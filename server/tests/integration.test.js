@@ -220,6 +220,111 @@ async function testLegacyShootRelay() {
     assert(data.power === 60, 'Power relayed correctly');
 }
 
+async function testShopPhase() {
+    console.log('\nTest: Shop Phase & Gold Economy');
+
+    // Reconnect fresh clients for a new room
+    client1.disconnect();
+    client2.disconnect();
+
+    client1 = ioc(`http://localhost:${PORT}`, { forceNew: true });
+    client2 = ioc(`http://localhost:${PORT}`, { forceNew: true });
+    await Promise.all([
+        new Promise((resolve) => client1.on('connect', resolve)),
+        new Promise((resolve) => client2.on('connect', resolve)),
+    ]);
+
+    // Create and join room
+    const roomsPromise = waitForEvent(client1, 'setRooms', 10000);
+    client1.emit('createRoom', { player: { name: 'ShopHost', color: 0xff0000 } });
+    const { rooms } = await roomsPromise;
+    const roomId = rooms[0].roomId;
+
+    const startPickPromise = waitForEvent(client2, 'startPick');
+    client2.emit('joinRoom', { roomId, name: 'ShopPlayer', color: 0x0000ff });
+    await startPickPromise;
+
+    // Ready up — should trigger shopPhase
+    const shopPromise1 = waitForEvent(client1, 'shopPhase', 5000);
+    const shopPromise2 = waitForEvent(client2, 'shopPhase', 5000);
+    client1.emit('ready');
+    client2.emit('ready');
+
+    const [shop1, shop2] = await Promise.all([shopPromise1, shopPromise2]);
+
+    assert(Array.isArray(shop1.weapons), 'Shop sends weapon catalog');
+    assert(shop1.weapons.length === 13, `Weapon catalog has ${shop1.weapons.length} weapons`);
+    assert(shop1.timer === 30, 'Shop timer is 30 seconds');
+    assert(typeof shop1.goldBalance === 'object', 'Gold balance is object');
+
+    const myBalance1 = shop1.goldBalance[client1.id];
+    assert(myBalance1 === 1000, `Host starts with ${myBalance1} Gold`);
+
+    // Buy a weapon (Magic Wall = 200 Gold)
+    const buyPromise = waitForEvent(client1, 'buyWeaponResult', 3000);
+    const oppBuyPromise = waitForEvent(client2, 'opponentBoughtWeapon', 3000);
+    client1.emit('buyWeapon', { weaponId: 12 });  // Magic Wall, 200 Gold
+
+    const buyResult = await buyPromise;
+    assert(buyResult.success === true, 'Buy weapon succeeded');
+    assert(buyResult.balance === 800, `Balance after buy: ${buyResult.balance}`);
+    assert(buyResult.weaponId === 12, 'Bought Magic Wall (ID 12)');
+
+    const oppBuy = await oppBuyPromise;
+    assert(oppBuy.weaponName === 'Magic Wall', 'Opponent notified of purchase');
+
+    // Try to buy something too expensive (Crazy Ivan = 2500 Gold)
+    const expensivePromise = waitForEvent(client1, 'buyWeaponResult', 3000);
+    client1.emit('buyWeapon', { weaponId: 9 });
+    const expensiveResult = await expensivePromise;
+    assert(expensiveResult.success === false, 'Cannot buy unaffordable weapon');
+    assert(expensiveResult.reason === 'Insufficient Gold', `Reject reason: ${expensiveResult.reason}`);
+
+    // Try to buy already owned weapon
+    const dupPromise = waitForEvent(client1, 'buyWeaponResult', 3000);
+    client1.emit('buyWeapon', { weaponId: 12 });
+    const dupResult = await dupPromise;
+    assert(dupResult.success === false, 'Cannot buy duplicate weapon');
+    assert(dupResult.reason === 'Already owned', `Dup reason: ${dupResult.reason}`);
+
+    // Both players done shopping
+    const shopEndPromise1 = waitForEvent(client1, 'shopEnd', 5000);
+    const shopEndPromise2 = waitForEvent(client2, 'shopEnd', 5000);
+    client1.emit('shopDone');
+    client2.emit('shopDone');
+
+    const [shopEnd1, shopEnd2] = await Promise.all([shopEndPromise1, shopEndPromise2]);
+    assert(shopEnd1.hostWeapons.length >= 1, `Host has ${shopEnd1.hostWeapons.length} weapons`);
+    assert(shopEnd1.playerWeapons.length >= 1, `Player has ${shopEnd1.playerWeapons.length} weapons`);
+    assert(typeof shopEnd1.goldBalance === 'object', 'shopEnd includes Gold balances');
+}
+
+async function testGoldFromDamage() {
+    console.log('\nTest: Gold Earned from Damage');
+
+    // Request terrain to set up battle phase
+    const terrainPromise1 = waitForEvent(client1, 'terrainGenerated', 5000);
+    client1.emit('requestTerrain');
+    const terrain = await terrainPromise1;
+
+    // Fire and check Gold in turnResult
+    const firstTurn = terrain.firstTurn;
+    const shooter = firstTurn === client1.id ? client1 : client2;
+
+    const resultPromise = waitForEvent(shooter, 'turnResult', 5000);
+    shooter.emit('fire', {
+        angle: 0.5,
+        power: 60,
+        weaponId: 0,
+        startX: terrain.tankPositions.host.x,
+        startY: terrain.tankPositions.host.y - 20
+    });
+
+    const result = await resultPromise;
+    assert(typeof result.goldEarned === 'number', `goldEarned field present: ${result.goldEarned}`);
+    assert(typeof result.goldBalance === 'object', 'goldBalance in turnResult');
+}
+
 async function testDisconnect() {
     console.log('\nTest: Disconnect Handling');
 
@@ -245,6 +350,8 @@ async function run() {
         const shotResult = await testServerFire(terrain);
         await testTurnValidation(terrain);
         await testLegacyShootRelay();
+        await testShopPhase();
+        await testGoldFromDamage();
         await testDisconnect();
 
     } catch (err) {

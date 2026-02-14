@@ -41,6 +41,7 @@ export class HUD extends Textures.CanvasTexture {
         this.moveDisplayText = null
         this.scoreDisplay1 = null
         this.scoreDisplay2 = null
+        this.goldDisplay = null
         this.overlay = null
         this.mouseLocked = false
         
@@ -88,7 +89,14 @@ export class HUD extends Textures.CanvasTexture {
         strokeText(name2, 4)
         strokeText(this.scoreDisplay1, 4)
         strokeText(this.scoreDisplay2, 4)
-    
+
+        // Gold display (centered, below title area)
+        const goldAmount = this.scene.sceneData?.player1?.gold || 0
+        this.goldDisplay = this.scene.add.text(this.width / 2, 10, `Gold: ${goldAmount}`)
+        this.goldDisplay.setOrigin(0.5, 0).setFontSize(22).setFontFamily('"Days One"')
+        this.goldDisplay.setColor('rgba(255,204,0,1)')
+        strokeText(this.goldDisplay, 3)
+
         this.update()
 
         // this.scene.input.mouse.onMouseDown = () => {
@@ -146,6 +154,12 @@ export class HUD extends Textures.CanvasTexture {
         this.overlay.visible = false
     }
 
+
+    updateGold = (amount) => {
+        if (this.goldDisplay) {
+            this.goldDisplay.setText(`Gold: ${amount}`)
+        }
+    }
 
     refresh = () => {
         var angle = 0

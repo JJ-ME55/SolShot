@@ -59,7 +59,7 @@ export const type3 = (scene) => {
     // === SERVER-AUTHORITATIVE EVENTS ===
     // Listen for server-computed turn results (from 'fire' event)
     // Currently logs results — will replace client physics in future phases
-    socket.on('turnResult', ({playerId, weaponId, trajectory, impact, damage, terrainUpdate, scores, nextTurn}) => {
+    socket.on('turnResult', ({playerId, weaponId, trajectory, impact, damage, terrainUpdate, scores, nextTurn, goldEarned, goldBalance}) => {
         console.log('[SolShot] Server turnResult:', {
             shooter: playerId === socket.id ? 'self' : 'opponent',
             weaponId,
@@ -67,8 +67,14 @@ export const type3 = (scene) => {
             damage,
             scores,
             trajectoryPoints: trajectory?.length,
-            nextTurn: nextTurn === socket.id ? 'your turn' : 'opponent turn'
+            nextTurn: nextTurn === socket.id ? 'your turn' : 'opponent turn',
+            goldEarned,
+            myGold: goldBalance ? goldBalance[socket.id] : undefined
         })
+        // Update Gold display in HUD
+        if (goldBalance && scene.hud && scene.hud.updateGold) {
+            scene.hud.updateGold(goldBalance[socket.id] || 0)
+        }
         // Future: animate trajectory from server data instead of local physics
         // Future: update terrain from terrainUpdate
         // Future: update score display from scores
@@ -90,12 +96,18 @@ export const type3 = (scene) => {
     })
 
     // Listen for round/match end from server
-    socket.on('roundEnd', ({winner, scores, roundWins, round}) => {
+    socket.on('roundEnd', ({winner, scores, roundWins, round, goldBalance}) => {
         console.log('[SolShot] Round ended:', { winner: winner === socket.id ? 'you' : 'opponent', scores, roundWins, round })
+        if (goldBalance && scene.hud && scene.hud.updateGold) {
+            scene.hud.updateGold(goldBalance[socket.id] || 0)
+        }
     })
 
-    socket.on('matchEnd', ({winner, scores, roundWins}) => {
+    socket.on('matchEnd', ({winner, scores, roundWins, goldBalance}) => {
         console.log('[SolShot] Match ended:', { winner: winner === socket.id ? 'you' : 'opponent', scores, roundWins })
+        if (goldBalance && scene.hud && scene.hud.updateGold) {
+            scene.hud.updateGold(goldBalance[socket.id] || 0)
+        }
     })
 
     socket.once('playAgain', () => {

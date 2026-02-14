@@ -2,6 +2,8 @@ import mongoose from 'mongoose';
 import Match from '../models/Match.js';
 import { processShot, generateTerrain, generateTankPositions, WEAPON_DATA } from '../services/physics.js';
 import { createMatchState, validateAction, transitionState, getNextTurn, isRoundOver, isMatchOver, getRoundWinner, MATCH_STATES } from '../services/match.js';
+import { initGold, getBalance, earnGold, spendGold, awardKillBonus, awardRoundWinBonus } from '../services/gold.js';
+import { WEAPON_CATALOG, getWeapon, getWeaponCost, getAllLaunchWeapons } from '../models/Weapon.js';
 
 // Helper: check if MongoDB is connected before DB operations
 function isDbConnected() {
@@ -14,6 +16,20 @@ var rooms = []
 
 // In-memory match states keyed by roomId
 var matchStates = {}
+
+// In-memory Gold balances keyed by roomId → { [playerId]: number }
+var goldStates = {}
+
+// In-memory weapon inventories keyed by roomId → { [playerId]: weaponId[] }
+var weaponInventories = {}
+
+// Shop timers keyed by roomId
+var shopTimers = {}
+
+// Shop readiness keyed by roomId → { [playerId]: boolean }
+var shopReady = {}
+
+const SHOP_DURATION = 30; // seconds
 
 // Helper: find room in memory cache
 function findRoom(roomId) {
@@ -64,6 +80,13 @@ async function removeRoom(roomId) {
     const room = findRoom(roomId);
     rooms = rooms.filter((r) => r.roomId !== roomId);
     delete matchStates[roomId];
+    delete goldStates[roomId];
+    delete weaponInventories[roomId];
+    delete shopReady[roomId];
+    if (shopTimers[roomId]) {
+        clearTimeout(shopTimers[roomId]);
+        delete shopTimers[roomId];
+    }
     if (room && room._matchId && isDbConnected()) {
         try {
             await Match.findByIdAndUpdate(room._matchId, { status: 'cancelled' });
@@ -71,6 +94,54 @@ async function removeRoom(roomId) {
             console.error('DB cancel error:', err.message);
         }
     }
+}
+
+/**
+ * End the weapon shop phase — transition to battle
+ * Called when both players are done or timer expires
+ */
+function endShopPhase(io, roomId) {
+    // Clear timer
+    if (shopTimers[roomId]) {
+        clearTimeout(shopTimers[roomId]);
+        delete shopTimers[roomId];
+    }
+
+    const room = findRoom(roomId)
+    if (!room) return
+
+    const ms = matchStates[roomId]
+    if (!ms) return
+
+    // Only transition if we're still in weapon_shop
+    if (ms.status !== MATCH_STATES.WEAPON_SHOP) return
+
+    transitionState(ms, MATCH_STATES.BATTLE)
+
+    // Build weapon lists for each player from inventories
+    const hostId = room.host ? room.host.socketId : null
+    const playerId = room.player ? room.player.socketId : null
+    const inventory = weaponInventories[roomId] || {}
+
+    // Convert weapon IDs to weapon objects for client
+    const hostWeapons = (inventory[hostId] || [0]).map(id => {
+        const w = getWeapon(id)
+        return w ? { id: w.id, name: w.name, type: 'single' } : { id: 0, name: 'Single Shot', type: 'single' }
+    })
+    const playerWeapons = (inventory[playerId] || [0]).map(id => {
+        const w = getWeapon(id)
+        return w ? { id: w.id, name: w.name, type: 'single' } : { id: 0, name: 'Single Shot', type: 'single' }
+    })
+
+    // Emit shopEnd with final inventories and Gold
+    io.sockets.in(roomId).emit('shopEnd', {
+        hostWeapons,
+        playerWeapons,
+        goldBalance: goldStates[roomId] || {}
+    })
+
+    // Reset shop readiness
+    delete shopReady[roomId]
 }
 
 const mainsocket = (io) => {
@@ -208,6 +279,43 @@ const mainsocket = (io) => {
             if (client.isHost === true) {
                 room.host.isReady = true
                 if (room.player && room.player.isReady === true) {
+                    // Initialize Gold for this match
+                    const hostId = room.host.socketId
+                    const playerId = room.player.socketId
+                    goldStates[client.roomId] = initGold(hostId, playerId)
+                    weaponInventories[client.roomId] = {
+                        [hostId]: [0],      // Everyone starts with Single Shot (free)
+                        [playerId]: [0]
+                    }
+                    shopReady[client.roomId] = {
+                        [hostId]: false,
+                        [playerId]: false
+                    }
+
+                    // Transition match state to weapon_shop
+                    const ms = matchStates[client.roomId]
+                    if (ms) {
+                        transitionState(ms, MATCH_STATES.WEAPON_SHOP)
+                    }
+
+                    // Emit shopPhase with weapon catalog and Gold balance
+                    const weapons = getAllLaunchWeapons()
+                    io.sockets.in(client.roomId).emit('shopPhase', {
+                        weapons,
+                        goldBalance: {
+                            [hostId]: getBalance(goldStates[client.roomId], hostId),
+                            [playerId]: getBalance(goldStates[client.roomId], playerId)
+                        },
+                        timer: SHOP_DURATION
+                    })
+
+                    // Start shop timer — auto-end shop after SHOP_DURATION seconds
+                    if (shopTimers[client.roomId]) clearTimeout(shopTimers[client.roomId])
+                    shopTimers[client.roomId] = setTimeout(() => {
+                        endShopPhase(io, client.roomId)
+                    }, SHOP_DURATION * 1000)
+
+                    // Also emit startGame for backward compatibility
                     io.sockets.in(client.roomId).emit('startGame', {})
                     room.player.isReady = false
                     room.host.isReady = false
@@ -217,6 +325,43 @@ const mainsocket = (io) => {
                 if (!room.player) return
                 room.player.isReady = true
                 if (room.host.isReady === true) {
+                    // Initialize Gold for this match
+                    const hostId = room.host.socketId
+                    const playerId = room.player.socketId
+                    goldStates[client.roomId] = initGold(hostId, playerId)
+                    weaponInventories[client.roomId] = {
+                        [hostId]: [0],      // Everyone starts with Single Shot (free)
+                        [playerId]: [0]
+                    }
+                    shopReady[client.roomId] = {
+                        [hostId]: false,
+                        [playerId]: false
+                    }
+
+                    // Transition match state to weapon_shop
+                    const ms = matchStates[client.roomId]
+                    if (ms) {
+                        transitionState(ms, MATCH_STATES.WEAPON_SHOP)
+                    }
+
+                    // Emit shopPhase with weapon catalog and Gold balance
+                    const weapons = getAllLaunchWeapons()
+                    io.sockets.in(client.roomId).emit('shopPhase', {
+                        weapons,
+                        goldBalance: {
+                            [hostId]: getBalance(goldStates[client.roomId], hostId),
+                            [playerId]: getBalance(goldStates[client.roomId], playerId)
+                        },
+                        timer: SHOP_DURATION
+                    })
+
+                    // Start shop timer — auto-end shop after SHOP_DURATION seconds
+                    if (shopTimers[client.roomId]) clearTimeout(shopTimers[client.roomId])
+                    shopTimers[client.roomId] = setTimeout(() => {
+                        endShopPhase(io, client.roomId)
+                    }, SHOP_DURATION * 1000)
+
+                    // Also emit startGame for backward compatibility
                     io.sockets.in(client.roomId).emit('startGame', {})
                     room.player.isReady = false
                     room.host.isReady = false
@@ -224,6 +369,90 @@ const mainsocket = (io) => {
             }
         })
 
+
+
+        // === GOLD ECONOMY EVENTS (Phase 3) ===
+
+        // Client buys a weapon during shop phase
+        client.on('buyWeapon', ({weaponId}) => {
+            const room = findRoom(client.roomId)
+            if (!room) return
+
+            const ms = matchStates[client.roomId]
+            if (ms && !validateAction(ms.status, 'buyWeapon')) {
+                client.emit('buyWeaponResult', { success: false, reason: `Cannot buy during ${ms.status}` })
+                return
+            }
+
+            // Validate weapon exists in catalog
+            const weapon = getWeapon(weaponId)
+            if (!weapon) {
+                client.emit('buyWeaponResult', { success: false, reason: 'Unknown weapon' })
+                return
+            }
+
+            // Check if already owned
+            const inventory = weaponInventories[client.roomId]
+            if (inventory && inventory[client.id] && inventory[client.id].includes(weaponId)) {
+                client.emit('buyWeaponResult', { success: false, reason: 'Already owned' })
+                return
+            }
+
+            // Try to spend Gold
+            const gold = goldStates[client.roomId]
+            if (!gold) {
+                client.emit('buyWeaponResult', { success: false, reason: 'No Gold state' })
+                return
+            }
+
+            const result = spendGold(gold, client.id, weapon.goldCost)
+            if (!result.success) {
+                client.emit('buyWeaponResult', { success: false, reason: result.reason, balance: result.balance })
+                return
+            }
+
+            // Add to inventory
+            if (!inventory[client.id]) inventory[client.id] = [0]
+            inventory[client.id].push(weaponId)
+
+            // Send result to buyer
+            client.emit('buyWeaponResult', {
+                success: true,
+                weaponId,
+                weapon,
+                balance: result.balance,
+                inventory: inventory[client.id]
+            })
+
+            // Notify opponent of purchase (they see opponent bought something)
+            client.to(client.roomId).emit('opponentBoughtWeapon', {
+                playerId: client.id,
+                weaponId,
+                weaponName: weapon.name
+            })
+        })
+
+        // Client done shopping
+        client.on('shopDone', () => {
+            const room = findRoom(client.roomId)
+            if (!room) return
+
+            const ms = matchStates[client.roomId]
+            if (ms && !validateAction(ms.status, 'shopDone')) return
+
+            const ready = shopReady[client.roomId]
+            if (!ready) return
+
+            ready[client.id] = true
+
+            // Check if both players are done
+            const hostId = room.host ? room.host.socketId : null
+            const playerId = room.player ? room.player.socketId : null
+
+            if (hostId && playerId && ready[hostId] && ready[playerId]) {
+                endShopPhase(io, client.roomId)
+            }
+        })
 
 
         // === EXISTING RELAY EVENTS (kept for backward compatibility) ===
@@ -334,11 +563,23 @@ const mainsocket = (io) => {
             // Update server terrain state
             room.heightmap = result.newTerrain
 
-            // Update match state
+            // Update match state + Gold
+            let goldEarned = 0
             if (ms) {
                 // Update scores
                 for (const [playerId, dmg] of Object.entries(result.damage)) {
                     ms.scores[playerId] = (ms.scores[playerId] || 0) + dmg
+                }
+
+                // Calculate Gold earned from damage dealt to opponent
+                const gold = goldStates[client.roomId]
+                if (gold) {
+                    // Find opponent's damage (positive values = damage to opponent)
+                    for (const [playerId, dmg] of Object.entries(result.damage)) {
+                        if (playerId !== client.id && dmg > 0) {
+                            goldEarned += earnGold(gold, client.id, dmg)
+                        }
+                    }
                 }
 
                 // Advance turn
@@ -348,7 +589,7 @@ const mainsocket = (io) => {
                 ms.currentTurn = playerId ? getNextTurn(ms, hostId, playerId) : null
             }
 
-            // Broadcast turn result to BOTH players
+            // Broadcast turn result to BOTH players (includes goldEarned + balances)
             io.sockets.in(client.roomId).emit('turnResult', {
                 playerId: client.id,
                 weaponId,
@@ -357,7 +598,9 @@ const mainsocket = (io) => {
                 damage: result.damage,
                 terrainUpdate: result.newTerrain,
                 scores: ms ? ms.scores : {},
-                nextTurn: ms ? ms.currentTurn : null
+                nextTurn: ms ? ms.currentTurn : null,
+                goldEarned,
+                goldBalance: goldStates[client.roomId] || {}
             })
 
             // Check if round is over
@@ -371,12 +614,19 @@ const mainsocket = (io) => {
 
                 const matchResult = isMatchOver(ms, hostId, playerId)
 
+                // Award round win Gold bonus
+                const gold = goldStates[client.roomId]
+                if (gold) {
+                    awardRoundWinBonus(gold, roundWinner)
+                }
+
                 if (matchResult.isOver) {
                     transitionState(ms, MATCH_STATES.SETTLING)
                     io.sockets.in(client.roomId).emit('matchEnd', {
                         winner: matchResult.winner,
                         scores: ms.scores,
-                        roundWins: ms.roundWins
+                        roundWins: ms.roundWins,
+                        goldBalance: goldStates[client.roomId] || {}
                     })
                 } else {
                     transitionState(ms, MATCH_STATES.ROUND_END)
@@ -384,7 +634,8 @@ const mainsocket = (io) => {
                         winner: roundWinner,
                         scores: ms.scores,
                         roundWins: ms.roundWins,
-                        round: ms.currentRound
+                        round: ms.currentRound,
+                        goldBalance: goldStates[client.roomId] || {}
                     })
                 }
             }
@@ -412,7 +663,10 @@ const mainsocket = (io) => {
             if (ms) {
                 ms.terrain = heightmap
                 ms.tankPositions = tankPositions
-                transitionState(ms, MATCH_STATES.BATTLE)
+                // Only transition if not already in battle (shop phase already transitions)
+                if (ms.status !== MATCH_STATES.BATTLE) {
+                    transitionState(ms, MATCH_STATES.BATTLE)
+                }
                 ms.currentTurn = getNextTurn(ms,
                     room.host ? room.host.socketId : null,
                     room.player ? room.player.socketId : null
@@ -527,8 +781,15 @@ const mainsocket = (io) => {
                     delete room.terrainPath
                     delete room.heightmap
 
-                    // Reset match state for new game
+                    // Reset match state, Gold, and inventories for new game
                     matchStates[client.roomId] = createMatchState(client.roomId)
+                    delete goldStates[client.roomId]
+                    delete weaponInventories[client.roomId]
+                    delete shopReady[client.roomId]
+                    if (shopTimers[client.roomId]) {
+                        clearTimeout(shopTimers[client.roomId])
+                        delete shopTimers[client.roomId]
+                    }
 
                     io.sockets.in(client.roomId).emit('playAgain', {})
                     room.player.playAgain = false
@@ -543,8 +804,15 @@ const mainsocket = (io) => {
                     delete room.terrainPath
                     delete room.heightmap
 
-                    // Reset match state for new game
+                    // Reset match state, Gold, and inventories for new game
                     matchStates[client.roomId] = createMatchState(client.roomId)
+                    delete goldStates[client.roomId]
+                    delete weaponInventories[client.roomId]
+                    delete shopReady[client.roomId]
+                    if (shopTimers[client.roomId]) {
+                        clearTimeout(shopTimers[client.roomId])
+                        delete shopTimers[client.roomId]
+                    }
 
                     io.sockets.in(client.roomId).emit('playAgain', {})
                     room.player.playAgain = false

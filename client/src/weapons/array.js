@@ -2,92 +2,45 @@ import * as Allweapons from './packs/Standard/Standard'
 
 export const weaponArray = []
 
-const singleshot = new Allweapons.singleshot()
+// === 13 Launch Weapons ===
+// IDs kept: 0, 1, 2, 3, 4, 5, 7, 9, 10, 11, 12, 15, 16
+// All weapon classes remain in Standard.js — only imports trimmed here
+
+const singleshot = new Allweapons.singleshot()       // ID 0 — Free
 weaponArray[singleshot.id] = singleshot
 
-const bigshot = new Allweapons.bigshot()
+const bigshot = new Allweapons.bigshot()             // ID 1 — Rare (700g)
 weaponArray[bigshot.id] = bigshot
 
-const threeshot = new Allweapons.threeshot()
+const threeshot = new Allweapons.threeshot()          // ID 2 — Tactical (400g)
 weaponArray[threeshot.id] = threeshot
 
-const fiveshot = new Allweapons.fiveshot()
+const fiveshot = new Allweapons.fiveshot()            // ID 3 — Rare (800g)
 weaponArray[fiveshot.id] = fiveshot
 
-const jackhammer = new Allweapons.jackhammer()
+const jackhammer = new Allweapons.jackhammer()        // ID 4 — Epic (1000g)
 weaponArray[jackhammer.id] = jackhammer
 
-const heatseeker = new Allweapons.heatseeker()
+const heatseeker = new Allweapons.heatseeker()        // ID 5 — Tactical (500g)
 weaponArray[heatseeker.id] = heatseeker
 
-const tracer = new Allweapons.tracer()
-weaponArray[tracer.id] = tracer
-
-const piledriver = new Allweapons.piledriver()
+const piledriver = new Allweapons.piledriver()        // ID 7 — Rare (600g)
 weaponArray[piledriver.id] = piledriver
 
-const dirtmover = new Allweapons.dirtmover()
-weaponArray[dirtmover.id] = dirtmover
-
-const crazyivan = new Allweapons.crazyivan()
+const crazyivan = new Allweapons.crazyivan()          // ID 9 — Legendary (2500g)
 weaponArray[crazyivan.id] = crazyivan
 
-const spider = new Allweapons.spider()
+const spider = new Allweapons.spider()                // ID 10 — Tactical (400g)
 weaponArray[spider.id] = spider
 
-const sniperrifle = new Allweapons.sniperrifle()
+const sniperrifle = new Allweapons.sniperrifle()      // ID 11 — Rare (700g)
 weaponArray[sniperrifle.id] = sniperrifle
 
-const magicwall = new Allweapons.magicwall()
+const magicwall = new Allweapons.magicwall()          // ID 12 — Tactical (200g)
 weaponArray[magicwall.id] = magicwall
 
-const dirtslinger = new Allweapons.dirtslinger()
-weaponArray[dirtslinger.id] = dirtslinger
-
-const zapper = new Allweapons.zapper()
-weaponArray[zapper.id] = zapper
-
-const napalm = new Allweapons.napalm()
+const napalm = new Allweapons.napalm()                // ID 15 — Rare (600g)
 weaponArray[napalm.id] = napalm
 
-const hailstorm = new Allweapons.hailstorm()
+const hailstorm = new Allweapons.hailstorm()          // ID 16 — Epic (1200g)
 weaponArray[hailstorm.id] = hailstorm
-
-const groundhog = new Allweapons.groundhog()
-weaponArray[groundhog.id] = groundhog
-
-const worm = new Allweapons.worm()
-weaponArray[worm.id] = worm
-
-const homingworm = new Allweapons.homingworm()
-weaponArray[homingworm.id] = homingworm
-
-const skipper = new Allweapons.skipper()
-weaponArray[skipper.id] = skipper
-
-const chainreaction = new Allweapons.chainreaction()
-weaponArray[chainreaction.id] = chainreaction
-
-const pineapple = new Allweapons.pineapple()
-weaponArray[pineapple.id] = pineapple
-
-const firecracker = new Allweapons.firecracker()
-weaponArray[firecracker.id] = firecracker
-
-const homingmissile = new Allweapons.homingmissile()
-weaponArray[homingmissile.id] = homingmissile
-
-const dirtball = new Allweapons.dirtball()
-weaponArray[dirtball.id] = dirtball
-
-const tommygun = new Allweapons.tommygun()
-weaponArray[tommygun.id] = tommygun
-
-const mountainmover = new Allweapons.mountainmover()
-weaponArray[mountainmover.id] = mountainmover
-
-const scattershot = new Allweapons.scattershot()
-weaponArray[scattershot.id] = scattershot
-
-const cruiser = new Allweapons.cruiser()
-weaponArray[cruiser.id] = cruiser

@@ -1,6 +1,5 @@
 import io from 'socket.io-client'
 
-var local = 'http://localhost:5001'
-var url = 'https://pocket-tanks.onrender.com'
+const serverUrl = process.env.REACT_APP_SERVER_URL || 'http://localhost:5001'
 
-export const socket = io(url)
+export const socket = io(serverUrl)

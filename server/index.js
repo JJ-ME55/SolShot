@@ -3,10 +3,11 @@ import http from "http";
 import * as socket from "socket.io";
 import cors from 'cors';
 import dotenv from 'dotenv';
+import mongoose from 'mongoose';
 import mainsocket from './socket-io/main.js'
 
 dotenv.config()
-const PORT = 5001
+const PORT = process.env.PORT || 5001
 const app = express();
 const server = http.createServer(app)
 
@@ -24,9 +25,30 @@ app.use(express.urlencoded({limit: "30mb", extended: true}))
 mainsocket(io)
 
 app.get('/', (req, res) => {
-    res.send('running')
+    res.send('SolShot server running')
 })
 
-server.listen(PORT, function () {
-    console.log("listening");
-})
+// Connect to MongoDB then start server
+const MONGODB_URI = process.env.MONGODB_URI;
+
+if (MONGODB_URI) {
+    mongoose.connect(MONGODB_URI)
+        .then(() => {
+            console.log('MongoDB connected');
+            server.listen(PORT, function () {
+                console.log(`SolShot server listening on port ${PORT}`);
+            });
+        })
+        .catch((err) => {
+            console.error('MongoDB connection error:', err.message);
+            // Start server anyway so socket.io still works during development
+            server.listen(PORT, function () {
+                console.log(`SolShot server listening on port ${PORT} (no DB)`);
+            });
+        });
+} else {
+    console.warn('MONGODB_URI not set — running without database');
+    server.listen(PORT, function () {
+        console.log(`SolShot server listening on port ${PORT} (no DB)`);
+    });
+}

@@ -58,18 +58,23 @@ export const type3 = (scene) => {
             if (index > 4) return
             //room.x = scene.add.rectangle(screenCenterX - 300, 150 + (index + 1) * 80, 50, 50, room.host.color, 255);
             var name = (room.host.name.length < 12) ? room.host.name : (room.host.name.slice(0,10) + "...")
+            const wagerText = room.wager && room.wager > 0 ? `${room.wager} SOL` : 'FREE'
             room.x = scene.add.text(screenCenterX - 350, 150 + (index + 1) * 80, index + 1).setFontSize(26);
             room.y = scene.add.text(screenCenterX - 300, 150 + (index + 1) * 80, name).setFontSize(26);
+            room.w = scene.add.text(screenCenterX + 120, 150 + (index + 1) * 80, wagerText).setFontSize(26);
             room.z = scene.add.text(screenCenterX + 280, 150 + (index + 1) * 80, 'Play').setFontSize(26);
             room.x.setColor('rgba(180,180,180,1)')
             room.z.setColor('rgba(240,240,240,1)')
             room.y.setColor(int2rgba(room.host.color))
+            room.w.setColor(room.wager && room.wager > 0 ? 'rgba(255,204,0,1)' : 'rgba(100,255,100,1)')
             //room.x.setOrigin(0.5)
             room.x.setOrigin(0, 0.4).setFontSize(40).setFontFamily('"Days One"')
             room.y.setOrigin(0, 0.4).setFontSize(40).setFontFamily('"Days One"')
+            room.w.setOrigin(0.5, 0.4).setFontSize(28).setFontFamily('"Days One"')
             room.z.setOrigin(0.5, 0.4).setFontSize(40).setFontFamily('"Days One"')
             strokeText(room.x, 6)
             strokeText(room.y, 6)
+            strokeText(room.w, 4)
             strokeText(room.z, 6)
             room.z.setInteractive()
         
@@ -79,7 +84,13 @@ export const type3 = (scene) => {
 
             room.z.on('pointerdown', () => {
                 scene.sound.play('click', {volume: 0.3})
-                socket.emit('joinRoom', {roomId: room.roomId, name: scene.player1.name, color: scene.player1.color})
+                socket.emit('joinRoom', {
+                    roomId: room.roomId,
+                    name: scene.player1.name,
+                    color: scene.player1.color,
+                    walletAddress: scene.player1.walletAddress || null,
+                    wager: scene.player1.wager || 0
+                })
             })
         });
 
@@ -96,6 +107,7 @@ export const type3 = (scene) => {
             //console.log(index + " removed")
             room.x.destroy(true)
             room.y.destroy(true)
+            if (room.w) room.w.destroy(true)
             room.z.destroy(true)
         });
         scene.roomList = []
@@ -119,11 +131,23 @@ export const type3 = (scene) => {
         serverError.setVisible(true)
     }
 
-    socket.on('startPick', ({host, player}) => {
-        if (socket.id === host.socketId)
-            scene.scene.start('scene-5', {gameType: 3, player1: scene.player1, player2: player, hostId: host.socketId})
-        else
-            scene.scene.start('scene-5', {gameType: 3, player1: scene.player1, player2: host, hostId: host.socketId})
+    socket.on('startPick', ({host, player, wager}) => {
+        const sceneData = {gameType: 3, player1: scene.player1, player2: null, hostId: host.socketId, wager: wager || 0}
+        if (socket.id === host.socketId) {
+            sceneData.player2 = player
+        } else {
+            sceneData.player2 = host
+        }
+        scene.scene.start('scene-5', sceneData)
+    })
+
+    // Handle join room errors (e.g. insufficient SOL balance)
+    socket.on('joinRoomError', ({reason}) => {
+        console.warn('[SolShot] Cannot join room:', reason)
+        noRoom.setVisible(false)
+        serverError.setVisible(true)
+        serverErrorTxt1.setText('Cannot Join')
+        serverErrorTxt2.setText(reason)
     })
 
     const g = scene.add.text(screenCenterX, 700, 'CREATE ROOM').setFontSize(50);

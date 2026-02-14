@@ -94,6 +94,136 @@ export const type3 = (scene) => {
     f.setColor(int2rgba(colorValues[selectedColor]))
     strokeText(f, 6)
 
+    // === WAGER SELECTION ===
+    const wagerLabel = scene.add.text(screenCenterX, 580, 'WAGER :  ').setFontSize(40)
+    wagerLabel.setFontFamily('"Days One"').setOrigin(1, 0).setColor('rgba(180,180,180,1)')
+    strokeText(wagerLabel, 5)
+
+    const wagerTiers = [0, 0.01, 0.05, 0.1, 0.25, 0.5]
+    const wagerLabels = ['FREE', '0.01', '0.05', '0.1', '0.25', '0.5']
+    var selectedWager = 0  // Default: free play
+
+    const wagerDisplay = scene.add.text(screenCenterX, 580, 'FREE').setFontSize(40)
+    wagerDisplay.setFontFamily('"Days One"').setOrigin(0, 0).setColor('rgba(100,255,100,1)')
+    strokeText(wagerDisplay, 5)
+
+    // Wallet status
+    const walletStatus = scene.add.text(screenCenterX, 630, '').setFontSize(18).setOrigin(0.5, 0)
+    walletStatus.setFontFamily('"Days One"').setColor('rgba(180,180,180,1)')
+
+    const updateWalletStatus = () => {
+        const wallet = window.solWallet
+        if (wallet && wallet.connected) {
+            walletStatus.setText(`Wallet: ${wallet.publicKey.slice(0,4)}...${wallet.publicKey.slice(-4)} | ${wallet.balance.toFixed(3)} SOL`)
+            walletStatus.setColor('rgba(100,255,100,1)')
+        } else {
+            walletStatus.setText('No wallet connected (free play only)')
+            walletStatus.setColor('rgba(255,150,100,1)')
+        }
+    }
+    updateWalletStatus()
+
+    // Wager tier buttons
+    const wagerButtons = []
+    const tierStartX = screenCenterX - 275
+    wagerTiers.forEach((tier, index) => {
+        const btnX = tierStartX + index * 110
+        const btn = scene.add.text(btnX, 580, wagerLabels[index]).setFontSize(24).setOrigin(0.5, 0)
+        btn.setFontFamily('"Days One"')
+        btn.setInteractive()
+
+        const updateBtnStyle = () => {
+            if (index === selectedWager) {
+                btn.setColor('rgba(255,204,0,1)')
+                strokeText(btn, 3)
+            } else {
+                const wallet = window.solWallet
+                const canAfford = tier === 0 || (wallet && wallet.connected && wallet.balance >= tier + 0.01)
+                if (canAfford) {
+                    btn.setColor('rgba(200,200,200,1)')
+                    strokeText(btn, 2)
+                } else {
+                    btn.setColor('rgba(100,100,100,1)')
+                    strokeText(btn, 2)
+                }
+            }
+        }
+        updateBtnStyle()
+        wagerButtons.push({ btn, tier, index, updateBtnStyle })
+
+        btn.on('pointerdown', () => {
+            if (tier > 0) {
+                const wallet = window.solWallet
+                if (!wallet || !wallet.connected) {
+                    walletStatus.setText('Connect wallet to wager SOL!')
+                    walletStatus.setColor('rgba(255,80,80,1)')
+                    return
+                }
+                if (wallet.balance < tier + 0.01) {
+                    walletStatus.setText(`Need ${(tier + 0.01).toFixed(3)} SOL (have ${wallet.balance.toFixed(3)})`)
+                    walletStatus.setColor('rgba(255,80,80,1)')
+                    return
+                }
+            }
+            scene.sound.play('click', {volume: 0.3})
+            selectedWager = index
+            wagerDisplay.setText(tier === 0 ? 'FREE' : `${tier} SOL`)
+            wagerDisplay.setColor(tier === 0 ? 'rgba(100,255,100,1)' : 'rgba(255,204,0,1)')
+            strokeText(wagerDisplay, 5)
+            wagerButtons.forEach(b => b.updateBtnStyle())
+            updateWalletStatus()
+        })
+    })
+
+    // Hide the per-tier buttons — use the wager label row instead
+    // Replace with left/right arrows for simpler UX
+    wagerButtons.forEach(b => b.btn.setVisible(false))
+
+    // Simplified wager selector: left/right arrows
+    const wagerLeft = scene.add.text(screenCenterX - 10, 580, '<').setFontSize(40).setOrigin(1, 0)
+    wagerLeft.setFontFamily('"Days One"').setColor('rgba(200,200,200,1)')
+    strokeText(wagerLeft, 4)
+    wagerLeft.setInteractive()
+
+    const wagerRight = scene.add.text(screenCenterX + wagerDisplay.width + 20, 580, '>').setFontSize(40).setOrigin(0, 0)
+    wagerRight.setFontFamily('"Days One"').setColor('rgba(200,200,200,1)')
+    strokeText(wagerRight, 4)
+    wagerRight.setInteractive()
+
+    const updateWagerDisplay = () => {
+        const tier = wagerTiers[selectedWager]
+        wagerDisplay.setText(tier === 0 ? 'FREE' : `${tier} SOL`)
+        wagerDisplay.setColor(tier === 0 ? 'rgba(100,255,100,1)' : 'rgba(255,204,0,1)')
+        strokeText(wagerDisplay, 5)
+        wagerRight.setX(screenCenterX + wagerDisplay.width + 20)
+        updateWalletStatus()
+    }
+
+    wagerLeft.on('pointerdown', () => {
+        scene.sound.play('click', {volume: 0.3})
+        selectedWager = Math.max(0, selectedWager - 1)
+        updateWagerDisplay()
+    })
+
+    wagerRight.on('pointerdown', () => {
+        const wallet = window.solWallet
+        const nextIdx = Math.min(wagerTiers.length - 1, selectedWager + 1)
+        const nextTier = wagerTiers[nextIdx]
+        if (nextTier > 0 && (!wallet || !wallet.connected)) {
+            walletStatus.setText('Connect wallet to wager SOL!')
+            walletStatus.setColor('rgba(255,80,80,1)')
+            return
+        }
+        if (nextTier > 0 && wallet && wallet.balance < nextTier + 0.01) {
+            walletStatus.setText(`Need ${(nextTier + 0.01).toFixed(3)} SOL`)
+            walletStatus.setColor('rgba(255,80,80,1)')
+            return
+        }
+        scene.sound.play('click', {volume: 0.3})
+        selectedWager = nextIdx
+        updateWagerDisplay()
+    })
+
     //
     const g = scene.add.text(screenCenterX, 700, 'CONTINUE').setFontSize(50);
     g.setFontFamily('"Days One"')
@@ -104,7 +234,17 @@ export const type3 = (scene) => {
     g.setInteractive()
     g.on('pointerdown', () => {
         scene.sound.play('click', {volume: 0.3})
-        scene.scene.start('scene-4', {gameType: 3, player1: {name: c.text, color: colorValues[selectedColor]}})
+        const wallet = window.solWallet
+        const wagerAmount = wagerTiers[selectedWager]
+        scene.scene.start('scene-4', {
+            gameType: 3,
+            player1: {
+                name: c.text,
+                color: colorValues[selectedColor],
+                walletAddress: wallet && wallet.connected ? wallet.publicKey : null,
+                wager: wagerAmount
+            }
+        })
     })
 }
 

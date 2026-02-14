@@ -4,6 +4,8 @@ import { processShot, generateTerrain, generateTankPositions, WEAPON_DATA } from
 import { createMatchState, validateAction, transitionState, getNextTurn, isRoundOver, isMatchOver, getRoundWinner, MATCH_STATES } from '../services/match.js';
 import { initGold, getBalance, earnGold, spendGold, awardKillBonus, awardRoundWinBonus } from '../services/gold.js';
 import { WEAPON_CATALOG, getWeapon, getWeaponCost, getAllLaunchWeapons } from '../models/Weapon.js';
+import { handleAuthenticate } from '../middleware/auth.js';
+import { verifyBalance, isValidWager, settleMatch, refundWager, WAGER_TIERS } from '../services/solana.js';
 
 // Helper: check if MongoDB is connected before DB operations
 function isDbConnected() {
@@ -28,6 +30,12 @@ var shopTimers = {}
 
 // Shop readiness keyed by roomId → { [playerId]: boolean }
 var shopReady = {}
+
+// Wager info keyed by roomId → { amount, wallets: { [playerId]: walletAddress } }
+var wagerStates = {}
+
+// Authenticated wallets keyed by socketId → walletAddress
+var authenticatedWallets = {}
 
 const SHOP_DURATION = 30; // seconds
 
@@ -83,6 +91,7 @@ async function removeRoom(roomId) {
     delete goldStates[roomId];
     delete weaponInventories[roomId];
     delete shopReady[roomId];
+    delete wagerStates[roomId];
     if (shopTimers[roomId]) {
         clearTimeout(shopTimers[roomId]);
         delete shopTimers[roomId];
@@ -150,10 +159,58 @@ const mainsocket = (io) => {
         client.name = ""
         client.color = 0
         client.isHost = false
+        client.walletAddress = null
+        client.isAuthenticated = false
+
+
+        // === WALLET AUTHENTICATION (Phase 4) ===
+        client.on('authenticate', (data) => {
+            const result = handleAuthenticate(client, data)
+            if (result.success) {
+                authenticatedWallets[client.id] = result.walletAddress
+                console.log(`[Auth] Socket ${client.id} authenticated as ${result.walletAddress}`)
+            }
+            client.emit('authResult', result)
+        })
 
 
         client.on('disconnect', async () => {
             if (client.roomId !== null) {
+                // Handle wager forfeit on disconnect during active match
+                const ws = wagerStates[client.roomId]
+                const ms = matchStates[client.roomId]
+                if (ws && ws.amount > 0 && ms) {
+                    const room = findRoom(client.roomId)
+                    if (room && (ms.status === MATCH_STATES.BATTLE || ms.status === MATCH_STATES.WEAPON_SHOP)) {
+                        // Disconnecting player forfeits — opponent wins
+                        const opponentId = client.isHost
+                            ? (room.player ? room.player.socketId : null)
+                            : (room.host ? room.host.socketId : null)
+                        const disconnectorWallet = ws.wallets[client.id]
+                        const opponentWallet = opponentId ? ws.wallets[opponentId] : null
+
+                        if (opponentWallet && disconnectorWallet) {
+                            // Settle: opponent wins by forfeit
+                            const settlementResult = await settleMatch(opponentWallet, disconnectorWallet, ws.amount)
+                            console.log('[Solana] Forfeit settlement:', settlementResult)
+                            if (opponentId) {
+                                io.to(opponentId).emit('matchSettled', {
+                                    type: 'forfeit',
+                                    winner: opponentId,
+                                    settlement: settlementResult.settlement,
+                                    txSignature: settlementResult.txSignature
+                                })
+                            }
+                        }
+                    } else if (ms.status === MATCH_STATES.LOBBY) {
+                        // Not started yet — refund if applicable
+                        const wallet = ws.wallets[client.id]
+                        if (wallet && ws.amount > 0) {
+                            await refundWager(wallet, ws.amount)
+                        }
+                    }
+                }
+
                 client.leave(client.roomId)
                 await removeRoom(client.roomId)
                 io.sockets.in(client.roomId).emit('opponentLeft', {})
@@ -162,12 +219,38 @@ const mainsocket = (io) => {
                 client.roomId = null
                 client.isHost = false
             }
+            delete authenticatedWallets[client.id]
         })
 
 
 
         client.on('leaveRoom', async () => {
             if (client.roomId !== null) {
+                // Handle wager forfeit on leave during active match
+                const ws = wagerStates[client.roomId]
+                const ms = matchStates[client.roomId]
+                if (ws && ws.amount > 0 && ms && (ms.status === MATCH_STATES.BATTLE || ms.status === MATCH_STATES.WEAPON_SHOP)) {
+                    const room = findRoom(client.roomId)
+                    if (room) {
+                        const opponentId = client.isHost
+                            ? (room.player ? room.player.socketId : null)
+                            : (room.host ? room.host.socketId : null)
+                        const disconnectorWallet = ws.wallets[client.id]
+                        const opponentWallet = opponentId ? ws.wallets[opponentId] : null
+                        if (opponentWallet && disconnectorWallet) {
+                            const settlementResult = await settleMatch(opponentWallet, disconnectorWallet, ws.amount)
+                            if (opponentId) {
+                                io.to(opponentId).emit('matchSettled', {
+                                    type: 'forfeit',
+                                    winner: opponentId,
+                                    settlement: settlementResult.settlement,
+                                    txSignature: settlementResult.txSignature
+                                })
+                            }
+                        }
+                    }
+                }
+
                 client.leave(client.roomId)
                 await removeRoom(client.roomId)
                 io.sockets.in(client.roomId).emit('opponentLeft', {})
@@ -194,10 +277,37 @@ const mainsocket = (io) => {
 
 
 
-        client.on('joinRoom', async ({roomId, name, color}) => {
+        client.on('joinRoom', async ({roomId, name, color, walletAddress, wager}) => {
             if (client.roomId === roomId) return
             var room = findRoom(roomId)
             if (!room || room.active === true) return
+
+            // Verify wager compatibility
+            const ws = wagerStates[roomId]
+            const roomWager = ws ? ws.amount : 0
+            const joinerWallet = walletAddress || authenticatedWallets[client.id] || null
+
+            if (roomWager > 0) {
+                // Room requires a wager — joiner must have a wallet
+                if (!joinerWallet) {
+                    client.emit('joinRoomError', { reason: 'Wallet required for wagered matches' })
+                    return
+                }
+
+                // Verify joiner has enough balance (best-effort — skip if RPC unavailable)
+                try {
+                    const balanceCheck = await verifyBalance(joinerWallet, roomWager)
+                    if (balanceCheck.balance > 0 && !balanceCheck.sufficient) {
+                        // Only reject if we got a real balance back and it's insufficient
+                        client.emit('joinRoomError', {
+                            reason: `Insufficient SOL balance. Need ${balanceCheck.required.toFixed(3)}, have ${balanceCheck.balance.toFixed(3)}`
+                        })
+                        return
+                    }
+                } catch (err) {
+                    console.warn('[Solana] Balance check skipped:', err.message)
+                }
+            }
 
             if (client.roomId !== null) {
                 client.leave(client.roomId)
@@ -210,6 +320,11 @@ const mainsocket = (io) => {
             client.name = name
             client.color = color
 
+            // Store joiner's wallet in wager state
+            if (ws) {
+                ws.wallets[client.id] = joinerWallet
+            }
+
             room.player = {name: name, color: color, socketId: client.id, isReady: false, playAgain: false}
             room.active = true
 
@@ -217,7 +332,7 @@ const mainsocket = (io) => {
             persistRoom(room);
 
             io.emit('setRooms', {rooms: getOpenRooms()})
-            io.sockets.in(client.roomId).emit('startPick', {host: room.host, player: room.player})
+            io.sockets.in(client.roomId).emit('startPick', {host: room.host, player: room.player, wager: roomWager})
         })
 
 
@@ -241,6 +356,19 @@ const mainsocket = (io) => {
             var host = {name: player.name, color: player.color, socketId: client.id, isReady: false, playAgain: false}
 
             const roomData = {roomId: roomId, host: host, active: false}
+
+            // Store wager info for this room
+            const wagerAmount = player.wager || 0
+            const walletAddress = player.walletAddress || authenticatedWallets[client.id] || null
+            if (wagerAmount > 0 && !isValidWager(wagerAmount)) {
+                client.emit('createRoomError', { reason: 'Invalid wager tier' })
+                return
+            }
+            wagerStates[roomId] = {
+                amount: wagerAmount,
+                wallets: { [client.id]: walletAddress }
+            }
+            roomData.wager = wagerAmount
 
             // Initialize match state
             matchStates[roomId] = createMatchState(roomId);
@@ -497,7 +625,7 @@ const mainsocket = (io) => {
 
         // === NEW: Server-authoritative fire event (Task 2.5) ===
         // Client sends input only → server runs physics → broadcasts results to both
-        client.on('fire', ({angle, power, weaponId, startX, startY}) => {
+        client.on('fire', async ({angle, power, weaponId, startX, startY}) => {
             const room = findRoom(client.roomId)
             if (!room) return
 
@@ -622,11 +750,42 @@ const mainsocket = (io) => {
 
                 if (matchResult.isOver) {
                     transitionState(ms, MATCH_STATES.SETTLING)
+
+                    // === SOL SETTLEMENT (Phase 4) ===
+                    let settlementInfo = null
+                    const ws = wagerStates[client.roomId]
+                    if (ws && ws.amount > 0) {
+                        const winnerWallet = ws.wallets[matchResult.winner] || null
+                        const loserId = matchResult.winner === hostId ? playerId : hostId
+                        const loserWallet = ws.wallets[loserId] || null
+                        if (winnerWallet && loserWallet) {
+                            try {
+                                const sResult = await settleMatch(winnerWallet, loserWallet, ws.amount)
+                                settlementInfo = {
+                                    wager: ws.amount,
+                                    totalPot: ws.amount * 2,
+                                    winnerPayout: sResult.settlement.winner,
+                                    treasuryFee: sResult.settlement.treasury,
+                                    opsFee: sResult.settlement.ops,
+                                    txSignature: sResult.txSignature
+                                }
+                                console.log('[Solana] Match settled:', settlementInfo)
+                            } catch (err) {
+                                console.error('[Solana] Settlement error:', err.message)
+                                settlementInfo = { error: err.message, wager: ws.amount }
+                            }
+                        }
+                    }
+
+                    transitionState(ms, MATCH_STATES.COMPLETE)
+
                     io.sockets.in(client.roomId).emit('matchEnd', {
                         winner: matchResult.winner,
                         scores: ms.scores,
                         roundWins: ms.roundWins,
-                        goldBalance: goldStates[client.roomId] || {}
+                        goldBalance: goldStates[client.roomId] || {},
+                        settlement: settlementInfo,
+                        wager: ws ? ws.amount : 0
                     })
                 } else {
                     transitionState(ms, MATCH_STATES.ROUND_END)
@@ -781,11 +940,12 @@ const mainsocket = (io) => {
                     delete room.terrainPath
                     delete room.heightmap
 
-                    // Reset match state, Gold, and inventories for new game
+                    // Reset match state, Gold, inventories, and wager for new game
                     matchStates[client.roomId] = createMatchState(client.roomId)
                     delete goldStates[client.roomId]
                     delete weaponInventories[client.roomId]
                     delete shopReady[client.roomId]
+                    delete wagerStates[client.roomId]
                     if (shopTimers[client.roomId]) {
                         clearTimeout(shopTimers[client.roomId])
                         delete shopTimers[client.roomId]
@@ -804,11 +964,12 @@ const mainsocket = (io) => {
                     delete room.terrainPath
                     delete room.heightmap
 
-                    // Reset match state, Gold, and inventories for new game
+                    // Reset match state, Gold, inventories, and wager for new game
                     matchStates[client.roomId] = createMatchState(client.roomId)
                     delete goldStates[client.roomId]
                     delete weaponInventories[client.roomId]
                     delete shopReady[client.roomId]
+                    delete wagerStates[client.roomId]
                     if (shopTimers[client.roomId]) {
                         clearTimeout(shopTimers[client.roomId])
                         delete shopTimers[client.roomId]

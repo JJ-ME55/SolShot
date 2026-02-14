@@ -1,6 +1,9 @@
+import React from 'react';
 import Phaser from 'phaser';
 import { socket } from './socket/index'
 import { MainScene, Scene1, Scene2, Scene3, Scene4, Scene5, LoadingScene, ControlsScene, AboutScene, GuideScene, ScreenshotScene } from './scenes';
+import { SolShotWalletProvider } from './wallet/WalletContext';
+import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 
 const gameConfig = {
 	title: 'SolShot',
@@ -60,7 +63,16 @@ window.addEventListener("keydown", (event) => {
 
 function App() {
   return (
-    null
+    <SolShotWalletProvider>
+      <div style={{
+        position: 'fixed',
+        top: 10,
+        right: 10,
+        zIndex: 1000,
+      }}>
+        <WalletMultiButton />
+      </div>
+    </SolShotWalletProvider>
   );
 }
 

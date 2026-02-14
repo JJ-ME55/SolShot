@@ -103,10 +103,31 @@ export const type3 = (scene) => {
         }
     })
 
-    socket.on('matchEnd', ({winner, scores, roundWins, goldBalance}) => {
-        console.log('[SolShot] Match ended:', { winner: winner === socket.id ? 'you' : 'opponent', scores, roundWins })
+    socket.on('matchEnd', ({winner, scores, roundWins, goldBalance, settlement, wager}) => {
+        console.log('[SolShot] Match ended:', { winner: winner === socket.id ? 'you' : 'opponent', scores, roundWins, settlement })
         if (goldBalance && scene.hud && scene.hud.updateGold) {
             scene.hud.updateGold(goldBalance[socket.id] || 0)
+        }
+
+        // Show SOL settlement result overlay if wagered match
+        if (wager && wager > 0 && settlement) {
+            const isWinner = winner === socket.id
+            const solText = isWinner
+                ? `+${settlement.winnerPayout?.toFixed(3) || '0.000'} SOL`
+                : `-${wager.toFixed(3)} SOL`
+            const solColor = isWinner ? 'rgba(100,255,100,1)' : 'rgba(255,80,80,1)'
+
+            const solResult = scene.add.text(screenCenterX, 80, solText).setFontSize(36)
+            solResult.setFontFamily('"Days One"').setOrigin(0.5).setDepth(130).setColor(solColor)
+            strokeText(solResult, 4)
+
+            const potLabel = scene.add.text(screenCenterX, 120, `Pot: ${(wager * 2).toFixed(3)} SOL`).setFontSize(18)
+            potLabel.setFontFamily('"Days One"').setOrigin(0.5).setDepth(130).setColor('rgba(180,180,180,1)')
+
+            if (settlement.txSignature) {
+                const txLabel = scene.add.text(screenCenterX, 145, `TX: ${settlement.txSignature.slice(0,8)}...`).setFontSize(14)
+                txLabel.setFontFamily('"Days One"').setOrigin(0.5).setDepth(130).setColor('rgba(150,150,150,1)')
+            }
         }
     })
 
@@ -162,6 +183,17 @@ export const type3 = (scene) => {
         scene.scene.start('scene-4', {gameType: scene.sceneData.gameType, player1: player1})
     })
     
+    // Listen for forfeit settlement (opponent disconnected during wagered match)
+    socket.on('matchSettled', ({type, winner, settlement, txSignature}) => {
+        console.log('[SolShot] Match settled via forfeit:', { type, winner: winner === socket.id ? 'you' : 'opponent', settlement })
+        if (winner === socket.id && settlement) {
+            const solText = `+${settlement.winner?.toFixed(3) || '0.000'} SOL (forfeit)`
+            const solResult = scene.add.text(screenCenterX, screenCenterY - 80, solText).setFontSize(30)
+            solResult.setFontFamily('"Days One"').setOrigin(0.5).setDepth(130).setColor('rgba(100,255,100,1)')
+            strokeText(solResult, 3)
+        }
+    })
+
     socket.once('opponentLeft', () => {
         scene.sound.stopByKey('winner')
         if (scene.winnerBlastInterval !== null) {

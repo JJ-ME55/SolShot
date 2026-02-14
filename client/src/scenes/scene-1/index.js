@@ -37,6 +37,24 @@ export class Scene1 extends Scene {
             duration: 2200
         })
 
+        // SolShot brand title overlay
+        const title = this.add.text(screenCenterX, 30, 'SOLSHOT')
+        title.setFontSize(28).setFontFamily('"Days One"').setOrigin(0.5, 0)
+        title.setColor('rgba(255,204,0,1)')
+        title.setStroke('rgba(178,143,0,1)', 4)
+        title.setAlpha(0)
+
+        // Tagline
+        const tagline = this.add.text(screenCenterX, 62, 'Artillery Battles on Solana')
+        tagline.setFontSize(14).setFontFamily('"Days One"').setOrigin(0.5, 0)
+        tagline.setColor('rgba(180,180,180,1)')
+        tagline.setAlpha(0)
+
+        // Fade in branding after cover bounce
+        this.time.delayedCall(2000, () => {
+            this.tweens.add({ targets: [title, tagline], alpha: 1, duration: 800, ease: 'Sine.InOut' })
+        })
+
         this.createPlayBtn()
         this.addScreenResize()
 

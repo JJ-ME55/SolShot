@@ -92,10 +92,19 @@ export class HUD extends Textures.CanvasTexture {
 
         // Gold display (centered, below title area)
         const goldAmount = this.scene.sceneData?.player1?.gold || 0
-        this.goldDisplay = this.scene.add.text(this.width / 2, 10, `Gold: ${goldAmount}`)
-        this.goldDisplay.setOrigin(0.5, 0).setFontSize(22).setFontFamily('"Days One"')
+        this.goldDisplay = this.scene.add.text(this.width / 2, 5, `Gold: ${goldAmount}`)
+        this.goldDisplay.setOrigin(0.5, 0).setFontSize(20).setFontFamily('"Days One"')
         this.goldDisplay.setColor('rgba(255,204,0,1)')
         strokeText(this.goldDisplay, 3)
+
+        // Wager display (centered, below Gold — only for wagered matches)
+        const wagerAmount = this.scene.sceneData?.wager || 0
+        if (wagerAmount > 0) {
+            this.wagerDisplay = this.scene.add.text(this.width / 2, 28, `Wager: ${wagerAmount} SOL`)
+            this.wagerDisplay.setOrigin(0.5, 0).setFontSize(14).setFontFamily('"Days One"')
+            this.wagerDisplay.setColor('rgba(100,255,100,1)')
+            strokeText(this.wagerDisplay, 2)
+        }
 
         this.update()
 

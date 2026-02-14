@@ -26,21 +26,31 @@ export class Scene2 extends Scene {
         const screenCenterY = this.cameras.main.worldView.y + this.cameras.main.height / 2;
         const h = this.game.renderer.height
 
-        const a = this.add.text(screenCenterX, h/12 * 3, 'ONE PLAYER');
+        // SolShot header
+        const header = this.add.text(screenCenterX, h/12 * 1.5, 'SELECT MODE')
+        header.setOrigin(0.5).setFontSize(36).setFontFamily('"Days One"').setColor('rgba(255,204,0,1)')
+        strokeText(header, 4)
+
+        const a = this.add.text(screenCenterX, h/12 * 3.5, 'ONE PLAYER');
         const b = this.add.text(screenCenterX, h/12 * 5, 'TWO PLAYERS');
         const c = this.add.text(screenCenterX, h/12 * 7, 'PLAY ONLINE');
         const d = this.add.text(screenCenterX, h/12 * 9, 'TARGET PRACTICE');
         const font = '"Days One"'
 
-        a.setOrigin(0.5).setFontSize(50).setFontFamily(font).setColor('rgba(102,255,51,1)')
-        b.setOrigin(0.5).setFontSize(50).setFontFamily(font).setColor('rgba(255,255,0,1)')
-        c.setOrigin(0.5).setFontSize(50).setFontFamily(font).setColor('rgba(255,153,51,1)')
-        d.setOrigin(0.5).setFontSize(50).setFontFamily(font).setColor('rgba(255,51,0,1)')
+        a.setOrigin(0.5).setFontSize(40).setFontFamily(font).setColor('rgba(180,180,180,1)')
+        b.setOrigin(0.5).setFontSize(40).setFontFamily(font).setColor('rgba(180,180,180,1)')
+        c.setOrigin(0.5).setFontSize(56).setFontFamily(font).setColor('rgba(255,204,0,1)')
+        d.setOrigin(0.5).setFontSize(40).setFontFamily(font).setColor('rgba(180,180,180,1)')
 
-        strokeText(a, 6)
-        strokeText(b, 6)
-        strokeText(c, 6)
-        strokeText(d, 6)
+        strokeText(a, 5)
+        strokeText(b, 5)
+        strokeText(c, 7)
+        strokeText(d, 5)
+
+        // SOL badge under PLAY ONLINE
+        const solBadge = this.add.text(screenCenterX, h/12 * 7 + 38, 'Wager SOL & Win')
+        solBadge.setOrigin(0.5).setFontSize(16).setFontFamily('"Days One"').setColor('rgba(100,255,100,1)')
+        strokeText(solBadge, 2)
 
         var canvas = document.createElement('canvas')
         var ctx = canvas.getContext('2d')

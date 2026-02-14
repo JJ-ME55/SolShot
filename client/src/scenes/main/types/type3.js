@@ -103,11 +103,13 @@ export const type3 = (scene) => {
         }
     })
 
-    socket.on('matchEnd', ({winner, scores, roundWins, goldBalance, settlement, wager}) => {
-        console.log('[SolShot] Match ended:', { winner: winner === socket.id ? 'you' : 'opponent', scores, roundWins, settlement })
+    socket.on('matchEnd', ({winner, scores, roundWins, goldBalance, settlement, wager, shotEarned}) => {
+        console.log('[SolShot] Match ended:', { winner: winner === socket.id ? 'you' : 'opponent', scores, roundWins, settlement, shotEarned })
         if (goldBalance && scene.hud && scene.hud.updateGold) {
             scene.hud.updateGold(goldBalance[socket.id] || 0)
         }
+
+        let resultY = 80  // Track vertical position for stacking result text
 
         // Show SOL settlement result overlay if wagered match
         if (wager && wager > 0 && settlement) {
@@ -117,16 +119,38 @@ export const type3 = (scene) => {
                 : `-${wager.toFixed(3)} SOL`
             const solColor = isWinner ? 'rgba(100,255,100,1)' : 'rgba(255,80,80,1)'
 
-            const solResult = scene.add.text(screenCenterX, 80, solText).setFontSize(36)
+            const solResult = scene.add.text(screenCenterX, resultY, solText).setFontSize(36)
             solResult.setFontFamily('"Days One"').setOrigin(0.5).setDepth(130).setColor(solColor)
             strokeText(solResult, 4)
+            resultY += 40
 
-            const potLabel = scene.add.text(screenCenterX, 120, `Pot: ${(wager * 2).toFixed(3)} SOL`).setFontSize(18)
+            const potLabel = scene.add.text(screenCenterX, resultY, `Pot: ${(wager * 2).toFixed(3)} SOL`).setFontSize(18)
             potLabel.setFontFamily('"Days One"').setOrigin(0.5).setDepth(130).setColor('rgba(180,180,180,1)')
+            resultY += 25
 
             if (settlement.txSignature) {
-                const txLabel = scene.add.text(screenCenterX, 145, `TX: ${settlement.txSignature.slice(0,8)}...`).setFontSize(14)
+                const txLabel = scene.add.text(screenCenterX, resultY, `TX: ${settlement.txSignature.slice(0,8)}...`).setFontSize(14)
                 txLabel.setFontFamily('"Days One"').setOrigin(0.5).setDepth(130).setColor('rgba(150,150,150,1)')
+                resultY += 20
+            }
+        }
+
+        // Show SHOT milestone earned
+        if (shotEarned && shotEarned[socket.id]) {
+            const myShot = shotEarned[socket.id]
+            if (myShot.earned > 0) {
+                resultY += 10
+                const shotText = scene.add.text(screenCenterX, resultY, `+${myShot.earned} SHOT`)
+                shotText.setFontSize(24).setFontFamily('"Days One"').setOrigin(0.5).setDepth(130)
+                shotText.setColor('rgba(255,100,255,1)')
+                strokeText(shotText, 3)
+                resultY += 28
+
+                if (myShot.milestone) {
+                    const msLabel = scene.add.text(screenCenterX, resultY, `Milestone: ${myShot.milestone}`)
+                    msLabel.setFontSize(16).setFontFamily('"Days One"').setOrigin(0.5).setDepth(130)
+                    msLabel.setColor('rgba(200,150,255,1)')
+                }
             }
         }
     })

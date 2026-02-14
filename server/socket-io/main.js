@@ -6,6 +6,7 @@ import { initGold, getBalance, earnGold, spendGold, awardKillBonus, awardRoundWi
 import { WEAPON_CATALOG, getWeapon, getWeaponCost, getAllLaunchWeapons } from '../models/Weapon.js';
 import { handleAuthenticate } from '../middleware/auth.js';
 import { verifyBalance, isValidWager, settleMatch, refundWager, WAGER_TIERS } from '../services/solana.js';
+import { recordMatchPlayed, prestigeBurn, getPrestigeInfo, getShotBalance, PRESTIGE_TIERS } from '../services/shot-token.js';
 
 // Helper: check if MongoDB is connected before DB operations
 function isDbConnected() {
@@ -583,6 +584,35 @@ const mainsocket = (io) => {
         })
 
 
+        // === SHOT TOKEN & PRESTIGE EVENTS (Phase 6) ===
+
+        // Get SHOT balance and prestige info
+        client.on('getShotInfo', () => {
+            const wallet = authenticatedWallets[client.id] || null
+            if (!wallet) {
+                client.emit('shotInfo', { balance: 0, prestige: { tier: 0, tierName: 'Unranked' }, tiers: PRESTIGE_TIERS })
+                return
+            }
+            const info = getPrestigeInfo(wallet)
+            client.emit('shotInfo', {
+                balance: getShotBalance(wallet),
+                prestige: info,
+                tiers: PRESTIGE_TIERS
+            })
+        })
+
+        // Burn SHOT to prestige up
+        client.on('prestigeBurn', () => {
+            const wallet = authenticatedWallets[client.id] || null
+            if (!wallet) {
+                client.emit('prestigeResult', { success: false, reason: 'Not authenticated' })
+                return
+            }
+            const result = prestigeBurn(wallet)
+            client.emit('prestigeResult', result)
+        })
+
+
         // === EXISTING RELAY EVENTS (kept for backward compatibility) ===
 
         client.on('weaponPick', ({arrayIndex}) => {
@@ -779,13 +809,27 @@ const mainsocket = (io) => {
 
                     transitionState(ms, MATCH_STATES.COMPLETE)
 
+                    // === SHOT TOKEN MILESTONES (Phase 6) ===
+                    const shotResults = {}
+                    const wsState = wagerStates[client.roomId]
+                    // Record match for both players (use wallet if available)
+                    const hostWallet = wsState?.wallets?.[hostId] || authenticatedWallets[hostId] || null
+                    const playerWallet = wsState?.wallets?.[playerId] || authenticatedWallets[playerId] || null
+                    if (hostWallet) {
+                        shotResults[hostId] = recordMatchPlayed(hostWallet)
+                    }
+                    if (playerWallet) {
+                        shotResults[playerId] = recordMatchPlayed(playerWallet)
+                    }
+
                     io.sockets.in(client.roomId).emit('matchEnd', {
                         winner: matchResult.winner,
                         scores: ms.scores,
                         roundWins: ms.roundWins,
                         goldBalance: goldStates[client.roomId] || {},
                         settlement: settlementInfo,
-                        wager: ws ? ws.amount : 0
+                        wager: ws ? ws.amount : 0,
+                        shotEarned: shotResults
                     })
                 } else {
                     transitionState(ms, MATCH_STATES.ROUND_END)

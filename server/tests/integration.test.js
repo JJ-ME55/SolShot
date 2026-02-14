@@ -567,6 +567,168 @@ async function testDisconnectForfeit() {
     }
 }
 
+async function testShotTokenMilestones() {
+    console.log('\nTest: SHOT Token Milestone Tracking');
+
+    // Reconnect fresh clients
+    client1.disconnect();
+    client2.disconnect();
+    client1 = ioc(`http://localhost:${PORT}`, { forceNew: true });
+    client2 = ioc(`http://localhost:${PORT}`, { forceNew: true });
+    await Promise.all([
+        new Promise((resolve) => client1.on('connect', resolve)),
+        new Promise((resolve) => client2.on('connect', resolve)),
+    ]);
+
+    // Test auth event flow (signature verification will fail with fake data, that's OK)
+    const authPromise = waitForEvent(client1, 'authResult', 3000);
+    client1.emit('authenticate', {
+        walletAddress: 'ShotTestWallet1111111111111111111111111111111',
+        message: 'SolShot Auth: ShotTestWallet1111111111111111111111111111111 at 1234567890',
+        signature: 'fakeSignatureBase64ForTesting',
+        timestamp: 1234567890
+    });
+    const authResult = await authPromise;
+    assert(authResult !== null, 'Auth result received');
+
+    // Request SHOT info (without valid auth, returns defaults + tiers)
+    const shotInfoPromise = waitForEvent(client1, 'shotInfo', 3000);
+    client1.emit('getShotInfo');
+    const shotInfo = await shotInfoPromise;
+    assert(typeof shotInfo.balance === 'number', `SHOT balance received: ${shotInfo.balance}`);
+    assert(shotInfo.prestige !== null, 'Prestige info included');
+    assert(shotInfo.prestige.tierName !== undefined, `Prestige tier: ${shotInfo.prestige.tierName}`);
+    assert(Array.isArray(shotInfo.tiers), 'Prestige tiers list included');
+    assert(shotInfo.tiers.length === 5, `${shotInfo.tiers.length} prestige tiers defined`);
+}
+
+async function testShotInfoWithoutAuth() {
+    console.log('\nTest: SHOT Info Without Authentication');
+
+    // Reconnect fresh client (no authentication)
+    client1.disconnect();
+    client1 = ioc(`http://localhost:${PORT}`, { forceNew: true });
+    await new Promise((resolve) => client1.on('connect', resolve));
+
+    // Request SHOT info without authenticating — should get defaults
+    const shotInfoPromise = waitForEvent(client1, 'shotInfo', 3000);
+    client1.emit('getShotInfo');
+    const shotInfo = await shotInfoPromise;
+    assert(shotInfo.balance === 0, 'Unauthenticated SHOT balance is 0');
+    assert(shotInfo.prestige.tier === 0, 'Unauthenticated prestige tier is 0');
+    assert(shotInfo.prestige.tierName === 'Unranked', `Unauthenticated tier name: ${shotInfo.prestige.tierName}`);
+}
+
+async function testPrestigeBurnWithoutAuth() {
+    console.log('\nTest: Prestige Burn Without Authentication');
+
+    // Try to prestige burn without auth
+    const prestigePromise = waitForEvent(client1, 'prestigeResult', 3000);
+    client1.emit('prestigeBurn');
+    const result = await prestigePromise;
+    assert(result.success === false, 'Prestige burn rejected without auth');
+    assert(result.reason === 'Not authenticated', `Rejection reason: ${result.reason}`);
+}
+
+async function testPrestigeBurnInsufficientShot() {
+    console.log('\nTest: Prestige Burn With Insufficient SHOT');
+
+    // Note: With fake signatures, auth fails, so prestige burn returns "Not authenticated"
+    // This test verifies the rejection path works.
+    // The direct service test (testShotTokenServiceDirect) covers the "insufficient SHOT" path.
+
+    // Reconnect and authenticate
+    client1.disconnect();
+    client1 = ioc(`http://localhost:${PORT}`, { forceNew: true });
+    await new Promise((resolve) => client1.on('connect', resolve));
+
+    // Attempt auth with a fresh wallet (will fail with fake sig)
+    const authPromise = waitForEvent(client1, 'authResult', 3000);
+    client1.emit('authenticate', {
+        walletAddress: 'PrestigeTestWallet1111111111111111111111111',
+        message: 'SolShot Auth: PrestigeTestWallet1111111111111111111111111 at 9999999',
+        signature: 'fakePrestigeSigBase64',
+        timestamp: 9999999
+    });
+    const authResult = await authPromise;
+    assert(authResult.success === false, 'Auth correctly rejected with fake signature');
+
+    // Try prestige burn — will fail because not authenticated
+    const prestigePromise = waitForEvent(client1, 'prestigeResult', 3000);
+    client1.emit('prestigeBurn');
+    const result = await prestigePromise;
+    assert(result.success === false, 'Prestige burn rejected');
+    assert(typeof result.reason === 'string', `Rejection reason provided: ${result.reason}`);
+}
+
+async function testShotTokenServiceDirect() {
+    console.log('\nTest: SHOT Token Service (Direct)');
+
+    // Import and test the service functions directly
+    const { recordMatchPlayed, prestigeBurn: prestigeBurnFn, getPrestigeInfo, getShotBalance, SHOT_MILESTONES, PRESTIGE_TIERS } = await import('../services/shot-token.js');
+
+    const testWallet = 'DirectTestWallet' + Date.now();
+
+    // First match should earn 50 SHOT (First Blood milestone)
+    const result1 = recordMatchPlayed(testWallet);
+    assert(result1.earned === 50, `First match earned ${result1.earned} SHOT (expected 50)`);
+    assert(result1.milestone === 'First Blood', `Milestone: ${result1.milestone}`);
+    assert(result1.newBalance === 50, `Balance after first match: ${result1.newBalance}`);
+    assert(result1.matchesPlayed === 1, 'Matches played: 1');
+
+    // Matches 2-4: no milestone, no SHOT earned
+    for (let i = 2; i <= 4; i++) {
+        const r = recordMatchPlayed(testWallet);
+        assert(r.earned === 0, `Match ${i}: no SHOT earned (as expected)`);
+    }
+
+    // Match 5: "Getting Started" milestone → +100 SHOT
+    const result5 = recordMatchPlayed(testWallet);
+    assert(result5.earned === 100, `Match 5 earned ${result5.earned} SHOT (expected 100)`);
+    assert(result5.milestone === 'Getting Started', `Milestone: ${result5.milestone}`);
+    assert(result5.newBalance === 150, `Balance after 5 matches: ${result5.newBalance}`);
+
+    // Verify balance via getShotBalance
+    const balance = getShotBalance(testWallet);
+    assert(balance === 150, `getShotBalance returns ${balance} (expected 150)`);
+
+    // Verify prestige info
+    const info = getPrestigeInfo(testWallet);
+    assert(info.tier === 0, 'Still Unranked (tier 0)');
+    assert(info.tierName === 'Unranked', `Tier name: ${info.tierName}`);
+    assert(info.matchesPlayed === 5, `Matches played: ${info.matchesPlayed}`);
+    assert(info.nextTier !== null, 'Next tier info available');
+    assert(info.nextTier.name === 'Bronze', `Next tier: ${info.nextTier.name}`);
+    assert(info.nextTier.burnCost === 200, `Next tier cost: ${info.nextTier.burnCost}`);
+    assert(info.nextTier.canAfford === false, 'Cannot afford Bronze yet');
+
+    // Play 5 more matches to reach match 10 → +200 SHOT (total 350)
+    for (let i = 6; i <= 9; i++) recordMatchPlayed(testWallet);
+    const result10 = recordMatchPlayed(testWallet);
+    assert(result10.earned === 200, `Match 10 earned ${result10.earned} SHOT (expected 200)`);
+    assert(result10.milestone === 'Regular', `Milestone: ${result10.milestone}`);
+    assert(result10.newBalance === 350, `Balance after 10 matches: ${result10.newBalance}`);
+
+    // Now can afford Bronze (200 SHOT burn)
+    const burnResult = prestigeBurnFn(testWallet);
+    assert(burnResult.success === true, 'Bronze prestige burn succeeded');
+    assert(burnResult.tier === 1, `New tier: ${burnResult.tier}`);
+    assert(burnResult.tierName === 'Bronze', `Tier name: ${burnResult.tierName}`);
+    assert(burnResult.balance === 150, `Balance after burn: ${burnResult.balance} (350-200)`);
+    assert(burnResult.totalBurned === 200, `Total burned: ${burnResult.totalBurned}`);
+    assert(Array.isArray(burnResult.unlockedWeapons), 'Unlocked weapons array returned');
+    assert(burnResult.unlockedWeapons.includes(26), 'Tommy Gun (ID 26) unlocked');
+
+    // Verify can't afford Silver (500 SHOT)
+    const burnResult2 = prestigeBurnFn(testWallet);
+    assert(burnResult2.success === false, 'Silver burn rejected (insufficient SHOT)');
+
+    // Verify prestige info updated
+    const info2 = getPrestigeInfo(testWallet);
+    assert(info2.tier === 1, 'Now Bronze (tier 1)');
+    assert(info2.unlockedWeapons.includes(26), 'Unlocked weapons includes Tommy Gun');
+}
+
 // Run all tests
 async function run() {
     console.log('═══════════════════════════════════════');
@@ -589,6 +751,11 @@ async function run() {
         await testFreePlayRoom();
         await testMatchSettlement();
         await testDisconnectForfeit();
+        await testShotTokenMilestones();
+        await testShotInfoWithoutAuth();
+        await testPrestigeBurnWithoutAuth();
+        await testPrestigeBurnInsufficientShot();
+        await testShotTokenServiceDirect();
 
     } catch (err) {
         console.error('\n  FATAL ERROR:', err.message);

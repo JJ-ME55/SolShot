@@ -48,6 +48,8 @@ function SolShotWalletInner({ children }) {
     const { connection } = useConnection();
     const [balance, setBalance] = useState(0);
     const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [shotBalance, setShotBalance] = useState(0);
+    const [prestigeInfo, setPrestigeInfo] = useState({ tier: 0, tierName: 'Unranked' });
 
     const walletAddress = useMemo(() => {
         return publicKey ? publicKey.toBase58() : null;
@@ -78,6 +80,27 @@ function SolShotWalletInner({ children }) {
         }
     }, [connected, publicKey, refreshBalance]);
 
+    // Listen for SHOT balance updates from server
+    useEffect(() => {
+        const socket = window.socket;
+        if (!socket) return;
+
+        const handleShotInfo = (data) => {
+            setShotBalance(data.balance || 0);
+            if (data.prestige) setPrestigeInfo(data.prestige);
+        };
+
+        socket.on('shotInfo', handleShotInfo);
+        return () => { socket.off('shotInfo', handleShotInfo); };
+    }, []);
+
+    // Request SHOT info when authenticated
+    useEffect(() => {
+        if (isAuthenticated && window.socket) {
+            window.socket.emit('getShotInfo');
+        }
+    }, [isAuthenticated]);
+
     // Expose wallet state to Phaser via window
     useEffect(() => {
         window.solWallet = {
@@ -85,8 +108,10 @@ function SolShotWalletInner({ children }) {
             balance,
             connected,
             refreshBalance,
+            shotBalance,
+            prestigeInfo,
         };
-    }, [walletAddress, balance, connected, refreshBalance]);
+    }, [walletAddress, balance, connected, refreshBalance, shotBalance, prestigeInfo]);
 
     // Authenticate with server (sign a message to prove wallet ownership)
     const authenticate = useCallback(async () => {
@@ -130,7 +155,9 @@ function SolShotWalletInner({ children }) {
         walletAddress,
         isAuthenticated,
         authenticate,
-    }), [balance, refreshBalance, walletAddress, isAuthenticated, authenticate]);
+        shotBalance,
+        prestigeInfo,
+    }), [balance, refreshBalance, walletAddress, isAuthenticated, authenticate, shotBalance, prestigeInfo]);
 
     return (
         <SolShotWalletContext.Provider value={value}>

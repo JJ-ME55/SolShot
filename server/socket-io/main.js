@@ -1,8 +1,19 @@
+import mongoose from 'mongoose';
 import Match from '../models/Match.js';
+import { processShot, generateTerrain, generateTankPositions, WEAPON_DATA } from '../services/physics.js';
+import { createMatchState, validateAction, transitionState, getNextTurn, isRoundOver, isMatchOver, getRoundWinner, MATCH_STATES } from '../services/match.js';
+
+// Helper: check if MongoDB is connected before DB operations
+function isDbConnected() {
+    return mongoose.connection.readyState === 1; // 1 = connected
+}
 
 // In-memory cache for active rooms (fast lookups during gameplay)
 // DB is source of truth, cache is synced on mutations
 var rooms = []
+
+// In-memory match states keyed by roomId
+var matchStates = {}
 
 // Helper: find room in memory cache
 function findRoom(roomId) {
@@ -17,7 +28,7 @@ function getOpenRooms() {
 
 // Helper: persist room state to DB (fire-and-forget for non-critical updates)
 async function persistRoom(room) {
-    if (!room || !room._matchId) return;
+    if (!room || !room._matchId || !isDbConnected()) return;
     try {
         const update = {
             active: room.active,
@@ -32,7 +43,6 @@ async function persistRoom(room) {
                 isReady: room.host.isReady,
                 playAgain: room.host.playAgain,
             };
-            if (room.host.pos) update['host.score'] = 0; // placeholder
         }
         if (room.player) {
             update.player = {
@@ -53,7 +63,8 @@ async function persistRoom(room) {
 async function removeRoom(roomId) {
     const room = findRoom(roomId);
     rooms = rooms.filter((r) => r.roomId !== roomId);
-    if (room && room._matchId) {
+    delete matchStates[roomId];
+    if (room && room._matchId && isDbConnected()) {
         try {
             await Match.findByIdAndUpdate(room._matchId, { status: 'cancelled' });
         } catch (err) {
@@ -160,24 +171,29 @@ const mainsocket = (io) => {
 
             const roomData = {roomId: roomId, host: host, active: false}
 
-            // Persist to DB
-            try {
-                const match = await Match.create({
-                    roomCode: roomId,
-                    host: {
-                        username: player.name,
-                        socketId: client.id,
-                        color: player.color,
-                        isReady: false,
-                        playAgain: false
-                    },
-                    status: 'lobby',
-                    active: false
-                });
-                roomData._matchId = match._id;
-            } catch (err) {
-                // DB not available — still works in-memory
-                console.warn('Match not persisted to DB:', err.message);
+            // Initialize match state
+            matchStates[roomId] = createMatchState(roomId);
+
+            // Persist to DB (only if connected — otherwise pure in-memory)
+            if (isDbConnected()) {
+                try {
+                    const match = await Match.create({
+                        roomCode: roomId,
+                        host: {
+                            username: player.name,
+                            socketId: client.id,
+                            color: player.color,
+                            isReady: false,
+                            playAgain: false
+                        },
+                        status: 'lobby',
+                        active: false
+                    });
+                    roomData._matchId = match._id;
+                } catch (err) {
+                    // DB error — still works in-memory
+                    console.warn('Match not persisted to DB:', err.message);
+                }
             }
 
             rooms.unshift(roomData)
@@ -209,6 +225,8 @@ const mainsocket = (io) => {
         })
 
 
+
+        // === EXISTING RELAY EVENTS (kept for backward compatibility) ===
 
         client.on('weaponPick', ({arrayIndex}) => {
             client.to(client.roomId).emit('opponentWeaponPick', {arrayIndex})
@@ -242,8 +260,173 @@ const mainsocket = (io) => {
 
 
 
+        // LEGACY: shoot relay (still works — client sends, server relays to opponent)
         client.on('shoot', ({selectedWeapon, power, rotation, rotation1, rotation2, position1, position2}) => {
             client.to(client.roomId).emit('opponentShoot', {selectedWeapon, power, rotation, rotation1, rotation2, position1, position2})
+        })
+
+
+        // === NEW: Server-authoritative fire event (Task 2.5) ===
+        // Client sends input only → server runs physics → broadcasts results to both
+        client.on('fire', ({angle, power, weaponId, startX, startY}) => {
+            const room = findRoom(client.roomId)
+            if (!room) return
+
+            const ms = matchStates[client.roomId]
+
+            // Task 2.8: Turn validation
+            if (ms) {
+                // Validate action is allowed in current state
+                if (!validateAction(ms.status, 'fire')) {
+                    client.emit('fireRejected', { reason: `Cannot fire during ${ms.status}` })
+                    return
+                }
+
+                // Validate it's this player's turn
+                if (ms.currentTurn && ms.currentTurn !== client.id) {
+                    client.emit('fireRejected', { reason: 'Not your turn' })
+                    return
+                }
+
+                // Validate weapon exists
+                if (!WEAPON_DATA[weaponId]) {
+                    client.emit('fireRejected', { reason: 'Invalid weapon' })
+                    return
+                }
+            }
+
+            // Build tank positions for physics
+            const tanks = []
+            if (room.host && room.host.pos) {
+                tanks.push({
+                    id: room.host.socketId,
+                    x: room.host.pos.x,
+                    y: room.host.pos.y,
+                    width: 40,
+                    height: 30
+                })
+            }
+            if (room.player && room.player.pos) {
+                tanks.push({
+                    id: room.player.socketId,
+                    x: room.player.pos.x,
+                    y: room.player.pos.y,
+                    width: 40,
+                    height: 30
+                })
+            }
+
+            // Get terrain heightmap (from room or default)
+            const terrain = room.heightmap || new Array(1200).fill(400)
+
+            // Run server physics
+            const result = processShot({
+                angle,
+                power,
+                weaponId,
+                startX,
+                startY,
+                shooterId: client.id,
+                terrain,
+                tanks
+            })
+
+            // Update server terrain state
+            room.heightmap = result.newTerrain
+
+            // Update match state
+            if (ms) {
+                // Update scores
+                for (const [playerId, dmg] of Object.entries(result.damage)) {
+                    ms.scores[playerId] = (ms.scores[playerId] || 0) + dmg
+                }
+
+                // Advance turn
+                ms.turnCount++
+                const hostId = room.host.socketId
+                const playerId = room.player ? room.player.socketId : null
+                ms.currentTurn = playerId ? getNextTurn(ms, hostId, playerId) : null
+            }
+
+            // Broadcast turn result to BOTH players
+            io.sockets.in(client.roomId).emit('turnResult', {
+                playerId: client.id,
+                weaponId,
+                trajectory: result.trajectory,
+                impact: result.impact,
+                damage: result.damage,
+                terrainUpdate: result.newTerrain,
+                scores: ms ? ms.scores : {},
+                nextTurn: ms ? ms.currentTurn : null
+            })
+
+            // Check if round is over
+            if (ms && isRoundOver(ms)) {
+                const hostId = room.host.socketId
+                const playerId = room.player ? room.player.socketId : null
+                const roundWinner = getRoundWinner(ms, hostId, playerId)
+
+                ms.roundWins[roundWinner] = (ms.roundWins[roundWinner] || 0) + 1
+                ms.currentRound++
+
+                const matchResult = isMatchOver(ms, hostId, playerId)
+
+                if (matchResult.isOver) {
+                    transitionState(ms, MATCH_STATES.SETTLING)
+                    io.sockets.in(client.roomId).emit('matchEnd', {
+                        winner: matchResult.winner,
+                        scores: ms.scores,
+                        roundWins: ms.roundWins
+                    })
+                } else {
+                    transitionState(ms, MATCH_STATES.ROUND_END)
+                    io.sockets.in(client.roomId).emit('roundEnd', {
+                        winner: roundWinner,
+                        scores: ms.scores,
+                        roundWins: ms.roundWins,
+                        round: ms.currentRound
+                    })
+                }
+            }
+        })
+
+
+        // === NEW: Server terrain generation (Task 2.9) ===
+        // Server generates terrain, sends to both clients
+        client.on('requestTerrain', () => {
+            const room = findRoom(client.roomId)
+            if (!room) return
+
+            const seed = Math.floor(Math.random() * 1000000)
+            const { path, heightmap } = generateTerrain(1200, 534, seed)
+            const tankPositions = generateTankPositions(heightmap)
+
+            // Store server-side
+            room.heightmap = heightmap
+            room.terrainSeed = seed
+            if (room.host) room.host.pos = tankPositions.host
+            if (room.player) room.player.pos = tankPositions.player
+
+            // Initialize match state for battle
+            const ms = matchStates[client.roomId]
+            if (ms) {
+                ms.terrain = heightmap
+                ms.tankPositions = tankPositions
+                transitionState(ms, MATCH_STATES.BATTLE)
+                ms.currentTurn = getNextTurn(ms,
+                    room.host ? room.host.socketId : null,
+                    room.player ? room.player.socketId : null
+                )
+            }
+
+            // Send to both clients
+            io.sockets.in(client.roomId).emit('terrainGenerated', {
+                path,
+                heightmap,
+                tankPositions,
+                seed,
+                firstTurn: ms ? ms.currentTurn : null
+            })
         })
 
 
@@ -266,12 +449,33 @@ const mainsocket = (io) => {
 
 
 
+        // LEGACY: terrain relay (still works for current client)
         client.on('terrainPath', ({path, hostPos, playerPos}) => {
             var room = findRoom(client.roomId)
             if (!room) return
             room.terrainPath = [...path]
             room.host.pos = {...hostPos}
             room.player.pos = {...playerPos}
+
+            // Also build heightmap from path for server physics
+            if (path && path.length > 0) {
+                const heightmap = new Array(1200).fill(534)
+                const sorted = path.filter(p => p.x >= 0 && p.x < 1200).sort((a, b) => a.x - b.x)
+                if (sorted.length > 1) {
+                    for (let i = 0; i < sorted.length - 1; i++) {
+                        const p1 = sorted[i]
+                        const p2 = sorted[i + 1]
+                        const startX = Math.max(0, Math.floor(p1.x))
+                        const endX = Math.min(1199, Math.floor(p2.x))
+                        for (let x = startX; x <= endX; x++) {
+                            const t = (p2.x - p1.x) !== 0 ? (x - p1.x) / (p2.x - p1.x) : 0
+                            heightmap[x] = Math.floor(p1.y + t * (p2.y - p1.y))
+                        }
+                    }
+                }
+                room.heightmap = heightmap
+            }
+
             persistRoom(room);
             client.to(client.roomId).emit('setTerrainPath', {path: room.terrainPath, hostPos: room.host.pos, playerPos: room.player.pos})
         })
@@ -299,6 +503,7 @@ const mainsocket = (io) => {
 
 
 
+        // LEGACY: turn relay (still works)
         client.on('giveTurn', ({terrainData, pos1, pos2, rotation1, rotation2}) => {
             client.to(client.roomId).emit('recieveTurn', {terrainData, pos1, pos2, rotation1, rotation2})
         })
@@ -320,6 +525,11 @@ const mainsocket = (io) => {
                 if (room.player && room.player.playAgain === true) {
                     delete room.randomArray
                     delete room.terrainPath
+                    delete room.heightmap
+
+                    // Reset match state for new game
+                    matchStates[client.roomId] = createMatchState(client.roomId)
+
                     io.sockets.in(client.roomId).emit('playAgain', {})
                     room.player.playAgain = false
                     room.host.playAgain = false
@@ -331,6 +541,11 @@ const mainsocket = (io) => {
                 if (room.host.playAgain === true) {
                     delete room.randomArray
                     delete room.terrainPath
+                    delete room.heightmap
+
+                    // Reset match state for new game
+                    matchStates[client.roomId] = createMatchState(client.roomId)
+
                     io.sockets.in(client.roomId).emit('playAgain', {})
                     room.player.playAgain = false
                     room.host.playAgain = false

@@ -56,6 +56,48 @@ export const type3 = (scene) => {
         scene.activeTank = 2
     }
 
+    // === SERVER-AUTHORITATIVE EVENTS ===
+    // Listen for server-computed turn results (from 'fire' event)
+    // Currently logs results — will replace client physics in future phases
+    socket.on('turnResult', ({playerId, weaponId, trajectory, impact, damage, terrainUpdate, scores, nextTurn}) => {
+        console.log('[SolShot] Server turnResult:', {
+            shooter: playerId === socket.id ? 'self' : 'opponent',
+            weaponId,
+            impactType: impact?.type,
+            damage,
+            scores,
+            trajectoryPoints: trajectory?.length,
+            nextTurn: nextTurn === socket.id ? 'your turn' : 'opponent turn'
+        })
+        // Future: animate trajectory from server data instead of local physics
+        // Future: update terrain from terrainUpdate
+        // Future: update score display from scores
+    })
+
+    // Listen for server-rejected fire attempts
+    socket.on('fireRejected', ({reason}) => {
+        console.warn('[SolShot] Fire rejected:', reason)
+    })
+
+    // Listen for server-generated terrain
+    socket.on('terrainGenerated', ({path, heightmap, tankPositions, seed, firstTurn}) => {
+        console.log('[SolShot] Server terrain generated:', {
+            pathPoints: path?.length,
+            seed,
+            firstTurn: firstTurn === socket.id ? 'your turn' : 'opponent turn'
+        })
+        // Future: use server terrain instead of host-generated
+    })
+
+    // Listen for round/match end from server
+    socket.on('roundEnd', ({winner, scores, roundWins, round}) => {
+        console.log('[SolShot] Round ended:', { winner: winner === socket.id ? 'you' : 'opponent', scores, roundWins, round })
+    })
+
+    socket.on('matchEnd', ({winner, scores, roundWins}) => {
+        console.log('[SolShot] Match ended:', { winner: winner === socket.id ? 'you' : 'opponent', scores, roundWins })
+    })
+
     socket.once('playAgain', () => {
         scene.sound.stopByKey('winner')
 

@@ -7,6 +7,7 @@ import { WEAPON_CATALOG, getWeapon, getWeaponCost, getAllLaunchWeapons } from '.
 import { handleAuthenticate } from '../middleware/auth.js';
 import { verifyBalance, isValidWager, settleMatch, refundWager, WAGER_TIERS } from '../services/solana.js';
 import { recordMatchPlayed, prestigeBurn, getPrestigeInfo, getShotBalance, PRESTIGE_TIERS } from '../services/shot-token.js';
+import { trackConnection, trackDisconnection, trackMatchCreated, trackMatchCompleted, trackMatchCancelled, trackWager, trackSettlement, trackForfeit, trackShot, trackDamage, trackGoldEarned, trackShotEmission, trackShotBurn, trackError } from '../services/monitoring.js';
 
 // Helper: check if MongoDB is connected before DB operations
 function isDbConnected() {
@@ -156,6 +157,7 @@ function endShopPhase(io, roomId) {
 
 const mainsocket = (io) => {
     return io.on("connection", (client) => {
+        trackConnection()
         client.roomId = null
         client.name = ""
         client.color = 0
@@ -176,6 +178,7 @@ const mainsocket = (io) => {
 
 
         client.on('disconnect', async () => {
+            trackDisconnection()
             if (client.roomId !== null) {
                 // Handle wager forfeit on disconnect during active match
                 const ws = wagerStates[client.roomId]
@@ -194,6 +197,8 @@ const mainsocket = (io) => {
                             // Settle: opponent wins by forfeit
                             const settlementResult = await settleMatch(opponentWallet, disconnectorWallet, ws.amount)
                             console.log('[Solana] Forfeit settlement:', settlementResult)
+                            trackForfeit()
+                            if (settlementResult.settlement) trackSettlement({ winnerPayout: settlementResult.settlement.winner, treasuryFee: settlementResult.settlement.treasury, opsFee: settlementResult.settlement.ops })
                             if (opponentId) {
                                 io.to(opponentId).emit('matchSettled', {
                                     type: 'forfeit',
@@ -240,6 +245,8 @@ const mainsocket = (io) => {
                         const opponentWallet = opponentId ? ws.wallets[opponentId] : null
                         if (opponentWallet && disconnectorWallet) {
                             const settlementResult = await settleMatch(opponentWallet, disconnectorWallet, ws.amount)
+                            trackForfeit()
+                            if (settlementResult.settlement) trackSettlement({ winnerPayout: settlementResult.settlement.winner, treasuryFee: settlementResult.settlement.treasury, opsFee: settlementResult.settlement.ops })
                             if (opponentId) {
                                 io.to(opponentId).emit('matchSettled', {
                                     type: 'forfeit',
@@ -397,6 +404,8 @@ const mainsocket = (io) => {
             }
 
             rooms.unshift(roomData)
+            trackMatchCreated()
+            if (wagerAmount > 0) trackWager(wagerAmount * 2)  // Both players wager
             io.emit('setRooms', {rooms: getOpenRooms()})
         })
 
@@ -609,6 +618,10 @@ const mainsocket = (io) => {
                 return
             }
             const result = prestigeBurn(wallet)
+            if (result.success) {
+                const tier = PRESTIGE_TIERS[result.tier]
+                if (tier) trackShotBurn(tier.burnCost)
+            }
             client.emit('prestigeResult', result)
         })
 
@@ -706,6 +719,8 @@ const mainsocket = (io) => {
             // Get terrain heightmap (from room or default)
             const terrain = room.heightmap || new Array(1200).fill(400)
 
+            trackShot()
+
             // Run server physics
             const result = processShot({
                 angle,
@@ -746,6 +761,12 @@ const mainsocket = (io) => {
                 const playerId = room.player ? room.player.socketId : null
                 ms.currentTurn = playerId ? getNextTurn(ms, hostId, playerId) : null
             }
+
+            // Track damage and gold
+            for (const [, dmg] of Object.entries(result.damage)) {
+                if (dmg > 0) trackDamage(dmg)
+            }
+            if (goldEarned > 0) trackGoldEarned(goldEarned)
 
             // Broadcast turn result to BOTH players (includes goldEarned + balances)
             io.sockets.in(client.roomId).emit('turnResult', {
@@ -808,6 +829,10 @@ const mainsocket = (io) => {
                     }
 
                     transitionState(ms, MATCH_STATES.COMPLETE)
+                    trackMatchCompleted()
+                    if (settlementInfo && !settlementInfo.error) {
+                        trackSettlement(settlementInfo)
+                    }
 
                     // === SHOT TOKEN MILESTONES (Phase 6) ===
                     const shotResults = {}
@@ -817,9 +842,11 @@ const mainsocket = (io) => {
                     const playerWallet = wsState?.wallets?.[playerId] || authenticatedWallets[playerId] || null
                     if (hostWallet) {
                         shotResults[hostId] = recordMatchPlayed(hostWallet)
+                        if (shotResults[hostId].earned > 0) trackShotEmission(shotResults[hostId].earned)
                     }
                     if (playerWallet) {
                         shotResults[playerId] = recordMatchPlayed(playerWallet)
+                        if (shotResults[playerId].earned > 0) trackShotEmission(shotResults[playerId].earned)
                     }
 
                     io.sockets.in(client.roomId).emit('matchEnd', {

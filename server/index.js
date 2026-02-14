@@ -5,6 +5,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import mainsocket from './socket-io/main.js'
+import { healthCheck, getStats } from './services/monitoring.js'
 
 dotenv.config()
 const PORT = process.env.PORT || 5001
@@ -27,6 +28,10 @@ mainsocket(io)
 app.get('/', (req, res) => {
     res.send('SolShot server running')
 })
+
+// Monitoring endpoints
+app.get('/health', healthCheck)
+app.get('/stats', getStats)
 
 // Connect to MongoDB then start server
 const MONGODB_URI = process.env.MONGODB_URI;

@@ -1,0 +1,38 @@
+# Render deployment config for SolShot server
+# Deploy: Connect GitHub repo → Render detects this file automatically
+#
+# Required environment variables (set in Render dashboard):
+#   MONGODB_URI, JWT_SECRET, SOLANA_RPC, TREASURY_WALLET, OPS_WALLET
+#   SHOT_TOKEN_MINT (after SPL deploy)
+#   MATCH_ESCROW_PROGRAM_ID (after program deploy)
+
+services:
+  - type: web
+    name: solshot-server
+    runtime: node
+    region: oregon
+    plan: starter
+    rootDir: server
+    buildCommand: npm install
+    startCommand: node index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5001
+      - key: MONGODB_URI
+        sync: false  # Set manually in dashboard
+      - key: JWT_SECRET
+        generateValue: true
+      - key: SOLANA_RPC
+        value: https://api.devnet.solana.com  # Change to mainnet RPC for production
+      - key: TREASURY_WALLET
+        sync: false
+      - key: OPS_WALLET
+        sync: false
+      - key: SHOT_TOKEN_MINT
+        sync: false
+      - key: MATCH_ESCROW_PROGRAM_ID
+        sync: false
+    healthCheckPath: /
+    autoDeploy: true

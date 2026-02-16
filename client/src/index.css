@@ -1,32 +1,275 @@
-body {
+/* ============================================
+   SOLSHOT — DESIGN SYSTEM
+   Military-Tech Visual Identity
+   ============================================ */
+
+/* --- Google Fonts --- */
+@import url('https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Share+Tech+Mono&family=Bebas+Neue&display=swap');
+
+/* --- CSS Variables (17 tokens from SOLSHOT_DESIGN_CONTROL.md) --- */
+:root {
+  --ol: #3d4a2f;   /* Olive Line — borders, dividers */
+  --od: #2a331f;   /* Olive Dark — card bg, input fields */
+  --kh: #b8a88a;   /* Khaki — secondary text, labels */
+  --ru: #c4510a;   /* Rust — primary button gradient base */
+  --rg: #ff6b1a;   /* Range Orange — accent, highlights, hover */
+  --am: #ffb627;   /* Amber — gold/currency, rare tier, warnings */
+  --ad: #a67b1a;   /* Amber Dark — gold gradients dark end */
+  --st: #6b7b8d;   /* Steel — tactical tier, inactive elements */
+  --sd: #3a4550;   /* Steel Dark — tank base, structural */
+  --bn: #e8dcc8;   /* Bone — primary text, headings */
+  --mu: #5c4a3a;   /* Mud — text shadows, deep accents */
+  --bk: #0a0c08;   /* Black Ops — page background */
+  --gg: #7fff44;   /* Go Green — victory, health, positive */
+  --rd: #cc2200;   /* Red Alert — defeat, damage, danger */
+  --sp: #9945FF;   /* Sol Purple — epic tier, prestige */
+  --sg: #14F195;   /* Sol Green — SOL balance, pot display */
+  --gd: #ffd700;   /* Gold — currency values, shop prices */
+}
+
+/* --- Global Reset & Base --- */
+*, *::before, *::after {
+  box-sizing: border-box;
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--bk);
+  color: var(--bn);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: black;
-  background-repeat: no-repeat;
-  background-attachment: fixed;
 }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-  monospace;
+/* --- Noise + Scanline Overlays (on body) --- */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
 }
 
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.02) 2px,
+    rgba(0, 0, 0, 0.02) 4px
+  );
+}
+
+#root {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #0c1008, #1a2a12 40%, #0a0c08);
+}
+
+/* --- Canvas (Phaser) --- */
 canvas {
   image-rendering: -moz-crisp-edges;
   image-rendering: -webkit-crisp-edges;
   image-rendering: pixelated;
-  background-color: black;
 }
 
-div {
-  background-color: transparent;
+/* --- Typography Classes --- */
+.font-display {
+  font-family: 'Black Ops One', cursive;
+  font-weight: 400;
 }
-/*
-background-image: linear-gradient(rgba(0, 0, 0, 1), rgb(120, 20, 140))
 
-cursor: url('./cursor.svg'), auto;
-*/
+.font-mono {
+  font-family: 'Share Tech Mono', monospace;
+  font-weight: 400;
+}
+
+.font-numeral {
+  font-family: 'Bebas Neue', sans-serif;
+  font-weight: 400;
+}
+
+/* --- Keyframe Animations --- */
+
+/* si — slide-in from left (menu items) */
+@keyframes si {
+  from { opacity: 0; transform: translateX(-20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* su — slide-up (stats/cards) */
+@keyframes su {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* sm — slam (Victory/Defeat text) */
+@keyframes sm {
+  0%   { opacity: 0; transform: scale(2.5); }
+  60%  { opacity: 1; transform: scale(0.9); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* sc — scale pop (SOL earned reveal) */
+@keyframes sc {
+  0%   { opacity: 0; transform: scale(0.3); }
+  70%  { transform: scale(1.08); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* vp — victory pulse (green glow) */
+@keyframes vp {
+  0%, 100% { text-shadow: 0 0 20px rgba(127, 255, 68, 0.3); }
+  50%      { text-shadow: 0 0 40px rgba(127, 255, 68, 0.6), 0 0 80px rgba(127, 255, 68, 0.2); }
+}
+
+/* dp — defeat pulse (red glow) */
+@keyframes dp {
+  0%, 100% { text-shadow: 0 0 20px rgba(204, 34, 0, 0.3); }
+  50%      { text-shadow: 0 0 40px rgba(204, 34, 0, 0.5), 0 0 80px rgba(204, 34, 0, 0.15); }
+}
+
+/* wd — wind drift (arrow sway) */
+@keyframes wd {
+  0%, 100% { transform: translateX(0); }
+  50%      { transform: translateX(4px); }
+}
+
+/* ug — upgrade glow (prestige button ready) */
+@keyframes ug {
+  0%, 100% { box-shadow: 0 0 8px rgba(255, 182, 39, 0.2); }
+  50%      { box-shadow: 0 0 20px rgba(255, 182, 39, 0.5), 0 0 40px rgba(255, 182, 39, 0.15); }
+}
+
+/* fl — subtle container flicker */
+@keyframes fl {
+  0%, 97%, 100% { opacity: 1; }
+  98%           { opacity: 0.97; }
+  99%           { opacity: 1; }
+}
+
+/* eg — entrance grow (badges, icons) */
+@keyframes eg {
+  from { opacity: 0; transform: scale(0.8); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* Loading bar fill */
+@keyframes loadFill {
+  from { width: 0%; }
+  to   { width: 100%; }
+}
+
+/* Pulse glow for active elements */
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 8px rgba(255, 107, 26, 0.2); }
+  50%      { box-shadow: 0 0 16px rgba(255, 107, 26, 0.4); }
+}
+
+/* --- Scrollbar Styling --- */
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bk);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--ol);
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--kh);
+}
+
+/* --- Range Input Styling --- */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  background: var(--od);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: var(--am);
+  border: 2px solid var(--ad);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: var(--am);
+  border: 2px solid var(--ad);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+/* --- Selection --- */
+::selection {
+  background: rgba(255, 107, 26, 0.3);
+  color: var(--bn);
+}
+
+/* --- Wallet Adapter Override (match SolShot theme) --- */
+.wallet-adapter-button {
+  font-family: 'Black Ops One', cursive !important;
+  letter-spacing: 2px !important;
+  font-size: 11px !important;
+  background: linear-gradient(180deg, #cc3300, #881a00) !important;
+  border: 1px solid var(--rg) !important;
+  border-radius: 4px !important;
+  color: var(--bn) !important;
+}
+
+.wallet-adapter-button:hover {
+  background: linear-gradient(180deg, #dd4400, #992200) !important;
+}
+
+.wallet-adapter-modal-wrapper {
+  background: var(--od) !important;
+  border: 1px solid var(--ol) !important;
+  border-radius: 4px !important;
+}
+
+.wallet-adapter-modal-title {
+  font-family: 'Black Ops One', cursive !important;
+  color: var(--bn) !important;
+  letter-spacing: 2px !important;
+}
+
+.wallet-adapter-modal-list li {
+  border: 1px solid var(--od) !important;
+}
+
+.wallet-adapter-modal-list li:hover {
+  border-color: var(--ol) !important;
+  background: rgba(255, 107, 26, 0.05) !important;
+}

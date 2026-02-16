@@ -114,8 +114,10 @@ export class Turret extends GameObjects.Sprite {
                     this.relativeRotation -= this.rotationDelta
                     this.setRotation(this.relativeRotation + this.tank.rotation)
                     const alpha = this.rotation
-                    this.scene.HUD.crossAir.setPosition(this.x + crossAirRadius * Math.sin(alpha), this.y - crossAirRadius * Math.cos(alpha))
-                    this.scene.HUD.crossAir.visibleTime = 40
+                    if (this.scene.HUD && this.scene.HUD.crossAir) {
+                        this.scene.HUD.crossAir.setPosition(this.x + crossAirRadius * Math.sin(alpha), this.y - crossAirRadius * Math.cos(alpha))
+                        this.scene.HUD.crossAir.visibleTime = 40
+                    }
                 }
             }
         }
@@ -125,8 +127,10 @@ export class Turret extends GameObjects.Sprite {
                     this.relativeRotation += this.rotationDelta
                     this.setRotation(this.relativeRotation + this.tank.rotation)
                     const alpha = this.rotation
-                    this.scene.HUD.crossAir.setPosition(this.x + crossAirRadius * Math.sin(alpha), this.y - crossAirRadius * Math.cos(alpha))
-                    this.scene.HUD.crossAir.visibleTime = 40
+                    if (this.scene.HUD && this.scene.HUD.crossAir) {
+                        this.scene.HUD.crossAir.setPosition(this.x + crossAirRadius * Math.sin(alpha), this.y - crossAirRadius * Math.cos(alpha))
+                        this.scene.HUD.crossAir.visibleTime = 40
+                    }
                 }
             }
         }

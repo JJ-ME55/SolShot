@@ -1,819 +1,649 @@
-import Phaser ,{ Scene, GameObjects, BlendModes, Textures, Display } from 'phaser';
-import { HUD } from '../../classes/HUD';
+/**
+ * MainScene — Stripped for React HUD migration.
+ *
+ * KEPT: Terrain, tanks, physics, projectiles, turn switching, canvas rendering.
+ * REMOVED: HUD class, all Phaser text overlays, exit menu, game-over text,
+ *          winner particles, play-again text, back button, auto-adjust.
+ * ADDED: GameBridge writes (state updates + event notifications).
+ *
+ * React HUD reads from GameBridge via rAF polling (useGameState hook).
+ * Socket events for matchEnd/roundEnd/opponentLeft are handled in React (BattleScreen).
+ */
+
+import Phaser, { Scene, Display } from 'phaser';
 import { Tank } from '../../classes/Tank';
 import { Terrain } from '../../classes/Terrain';
-import { type1 } from './types/type1';
-import { type2 } from './types/type2';
-import { type3 } from './types/type3';
-import { type4 } from './types/type4';
-import { drawBackBtn } from '../../graphics/back-btn';
 import { BlastCache } from '../../classes/BlastCache';
 
 export class MainScene extends Scene {
-    constructor() {
-        super('main-scene');
-        this.tank1 = null
-        this.tank2 = null
-        this.terrain = null
-        this.HUD = null
-        this.x = 0;
-        this.y = 0;
-        this.fps = null
-        this.activeTank = 0
-        this.background = null
-        this.blastLayer = null
-        this.pointsLayer = null
-        this.cpuHandler = null
-        this.sceneData = null
-        this.turnPointer = null
-        this.winnerBlastTween = null
-        this.gameOver = false
-        this.exitMenuContent = null
-        this.blastCache = new BlastCache(this)
+  constructor() {
+    super('main-scene');
+    this.tank1 = null;
+    this.tank2 = null;
+    this.terrain = null;
+    this.HUD = null; // Kept as null — physics classes guard against this
+    this.x = 0;
+    this.y = 0;
+    this.activeTank = 0;
+    this.background = null;
+    this.blastLayer = null;
+    this.pointsLayer = null;
+    this.cpuHandler = null;
+    this.sceneData = null;
+    this.turnPointer = null;
+    this.gameOver = false;
+    this.blastCache = new BlastCache(this);
+    this._bridge = null;
+
+    // Socket handler refs for cleanup (Fix 4)
+    this._socketHandlers = {};
+  }
+
+  init = (data) => {
+    // Phaser may pass an empty object {} when auto-starting.
+    // Check for a meaningful property (gameType) to decide whether `data` is real.
+    const hasRealData = data && data.gameType;
+    this.sceneData = hasRealData ? data : (window.pendingSceneData || null);
+    this.activeTank = 0;
+    this.gameOver = false;
+    this._bridge = window.gameBridge || null;
+    this._created = false;
+  };
+
+  preload = () => {
+    this.load.image('wall', 'assets/images/wall.png');
+    this.load.audio('background', ['assets/sounds/background.mp3']);
+    this.load.audio('click', ['assets/sounds/click.wav']);
+    this.load.audio('winner', ['assets/sounds/winner.mp3']);
+    this.load.audio('launch', ['assets/sounds/others/launch.mp3']);
+    this.load.audio('tick', ['assets/sounds/others/tick.wav']);
+    this.load.audio('expshort', ['assets/sounds/others/expshort.wav']);
+    this.load.audio('expshort2', ['assets/sounds/others/expshort2.wav']);
+    this.load.audio('expmedium', ['assets/sounds/others/expmedium.wav']);
+    this.load.audio('expmedium2', ['assets/sounds/others/expmedium2.wav']);
+    this.load.audio('explong', ['assets/sounds/others/explong.wav']);
+    this.load.audio('exphuge', ['assets/sounds/others/exphuge.wav']);
+    this.load.audio('bigpop', ['assets/sounds/others/bigpop.wav']);
+    this.load.audio('rocks_1', ['assets/sounds/others/rocks_1.wav']);
+    this.load.audio('rocks_2', ['assets/sounds/others/rocks_2.wav']);
+    this.load.audio('rocks_3', ['assets/sounds/others/rocks_3.wav']);
+    this.load.audio('rocks_4', ['assets/sounds/others/rocks_4.wav']);
+    this.load.audio('rocks_5', ['assets/sounds/others/rocks_5.wav']);
+    this.load.audio('rocks_6', ['assets/sounds/others/rocks_6.wav']);
+    this.load.audio('rockslide', ['assets/sounds/others/rockslide.wav']);
+    this.load.audio('napalm', ['assets/sounds/others/napalm.wav']);
+    this.load.audio('hailstorm', ['assets/sounds/others/hailstorm.wav']);
+    this.load.audio('aquabomb_splash', ['assets/sounds/others/aquabomb_splash.wav']);
+    this.load.audio('firecracker', ['assets/sounds/others/firecracker.wav']);
+    this.load.audio('clusterbombs_exp', ['assets/sounds/others/clusterbombs_exp.wav']);
+    this.load.audio('homingmissile', ['assets/sounds/others/homingmissile.wav']);
+    this.load.audio('rungun', ['assets/sounds/others/rungun.wav']);
+    this.load.audio('rubberbullet', ['assets/sounds/others/rubberbullet.wav']);
+    this.load.audio('laser1', ['assets/sounds/others/laser1.wav']);
+    this.load.audio('magicbeans_grow', ['assets/sounds/others/magicbeans_grow.wav']);
+    this.load.audio('rock', ['assets/sounds/others/rock.wav']);
+    this.load.audio('rocket', ['assets/sounds/others/rocket.wav']);
+  };
+
+  create = () => {
+    if (!this.sceneData || !this.sceneData.gameType) {
+      console.warn('[SolShot] MainScene.create() — no sceneData, skipping');
+      return;
     }
 
+    // Safe sound wrapper — some weapon code plays sounds that don't exist
+    const originalPlay = this.sound.play.bind(this.sound);
+    this.sound.play = (key, config) => {
+      try {
+        if (this.sound.get(key) || this.cache.audio.exists(key)) {
+          return originalPlay(key, config);
+        }
+      } catch (_) {}
+      return false;
+    };
 
+    // Cleanup on scene shutdown/destroy
+    this.events.once('shutdown', () => this.shutdown());
+    this.events.once('destroy', () => this.shutdown());
 
-    init = (data) => {
-        this.sceneData = data
-        this.activeTank = 0
-        this.gameOver = false
+    this.createBackground();
+    this.createBlastLayer();
+    this.createPointsLayer();
+    this.createTerrain();
+    this.createBoundWalls();
+    this.createTank1();
+    this.createTank2();
+
+    // ── Type handler ──
+    if (this.sceneData.gameType === 3) {
+      this.handleType3();
+    } else if (this.sceneData.gameType === 4) {
+      this.handleType4();
     }
 
+    this.showTurnPointer();
 
+    try {
+      this.sound.stopAll();
+      this.sound.play('background', { loop: true });
+    } catch (_) {}
 
-    preload = () => {
-        if (window.sdk === 'crazygames') {
-            window.CrazyGames.SDK.game.gameplayStart();
+    this.terrain.multiplayerPoints = [];
+
+    // ── Turn management socket listeners ──
+    // These are the SAME as the original create() body — verbatim logic.
+    const socket = window.socket;
+    if (socket) {
+      this._socketHandlers.recieveTurn = ({ terrainData, pos1, pos2, rotation1, rotation2 }) => {
+        console.log('[SolShot] recieveTurn received — activeTank=' + this.activeTank +
+          ' t2active=' + this.tank2.active + ' t2weapon=' + (this.tank2.turret.activeWeapon !== null) +
+          ' animate=' + this.terrain.animate + ' blasts=' + this.terrain.blastArray.length +
+          ' t1settled=' + this.tank1.settled + ' t2settled=' + this.tank2.settled);
+        if (this.terrain.animate === true) return;
+        if (this.terrain.blastArray.length !== 0) return;
+        if (this.tank1.settled === false) return;
+        if (this.tank2.settled === false) return;
+
+        if (this.activeTank === 2 && this.tank2.active === false && this.tank2.turret.activeWeapon === null) {
+          this.activeTank = 1;
+          this.tank1.active = true;
+          this.terrain.frameCount = -1;
+          this.terrain.multiplayerCorrection(terrainData);
+
+          this.tank1.setPosition(pos2.x, pos2.y);
+          this.tank2.setPosition(pos1.x, pos1.y);
+          this.tank1.setRotation(rotation2);
+          this.tank2.setRotation(rotation1);
+
+          this.terrain.multiplayerPoints = [];
+          this.terrain.addPixels = [];
+          this.showTurnPointer();
+          this._pushStateToBridge();
         }
-        if (window.sdk === 'gdsdk') {
-            if (window.gdsdk !== undefined && window.gdsdk.preloadAd !== undefined) {
-                window.gdsdk.preloadAd('rewarded')
-            }
+      };
+
+      this._socketHandlers.opponentRequestTurn = () => {
+        if (this.terrain.animate === true) return;
+        if (this.terrain.blastArray.length !== 0) return;
+        if (this.tank1.settled === false) return;
+        if (this.tank2.settled === false) return;
+
+        if (this.activeTank === 2 && this.tank2.active === true && this.tank2.turret.activeWeapon === null) {
+          socket.emit('giveTurn', {
+            terrainData: this.terrain.multiplayerPoints,
+            pos1: { x: this.tank1.x, y: this.tank1.y },
+            pos2: { x: this.tank2.x, y: this.tank2.y },
+            rotation1: this.tank1.rotation,
+            rotation2: this.tank2.rotation,
+          });
+          this.terrain.save();
         }
-        //this.sound.add('click')
-        // this.load.audio('background', ['assets/sounds/background.mp3'])
-        // this.load.image('wall', 'assets/images/wall.png');
+      };
+
+      socket.on('recieveTurn', this._socketHandlers.recieveTurn);
+      socket.on('opponentRequestTurn', this._socketHandlers.opponentRequestTurn);
     }
 
+    // ── Notify React that Phaser is ready ──
+    this.events.once('terrain-finished', () => {
+      if (this.activeTank === 2) {
+        this.terrain.save();
+      }
+      this._pushStateToBridge();
+      if (this._bridge) {
+        this._bridge._readyFired = true;
+        this._bridge.notifyReady();
+      }
+    });
 
-    create = () => {
-        if (this.winnerBlastTween !== null) {
-            this.winnerBlastTween.stop()
-            this.winnerBlastTween = null
-        }
-        this.events.once('terrain-finished', () => {
-            if (this.activeTank === 2) {
-                this.terrain.save()
-            }
-        })
+    // Fallback: if terrain-finished never fires (e.g. non-host path race), force ready
+    this.time.delayedCall(3000, () => {
+      if (this._bridge && !this._bridge._readyFired) {
+        this._bridge._readyFired = true;
+        this._pushStateToBridge();
+        this._bridge.notifyReady();
+      }
+    });
 
-        this.createBackground()
-        this.createBlastLayer()
-        this.createPointsLayer()
-        this.createTerrain()
-        this.createBoundWalls()
-        this.createTank1()
-        this.createTank2()
-        this.createAutoAdjust()
-       
-        if (this.sceneData.gameType === 1) {
-            this.handleType1()
-        }
-        else if (this.sceneData.gameType === 2) {
-            this.handleType2()
-        }
-        else if (this.sceneData.gameType === 3) {
-            this.handleType3()
-        }
-        else if (this.sceneData.gameType === 4) {
-            this.handleType4()
-        }
+    this._created = true;
+  };
 
-        this.showTurnPointer()
+  update = (_time, _delta) => {
+    if (!this._created || !this.terrain || !this.tank1 || !this.tank2) return;
 
-        this.createHUD()
+    this.checkSwitchTurn();
+    this._pushStateToBridge();
 
-        this.sound.stopAll()
-       
-        this.sound.play('background', {loop: true})
+    this.input.mousePointer.prev = { x: this.input.mousePointer.x, y: this.input.mousePointer.y };
+    this.input.activePointer.prev = { x: this.input.activePointer.x, y: this.input.activePointer.y };
+  };
 
-        this.terrain.multiplayerPoints = []
+  // ── Physics / Rendering (unchanged from original) ──
 
-        var socket = window.socket
-        
-        socket.on('recieveTurn', ({terrainData, pos1, pos2, rotation1, rotation2}) => {
-            if (this.terrain.animate === true) return
-            if (this.terrain.blastArray.length !== 0) return
-            if (this.tank1.settled === false) return
-            if (this.tank2.settled === false) return
+  createBoundWalls = () => {
+    this.rightWall = this.physics.add.image(this.renderer.width + 50, this.renderer.height, 'wall');
+    this.leftWall = this.physics.add.image(-50, this.renderer.height, 'wall');
+    this.rightWall.setSize(100, this.renderer.height * 4);
+    this.leftWall.setSize(100, this.renderer.height * 4);
+    this.leftWall.setImmovable(true).setAlpha(0);
+    this.rightWall.setImmovable(true).setAlpha(0);
+    this.leftWall.setOrigin(1, 0);
+    this.rightWall.setOrigin(0, 0);
+  };
 
-            if (this.activeTank === 2 && this.tank2.active === false && this.tank2.turret.activeWeapon === null){
-                this.activeTank = 1
-                this.tank1.active = true
-                this.HUD.reset()
-                this.terrain.frameCount = -1
-                this.terrain.multiplayerCorrection(terrainData)
+  createBackground = () => {
+    var canvas = document.createElement('canvas');
+    var ctx = canvas.getContext('2d');
+    canvas.height = this.renderer.height;
+    canvas.width = this.renderer.width;
+    ctx.fillStyle = 'rgba(0,0,0,1)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (this.textures.exists('background')) this.textures.remove('background');
+    this.background = this.textures.addCanvas('background', canvas);
+    this.add.image(canvas.width / 2, canvas.height / 2, 'background').setDepth(-3);
+  };
 
-                this.tank1.setPosition(pos2.x, pos2.y)
-                this.tank2.setPosition(pos1.x, pos1.y)
-                this.tank1.setRotation(rotation2)
-                this.tank2.setRotation(rotation1)
-                
-                this.terrain.multiplayerPoints = []
-                this.terrain.addPixels = []
-                //console.log('turn 1')
-                this.showTurnPointer()
-            }
-        })
+  createBlastLayer = () => {
+    var canvas = document.createElement('canvas');
+    canvas.height = this.renderer.height;
+    canvas.width = this.renderer.width;
+    if (this.textures.exists('blast-layer')) this.textures.remove('blast-layer');
+    this.textures.addCanvas('blast-layer', canvas);
+    this.blastLayer = this.add.image(canvas.width / 2, canvas.height / 2, 'blast-layer').setDepth(3);
+  };
 
-        socket.on('opponentRequestTurn', () => {
-            if (this.terrain.animate === true) return
-            if (this.terrain.blastArray.length !== 0) return
-            if (this.tank1.settled === false) return
-            if (this.tank2.settled === false) return
+  createPointsLayer = () => {
+    var canvas = document.createElement('canvas');
+    canvas.height = this.renderer.height;
+    canvas.width = this.renderer.width;
+    if (this.textures.exists('points-layer')) this.textures.remove('points-layer');
+    this.blastLayer = this.textures.addCanvas('points-layer', canvas);
+    this.add.image(canvas.width / 2, canvas.height / 2, 'points-layer').setDepth(4);
+  };
 
-            if (this.activeTank === 2 && this.tank2.active === true && this.tank2.turret.activeWeapon === null) {
-                socket.emit('giveTurn', {terrainData: this.terrain.multiplayerPoints, pos1: {x: this.tank1.x, y: this.tank1.y}, pos2: {x: this.tank2.x, y: this.tank2.y}, rotation1: this.tank1.rotation, rotation2: this.tank2.rotation})
-                this.terrain.save()
-            }
-        })
+  createTerrain = () => {
+    this.terrain = new Terrain(this);
+  };
 
+  createTank1 = () => {
+    this.tank1 = new Tank(this, 1);
+    this.tank1.setDepth(-2);
+  };
 
-        this.input.keyboard.on('keydown', (e) => {
-            if (e.keyCode === 27) {
-                this.sound.play('click', {volume: 0.3})
-                e.preventDefault()
-                if (this.exitMenuContent === null)
-                    this.showExitMenu()
-                else
-                    this.hideExitMenu()
-            }
-        })
-        
-        var canvas = document.createElement('canvas')
-        var ctx = canvas.getContext('2d')
-        canvas.width = 150
-        canvas.height = 100
-        drawBackBtn(ctx, canvas.width, canvas.height)
-        var backtexture = this.textures.addCanvas('back-btn', canvas, true)
-        var backbtn = this.add.image(100, this.game.renderer.height - 100, backtexture)
-        backbtn.setDepth(10)
-        
-        backbtn.setInteractive()
+  createTank2 = () => {
+    this.tank2 = new Tank(this, 2);
+    this.tank2.setDepth(-2);
+  };
 
-        backbtn.on('pointerdown', () => {
-            this.sound.play('click', {volume: 0.3})
-            if (this.HUD.mouseLocked === false) {
-                this.showExitMenu()
-            }
-        })
+  // ── Turn switching — identical to original ──
+
+  checkSwitchTurn = () => {
+    // Debug: throttled state log (once per second)
+    if (!this._lastSwitchLog || Date.now() - this._lastSwitchLog > 1000) {
+      const t1active = this.tank1?.active;
+      const t2active = this.tank2?.active;
+      const t1weapon = this.tank1?.turret?.activeWeapon !== null;
+      const t2weapon = this.tank2?.turret?.activeWeapon !== null;
+      const blocked = this.terrain.animate || this.terrain.blastArray.length !== 0 ||
+        !this.tank1.settled || !this.tank2.settled;
+      if (t1active === false && t2active === false && !this.gameOver) {
+        console.log('[SolShot] checkSwitchTurn: BOTH INACTIVE — activeTank=' + this.activeTank +
+          ' t1weapon=' + t1weapon + ' t2weapon=' + t2weapon + ' blocked=' + blocked +
+          ' animate=' + this.terrain.animate + ' blasts=' + this.terrain.blastArray.length +
+          ' t1settled=' + this.tank1.settled + ' t2settled=' + this.tank2.settled);
+      }
+      this._lastSwitchLog = Date.now();
     }
 
+    if (this.terrain.animate === true) return;
+    if (this.terrain.blastArray.length !== 0) return;
+    if (this.tank1.settled === false) return;
+    if (this.tank2.settled === false) return;
+    if (this.gameOver === true) return;
 
+    var socket;
 
-    update = (time, delta) => {
-        this.HUD.refresh()
-        this.checkSwitchTurn()
-
-        this.input.mousePointer.prev = {x: this.input.mousePointer.x, y: this.input.mousePointer.y}
-        this.input.activePointer.prev = {x: this.input.activePointer.x, y: this.input.activePointer.y}
-    }
-
-
-
-    createBoundWalls = () => {
-        this.rightWall = this.physics.add.image(this.renderer.width + 50, this.renderer.height, 'wall')
-        this.leftWall = this.physics.add.image(-50, this.renderer.height, 'wall')
-        this.rightWall.setSize(100, this.renderer.height * 4)
-        this.leftWall.setSize(100, this.renderer.height * 4)
-        this.leftWall.setImmovable(true).setAlpha(0)
-        this.rightWall.setImmovable(true).setAlpha(0)
-        this.leftWall.setOrigin(1, 0)
-        this.rightWall.setOrigin(0, 0)
-    }
-
-
-
-    createBackground = () => {
-        var canvas = document.createElement('canvas')
-        var ctx = canvas.getContext('2d')
-
-        canvas.height = this.renderer.height
-        canvas.width = this.renderer.width
-
-        var grd = ctx.createLinearGradient(0, 0, 0, canvas.height)
-        grd.addColorStop(0, 'rgba(0,0,0,1)')
-        grd.addColorStop(0.30, 'rgba(30,10,40,1)')
-        grd.addColorStop(0.40, 'rgba(50,20,70,1)')
-        grd.addColorStop(0.5, 'rgba(90,30,130,1)')
-        grd.addColorStop(1, 'rgba(200,40,255,1)')
-
-        //ctx.fillStyle = grd
-        ctx.fillStyle = 'rgba(0,0,0,1)'
-        ctx.fillRect(0, 0, canvas.width, canvas.height)
-
-        if (this.textures.exists('background')) this.textures.remove('background')
-        this.background = this.textures.addCanvas('background', canvas)
-        this.add.image(canvas.width/2, canvas.height/2, 'background').setDepth(-3)
-    }
-
-
-
-
-    createBlastLayer = () => {
-        var canvas = document.createElement('canvas')
-        
-        canvas.height = this.renderer.height
-        canvas.width = this.renderer.width
-
-        if (this.textures.exists('blast-layer')) this.textures.remove('blast-layer')
-        this.textures.addCanvas('blast-layer', canvas)
-        this.blastLayer = this.add.image(canvas.width/2, canvas.height/2, 'blast-layer').setDepth(3)
-    }
-
-
-
-    createPointsLayer = () => {
-        var canvas = document.createElement('canvas')
-        
-        canvas.height = this.renderer.height
-        canvas.width = this.renderer.width
-
-        if (this.textures.exists('points-layer')) this.textures.remove('points-layer')
-        this.blastLayer = this.textures.addCanvas('points-layer', canvas)
-        this.add.image(canvas.width/2, canvas.height/2, 'points-layer').setDepth(4)
-    }
-
-
-
-    createTerrain = () => {
-        this.terrain = new Terrain(this);
-    }
-
-
-
-    createTank1 = () => {
-        this.tank1 = new Tank(this, 1);
-        //this.tank1.setBlendMode(Phaser.BlendModes.SOFT_LIGHT)
-        this.tank1.setDepth(-2)
-    }
-
-
-
-    createTank2 = () => {
-        this.tank2 = new Tank(this, 2)
-        //this.tank2.setBlendMode(Phaser.BlendModes.SOFT_LIGHT)
-        this.tank2.setDepth(-2)
-    }
-
-
-
-    createHUD = () => {
-        this.HUD = new HUD(this)
-        this.HUD.reset()
-    }
-
-
-
-    createAutoAdjust = () => {
-        var h = 60
-        var w = 180
-
-        var adBtnContainer = this.add.container(this.renderer.width/2, this.renderer.height * 8/9)
-        
-        var adBtnText = this.add.text(0, 0, "Auto Adjust").setFontSize(18).setFontFamily('Verdana').setFontStyle('bold')
-        
-        if (!this.game.device.os.desktop){
-            adBtnText.setFontSize(26)
-            h = h * 1.3
-            w = w * 1.3
+    if (this.tank1.weapons.length === 0 && this.tank2.weapons.length === 0) {
+      if (this.tank1.turret.activeWeapon === null && this.tank2.turret.activeWeapon === null) {
+        this.gameOver = true;
+        this.tank1.active = false;
+        this.tank2.active = false;
+        this.activeTank = 0;
+      }
+    } else if (this.activeTank === 1 && this.tank1.active === false && this.tank1.turret.activeWeapon === null) {
+      console.log('[SolShot] checkSwitchTurn: activeTank 1→2, emitting giveTurn');
+      this.terrain.frameCount = -1;
+      this.activeTank = 2;
+      this.tank2.active = true;
+      if (this.sceneData.gameType === 3) {
+        socket = window.socket;
+        if (socket) {
+          socket.emit('giveTurn', {
+            terrainData: this.terrain.multiplayerPoints,
+            pos1: { x: this.tank1.x, y: this.tank1.y },
+            pos2: { x: this.tank2.x, y: this.tank2.y },
+            rotation1: this.tank1.rotation,
+            rotation2: this.tank2.rotation,
+          });
         }
-        adBtnText.setOrigin(0.5, 0.5).setColor("rgba(0,0,0,1)")
-
-        var clapperBoard = this.add.image(0, 0, 'clapperboard')
-        clapperBoard.displayHeight = 40
-        clapperBoard.displayWidth = 40
-
-        var averageWidth = (adBtnText.displayWidth + clapperBoard.displayWidth + 10) / 2
-        adBtnText.setX(adBtnText.displayWidth/2 - averageWidth)
-        clapperBoard.setX(averageWidth - clapperBoard.displayWidth/2)
-        
-        var adBtnBackground = this.add.rectangle(0, 0, w, h, 0xcccccc)
-        adBtnBackground.setOrigin(0.5,0.5)
-        
-        adBtnContainer.add(adBtnBackground)
-        adBtnContainer.add(clapperBoard)
-        adBtnContainer.add(adBtnText)
-
-        adBtnContainer.setDepth(100)
-
-        if (this.sceneData.gameType === 3) {
-            adBtnBackground.setFillStyle(0x999999)
+        this.terrain.save();
+      }
+      this.showTurnPointer();
+    } else if (this.activeTank === 2 && this.tank2.active === false && this.tank2.turret.activeWeapon === null) {
+      console.log('[SolShot] checkSwitchTurn: activeTank=2, tank2 done, emitting requestTurn');
+      this.terrain.frameCount = -1;
+      if (this.sceneData.gameType !== 3) {
+        this.activeTank = 1;
+        this.tank1.active = true;
+        this.showTurnPointer();
+      } else {
+        socket = window.socket;
+        if (socket) {
+          socket.emit('requestTurn', {});
         }
+      }
+    }
+  };
 
-        const autoAdjust = () => {
-            var tank = null;
-            if (this.activeTank === 1) tank = this.tank1
-            if (this.activeTank === 2) tank = this.tank2
-            if (tank !== null) {
-                tank.autoAdjust()
-            }
-            adBtnText.setText("Auto Adjust")
-            adBtnBackground.setInteractive()
-            //adBtnContainer.setInteractive()
-        }
+  // ── Turn pointer ──
 
-        const clickHandler = () => {
-            if (this.HUD.mouseLocked === true) return
-            if (this.sceneData.gameType === 3) return
-            this.sound.play('click', {volume: 0.3})
+  showTurnPointer = () => {
+    var tank = null;
+    if (this.activeTank === 1) tank = this.tank1;
+    if (this.activeTank === 2) tank = this.tank2;
 
-            //adBtn.disableInteractive()
-            //adImg.disableInteractive()
-            adBtnBackground.disableInteractive()
-            //adBtnContainer.disableInteractive()
-            adBtnText.setText("Loading")
-            
-            if (window.sdk === 'gdsdk') {
-                var gdsdk = window.gdsdk
-                if (typeof gdsdk !== undefined && gdsdk.showAd !== undefined) {
-                    gdsdk.showAd("rewarded")
-                    autoAdjust()
-                }
-            }
+    if (tank !== null) {
+      this.hideTurnPointer();
+      var canvas = document.createElement('canvas');
+      canvas.width = 18;
+      canvas.height = 20;
+      var w = 18;
+      var h = 20;
+      var ctx = canvas.getContext('2d');
 
-            if (window.sdk === 'crazygames') {
-                const callbacks = {
-                    adFinished: () => {this.game.sound.mute = false; autoAdjust()},
-                    adError: () => {this.game.sound.mute = false; autoAdjust()},
-                    adStarted: () => {this.game.sound.mute = true},
-                };
-                window.CrazyGames.SDK.ad.requestAd("rewarded", callbacks);
-            }
+      ctx.fillStyle = tank.color;
+      ctx.moveTo(w / 3, 0);
+      ctx.lineTo(w * (2 / 3), 0);
+      ctx.lineTo(w * (2 / 3), h * (1 / 2));
+      ctx.lineTo(w, h * (1 / 2));
+      ctx.lineTo(w / 2, h);
+      ctx.lineTo(0, h * (1 / 2));
+      ctx.lineTo(w * (1 / 3), h * (1 / 2));
+      ctx.lineTo(w / 3, 0);
+      ctx.closePath();
+      ctx.fill();
 
-            else {
-                autoAdjust()
-            }
-        }
+      if (this.textures.exists('turn-pointer')) this.textures.remove('turn-pointer');
+      this.textures.addCanvas('turn-pointer', canvas);
+      this.turnPointer = this.add.image(tank.x, tank.y - 45, 'turn-pointer');
+      this.turnPointer.setDepth(10);
 
-        //adBtnText.setInteractive()
-        //adImg.setInteractive()
-        adBtnBackground.setInteractive()
+      this.tweens.add({
+        targets: this.turnPointer,
+        y: this.turnPointer.y - 10,
+        repeat: -1,
+        yoyo: true,
+        duration: 300,
+      });
 
-        ///adBtn.on('pointerdown', clickHandler)
-        //adImg.on('pointerdown', clickHandler)
-        adBtnBackground.on('pointerdown', clickHandler)
+      this.turnPointer.setVisible(true);
+    }
+  };
+
+  hideTurnPointer = () => {
+    if (this.turnPointer !== null) {
+      this.turnPointer.setVisible(false);
+      this.turnPointer = null;
+    }
+  };
+
+  // ── Type 3: Online multiplayer ──
+
+  handleType3 = () => {
+    const socket = window.socket;
+    if (!socket) {
+      console.error('[SolShot] handleType3: No socket!');
+      return;
     }
 
+    // NOTE: We do NOT call socket.removeAllListeners() — Fix 4 from migration spec.
+    // React's BattleScreen manages its own listeners via useSocket.
 
+    const player1 = this.sceneData.player1;
+    const player2 = this.sceneData.player2;
+    const hostId = this.sceneData.hostId;
 
-    checkSwitchTurn = () => {
-        if (this.terrain.animate === true) return
-        if (this.terrain.blastArray.length !== 0) return
-        if (this.tank1.settled === false) return
-        if (this.tank2.settled === false) return
-        if (this.gameOver === true) return
-        var socket
+    this.tank1.weapons = player1.weapons;
+    this.tank2.weapons = player2.weapons;
 
-        if (this.tank1.weapons.length === 0 && this.tank2.weapons.length === 0) {
-            if (this.tank1.turret.activeWeapon === null && this.tank2.turret.activeWeapon === null) {
-                this.showGameOver()
-                this.tank1.active = false
-                this.tank2.active = false
-                this.activeTank = 0
-            }
+    this.tank1.create(int2rgba(player1.color), player1.name);
+    this.tank2.create(int2rgba(player2.color), player2.name);
+
+    if (socket.id === hostId) {
+      this.terrain.create();
+      // Debug: verify terrain has pixels
+      let foundPixel = false;
+      for (let y = 0; y < this.terrain.height; y++) {
+        if (this.terrain.getPixel(this.terrain.width / 2, y).alpha > 0) { foundPixel = true; break; }
+      }
+      console.log('[SolShot] Host terrain created: hasPixels=' + foundPixel + ' size=' + this.terrain.width + 'x' + this.terrain.height);
+      this.tank1.randomPos();
+      this.tank2.randomPos();
+      socket.emit('terrainPath', {
+        path: this.terrain.path,
+        hostPos: { x: this.tank1.x, y: this.tank1.y },
+        playerPos: { x: this.tank2.x, y: this.tank2.y },
+      });
+    } else {
+      socket.once('setTerrainPath', ({ path, hostPos, playerPos }) => {
+        this.terrain.setPath(path);
+        this.tank1.setPosition(playerPos.x, playerPos.y);
+        this.tank2.setPosition(hostPos.x, hostPos.y);
+        var rotation = this.terrain.getSlope(playerPos.x, playerPos.y);
+        if (rotation !== undefined) this.tank1.setRotation(rotation);
+        rotation = this.terrain.getSlope(hostPos.x, hostPos.y);
+        if (rotation !== undefined) this.tank2.setRotation(rotation);
+        // Re-enable physics bodies (were disabled during create() waiting for terrain)
+        this.tank1.enablePhysics();
+        this.tank2.enablePhysics();
+        this.showTurnPointer();
+        this._pushStateToBridge();
+        if (this._bridge) {
+          this._bridge._readyFired = true;
+          this._bridge.notifyReady();
         }
-
-        else if (this.activeTank === 1 && this.tank1.active === false && this.tank1.turret.activeWeapon === null) {
-            //this.terrain.restore()
-            this.terrain.frameCount = -1
-            this.activeTank = 2
-            this.tank2.active = true
-            this.HUD.reset()
-            if (this.sceneData.gameType === 3) {
-                socket = window.socket
-                socket.emit('giveTurn', {terrainData: this.terrain.multiplayerPoints, pos1: {x: this.tank1.x, y: this.tank1.y}, pos2: {x: this.tank2.x, y: this.tank2.y}, rotation1: this.tank1.rotation, rotation2: this.tank2.rotation})
-                this.terrain.save()
-            }
-            //console.log('turn 2')
-            this.showTurnPointer()
-            if (this.sceneData.gameType === 1) {
-                this.cpuHandler.play()
-            }
-        }
-        else if (this.activeTank === 2 && this.tank2.active === false && this.tank2.turret.activeWeapon === null){
-            //this.terrain.restore()
-            this.terrain.frameCount = -1
-            if (this.sceneData.gameType !== 3) {
-                this.activeTank = 1
-                this.tank1.active = true
-                this.HUD.reset()
-                //console.log('turn 1')
-                this.showTurnPointer()
-            }
-            else {
-                socket = window.socket
-                socket.emit('requestTurn', {})
-            }
-        }
+      });
+      socket.emit('getTerrainPath', {});
     }
 
-
-
-    showTurnPointer = () => {
-        var tank = null
-        if (this.activeTank === 1) tank = this.tank1
-        if (this.activeTank === 2) tank = this.tank2
-
-        if (tank !== null) {
-            this.hideTurnPointer()
-            var canvas = document.createElement('canvas')
-            canvas.width = 18
-            canvas.height = 20
-            var w = 18
-            var h = 20
-            var ctx = canvas.getContext('2d')
-
-            ctx.fillStyle = tank.color
-            ctx.moveTo(w/3, 0)
-            ctx.lineTo(w * (2/3), 0)
-            ctx.lineTo(w * (2/3), h * (1/2))
-            ctx.lineTo(w, h * (1/2))
-            ctx.lineTo(w/2, h)
-            ctx.lineTo(0, h * (1/2))
-            ctx.lineTo(w * (1/3), h * (1/2))
-            ctx.lineTo(w/3, 0)
-            ctx.closePath()
-            ctx.fill()
-            
-            if (this.textures.exists('turn-pointer')) this.textures.remove('turn-pointer')
-            this.textures.addCanvas('turn-pointer', canvas)
-            this.turnPointer = this.add.image(tank.x, tank.y - 45, 'turn-pointer')
-            this.turnPointer.setDepth(10)
-
-            this.tweens.add({
-                targets: this.turnPointer,
-                y: this.turnPointer.y - 10,
-                repeat: -1,
-                yoyo: true,
-                duration: 300,
-            })
-
-            this.turnPointer.setVisible(true)
-        }
+    // Both players start active — this is the original design (simultaneous first turn).
+    if (socket.id === hostId) {
+      this.tank1.active = true;
+      this.activeTank = 1;
+    } else {
+      this.tank2.active = true;
+      this.activeTank = 2;
     }
 
-
-
-    hideTurnPointer = () => {
-        if (this.turnPointer !== null) {
-            this.turnPointer.setVisible(false)
-            this.turnPointer = null
+    // Server-authoritative events
+    this._socketHandlers.turnResult = ({ playerId, goldBalance }) => {
+      if (goldBalance && socket) {
+        const myGold = goldBalance[socket.id];
+        if (myGold !== undefined && this._bridge) {
+          this._bridge.updateState({ gold: myGold });
         }
+      }
+    };
+    this._socketHandlers.fireRejected = ({ reason }) => {
+      console.warn('[SolShot] Fire rejected:', reason);
+    };
+    socket.on('turnResult', this._socketHandlers.turnResult);
+    socket.on('fireRejected', this._socketHandlers.fireRejected);
+  };
+
+  handleType4 = () => {
+    this.terrain.create();
+    const player1 = this.sceneData.player1;
+    const player2 = this.sceneData.player2;
+
+    this.tank1.weapons = player1.weapons;
+    this.tank2.weapons = player2.weapons;
+
+    this.tank1.create(int2rgba(player1.color), player1.name);
+    this.tank2.create(int2rgba(player2.color), player2.name);
+
+    if (Math.random() > 0.5) {
+      this.tank1.active = true;
+      this.activeTank = 1;
+    } else {
+      this.tank2.active = true;
+      this.activeTank = 2;
     }
+  };
 
+  // ── React bridge command handlers ──
+  //
+  // These replace the original fire-btn.js, HUD power/angle controls, and
+  // keyboard handlers. They must emit the same socket events the originals did.
 
+  handleFireFromReact = () => {
+    const tank = this.activeTank === 1 ? this.tank1 : this.tank2;
+    console.log('[SolShot] handleFireFromReact — activeTank=' + this.activeTank +
+      ' tankActive=' + tank?.active + ' weapon=' + tank?.weapons[tank?.selectedWeapon]?.id);
+    if (!tank || !tank.active) return;
 
-
-    showGameOver = () => {
-        this.showWinner()
-        const socket = window.socket
-        this.gameOver = true
-
-        const screenCenterX = this.terrain.width/2
-        const screenCenterY = this.terrain.height/2
-
-        this.tank1.active = false
-        this.tank2.active = false
-        this.activeTank = 0
-
-        var x = this.add.text(screenCenterX, screenCenterY, 'PLAY AGAIN ?')
-        var a = this.add.text(screenCenterX - 80, screenCenterY + 50, 'YES')
-        var y = this.add.text(screenCenterX, screenCenterY + 50, '/')
-        var b = this.add.text(screenCenterX + 80, screenCenterY + 50, 'NO')
-
-        x.setFontSize(50).setOrigin(0.5).setVisible(false).setFontFamily('"Days One"').setColor('rgba(240,240,240,1)').setDepth(100)
-        a.setFontSize(40).setOrigin(0.5).setVisible(false).setFontFamily('"Days One"').setColor('rgba(240,240,240,1)').setDepth(100)
-        b.setFontSize(40).setOrigin(0.5).setVisible(false).setFontFamily('"Days One"').setColor('rgba(240,240,240,1)').setDepth(100)
-        y.setFontSize(40).setOrigin(0.5).setVisible(false).setFontFamily('"Days One"').setColor('rgba(240,240,240,1)').setDepth(100)
-
-        strokeText(x, 4)
-        strokeText(a, 4)
-        strokeText(b, 4)
-        strokeText(y, 4)
-
-        a.setInteractive()
-        b.setInteractive()
-
-        if (window.sdk === 'kongregate' && !window.kongregate.services.isGuest()) {
-            if (this.sceneData.gameType === 1) {
-                window.kongregate.stats.submit('Highscore (CPU)', this.tank1.score);
-                window.kongregate.stats.submit('Lifetime (CPU)', this.tank1.score);
-            }
-            else if (this.sceneData.gameType === 3) {
-                window.kongregate.stats.submit('Highscore (Online)', this.tank1.score);
-                window.kongregate.stats.submit('Lifetime (Online)', this.tank1.score);
-            }
-        }
-
-        //var gdsdk = window.gdsdk
-        
-        a.once('pointerdown', () => {
-            this.sound.play('click', {volume: 0.3})
-
-            const restartGame = () => {
-                if (this.sceneData.gameType === 3) {
-                    socket.emit('playAgainRequest', {})
-                    a.disableInteractive()
-                    a.setText('')
-                    b.setText('')
-                    y.setText('')
-                    x.setText('Waiting for opponent...')
-                }
-                else {
-                    if (this.winnerBlastTween !== null) {
-                        this.winnerBlastTween.stop()
-                        this.winnerBlastTween = null
-                    }
-                    this.sound.stopByKey('winner')
-                    this.scene.start('scene-5', this.sceneData)
-                }
-            }
-
-            if (window.sdk === 'crazygames') {
-                const callbacks = {
-                    adFinished: () => {this.game.sound.mute = false; restartGame()},
-                    adError: () => {this.game.sound.mute = false; restartGame(); window.CrazyGames.SDK.game.gameplayStop()},
-                    adStarted: () => {this.game.sound.mute = true; window.CrazyGames.SDK.game.gameplayStop()},
-                };
-                window.CrazyGames.SDK.ad.requestAd("midgame", callbacks);
-                
-            }
-            if (window.sdk === 'gdsdk') {
-                var gdsdk = window.gdsdk
-                if (typeof gdsdk !== undefined && gdsdk.showAd !== undefined) {
-                    gdsdk.showAd()
-                    restartGame()
-                }
-            }
-            else {
-                restartGame()
-            }
-        })
-
-        b.once('pointerdown', () => {
-            this.sound.play('click', {volume: 0.3})
-
-            const endGame = () => {
-                this.sound.stopByKey('winner')
-                this.scene.start('scene-1')
-                if (this.sceneData.gameType === 3) {
-                    const socket = window.socket
-                    socket.emit('leaveRoom', {})
-                }
-            }
-
-            if (window.sdk === 'crazygames') {
-                const callbacks = {
-                    adFinished: () => {this.game.sound.mute = false; endGame()},
-                    adError: () => {this.game.sound.mute = false; endGame(); window.CrazyGames.SDK.game.gameplayStop()},
-                    adStarted: () => {this.game.sound.mute = true; window.CrazyGames.SDK.game.gameplayStop()},
-                };
-    
-                window.CrazyGames.SDK.ad.requestAd("midgame", callbacks);
-            }
-            if (window.sdk === 'gdsdk') {
-                var gdsdk = window.gdsdk
-                if (typeof gdsdk !== undefined && gdsdk.showAd !== undefined) {
-                    gdsdk.showAd()
-                    endGame()
-                }
-            }
-            else {
-                endGame()
-            }
-
-        })
-        
-        setTimeout(() => {
-            x.setVisible(true)
-            a.setVisible(true)
-            b.setVisible(true)
-            y.setVisible(true)
-        }, 2000);
-    }
-
-
-
-    showExitMenu = () => {
-        if (this.gameOver) return
-
-        const screenCenterX = this.terrain.width/2
-        const screenCenterY = this.terrain.height/2
-        
-        var x = this.add.text(screenCenterX, screenCenterY, 'EXIT GAME ?')
-        var a = this.add.text(screenCenterX - 80, screenCenterY + 50, 'YES')
-        var y = this.add.text(screenCenterX, screenCenterY + 50, '/')
-        var b = this.add.text(screenCenterX + 80, screenCenterY + 50, 'NO')
-
-        x.setFontSize(50).setOrigin(0.5).setFontFamily('"Days One"').setColor('rgba(240,240,240,1)').setDepth(130)
-        a.setFontSize(40).setOrigin(0.5).setFontFamily('"Days One"').setColor('rgba(240,240,240,1)').setDepth(130)
-        b.setFontSize(40).setOrigin(0.5).setFontFamily('"Days One"').setColor('rgba(240,240,240,1)').setDepth(130)
-        y.setFontSize(40).setOrigin(0.5).setFontFamily('"Days One"').setColor('rgba(240,240,240,1)').setDepth(130)
-
-        strokeText(x, 4)
-        strokeText(a, 4)
-        strokeText(b, 4)
-        strokeText(y, 4)
-
-        a.setInteractive()
-        b.setInteractive()
-
-        this.exitMenuContent = this.add.group([x, y, a, b])
-
-        a.once('pointerdown', () => {
-            this.sound.play('click', {volume: 0.3})
-
-            const exitGame = () => {
-                if (this.sceneData.gameType === 3) {
-                    window.socket.emit('leaveRoom', {})
-                }
-                this.scene.start('scene-1')                
-            }
-
-            if (window.sdk === 'crazygames') {
-                const callbacks = {
-                    adFinished: () => {this.game.sound.mute = false; exitGame()},
-                    adError: () => {this.game.sound.mute = false; exitGame(); window.CrazyGames.SDK.game.gameplayStop()},
-                    adStarted: () => {this.game.sound.mute = true; window.CrazyGames.SDK.game.gameplayStop()},
-                };
-                window.CrazyGames.SDK.ad.requestAd("midgame", callbacks);
-            }
-            if (window.sdk === 'gdsdk') {
-                var gdsdk = window.gdsdk
-                if (typeof gdsdk !== undefined && gdsdk.showAd !== undefined) {
-                    gdsdk.showAd()
-                    exitGame()
-                }
-            }
-            else {
-                exitGame()
-            }
-            
-        })
-
-        b.once('pointerdown', () => {
-            this.sound.play('click', {volume: 0.3})
-            
-            const resumeGame = () => {
-                this.hideExitMenu()
-            }
-            resumeGame()
-        })
-    }
-
-
-
-
-    hideExitMenu = () => {
-        if (this.exitMenuContent !== null) {
-            this.exitMenuContent.destroy(true)
-            this.exitMenuContent = null
-        }
-    }
-
-
-
-
-    showWinner = () => {
-        var tank = null
-
-        if (this.tank1.score > this.tank2.score) {
-            tank = this.tank1
-        }
-        else if (this.tank1.score < this.tank2.score) {
-            tank = this.tank2
-        }
-        else return
-
-        this.sound.play('winner', {loop: true})
-
-        if (window.sdk === 'crazygames') {
-            window.CrazyGames.SDK.game.happytime();
-        }
-
-        var height = 60
-        var w1 = this.add.text(tank.x - 38, tank.y - height - 11, 'W')
-        var i1 = this.add.text(tank.x - 19, tank.y - height - 7, 'i')
-        var n1 = this.add.text(tank.x - 6, tank.y - height - 1, 'n')
-        var n2 = this.add.text(tank.x + 11, tank.y - height + 7, 'n')
-        var e1 = this.add.text(tank.x + 28, tank.y - height + 11, 'e')
-        var r1 = this.add.text(tank.x + 42, tank.y - height + 7, 'r')
-
-        var letters = [w1, i1, n1, n2, e1, r1]
-
-        letters.forEach((l, i) => {
-            l.setFontSize(30).setOrigin(0.5).setColor('rgba(240,240,240,1)').setFontFamily('Arial').setDepth(10)
-            if (i < 4) l.movement = 1
-            else l.movement = -1
-
-            this.tweens.add({
-                targets: l,
-                loop: -1,
-                onLoop: () => {
-                    if (l.movement === 1 && l.y > tank.y - height + 12) {
-                        l.movement = -1
-                    }
-                    else if (l.movement === - 1 && l.y < tank.y - height - 12) {
-                        l.movement = 1
-                    }
-                    l.y = l.y + 0.8 * l.movement
-                }
-            })
-        })
-
-        this.winnerBlastTween = this.tweens.add({
-            targets: letters,
-            duration: 100,
-            t: 1,
-            loop: -1,
-            onLoop: () => {
-                var fillColor = Math.floor(Math.random() * 0xffffff)
-                var vec = new Phaser.Math.Vector2(1,1)
-                var posX = tank.x + (0.5 - Math.random()) * 120
-                var posY = tank.y + (0.5 - Math.random()) * 60 - height
-    
-                for (let index = 0; index < 100; index++) {
-                    var particle = this.add.circle(posX, posY, 1, fillColor, 255) 
-    
-                    vec.setAngle(Math.PI * 2 * Math.random())
-                    vec.setLength(Math.pow(Math.random(), 2) * 60)
-    
-                    var t = Math.random() * 1000 + 800
-                    this.tweens.add({
-                        targets: particle,
-                        duration: t,
-                        ease: 'Quad.easeOut',
-                        x: particle.x + vec.x,
-                        y: particle.y + vec.y
-                    })    
-                    this.tweens.add({
-                        targets: particle,
-                        duration: t,
-                        ease: 'Quad.easeOut',
-                        alpha: 0,
-                        onComplete: () => { particle.destroy(true) }
-                    })
-                }
-            }
+    // Emit 'shoot' to server — server relays as 'opponentShoot' to the other player
+    // so they see our shot render on their screen. This is what fire-btn.js did.
+    if (this.sceneData.gameType === 3) {
+      const socket = window.socket;
+      if (socket) {
+        socket.emit('shoot', {
+          selectedWeapon: tank.selectedWeapon,
+          power: tank.power,
+          rotation: tank.turret.relativeRotation,
+          rotation1: this.tank1.rotation,
+          rotation2: this.tank2.rotation,
+          position1: { x: this.tank1.x, y: this.tank1.y },
+          position2: { x: this.tank2.x, y: this.tank2.y },
         });
+      }
     }
+    tank.shoot();
+  };
 
-
-
-    handleType1 = () => {
-        type1(this)
+  handlePowerFromReact = (v) => {
+    const tank = this.activeTank === 1 ? this.tank1 : this.tank2;
+    if (!tank || !tank.active) return;
+    tank.setPower(v);
+    if (this.sceneData.gameType === 3) {
+      const socket = window.socket;
+      if (socket) socket.emit('powerChange', { power: v });
     }
+  };
 
-    
-    
-    handleType2 = () => {
-        type2(this)
+  handleAngleFromReact = (v) => {
+    const tank = this.activeTank === 1 ? this.tank1 : this.tank2;
+    if (!tank || !tank.turret || !tank.active) return;
+    const radians = Phaser.Math.DegToRad(v) - Math.PI / 2;
+    tank.turret.setRelativeRotation(radians - tank.rotation);
+    // Angle emit is handled by Turret.emitRotation() on a 500ms timer
+  };
+
+  handleWeaponSelectFromReact = (idx) => {
+    const tank = this.activeTank === 1 ? this.tank1 : this.tank2;
+    if (!tank || !tank.active) return;
+    tank.selectedWeapon = idx;
+  };
+
+  handleMoveLeftFromReact = () => {
+    const tank = this.activeTank === 1 ? this.tank1 : this.tank2;
+    if (!tank || !tank.active || tank.movesRemaining <= 0) return;
+    tank.stepLeft();
+    if (this.sceneData.gameType === 3) {
+      const socket = window.socket;
+      if (socket) socket.emit('stepLeft', {});
     }
+  };
 
-    
-    
-    handleType3 = () => {
-        type3(this)
+  handleMoveRightFromReact = () => {
+    const tank = this.activeTank === 1 ? this.tank1 : this.tank2;
+    if (!tank || !tank.active || tank.movesRemaining <= 0) return;
+    tank.stepRight();
+    if (this.sceneData.gameType === 3) {
+      const socket = window.socket;
+      if (socket) socket.emit('stepRight', {});
     }
+  };
 
-
-
-    handleType4 = () => {
-        type4(this)
+  handleExitFromReact = () => {
+    if (window.socket) {
+      window.socket.emit('leaveRoom', {});
     }
-}
+  };
 
+  // ── Bridge state push ──
 
-const strokeText = (txt, thickness) => {
-    var re = /rgba\((\d+),(\d+),(\d+),(\d+)\)/
-    var match = new RegExp(re).exec(txt.style.color)
-    var r, g, b, a, k = 0.7;
-    r = parseInt(match[1])
-    g = parseInt(match[2])
-    b = parseInt(match[3])
-    a = parseInt(match[4])
+  _pushStateToBridge = () => {
+    if (!this._bridge) return;
 
-    r = Math.ceil(r * k)
-    g = Math.ceil(g * k)
-    b = Math.ceil(b * k)
+    const myId = window.socket?.id;
+    const hostId = this.sceneData?.hostId;
+    const isHost = myId === hostId;
 
-    txt.setStroke('rgba(' + r + ',' + g + ',' + b + ',' + a + ')', thickness)
+    const myTank = isHost ? this.tank1 : this.tank2;
+    const isMyTurn = myTank && myTank.active;
+
+    this._bridge.updateState({
+      tank1: this.tank1 ? {
+        x: this.tank1.x,
+        y: this.tank1.y,
+        hp: this.tank1.scoreHandler ? this.tank1.scoreHandler.hp : 100,
+        angle: this.tank1.turret ? Phaser.Math.RadToDeg(this.tank1.turret.relativeRotation + this.tank1.rotation + Math.PI / 2) : 45,
+        power: this.tank1.power || 60,
+        name: this.tank1.name || '',
+        color: this.tank1.color || '#FF0000',
+        score: this.tank1.score || 0,
+      } : this._bridge.state.tank1,
+      tank2: this.tank2 ? {
+        x: this.tank2.x,
+        y: this.tank2.y,
+        hp: this.tank2.scoreHandler ? this.tank2.scoreHandler.hp : 100,
+        angle: this.tank2.turret ? Phaser.Math.RadToDeg(this.tank2.turret.relativeRotation + this.tank2.rotation + Math.PI / 2) : 45,
+        power: this.tank2.power || 60,
+        name: this.tank2.name || '',
+        color: this.tank2.color || '#0066FF',
+        score: this.tank2.score || 0,
+      } : this._bridge.state.tank2,
+      activeTank: this.activeTank,
+      isPlayerTurn: isMyTurn,
+      moveSteps: myTank ? myTank.movesRemaining : 0,
+      currentWeaponIndex: myTank ? myTank.selectedWeapon : 0,
+      weapons: myTank ? myTank.weapons : [],
+      isFiring: myTank && myTank.turret ? myTank.turret.activeWeapon !== null : false,
+      gameOver: this.gameOver,
+    });
+  };
+
+  // ── Cleanup (Fix 4: specific socket.off, never removeAllListeners) ──
+
+  shutdown = () => {
+    const socket = window.socket;
+    if (socket && this._socketHandlers) {
+      Object.entries(this._socketHandlers).forEach(([event, handler]) => {
+        socket.off(event, handler);
+      });
+    }
+    this._socketHandlers = {};
+
+    try {
+      this.sound.stopAll();
+    } catch (_) {}
+
+    this._bridge = null;
+  };
 }
 
 const int2rgba = (colorInt) => {
-    var rgba = new Display.Color.IntegerToRGB(colorInt)
-    var rgbaString = 'rgba(' + rgba.r + ',' + rgba.g + ',' + rgba.b + ',' + rgba.a + ')'
-    return rgbaString
-}
+  var rgba = new Display.Color.IntegerToRGB(colorInt);
+  return 'rgba(' + rgba.r + ',' + rgba.g + ',' + rgba.b + ',' + rgba.a + ')';
+};

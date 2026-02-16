@@ -25,6 +25,8 @@
  * when shot-token program is deployed.
  */
 
+import { loadServerState, saveServerState } from '../models/ServerState.js';
+
 // Token supply config
 export const SHOT_TOKEN_CONFIG = {
     name: 'SHOT',
@@ -62,7 +64,36 @@ export const PRESTIGE_TIERS = [
 ];
 
 // In-memory player SHOT state (keyed by walletAddress)
+// H035: WARNING — this is in-memory only. Balances are lost on server restart.
+// Full fix requires SPL token or database persistence (follow-up task).
 const playerShotState = {};
+
+// H034: Track total emitted SHOT across all players
+// Fix 6: Persisted to MongoDB — loaded on startup, saved after every emission
+let totalShotEmitted = 0;
+let savePending = false;
+
+/**
+ * Initialize SHOT emission counter from MongoDB.
+ * Call once after MongoDB connects.
+ */
+export async function initShotState() {
+    const state = await loadServerState();
+    totalShotEmitted = state.totalShotEmitted;
+    console.log(`[SHOT] Initialized: totalShotEmitted = ${totalShotEmitted}`);
+}
+
+/**
+ * Persist current totalShotEmitted to MongoDB (debounced — max 1 save/sec)
+ */
+function persistEmissionCount() {
+    if (savePending) return;
+    savePending = true;
+    setTimeout(async () => {
+        savePending = false;
+        await saveServerState(totalShotEmitted);
+    }, 1000);
+}
 
 /**
  * Get or create SHOT state for a player
@@ -89,12 +120,42 @@ export function getPlayerShotState(walletAddress) {
 /**
  * Record a completed match and check for SHOT milestones
  *
+ * H033: Requires matchInfo for farming protection:
+ *   - turnCount must be >= 4 (minimum meaningful game)
+ *   - 30-second cooldown between rewards per wallet
+ *   - matchId dedup prevents double-claiming
+ *
+ * H034: Enforces global supply cap — no emissions beyond rewardPool
+ *
  * @param {string} walletAddress
+ * @param {object} matchInfo - { turnCount, matchId }
  * @returns {{ earned: number, milestone?: string, newBalance: number }}
  */
-export function recordMatchPlayed(walletAddress) {
+export function recordMatchPlayed(walletAddress, matchInfo = {}) {
     const state = getPlayerShotState(walletAddress);
     if (!state) return { earned: 0, newBalance: 0 };
+
+    // H033: Farming protection — minimum turns
+    const { turnCount = 0, matchId = null } = matchInfo;
+    if (turnCount < 4) {
+        return { earned: 0, newBalance: state.balance, reason: 'Match too short for rewards' };
+    }
+
+    // H033: Farming protection — 30-second cooldown
+    const now = Date.now();
+    if (state.lastRewardAt && (now - state.lastRewardAt) < 30_000) {
+        return { earned: 0, newBalance: state.balance, reason: 'Reward cooldown active' };
+    }
+
+    // H033: Farming protection — match ID dedup
+    if (matchId && state.claimedMatchIds && state.claimedMatchIds.has(matchId)) {
+        return { earned: 0, newBalance: state.balance, reason: 'Match already claimed' };
+    }
+
+    // H034: Check global supply cap before emitting
+    if (totalShotEmitted >= SHOT_TOKEN_CONFIG.rewardPool) {
+        return { earned: 0, newBalance: state.balance, reason: 'Reward pool exhausted' };
+    }
 
     state.matchesPlayed++;
     let totalEarned = 0;
@@ -119,6 +180,25 @@ export function recordMatchPlayed(walletAddress) {
             milestoneLabel = `${state.matchesPlayed} Matches`;
         }
     }
+
+    // H034: Clamp earned to remaining supply
+    if (totalShotEmitted + totalEarned > SHOT_TOKEN_CONFIG.rewardPool) {
+        const allowed = SHOT_TOKEN_CONFIG.rewardPool - totalShotEmitted;
+        const excess = totalEarned - allowed;
+        state.balance -= excess;  // Remove excess that was added above
+        totalEarned = allowed;
+    }
+
+    // H034: Track global emissions
+    totalShotEmitted += totalEarned;
+
+    // Fix 6: Persist emission counter to MongoDB (debounced)
+    if (totalEarned > 0) persistEmissionCount();
+
+    // H033: Update anti-farming state
+    state.lastRewardAt = now;
+    if (!state.claimedMatchIds) state.claimedMatchIds = new Set();
+    if (matchId) state.claimedMatchIds.add(matchId);
 
     return {
         earned: totalEarned,

@@ -1,0 +1,61 @@
+# SolShot — Solana dApp Store Publisher Config
+# Template for Solana dApp Store (Saga/Seeker) submission
+# Fill in TODO values before submission
+
+publisher:
+  name: "TODO: Your publisher name"
+  website: "TODO: https://your-domain.com"
+  contact_email: "TODO: your@email.com"
+
+app:
+  name: "SolShot"
+  package_id: "io.solshot.game"
+  version: "0.5.0"
+  version_code: 1
+  description:
+    short: "Artillery Combat on Solana"
+    long: |
+      SolShot is a real-time multiplayer artillery combat game built on Solana.
+      Challenge opponents in 1v1 tank battles with SOL wagers, earn SHOT tokens,
+      and climb the prestige ranks. Features destructible terrain, 13+ weapons,
+      and a gold-based economy within each match.
+
+  category: "Games"
+  content_rating: "Everyone"
+
+  # URLs
+  website: "TODO: https://your-domain.com"
+  privacy_policy: "TODO: https://your-domain.com/privacy"
+  terms_of_service: "TODO: https://your-domain.com/terms"
+
+  # Solana-specific
+  solana_network: "mainnet-beta"
+  requires_wallet: true
+  wallet_protocols:
+    - "mobile-wallet-adapter"
+
+media:
+  icon: "TODO: path/to/icon-512.png"
+  banner: "TODO: path/to/banner-1024x500.png"
+  screenshots:
+    - "TODO: path/to/screenshot-1.png"
+    - "TODO: path/to/screenshot-2.png"
+    - "TODO: path/to/screenshot-3.png"
+
+# Localization
+locales:
+  en:
+    name: "SolShot"
+    short_description: "Artillery Combat on Solana"
+    long_description: |
+      SolShot is a real-time multiplayer artillery combat game built on Solana.
+
+# TWA (Trusted Web Activity) configuration
+twa:
+  host: "TODO: your-domain.com"
+  launch_url: "/"
+  display_mode: "standalone"
+  orientation: "landscape"
+  status_bar_color: "#0a0c08"
+  navigation_bar_color: "#0a0c08"
+  splash_screen_color: "#0a0c08"

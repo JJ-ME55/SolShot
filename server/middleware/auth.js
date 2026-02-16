@@ -13,8 +13,18 @@
 import { PublicKey } from '@solana/web3.js';
 import nacl from 'tweetnacl';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'solshot-dev-secret-change-me';
+// H007: Remove hardcoded JWT secret fallback
+const JWT_SECRET = process.env.JWT_SECRET || (() => {
+    if (process.env.NODE_ENV === 'production') {
+        console.error('[Auth] FATAL: JWT_SECRET must be set in production');
+        process.exit(1);
+    }
+    const devSecret = crypto.randomBytes(32).toString('hex');
+    console.warn('[Auth] No JWT_SECRET set — using random secret (dev mode). Tokens will not survive restart.');
+    return devSecret;
+})();
 const AUTH_TIMEOUT = 5 * 60 * 1000; // 5 minutes — signature must be recent
 
 /**

@@ -66,7 +66,21 @@ export class Tank extends GameObjects.Sprite {
 
         this.scene.physics.world.enable(this)
 
-        this.randomPos()
+        // Only randomPos if terrain already has pixels drawn.
+        // In multiplayer (type 3), terrain.create() runs AFTER tank.create(),
+        // so positions are set later by MainScene (host: randomPos after terrain.create(),
+        // non-host: setPosition from setTerrainPath event).
+        var midX = Math.floor(this.terrain.width / 2)
+        var midY = Math.floor(this.terrain.height / 2)
+        var terrainHasPixels = this.terrain.getPixel(midX, midY).alpha > 0
+        if (terrainHasPixels) {
+            this.randomPos()
+        } else {
+            // Terrain not drawn yet (multiplayer). Disable physics body to prevent
+            // physicsStep from moving the tank while we wait for valid positions.
+            // Body is re-enabled in randomPos() or enablePhysics().
+            this.body.enable = false
+        }
     
         ctx.beginPath();
         ctx.moveTo(this.canvas.width/6, this.canvas.height/2)
@@ -104,7 +118,9 @@ export class Tank extends GameObjects.Sprite {
             this.selectedWeapon = selectedWeapon
             this.setPower(power)
             this.turret.setRelativeRotation(rotation)
-            this.scene.HUD.weaponScrollDisplay.reset(this)
+            if (this.scene.HUD && this.scene.HUD.weaponScrollDisplay) {
+                this.scene.HUD.weaponScrollDisplay.reset(this)
+            }
             this.shoot()
         })
 
@@ -192,12 +208,27 @@ export class Tank extends GameObjects.Sprite {
                 break;
             }
         }
+        console.log('[SolShot] Tank' + this.id + '.randomPos: x=' + initX + ' y=' + initY + ' terrainH=' + this.scene.terrain.height)
         this.setPosition(initX, initY)
         this.prevPos.x = initX
         this.prevPos.y = initY
         var rotation = this.terrain.getSlope(initX, initY)
         if (rotation !== undefined) {
             this.setRotation(rotation)
+        }
+        // Re-enable physics body (may have been disabled waiting for terrain)
+        if (this.body && !this.body.enable) {
+            this.body.enable = true
+        }
+    }
+
+
+    // Called by MainScene after setting tank position from socket data.
+    // Re-enables the physics body that was disabled during create() when
+    // terrain wasn't ready yet.
+    enablePhysics = () => {
+        if (this.body && !this.body.enable) {
+            this.body.enable = true
         }
     }
 
@@ -246,6 +277,16 @@ export class Tank extends GameObjects.Sprite {
 
 
     physicsStep = () => {
+        // Debug: detect tanks falling off the bottom of terrain
+        if (this.body.y > this.scene.terrain.height + 50) {
+            if (!this._fallWarned) {
+                console.warn('[SolShot] Tank' + this.id + ' fell below terrain! y=' + Math.round(this.body.y) +
+                  ' terrainH=' + this.scene.terrain.height + ' settled=' + this.settled +
+                  ' gravity=' + JSON.stringify({x: this.body.gravity.x, y: this.body.gravity.y}) +
+                  ' vel=' + JSON.stringify({x: Math.round(this.body.velocity.x), y: Math.round(this.body.velocity.y)}))
+                this._fallWarned = true
+            }
+        }
         if (this.body.y < 0) {
             if (this.body.x < 0 || this.body.x > this.scene.terrain.width - 1) return
 
@@ -406,7 +447,7 @@ export class Tank extends GameObjects.Sprite {
     shoot = () => {
         if (!this.active) return
         this.scene.hideTurnPointer()
-        
+
         this.active = false
         this.turret.shoot(this.weapons[this.selectedWeapon]?.id)
         if (this.scene.sceneData.gameType !== 4) {

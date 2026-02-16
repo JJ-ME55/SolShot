@@ -21,7 +21,8 @@ export const MATCH_STATES = {
 const TRANSITIONS = {
     [MATCH_STATES.LOBBY]:       [MATCH_STATES.WEAPON_SHOP, MATCH_STATES.BATTLE, MATCH_STATES.CANCELLED],
     [MATCH_STATES.WEAPON_SHOP]: [MATCH_STATES.BATTLE, MATCH_STATES.CANCELLED],
-    [MATCH_STATES.BATTLE]:      [MATCH_STATES.ROUND_END, MATCH_STATES.CANCELLED],
+    // H022: Added SETTLING — fire handler needs BATTLE→SETTLING when match ends
+    [MATCH_STATES.BATTLE]:      [MATCH_STATES.ROUND_END, MATCH_STATES.SETTLING, MATCH_STATES.CANCELLED],
     [MATCH_STATES.ROUND_END]:   [MATCH_STATES.WEAPON_SHOP, MATCH_STATES.SETTLING, MATCH_STATES.CANCELLED],
     [MATCH_STATES.SETTLING]:    [MATCH_STATES.COMPLETE, MATCH_STATES.CANCELLED],
     [MATCH_STATES.COMPLETE]:    [],
@@ -63,7 +64,7 @@ export function validateAction(currentState, action) {
         [MATCH_STATES.BATTLE]: ['fire', 'move', 'angleChange', 'powerChange', 'weaponChange', 'stepLeft', 'stepRight', 'giveTurn', 'requestTurn', 'shoot'],
         [MATCH_STATES.ROUND_END]: ['playAgainRequest'],
         [MATCH_STATES.SETTLING]: [],
-        [MATCH_STATES.COMPLETE]: [],
+        [MATCH_STATES.COMPLETE]: ['playAgainRequest'],
         [MATCH_STATES.CANCELLED]: []
     };
 
@@ -92,11 +93,23 @@ export function createMatchState(roomId, roundType = '1') {
         roundWins: {},       // { [playerId]: roundsWon }
         currentTurn: null,   // playerId whose turn it is
         turnCount: 0,
+        turnSequence: 0,     // Fix 4: Nonce — increments each fire, prevents replay
         turnsPerRound: 20,   // 10 per player per round
         terrain: null,
         tankPositions: null,
         stateChangedAt: Date.now()
     };
+}
+
+/**
+ * Reset turn state for a new round (H023)
+ *
+ * @param {object} matchState
+ */
+export function resetForNextRound(matchState) {
+    matchState.turnCount = 0;
+    matchState.turnSequence = 0;
+    matchState.currentTurn = null;
 }
 
 /**

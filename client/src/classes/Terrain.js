@@ -31,7 +31,10 @@ export class Terrain extends Textures.CanvasTexture {
         this.animate = false
         this.blastArray = [];
         this.path = []
+        this.multiplayerPoints = []
+        this.addPixels = []
         this.previousSaved = null
+        this.frameCount = -1
         this.soundEffects = ['rocks_1', 'rocks_2', 'rocks_3', 'rocks_4', 'rocks_5', 'rocks_6']
         this.soundEffectIndex = 0
 
@@ -75,7 +78,12 @@ export class Terrain extends Textures.CanvasTexture {
         this.update()
     }
 
-    
+    // Multiplayer terrain correction — syncs terrain between players.
+    // Original implementation was a no-op (returned immediately).
+    // Each player runs terrain physics independently; this is kept for API compatibility.
+    multiplayerCorrection = (data) => {
+        return
+    }
 
 
     updateTerrain = () => {

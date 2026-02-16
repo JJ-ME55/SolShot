@@ -1,78 +1,81 @@
-import React from 'react';
-import Phaser from 'phaser';
-import { socket } from './socket/index'
-import { MainScene, Scene1, Scene2, Scene3, Scene4, Scene5, LoadingScene, ControlsScene, AboutScene, GuideScene, ScreenshotScene } from './scenes';
+import React, { useState, useCallback } from 'react';
+import { socket } from './socket/index';
 import { SolShotWalletProvider } from './wallet/WalletContext';
-import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
+import { TelegramProvider } from './telegram/TelegramContext';
+import useTelegramBackButton from './telegram/useTelegramBackButton';
+import Layout from './components/Layout';
+import LoadingScreen from './screens/LoadingScreen';
+import MenuScreen from './screens/MenuScreen';
+import LobbyScreen from './screens/LobbyScreen';
+import ShopScreen from './screens/ShopScreen';
+import BattleScreen from './screens/BattleScreen';
+import WinScreen from './screens/WinScreen';
+import LoseScreen from './screens/LoseScreen';
+import ArmoryScreen from './screens/ArmoryScreen';
+import PrestigeScreen from './screens/PrestigeScreen';
+import BarracksScreen from './screens/BarracksScreen';
 
-const gameConfig = {
-	title: 'SolShot',
-  type: Phaser.CANVAS,
-  parent: 'game',
-  backgroundColor: 'rgba(255,100,100)',
-  scale: {
-    mode: Phaser.Scale.ScaleModes.FIT,
-    autoCenter: Phaser.Scale.CENTER_BOTH,
-    width: 1200,
-    height: 800,
-  },
-  physics: {
-    default: 'arcade',
-    arcade : {
-      debug:false
-    },
-    fps: 60
-  },
-  render: {
-    antialiasGL: false,
-    pixelArt: true,
-    transparent: true,
-  },
-  callbacks: {
-    postBoot: () => {
-    },
-  },
-  autoFocus: true,
-  audio: {
-    disableWebAudio: false,
-  },
-  fps: {
-    target: 60,
-  },
-  dom: {
-    createContainer: true,
-  },
-  scene: [LoadingScene, ControlsScene, AboutScene, GuideScene, ScreenshotScene, Scene1, Scene2, Scene3, Scene4, Scene5, MainScene],
-};
+// Keep socket on window for Phaser + WalletContext access
+window.socket = socket;
 
-window.sdk = ''
+function AppInner() {
+  const [screen, setScreen] = useState('loading');
+  const [screenData, setScreenData] = useState({});
 
-window.socket = socket
-window.game = new Phaser.Game(gameConfig);
+  // Navigate between screens — spread copy to avoid stale refs
+  const navigate = useCallback((nextScreen, data = {}) => {
+    setScreenData({ ...data });
+    setScreen(nextScreen);
+  }, []);
 
-window.addEventListener("wheel", (event) => event.preventDefault(), {
-  passive: false,
-});
+  // Telegram native back button integration
+  const handleTelegramBack = useCallback(() => {
+    navigate('menu');
+  }, [navigate]);
 
-window.addEventListener("keydown", (event) => {
-  if (["ArrowUp", "ArrowDown", " "].includes(event.key)) {
-    event.preventDefault();
-  }
-});
+  useTelegramBackButton(screen, handleTelegramBack);
 
+  const renderScreen = () => {
+    switch (screen) {
+      case 'loading':
+        return <LoadingScreen navigate={navigate} />;
+      case 'menu':
+        return <MenuScreen navigate={navigate} />;
+      case 'lobby':
+        return <LobbyScreen navigate={navigate} screenData={screenData} />;
+      case 'shop':
+        return <ShopScreen navigate={navigate} screenData={screenData} />;
+      case 'battle':
+        return <BattleScreen navigate={navigate} screenData={screenData} />;
+      case 'win':
+        return <WinScreen navigate={navigate} screenData={screenData} />;
+      case 'lose':
+        return <LoseScreen navigate={navigate} screenData={screenData} />;
+      case 'armory':
+        return <ArmoryScreen navigate={navigate} />;
+      case 'prestige':
+        return <PrestigeScreen navigate={navigate} />;
+      case 'barracks':
+        return <BarracksScreen navigate={navigate} />;
+      default:
+        return <MenuScreen navigate={navigate} />;
+    }
+  };
+
+  return (
+    <Layout>
+      {renderScreen()}
+    </Layout>
+  );
+}
 
 function App() {
   return (
-    <SolShotWalletProvider>
-      <div style={{
-        position: 'fixed',
-        top: 10,
-        right: 10,
-        zIndex: 1000,
-      }}>
-        <WalletMultiButton />
-      </div>
-    </SolShotWalletProvider>
+    <TelegramProvider>
+      <SolShotWalletProvider>
+        <AppInner />
+      </SolShotWalletProvider>
+    </TelegramProvider>
   );
 }
 

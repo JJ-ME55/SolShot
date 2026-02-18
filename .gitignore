@@ -26,5 +26,6 @@ yarn-error.log*
 # Anchor / Solana
 target/
 test-ledger/
-*-keypair.jsonnul
+*-keypair.json
+nul
 _archive/junk/nul

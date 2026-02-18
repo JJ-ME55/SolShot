@@ -64,7 +64,7 @@ export function validateAction(currentState, action) {
         [MATCH_STATES.LOBBY]: ['join', 'leave', 'ready'],
         [MATCH_STATES.WEAPON_SHOP]: ['buyWeapon', 'shopDone'],
         [MATCH_STATES.BATTLE]: ['fire', 'move', 'angleChange', 'powerChange', 'weaponChange', 'stepLeft', 'stepRight', 'giveTurn', 'requestTurn', 'shoot'],
-        [MATCH_STATES.ROUND_END]: ['playAgainRequest'],
+        [MATCH_STATES.ROUND_END]: ['ready', 'playAgainRequest'],
         [MATCH_STATES.SETTLING]: [],
         [MATCH_STATES.COMPLETE]: ['playAgainRequest'],
         [MATCH_STATES.CANCELLED]: []

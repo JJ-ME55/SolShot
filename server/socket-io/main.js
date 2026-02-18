@@ -888,106 +888,76 @@ const mainsocket = (io) => {
                 return
             }
 
+            // Track readiness
             if (client.isHost === true) {
                 room.host.isReady = true
-                if (room.player && room.player.isReady === true) {
-                    // Initialize Gold for this match
-                    const hostId = room.host.socketId
-                    const playerId = room.player.socketId
-                    goldStates[client.roomId] = initGold(hostId, playerId)
-                    // Initialize inventories: Single Shot (free) + any prestige weapons
-                    const hostPrestige = getPrestigeInfo(authenticatedWallets[hostId] || '')
-                    const playerPrestige = getPrestigeInfo(authenticatedWallets[playerId] || '')
-                    weaponInventories[client.roomId] = {
-                        [hostId]: [0, ...(hostPrestige.unlockedWeapons || [])],
-                        [playerId]: [0, ...(playerPrestige.unlockedWeapons || [])]
-                    }
-                    shopReady[client.roomId] = {
-                        [hostId]: false,
-                        [playerId]: false
-                    }
-
-                    // Transition match state to weapon_shop
-                    const ms = matchStates[client.roomId]
-                    if (ms) {
-                        transitionState(ms, MATCH_STATES.WEAPON_SHOP)
-                    }
-
-                    // Emit shopPhase with weapon catalog and Gold balance
-                    const weapons = getAllLaunchWeapons()
-                    io.sockets.in(client.roomId).emit('shopPhase', {
-                        weapons,
-                        goldBalance: {
-                            [hostId]: getBalance(goldStates[client.roomId], hostId),
-                            [playerId]: getBalance(goldStates[client.roomId], playerId)
-                        },
-                        timer: SHOP_DURATION,
-                        totalRounds: ms ? ms.maxRounds : 1,
-                        round: ms ? ms.currentRound + 1 : 1
-                    })
-
-                    // Start shop timer — auto-end shop after SHOP_DURATION seconds
-                    if (shopTimers[client.roomId]) clearTimeout(shopTimers[client.roomId])
-                    shopTimers[client.roomId] = setTimeout(() => {
-                        endShopPhase(io, client.roomId)
-                    }, SHOP_DURATION * 1000)
-
-                    // Also emit startGame for backward compatibility
-                    io.sockets.in(client.roomId).emit('startGame', {})
-                    room.player.isReady = false
-                    room.host.isReady = false
-                }
-            }
-            else {
+            } else {
                 if (!room.player) return
                 room.player.isReady = true
-                if (room.host.isReady === true) {
-                    // Initialize Gold for this match
-                    const hostId = room.host.socketId
-                    const playerId = room.player.socketId
+            }
+
+            // Both players ready — start shop phase
+            if (room.host.isReady && room.player && room.player.isReady) {
+                const hostId = room.host.socketId
+                const playerId = room.player.socketId
+                const ms = matchStates[client.roomId]
+                const isBetweenRounds = ms && ms.status === MATCH_STATES.ROUND_END
+
+                if (isBetweenRounds) {
+                    // ── Between-round shop: preserve gold + inventories ──
+                    // Gold carries over — do NOT call initGold()
+                    // Inventories carry over — do NOT reinitialize
+                    console.log(`[BO3] Between-round shop: Round ${ms.currentRound} ended. Gold: host=${getBalance(goldStates[client.roomId], hostId)}, player=${getBalance(goldStates[client.roomId], playerId)}`)
+                } else {
+                    // ── First shop (from lobby): initialize everything ──
                     goldStates[client.roomId] = initGold(hostId, playerId)
-                    // Initialize inventories: Single Shot (free) + any prestige weapons
                     const hostPrestige = getPrestigeInfo(authenticatedWallets[hostId] || '')
                     const playerPrestige = getPrestigeInfo(authenticatedWallets[playerId] || '')
                     weaponInventories[client.roomId] = {
                         [hostId]: [0, ...(hostPrestige.unlockedWeapons || [])],
                         [playerId]: [0, ...(playerPrestige.unlockedWeapons || [])]
                     }
-                    shopReady[client.roomId] = {
-                        [hostId]: false,
-                        [playerId]: false
-                    }
-
-                    // Transition match state to weapon_shop
-                    const ms = matchStates[client.roomId]
-                    if (ms) {
-                        transitionState(ms, MATCH_STATES.WEAPON_SHOP)
-                    }
-
-                    // Emit shopPhase with weapon catalog and Gold balance
-                    const weapons = getAllLaunchWeapons()
-                    io.sockets.in(client.roomId).emit('shopPhase', {
-                        weapons,
-                        goldBalance: {
-                            [hostId]: getBalance(goldStates[client.roomId], hostId),
-                            [playerId]: getBalance(goldStates[client.roomId], playerId)
-                        },
-                        timer: SHOP_DURATION,
-                        totalRounds: ms ? ms.maxRounds : 1,
-                        round: ms ? ms.currentRound + 1 : 1
-                    })
-
-                    // Start shop timer — auto-end shop after SHOP_DURATION seconds
-                    if (shopTimers[client.roomId]) clearTimeout(shopTimers[client.roomId])
-                    shopTimers[client.roomId] = setTimeout(() => {
-                        endShopPhase(io, client.roomId)
-                    }, SHOP_DURATION * 1000)
-
-                    // Also emit startGame for backward compatibility
-                    io.sockets.in(client.roomId).emit('startGame', {})
-                    room.player.isReady = false
-                    room.host.isReady = false
                 }
+
+                // Reset shop readiness for both paths
+                shopReady[client.roomId] = {
+                    [hostId]: false,
+                    [playerId]: false
+                }
+
+                // Transition match state to weapon_shop
+                if (ms) {
+                    transitionState(ms, MATCH_STATES.WEAPON_SHOP)
+                }
+
+                // Emit shopPhase with weapon catalog, Gold balance, and inventories
+                const weapons = getAllLaunchWeapons()
+                const inv = weaponInventories[client.roomId] || {}
+                io.sockets.in(client.roomId).emit('shopPhase', {
+                    weapons,
+                    goldBalance: {
+                        [hostId]: getBalance(goldStates[client.roomId], hostId),
+                        [playerId]: getBalance(goldStates[client.roomId], playerId)
+                    },
+                    inventory: {
+                        [hostId]: inv[hostId] || [0],
+                        [playerId]: inv[playerId] || [0]
+                    },
+                    timer: SHOP_DURATION,
+                    totalRounds: ms ? ms.maxRounds : 1,
+                    round: ms ? ms.currentRound + 1 : 1
+                })
+
+                // Start shop timer — auto-end shop after SHOP_DURATION seconds
+                if (shopTimers[client.roomId]) clearTimeout(shopTimers[client.roomId])
+                shopTimers[client.roomId] = setTimeout(() => {
+                    endShopPhase(io, client.roomId)
+                }, SHOP_DURATION * 1000)
+
+                // Also emit startGame for backward compatibility
+                io.sockets.in(client.roomId).emit('startGame', {})
+                room.player.isReady = false
+                room.host.isReady = false
             }
         })
 
@@ -1564,6 +1534,7 @@ const mainsocket = (io) => {
                         scores: ms.scores,
                         roundWins: ms.roundWins,
                         round: ms.currentRound,
+                        totalRounds: ms.maxRounds,
                         goldBalance: goldStates[roomId] || {}
                     }
                     setTimeout(() => {

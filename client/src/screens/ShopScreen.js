@@ -241,9 +241,28 @@ function hexToRgb(hex) {
 
 
 function ShopScreen({ navigate, screenData }) {
+  // Normalize data — lobby format has {host, player}, between-round has {hostId, player1, player2}
+  const hostInfo = screenData?.host || {
+    socketId: screenData?.hostId,
+    name: screenData?.player1?.name,
+    color: screenData?.player1?.color,
+  };
+  const playerInfo = screenData?.player || {
+    socketId: null, // joiner's socketId isn't in battle screenData — server will provide via shopEnd
+    name: screenData?.player2?.name,
+    color: screenData?.player2?.color,
+  };
+
   /* ── state ── */
   const [weapons, setWeapons] = useState(WEAPONS);
-  const [gold, setGold] = useState(1000);
+  // Initialize gold from between-round data if available, else default 1000
+  const [gold, setGold] = useState(() => {
+    if (screenData?.goldBalance && window.socket) {
+      const myGold = screenData.goldBalance[window.socket.id];
+      if (myGold !== undefined) return myGold;
+    }
+    return 1000;
+  });
   const [inventory, setInventory] = useState([0]); // owned weapon IDs
   const [selectedWeaponId, setSelectedWeaponId] = useState(null);
   const [timeRemaining, setTimeRemaining] = useState(30);
@@ -270,6 +289,13 @@ function ShopScreen({ navigate, screenData }) {
       const myId = window.socket.id;
       const myGold = data.goldBalance[myId];
       if (myGold !== undefined) setGold(myGold);
+    }
+
+    // Restore inventory from server (important for between-round shops)
+    if (data.inventory && window.socket) {
+      const myId = window.socket.id;
+      const myInv = data.inventory[myId];
+      if (myInv && Array.isArray(myInv)) setInventory(myInv);
     }
 
     // Timer: server sends `timer` (seconds). Start countdown from that value.
@@ -302,18 +328,18 @@ function ShopScreen({ navigate, screenData }) {
     // player1 = host, player2 = joiner. MainScene handles perspective swap internally.
     navigate('battle', {
       gameType: 3,
-      hostId: screenData?.host?.socketId,
+      hostId: hostInfo.socketId,
       player1: {
-        name: screenData?.host?.name,
-        color: screenData?.host?.color,
+        name: hostInfo.name,
+        color: hostInfo.color,
         weapons: data.hostWeapons,
       },
       player2: {
-        name: screenData?.player?.name,
-        color: screenData?.player?.color,
+        name: playerInfo.name,
+        color: playerInfo.color,
         weapons: data.playerWeapons,
       },
-      wager: screenData?.wager || 0,
+      wager: wager,
       goldBalance: data.goldBalance,
       round: currentRound,
       totalRounds: totalRounds,

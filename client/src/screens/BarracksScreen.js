@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import TopBar from '../components/TopBar';
+import Button from '../components/Button';
+import CombatCard from '../components/CombatCard';
 import { PRESTIGE_TIERS } from '../data/tiers';
 
 /* ── styles ── */
@@ -9,9 +11,10 @@ const s = {
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    justifyContent: 'center',
-    padding: '20px 30px',
-    gap: 14,
+    justifyContent: 'flex-start',
+    padding: '16px 30px 20px',
+    gap: 12,
+    overflowY: 'auto',
   },
 
   /* Profile header */
@@ -59,7 +62,7 @@ const s = {
   statsSection: {
     width: '100%',
     maxWidth: 440,
-    marginTop: 6,
+    marginTop: 4,
   },
   statsLabel: {
     fontFamily: "'Black Ops One', cursive",
@@ -88,6 +91,21 @@ const s = {
     letterSpacing: 2,
     lineHeight: 1,
   },
+  statValueHighlight: {
+    fontFamily: "'Bebas Neue', sans-serif",
+    fontSize: 24,
+    color: 'var(--rg)',
+    letterSpacing: 2,
+    lineHeight: 1,
+    textShadow: '0 0 8px rgba(255,107,26,0.3)',
+  },
+  statValueDim: {
+    fontFamily: "'Bebas Neue', sans-serif",
+    fontSize: 24,
+    color: 'rgba(184,168,138,0.25)',
+    letterSpacing: 2,
+    lineHeight: 1,
+  },
   statLabel: {
     fontFamily: "'Share Tech Mono', monospace",
     fontSize: 11,
@@ -97,14 +115,58 @@ const s = {
     marginTop: 3,
   },
 
-  /* Joined date */
-  joinedLine: {
+  /* Win rate bar */
+  winRateSection: {
+    width: '100%',
+    maxWidth: 440,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    padding: '0 2px',
+  },
+  wrLabel: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 12,
+    fontSize: 10,
+    color: 'var(--kh)',
+    letterSpacing: '0.15em',
+    textTransform: 'uppercase',
+    whiteSpace: 'nowrap',
+    opacity: 0.5,
+  },
+  wrTrack: {
+    flex: 1,
+    height: 4,
+    background: 'var(--od)',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  wrFill: (pct) => ({
+    height: '100%',
+    width: `${pct}%`,
+    background: 'linear-gradient(90deg, var(--ru), var(--rg))',
+    borderRadius: 2,
+    transition: 'width 0.8s ease',
+  }),
+  wrPct: {
+    fontFamily: "'Bebas Neue', sans-serif",
+    fontSize: 16,
+    color: 'var(--kh)',
+    letterSpacing: 1,
+    whiteSpace: 'nowrap',
+  },
+
+  /* Export button */
+  exportBtn: {
+    marginTop: 4,
+  },
+
+  /* Loading / status */
+  statusLine: {
+    fontFamily: "'Share Tech Mono', monospace",
+    fontSize: 11,
     color: 'var(--kh)',
     letterSpacing: 2,
     opacity: 0.4,
-    marginTop: 6,
   },
 };
 
@@ -112,6 +174,8 @@ const s = {
 function BarracksScreen({ navigate }) {
   const [walletAddr, setWalletAddr] = useState(null);
   const [prestige, setPrestige] = useState({ tier: 0, tierName: 'Unranked' });
+  const [stats, setStats] = useState(null); // null = loading, object = loaded
+  const [showCard, setShowCard] = useState(false);
 
   useEffect(() => {
     const wallet = window.solWallet;
@@ -121,12 +185,41 @@ function BarracksScreen({ navigate }) {
     if (wallet && wallet.prestigeInfo) {
       setPrestige(wallet.prestigeInfo);
     }
+
+    // Fetch persistent stats from server
+    const socket = window.socket;
+    if (socket) {
+      socket.emit('getStats');
+      const handler = (data) => {
+        setStats(data || {
+          matchesPlayed: 0, wins: 0, losses: 0,
+          totalSolWon: 0, totalSolLost: 0, totalShotEarned: 0,
+        });
+      };
+      socket.on('statsData', handler);
+      return () => socket.off('statsData', handler);
+    } else {
+      // No socket — show zeros
+      setStats({ matchesPlayed: 0, wins: 0, losses: 0, totalSolWon: 0, totalSolLost: 0, totalShotEarned: 0 });
+    }
   }, []);
 
   const currentTier = PRESTIGE_TIERS[prestige.tier] || PRESTIGE_TIERS[0];
   const displayAddr = walletAddr
     ? walletAddr.slice(0, 6) + '...' + walletAddr.slice(-6)
     : 'NOT CONNECTED';
+
+  // Derived stats
+  const matches = stats?.matchesPlayed || 0;
+  const wins = stats?.wins || 0;
+  const losses = stats?.losses || 0;
+  const winRate = matches > 0 ? Math.round((wins / matches) * 100) : null;
+  const solEarned = stats?.totalSolWon || 0;
+  const shotEarned = stats?.totalShotEarned || 0;
+
+  const fmt = (val) => val > 0 ? val : '--';
+  const fmtSol = (val) => val > 0 ? val.toFixed(3) : '--';
+  const fmtShot = (val) => val > 0 ? val.toLocaleString() : '--';
 
   return (
     <>
@@ -147,36 +240,80 @@ function BarracksScreen({ navigate }) {
         {/* Stats */}
         <div style={s.statsSection}>
           <div style={s.statsLabel}>COMBAT RECORD</div>
-          <div style={s.statsGrid}>
-            <div style={s.statCard}>
-              <div style={s.statValue}>--</div>
-              <div style={s.statLabel}>MATCHES</div>
-            </div>
-            <div style={s.statCard}>
-              <div style={s.statValue}>--</div>
-              <div style={s.statLabel}>WINS</div>
-            </div>
-            <div style={s.statCard}>
-              <div style={s.statValue}>--</div>
-              <div style={s.statLabel}>LOSSES</div>
-            </div>
-            <div style={s.statCard}>
-              <div style={s.statValue}>--</div>
-              <div style={s.statLabel}>WIN RATE</div>
-            </div>
-            <div style={s.statCard}>
-              <div style={s.statValue}>--</div>
-              <div style={s.statLabel}>SOL EARNED</div>
-            </div>
-            <div style={s.statCard}>
-              <div style={s.statValue}>--</div>
-              <div style={s.statLabel}>SHOT EARNED</div>
-            </div>
-          </div>
+
+          {stats === null ? (
+            <div style={s.statusLine}>LOADING STATS...</div>
+          ) : (
+            <>
+              <div style={s.statsGrid}>
+                <div style={s.statCard}>
+                  <div style={matches > 0 ? s.statValue : s.statValueDim}>{fmt(matches)}</div>
+                  <div style={s.statLabel}>MATCHES</div>
+                </div>
+                <div style={s.statCard}>
+                  <div style={wins > 0 ? s.statValueHighlight : s.statValueDim}>{fmt(wins)}</div>
+                  <div style={s.statLabel}>WINS</div>
+                </div>
+                <div style={s.statCard}>
+                  <div style={losses > 0 ? s.statValue : s.statValueDim}>{fmt(losses)}</div>
+                  <div style={s.statLabel}>LOSSES</div>
+                </div>
+                <div style={s.statCard}>
+                  <div style={winRate != null ? s.statValue : s.statValueDim}>
+                    {winRate != null ? `${winRate}%` : '--'}
+                  </div>
+                  <div style={s.statLabel}>WIN RATE</div>
+                </div>
+                <div style={s.statCard}>
+                  <div style={solEarned > 0 ? s.statValue : s.statValueDim}>{fmtSol(solEarned)}</div>
+                  <div style={s.statLabel}>SOL EARNED</div>
+                </div>
+                <div style={s.statCard}>
+                  <div style={shotEarned > 0 ? s.statValue : s.statValueDim}>{fmtShot(shotEarned)}</div>
+                  <div style={s.statLabel}>SHOT EARNED</div>
+                </div>
+              </div>
+
+              {/* Win rate visual bar */}
+              <div style={{ marginTop: 8 }}>
+                <div style={s.winRateSection}>
+                  <div style={s.wrLabel}>Win Rate</div>
+                  <div style={s.wrTrack}>
+                    <div style={s.wrFill(winRate || 0)} />
+                  </div>
+                  <div style={s.wrPct}>{winRate != null ? `${winRate}%` : '--%'}</div>
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
-        <div style={s.joinedLine}>STATS TRACKING -- COMING SOON</div>
+        {/* Export Combat Card */}
+        <div style={s.exportBtn}>
+          <Button
+            variant="primary"
+            onClick={() => setShowCard(true)}
+            style={{ fontSize: 13, padding: '10px 28px', letterSpacing: 2 }}
+          >
+            EXPORT COMBAT CARD
+          </Button>
+        </div>
+
+        <div style={s.statusLine}>
+          {matches > 0 ? `${matches} MATCHES TRACKED` : 'PLAY MATCHES TO BUILD YOUR RECORD'}
+        </div>
       </div>
+
+      {/* Combat Card overlay */}
+      {showCard && (
+        <CombatCard
+          handle={displayAddr.slice(0, 6)}
+          rank={currentTier.name}
+          wallet={displayAddr}
+          stats={stats}
+          onClose={() => setShowCard(false)}
+        />
+      )}
     </>
   );
 }

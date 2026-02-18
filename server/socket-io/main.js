@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import mongoose from 'mongoose';
 import Match from '../models/Match.js';
+import User from '../models/User.js';
 import { processShot, generateTerrain, generateTankPositions, generateWind, WEAPON_DATA } from '../services/physics.js';
 import { createMatchState, validateAction, transitionState, getNextTurn, isRoundOver, isMatchOver, getRoundWinner, resetForNextRound, MATCH_STATES } from '../services/match.js';
 import { initGold, getBalance, earnGold, spendGold, awardKillBonus, awardRoundWinBonus } from '../services/gold.js';
@@ -1069,6 +1070,23 @@ const mainsocket = (io) => {
             })
         })
 
+        // Fetch persistent player stats from DB
+        client.on('getStats', async () => {
+            const wallet = authenticatedWallets[client.id] || null
+            const defaultStats = { matchesPlayed: 0, wins: 0, losses: 0, totalSolWon: 0, totalSolLost: 0, totalShotEarned: 0, shotBurned: 0, prestigeTier: 0 }
+            if (!wallet || !isDbConnected()) {
+                client.emit('statsData', defaultStats)
+                return
+            }
+            try {
+                const user = await User.findOne({ walletAddress: wallet })
+                client.emit('statsData', user?.stats || defaultStats)
+            } catch (err) {
+                console.error('[Stats] getStats error:', err.message)
+                client.emit('statsData', defaultStats)
+            }
+        })
+
         // Burn SHOT to prestige up (with on-chain burn verification)
         client.on('prestigeBurn', async (data) => {
             const wallet = authenticatedWallets[client.id] || null
@@ -1539,6 +1557,40 @@ const mainsocket = (io) => {
                         setTimeout(() => {
                             io.sockets.in(roomId).emit('matchEnd', matchEndPayload)
                         }, ROUND_END_DELAY)
+
+                        // === PERSIST STATS TO DB (fire-and-forget) ===
+                        if (isDbConnected()) {
+                            const winnerId = matchResult.winner
+                            const loserId = winnerId === hostId ? playerId : hostId
+                            const winnerAddr = authenticatedWallets[winnerId] || wsState?.wallets?.[winnerId]
+                            const loserAddr = authenticatedWallets[loserId] || wsState?.wallets?.[loserId]
+                            const wagerAmt = ws ? ws.amount : 0
+                            const solWonAmt = wagerAmt > 0 ? wagerAmt * 2 * 0.9 : 0 // 90% to winner after fees
+                            const persistStats = async () => {
+                                try {
+                                    if (winnerAddr) {
+                                        const winnerShotEarned = shotResults[winnerId]?.earned || 0
+                                        await User.findOneAndUpdate(
+                                            { walletAddress: winnerAddr },
+                                            { $inc: { 'stats.matchesPlayed': 1, 'stats.wins': 1, 'stats.totalSolWon': solWonAmt, 'stats.totalShotEarned': winnerShotEarned }, $set: { lastActive: new Date() } },
+                                            { upsert: true }
+                                        )
+                                    }
+                                    if (loserAddr) {
+                                        const loserShotEarned = shotResults[loserId]?.earned || 0
+                                        await User.findOneAndUpdate(
+                                            { walletAddress: loserAddr },
+                                            { $inc: { 'stats.matchesPlayed': 1, 'stats.losses': 1, 'stats.totalSolLost': wagerAmt, 'stats.totalShotEarned': loserShotEarned }, $set: { lastActive: new Date() } },
+                                            { upsert: true }
+                                        )
+                                    }
+                                    console.log('[Stats] Persisted match stats for', winnerAddr?.slice(0,8), '(W) /', loserAddr?.slice(0,8), '(L)')
+                                } catch (err) {
+                                    console.error('[Stats] Failed to persist:', err.message)
+                                }
+                            }
+                            persistStats() // fire-and-forget — don't await
+                        }
                     })
                 } else {
                     transitionState(ms, MATCH_STATES.ROUND_END)

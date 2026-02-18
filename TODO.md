@@ -148,13 +148,13 @@
 
 ## PHASE 4: ART & ASSETS (John — Gemini/Midjourney)
 
-### 4A: Missing Weapon Icons
-_(Gemini prompts provided below — batch generate these)_
-- [ ] Generate any weapon PNGs identified as genuinely missing after 1B audit
+### 4A: Missing Weapon Icons (DONE)
+- [x] All 20 weapon PNGs present in `client/public/assets/images/logos/standard/`
 
-### 4B: Victory/Defeat Screens
-- [ ] Win splash art
-- [ ] Lose splash art
+### 4B: Victory/Defeat Screens (DONE)
+- [x] Win splash art → `client/public/assets/images/branding/win-screen.png`
+- [x] Lose splash art → `client/public/assets/images/branding/lose-screen.png`
+- [x] Wired into WinScreen.js + LoseScreen.js as hero banners (replaces text headers)
 
 ### 4C: Missing Sound Effects (Freesound.org — 30 min session)
 - [ ] tracer.wav — bullet whiz
@@ -165,10 +165,18 @@ _(Gemini prompts provided below — batch generate these)_
 - [ ] homing.wav — rocket whoosh
 - [ ] sniper.wav — rifle crack
 
-### 4D: PWA Icons
-- [ ] 192x192 icon from logo
-- [ ] 512x512 icon from logo
-- [ ] Favicon .ico (32x32)
+### 4D: PWA Icons (DONE)
+- [x] 192x192 icon from bullet crosshair logo
+- [x] 512x512 icon from bullet crosshair logo
+- [x] Favicon .ico (multi-size: 16/24/32/48/64)
+- [x] Maskable PWA icons (192 + 512 with safe-zone padding)
+- [x] Apple touch icon (180x180)
+
+### 4E: Barracks Combat Card (DONE)
+- [x] Server: persist match stats to MongoDB User model on match end
+- [x] Server: `getStats` socket handler returns wallet-linked persistent stats
+- [x] Client: BarracksScreen shows live stats (matches/wins/losses/win rate/SOL/SHOT)
+- [x] Client: CombatCard component — exportable stats card with html2canvas (clipboard copy or PNG download)
 
 ---
 
@@ -215,6 +223,12 @@ _(Gemini prompts provided below — batch generate these)_
 ---
 
 ## RECENTLY COMPLETED
+- [x] **Phase 4E: Combat Card** — Persistent wallet-linked stats (MongoDB User model), BarracksScreen live data, exportable CombatCard component (html2canvas → clipboard/download)
+- [x] **Phase 4D: PWA Icons** — Favicon.ico (multi-size), icon-192/512, maskable variants, apple-touch-icon — all from bullet crosshair logo
+- [x] **Phase 4B: Win/Lose Screens** — Hero banner images wired into WinScreen.js + LoseScreen.js (replaces text headers)
+- [x] **BO3 Round Fixes** — Gold carries over between rounds, ready allowed during ROUND_END, ShopScreen data normalization, terrain cache for round 2, kill tracking + matchEnd stats format
+- [x] **HP Bar Redesign** — 140x14px with number overlay, gradient colors, trailing damage ghost bar, floating damage popup
+- [x] **Heatseeker Visual Fix** — Corrected homing angle, stronger turn rate, sprite rotation
 - [x] **Phase 3A: Deployment Config** — render.yaml, vercel.json, .env.examples updated, SOLANA_KEYPAIR_JSON cloud support, .gitignore hardened
 - [x] **Phase 2C: Prestige Burns** — On-chain SPL burn for prestige tiers, server burn tx verification, PrestigeScreen wired with burn button + result UI
 - [x] **Phase 2B: SHOT Token** — 10M SHOT minted on devnet (`4NnYBycLLo8acgbkLz2SyCXd3KU8jgHQLEmrVypi5VLd`), mint authority burned, 1.5M to treasury

@@ -10,25 +10,18 @@ const s = {
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    justifyContent: 'center',
-    padding: '20px 30px',
-    gap: 14,
-    background: 'radial-gradient(ellipse at center, rgba(204, 34, 0, 0.05) 0%, transparent 70%)',
+    justifyContent: 'flex-start',
+    padding: '0 30px 20px',
+    gap: 10,
+    overflowY: 'auto',
   },
-  title: {
-    fontFamily: "'Black Ops One', cursive",
-    fontSize: 32,
-    color: 'var(--rd)',
-    letterSpacing: 6,
-    textShadow: '0 0 20px rgba(204, 34, 0, 0.4), 0 0 40px rgba(204, 34, 0, 0.15)',
+  heroBanner: {
+    width: '100%',
+    maxWidth: 520,
+    borderRadius: 6,
+    marginBottom: 2,
     animation: 'sm 0.5s ease-out both',
-  },
-  subtitle: {
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 14,
-    color: 'var(--kh)',
-    letterSpacing: 3,
-    opacity: 0.7,
+    filter: 'drop-shadow(0 4px 20px rgba(204, 34, 0, 0.3))',
   },
 
   /* Loss card */
@@ -143,8 +136,12 @@ function LoseScreen({ navigate, screenData }) {
 
   return (
     <div style={s.container}>
-      <div style={s.title}>DEFEATED</div>
-      <div style={s.subtitle}>MISSION FAILED</div>
+      <img
+        src="/assets/images/branding/lose-screen.png"
+        alt="Defeat"
+        style={s.heroBanner}
+        draggable={false}
+      />
 
       {/* Loss Card */}
       {wager > 0 && (

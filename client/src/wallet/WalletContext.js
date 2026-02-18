@@ -107,20 +107,6 @@ function SolShotWalletInner({ children }) {
         }
     }, [isAuthenticated]);
 
-    // Expose wallet state to Phaser via window
-    useEffect(() => {
-        window.solWallet = {
-            publicKey: walletAddress,
-            balance,
-            connected,
-            refreshBalance,
-            shotBalance,
-            prestigeInfo,
-            signAndSendEscrowDeposit,
-            signAndBurnShot,
-        };
-    }, [walletAddress, balance, connected, refreshBalance, shotBalance, prestigeInfo, signAndSendEscrowDeposit, signAndBurnShot]);
-
     // Authenticate with server (sign a message to prove wallet ownership)
     const authenticate = useCallback(async () => {
         if (!publicKey || !signMessage) {
@@ -237,6 +223,20 @@ function SolShotWalletInner({ children }) {
             return null;
         }
     }, [publicKey, sendTransaction, connection]);
+
+    // Expose wallet state to Phaser via window
+    useEffect(() => {
+        window.solWallet = {
+            publicKey: walletAddress,
+            balance,
+            connected,
+            refreshBalance,
+            shotBalance,
+            prestigeInfo,
+            signAndSendEscrowDeposit,
+            signAndBurnShot,
+        };
+    }, [walletAddress, balance, connected, refreshBalance, shotBalance, prestigeInfo, signAndSendEscrowDeposit, signAndBurnShot]);
 
     const value = useMemo(() => ({
         balance,

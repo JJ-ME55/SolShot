@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState, useRef } from 'react';
 
 const s = {
   container: {
@@ -18,14 +18,21 @@ const s = {
     opacity: 0.7,
     minWidth: 32,
   },
-  value: {
+  valueInput: {
     fontFamily: "'Bebas Neue', sans-serif",
     fontSize: 20,
     color: 'var(--bn)',
     letterSpacing: 1,
     lineHeight: 1,
     minWidth: 32,
+    width: 42,
     textAlign: 'right',
+    background: 'transparent',
+    border: 'none',
+    outline: 'none',
+    padding: 0,
+    cursor: 'text',
+    pointerEvents: 'auto',
   },
   slider: (disabled) => ({
     width: 120,
@@ -47,16 +54,63 @@ const s = {
 };
 
 function AngleControl({ angle, onChange, disabled }) {
-  const handleChange = useCallback((e) => {
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState('');
+  const inputRef = useRef(null);
+
+  const handleSlider = useCallback((e) => {
     if (!disabled) {
       onChange(Number(e.target.value));
     }
   }, [disabled, onChange]);
 
+  const handleFocus = useCallback(() => {
+    if (disabled) return;
+    setEditing(true);
+    setEditValue(String(Math.round(angle || 45)));
+    setTimeout(() => inputRef.current?.select(), 0);
+  }, [disabled, angle]);
+
+  const commitValue = useCallback(() => {
+    setEditing(false);
+    const num = parseInt(editValue, 10);
+    if (!isNaN(num)) {
+      onChange(Math.max(0, Math.min(180, num)));
+    }
+  }, [editValue, onChange]);
+
+  const handleKeyDown = useCallback((e) => {
+    if (e.key === 'Enter') {
+      e.target.blur();
+    } else if (e.key === 'Escape') {
+      setEditing(false);
+    }
+    // Stop Phaser from capturing these keys while typing
+    e.stopPropagation();
+  }, []);
+
+  const displayAngle = Math.round(angle || 45);
+
   return (
     <div style={s.container}>
       <span style={s.label}>ANG</span>
-      <span style={s.value}>{Math.round(angle || 45)}</span>
+      <input
+        ref={inputRef}
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        value={editing ? editValue : displayAngle}
+        onChange={(e) => setEditValue(e.target.value.replace(/[^0-9]/g, ''))}
+        onFocus={handleFocus}
+        onBlur={commitValue}
+        onKeyDown={handleKeyDown}
+        disabled={disabled}
+        style={{
+          ...s.valueInput,
+          opacity: disabled ? 0.4 : 1,
+          cursor: disabled ? 'default' : 'text',
+        }}
+      />
       <span style={s.unit}>deg</span>
       <input
         type="range"
@@ -64,7 +118,7 @@ function AngleControl({ angle, onChange, disabled }) {
         max={180}
         step={1}
         value={angle || 45}
-        onChange={handleChange}
+        onChange={handleSlider}
         disabled={disabled}
         style={s.slider(disabled)}
       />

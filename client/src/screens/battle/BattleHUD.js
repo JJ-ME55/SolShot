@@ -38,6 +38,7 @@ const s = {
     justifyContent: 'space-between',
     padding: '8px 12px',
     gap: 10,
+    flexWrap: 'wrap',
   },
   controlsLeft: {
     display: 'flex',
@@ -171,12 +172,9 @@ function BattleHUD({ bridge, gameState, wager }) {
           />
         </div>
 
-        {/* Right: Move Controls */}
+        {/* Right: Move Controls + Counter */}
         <div style={s.controlsRight}>
-          <div style={{
-            display: 'flex',
-            gap: 6,
-          }}>
+          <div style={{ display: 'flex', gap: 6 }}>
             <button
               style={moveBtn(disabled || moveSteps <= 0)}
               onClick={() => bridge.moveLeft()}

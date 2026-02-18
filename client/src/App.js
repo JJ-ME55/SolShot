@@ -108,7 +108,62 @@ function AppInner() {
   return (
     <Layout>
       {renderScreen()}
+      <PortraitWarning />
     </Layout>
+  );
+}
+
+/* Rotate-to-landscape overlay for mobile portrait */
+function PortraitWarning() {
+  const [isPortrait, setIsPortrait] = useState(false);
+
+  useEffect(() => {
+    const check = () => {
+      // Only show on mobile-sized screens (< 768px wide) in portrait
+      const mobile = window.innerWidth < 768;
+      const portrait = window.innerHeight > window.innerWidth;
+      setIsPortrait(mobile && portrait);
+    };
+    check();
+    window.addEventListener('resize', check);
+    window.addEventListener('orientationchange', () => setTimeout(check, 100));
+    return () => {
+      window.removeEventListener('resize', check);
+      window.removeEventListener('orientationchange', check);
+    };
+  }, []);
+
+  if (!isPortrait) return null;
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 9999,
+      background: 'rgba(10, 12, 8, 0.95)',
+      display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center', gap: 16,
+    }}>
+      <div style={{
+        fontSize: 48, transform: 'rotate(90deg)',
+        transition: 'transform 1s ease',
+        animation: 'rotateHint 2s ease-in-out infinite',
+      }}>📱</div>
+      <div style={{
+        fontFamily: "'Black Ops One', cursive",
+        fontSize: 18, color: 'var(--bn)',
+        letterSpacing: 3, textAlign: 'center',
+      }}>ROTATE TO LANDSCAPE</div>
+      <div style={{
+        fontFamily: "'Share Tech Mono', monospace",
+        fontSize: 12, color: 'var(--kh)',
+        textAlign: 'center', opacity: 0.6,
+      }}>SolShot plays best in landscape mode</div>
+      <style>{`
+        @keyframes rotateHint {
+          0%, 100% { transform: rotate(0deg); }
+          50% { transform: rotate(90deg); }
+        }
+      `}</style>
+    </div>
   );
 }
 

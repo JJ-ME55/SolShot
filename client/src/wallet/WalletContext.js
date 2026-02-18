@@ -134,7 +134,7 @@ function SolShotWalletInner({ children }) {
                 });
             }
 
-            setIsAuthenticated(true);
+            // Don't set isAuthenticated here — wait for server 'authResult' confirmation
             return { walletAddress, signature: signatureBase64, message };
         } catch (err) {
             console.error('[SolShot] Auth error:', err.message);
@@ -238,18 +238,50 @@ function SolShotWalletInner({ children }) {
         };
     }, [walletAddress, balance, connected, refreshBalance, shotBalance, prestigeInfo, signAndSendEscrowDeposit, signAndBurnShot]);
 
+    // Listen for auth result from server
+    useEffect(() => {
+        const checkSocket = () => {
+            const socket = window.socket;
+            if (!socket) return false;
+            const handler = (result) => {
+                if (result.success) {
+                    console.log('[SolShot] Auth confirmed by server');
+                    setIsAuthenticated(true);
+                } else {
+                    console.warn('[SolShot] Auth rejected:', result.reason);
+                    setIsAuthenticated(false);
+                }
+            };
+            socket.on('authResult', handler);
+            return () => { socket.off('authResult', handler); };
+        };
+        // Socket might not exist yet — poll briefly
+        const cleanup = checkSocket();
+        if (cleanup) return cleanup;
+        const timer = setInterval(() => {
+            const c = checkSocket();
+            if (c) { clearInterval(timer); }
+        }, 500);
+        return () => clearInterval(timer);
+    }, []);
+
     // Auto-authenticate when wallet connects and socket is ready
     useEffect(() => {
-        if (connected && publicKey && !isAuthenticated && window.socket) {
-            // Small delay to ensure socket is fully connected
-            const timer = setTimeout(() => {
-                if (connected && publicKey && !isAuthenticated) {
-                    console.log('[SolShot] Auto-authenticating wallet...');
-                    authenticate();
-                }
-            }, 1000);
-            return () => clearTimeout(timer);
-        }
+        if (!connected || !publicKey || isAuthenticated) return;
+        // Poll for socket availability (may not exist on first render)
+        const tryAuth = () => {
+            if (window.socket && window.socket.connected) {
+                console.log('[SolShot] Auto-authenticating wallet...');
+                authenticate();
+                return true;
+            }
+            return false;
+        };
+        if (tryAuth()) return;
+        const timer = setInterval(() => {
+            if (tryAuth()) clearInterval(timer);
+        }, 1000);
+        return () => clearInterval(timer);
     }, [connected, publicKey, isAuthenticated, authenticate]);
 
     const value = useMemo(() => ({

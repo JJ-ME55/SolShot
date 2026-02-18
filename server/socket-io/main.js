@@ -190,8 +190,9 @@ function endShopPhase(io, roomId) {
         goldBalance: goldStates[roomId] || {}
     })
 
-    // Reset shop readiness
+    // Reset shop readiness and terrain cache for new round
     delete shopReady[roomId]
+    if (room) delete room._terrainCache
 }
 
 // Start a turn timer — auto-forfeit if no action within TURN_TIMEOUT_MS
@@ -1546,10 +1547,20 @@ const mainsocket = (io) => {
 
 
         // === NEW: Server terrain generation (Task 2.9) ===
-        // Server generates terrain, sends to both clients
+        // Both host and non-host emit requestTerrain. First request generates;
+        // subsequent requests re-send cached terrain (fixes round 2 race condition).
         client.on('requestTerrain', () => {
             const room = findRoom(client.roomId)
             if (!room) return
+
+            const ms = matchStates[client.roomId]
+
+            // If terrain already generated for this round, re-send to requesting client only
+            if (room._terrainCache) {
+                console.log(`[Terrain] Re-sending cached terrain to ${client.id.slice(0,8)}`)
+                client.emit('terrainGenerated', room._terrainCache)
+                return
+            }
 
             const seed = crypto.randomInt(1000000)
             const { path, heightmap } = generateTerrain(1200, 800, seed)
@@ -1564,7 +1575,6 @@ const mainsocket = (io) => {
             if (room.player) room.player.pos = tankPositions.player
 
             // Initialize match state for battle
-            const ms = matchStates[client.roomId]
             if (ms) {
                 ms.terrain = heightmap
                 ms.tankPositions = tankPositions
@@ -1584,8 +1594,8 @@ const mainsocket = (io) => {
                 startTurnTimer(io, client.roomId)
             }
 
-            // Send to both clients
-            io.sockets.in(client.roomId).emit('terrainGenerated', {
+            // Cache terrain payload for late-joining clients
+            const terrainPayload = {
                 path,
                 heightmap,
                 tankPositions,
@@ -1593,7 +1603,11 @@ const mainsocket = (io) => {
                 wind,
                 firstTurn: ms ? ms.currentTurn : null,
                 seq: ms ? ms.turnSequence : 0  // Fix 4: initial nonce for first fire
-            })
+            }
+            room._terrainCache = terrainPayload
+
+            // Send to both clients
+            io.sockets.in(client.roomId).emit('terrainGenerated', terrainPayload)
         })
 
 

@@ -471,10 +471,10 @@ export class MainScene extends Scene {
     };
     socket.on('terrainGenerated', this._socketHandlers.terrainGenerated);
 
-    // Host requests terrain from server
-    if (isHost) {
-      socket.emit('requestTerrain');
-    }
+    // Both host and non-host request terrain from server.
+    // Server generates on first request, re-sends cached data on subsequent.
+    // This fixes round 2 race condition where non-host misses terrainGenerated.
+    socket.emit('requestTerrain');
 
     // ── STEP 3: Handle turnResult — full server response ──
     this._socketHandlers.turnResult = (data) => {

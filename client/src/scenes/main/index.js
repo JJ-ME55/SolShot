@@ -258,9 +258,26 @@ export class MainScene extends Scene {
   checkSwitchTurn = () => {
     if (this.terrain.animate === true) return;
     if (this.terrain.blastArray.length !== 0) return;
-    if (this.tank1.settled === false) return;
-    if (this.tank2.settled === false) return;
     if (this.gameOver === true) return;
+
+    // Safety: if a tank is unsettled for too long (>3s), force settle it
+    // This prevents the game from getting permanently stuck
+    if (this.tank1.settled === false || this.tank2.settled === false) {
+      if (!this._settleWaitStart) {
+        this._settleWaitStart = Date.now();
+      } else if (Date.now() - this._settleWaitStart > 3000) {
+        console.warn('[SolShot] Force-settling tanks after 3s timeout. t1=' + this.tank1.settled + ' t2=' + this.tank2.settled);
+        this.tank1.settled = true;
+        this.tank2.settled = true;
+        this.tank1.body.stop();
+        this.tank2.body.stop();
+        this.tank1.body.setGravity(0);
+        this.tank2.body.setGravity(0);
+        this._settleWaitStart = null;
+      }
+      return;
+    }
+    this._settleWaitStart = null;
 
     // For multiplayer: apply pending server result once ALL animations are done.
     if (this.sceneData.gameType === 3) {

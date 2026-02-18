@@ -123,13 +123,18 @@ export class Tank extends GameObjects.Sprite {
             // In multiplayer, only move the opponent's tank (tank2), not our own
             if (this.gameType === 3 && this !== this.scene.tank2) return
             if (this.gameType !== 3 && this.active === false) return
-            this.stepLeft()
+            // Force-animate opponent movement — don't check movesRemaining
+            // (server already validated the move; we just need to show it)
+            this.leftSteps = 80
+            this.moving = true
         })
 
         socket.on('opponentStepRight', () => {
             if (this.gameType === 3 && this !== this.scene.tank2) return
             if (this.gameType !== 3 && this.active === false) return
-            this.stepRight()
+            // Force-animate opponent movement — don't check movesRemaining
+            this.rightSteps = 80
+            this.moving = true
         })
 
         this.scene.input.keyboard.on('keydown-A', () => {

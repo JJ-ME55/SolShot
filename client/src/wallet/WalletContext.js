@@ -238,6 +238,20 @@ function SolShotWalletInner({ children }) {
         };
     }, [walletAddress, balance, connected, refreshBalance, shotBalance, prestigeInfo, signAndSendEscrowDeposit, signAndBurnShot]);
 
+    // Auto-authenticate when wallet connects and socket is ready
+    useEffect(() => {
+        if (connected && publicKey && !isAuthenticated && window.socket) {
+            // Small delay to ensure socket is fully connected
+            const timer = setTimeout(() => {
+                if (connected && publicKey && !isAuthenticated) {
+                    console.log('[SolShot] Auto-authenticating wallet...');
+                    authenticate();
+                }
+            }, 1000);
+            return () => clearTimeout(timer);
+        }
+    }, [connected, publicKey, isAuthenticated, authenticate]);
+
     const value = useMemo(() => ({
         balance,
         refreshBalance,

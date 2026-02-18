@@ -294,7 +294,13 @@ export class MainScene extends Scene {
         const weaponDone = isMyShot
           ? (this.tank1.turret && this.tank1.turret.activeWeapon === null)
           : true;
+        if (!weaponDone && !this._weaponWaitLogged) {
+          console.log('[SolShot] checkSwitchTurn: waiting for weapon animation to finish (activeWeapon=' + (this.tank1.turret ? this.tank1.turret.activeWeapon : 'no turret') + ')');
+          this._weaponWaitLogged = true;
+        }
         if (weaponDone) {
+          console.log('[SolShot] checkSwitchTurn: applying turnResult NOW');
+          this._weaponWaitLogged = false;
           this.applyTurnResult(this.pendingTurnResult);
           this.pendingTurnResult = null;
         }
@@ -473,6 +479,7 @@ export class MainScene extends Scene {
     // ── STEP 3: Handle turnResult — full server response ──
     this._socketHandlers.turnResult = (data) => {
       // turnResult received from server
+      console.log('[SolShot] turnResult received: damage=' + JSON.stringify(data.damage) + ' hp=' + JSON.stringify(data.hp) + ' nextTurn=' + (data.nextTurn ? data.nextTurn.slice(0,8) : null));
 
       // Store nonce for next fire
       this._turnSeq = data.seq;

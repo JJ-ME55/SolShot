@@ -355,7 +355,9 @@ export class Tank extends GameObjects.Sprite {
 
 
     moveLeft = () => {
-        if (!this.active) return
+        // In multiplayer, opponent tank (tank2) has active=false during our turn
+        // but still needs to animate when we receive opponentStepLeft events
+        if (!this.active && !(this.gameType === 3 && this === this.scene.tank2)) return
         if (this.isInsideTerrain()) return
         this.scene.hideTurnPointer()
 
@@ -383,7 +385,9 @@ export class Tank extends GameObjects.Sprite {
 
 
     moveRight = () => {
-        if (!this.active) return
+        // In multiplayer, opponent tank (tank2) has active=false during our turn
+        // but still needs to animate when we receive opponentStepRight events
+        if (!this.active && !(this.gameType === 3 && this === this.scene.tank2)) return
         if (this.isInsideTerrain()) return
         this.scene.hideTurnPointer()
 

@@ -91,7 +91,8 @@ export function createMatchState(roomId, roundType = '1') {
         roundType,
         maxRounds,
         currentRound: 0,
-        scores: {},          // { [playerId]: totalScore }
+        scores: {},          // { [playerId]: totalDamageDealt }
+        kills: {},           // { [playerId]: totalKills }
         roundWins: {},       // { [playerId]: roundsWon }
         hp: {},              // { [playerId]: currentHP } — 250 per player per round
         currentTurn: null,   // playerId whose turn it is

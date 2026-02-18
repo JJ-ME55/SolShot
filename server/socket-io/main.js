@@ -1366,7 +1366,12 @@ const mainsocket = (io) => {
                 // Update HP — apply absolute damage to each affected player
                 for (const [playerId, dmg] of Object.entries(result.damage)) {
                     if (ms.hp[playerId] === undefined) ms.hp[playerId] = 250
+                    const hpBefore = ms.hp[playerId]
                     ms.hp[playerId] = Math.max(0, ms.hp[playerId] - Math.abs(dmg))
+                    // Track kill: if opponent HP dropped to 0 from this shot
+                    if (hpBefore > 0 && ms.hp[playerId] <= 0 && playerId !== this.id) {
+                        ms.kills[this.id] = (ms.kills[this.id] || 0) + 1
+                    }
                 }
 
                 // Calculate Gold earned from damage dealt to opponent
@@ -1512,9 +1517,19 @@ const mainsocket = (io) => {
                         }
 
                         // Delay matchEnd emit so client can animate the killing blow
+                        // Transform scores to client format: { [id]: { damageDealt, kills } }
+                        const formattedScores = {}
+                        for (const pid of [hostId, playerId]) {
+                            if (pid) {
+                                formattedScores[pid] = {
+                                    damageDealt: ms.scores[pid] || 0,
+                                    kills: ms.kills[pid] || 0
+                                }
+                            }
+                        }
                         const matchEndPayload = {
                             winner: matchResult.winner,
-                            scores: ms.scores,
+                            scores: formattedScores,
                             roundWins: ms.roundWins,
                             goldBalance: goldStates[roomId] || {},
                             settlement: settlementInfo,

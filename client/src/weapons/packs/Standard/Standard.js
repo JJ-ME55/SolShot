@@ -753,11 +753,22 @@ export class heatseeker {
 
     checkCloseToTank = (weapon) => {
         var oppTank = weapon.tank === weapon.scene.tank1 ? weapon.scene.tank2 : weapon.scene.tank1
-        if (Phaser.Math.Distance.Between(oppTank.centre.x, oppTank.centre.y, this.projectile.body.x, this.projectile.body.y) < 200) {
-            weapon.fixCloseToTank(this.projectile, {oppTankDist: 200})
-            var targetAngle = Phaser.Math.Angle.Between(oppTank.centre.x, oppTank.centre.y, this.projectile.body.x, this.projectile.body.y) + Math.PI;
-            var diff = Phaser.Math.Angle.Wrap(targetAngle - this.projectile.body.velocity.angle())
-            this.projectile.body.velocity.rotate(diff/10)
+        if (Phaser.Math.Distance.Between(oppTank.centre.x, oppTank.centre.y, this.projectile.body.x, this.projectile.body.y) < 250) {
+            if (!this._homing) {
+                this._homing = true
+                weapon.fixCloseToTank(this.projectile, {oppTankDist: 250})
+            }
+            // Angle from projectile toward opponent tank
+            var targetAngle = Phaser.Math.Angle.Between(
+                this.projectile.body.x, this.projectile.body.y,
+                oppTank.centre.x, oppTank.centre.y
+            );
+            var currentAngle = this.projectile.body.velocity.angle()
+            var diff = Phaser.Math.Angle.Wrap(targetAngle - currentAngle)
+            // Stronger turn rate for snappier homing visual
+            this.projectile.body.velocity.rotate(diff * 0.15)
+            // Rotate sprite to match velocity direction
+            this.projectile.setRotation(this.projectile.body.velocity.angle())
             this.releaseParticles(weapon)
         }
     }

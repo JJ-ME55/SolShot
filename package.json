@@ -1,0 +1,39 @@
+{
+  "name": "solshot",
+  "version": "1.0.0",
+  "description": "Live demo - https://pocket-tanks.netlify.app",
+  "main": "generate-terrain-textures.js",
+  "directories": {
+    "test": "tests"
+  },
+  "dependencies": {
+    "detect-libc": "^2.1.2",
+    "semver": "^7.7.4",
+    "sharp": "^0.34.5"
+  },
+  "devDependencies": {
+    "@coral-xyz/anchor": "^0.32.1",
+    "@solana/web3.js": "^1.98.4",
+    "@types/chai": "^5.2.3",
+    "@types/mocha": "^10.0.10",
+    "chai": "^6.2.2",
+    "mocha": "^11.7.5",
+    "ts-mocha": "^11.1.0",
+    "typescript": "^5.9.3"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JJ-ME55/SolShot.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/JJ-ME55/SolShot/issues"
+  },
+  "homepage": "https://github.com/JJ-ME55/SolShot#readme"
+}

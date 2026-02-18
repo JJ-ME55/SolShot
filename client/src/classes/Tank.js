@@ -16,7 +16,6 @@ export class Tank extends GameObjects.Sprite {
 
         if (scene.textures.exists('tank' + id)) scene.textures.remove('tank' + id)
         scene.textures.addCanvas('tank' + id, canvas);
-        //scene.add.sprite(0, 0, 'tank');
         super(scene, 0, 0, 'tank' + id)
         scene.add.existing(this)
 
@@ -105,24 +104,8 @@ export class Tank extends GameObjects.Sprite {
         this.body.setSize(1,1)
         this.turret = new Turret(this.scene, this, this.id)
 
-        socket.on('opponentShoot', ({selectedWeapon, power, rotation, rotation1, rotation2, position1, position2}) => {
-            if (this.active === false) return
-            this.moving = false
-            this.leftSteps = 0
-            this.rightSteps = 0
-            this.scene.tank1.setPosition(position2.x, position2.y)
-            this.scene.tank1.setRotation(rotation2)
-            this.scene.tank2.setPosition(position1.x, position1.y)
-            this.scene.tank2.setRotation(rotation1)
-
-            this.selectedWeapon = selectedWeapon
-            this.setPower(power)
-            this.turret.setRelativeRotation(rotation)
-            if (this.scene.HUD && this.scene.HUD.weaponScrollDisplay) {
-                this.scene.HUD.weaponScrollDisplay.reset(this)
-            }
-            this.shoot()
-        })
+        // Legacy opponentShoot handler REMOVED — server-authoritative fire path
+        // uses turnResult to animate opponent shots via MainScene.animateTrajectory()
 
         socket.on('opponentPowerChange', ({power}) => {
             if (this.active && this === this.scene.tank2) {
@@ -137,12 +120,15 @@ export class Tank extends GameObjects.Sprite {
         })
         
         socket.on('opponentStepLeft', () => {
-            if (this.active === false) return
+            // In multiplayer, only move the opponent's tank (tank2), not our own
+            if (this.gameType === 3 && this !== this.scene.tank2) return
+            if (this.gameType !== 3 && this.active === false) return
             this.stepLeft()
         })
 
         socket.on('opponentStepRight', () => {
-            if (this.active === false) return
+            if (this.gameType === 3 && this !== this.scene.tank2) return
+            if (this.gameType !== 3 && this.active === false) return
             this.stepRight()
         })
 
@@ -450,10 +436,9 @@ export class Tank extends GameObjects.Sprite {
 
         this.active = false
         this.turret.shoot(this.weapons[this.selectedWeapon]?.id)
-        if (this.scene.sceneData.gameType !== 4) {
-            this.weapons.splice(this.selectedWeapon, 1)
-        }
-        this.selectedWeapon = this.weapons.length >= 1 ? Math.min(this.selectedWeapon, this.weapons.length - 1) : null
+        // In multiplayer (type 3), server owns the weapon inventory — don't deplete locally.
+        // In practice mode (type 4), weapons are also unlimited.
+        // Legacy splice removed: server-authoritative model keeps weapons persistent.
     }
 
 

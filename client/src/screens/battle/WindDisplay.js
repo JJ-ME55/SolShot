@@ -13,20 +13,20 @@ const s = {
   },
   label: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 7,
+    fontSize: 11,
     color: 'var(--kh)',
     letterSpacing: 1,
     opacity: 0.7,
   },
   value: (wind) => ({
     fontFamily: "'Bebas Neue', sans-serif",
-    fontSize: 12,
+    fontSize: 16,
     color: wind > 0 ? 'var(--sg)' : wind < 0 ? 'var(--rg)' : 'var(--kh)',
     letterSpacing: 1,
     lineHeight: 1,
   }),
   arrow: (wind) => ({
-    fontSize: 8,
+    fontSize: 12,
     color: wind > 0 ? 'var(--sg)' : 'var(--rg)',
   }),
 };

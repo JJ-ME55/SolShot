@@ -1,0 +1,607 @@
+{
+  "address": "CqvRC6mSJe2CrBtENVfCEPkgRW3WwxLSL9C1hgXz7GtD",
+  "metadata": {
+    "name": "solshot_escrow",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "SolShot match escrow program — PDA-based wagering with 90/7/3 split"
+  },
+  "instructions": [
+    {
+      "name": "cancel_match",
+      "docs": [
+        "Cancel match — refund both players.",
+        "Callable by authority (server) or by either player if only they deposited.",
+        "Also used for 24-hour timeout auto-refund."
+      ],
+      "discriminator": [
+        142,
+        136,
+        247,
+        45,
+        92,
+        112,
+        180,
+        83
+      ],
+      "accounts": [
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  116,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "escrow.match_id",
+                "account": "MatchEscrow"
+              }
+            ]
+          }
+        },
+        {
+          "name": "caller",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "player_one",
+          "writable": true
+        },
+        {
+          "name": "player_two",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "create_match",
+      "docs": [
+        "Create a new match escrow.",
+        "Called by the server authority when a room is created with a wager.",
+        "Seeds: [\"match\", match_id.as_bytes()]"
+      ],
+      "discriminator": [
+        107,
+        2,
+        184,
+        145,
+        70,
+        142,
+        17,
+        165
+      ],
+      "accounts": [
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  116,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "match_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "match_id",
+          "type": "string"
+        },
+        {
+          "name": "wager_lamports",
+          "type": "u64"
+        },
+        {
+          "name": "player_one",
+          "type": "pubkey"
+        },
+        {
+          "name": "player_two",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "deposit_wager",
+      "docs": [
+        "Deposit wager into escrow.",
+        "Each player calls this once. Match transitions to Active when both deposit."
+      ],
+      "discriminator": [
+        234,
+        73,
+        235,
+        136,
+        168,
+        103,
+        239,
+        207
+      ],
+      "accounts": [
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  116,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "escrow.match_id",
+                "account": "MatchEscrow"
+              }
+            ]
+          }
+        },
+        {
+          "name": "player",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "settle_match",
+      "docs": [
+        "Settle match — distribute pot to winner, treasury, ops.",
+        "Only callable by the server authority.",
+        "Uses integer lamport math — winner gets remainder to avoid dust loss."
+      ],
+      "discriminator": [
+        71,
+        124,
+        117,
+        96,
+        191,
+        217,
+        116,
+        24
+      ],
+      "accounts": [
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  116,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "escrow.match_id",
+                "account": "MatchEscrow"
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "escrow"
+          ]
+        },
+        {
+          "name": "winner",
+          "writable": true
+        },
+        {
+          "name": "treasury",
+          "writable": true
+        },
+        {
+          "name": "ops",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "winner",
+          "type": "pubkey"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "MatchEscrow",
+      "discriminator": [
+        41,
+        253,
+        245,
+        149,
+        7,
+        243,
+        203,
+        139
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "MatchActive",
+      "discriminator": [
+        47,
+        250,
+        190,
+        20,
+        188,
+        234,
+        223,
+        201
+      ]
+    },
+    {
+      "name": "MatchCancelled",
+      "discriminator": [
+        99,
+        86,
+        22,
+        122,
+        82,
+        247,
+        60,
+        113
+      ]
+    },
+    {
+      "name": "MatchCreated",
+      "discriminator": [
+        151,
+        176,
+        11,
+        24,
+        34,
+        225,
+        227,
+        16
+      ]
+    },
+    {
+      "name": "MatchSettled",
+      "discriminator": [
+        243,
+        201,
+        134,
+        151,
+        193,
+        131,
+        223,
+        150
+      ]
+    },
+    {
+      "name": "WagerDeposited",
+      "discriminator": [
+        31,
+        48,
+        70,
+        183,
+        103,
+        182,
+        95,
+        75
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "MatchIdTooLong",
+      "msg": "Match ID must be 32 characters or fewer"
+    },
+    {
+      "code": 6001,
+      "name": "ZeroWager",
+      "msg": "Wager must be greater than zero"
+    },
+    {
+      "code": 6002,
+      "name": "SamePlayer",
+      "msg": "Players must be different wallets"
+    },
+    {
+      "code": 6003,
+      "name": "InvalidState",
+      "msg": "Match is not in the correct state for this operation"
+    },
+    {
+      "code": 6004,
+      "name": "NotAPlayer",
+      "msg": "Signer is not a player in this match"
+    },
+    {
+      "code": 6005,
+      "name": "AlreadyDeposited",
+      "msg": "Player has already deposited"
+    },
+    {
+      "code": 6006,
+      "name": "InvalidWinner",
+      "msg": "Winner must be player one or player two"
+    },
+    {
+      "code": 6007,
+      "name": "Unauthorized",
+      "msg": "Not authorized for this operation"
+    },
+    {
+      "code": 6008,
+      "name": "InvalidPlayer",
+      "msg": "Player account does not match escrow record"
+    }
+  ],
+  "types": [
+    {
+      "name": "MatchActive",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "match_id",
+            "type": "string"
+          },
+          {
+            "name": "total_pot",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MatchCancelled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "match_id",
+            "type": "string"
+          },
+          {
+            "name": "refunded_one",
+            "type": "bool"
+          },
+          {
+            "name": "refunded_two",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MatchCreated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "match_id",
+            "type": "string"
+          },
+          {
+            "name": "player_one",
+            "type": "pubkey"
+          },
+          {
+            "name": "player_two",
+            "type": "pubkey"
+          },
+          {
+            "name": "wager_lamports",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MatchEscrow",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "match_id",
+            "docs": [
+              "Unique match identifier (max 32 chars, e.g. room ID)"
+            ],
+            "type": "string"
+          },
+          {
+            "name": "authority",
+            "docs": [
+              "Server authority that created/settles this match"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "player_one",
+            "docs": [
+              "Player 1 wallet"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "player_two",
+            "docs": [
+              "Player 2 wallet"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "wager_lamports",
+            "docs": [
+              "Wager per player in lamports"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "player_one_deposited",
+            "docs": [
+              "Whether player 1 has deposited"
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "player_two_deposited",
+            "docs": [
+              "Whether player 2 has deposited"
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "state",
+            "docs": [
+              "Current match state"
+            ],
+            "type": {
+              "defined": {
+                "name": "MatchState"
+              }
+            }
+          },
+          {
+            "name": "created_at",
+            "docs": [
+              "Unix timestamp of creation (for 24h timeout)"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump seed"
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MatchSettled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "match_id",
+            "type": "string"
+          },
+          {
+            "name": "winner",
+            "type": "pubkey"
+          },
+          {
+            "name": "winner_amount",
+            "type": "u64"
+          },
+          {
+            "name": "treasury_amount",
+            "type": "u64"
+          },
+          {
+            "name": "ops_amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MatchState",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "AwaitingDeposits"
+          },
+          {
+            "name": "Active"
+          },
+          {
+            "name": "Settled"
+          },
+          {
+            "name": "Cancelled"
+          }
+        ]
+      }
+    },
+    {
+      "name": "WagerDeposited",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "match_id",
+            "type": "string"
+          },
+          {
+            "name": "player",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    }
+  ]
+}

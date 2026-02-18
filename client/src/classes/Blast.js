@@ -16,7 +16,7 @@ export class Blast {
         this.scene = scene
         this.count = 0
         this.blastType = blastType
-        
+
         this.terrain = scene.terrain
         this.maxRadius = Math.max(radius, 1)
         this.outerRadius = 0
@@ -28,14 +28,17 @@ export class Blast {
         this.canvas.width = this.maxRadius * 2
         this.canvas.height = this.maxRadius * 2
         this.textureId = Math.random().toString(32).slice(2, 7)
-        
+
         this.scene.textures.addCanvas(this.textureId, this.canvas)
-        this.image = this.scene.add.image(this.x, this.y, this.textureId).setOrigin(0.5, 0.5)
+        this.image = this.scene.add.image(this.x, this.y, this.textureId).setOrigin(0.5, 0.5).setDepth(3)
 
         this.gradient = null
         this.circles = []
         this.toRemove = false
         this.blowTank = blowTank
+        // Visual-only mode: show expanding ring but don't dig terrain canvas.
+        // Used for opponent blasts — applyHeightmap handles terrain authoritatively.
+        this.visualOnly = !!data.visualOnly
         this.soundEffect = data.soundEffect
         this.soundConfig = data.soundConfig
 
@@ -93,6 +96,7 @@ export class Blast {
 
     updateType1 = () => {
         this.outerRadius++
+        this.count++
         if (this.maxRadius > this.innerRadius) {
             this.animateHole1()
             if (this.blowTank === true) {
@@ -146,7 +150,11 @@ export class Blast {
         }
         else {
             this.innerRadius = this.maxRadius
-            this.terrain.fixTerrain(this.x, this.y, this.maxRadius)
+            // Only run fixTerrain (gravity sim) for own-shot blasts.
+            // For opponent blasts (visualOnly), applyHeightmap handles terrain.
+            if (!this.visualOnly) {
+                this.terrain.fixTerrain(this.x, this.y, this.maxRadius)
+            }
             this.toRemove = true
             this.image.destroy(true)
             this.scene.textures.remove(this.textureId)
@@ -155,15 +163,18 @@ export class Blast {
 
 
     animateHole1 = () => {
-        var ctx = this.terrain.canvas.getContext('2d')
-        ctx.globalCompositeOperation = 'destination-out'
-
-        ctx.fillStyle = 'rgba(0,0,0,1)'
-        
-        ctx.beginPath()
-        ctx.arc(this.x, this.y, Math.min(this.outerRadius, this.maxRadius), 0, Math.PI * 2)
-        ctx.closePath()
-        ctx.fill()
+        // Only dig terrain when NOT visual-only.
+        // For opponent blasts, applyHeightmap handles the crater authoritatively.
+        if (!this.visualOnly) {
+            var ctx = this.terrain.canvas.getContext('2d')
+            ctx.globalCompositeOperation = 'destination-out'
+            ctx.fillStyle = 'rgba(0,0,0,1)'
+            ctx.beginPath()
+            ctx.arc(this.x, this.y, Math.min(this.outerRadius, this.maxRadius), 0, Math.PI * 2)
+            ctx.closePath()
+            ctx.fill()
+            ctx.globalCompositeOperation = 'source-over'
+        }
 
         var canvas = this.canvas
         var ctx2 = canvas.getContext('2d')
@@ -199,6 +210,10 @@ export class Blast {
         else {
             ctx2.drawImage(this.scene.blastCache.getCanvas(this.blastType, this.outerRadius), 0, 0)
         }
+
+        // Refresh the Phaser texture so the updated canvas renders on screen
+        var tex = this.scene.textures.get(this.textureId)
+        if (tex && tex.update) tex.update()
     }
 
 
@@ -212,7 +227,9 @@ export class Blast {
         }
         else {
             this.innerRadius = this.maxRadius
-            this.terrain.fixTerrain(this.x, this.y, this.maxRadius)
+            if (!this.visualOnly) {
+                this.terrain.fixTerrain(this.x, this.y, this.maxRadius)
+            }
             this.toRemove = true
             this.image.destroy(true)
             this.scene.textures.remove(this.textureId)
@@ -221,15 +238,16 @@ export class Blast {
 
 
     animateHole2 = () => {
-        var ctx = this.terrain.canvas.getContext('2d')
-        ctx.globalCompositeOperation = 'destination-out'
-
-        ctx.fillStyle = 'rgba(0,0,0,1)'
-        
-        ctx.beginPath()
-        ctx.arc(this.x, this.y, Math.min(this.outerRadius, this.maxRadius), 0, Math.PI * 2)
-        ctx.closePath()
-        ctx.fill()
+        if (!this.visualOnly) {
+            var ctx = this.terrain.canvas.getContext('2d')
+            ctx.globalCompositeOperation = 'destination-out'
+            ctx.fillStyle = 'rgba(0,0,0,1)'
+            ctx.beginPath()
+            ctx.arc(this.x, this.y, Math.min(this.outerRadius, this.maxRadius), 0, Math.PI * 2)
+            ctx.closePath()
+            ctx.fill()
+            ctx.globalCompositeOperation = 'source-over'
+        }
 
         var canvas = this.canvas
         var ctx2 = canvas.getContext('2d')
@@ -292,7 +310,9 @@ export class Blast {
 
         else {
             this.innerRadius = this.maxRadius
-            this.terrain.fixTerrain(this.x, this.y, this.maxRadius)
+            if (!this.visualOnly) {
+                this.terrain.fixTerrain(this.x, this.y, this.maxRadius)
+            }
             this.toRemove = true
             this.image.destroy(true)
             this.scene.textures.remove(this.textureId)
@@ -301,16 +321,16 @@ export class Blast {
 
 
     animateHole3 = () => {
-        var ctx = this.terrain.canvas.getContext('2d')
-        ctx.globalCompositeOperation = 'destination-out'
-
-        ctx.fillStyle = 'rgba(0,0,0,1)'
-        
-        ctx.beginPath()
-        ctx.arc(this.x, this.y, Math.min(this.outerRadius, this.maxRadius), 0, Math.PI * 2)
-        ctx.closePath()
-        ctx.fill()
-        //this.terrain.update()
+        if (!this.visualOnly) {
+            var ctx = this.terrain.canvas.getContext('2d')
+            ctx.globalCompositeOperation = 'destination-out'
+            ctx.fillStyle = 'rgba(0,0,0,1)'
+            ctx.beginPath()
+            ctx.arc(this.x, this.y, Math.min(this.outerRadius, this.maxRadius), 0, Math.PI * 2)
+            ctx.closePath()
+            ctx.fill()
+            ctx.globalCompositeOperation = 'source-over'
+        }
 
         var canvas = this.canvas
         var ctx2 = canvas.getContext('2d')

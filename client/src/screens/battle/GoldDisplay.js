@@ -13,12 +13,12 @@ const s = {
   },
   icon: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 9,
+    fontSize: 13,
     color: 'var(--gd)',
   },
   value: {
     fontFamily: "'Bebas Neue', sans-serif",
-    fontSize: 12,
+    fontSize: 16,
     color: 'var(--gd)',
     letterSpacing: 1,
     lineHeight: 1,

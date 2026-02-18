@@ -23,20 +23,20 @@ const s = {
   }),
   name: {
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 9,
+    fontSize: 14,
     color: 'var(--bn)',
     letterSpacing: 1,
   },
   score: {
     fontFamily: "'Bebas Neue', sans-serif",
-    fontSize: 14,
+    fontSize: 20,
     color: 'var(--gd)',
     letterSpacing: 2,
     lineHeight: 1,
   },
   hpBar: {
-    width: 80,
-    height: 4,
+    width: 100,
+    height: 6,
     borderRadius: 2,
     background: 'rgba(184, 168, 138, 0.15)',
     overflow: 'hidden',
@@ -52,7 +52,8 @@ const s = {
 };
 
 function ScoreBoard({ tank, side }) {
-  const hp = tank?.hp ?? 100;
+  const rawHp = tank?.hp ?? 250;
+  const hp = Math.round((rawHp / 250) * 100); // Convert 0-250 HP to 0-100% for bar width
   return (
     <div style={s.container(side)}>
       <div style={s.nameRow(side)}>

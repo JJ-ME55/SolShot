@@ -20,7 +20,7 @@ const s = {
     flex: 1,
     padding: '8px 0',
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 9,
+    fontSize: 14,
     letterSpacing: 2,
     textAlign: 'center',
     cursor: 'pointer',
@@ -80,20 +80,20 @@ const s = {
   },
   itemName: {
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 9,
+    fontSize: 14,
     color: 'var(--bn)',
     letterSpacing: 1,
   },
   itemType: (tierColor) => ({
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 7,
+    fontSize: 11,
     color: tierColor,
     letterSpacing: 1,
     opacity: 0.8,
   }),
   itemPrice: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 8,
+    fontSize: 13,
     color: 'var(--gd)',
     letterSpacing: 1,
     flexShrink: 0,
@@ -110,19 +110,19 @@ const s = {
   },
   detailName: {
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 14,
+    fontSize: 20,
     color: 'var(--bn)',
     letterSpacing: 2,
   },
   detailTier: (color) => ({
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 8,
+    fontSize: 13,
     color: color,
     letterSpacing: 2,
   }),
   detailDesc: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 8,
+    fontSize: 13,
     color: 'var(--kh)',
     letterSpacing: 1,
     lineHeight: 1.6,
@@ -130,7 +130,7 @@ const s = {
   },
   detailType: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 7,
+    fontSize: 11,
     color: 'var(--st)',
     letterSpacing: 2,
     padding: '3px 8px',
@@ -140,7 +140,7 @@ const s = {
   },
   comingSoon: {
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 10,
+    fontSize: 14,
     color: 'var(--am)',
     letterSpacing: 3,
     textAlign: 'center',
@@ -156,7 +156,7 @@ const s = {
     alignItems: 'center',
     justifyContent: 'center',
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 8,
+    fontSize: 14,
     color: 'var(--kh)',
     letterSpacing: 2,
     opacity: 0.4,
@@ -168,6 +168,7 @@ const ICON_MAP = {
   TRAIL: '~',
   BLAST: '*',
   SKIN: '^',
+  KILL: '!',
 };
 
 function ArmoryScreen({ navigate }) {

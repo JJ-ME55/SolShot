@@ -13,14 +13,14 @@ const s = {
   },
   label: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 7,
+    fontSize: 11,
     color: 'var(--sg)',
     letterSpacing: 1,
     opacity: 0.7,
   },
   value: {
     fontFamily: "'Bebas Neue', sans-serif",
-    fontSize: 12,
+    fontSize: 16,
     color: 'var(--sg)',
     letterSpacing: 1,
     lineHeight: 1,

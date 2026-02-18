@@ -1,4 +1,5 @@
 import React, { useCallback } from 'react';
+import { getWeaponIconUrl } from '../../data/weapons';
 
 const s = {
   container: {
@@ -12,31 +13,31 @@ const s = {
   },
   arrow: (disabled) => ({
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 14,
+    fontSize: 20,
     color: disabled ? 'var(--ol)' : 'var(--kh)',
     cursor: disabled ? 'default' : 'pointer',
-    padding: '0 4px',
+    padding: '0 6px',
     userSelect: 'none',
     lineHeight: 1,
     transition: 'color 0.15s ease',
   }),
   weaponName: {
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 10,
+    fontSize: 14,
     color: 'var(--bn)',
     letterSpacing: 1,
-    minWidth: 100,
+    minWidth: 120,
     textAlign: 'center',
     whiteSpace: 'nowrap',
   },
   ammo: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 7,
+    fontSize: 11,
     color: 'var(--kh)',
     letterSpacing: 1,
     opacity: 0.6,
     textAlign: 'center',
-    marginTop: 1,
+    marginTop: 2,
   },
   nameBlock: {
     display: 'flex',
@@ -75,6 +76,7 @@ function WeaponSelector({ weapons, currentIndex, onChange, disabled }) {
       </span>
 
       <div style={s.nameBlock}>
+        <img src={getWeaponIconUrl(current.name || 'Single Shot')} alt="" style={{ width: 32, height: 32, objectFit: 'contain', imageRendering: 'pixelated', marginBottom: 3 }} onError={(e) => { e.target.style.display = 'none'; }} />
         <span style={s.weaponName}>
           {current.name || 'SINGLE SHOT'}
         </span>

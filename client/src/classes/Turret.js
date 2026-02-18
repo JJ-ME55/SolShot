@@ -12,7 +12,7 @@ export class Turret extends GameObjects.Sprite {
         var canvas = document.createElement('canvas');
         canvas.height = 32 // turret height
         canvas.width = 2  // turret width
-        
+
         if (scene.textures.exists('turret' + id)) scene.textures.remove('turret' + id)
         scene.textures.addCanvas('turret' + id, canvas);
         super(scene, 0, 0, 'turret' + id)
@@ -43,7 +43,7 @@ export class Turret extends GameObjects.Sprite {
     create = () => {
         var ctx = this.canvas.getContext('2d')
         ctx.fillStyle = 'rgba(200,200,200,1)'
-    
+
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height/2)
 
         socket.on('opponentAngleChange', ({rotation}) => {

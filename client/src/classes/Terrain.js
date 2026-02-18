@@ -9,18 +9,26 @@ export class Terrain extends Textures.CanvasTexture {
     /**
     * @param {Phaser.Scene} scene
     */
-    constructor (scene) { 
+    constructor (scene) {
         var width = scene.game.renderer.width
         var height = scene.game.renderer.height
-        
+
         var canvas = document.createElement('canvas');
-        canvas.height = height * 2/3
+        canvas.height = height
         canvas.width = width
         if (scene.textures.exists('terrain')) scene.textures.remove('terrain')
         scene.textures.addCanvas('terrain', canvas);
-        scene.add.image(width/2, height/3, 'terrain');
 
         super(scene.textures, 'terrain', canvas, canvas.width, canvas.height)
+
+        // CRITICAL: Replace the texture manager's entry with `this` (the Terrain object).
+        // addCanvas() above creates a SEPARATE CanvasTexture in the manager.
+        // super() creates `this` as another CanvasTexture wrapping the same canvas.
+        // Without this, the Image references the addCanvas texture, but this.update()
+        // only refreshes `this` — so canvas changes never appear on screen.
+        scene.textures.list['terrain'] = this;
+
+        scene.add.image(width/2, height/2, 'terrain');
 
         this.canvas = canvas
         this.scene = scene
@@ -85,16 +93,91 @@ export class Terrain extends Textures.CanvasTexture {
         return
     }
 
+    /**
+     * Apply a server-authoritative heightmap to sync terrain after a shot.
+     * The heightmap is a 1D array where heightmap[x] = Y-coordinate of terrain surface.
+     * Handles BOTH craters (clearing terrain) AND raised terrain (drawing new terrain).
+     *
+     * @param {number[]} heightmap - 1200-element array of Y-values
+     */
+    applyHeightmap = (heightmap) => {
+        if (!heightmap || !heightmap.length) {
+            console.warn('[SolShot] applyHeightmap: no heightmap data');
+            return;
+        }
+
+        try {
+            const ctx = this.canvas.getContext('2d');
+            const width = this.width;
+            const height = this.height;
+            const currentData = ctx.getImageData(0, 0, width, height);
+            const pixels = currentData.data;
+            const cols = Math.min(width, heightmap.length);
+
+            // Brown color for newly raised terrain (walls, mounds)
+            const TERRAIN_R = 139, TERRAIN_G = 90, TERRAIN_B = 43, TERRAIN_A = 255;
+
+            for (let x = 0; x < cols; x++) {
+                const serverY = Math.floor(heightmap[x]);
+
+                // Find current client surface Y for this column
+                // (first opaque pixel scanning top-down = terrain surface)
+                let clientY = height; // default: no terrain in this column
+                for (let y = 0; y < height; y++) {
+                    const idx = (y * width + x) * 4;
+                    if (pixels[idx + 3] > 0) {
+                        clientY = y;
+                        break;
+                    }
+                }
+
+                if (serverY > clientY) {
+                    // CRATER: server surface is lower (higher Y) → clear pixels above serverY
+                    for (let y = clientY; y < Math.min(serverY, height); y++) {
+                        const idx = (y * width + x) * 4;
+                        pixels[idx] = 0;
+                        pixels[idx + 1] = 0;
+                        pixels[idx + 2] = 0;
+                        pixels[idx + 3] = 0;
+                    }
+                } else if (serverY < clientY) {
+                    // RAISED TERRAIN: server surface is higher (lower Y) → draw terrain pixels
+                    for (let y = serverY; y < clientY; y++) {
+                        const idx = (y * width + x) * 4;
+                        pixels[idx] = TERRAIN_R;
+                        pixels[idx + 1] = TERRAIN_G;
+                        pixels[idx + 2] = TERRAIN_B;
+                        pixels[idx + 3] = TERRAIN_A;
+                    }
+                }
+                // if equal: no change needed for this column
+            }
+
+            ctx.putImageData(currentData, 0, 0);
+            this.update();
+        } catch (err) {
+            console.error('[SolShot] applyHeightmap error:', err);
+        }
+    }
+
 
     updateTerrain = () => {
         if (this.blastArray.length !== 0) {
             this.blastArray.forEach((hole) => {
-                hole.update()
+                try {
+                    hole.update()
+                } catch (err) {
+                    console.error('[SolShot] Blast.update() error:', err.message)
+                    hole.toRemove = true
+                }
             })
-    
+
             this.blastArray = this.blastArray.filter((hole) => {
                 return (hole.toRemove === false)
             })
+
+            // Refresh the Phaser CanvasTexture so blast-drawn pixels appear on screen
+            this.update()
         }
         
         if (this.matrix.length === 0) {

@@ -1,3 +1,5 @@
+import crypto from 'crypto';
+
 /**
  * SolShot Match State Machine
  *
@@ -91,6 +93,7 @@ export function createMatchState(roomId, roundType = '1') {
         currentRound: 0,
         scores: {},          // { [playerId]: totalScore }
         roundWins: {},       // { [playerId]: roundsWon }
+        hp: {},              // { [playerId]: currentHP } — 250 per player per round
         currentTurn: null,   // playerId whose turn it is
         turnCount: 0,
         turnSequence: 0,     // Fix 4: Nonce — increments each fire, prevents replay
@@ -110,6 +113,10 @@ export function resetForNextRound(matchState) {
     matchState.turnCount = 0;
     matchState.turnSequence = 0;
     matchState.currentTurn = null;
+    // Reset HP for all players
+    for (const playerId of Object.keys(matchState.hp)) {
+        matchState.hp[playerId] = 250;
+    }
 }
 
 /**
@@ -123,7 +130,7 @@ export function resetForNextRound(matchState) {
 export function getNextTurn(matchState, hostId, playerId) {
     if (!matchState.currentTurn) {
         // First turn — random
-        return Math.random() < 0.5 ? hostId : playerId;
+        return crypto.randomInt(2) === 0 ? hostId : playerId;
     }
     // Alternate turns
     return matchState.currentTurn === hostId ? playerId : hostId;
@@ -136,7 +143,14 @@ export function getNextTurn(matchState, hostId, playerId) {
  * @returns {boolean}
  */
 export function isRoundOver(matchState) {
-    return matchState.turnCount >= matchState.turnsPerRound;
+    // Round ends when turns run out OR any tank reaches 0 HP
+    if (matchState.turnCount >= matchState.turnsPerRound) return true;
+    if (matchState.hp) {
+        for (const hp of Object.values(matchState.hp)) {
+            if (hp <= 0) return true;
+        }
+    }
+    return false;
 }
 
 /**
@@ -181,6 +195,13 @@ export function isMatchOver(matchState, hostId, playerId) {
  * @returns {string} winner's ID
  */
 export function getRoundWinner(matchState, hostId, playerId) {
+    // HP death: if one player's HP is 0 (or below), the other wins
+    const hostHp = matchState.hp[hostId] ?? 250;
+    const playerHp = matchState.hp[playerId] ?? 250;
+    if (hostHp <= 0 && playerHp > 0) return playerId;
+    if (playerHp <= 0 && hostHp > 0) return hostId;
+
+    // Fallback: higher score (cumulative damage dealt) wins
     const hostScore = matchState.scores[hostId] || 0;
     const playerScore = matchState.scores[playerId] || 0;
 

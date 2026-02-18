@@ -15,28 +15,40 @@
  *   100 matches → 2000 SHOT
  *   Every 50 after → 500 SHOT
  *
- * Prestige tiers (cumulative SHOT burned):
- *   Tier 1: 200 SHOT  → Bronze  (unlock: Tommy Gun)
- *   Tier 2: 500 SHOT  → Silver  (unlock: Scatter Shot)
- *   Tier 3: 1200 SHOT → Gold    (unlock: Spike Ball)
- *   Tier 4: 4000 SHOT → Diamond (unlock: Mega Nuke, Heatseeker)
+ * Prestige tiers — Litepaper v2.0 (cumulative SHOT burned):
+ *   Tier 1: 200 SHOT  → Bronze   (unlock: Homing Missile)
+ *   Tier 2: 500 SHOT  → Silver   (unlock: Cruiser)
+ *   Tier 3: 1200 SHOT → Gold     (unlock: Tommy Gun)
+ *   Tier 4: 2500 SHOT → Platinum (unlock: Chain Reaction)
+ *   Tier 5: 4000 SHOT → Diamond  (unlock: Pineapple)
  *
  * Future: Replace in-memory tracking with on-chain SPL token
  * when shot-token program is deployed.
  */
 
+import { Connection, PublicKey } from '@solana/web3.js';
 import { loadServerState, saveServerState } from '../models/ServerState.js';
 
-// Token supply config
+// Solana connection for burn verification
+const SOLANA_RPC = process.env.SOLANA_RPC || 'https://api.devnet.solana.com';
+const connection = new Connection(SOLANA_RPC, 'confirmed');
+
+// SHOT token mint — set via .env after deploy
+const SHOT_MINT = process.env.SHOT_TOKEN_MINT || null;
+
+// Track verified burn tx signatures to prevent replay
+const verifiedBurnTxs = new Set();
+
+// Token supply config — Litepaper v2.0
 export const SHOT_TOKEN_CONFIG = {
     name: 'SHOT',
     symbol: 'SHOT',
-    decimals: 6,
+    decimals: 9,                 // SPL token standard
     totalSupply: 10_000_000,     // 10M total
     rewardPool: 7_000_000,       // 70% for rewards
-    teamAllocation: 1_500_000,   // 15% team
-    liquidityPool: 1_000_000,    // 10% Raydium LP
-    treasury: 500_000,           // 5% treasury
+    treasury: 1_500_000,         // 15% treasury (multisig)
+    teamAllocation: 1_000_000,   // 10% team (12mo cliff, 24mo linear)
+    liquidityPool: 500_000,      // 5% Raydium LP (locked)
     mint: process.env.SHOT_TOKEN_MINT || null, // Set after deploy
 };
 
@@ -54,13 +66,15 @@ export const SHOT_MILESTONES = [
 const RECURRING_MILESTONE_INTERVAL = 50;
 const RECURRING_MILESTONE_REWARD = 500;
 
-// Prestige tiers
+// Prestige tiers — Litepaper v2.0
+// Each tier burns SHOT permanently. Cumulative: 200+500+1200+2500+4000 = 8400 SHOT to Diamond
 export const PRESTIGE_TIERS = [
-    { tier: 0, name: 'Unranked', burnCost: 0,    color: 'rgba(150,150,150,1)', weapons: [] },
-    { tier: 1, name: 'Bronze',   burnCost: 200,  color: 'rgba(205,127,50,1)',  weapons: [26] },       // Tommy Gun
-    { tier: 2, name: 'Silver',   burnCost: 500,  color: 'rgba(192,192,192,1)', weapons: [28] },       // Scatter Shot (ID 28 placeholder)
-    { tier: 3, name: 'Gold',     burnCost: 1200, color: 'rgba(255,204,0,1)',   weapons: [24] },       // Spike Ball
-    { tier: 4, name: 'Diamond',  burnCost: 4000, color: 'rgba(100,200,255,1)', weapons: [21, 29] },   // Mega Nuke, Heatseeker
+    { tier: 0, name: 'Unranked',  burnCost: 0,    color: 'rgba(150,150,150,1)', weapons: [] },
+    { tier: 1, name: 'Bronze',    burnCost: 200,  color: 'rgba(205,127,50,1)',  weapons: [24] },       // Homing Missile (60dmg, guided)
+    { tier: 2, name: 'Silver',    burnCost: 500,  color: 'rgba(192,192,192,1)', weapons: [29] },       // Cruiser (80dmg, rolling terrain bomb)
+    { tier: 3, name: 'Gold',      burnCost: 1200, color: 'rgba(255,204,0,1)',   weapons: [26] },       // Tommy Gun (12x20=240 max, rapid-fire)
+    { tier: 4, name: 'Platinum',  burnCost: 2500, color: 'rgba(180,160,255,1)', weapons: [21] },       // Chain Reaction (15x20=300 max, carpet-bomb)
+    { tier: 5, name: 'Diamond',   burnCost: 4000, color: 'rgba(100,200,255,1)', weapons: [22] },       // Pineapple (20 fragments, 640 max)
 ];
 
 // In-memory player SHOT state (keyed by walletAddress)
@@ -293,4 +307,120 @@ export function getPrestigeInfo(walletAddress) {
 export function getShotBalance(walletAddress) {
     const state = getPlayerShotState(walletAddress);
     return state ? state.balance : 0;
+}
+
+/**
+ * Verify an on-chain SHOT burn transaction before unlocking prestige.
+ *
+ * Checks:
+ *   1. Transaction exists and is confirmed
+ *   2. Transaction has not been used for a previous prestige burn (replay protection)
+ *   3. Transaction contains a Burn instruction for the SHOT token mint
+ *   4. Burn was signed by the claimed wallet address
+ *   5. Burn amount matches the expected prestige tier cost
+ *
+ * @param {string} txSignature — Solana transaction signature
+ * @param {string} walletAddress — Player's wallet address (must match signer)
+ * @param {number} expectedAmount — Expected burn amount in whole SHOT tokens
+ * @returns {Promise<{valid: boolean, reason?: string}>}
+ */
+export async function verifyBurnTransaction(txSignature, walletAddress, expectedAmount) {
+    // If no SHOT mint is configured, skip on-chain verification (dev mode)
+    if (!SHOT_MINT) {
+        console.log('[SHOT] No SHOT_TOKEN_MINT configured — skipping on-chain burn verification (dev mode)');
+        return { valid: true };
+    }
+
+    // Replay protection — each tx can only unlock one prestige
+    if (verifiedBurnTxs.has(txSignature)) {
+        return { valid: false, reason: 'Transaction already used for prestige' };
+    }
+
+    try {
+        // Fetch the confirmed transaction
+        const tx = await connection.getParsedTransaction(txSignature, {
+            commitment: 'confirmed',
+            maxSupportedTransactionVersion: 0,
+        });
+
+        if (!tx) {
+            return { valid: false, reason: 'Transaction not found or not confirmed' };
+        }
+
+        if (tx.meta?.err) {
+            return { valid: false, reason: 'Transaction failed on-chain' };
+        }
+
+        // Look for a Burn instruction targeting the SHOT mint
+        const instructions = tx.transaction.message.instructions;
+        let burnFound = false;
+
+        for (const ix of instructions) {
+            // Check parsed token instructions (SPL Token program)
+            if (ix.program === 'spl-token' && ix.parsed) {
+                const { type, info } = ix.parsed;
+
+                if (type === 'burn' || type === 'burnChecked') {
+                    const ixMint = info.mint;
+                    const ixAuthority = info.authority;
+                    const ixAmount = type === 'burnChecked'
+                        ? parseInt(info.tokenAmount?.amount || '0')
+                        : parseInt(info.amount || '0');
+
+                    // Verify mint matches SHOT token
+                    if (ixMint !== SHOT_MINT) continue;
+
+                    // Verify signer matches the player's wallet
+                    if (ixAuthority !== walletAddress) {
+                        return { valid: false, reason: 'Burn was not signed by your wallet' };
+                    }
+
+                    // Verify amount (expectedAmount is in whole tokens, on-chain is raw with 9 decimals)
+                    const expectedRaw = BigInt(expectedAmount) * BigInt(1_000_000_000);
+                    if (BigInt(ixAmount) < expectedRaw) {
+                        return { valid: false, reason: `Burned ${ixAmount} raw but need ${expectedRaw} for prestige` };
+                    }
+
+                    burnFound = true;
+                    break;
+                }
+            }
+        }
+
+        // Also check innerInstructions for burn (some wallets wrap in CPI)
+        if (!burnFound && tx.meta?.innerInstructions) {
+            for (const inner of tx.meta.innerInstructions) {
+                for (const ix of inner.instructions) {
+                    if (ix.program === 'spl-token' && ix.parsed) {
+                        const { type, info } = ix.parsed;
+                        if (type === 'burn' || type === 'burnChecked') {
+                            if (info.mint === SHOT_MINT && info.authority === walletAddress) {
+                                const ixAmount = type === 'burnChecked'
+                                    ? parseInt(info.tokenAmount?.amount || '0')
+                                    : parseInt(info.amount || '0');
+                                const expectedRaw = BigInt(expectedAmount) * BigInt(1_000_000_000);
+                                if (BigInt(ixAmount) >= expectedRaw) {
+                                    burnFound = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (burnFound) break;
+            }
+        }
+
+        if (!burnFound) {
+            return { valid: false, reason: 'No valid SHOT burn found in transaction' };
+        }
+
+        // Mark tx as used (replay protection)
+        verifiedBurnTxs.add(txSignature);
+
+        return { valid: true };
+    } catch (err) {
+        console.error('[SHOT] Burn verification error:', err.message);
+        return { valid: false, reason: 'Failed to verify burn transaction' };
+    }
 }

@@ -23,14 +23,14 @@ const styles = {
   },
   title: {
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 14,
+    fontSize: 20,
     color: 'var(--bn)',
     letterSpacing: 2,
     marginBottom: 10,
   },
   message: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 9,
+    fontSize: 14,
     color: 'var(--kh)',
     letterSpacing: 1,
     lineHeight: 1.6,
@@ -55,7 +55,7 @@ function Modal({ title, message, buttons = [], onClose }) {
               key={i}
               variant={btn.variant || 'secondary'}
               onClick={btn.onClick}
-              style={{ fontSize: 11, padding: '8px 16px' }}
+              style={{ fontSize: 14, padding: '10px 20px' }}
             >
               {btn.label}
             </Button>

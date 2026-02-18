@@ -15,6 +15,7 @@ const s = {
     height: '100%',
     overflow: 'hidden',
     background: '#000',
+    cursor: 'url("/assets/images/crosshair.svg") 16 16, crosshair',
   },
   canvas: {
     width: '100%',
@@ -53,10 +54,35 @@ const s = {
   },
   deploySub: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 8,
+    fontSize: 14,
     color: 'var(--kh)',
     letterSpacing: 2,
     opacity: 0.6,
+  },
+  disconnectOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: '50%',
+    transform: 'translateX(-50%)',
+    background: 'rgba(10, 12, 8, 0.9)',
+    border: '1px solid var(--ol)',
+    borderTop: 'none',
+    borderRadius: '0 0 8px 8px',
+    padding: '12px 24px',
+    zIndex: 45,
+    textAlign: 'center',
+  },
+  disconnectText: {
+    fontFamily: "'Share Tech Mono', monospace",
+    fontSize: 13,
+    color: '#ff6644',
+    letterSpacing: 1,
+  },
+  disconnectTimer: {
+    fontFamily: "'Black Ops One', cursive",
+    fontSize: 22,
+    color: '#ff6644',
+    marginTop: 4,
   },
 };
 
@@ -67,6 +93,8 @@ function BattleScreen({ navigate, screenData }) {
   const [phaserReady, setPhaserReady] = useState(false);
   const [showExit, setShowExit] = useState(false);
   const [error, setError] = useState(null);
+  const [disconnectCountdown, setDisconnectCountdown] = useState(null);
+  const countdownRef = useRef(null);
 
   // Initialize bridge once
   if (!bridgeRef.current) {
@@ -90,6 +118,20 @@ function BattleScreen({ navigate, screenData }) {
       bridge.onReady = null;
     };
   }, [bridge]);
+
+  /* -- Socket: escrowDeposit -> auto-sign deposit transaction -- */
+  useSocket('escrowDeposit', async (data) => {
+    if (!data?.transaction) return;
+    const signFn = window.solWallet?.signAndSendEscrowDeposit;
+    if (signFn) {
+      const sig = await signFn(data.transaction, data.roomId || screenData?.roomId);
+      if (sig) {
+        console.log('[Battle] Escrow deposit signed:', sig);
+      } else {
+        setError('Failed to deposit wager to escrow. Match may not proceed.');
+      }
+    }
+  });
 
   /* -- Socket: matchEnd -> navigate to win/lose -- */
   useSocket('matchEnd', (data) => {
@@ -121,6 +163,61 @@ function BattleScreen({ navigate, screenData }) {
       settlement: data,
     });
   });
+
+  /* -- Socket: opponent disconnected — show countdown overlay -- */
+  useSocket('opponentDisconnected', (data) => {
+    const windowMs = data.reconnectWindowMs || 30000;
+    let remaining = Math.ceil(windowMs / 1000);
+    setDisconnectCountdown(remaining);
+    countdownRef.current = setInterval(() => {
+      remaining--;
+      if (remaining <= 0) {
+        clearInterval(countdownRef.current);
+        countdownRef.current = null;
+        setDisconnectCountdown(null);
+      } else {
+        setDisconnectCountdown(remaining);
+      }
+    }, 1000);
+  });
+
+  /* -- Socket: opponent reconnected — dismiss countdown -- */
+  useSocket('opponentReconnected', () => {
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+      countdownRef.current = null;
+    }
+    setDisconnectCountdown(null);
+  });
+
+  /* -- Socket: reconnect window expired — opponent forfeited -- */
+  useSocket('reconnectExpired', () => {
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+      countdownRef.current = null;
+    }
+    setDisconnectCountdown(null);
+    setError('Opponent disconnected — you win by forfeit');
+  });
+
+  /* -- Socket: turn timeout — server auto-advanced the turn -- */
+  useSocket('turnTimeout', (data) => {
+    if (bridgeRef.current) {
+      bridgeRef.current.updateState({
+        currentTurn: data.nextTurn,
+        turnCount: data.turnCount,
+      });
+    }
+  });
+
+  /* -- Cleanup countdown interval on unmount -- */
+  useEffect(() => {
+    return () => {
+      if (countdownRef.current) {
+        clearInterval(countdownRef.current);
+      }
+    };
+  }, []);
 
   /* -- ESC key for exit menu -- */
   useEffect(() => {
@@ -200,10 +297,19 @@ function BattleScreen({ navigate, screenData }) {
         />
       )}
 
+      {/* Opponent Disconnect Countdown */}
+      {disconnectCountdown !== null && (
+        <div style={s.disconnectOverlay}>
+          <div style={s.disconnectText}>OPPONENT DISCONNECTED</div>
+          <div style={s.disconnectTimer}>{disconnectCountdown}s</div>
+          <div style={s.disconnectText}>WAITING FOR RECONNECT...</div>
+        </div>
+      )}
+
       {/* Error Modal */}
       {error && (
         <Modal
-          title="DISCONNECTED"
+          title={error.includes('forfeit') ? 'VICTORY' : 'DISCONNECTED'}
           message={error}
           buttons={[{
             label: 'RETURN TO LOBBY',

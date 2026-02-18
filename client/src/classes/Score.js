@@ -7,6 +7,7 @@ export class Score {
         this.scene = scene
         this.tank = tank
         this.pointsArray = []
+        this.hp = 250  // Server-authoritative HP (updated via applyTurnResult)
     }
 
 

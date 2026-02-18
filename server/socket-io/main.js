@@ -1,13 +1,13 @@
 import crypto from 'crypto';
 import mongoose from 'mongoose';
 import Match from '../models/Match.js';
-import { processShot, generateTerrain, generateTankPositions, WEAPON_DATA } from '../services/physics.js';
+import { processShot, generateTerrain, generateTankPositions, generateWind, WEAPON_DATA } from '../services/physics.js';
 import { createMatchState, validateAction, transitionState, getNextTurn, isRoundOver, isMatchOver, getRoundWinner, resetForNextRound, MATCH_STATES } from '../services/match.js';
 import { initGold, getBalance, earnGold, spendGold, awardKillBonus, awardRoundWinBonus } from '../services/gold.js';
 import { WEAPON_CATALOG, getWeapon, getWeaponCost, getAllLaunchWeapons } from '../models/Weapon.js';
 import { handleAuthenticate } from '../middleware/auth.js';
-import { verifyBalance, isValidWager, settleMatch, refundWager, WAGER_TIERS } from '../services/solana.js';
-import { recordMatchPlayed, prestigeBurn, getPrestigeInfo, getShotBalance, PRESTIGE_TIERS } from '../services/shot-token.js';
+import { verifyBalance, isValidWager, settleMatch, refundWager, WAGER_TIERS, MATCH_MODES, validateMatchMode, isEscrowEnabled, createMatchEscrow, buildDepositTransaction, getEscrowState } from '../services/solana.js';
+import { recordMatchPlayed, prestigeBurn, getPrestigeInfo, getShotBalance, PRESTIGE_TIERS, verifyBurnTransaction } from '../services/shot-token.js';
 import { trackConnection, trackDisconnection, trackMatchCreated, trackMatchCompleted, trackMatchCancelled, trackWager, trackSettlement, trackForfeit, trackShot, trackDamage, trackGoldEarned, trackShotEmission, trackShotBurn, trackError } from '../services/monitoring.js';
 import { requireAuth, validatePayload, validateFireParams, sanitizeName, withLock, safeHandler } from '../middleware/guards.js';
 
@@ -41,7 +41,17 @@ var wagerStates = {}
 // Authenticated wallets keyed by socketId → walletAddress
 var authenticatedWallets = {}
 
+// Disconnect/reconnect: pending timers keyed by walletAddress
+var disconnectTimers = {}
+// Pending reconnect info keyed by walletAddress → { roomId, isHost, socketId (old), name, color }
+var pendingReconnects = {}
+
+// Turn timers keyed by roomId
+var turnTimers = {}
+
 const SHOP_DURATION = 30; // seconds
+const RECONNECT_WINDOW_MS = 30000; // 30 seconds to reconnect
+const TURN_TIMEOUT_MS = 60000;     // 60 seconds per turn
 
 // O2: Debounced room broadcast — batch multiple room changes within 100ms
 let broadcastTimer = null;
@@ -71,6 +81,8 @@ function getOpenRooms() {
                     color: room.host.color,
                 } : null,
                 wager: room.wager || 0,
+                matchMode: room.matchMode || null,
+                totalRounds: room.totalRounds || 1,
             });
             if (result.length >= 5) break;
         }
@@ -120,6 +132,7 @@ async function removeRoom(roomId) {
     delete weaponInventories[roomId];
     delete shopReady[roomId];
     delete wagerStates[roomId];
+    clearTurnTimer(roomId);
     if (shopTimers[roomId]) {
         clearTimeout(shopTimers[roomId]);
         delete shopTimers[roomId];
@@ -181,6 +194,44 @@ function endShopPhase(io, roomId) {
     delete shopReady[roomId]
 }
 
+// Start a turn timer — auto-forfeit if no action within TURN_TIMEOUT_MS
+function startTurnTimer(io, roomId) {
+    clearTurnTimer(roomId)
+    turnTimers[roomId] = setTimeout(async () => {
+        const ms = matchStates[roomId]
+        if (!ms || ms.status !== MATCH_STATES.BATTLE) return
+
+        const room = findRoom(roomId)
+        if (!room) return
+
+        const currentTurnId = ms.currentTurn
+        if (!currentTurnId) return
+
+        // The player whose turn it is forfeits the turn — advance to next player
+        const hostId = room.host ? room.host.socketId : null
+        const playerId = room.player ? room.player.socketId : null
+
+        ms.turnCount++
+        ms.currentTurn = getNextTurn(ms, hostId, playerId)
+
+        io.sockets.in(roomId).emit('turnTimeout', {
+            timedOutPlayer: currentTurnId,
+            nextTurn: ms.currentTurn,
+            turnCount: ms.turnCount,
+        })
+
+        // Restart timer for the next player
+        startTurnTimer(io, roomId)
+    }, TURN_TIMEOUT_MS)
+}
+
+function clearTurnTimer(roomId) {
+    if (turnTimers[roomId]) {
+        clearTimeout(turnTimers[roomId])
+        delete turnTimers[roomId]
+    }
+}
+
 const mainsocket = (io) => {
     return io.on("connection", (client) => {
         trackConnection()
@@ -198,6 +249,12 @@ const mainsocket = (io) => {
         const RL_DISCONNECT_MULT = 3      // disconnect at 3x limit (90 events/sec)
         const RL_DISCONNECT_WINDOW = 5000 // sustained for 5 seconds
         const RL_WINDOW_MS = 1000
+
+        // Per-event throttle for room creation (max 3 per 60 seconds)
+        const RL_MAX_CREATES = 3
+        const RL_CREATE_WINDOW = 60000
+        const createRing = new Int32Array(RL_MAX_CREATES + 1)
+        let createHead = 0
 
         // Ring buffers — fixed-size circular arrays, O(1) insert + count
         const eventRing = new Int32Array(RL_MAX_EVENTS + 1)  // timestamps mod windowMs
@@ -256,6 +313,16 @@ const mainsocket = (io) => {
                 }
                 fireRing[fireHead % fireRing.length] = now
                 fireHead++
+            }
+
+            // Check create-room rate limit (max 3 per 60s)
+            if (eventName === 'createRoom') {
+                const createCount = ringCount(createRing, createHead, createRing.length, now, RL_CREATE_WINDOW)
+                if (createCount >= RL_MAX_CREATES) {
+                    return  // Drop excess room creations
+                }
+                createRing[createHead % createRing.length] = now
+                createHead++
             }
 
             // Record event in ring buffer
@@ -318,7 +385,7 @@ const mainsocket = (io) => {
 
                         if (opponentWallet && disconnectorWallet) {
                             try {
-                                const settlementResult = await settleMatch(opponentWallet, disconnectorWallet, ws.amount)
+                                const settlementResult = await settleMatch(opponentWallet, disconnectorWallet, ws.amount, roomId)
                                 console.log(`[Solana] Forfeit settlement (${reason}):`, settlementResult)
                                 trackForfeit()
                                 if (settlementResult.settlement) trackSettlement({ winnerPayout: settlementResult.settlement.winner, treasuryFee: settlementResult.settlement.treasury, opsFee: settlementResult.settlement.ops })
@@ -360,8 +427,64 @@ const mainsocket = (io) => {
 
         client.on('disconnect', async () => {
             trackDisconnection()
-            await cleanupRoom(client, io, 'disconnect')
-            delete authenticatedWallets[client.id]
+            const walletAddress = authenticatedWallets[client.id]
+            const roomId = client.roomId
+            const ms = roomId ? matchStates[roomId] : null
+            const room = roomId ? findRoom(roomId) : null
+
+            // Only offer reconnect window during active match (BATTLE or WEAPON_SHOP) with a wallet
+            if (walletAddress && roomId && ms && room &&
+                (ms.status === MATCH_STATES.BATTLE || ms.status === MATCH_STATES.WEAPON_SHOP)) {
+
+                // Store reconnect info keyed by wallet
+                pendingReconnects[walletAddress] = {
+                    roomId,
+                    isHost: client.isHost,
+                    oldSocketId: client.id,
+                    name: client.name,
+                    color: client.color,
+                }
+
+                // Notify opponent of disconnect with countdown
+                const opponentId = client.isHost
+                    ? (room.player ? room.player.socketId : null)
+                    : (room.host ? room.host.socketId : null)
+                if (opponentId) {
+                    io.to(opponentId).emit('opponentDisconnected', {
+                        reconnectWindowMs: RECONNECT_WINDOW_MS,
+                    })
+                }
+
+                // Deferred cleanup — runs after 30s if no reconnect
+                disconnectTimers[walletAddress] = setTimeout(async () => {
+                    delete pendingReconnects[walletAddress]
+                    delete disconnectTimers[walletAddress]
+
+                    // Re-read state (may have changed during window)
+                    const currentMs = matchStates[roomId]
+                    const currentRoom = findRoom(roomId)
+                    if (!currentRoom || !currentMs) return
+
+                    if (opponentId) {
+                        io.to(opponentId).emit('reconnectExpired', {})
+                    }
+
+                    // Perform forfeit settlement (reuse cleanupRoom logic)
+                    // Create a fake client-like object for cleanupRoom
+                    const fakeClient = {
+                        id: client.id,
+                        roomId: roomId,
+                        isHost: client.isHost,
+                        leave: () => {},
+                    }
+                    await cleanupRoom(fakeClient, io, 'reconnect_timeout')
+                    delete authenticatedWallets[client.id]
+                }, RECONNECT_WINDOW_MS)
+            } else {
+                // No reconnect window — immediate cleanup (lobby, no wallet, etc.)
+                await cleanupRoom(client, io, 'disconnect')
+                delete authenticatedWallets[client.id]
+            }
         })
 
 
@@ -370,6 +493,133 @@ const mainsocket = (io) => {
             await cleanupRoom(client, io, 'leave')
         })
 
+
+        // === RECONNECT: Rejoin a match after disconnect ===
+        client.on('rejoinRoom', (data) => {
+            if (!data || !data.walletAddress) {
+                client.emit('rejoinError', { reason: 'Missing wallet address' })
+                return
+            }
+
+            const walletAddress = data.walletAddress
+            const pending = pendingReconnects[walletAddress]
+            if (!pending) {
+                client.emit('rejoinError', { reason: 'No active match to rejoin' })
+                return
+            }
+
+            const { roomId, isHost, oldSocketId, name, color } = pending
+            const room = findRoom(roomId)
+            const ms = matchStates[roomId]
+
+            if (!room || !ms) {
+                delete pendingReconnects[walletAddress]
+                client.emit('rejoinError', { reason: 'Match no longer exists' })
+                return
+            }
+
+            // Cancel the deferred cleanup timer
+            if (disconnectTimers[walletAddress]) {
+                clearTimeout(disconnectTimers[walletAddress])
+                delete disconnectTimers[walletAddress]
+            }
+            delete pendingReconnects[walletAddress]
+
+            // Map new socket to the old player slot
+            client.join(roomId)
+            client.roomId = roomId
+            client.isHost = isHost
+            client.name = name
+            client.color = color
+            client.walletAddress = walletAddress
+            client.isAuthenticated = true
+            authenticatedWallets[client.id] = walletAddress
+
+            // Update room references from old socketId to new
+            if (isHost && room.host) {
+                // Migrate wager wallet entry
+                const ws = wagerStates[roomId]
+                if (ws && ws.wallets[oldSocketId]) {
+                    ws.wallets[client.id] = ws.wallets[oldSocketId]
+                    delete ws.wallets[oldSocketId]
+                }
+                // Migrate gold state
+                const gs = goldStates[roomId]
+                if (gs && gs[oldSocketId] !== undefined) {
+                    gs[client.id] = gs[oldSocketId]
+                    delete gs[oldSocketId]
+                }
+                // Migrate weapon inventory
+                const wi = weaponInventories[roomId]
+                if (wi && wi[oldSocketId]) {
+                    wi[client.id] = wi[oldSocketId]
+                    delete wi[oldSocketId]
+                }
+                // Migrate match state references
+                if (ms.scores[oldSocketId] !== undefined) { ms.scores[client.id] = ms.scores[oldSocketId]; delete ms.scores[oldSocketId] }
+                if (ms.roundWins[oldSocketId] !== undefined) { ms.roundWins[client.id] = ms.roundWins[oldSocketId]; delete ms.roundWins[oldSocketId] }
+                if (ms.hp[oldSocketId] !== undefined) { ms.hp[client.id] = ms.hp[oldSocketId]; delete ms.hp[oldSocketId] }
+                if (ms.currentTurn === oldSocketId) ms.currentTurn = client.id
+
+                room.host.socketId = client.id
+            } else if (room.player) {
+                const ws = wagerStates[roomId]
+                if (ws && ws.wallets[oldSocketId]) {
+                    ws.wallets[client.id] = ws.wallets[oldSocketId]
+                    delete ws.wallets[oldSocketId]
+                }
+                const gs = goldStates[roomId]
+                if (gs && gs[oldSocketId] !== undefined) {
+                    gs[client.id] = gs[oldSocketId]
+                    delete gs[oldSocketId]
+                }
+                const wi = weaponInventories[roomId]
+                if (wi && wi[oldSocketId]) {
+                    wi[client.id] = wi[oldSocketId]
+                    delete wi[oldSocketId]
+                }
+                if (ms.scores[oldSocketId] !== undefined) { ms.scores[client.id] = ms.scores[oldSocketId]; delete ms.scores[oldSocketId] }
+                if (ms.roundWins[oldSocketId] !== undefined) { ms.roundWins[client.id] = ms.roundWins[oldSocketId]; delete ms.roundWins[oldSocketId] }
+                if (ms.hp[oldSocketId] !== undefined) { ms.hp[client.id] = ms.hp[oldSocketId]; delete ms.hp[oldSocketId] }
+                if (ms.currentTurn === oldSocketId) ms.currentTurn = client.id
+
+                room.player.socketId = client.id
+            }
+
+            // Notify opponent that player reconnected
+            const opponentId = isHost
+                ? (room.player ? room.player.socketId : null)
+                : (room.host ? room.host.socketId : null)
+            if (opponentId) {
+                io.to(opponentId).emit('opponentReconnected', {})
+            }
+
+            // Send full state snapshot to the reconnected player
+            client.emit('rejoinSuccess', {
+                roomId,
+                isHost,
+                matchState: {
+                    status: ms.status,
+                    currentRound: ms.currentRound,
+                    maxRounds: ms.maxRounds,
+                    roundType: ms.roundType,
+                    scores: ms.scores,
+                    roundWins: ms.roundWins,
+                    hp: ms.hp,
+                    currentTurn: ms.currentTurn,
+                    turnCount: ms.turnCount,
+                },
+                goldBalance: goldStates[roomId] || {},
+                weapons: weaponInventories[roomId] ? weaponInventories[roomId][client.id] : [0],
+                terrain: room.heightmap ? { seed: room.terrainSeed, heightmap: room.heightmap } : null,
+                tankPositions: {
+                    host: room.host ? room.host.pos : null,
+                    player: room.player ? room.player.pos : null,
+                },
+                wager: wagerStates[roomId] ? wagerStates[roomId].amount : 0,
+                wind: room.wind || 0,
+            })
+        })
 
 
         client.on('deleteRoom', async () => {
@@ -463,6 +713,50 @@ const mainsocket = (io) => {
             persistRoom(room);
 
             broadcastRooms(io)
+
+            // Create on-chain escrow for wagered matches
+            if (roomWager > 0 && isEscrowEnabled()) {
+                const hostWallet = ws?.wallets[room.host.socketId]
+                if (hostWallet && joinerWallet) {
+                    try {
+                        const escrowResult = await createMatchEscrow(roomId, roomWager, hostWallet, joinerWallet)
+                        if (escrowResult.success) {
+                            room.escrowPDA = escrowResult.escrowPDA
+                            console.log(`[Match] Escrow created for room ${roomId}: ${escrowResult.escrowPDA}`)
+
+                            // Build deposit transactions for both players to sign
+                            const [hostDeposit, joinerDeposit] = await Promise.all([
+                                buildDepositTransaction(roomId, hostWallet),
+                                buildDepositTransaction(roomId, joinerWallet),
+                            ])
+
+                            // Send deposit instructions to each player
+                            const hostSocket = io.sockets.sockets.get(room.host.socketId)
+                            if (hostSocket && hostDeposit.success) {
+                                hostSocket.emit('escrowDeposit', {
+                                    roomId,
+                                    transaction: hostDeposit.transaction,
+                                    escrowPDA: escrowResult.escrowPDA,
+                                    wager: roomWager,
+                                })
+                            }
+                            if (joinerDeposit.success) {
+                                client.emit('escrowDeposit', {
+                                    roomId,
+                                    transaction: joinerDeposit.transaction,
+                                    escrowPDA: escrowResult.escrowPDA,
+                                    wager: roomWager,
+                                })
+                            }
+                        } else {
+                            console.error(`[Match] Escrow creation failed for ${roomId}:`, escrowResult.error)
+                        }
+                    } catch (err) {
+                        console.error(`[Match] Escrow error for ${roomId}:`, err.message)
+                    }
+                }
+            }
+
             io.sockets.in(client.roomId).emit('startPick', {host: room.host, player: room.player, wager: roomWager})
         })
 
@@ -523,7 +817,18 @@ const mainsocket = (io) => {
                 return
             }
 
-            const roomId = Math.random().toString(32).slice(2,8)
+            // Match mode validation (litepaper v2.0)
+            const rounds = [1, 3, 5].includes(player.matchLength) ? player.matchLength : 1
+            const matchMode = player.matchMode && MATCH_MODES[player.matchMode] ? player.matchMode : null
+            if (matchMode) {
+                const modeCheck = validateMatchMode(matchMode, wagerAmount, rounds)
+                if (!modeCheck.valid) {
+                    client.emit('createRoomError', { reason: modeCheck.reason })
+                    return
+                }
+            }
+
+            const roomId = crypto.randomBytes(4).toString('hex')
             client.join(roomId)
             client.roomId = roomId
             client.isHost = true
@@ -537,9 +842,10 @@ const mainsocket = (io) => {
                 wallets: { [client.id]: walletAddress }
             }
             roomData.wager = wagerAmount
-
-            // Initialize match state
-            matchStates[roomId] = createMatchState(roomId);
+            roomData.matchMode = matchMode
+            const roundType = rounds === 5 ? 'BO5' : rounds === 3 ? 'BO3' : '1'
+            matchStates[roomId] = createMatchState(roomId, roundType);
+            roomData.totalRounds = rounds
 
             // Persist to DB (only if connected — otherwise pure in-memory)
             if (isDbConnected()) {
@@ -589,9 +895,12 @@ const mainsocket = (io) => {
                     const hostId = room.host.socketId
                     const playerId = room.player.socketId
                     goldStates[client.roomId] = initGold(hostId, playerId)
+                    // Initialize inventories: Single Shot (free) + any prestige weapons
+                    const hostPrestige = getPrestigeInfo(authenticatedWallets[hostId] || '')
+                    const playerPrestige = getPrestigeInfo(authenticatedWallets[playerId] || '')
                     weaponInventories[client.roomId] = {
-                        [hostId]: [0],      // Everyone starts with Single Shot (free)
-                        [playerId]: [0]
+                        [hostId]: [0, ...(hostPrestige.unlockedWeapons || [])],
+                        [playerId]: [0, ...(playerPrestige.unlockedWeapons || [])]
                     }
                     shopReady[client.roomId] = {
                         [hostId]: false,
@@ -612,7 +921,9 @@ const mainsocket = (io) => {
                             [hostId]: getBalance(goldStates[client.roomId], hostId),
                             [playerId]: getBalance(goldStates[client.roomId], playerId)
                         },
-                        timer: SHOP_DURATION
+                        timer: SHOP_DURATION,
+                        totalRounds: ms ? ms.maxRounds : 1,
+                        round: ms ? ms.currentRound + 1 : 1
                     })
 
                     // Start shop timer — auto-end shop after SHOP_DURATION seconds
@@ -635,9 +946,12 @@ const mainsocket = (io) => {
                     const hostId = room.host.socketId
                     const playerId = room.player.socketId
                     goldStates[client.roomId] = initGold(hostId, playerId)
+                    // Initialize inventories: Single Shot (free) + any prestige weapons
+                    const hostPrestige = getPrestigeInfo(authenticatedWallets[hostId] || '')
+                    const playerPrestige = getPrestigeInfo(authenticatedWallets[playerId] || '')
                     weaponInventories[client.roomId] = {
-                        [hostId]: [0],      // Everyone starts with Single Shot (free)
-                        [playerId]: [0]
+                        [hostId]: [0, ...(hostPrestige.unlockedWeapons || [])],
+                        [playerId]: [0, ...(playerPrestige.unlockedWeapons || [])]
                     }
                     shopReady[client.roomId] = {
                         [hostId]: false,
@@ -658,7 +972,9 @@ const mainsocket = (io) => {
                             [hostId]: getBalance(goldStates[client.roomId], hostId),
                             [playerId]: getBalance(goldStates[client.roomId], playerId)
                         },
-                        timer: SHOP_DURATION
+                        timer: SHOP_DURATION,
+                        totalRounds: ms ? ms.maxRounds : 1,
+                        round: ms ? ms.currentRound + 1 : 1
                     })
 
                     // Start shop timer — auto-end shop after SHOP_DURATION seconds
@@ -782,19 +1098,41 @@ const mainsocket = (io) => {
             })
         })
 
-        // Burn SHOT to prestige up
-        client.on('prestigeBurn', () => {
+        // Burn SHOT to prestige up (with on-chain burn verification)
+        client.on('prestigeBurn', async (data) => {
             const wallet = authenticatedWallets[client.id] || null
             if (!wallet) {
                 client.emit('prestigeResult', { success: false, reason: 'Not authenticated' })
                 return
             }
-            const result = prestigeBurn(wallet)
-            if (result.success) {
-                const tier = PRESTIGE_TIERS[result.tier]
-                if (tier) trackShotBurn(tier.burnCost)
+
+            const { txSignature, burnAmount } = data || {}
+            if (!txSignature) {
+                client.emit('prestigeResult', { success: false, reason: 'No burn transaction provided' })
+                return
             }
-            client.emit('prestigeResult', result)
+
+            try {
+                // Verify the burn transaction on-chain
+                const verification = await verifyBurnTransaction(txSignature, wallet, burnAmount)
+
+                if (!verification.valid) {
+                    client.emit('prestigeResult', { success: false, reason: verification.reason || 'Burn verification failed' })
+                    return
+                }
+
+                // Burn verified — unlock the tier
+                const result = prestigeBurn(wallet)
+                if (result.success) {
+                    const tier = PRESTIGE_TIERS[result.tier]
+                    if (tier) trackShotBurn(tier.burnCost)
+                    console.log(`[Prestige] On-chain burn verified: ${wallet} → Tier ${result.tier} (${result.tierName}), tx: ${txSignature}`)
+                }
+                client.emit('prestigeResult', result)
+            } catch (err) {
+                console.error('[Prestige] Burn verification error:', err.message)
+                client.emit('prestigeResult', { success: false, reason: 'Burn verification error' })
+            }
         })
 
 
@@ -869,6 +1207,39 @@ const mainsocket = (io) => {
         })
 
 
+        // === ESCROW: Deposit confirmation from client ===
+        // Client signs the deposit TX and sends back the signature
+        client.on('escrowDepositConfirm', async (data) => {
+            if (!data || typeof data !== 'object') return
+            const { roomId: rid, txSignature } = data
+            if (!rid || !txSignature) return
+
+            const room = findRoom(rid)
+            if (!room) return
+
+            const ws = wagerStates[rid]
+            if (!ws) return
+
+            // Track which players have confirmed deposits
+            if (!ws.deposits) ws.deposits = {}
+            ws.deposits[client.id] = txSignature
+
+            const hostDeposited = ws.deposits[room.host?.socketId]
+            const playerDeposited = ws.deposits[room.player?.socketId]
+
+            console.log(`[Escrow] Deposit confirmed: ${client.id} for room ${rid} (TX: ${txSignature})`)
+
+            if (hostDeposited && playerDeposited) {
+                // Both players deposited — escrow is now active
+                console.log(`[Escrow] Both deposits confirmed for room ${rid} — match is escrowed`)
+                io.sockets.in(rid).emit('escrowActive', {
+                    roomId: rid,
+                    escrowPDA: room.escrowPDA,
+                    totalPot: ws.amount * 2,
+                })
+            }
+        })
+
         // === NEW: Server-authoritative fire event (Task 2.5) ===
         // Client sends input only → server runs physics → broadcasts results to both
         // H062: Wrap fire handler in safeHandler for unhandled rejection protection
@@ -940,8 +1311,23 @@ const mainsocket = (io) => {
                 this.emit('fireRejected', { reason: 'No position data' })
                 return
             }
-            const startX = serverPos.x
-            const startY = serverPos.y
+
+            // Accept client-reported position to handle movement sync
+            // Client pixel-walks terrain surface which may differ from server heightmap snap
+            // Validate within tolerance (4 steps * ~80px + margin)
+            let startX = serverPos.x
+            let startY = serverPos.y
+            if (data.position && typeof data.position === 'object' &&
+                Number.isFinite(data.position.x) && Number.isFinite(data.position.y)) {
+                const dx = Math.abs(data.position.x - serverPos.x)
+                const dy = Math.abs(data.position.y - serverPos.y)
+                if (dx <= 400 && dy <= 200) {
+                    startX = data.position.x
+                    startY = data.position.y
+                    serverPos.x = startX
+                    serverPos.y = startY
+                }
+            }
 
             // Build tank positions for physics
             const tanks = []
@@ -970,6 +1356,7 @@ const mainsocket = (io) => {
             trackShot()
 
             // Run server physics
+            console.log('[Fire] tanks:', tanks.map(t => ({ id: t.id.slice(0,8), x: Math.round(t.x), y: Math.round(t.y) })))
             const result = processShot({
                 angle,
                 power,
@@ -978,11 +1365,24 @@ const mainsocket = (io) => {
                 startY,
                 shooterId: this.id,
                 terrain,
-                tanks
+                tanks,
+                wind: room.wind || 0
             })
+            console.log('[Fire] impact:', result.impact, 'damage:', result.damage)
 
             // Update server terrain state
             room.heightmap = result.newTerrain
+
+            // Update tank Y positions to match deformed terrain
+            // Without this, next shot starts from old position which may be inside terrain
+            if (room.host && room.host.pos) {
+                const hx = Math.min(1199, Math.max(0, Math.floor(room.host.pos.x)))
+                room.host.pos.y = result.newTerrain[hx] - 15  // -15 for tank height offset
+            }
+            if (room.player && room.player.pos) {
+                const px = Math.min(1199, Math.max(0, Math.floor(room.player.pos.x)))
+                room.player.pos.y = result.newTerrain[px] - 15
+            }
 
             // Update match state + Gold
             let goldEarned = 0
@@ -990,6 +1390,12 @@ const mainsocket = (io) => {
                 // Update scores
                 for (const [playerId, dmg] of Object.entries(result.damage)) {
                     ms.scores[playerId] = (ms.scores[playerId] || 0) + dmg
+                }
+
+                // Update HP — apply absolute damage to each affected player
+                for (const [playerId, dmg] of Object.entries(result.damage)) {
+                    if (ms.hp[playerId] === undefined) ms.hp[playerId] = 250
+                    ms.hp[playerId] = Math.max(0, ms.hp[playerId] - Math.abs(dmg))
                 }
 
                 // Calculate Gold earned from damage dealt to opponent
@@ -1025,14 +1431,26 @@ const mainsocket = (io) => {
                 damage: result.damage,
                 terrainUpdate: result.newTerrain,
                 scores: ms ? ms.scores : {},
+                hp: ms ? ms.hp : {},
                 nextTurn: ms ? ms.currentTurn : null,
                 seq: ms ? ms.turnSequence : 0,  // Fix 4: client must echo this in next fire
                 goldEarned,
-                goldBalance: goldStates[this.roomId] || {}
+                goldBalance: goldStates[this.roomId] || {},
+                tankPositions: {
+                    host: room.host ? { x: room.host.pos.x, y: room.host.pos.y } : null,
+                    player: room.player ? { x: room.player.pos.x, y: room.player.pos.y } : null,
+                    hostId: room.host ? room.host.socketId : null,
+                }
             })
+
+            // Restart turn timer for the next player
+            if (ms && !isRoundOver(ms)) {
+                startTurnTimer(io, this.roomId)
+            }
 
             // Check if round is over
             if (ms && isRoundOver(ms)) {
+                clearTurnTimer(this.roomId)
                 const hostId = room.host.socketId
                 const playerId = room.player ? room.player.socketId : null
                 const roundWinner = getRoundWinner(ms, hostId, playerId)
@@ -1047,6 +1465,11 @@ const mainsocket = (io) => {
                 if (gold) {
                     awardRoundWinBonus(gold, roundWinner)
                 }
+
+                // Delay round/match end emit so client can animate the killing blow
+                const ROUND_END_DELAY = 3000 // 3 seconds for final blast animation
+                const roomId = this.roomId
+                const socketId = this.id
 
                 if (matchResult.isOver) {
                     // H068/H020: Transition to SETTLING — if fails, another handler already settled
@@ -1067,7 +1490,7 @@ const mainsocket = (io) => {
                             const loserWallet = ws.wallets[loserId] || null
                             if (winnerWallet && loserWallet) {
                                 try {
-                                    const sResult = await settleMatch(winnerWallet, loserWallet, ws.amount)
+                                    const sResult = await settleMatch(winnerWallet, loserWallet, ws.amount, roomId)
                                     settlementInfo = {
                                         wager: ws.amount,
                                         totalPot: ws.amount * 2,
@@ -1117,27 +1540,35 @@ const mainsocket = (io) => {
                             if (shotResults[playerId].earned > 0) trackShotEmission(shotResults[playerId].earned)
                         }
 
-                        io.sockets.in(this.roomId).emit('matchEnd', {
+                        // Delay matchEnd emit so client can animate the killing blow
+                        const matchEndPayload = {
                             winner: matchResult.winner,
                             scores: ms.scores,
                             roundWins: ms.roundWins,
-                            goldBalance: goldStates[this.roomId] || {},
+                            goldBalance: goldStates[roomId] || {},
                             settlement: settlementInfo,
                             wager: ws ? ws.amount : 0,
                             shotEarned: shotResults
-                        })
+                        }
+                        setTimeout(() => {
+                            io.sockets.in(roomId).emit('matchEnd', matchEndPayload)
+                        }, ROUND_END_DELAY)
                     })
                 } else {
                     transitionState(ms, MATCH_STATES.ROUND_END)
                     // H023: Reset turnCount for next round
                     resetForNextRound(ms)
-                    io.sockets.in(this.roomId).emit('roundEnd', {
+                    // Delay roundEnd emit so client can animate the killing blow
+                    const roundEndPayload = {
                         winner: roundWinner,
                         scores: ms.scores,
                         roundWins: ms.roundWins,
                         round: ms.currentRound,
-                        goldBalance: goldStates[this.roomId] || {}
-                    })
+                        goldBalance: goldStates[roomId] || {}
+                    }
+                    setTimeout(() => {
+                        io.sockets.in(roomId).emit('roundEnd', roundEndPayload)
+                    }, ROUND_END_DELAY)
                 }
             }
         }))
@@ -1149,13 +1580,15 @@ const mainsocket = (io) => {
             const room = findRoom(client.roomId)
             if (!room) return
 
-            const seed = Math.floor(Math.random() * 1000000)
-            const { path, heightmap } = generateTerrain(1200, 534, seed)
+            const seed = crypto.randomInt(1000000)
+            const { path, heightmap } = generateTerrain(1200, 800, seed)
             const tankPositions = generateTankPositions(heightmap)
+            const wind = generateWind()
 
             // Store server-side
             room.heightmap = heightmap
             room.terrainSeed = seed
+            room.wind = wind
             if (room.host) room.host.pos = tankPositions.host
             if (room.player) room.player.pos = tankPositions.player
 
@@ -1172,6 +1605,12 @@ const mainsocket = (io) => {
                     room.host ? room.host.socketId : null,
                     room.player ? room.player.socketId : null
                 )
+                // Initialize HP for both players
+                if (room.host) ms.hp[room.host.socketId] = 250
+                if (room.player) ms.hp[room.player.socketId] = 250
+
+                // Start turn timer for the first turn
+                startTurnTimer(io, client.roomId)
             }
 
             // Send to both clients
@@ -1180,6 +1619,7 @@ const mainsocket = (io) => {
                 heightmap,
                 tankPositions,
                 seed,
+                wind,
                 firstTurn: ms ? ms.currentTurn : null,
                 seq: ms ? ms.turnSequence : 0  // Fix 4: initial nonce for first fire
             })
@@ -1209,7 +1649,24 @@ const mainsocket = (io) => {
             client.to(client.roomId).emit('opponentPowerChange', {power: power})
         })
 
-
+        // After blast knockback, client reports its new tank position
+        client.on('positionUpdate', (data) => {
+            if (!data || typeof data !== 'object') return
+            const { x, y } = data
+            if (!Number.isFinite(x) || !Number.isFinite(y)) return
+            // Clamp to valid bounds
+            const clampedX = Math.min(1199, Math.max(0, x))
+            const clampedY = Math.min(800, Math.max(0, y))
+            var room = findRoom(client.roomId)
+            if (!room) return
+            if (room.host && room.host.socketId === client.id) {
+                room.host.pos.x = clampedX
+                room.host.pos.y = clampedY
+            } else if (room.player && room.player.socketId === client.id) {
+                room.player.pos.x = clampedX
+                room.player.pos.y = clampedY
+            }
+        })
 
         // LEGACY: terrain relay (still works for current client)
         // Fix 3: Validate positions to prevent cheater-injected coordinates
@@ -1225,12 +1682,12 @@ const mainsocket = (io) => {
             if (!Array.isArray(path) || path.length === 0 || path.length > 2400) return
 
             // Validate positions are objects with finite numbers within canvas bounds
-            // Canvas: 1200 x 534
+            // Canvas: 1200 x 800
             if (!hostPos || !playerPos) return
             if (!Number.isFinite(hostPos.x) || !Number.isFinite(hostPos.y)) return
             if (!Number.isFinite(playerPos.x) || !Number.isFinite(playerPos.y)) return
-            if (hostPos.x < 0 || hostPos.x > 1200 || hostPos.y < 0 || hostPos.y > 600) return
-            if (playerPos.x < 0 || playerPos.x > 1200 || playerPos.y < 0 || playerPos.y > 600) return
+            if (hostPos.x < 0 || hostPos.x > 1200 || hostPos.y < 0 || hostPos.y > 800) return
+            if (playerPos.x < 0 || playerPos.x > 1200 || playerPos.y < 0 || playerPos.y > 800) return
 
             // O6: Assign directly — no spread needed, overwritten every call
             room.terrainPath = path
@@ -1238,7 +1695,7 @@ const mainsocket = (io) => {
             room.player.pos = { x: playerPos.x, y: playerPos.y }
 
             // Also build heightmap from path for server physics
-            const heightmap = new Array(1200).fill(534)
+            const heightmap = new Array(1200).fill(800)
             const sorted = path.filter(p =>
                 p && Number.isFinite(p.x) && Number.isFinite(p.y) &&
                 p.x >= 0 && p.x < 1200
@@ -1284,6 +1741,21 @@ const mainsocket = (io) => {
             if (!client.roomId) return
             const ms = matchStates[client.roomId]
             if (ms && !validateAction(ms.status, 'stepLeft')) return
+
+            // Track movement server-side so fire handler uses correct position
+            const room = findRoom(client.roomId)
+            if (room) {
+                const isHost = room.host && room.host.socketId === client.id
+                const pos = isHost ? room.host.pos : (room.player ? room.player.pos : null)
+                if (pos && room.heightmap) {
+                    const newX = Math.max(0, Math.floor(pos.x - 80))
+                    if (room.heightmap[newX] !== undefined) {
+                        pos.x = newX
+                        pos.y = room.heightmap[newX] - 15
+                    }
+                }
+            }
+
             client.to(client.roomId).emit('opponentStepLeft', {})
         })
 
@@ -1293,6 +1765,21 @@ const mainsocket = (io) => {
             if (!client.roomId) return
             const ms = matchStates[client.roomId]
             if (ms && !validateAction(ms.status, 'stepRight')) return
+
+            // Track movement server-side so fire handler uses correct position
+            const room = findRoom(client.roomId)
+            if (room) {
+                const isHost = room.host && room.host.socketId === client.id
+                const pos = isHost ? room.host.pos : (room.player ? room.player.pos : null)
+                if (pos && room.heightmap) {
+                    const newX = Math.min(1199, Math.floor(pos.x + 80))
+                    if (room.heightmap[newX] !== undefined) {
+                        pos.x = newX
+                        pos.y = room.heightmap[newX] - 15
+                    }
+                }
+            }
+
             client.to(client.roomId).emit('opponentStepRight', {})
         })
 
@@ -1328,6 +1815,10 @@ const mainsocket = (io) => {
                 return
             }
 
+            // Derive roundType from room's totalRounds so playAgain preserves BO format
+            const paRounds = room.totalRounds || 1
+            const paRoundType = paRounds === 5 ? 'BO5' : paRounds === 3 ? 'BO3' : '1'
+
             if (client.isHost === true) {
                 room.host.playAgain = true
                 if (room.player && room.player.playAgain === true) {
@@ -1336,7 +1827,7 @@ const mainsocket = (io) => {
                     delete room.heightmap
 
                     // Reset match state, Gold, and inventories for new game
-                    matchStates[client.roomId] = createMatchState(client.roomId)
+                    matchStates[client.roomId] = createMatchState(client.roomId, paRoundType)
                     delete goldStates[client.roomId]
                     delete weaponInventories[client.roomId]
                     delete shopReady[client.roomId]
@@ -1360,7 +1851,7 @@ const mainsocket = (io) => {
                     delete room.heightmap
 
                     // Reset match state, Gold, and inventories for new game
-                    matchStates[client.roomId] = createMatchState(client.roomId)
+                    matchStates[client.roomId] = createMatchState(client.roomId, paRoundType)
                     delete goldStates[client.roomId]
                     delete weaponInventories[client.roomId]
                     delete shopReady[client.roomId]

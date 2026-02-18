@@ -16,7 +16,7 @@ const styles = {
     border: '1px solid var(--od)',
     borderRadius: 3,
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 9,
+    fontSize: 13,
     letterSpacing: 1,
   },
   solValue: {
@@ -26,7 +26,7 @@ const styles = {
     color: 'var(--am)',
   },
   icon: {
-    fontSize: 8,
+    fontSize: 12,
   },
 };
 

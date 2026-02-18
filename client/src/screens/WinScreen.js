@@ -25,7 +25,7 @@ const s = {
   },
   subtitle: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 9,
+    fontSize: 14,
     color: 'var(--kh)',
     letterSpacing: 3,
     opacity: 0.7,
@@ -49,14 +49,14 @@ const s = {
   }),
   rewardValue: (color) => ({
     fontFamily: "'Bebas Neue', sans-serif",
-    fontSize: 22,
+    fontSize: 28,
     color: color,
     letterSpacing: 2,
     lineHeight: 1,
   }),
   rewardLabel: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 7,
+    fontSize: 12,
     color: 'var(--kh)',
     letterSpacing: 2,
     opacity: 0.7,
@@ -74,14 +74,14 @@ const s = {
   },
   statValue: {
     fontFamily: "'Bebas Neue', sans-serif",
-    fontSize: 16,
+    fontSize: 22,
     color: 'var(--bn)',
     letterSpacing: 2,
     lineHeight: 1,
   },
   statLabel: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 7,
+    fontSize: 12,
     color: 'var(--kh)',
     letterSpacing: 1,
     opacity: 0.6,
@@ -94,14 +94,14 @@ const s = {
   },
   settlementLine: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 7,
+    fontSize: 12,
     color: 'var(--sg)',
     letterSpacing: 1,
     opacity: 0.6,
   },
   waitingText: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 8,
+    fontSize: 14,
     color: 'var(--am)',
     letterSpacing: 2,
     animation: 'fl 2s ease-in-out infinite',
@@ -209,18 +209,18 @@ function WinScreen({ navigate, screenData }) {
       <div style={s.buttonRow}>
         {!opponentLeft ? (
           <>
-            <Button variant="primary" onClick={handleRematch} disabled={waitingRematch} style={{ fontSize: 11, padding: '8px 20px' }}>
+            <Button variant="primary" onClick={handleRematch} disabled={waitingRematch} style={{ fontSize: 14, padding: '10px 24px' }}>
               {waitingRematch ? 'WAITING...' : 'REMATCH'}
             </Button>
-            <Button variant="secondary" onClick={handleLobby} style={{ fontSize: 10, padding: '8px 16px' }}>
+            <Button variant="secondary" onClick={handleLobby} style={{ fontSize: 13, padding: '10px 20px' }}>
               LOBBY
             </Button>
-            <Button variant="secondary" onClick={handleMenu} style={{ fontSize: 10, padding: '8px 16px' }}>
+            <Button variant="secondary" onClick={handleMenu} style={{ fontSize: 13, padding: '10px 20px' }}>
               MENU
             </Button>
           </>
         ) : (
-          <Button variant="secondary" onClick={handleLobby} style={{ fontSize: 11, padding: '8px 20px' }}>
+          <Button variant="secondary" onClick={handleLobby} style={{ fontSize: 14, padding: '10px 24px' }}>
             RETURN TO LOBBY
           </Button>
         )}

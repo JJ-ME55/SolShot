@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SolShot — Artillery Combat on Solana</title>
+<meta name="description" content="PvP artillery game on Solana. Wager SOL in tank battles. Outshoot your opponent. Take the pot.">
+<meta property="og:title" content="SolShot — Aim. Fire. Earn.">
+<meta property="og:description" content="Multiplayer artillery combat on Solana. Wager SOL. Winner takes 90%.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://solshot.gg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="SolShot — Aim. Fire. Earn.">
+<meta name="twitter:description" content="PvP tank artillery on Solana. Real SOL wagers. Server-authoritative. No cheats.">
+<link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Share+Tech+Mono&family=Bebas+Neue&display=swap" rel="stylesheet">
+<style>
+:root{--ol:#3d4a2f;--od:#2a331f;--kh:#b8a88a;--ru:#c4510a;--rg:#ff6b1a;--am:#ffb627;--ad:#a67b1a;--st:#6b7b8d;--sd:#3a4550;--bn:#e8dcc8;--mu:#5c4a3a;--bk:#0a0c08;--gg:#7fff44;--rd:#cc2200;--sp:#9945FF;--sg:#14F195;--gd:#ffd700}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:'Share Tech Mono',monospace;background:var(--bk);color:var(--kh);line-height:1.6;overflow-x:hidden}
+
+/* Noise + Scanlines */
+body::before{content:'';position:fixed;inset:0;opacity:0.03;pointer-events:none;z-index:9999;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:9998;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.02) 2px,rgba(0,0,0,0.02) 4px)}
+
+.st{font-family:'Black Ops One',cursive}
+.mo{font-family:'Share Tech Mono',monospace}
+.be{font-family:'Bebas Neue',sans-serif}
+
+@keyframes si{from{transform:translateX(-16px);opacity:0}to{transform:translateX(0);opacity:1}}
+@keyframes su{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+@keyframes fl{0%,100%{opacity:1}50%{opacity:0.98}}
+@keyframes wd{0%,100%{transform:translateX(0)}50%{transform:translateX(5px)}}
+@keyframes gp{0%,100%{opacity:0.4}50%{opacity:0.8}}
+
+/* ===== NAV ===== */
+nav{position:fixed;top:0;left:0;right:0;z-index:1000;padding:0 24px;height:48px;display:flex;justify-content:space-between;align-items:center;background:rgba(10,12,8,0.9);backdrop-filter:blur(12px);border-bottom:1px solid var(--ol)}
+.nav-logo{display:flex;align-items:center;gap:8px;text-decoration:none}
+.nav-shell{width:28px;height:38px;border:2px solid var(--kh);border-radius:3px 3px 8px 8px;background:linear-gradient(135deg,var(--sd),var(--st));display:flex;align-items:center;justify-content:center;position:relative;flex-shrink:0}
+.nav-shell::before{content:'';position:absolute;top:-6px;width:10px;height:10px;border-radius:50%;border:2px solid var(--kh);background:var(--sd)}
+.nav-shell span{font-size:12px;color:var(--bn)}
+.nav-title{font-size:22px;letter-spacing:2px;line-height:1}
+.nav-title .sol{color:var(--bn)}
+.nav-title .shot{color:var(--rg)}
+.nav-links{display:flex;gap:20px;align-items:center;list-style:none}
+.nav-links a{color:var(--kh);text-decoration:none;font-size:10px;letter-spacing:2px;text-transform:uppercase;opacity:0.5;transition:all 0.2s}
+.nav-links a:hover{opacity:1;color:var(--rg)}
+.btn-deploy{display:inline-flex;align-items:center;gap:5px;padding:6px 16px;background:linear-gradient(180deg,#cc3300,#881a00);color:var(--bn);font-family:'Black Ops One',cursive;font-size:11px;letter-spacing:2px;text-decoration:none;border:1px solid var(--rg);border-radius:4px;box-shadow:0 0 12px rgba(204,51,0,0.2);transition:all 0.2s}
+.btn-deploy:hover{box-shadow:0 0 20px rgba(204,51,0,0.4);transform:translateY(-1px)}
+
+/* ===== HERO ===== */
+.hero{min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:80px 24px 48px;position:relative;overflow:hidden;background:linear-gradient(135deg,#0c1008,#1a2a12 40%,#0a0c08)}
+
+/* Terrain silhouette */
+.hero::after{content:'';position:absolute;bottom:0;left:0;right:0;height:200px;background:linear-gradient(180deg,transparent,#1a1208 50%);clip-path:polygon(0% 50%,5% 35%,12% 45%,20% 20%,28% 35%,35% 15%,42% 30%,50% 10%,58% 25%,65% 12%,72% 28%,78% 18%,85% 32%,92% 22%,100% 30%,100% 100%,0% 100%);opacity:0.3}
+
+/* Explosion glow */
+.hero-glow{position:absolute;top:25%;right:15%;width:120px;height:120px;border-radius:50%;background:radial-gradient(circle,rgba(255,107,26,0.15),transparent 70%);animation:gp 4s ease-in-out infinite}
+
+.hero-badge{display:inline-flex;align-items:center;gap:6px;padding:3px 12px;background:rgba(153,69,255,0.08);border:1px solid rgba(153,69,255,0.2);border-radius:3px;font-size:8px;color:var(--sg);letter-spacing:3px;text-transform:uppercase;margin-bottom:24px;position:relative;z-index:1}
+.hero-badge::before{content:'';width:5px;height:5px;background:var(--sg);border-radius:50%;animation:gp 2s ease-in-out infinite}
+
+.hero h1{font-size:clamp(48px,10vw,100px);line-height:0.9;letter-spacing:4px;margin-bottom:16px;position:relative;z-index:1;text-shadow:0 0 20px rgba(255,107,26,0.2),0 4px 0 var(--mu)}
+.hero h1 .w1,.hero h1 .w2{display:block;color:var(--bn)}
+.hero h1 .w3{display:block;color:var(--rg)}
+
+.hero-sub{font-size:12px;color:var(--kh);max-width:480px;margin-bottom:32px;line-height:1.8;opacity:0.7;position:relative;z-index:1;letter-spacing:1px}
+
+.hero-ctas{display:flex;gap:12px;position:relative;z-index:1;margin-bottom:40px}
+.btn-primary{display:inline-flex;align-items:center;gap:6px;padding:14px 32px;background:linear-gradient(180deg,#cc3300,#881a00);color:var(--bn);font-family:'Black Ops One',cursive;font-size:16px;letter-spacing:4px;text-decoration:none;border:2px solid var(--rg);border-radius:5px;box-shadow:0 0 20px rgba(204,51,0,0.3),inset 0 1px 0 rgba(255,255,255,0.08);transition:all 0.2s;cursor:pointer;text-shadow:0 2px 4px rgba(0,0,0,0.5)}
+.btn-primary:hover{box-shadow:0 0 30px rgba(204,51,0,0.5);transform:translateY(-2px)}
+.btn-secondary{display:inline-flex;align-items:center;padding:14px 24px;background:var(--od);color:var(--kh);font-family:'Black Ops One',cursive;font-size:13px;letter-spacing:2px;text-decoration:none;border:1px solid var(--ol);border-radius:5px;transition:all 0.2s;cursor:pointer}
+.btn-secondary:hover{border-color:var(--rg);color:var(--bn)}
+
+.hero-stats{display:flex;gap:32px;position:relative;z-index:1}
+.hero-stat{text-align:center}
+.hero-stat-val{font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--rg);line-height:1}
+.hero-stat-label{font-size:8px;color:var(--kh);letter-spacing:3px;text-transform:uppercase;opacity:0.4;margin-top:2px}
+
+/* ===== SECTIONS ===== */
+section{padding:80px 24px;max-width:1000px;margin:0 auto}
+.sec-label{font-size:8px;letter-spacing:4px;text-transform:uppercase;color:var(--rg);margin-bottom:8px;opacity:0.6}
+.sec-title{font-size:clamp(24px,4vw,36px);color:var(--bn);margin-bottom:8px;letter-spacing:2px;text-shadow:0 2px 0 var(--mu)}
+.sec-desc{color:var(--kh);max-width:520px;font-size:11px;line-height:1.7;margin-bottom:32px;opacity:0.6}
+
+/* ===== HOW IT WORKS ===== */
+.how-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--ol);border:1px solid var(--ol)}
+.how-step{background:rgba(26,32,16,0.7);padding:24px 18px;transition:background 0.2s}
+.how-step:hover{background:rgba(42,51,31,0.5)}
+.how-num{font-family:'Bebas Neue',sans-serif;font-size:40px;color:var(--ol);line-height:1;margin-bottom:8px;transition:color 0.2s}
+.how-step:hover .how-num{color:var(--rg)}
+.how-step h3{font-size:14px;color:var(--bn);letter-spacing:2px;margin-bottom:6px}
+.how-step p{font-size:10px;color:var(--kh);line-height:1.6;opacity:0.6}
+
+/* ===== WEAPONS ===== */
+.wpn-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:1px;background:var(--ol);border:1px solid var(--ol)}
+.wpn{background:rgba(26,32,16,0.6);padding:14px 16px;border-left:3px solid var(--kh);transition:background 0.2s}
+.wpn:hover{background:rgba(42,51,31,0.4)}
+.wpn[data-t="free"]{border-left-color:var(--kh)}
+.wpn[data-t="standard"]{border-left-color:var(--kh)}
+.wpn[data-t="tactical"]{border-left-color:var(--st)}
+.wpn[data-t="rare"]{border-left-color:var(--am)}
+.wpn[data-t="epic"]{border-left-color:var(--sp)}
+.wpn[data-t="legendary"]{border-left-color:var(--rg)}
+.wpn[data-t="prestige"]{border-left-color:var(--gg)}
+.wpn-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px}
+.wpn-name{font-size:12px;color:var(--bn);letter-spacing:1px}
+.wpn-cost{font-size:9px;padding:2px 6px;border-radius:2px;letter-spacing:1px}
+.wpn[data-t="free"] .wpn-cost{color:var(--gg);background:rgba(127,255,68,0.08)}
+.wpn[data-t="standard"] .wpn-cost{color:var(--kh);background:rgba(184,168,138,0.08)}
+.wpn[data-t="tactical"] .wpn-cost{color:var(--st);background:rgba(107,123,141,0.08)}
+.wpn[data-t="rare"] .wpn-cost{color:var(--am);background:rgba(255,182,39,0.08)}
+.wpn[data-t="epic"] .wpn-cost{color:var(--sp);background:rgba(153,69,255,0.08)}
+.wpn[data-t="legendary"] .wpn-cost{color:var(--rg);background:rgba(255,107,26,0.08)}
+.wpn[data-t="prestige"] .wpn-cost{color:var(--gg);background:rgba(127,255,68,0.08)}
+.wpn-tier{font-size:7px;letter-spacing:2px;text-transform:uppercase;opacity:0.4;margin-bottom:4px}
+.wpn-desc{font-size:9px;color:var(--kh);line-height:1.5;opacity:0.5}
+
+/* ===== TOKENOMICS ===== */
+.tok-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.tok-card{background:rgba(26,32,16,0.5);border:1px solid var(--ol);padding:24px}
+.tok-card h3{font-size:16px;color:var(--bn);letter-spacing:2px;margin-bottom:16px}
+.tok-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--od);font-size:10px}
+.tok-row:last-child{border-bottom:none}
+.tok-row-l{color:var(--kh);opacity:0.6}
+.tok-row-v{color:var(--bn);letter-spacing:1px}
+
+.burn-flow{display:flex;align-items:center;gap:10px;margin-top:20px;padding:16px;background:rgba(204,34,0,0.04);border:1px solid rgba(204,34,0,0.12)}
+.burn-step{text-align:center;flex:1}
+.burn-step .v{font-size:11px;color:var(--bn);letter-spacing:1px}
+.burn-step .l{font-size:7px;color:var(--kh);opacity:0.4;letter-spacing:2px;text-transform:uppercase;margin-top:2px}
+.burn-arrow{color:var(--rd);font-size:16px;opacity:0.4}
+
+/* ===== PRESTIGE ===== */
+.pres-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--ol);border:1px solid var(--ol)}
+.pres-tier{background:rgba(26,32,16,0.6);padding:20px 14px;text-align:center;transition:background 0.2s}
+.pres-tier:hover{background:rgba(42,51,31,0.4)}
+.pres-icon{font-family:'Bebas Neue',sans-serif;font-size:28px;margin-bottom:4px}
+.pres-name{font-size:12px;color:var(--bn);letter-spacing:1px;margin-bottom:2px}
+.pres-cost{font-size:9px;color:var(--rd);margin-bottom:8px;letter-spacing:1px}
+.pres-unlock{font-size:8px;color:var(--kh);opacity:0.5;line-height:1.4}
+.pres-unlock strong{color:var(--gg);opacity:1}
+
+/* ===== ROADMAP ===== */
+.road{position:relative;padding-left:28px}
+.road::before{content:'';position:absolute;left:0;top:0;bottom:0;width:2px;background:linear-gradient(180deg,var(--gg),var(--rg),var(--rd))}
+.road-item{padding:0 0 32px 20px;position:relative}
+.road-item::before{content:'';position:absolute;left:-5px;top:5px;width:12px;height:12px;border-radius:50%;border:2px solid var(--rg);background:var(--bk)}
+.road-item.active::before{background:var(--gg);border-color:var(--gg);box-shadow:0 0 8px rgba(127,255,68,0.3)}
+.road-phase{font-size:8px;letter-spacing:3px;text-transform:uppercase;color:var(--rg);margin-bottom:2px;opacity:0.6}
+.road-item.active .road-phase{color:var(--gg);opacity:1}
+.road-title{font-size:16px;color:var(--bn);letter-spacing:1px;margin-bottom:4px}
+.road-desc{font-size:10px;color:var(--kh);line-height:1.6;opacity:0.5}
+
+/* ===== FAQ ===== */
+.faq-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--ol);border:1px solid var(--ol)}
+.faq-item{background:rgba(26,32,16,0.6);padding:20px}
+.faq-item h3{font-size:12px;color:var(--bn);letter-spacing:1px;margin-bottom:8px}
+.faq-item p{font-size:9px;color:var(--kh);line-height:1.7;opacity:0.6}
+
+/* ===== CTA ===== */
+.cta-section{text-align:center;padding:100px 24px;position:relative}
+.cta-section::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(255,107,26,0.06),transparent 70%)}
+.cta-section h2{font-size:clamp(28px,5vw,48px);color:var(--bn);margin-bottom:8px;letter-spacing:3px;position:relative;text-shadow:0 0 16px rgba(255,107,26,0.2),0 3px 0 var(--mu)}
+.cta-section p{font-size:11px;color:var(--kh);margin-bottom:24px;opacity:0.6;position:relative;letter-spacing:1px}
+
+/* ===== RESPONSIBLE GAMING ===== */
+.rg{max-width:1000px;margin:0 auto 24px;padding:14px 20px;background:rgba(204,34,0,0.04);border:1px solid rgba(204,34,0,0.12);display:flex;align-items:center;gap:12px}
+.rg-icon{font-size:14px;color:var(--rd);flex-shrink:0}
+.rg p{font-size:9px;color:var(--kh);opacity:0.5;line-height:1.5}
+.rg a{color:var(--rd);text-decoration:none}
+
+/* ===== FOOTER ===== */
+footer{padding:48px 24px;border-top:1px solid var(--ol);max-width:1000px;margin:0 auto}
+.ft-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px}
+.ft-brand p{font-size:9px;color:var(--kh);opacity:0.4;max-width:260px;margin-top:8px;line-height:1.6}
+.ft-group h4{font-size:8px;letter-spacing:3px;text-transform:uppercase;color:var(--kh);opacity:0.3;margin-bottom:10px}
+.ft-group a{display:block;color:var(--kh);text-decoration:none;font-size:10px;padding:3px 0;opacity:0.5;transition:all 0.2s}
+.ft-group a:hover{opacity:1;color:var(--rg)}
+.ft-bottom{display:flex;justify-content:space-between;align-items:center;padding-top:20px;border-top:1px solid var(--od)}
+.ft-bottom p{font-size:8px;color:var(--kh);opacity:0.25}
+.ft-legal{display:flex;gap:16px}
+.ft-legal a{color:var(--kh);text-decoration:none;font-size:8px;opacity:0.25;transition:opacity 0.2s}
+.ft-legal a:hover{opacity:0.6}
+
+/* ===== MOBILE ===== */
+@media(max-width:900px){.how-grid{grid-template-columns:1fr 1fr}.tok-grid{grid-template-columns:1fr}.pres-grid{grid-template-columns:repeat(3,1fr)}.faq-grid{grid-template-columns:1fr}.ft-top{flex-direction:column;gap:24px}.nav-links{display:none}}
+@media(max-width:600px){.how-grid{grid-template-columns:1fr}.pres-grid{grid-template-columns:1fr}.hero-stats{flex-direction:column;gap:16px}.hero-ctas{flex-direction:column}.rg{flex-direction:column;text-align:center}}
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="#" class="nav-logo">
+    <div class="nav-shell st"><span>S</span></div>
+    <span class="st nav-title"><span class="sol">SOL</span><span class="shot">SHOT</span></span>
+  </a>
+  <ul class="nav-links">
+    <li><a href="#how" class="mo">How It Works</a></li>
+    <li><a href="#arsenal" class="mo">Arsenal</a></li>
+    <li><a href="#token" class="mo">$SHOT</a></li>
+    <li><a href="#roadmap" class="mo">Roadmap</a></li>
+    <li><a href="#faq" class="mo">FAQ</a></li>
+    <li><a href="#" class="btn-deploy st">DEPLOY</a></li>
+  </ul>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-glow"></div>
+  <div class="hero-badge mo">BUILT ON SOLANA — DEVNET LIVE</div>
+  <h1 class="st">
+    <span class="w1">AIM.</span>
+    <span class="w2">FIRE.</span>
+    <span class="w3">EARN.</span>
+  </h1>
+  <p class="hero-sub mo">Multiplayer artillery combat on Solana. Wager SOL in PvP tank battles. Outshoot your opponent. Take the pot. Burn SHOT for prestige.</p>
+  <div class="hero-ctas">
+    <a href="#" class="btn-primary st">DEPLOY NOW</a>
+    <a href="#how" class="btn-secondary st">RECON</a>
+  </div>
+  <div class="hero-stats">
+    <div class="hero-stat"><div class="hero-stat-val">0.01</div><div class="hero-stat-label mo">MIN WAGER (SOL)</div></div>
+    <div class="hero-stat"><div class="hero-stat-val">90%</div><div class="hero-stat-label mo">TO WINNER</div></div>
+    <div class="hero-stat"><div class="hero-stat-val">13</div><div class="hero-stat-label mo">WEAPONS</div></div>
+    <div class="hero-stat"><div class="hero-stat-val">&lt;2s</div><div class="hero-stat-label mo">SETTLEMENT</div></div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section id="how">
+  <div class="sec-label mo">// OPERATIONS BRIEF</div>
+  <div class="sec-title st">Four Steps to Victory</div>
+  <div class="sec-desc mo">Connect your wallet, pick your wager, arm up, and blow them up.</div>
+  <div class="how-grid">
+    <div class="how-step"><div class="how-num">01</div><h3 class="st">CONNECT & WAGER</h3><p class="mo">Connect your Solana wallet. Pick a tier from 0.01 to 0.5 SOL. Your wager locks into an on-chain escrow — trustless, transparent, instant.</p></div>
+    <div class="how-step"><div class="how-num">02</div><h3 class="st">ARM UP</h3><p class="mo">Spend Gold in the weapon shop. Every player starts with 1,000 Gold. Load up on cheap tacticals or save for one devastating strike.</p></div>
+    <div class="how-step"><div class="how-num">03</div><h3 class="st">FIRE</h3><p class="mo">Take turns firing. Adjust angle, power, weapon selection. Terrain deforms. Positions shift. Every shot calculated server-side — no cheats.</p></div>
+    <div class="how-step"><div class="how-num">04</div><h3 class="st">COLLECT</h3><p class="mo">Winner takes 90% of the pot, settled on-chain in under 2 seconds. Hit milestones to earn SHOT. Burn SHOT for permanent prestige.</p></div>
+  </div>
+</section>
+
+<!-- ARSENAL -->
+<section id="arsenal">
+  <div class="sec-label mo">// ARSENAL</div>
+  <div class="sec-title st">13 Weapons. Infinite Strategies.</div>
+  <div class="sec-desc mo">Every weapon has a role. Your Gold budget forces hard choices. The right loadout wins matches.</div>
+  <div class="wpn-grid">
+    <div class="wpn" data-t="free"><div class="wpn-head"><span class="wpn-name st">Single Shot</span><span class="wpn-cost mo">FREE</span></div><div class="wpn-tier mo">FREE</div><div class="wpn-desc mo">Your reliable sidearm. Small blast, but infinite ammo. You're never weaponless.</div></div>
+    <div class="wpn" data-t="standard"><div class="wpn-head"><span class="wpn-name st">Dirt Ball</span><span class="wpn-cost mo">150G</span></div><div class="wpn-tier mo">STANDARD</div><div class="wpn-desc mo">Raises terrain on impact. Bury your opponent or build yourself cover.</div></div>
+    <div class="wpn" data-t="standard"><div class="wpn-head"><span class="wpn-name st">Magic Wall</span><span class="wpn-cost mo">200G</span></div><div class="wpn-tier mo">STANDARD</div><div class="wpn-desc mo">Erects a wall of terrain. Block incoming fire or trap your opponent behind cover.</div></div>
+    <div class="wpn" data-t="tactical"><div class="wpn-head"><span class="wpn-name st">3 Shot</span><span class="wpn-cost mo">400G</span></div><div class="wpn-tier mo">TACTICAL</div><div class="wpn-desc mo">Three projectiles fan out mid-air. Forgiving aim with decent coverage.</div></div>
+    <div class="wpn" data-t="tactical"><div class="wpn-head"><span class="wpn-name st">Spider</span><span class="wpn-cost mo">400G</span></div><div class="wpn-tier mo">TACTICAL</div><div class="wpn-desc mo">Splits into crawling sub-munitions on impact. Area denial.</div></div>
+    <div class="wpn" data-t="tactical"><div class="wpn-head"><span class="wpn-name st">Heatseeker</span><span class="wpn-cost mo">500G</span></div><div class="wpn-tier mo">TACTICAL</div><div class="wpn-desc mo">Locks onto your opponent's tank. Not the strongest, but almost never misses.</div></div>
+    <div class="wpn" data-t="rare"><div class="wpn-head"><span class="wpn-name st">Napalm</span><span class="wpn-cost mo">600G</span></div><div class="wpn-tier mo">RARE</div><div class="wpn-desc mo">Liquid fire that melts terrain and burns everything it touches.</div></div>
+    <div class="wpn" data-t="rare"><div class="wpn-head"><span class="wpn-name st">Pile Driver</span><span class="wpn-cost mo">600G</span></div><div class="wpn-tier mo">RARE</div><div class="wpn-desc mo">Drops vertically and drills deep. Digs your opponent out of any position.</div></div>
+    <div class="wpn" data-t="rare"><div class="wpn-head"><span class="wpn-name st">Sniper Rifle</span><span class="wpn-cost mo">700G</span></div><div class="wpn-tier mo">RARE</div><div class="wpn-desc mo">Tiny blast, devastating damage. For players who don't miss.</div></div>
+    <div class="wpn" data-t="rare"><div class="wpn-head"><span class="wpn-name st">Big Shot</span><span class="wpn-cost mo">700G</span></div><div class="wpn-tier mo">RARE</div><div class="wpn-desc mo">Massive blast radius. When you want a crater, not a dent.</div></div>
+    <div class="wpn" data-t="epic"><div class="wpn-head"><span class="wpn-name st">Jackhammer</span><span class="wpn-cost mo">1,000G</span></div><div class="wpn-tier mo">EPIC</div><div class="wpn-desc mo">Drills into terrain with a chain of blasts going deeper. Nowhere to hide.</div></div>
+    <div class="wpn" data-t="epic"><div class="wpn-head"><span class="wpn-name st">Hail Storm</span><span class="wpn-cost mo">1,200G</span></div><div class="wpn-tier mo">EPIC</div><div class="wpn-desc mo">Rain of projectiles over a wide area. Carpet bombing from above.</div></div>
+    <div class="wpn" data-t="legendary"><div class="wpn-head"><span class="wpn-name st">Crazy Ivan</span><span class="wpn-cost mo">2,500G</span></div><div class="wpn-tier mo">LEGENDARY</div><div class="wpn-desc mo">Fifteen random explosions. Pure chaos. Reshapes the battlefield. Game-ender.</div></div>
+  </div>
+  <div style="margin-top:32px">
+    <div class="sec-label mo">// PRESTIGE ARSENAL — BURN TO UNLOCK</div>
+    <div class="wpn-grid" style="margin-top:12px">
+      <div class="wpn" data-t="prestige"><div class="wpn-head"><span class="wpn-name st">Homing Missile</span><span class="wpn-cost mo">BRONZE</span></div><div class="wpn-tier mo">PRESTIGE</div><div class="wpn-desc mo">Guided destruction. Burns 200 SHOT to unlock permanently.</div></div>
+      <div class="wpn" data-t="prestige"><div class="wpn-head"><span class="wpn-name st">Chain Reaction</span><span class="wpn-cost mo">SILVER</span></div><div class="wpn-tier mo">PRESTIGE</div><div class="wpn-desc mo">Sequential devastation. Burns 500 SHOT.</div></div>
+      <div class="wpn" data-t="prestige"><div class="wpn-head"><span class="wpn-name st">Cruiser</span><span class="wpn-cost mo">GOLD</span></div><div class="wpn-tier mo">PRESTIGE</div><div class="wpn-desc mo">Player-guided missile. Burns 1,200 SHOT.</div></div>
+      <div class="wpn" data-t="prestige"><div class="wpn-head"><span class="wpn-name st">Tommy Gun</span><span class="wpn-cost mo">PLATINUM</span></div><div class="wpn-tier mo">PRESTIGE</div><div class="wpn-desc mo">Rapid-fire burst. Burns 2,500 SHOT.</div></div>
+      <div class="wpn" data-t="prestige"><div class="wpn-head"><span class="wpn-name st">Mountain Mover</span><span class="wpn-cost mo">DIAMOND</span></div><div class="wpn-tier mo">PRESTIGE</div><div class="wpn-desc mo">Reshapes the earth. Burns 4,000 SHOT. The ultimate flex.</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- TOKENOMICS -->
+<section id="token">
+  <div class="sec-label mo">// $SHOT TOKEN</div>
+  <div class="sec-title st">Play to Earn. Burn to Flex.</div>
+  <div class="sec-desc mo">SHOT is earned through gameplay and burned for permanent prestige. Deflationary by design — every burn reduces supply forever.</div>
+  <div class="tok-grid">
+    <div class="tok-card" style="border-color:rgba(255,182,39,0.15)">
+      <h3 class="st">DISTRIBUTION</h3>
+      <div class="tok-row"><span class="tok-row-l mo">Total Supply</span><span class="tok-row-v mo">10,000,000 SHOT</span></div>
+      <div class="tok-row"><span class="tok-row-l mo">Reward Pool (PDA)</span><span class="tok-row-v mo" style="color:var(--gg)">70% — 7,000,000</span></div>
+      <div class="tok-row"><span class="tok-row-l mo">Treasury</span><span class="tok-row-v mo">15% — 1,500,000</span></div>
+      <div class="tok-row"><span class="tok-row-l mo">Team (vested)</span><span class="tok-row-v mo">10% — 1,000,000</span></div>
+      <div class="tok-row"><span class="tok-row-l mo">Liquidity</span><span class="tok-row-v mo">5% — 500,000</span></div>
+    </div>
+    <div class="tok-card">
+      <h3 class="st">MECHANICS</h3>
+      <div class="tok-row"><span class="tok-row-l mo">Earning</span><span class="tok-row-v mo">Gameplay milestones</span></div>
+      <div class="tok-row"><span class="tok-row-l mo">Emission Cap</span><span class="tok-row-v mo">5% of pool / month</span></div>
+      <div class="tok-row"><span class="tok-row-l mo">Burning</span><span class="tok-row-v mo">Prestige tiers (permanent)</span></div>
+      <div class="tok-row"><span class="tok-row-l mo">Team Vest</span><span class="tok-row-v mo">12mo cliff, 24mo linear</span></div>
+      <div class="tok-row"><span class="tok-row-l mo">Trading</span><span class="tok-row-v mo">Raydium SHOT/SOL</span></div>
+    </div>
+  </div>
+  <div class="burn-flow">
+    <div class="burn-step"><div class="v mo">PLAY MATCHES</div><div class="l mo">Earn milestones</div></div>
+    <div class="burn-arrow">▸</div>
+    <div class="burn-step"><div class="v mo">RECEIVE SHOT</div><div class="l mo">From reward pool</div></div>
+    <div class="burn-arrow">▸</div>
+    <div class="burn-step"><div class="v mo" style="color:var(--rd)">BURN SHOT</div><div class="l mo">Permanent removal</div></div>
+    <div class="burn-arrow">▸</div>
+    <div class="burn-step"><div class="v mo" style="color:var(--am)">PRESTIGE</div><div class="l mo">Exclusive weapons + badges</div></div>
+  </div>
+</section>
+
+<!-- PRESTIGE -->
+<section>
+  <div class="sec-label mo">// PRESTIGE SYSTEM</div>
+  <div class="sec-title st">Burn to Rise</div>
+  <div class="sec-desc mo">Five tiers. Each burn is permanent. Your rank is proof of commitment — not a credit card.</div>
+  <div class="pres-grid">
+    <div class="pres-tier"><div class="pres-icon be" style="color:#CD7F32">1</div><div class="pres-name st">BRONZE</div><div class="pres-cost mo">BURN 200 SHOT</div><div class="pres-unlock mo">Unlocks <strong>Homing Missile</strong></div></div>
+    <div class="pres-tier"><div class="pres-icon be" style="color:#C0C0C0">2</div><div class="pres-name st">SILVER</div><div class="pres-cost mo">BURN 500 SHOT</div><div class="pres-unlock mo">Unlocks <strong>Chain Reaction</strong></div></div>
+    <div class="pres-tier"><div class="pres-icon be" style="color:#FFD700">3</div><div class="pres-name st">GOLD</div><div class="pres-cost mo">BURN 1,200 SHOT</div><div class="pres-unlock mo">Unlocks <strong>Cruiser</strong></div></div>
+    <div class="pres-tier"><div class="pres-icon be" style="color:#E5E4E2">4</div><div class="pres-name st">PLATINUM</div><div class="pres-cost mo">BURN 2,500 SHOT</div><div class="pres-unlock mo">Unlocks <strong>Tommy Gun</strong></div></div>
+    <div class="pres-tier"><div class="pres-icon be" style="color:#B9F2FF">5</div><div class="pres-name st">DIAMOND</div><div class="pres-cost mo">BURN 4,000 SHOT</div><div class="pres-unlock mo">Unlocks <strong>Mountain Mover</strong></div></div>
+  </div>
+</section>
+
+<!-- ROADMAP -->
+<section id="roadmap">
+  <div class="sec-label mo">// BATTLE PLAN</div>
+  <div class="sec-title st">Roadmap</div>
+  <div class="road">
+    <div class="road-item active"><div class="road-phase mo">PHASE 1 — NOW</div><div class="road-title st">FOUNDATION</div><div class="road-desc mo">Core engine, server authority, MongoDB, 13 launch weapons. Playable on devnet.</div></div>
+    <div class="road-item"><div class="road-phase mo">PHASE 2</div><div class="road-title st">SERVER AUTHORITY</div><div class="road-desc mo">Server-side physics, anti-cheat validation, Gold economy, weapon shop.</div></div>
+    <div class="road-item"><div class="road-phase mo">PHASE 3</div><div class="road-title st">WALLET & WAGERING</div><div class="road-desc mo">Solana wallet connect, on-chain escrow, SOL wager tiers, trustless settlement.</div></div>
+    <div class="road-item"><div class="road-phase mo">PHASE 4</div><div class="road-title st">SHOT TOKEN & PRESTIGE</div><div class="road-desc mo">SHOT token launch, milestone emissions, prestige burn system, 5 exclusive weapons.</div></div>
+    <div class="road-item"><div class="road-phase mo">PHASE 5</div><div class="road-title st">POLISH & DEPLOY</div><div class="road-desc mo">UI reskin, new art, screen shake, kill cams, Raydium pool, mainnet. SolShot.gg live.</div></div>
+    <div class="road-item"><div class="road-phase mo">PHASE 6+</div><div class="road-title st">EXPAND</div><div class="road-desc mo">Tournaments, leaderboards, new terrain themes, seasonal weapons, mobile, community events.</div></div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section id="faq">
+  <div class="sec-label mo">// INTEL</div>
+  <div class="sec-title st">Common Questions</div>
+  <div class="faq-grid">
+    <div class="faq-item"><h3 class="st">HOW DOES WAGERING WORK?</h3><p class="mo">Both players deposit SOL into an on-chain escrow before the match. The smart contract holds funds trustlessly. Winner receives 90% automatically. 7% treasury, 3% operations.</p></div>
+    <div class="faq-item"><h3 class="st">CAN THE GAME BE CHEATED?</h3><p class="mo">No. All physics run server-side. Your client sends inputs only (angle, power, weapon). The server computes everything and broadcasts results. Nothing to hack.</p></div>
+    <div class="faq-item"><h3 class="st">WHAT WALLET DO I NEED?</h3><p class="mo">Any Solana wallet. Solflare or Phantom recommended. Connect in-browser — no downloads, no accounts, no emails. Wallet address is your identity.</p></div>
+    <div class="faq-item"><h3 class="st">WHAT IS GOLD?</h3><p class="mo">In-match currency for buying weapons. Start with 1,000. Earn more from damage (+15/HP), kills (+200), round wins (+300). Resets after each match. Never persists.</p></div>
+    <div class="faq-item"><h3 class="st">HOW DO I EARN SHOT?</h3><p class="mo">By playing. SHOT emits from a fixed pool based on milestones — matches played, wins, damage. Can't buy your way to SHOT. 5% pool cap per month.</p></div>
+    <div class="faq-item"><h3 class="st">WHAT IF I DISCONNECT?</h3><p class="mo">30-second reconnect window. If you don't return, you forfeit and opponent takes the pot. If the server goes down, escrow refunds both players automatically.</p></div>
+    <div class="faq-item"><h3 class="st">MINIMUM WAGER?</h3><p class="mo">0.01 SOL. Tiers: 0.01, 0.05, 0.1, 0.25, 0.5 SOL. Practice matches available at zero wager.</p></div>
+    <div class="faq-item"><h3 class="st">WHAT'S PRESTIGE?</h3><p class="mo">Burn SHOT permanently to unlock tiers (Bronze → Diamond). Each tier grants an exclusive weapon. Burns are irreversible — rank is proof of dedication.</p></div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta-section">
+  <h2 class="st">READY TO TAKE THE SHOT?</h2>
+  <p class="mo">Connect your wallet. Pick your wager. Prove you're the better shot.</p>
+  <a href="#" class="btn-primary st">DEPLOY NOW</a>
+</section>
+
+<!-- RESPONSIBLE GAMING -->
+<div class="rg">
+  <div class="rg-icon mo">[!]</div>
+  <p class="mo">SolShot involves wagering real cryptocurrency. Play responsibly. Never wager more than you can afford to lose. You must be 18+ to play wagered matches. If you or someone you know has a gambling problem, visit <a href="https://www.begambleaware.org" target="_blank">BeGambleAware.org</a>.</p>
+</div>
+
+<!-- FOOTER -->
+<footer>
+  <div class="ft-top">
+    <div class="ft-brand">
+      <a href="#" class="nav-logo" style="margin-bottom:4px">
+        <div class="nav-shell st"><span>S</span></div>
+        <span class="st nav-title"><span class="sol">SOL</span><span class="shot">SHOT</span></span>
+      </a>
+      <p class="mo">Multiplayer artillery combat on Solana. Skill-based PvP with real stakes.</p>
+    </div>
+    <div class="ft-group"><h4 class="mo">GAME</h4><a href="#" class="mo">Deploy</a><a href="#arsenal" class="mo">Arsenal</a><a href="#how" class="mo">Operations Brief</a><a href="#faq" class="mo">Intel</a></div>
+    <div class="ft-group"><h4 class="mo">TOKEN</h4><a href="#token" class="mo">$SHOT Overview</a><a href="#" class="mo">Litepaper</a><a href="#" class="mo">Raydium Pool</a></div>
+    <div class="ft-group"><h4 class="mo">COMMUNITY</h4><a href="#" class="mo">Twitter</a><a href="#" class="mo">Discord</a><a href="#" class="mo">GitHub</a></div>
+  </div>
+  <div class="ft-bottom">
+    <p class="mo">&copy; 2026 SolShot. All rights reserved.</p>
+    <div class="ft-legal"><a href="#" class="mo">Terms of Service</a><a href="#" class="mo">Privacy Policy</a><a href="#" class="mo">Responsible Gaming</a></div>
+  </div>
+</footer>
+
+</body>
+</html>

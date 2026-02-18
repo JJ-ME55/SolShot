@@ -5,11 +5,20 @@ import Modal from '../components/Modal';
 import useSocket from '../hooks/useSocket';
 import TANK_COLORS from '../data/colors';
 
-/* ── wager tiers ── */
-const WAGER_TIERS = [0, 0.01, 0.05, 0.1, 0.25, 0.5];
+/* ── match modes (mirrors server MATCH_MODES) ── */
+const MATCH_MODES = {
+  practice:    { label: 'PRACTICE',     wagerRange: [0, 0],      formats: [1],    color: 'var(--kh)' },
+  quick_match: { label: 'QUICK MATCH',  wagerRange: [0.01, 0.1], formats: [1, 3], color: 'var(--sg)' },
+  duel:        { label: 'DUEL',         wagerRange: [0.05, 0.25],formats: [3, 5], color: '#00ccff' },
+  high_roller: { label: 'HIGH ROLLER',  wagerRange: [0.25, 0.5], formats: [3, 5], color: '#ffcc00' },
+};
+const MODE_KEYS = Object.keys(MATCH_MODES);
 
-/* ── match-length options ── */
-const MATCH_LENGTHS = [
+/* ── all wager tiers ── */
+const ALL_WAGER_TIERS = [0, 0.01, 0.05, 0.1, 0.25, 0.5];
+
+/* ── all match-length options ── */
+const ALL_MATCH_LENGTHS = [
   { label: 'BO1', rounds: 1 },
   { label: 'BO3', rounds: 3 },
   { label: 'BO5', rounds: 5 },
@@ -36,14 +45,14 @@ const s = {
   },
   sectionLabel: {
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 10,
+    fontSize: 15,
     color: 'var(--am)',
     letterSpacing: 2,
-    marginBottom: 2,
+    marginBottom: 4,
   },
   sublabel: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 8,
+    fontSize: 12,
     color: 'var(--kh)',
     letterSpacing: 1,
     opacity: 0.7,
@@ -57,9 +66,9 @@ const s = {
   },
   matchBtn: (active) => ({
     flex: 1,
-    padding: '6px 0',
+    padding: '8px 0',
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 11,
+    fontSize: 14,
     letterSpacing: 2,
     textAlign: 'center',
     borderRadius: 3,
@@ -78,9 +87,9 @@ const s = {
     gap: 4,
   },
   wagerBtn: (active) => ({
-    padding: '4px 8px',
+    padding: '5px 10px',
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 9,
+    fontSize: 13,
     letterSpacing: 1,
     borderRadius: 3,
     cursor: 'pointer',
@@ -98,14 +107,37 @@ const s = {
     flexWrap: 'wrap',
   },
   colorSwatch: (hex, selected) => ({
-    width: 22,
-    height: 22,
+    width: 28,
+    height: 28,
     borderRadius: 3,
     background: hex,
     border: selected ? '2px solid var(--bn)' : '2px solid transparent',
     cursor: 'pointer',
     transition: 'border 0.15s ease',
     boxShadow: selected ? `0 0 8px ${hex}` : 'none',
+  }),
+
+  /* Mode selector */
+  modeRow: {
+    display: 'flex',
+    gap: 4,
+    flexWrap: 'wrap',
+  },
+  modeBtn: (active, color) => ({
+    flex: 1,
+    minWidth: 70,
+    padding: '6px 0',
+    fontFamily: "'Black Ops One', cursive",
+    fontSize: 11,
+    letterSpacing: 1,
+    textAlign: 'center',
+    borderRadius: 3,
+    cursor: 'pointer',
+    border: active ? `1px solid ${color}` : '1px solid var(--ol)',
+    background: active ? `${color}14` : 'var(--od)',
+    color: active ? color : 'var(--kh)',
+    transition: 'all 0.15s ease',
+    userSelect: 'none',
   }),
 
   /* Quick action buttons */
@@ -126,7 +158,7 @@ const s = {
   },
   roomListHeader: {
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 10,
+    fontSize: 15,
     color: 'var(--am)',
     letterSpacing: 2,
     marginBottom: 8,
@@ -156,15 +188,15 @@ const s = {
     minWidth: 0,
   },
   hostColor: (hex) => ({
-    width: 12,
-    height: 12,
+    width: 16,
+    height: 16,
     borderRadius: 2,
     background: hex,
     flexShrink: 0,
   }),
   hostName: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 10,
+    fontSize: 14,
     color: 'var(--bn)',
     letterSpacing: 1,
     whiteSpace: 'nowrap',
@@ -173,22 +205,42 @@ const s = {
   },
   wagerBadge: (amount) => ({
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 9,
+    fontSize: 13,
     letterSpacing: 1,
-    padding: '2px 6px',
+    padding: '3px 8px',
     borderRadius: 3,
     background: amount > 0 ? 'rgba(20, 241, 149, 0.08)' : 'rgba(184, 168, 138, 0.08)',
     border: amount > 0 ? '1px solid rgba(20, 241, 149, 0.3)' : '1px solid rgba(184, 168, 138, 0.15)',
     color: amount > 0 ? 'var(--sg)' : 'var(--kh)',
     flexShrink: 0,
   }),
+  modeBadge: (color) => ({
+    fontFamily: "'Share Tech Mono', monospace",
+    fontSize: 11,
+    letterSpacing: 1,
+    padding: '2px 6px',
+    borderRadius: 2,
+    color: color || 'var(--kh)',
+    border: `1px solid ${color || 'var(--kh)'}33`,
+    flexShrink: 0,
+  }),
+  formatBadge: {
+    fontFamily: "'Share Tech Mono', monospace",
+    fontSize: 11,
+    letterSpacing: 1,
+    padding: '2px 6px',
+    borderRadius: 2,
+    color: 'var(--kh)',
+    border: '1px solid rgba(184, 168, 138, 0.15)',
+    flexShrink: 0,
+  },
   emptyState: {
     flex: 1,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 9,
+    fontSize: 14,
     color: 'var(--kh)',
     letterSpacing: 2,
     opacity: 0.5,
@@ -208,14 +260,14 @@ const s = {
   },
   waitingText: {
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 14,
+    fontSize: 20,
     color: 'var(--am)',
     letterSpacing: 3,
     animation: 'fl 2s ease-in-out infinite',
   },
   waitingSubtext: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 9,
+    fontSize: 14,
     color: 'var(--kh)',
     letterSpacing: 1,
     opacity: 0.7,
@@ -226,11 +278,37 @@ const s = {
 function LobbyScreen({ navigate }) {
   /* ── state ── */
   const [rooms, setRooms] = useState([]);
+  const [matchMode, setMatchMode] = useState('quick_match');
   const [matchLength, setMatchLength] = useState(1); // rounds: 1, 3, 5
-  const [wager, setWager] = useState(0);
+  const [wager, setWager] = useState(0.01);
   const [selectedColor, setSelectedColor] = useState(0); // index into TANK_COLORS
   const [waiting, setWaiting] = useState(false); // waiting for opponent
   const [error, setError] = useState(null);
+
+  // Derived: available wagers + formats for current mode
+  const modeConfig = MATCH_MODES[matchMode];
+  const availableWagers = ALL_WAGER_TIERS.filter(
+    (t) => t >= modeConfig.wagerRange[0] && t <= modeConfig.wagerRange[1]
+  );
+  const availableFormats = ALL_MATCH_LENGTHS.filter(
+    (m) => modeConfig.formats.includes(m.rounds)
+  );
+
+  // Auto-constrain wager + format when mode changes
+  useEffect(() => {
+    const cfg = MATCH_MODES[matchMode];
+    // Reset wager to first valid tier
+    const validWagers = ALL_WAGER_TIERS.filter(
+      (t) => t >= cfg.wagerRange[0] && t <= cfg.wagerRange[1]
+    );
+    if (!validWagers.includes(wager)) {
+      setWager(validWagers[0] ?? 0);
+    }
+    // Reset format to first valid option
+    if (!cfg.formats.includes(matchLength)) {
+      setMatchLength(cfg.formats[0]);
+    }
+  }, [matchMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── derived player name from wallet ── */
   const getPlayerName = useCallback(() => {
@@ -253,6 +331,18 @@ function LobbyScreen({ navigate }) {
   useSocket('setRooms', (data) => {
     if (data && data.rooms) {
       setRooms(data.rooms);
+    }
+  });
+
+  /* ── socket: escrow deposit (sign wager before match starts) ── */
+  useSocket('escrowDeposit', async (data) => {
+    if (!data?.transaction) return;
+    const signFn = window.solWallet?.signAndSendEscrowDeposit;
+    if (signFn) {
+      const sig = await signFn(data.transaction, data.roomId);
+      if (!sig) {
+        setError('Failed to deposit wager. Try again or lower your wager.');
+      }
     }
   });
 
@@ -295,11 +385,13 @@ function LobbyScreen({ navigate }) {
         color,
         walletAddress: window.solWallet?.publicKey?.toString() || null,
         wager,
+        matchLength,
+        matchMode,
       },
     });
 
     setWaiting(true);
-  }, [getPlayerName, selectedColor, wager]);
+  }, [getPlayerName, selectedColor, wager, matchLength, matchMode]);
 
   const joinRoom = useCallback((roomId) => {
     if (!window.socket) return;
@@ -327,23 +419,17 @@ function LobbyScreen({ navigate }) {
   }, []);
 
   const quickMatch = useCallback(() => {
-    // Join first available free room, or create one
-    const freeRoom = rooms.find((r) => r.wager === 0);
-    if (freeRoom) {
-      joinRoom(freeRoom.roomId);
+    // Join first available room matching current mode, or create one
+    const modeRoom = rooms.find((r) =>
+      (r.matchMode === matchMode) ||
+      (!r.matchMode && matchMode === 'quick_match' && r.wager >= 0.01 && r.wager <= 0.1)
+    );
+    if (modeRoom) {
+      joinRoom(modeRoom.roomId);
     } else {
-      // Set wager to 0 and create
-      setWager(0);
-      const name = getPlayerName();
-      const color = TANK_COLORS[selectedColor].phaserHex;
-      if (window.socket) {
-        window.socket.emit('createRoom', {
-          player: { name, color, walletAddress: window.solWallet?.publicKey?.toString() || null, wager: 0 },
-        });
-        setWaiting(true);
-      }
+      createRoom();
     }
-  }, [rooms, joinRoom, getPlayerName, selectedColor]);
+  }, [rooms, joinRoom, createRoom, matchMode]);
 
   /* ── helpers ── */
   const getColorHex = (phaserColor) => {
@@ -366,11 +452,27 @@ function LobbyScreen({ navigate }) {
       <div style={s.container}>
         {/* ═══ LEFT PANEL ═══ */}
         <div style={s.left}>
+          {/* Match Mode */}
+          <div>
+            <div style={s.sectionLabel}>MODE</div>
+            <div style={s.modeRow}>
+              {MODE_KEYS.map((key) => (
+                <div
+                  key={key}
+                  style={s.modeBtn(matchMode === key, MATCH_MODES[key].color)}
+                  onClick={() => setMatchMode(key)}
+                >
+                  {MATCH_MODES[key].label}
+                </div>
+              ))}
+            </div>
+          </div>
+
           {/* Match Length */}
           <div>
-            <div style={s.sectionLabel}>MATCH LENGTH</div>
+            <div style={s.sectionLabel}>FORMAT</div>
             <div style={s.matchRow}>
-              {MATCH_LENGTHS.map((m) => (
+              {availableFormats.map((m) => (
                 <div
                   key={m.rounds}
                   style={s.matchBtn(matchLength === m.rounds)}
@@ -383,21 +485,23 @@ function LobbyScreen({ navigate }) {
           </div>
 
           {/* Wager */}
-          <div>
-            <div style={s.sectionLabel}>WAGER</div>
-            <div style={s.sublabel}>SOL STAKE PER MATCH</div>
-            <div style={s.wagerRow}>
-              {WAGER_TIERS.map((tier) => (
-                <div
-                  key={tier}
-                  style={s.wagerBtn(wager === tier)}
-                  onClick={() => setWager(tier)}
-                >
-                  {tier === 0 ? 'FREE' : tier + ' SOL'}
-                </div>
-              ))}
+          {availableWagers.length > 1 && (
+            <div>
+              <div style={s.sectionLabel}>WAGER</div>
+              <div style={s.sublabel}>SOL STAKE PER MATCH</div>
+              <div style={s.wagerRow}>
+                {availableWagers.map((tier) => (
+                  <div
+                    key={tier}
+                    style={s.wagerBtn(wager === tier)}
+                    onClick={() => setWager(tier)}
+                  >
+                    {tier === 0 ? 'FREE' : tier + ' SOL'}
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Color Picker */}
           <div>
@@ -416,24 +520,22 @@ function LobbyScreen({ navigate }) {
 
           {/* Action Buttons */}
           <div style={s.quickBtns}>
-            <Button variant="primary" onClick={quickMatch} style={{ fontSize: 11, padding: '10px 16px' }}>
-              QUICK MATCH
+            <Button variant="primary" onClick={quickMatch} style={{ fontSize: 15, padding: '12px 20px' }}>
+              {'FIND ' + modeConfig.label}
             </Button>
-            <Button variant="secondary" onClick={createRoom} style={{ fontSize: 10, padding: '8px 14px' }}>
+            <Button variant="secondary" onClick={createRoom} style={{ fontSize: 14, padding: '10px 18px' }}>
               CREATE MATCH
             </Button>
-            {wager > 0 && (
-              <div style={{
-                fontFamily: "'Share Tech Mono', monospace",
-                fontSize: 8,
-                color: 'var(--sg)',
-                letterSpacing: 1,
-                textAlign: 'center',
-                opacity: 0.8,
-              }}>
-                {'◆ ' + wager + ' SOL WAGER'}
-              </div>
-            )}
+            <div style={{
+              fontFamily: "'Share Tech Mono', monospace",
+              fontSize: 13,
+              color: modeConfig.color,
+              letterSpacing: 1,
+              textAlign: 'center',
+              opacity: 0.8,
+            }}>
+              {wager > 0 ? '◆ ' + wager + ' SOL WAGER' : '◆ FREE MATCH'}
+            </div>
           </div>
         </div>
 
@@ -443,7 +545,7 @@ function LobbyScreen({ navigate }) {
             OPEN LOBBIES
             <span style={{
               fontFamily: "'Share Tech Mono', monospace",
-              fontSize: 9,
+              fontSize: 13,
               color: 'var(--kh)',
               marginLeft: 8,
               letterSpacing: 1,
@@ -459,28 +561,43 @@ function LobbyScreen({ navigate }) {
                 NO OPEN LOBBIES -- CREATE A MATCH
               </div>
             ) : (
-              rooms.map((room) => (
-                <div key={room.roomId} style={s.roomCard}>
-                  <div style={s.roomInfo}>
-                    <div style={s.hostColor(getColorHex(room.host?.color))} />
-                    <span style={s.hostName}>
-                      {room.host?.name || 'UNKNOWN'}
-                    </span>
-                  </div>
+              rooms.map((room) => {
+                const rMode = room.matchMode && MATCH_MODES[room.matchMode]
+                  ? MATCH_MODES[room.matchMode]
+                  : null;
+                return (
+                  <div key={room.roomId} style={s.roomCard}>
+                    <div style={s.roomInfo}>
+                      <div style={s.hostColor(getColorHex(room.host?.color))} />
+                      <span style={s.hostName}>
+                        {room.host?.name || 'UNKNOWN'}
+                      </span>
+                    </div>
 
-                  <div style={s.wagerBadge(room.wager || 0)}>
-                    {formatWager(room.wager || 0)}
-                  </div>
+                    {rMode && (
+                      <div style={s.modeBadge(rMode.color)}>
+                        {rMode.label}
+                      </div>
+                    )}
 
-                  <Button
-                    variant="secondary"
-                    onClick={() => joinRoom(room.roomId)}
-                    style={{ fontSize: 9, padding: '4px 12px', letterSpacing: 2 }}
-                  >
-                    JOIN
-                  </Button>
-                </div>
-              ))
+                    <div style={s.formatBadge}>
+                      {'BO' + (room.totalRounds || 1)}
+                    </div>
+
+                    <div style={s.wagerBadge(room.wager || 0)}>
+                      {formatWager(room.wager || 0)}
+                    </div>
+
+                    <Button
+                      variant="secondary"
+                      onClick={() => joinRoom(room.roomId)}
+                      style={{ fontSize: 13, padding: '6px 14px', letterSpacing: 2 }}
+                    >
+                      JOIN
+                    </Button>
+                  </div>
+                );
+              })
             )}
           </div>
         </div>
@@ -491,12 +608,12 @@ function LobbyScreen({ navigate }) {
         <div style={s.waitingOverlay}>
           <div style={s.waitingText}>WAITING FOR OPPONENT</div>
           <div style={s.waitingSubtext}>
-            {wager > 0 ? wager + ' SOL WAGER' : 'FREE MATCH'}
+            {modeConfig.label + ' / BO' + matchLength + (wager > 0 ? ' / ' + wager + ' SOL' : '')}
           </div>
           <Button
             variant="secondary"
             onClick={cancelRoom}
-            style={{ fontSize: 10, padding: '8px 20px', marginTop: 8 }}
+            style={{ fontSize: 14, padding: '10px 24px', marginTop: 8 }}
           >
             CANCEL
           </Button>

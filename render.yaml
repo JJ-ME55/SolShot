@@ -1,10 +1,10 @@
 # Render deployment config for SolShot server
 # Deploy: Connect GitHub repo → Render detects this file automatically
 #
-# Required environment variables (set in Render dashboard):
-#   MONGODB_URI, JWT_SECRET, SOLANA_RPC, TREASURY_WALLET, OPS_WALLET
-#   SHOT_TOKEN_MINT (after SPL deploy)
-#   MATCH_ESCROW_PROGRAM_ID (after program deploy)
+# After connecting repo, set these SECRET env vars in the Render dashboard:
+#   SOLANA_KEYPAIR_JSON  — paste contents of solshot-dev.json (the JSON byte array)
+#   JWT_SECRET           — auto-generated below, or set your own
+#   MONGODB_URI          — from MongoDB Atlas (optional for devnet testing)
 
 services:
   - type: web
@@ -19,20 +19,23 @@ services:
       - key: NODE_ENV
         value: production
       - key: PORT
-        value: 5001
-      - key: MONGODB_URI
-        sync: false  # Set manually in dashboard
+        value: 10000
+      - key: SOLANA_RPC
+        value: https://api.devnet.solana.com
+      - key: MATCH_ESCROW_PROGRAM_ID
+        value: CqvRC6mSJe2CrBtENVfCEPkgRW3WwxLSL9C1hgXz7GtD
+      - key: SHOT_TOKEN_MINT
+        value: 4NnYBycLLo8acgbkLz2SyCXd3KU8jgHQLEmrVypi5VLd
+      - key: TREASURY_WALLET
+        value: 4Ekd8xxsym6HiGaKbDVP7hgf3AoBsLmBSenyfx3N2hGk
+      - key: OPS_WALLET
+        value: G2TgxypFAQHvcfwRA1dkJMx2St4gYpDpz37uiG1Q9grx
+      - key: CORS_ORIGINS
+        value: https://solshot.gg,https://www.solshot.gg,https://solshot-client.vercel.app
       - key: JWT_SECRET
         generateValue: true
-      - key: SOLANA_RPC
-        value: https://api.devnet.solana.com  # Change to mainnet RPC for production
-      - key: TREASURY_WALLET
-        sync: false
-      - key: OPS_WALLET
-        sync: false
-      - key: SHOT_TOKEN_MINT
-        sync: false
-      - key: MATCH_ESCROW_PROGRAM_ID
-        sync: false
-    healthCheckPath: /
+      # Set these manually in dashboard (secrets — don't commit):
+      # - SOLANA_KEYPAIR_JSON  (paste the raw JSON array from solshot-dev.json)
+      # - MONGODB_URI          (from Atlas, or omit for no persistence)
+    healthCheckPath: /health
     autoDeploy: true

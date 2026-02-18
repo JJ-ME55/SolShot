@@ -61,10 +61,10 @@ const s = {
   },
   turnLabel: {
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 10,
+    fontSize: 16,
     letterSpacing: 3,
     textAlign: 'center',
-    padding: '4px 12px',
+    padding: '6px 16px',
     borderRadius: 3,
     pointerEvents: 'none',
   },
@@ -84,9 +84,9 @@ const s = {
 
 const moveBtn = (disabled) => ({
   fontFamily: "'Black Ops One', cursive",
-  fontSize: 10,
+  fontSize: 14,
   letterSpacing: 2,
-  padding: '6px 14px',
+  padding: '8px 18px',
   borderRadius: 3,
   border: 'none',
   cursor: disabled ? 'default' : 'pointer',

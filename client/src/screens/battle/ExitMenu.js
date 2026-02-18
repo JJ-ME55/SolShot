@@ -21,7 +21,7 @@ const s = {
   },
   message: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 9,
+    fontSize: 14,
     color: 'var(--kh)',
     letterSpacing: 2,
     textAlign: 'center',
@@ -30,7 +30,7 @@ const s = {
   },
   wagerWarning: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 9,
+    fontSize: 14,
     color: 'var(--rg)',
     letterSpacing: 1,
     padding: '4px 12px',
@@ -63,14 +63,14 @@ function ExitMenu({ wager, onConfirm, onCancel }) {
         <Button
           variant="primary"
           onClick={onConfirm}
-          style={{ fontSize: 11, padding: '8px 20px' }}
+          style={{ fontSize: 14, padding: '10px 24px' }}
         >
           FORFEIT
         </Button>
         <Button
           variant="secondary"
           onClick={onCancel}
-          style={{ fontSize: 10, padding: '8px 16px' }}
+          style={{ fontSize: 13, padding: '10px 20px' }}
         >
           CANCEL
         </Button>

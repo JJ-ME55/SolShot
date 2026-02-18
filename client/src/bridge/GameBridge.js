@@ -10,8 +10,8 @@
 class GameBridge {
   constructor() {
     this.state = {
-      tank1: { x: 0, y: 0, hp: 100, angle: 45, power: 60, name: '', color: '#FF0000', score: 0 },
-      tank2: { x: 0, y: 0, hp: 100, angle: 45, power: 60, name: '', color: '#0066FF', score: 0 },
+      tank1: { x: 0, y: 0, hp: 250, angle: 45, power: 60, name: '', color: '#FF0000', score: 0 },
+      tank2: { x: 0, y: 0, hp: 250, angle: 45, power: 60, name: '', color: '#0066FF', score: 0 },
       activeTank: 0,
       wind: 0,
       gold: 0,
@@ -141,8 +141,8 @@ class GameBridge {
    */
   reset() {
     this.state = {
-      tank1: { x: 0, y: 0, hp: 100, angle: 45, power: 60, name: '', color: '#FF0000', score: 0 },
-      tank2: { x: 0, y: 0, hp: 100, angle: 45, power: 60, name: '', color: '#0066FF', score: 0 },
+      tank1: { x: 0, y: 0, hp: 250, angle: 45, power: 60, name: '', color: '#FF0000', score: 0 },
+      tank2: { x: 0, y: 0, hp: 250, angle: 45, power: 60, name: '', color: '#0066FF', score: 0 },
       activeTank: 0,
       wind: 0,
       gold: 0,

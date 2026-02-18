@@ -26,8 +26,8 @@ const s = {
     boxShadow: selected ? `0 0 8px rgba(${hexToRgb(tierColor)}, 0.15)` : 'none',
   }),
   iconBox: (tierColor) => ({
-    width: 28,
-    height: 28,
+    width: 36,
+    height: 36,
     borderRadius: 3,
     background: 'rgba(10, 12, 8, 0.6)',
     border: `1px solid ${tierColor}33`,
@@ -38,8 +38,8 @@ const s = {
     overflow: 'hidden',
   }),
   iconImg: {
-    width: 22,
-    height: 22,
+    width: 28,
+    height: 28,
     objectFit: 'contain',
     imageRendering: 'pixelated',
   },
@@ -55,7 +55,7 @@ const s = {
   },
   name: {
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 9,
+    fontSize: 13,
     color: 'var(--bn)',
     letterSpacing: 1,
     whiteSpace: 'nowrap',
@@ -64,7 +64,7 @@ const s = {
   },
   tierLabel: (tierColor) => ({
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 7,
+    fontSize: 11,
     color: tierColor,
     letterSpacing: 1,
     opacity: 0.8,
@@ -95,11 +95,11 @@ const s = {
   }),
   statLabel: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 7,
+    fontSize: 10,
     color: 'var(--kh)',
     letterSpacing: 1,
     opacity: 0.6,
-    width: 24,
+    width: 30,
   },
   priceArea: {
     display: 'flex',
@@ -110,13 +110,13 @@ const s = {
   },
   price: (isFree) => ({
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 9,
+    fontSize: 13,
     letterSpacing: 1,
     color: isFree ? 'var(--kh)' : 'var(--gd)',
   }),
   owned: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 7,
+    fontSize: 11,
     color: 'var(--sg)',
     letterSpacing: 1,
   },

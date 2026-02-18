@@ -1,0 +1,20 @@
+{
+  "version": "1.0.0",
+  "audit_id": "solshot-2026-02-14",
+  "started_at": "2026-02-14T00:00:00Z",
+  "config": {
+    "tier": "standard",
+    "batch_size": 5,
+    "strategy_count": 75,
+    "ecosystem": "nodejs-socketio-solana"
+  },
+  "phases": {
+    "phase_0_preflight": { "status": "completed" },
+    "phase_05_prescan": { "status": "completed" },
+    "phase_1_context": { "status": "completed" },
+    "phase_2_synthesis": { "status": "completed" },
+    "phase_3_strategies": { "status": "completed", "count": 75 },
+    "phase_4_investigation": { "status": "completed", "batches_completed": 5, "batches_total": 5, "investigated": 35, "confirmed": 34, "potential": 1 },
+    "phase_5_synthesis": { "status": "completed" }
+  }
+}

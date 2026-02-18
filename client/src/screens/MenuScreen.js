@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import Button from '../components/Button';
 import WalletDisplay from '../components/WalletDisplay';
 import { useTelegram } from '../telegram/TelegramContext';
@@ -78,11 +78,11 @@ const styles = {
 
   tagline: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 9,
+    fontSize: 14,
     color: 'var(--kh)',
     opacity: 0.6,
     letterSpacing: 3,
-    marginTop: 6,
+    marginTop: 8,
     textTransform: 'uppercase',
   },
 
@@ -98,15 +98,15 @@ const styles = {
     marginBottom: 20,
   },
   solanaDot: {
-    width: 6,
-    height: 6,
+    width: 8,
+    height: 8,
     borderRadius: '50%',
     background: 'var(--sg)',
     boxShadow: '0 0 6px rgba(20, 241, 149, 0.4)',
   },
   solanaText: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 7,
+    fontSize: 12,
     color: 'var(--sg)',
     letterSpacing: 3,
     textTransform: 'uppercase',
@@ -150,10 +150,10 @@ const styles = {
   // Version tag
   versionTag: {
     position: 'absolute',
-    bottom: 8,
-    left: 12,
+    bottom: 10,
+    left: 14,
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 8,
+    fontSize: 12,
     color: 'var(--kh)',
     opacity: 0.3,
     zIndex: 1,
@@ -162,7 +162,9 @@ const styles = {
 
 function MenuScreen({ navigate }) {
   const [hoveredBtn, setHoveredBtn] = useState(null);
+  const [logoFailed, setLogoFailed] = useState(false);
   const { isTelegram, user: tgUser } = useTelegram();
+  const onLogoError = useCallback(() => setLogoFailed(true), []);
 
   const navItems = [
     { id: 'deploy', label: 'DEPLOY', variant: 'primary', screen: 'lobby' },
@@ -179,13 +181,19 @@ function MenuScreen({ navigate }) {
 
       {/* Logo */}
       <div style={styles.logoSection}>
-        <div style={styles.logoRow}>
-          <div style={styles.shellIcon}>S</div>
-          <div style={styles.logoText}>
-            <span style={{ color: 'var(--bn)' }}>SOL</span>
-            <span style={{ color: 'var(--rg)' }}>SHOT</span>
+        {logoFailed ? (
+          <div style={styles.logoRow}>
+            <span style={{ ...styles.logoText, color: 'var(--bn)' }}>SOL</span>
+            <span style={{ ...styles.logoText, color: 'var(--rd)' }}>SHOT</span>
           </div>
-        </div>
+        ) : (
+          <img
+            src="/assets/images/branding/logo-transparent.png"
+            alt="SolShot"
+            onError={onLogoError}
+            style={{ width: 300, height: 'auto', objectFit: 'contain', marginBottom: 6 }}
+          />
+        )}
         <div style={styles.tagline}>ARTILLERY COMBAT ON SOLANA</div>
       </div>
 
@@ -230,13 +238,13 @@ function MenuScreen({ navigate }) {
       {isTelegram && tgUser && (
         <div style={{
           fontFamily: "'Share Tech Mono', monospace",
-          fontSize: 8,
+          fontSize: 13,
           color: 'var(--kh)',
           letterSpacing: 1,
-          padding: '3px 10px',
+          padding: '4px 12px',
           border: '1px solid var(--ol)',
           borderRadius: 3,
-          marginBottom: 6,
+          marginBottom: 8,
           zIndex: 1,
           opacity: 0.7,
         }}>

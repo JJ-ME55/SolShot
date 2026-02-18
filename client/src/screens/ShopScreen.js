@@ -31,15 +31,17 @@ const s = {
   },
   catalogTitle: {
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 10,
+    fontSize: 16,
     color: 'var(--am)',
     letterSpacing: 2,
   },
   goldChip: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 10,
+    fontSize: 14,
     color: 'var(--gd)',
     letterSpacing: 1,
+    display: 'flex',
+    alignItems: 'center',
   },
   catalogList: {
     flex: 1,
@@ -78,7 +80,7 @@ const s = {
   }),
   timerLabel: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 7,
+    fontSize: 12,
     color: 'var(--kh)',
     letterSpacing: 2,
     textAlign: 'center',
@@ -98,19 +100,19 @@ const s = {
   },
   detailName: {
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 12,
+    fontSize: 18,
     color: 'var(--bn)',
     letterSpacing: 2,
   },
   detailTier: (tierColor) => ({
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 8,
+    fontSize: 13,
     color: tierColor,
     letterSpacing: 2,
   }),
   detailDesc: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 8,
+    fontSize: 13,
     color: 'var(--kh)',
     letterSpacing: 1,
     lineHeight: 1.6,
@@ -129,10 +131,10 @@ const s = {
   },
   detailStatLabel: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 8,
+    fontSize: 13,
     color: 'var(--kh)',
     letterSpacing: 1,
-    width: 60,
+    width: 70,
     opacity: 0.7,
   },
   detailStatBar: {
@@ -151,7 +153,7 @@ const s = {
   }),
   detailPrice: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 10,
+    fontSize: 15,
     color: 'var(--gd)',
     letterSpacing: 1,
     marginTop: 4,
@@ -162,7 +164,7 @@ const s = {
     alignItems: 'center',
     justifyContent: 'center',
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 8,
+    fontSize: 14,
     color: 'var(--kh)',
     letterSpacing: 2,
     opacity: 0.4,
@@ -176,20 +178,20 @@ const s = {
   },
   loadoutChip: (tierColor) => ({
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 7,
+    fontSize: 12,
     color: tierColor,
     letterSpacing: 1,
-    padding: '2px 6px',
+    padding: '3px 8px',
     borderRadius: 3,
     border: `1px solid ${tierColor}33`,
     background: `rgba(${hexToRgb(tierColor)}, 0.06)`,
   }),
   loadoutLabel: {
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 8,
+    fontSize: 13,
     color: 'var(--kh)',
     letterSpacing: 2,
-    marginBottom: 2,
+    marginBottom: 3,
   },
 
   /* Bottom bar */
@@ -202,7 +204,7 @@ const s = {
   /* Opponent activity */
   activityLine: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 7,
+    fontSize: 12,
     color: 'var(--rg)',
     letterSpacing: 1,
     textAlign: 'center',
@@ -218,13 +220,15 @@ const s = {
   },
   potBadge: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 9,
+    fontSize: 14,
     color: 'var(--sg)',
     letterSpacing: 1,
-    padding: '3px 10px',
+    padding: '4px 12px',
     borderRadius: 3,
     border: '1px solid rgba(20, 241, 149, 0.2)',
     background: 'rgba(20, 241, 149, 0.04)',
+    display: 'flex',
+    alignItems: 'center',
   },
 };
 
@@ -247,6 +251,8 @@ function ShopScreen({ navigate, screenData }) {
   const [opponentActivity, setOpponentActivity] = useState(null);
   const [error, setError] = useState(null);
   const [wager] = useState(screenData?.wager || 0);
+  const [totalRounds, setTotalRounds] = useState(screenData?.totalRounds || 3);
+  const [currentRound, setCurrentRound] = useState(screenData?.round || 1);
 
   const timerRef = useRef(null);
   const activityTimerRef = useRef(null);
@@ -254,6 +260,10 @@ function ShopScreen({ navigate, screenData }) {
   /* ── socket: shop phase init ── */
   useSocket('shopPhase', (data) => {
     if (data.weapons) setWeapons(data.weapons);
+
+    // Store round info from server
+    if (data.totalRounds != null) setTotalRounds(data.totalRounds);
+    if (data.round != null) setCurrentRound(data.round);
 
     // Find our gold balance — check all keys for our socket id
     if (data.goldBalance && window.socket) {
@@ -305,8 +315,8 @@ function ShopScreen({ navigate, screenData }) {
       },
       wager: screenData?.wager || 0,
       goldBalance: data.goldBalance,
-      round: screenData?.round || 1,
-      totalRounds: screenData?.totalRounds || 1,
+      round: currentRound,
+      totalRounds: totalRounds,
     });
   });
 
@@ -379,7 +389,7 @@ function ShopScreen({ navigate, screenData }) {
         <div style={s.catalogPanel}>
           <div style={s.catalogHeader}>
             <span style={s.catalogTitle}>ARSENAL</span>
-            <span style={s.goldChip}>{'* ' + gold + ' GOLD'}</span>
+            <span style={s.goldChip}><img src="/assets/images/currency/icon-gold.png" alt="" style={{ width: 12, height: 12, verticalAlign: 'middle', marginRight: 4 }} />{gold + ' GOLD'}</span>
           </div>
 
           <div style={s.catalogList}>
@@ -415,7 +425,7 @@ function ShopScreen({ navigate, screenData }) {
           {/* Pot Display (if wagered) */}
           {wager > 0 && (
             <div style={s.potDisplay}>
-              <span style={s.potBadge}>{'POT: ' + (wager * 2) + ' SOL'}</span>
+              <span style={s.potBadge}><img src="/assets/images/currency/icon-sol.png" alt="" style={{ width: 12, height: 12, verticalAlign: 'middle', marginRight: 4 }} />{'POT: ' + (wager * 2) + ' SOL'}</span>
             </div>
           )}
 

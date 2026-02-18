@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 const styles = {
   container: {
@@ -31,10 +31,10 @@ const styles = {
     animation: 'su 0.4s ease-out 0.2s both',
   },
   barContainer: {
-    width: 240,
-    height: 4,
+    width: 300,
+    height: 6,
     background: 'var(--od)',
-    borderRadius: 2,
+    borderRadius: 3,
     overflow: 'hidden',
     border: '1px solid var(--ol)',
     animation: 'su 0.4s ease-out 0.4s both',
@@ -47,7 +47,7 @@ const styles = {
   },
   statusText: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 8,
+    fontSize: 14,
     color: 'var(--kh)',
     letterSpacing: 3,
     textTransform: 'uppercase',
@@ -55,7 +55,7 @@ const styles = {
   },
   percentText: {
     fontFamily: "'Bebas Neue', sans-serif",
-    fontSize: 22,
+    fontSize: 36,
     color: 'var(--bn)',
     animation: 'su 0.4s ease-out 0.45s both',
   },
@@ -112,6 +112,7 @@ function checkSocket() {
 function preloadImages() {
   const urls = [
     'assets/images/wall.png',
+    'assets/images/branding/logo-transparent.png',
   ];
   return Promise.all(
     urls.map((src) =>
@@ -128,7 +129,9 @@ function preloadImages() {
 function LoadingScreen({ navigate }) {
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState('INITIALIZING...');
+  const [logoFailed, setLogoFailed] = useState(false);
   const doneRef = useRef(false);
+  const onLogoError = useCallback(() => setLogoFailed(true), []);
 
   useEffect(() => {
     if (doneRef.current) return;
@@ -183,14 +186,20 @@ function LoadingScreen({ navigate }) {
 
   return (
     <div style={styles.container}>
-      {/* Shell icon */}
-      <div style={styles.shellIcon}>S</div>
-
       {/* Logo */}
-      <div style={styles.logoText}>
-        <span style={{ color: 'var(--bn)' }}>SOL</span>
-        <span style={{ color: 'var(--rg)' }}>SHOT</span>
-      </div>
+      {logoFailed ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, animation: 'eg 0.5s ease-out both' }}>
+          <span style={{ ...styles.logoText, color: 'var(--bn)' }}>SOL</span>
+          <span style={{ ...styles.logoText, color: 'var(--rd)' }}>SHOT</span>
+        </div>
+      ) : (
+        <img
+          src="/assets/images/branding/logo-transparent.png"
+          alt="SolShot"
+          onError={onLogoError}
+          style={{ width: 260, height: 'auto', objectFit: 'contain', animation: 'eg 0.5s ease-out both' }}
+        />
+      )}
 
       {/* Percentage */}
       <div style={styles.percentText}>{progress}%</div>

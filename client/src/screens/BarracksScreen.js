@@ -22,8 +22,8 @@ const s = {
     gap: 8,
   },
   badgeRing: (color) => ({
-    width: 60,
-    height: 60,
+    width: 90,
+    height: 90,
     borderRadius: '50%',
     border: `3px solid ${color}`,
     display: 'flex',
@@ -33,20 +33,20 @@ const s = {
   }),
   badgeText: (color) => ({
     fontFamily: "'Bebas Neue', sans-serif",
-    fontSize: 22,
+    fontSize: 32,
     color: color,
     lineHeight: 1,
   }),
   rankName: {
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 12,
+    fontSize: 18,
     color: 'var(--bn)',
     letterSpacing: 3,
     textAlign: 'center',
   },
   walletAddress: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 8,
+    fontSize: 13,
     color: 'var(--kh)',
     letterSpacing: 1,
     opacity: 0.6,
@@ -63,7 +63,7 @@ const s = {
   },
   statsLabel: {
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 9,
+    fontSize: 14,
     color: 'var(--am)',
     letterSpacing: 2,
     marginBottom: 6,
@@ -83,14 +83,14 @@ const s = {
   },
   statValue: {
     fontFamily: "'Bebas Neue', sans-serif",
-    fontSize: 18,
+    fontSize: 24,
     color: 'var(--bn)',
     letterSpacing: 2,
     lineHeight: 1,
   },
   statLabel: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 7,
+    fontSize: 11,
     color: 'var(--kh)',
     letterSpacing: 1,
     opacity: 0.6,
@@ -100,7 +100,7 @@ const s = {
   /* Joined date */
   joinedLine: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 7,
+    fontSize: 12,
     color: 'var(--kh)',
     letterSpacing: 2,
     opacity: 0.4,

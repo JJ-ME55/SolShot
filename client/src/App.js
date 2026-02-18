@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { socket } from './socket/index';
 import { SolShotWalletProvider } from './wallet/WalletContext';
 import { TelegramProvider } from './telegram/TelegramContext';
@@ -27,6 +27,49 @@ function AppInner() {
     setScreenData({ ...data });
     setScreen(nextScreen);
   }, []);
+
+  // Attempt to rejoin an active match after page reload / socket reconnect
+  useEffect(() => {
+    if (!window.socket) return;
+
+    const handleRejoinSuccess = (data) => {
+      // Server sent full state snapshot — jump straight to battle
+      navigate('battle', {
+        roomId: data.roomId,
+        isHost: data.isHost,
+        wager: data.wager || 0,
+        round: data.matchState?.currentRound || 1,
+        totalRounds: data.matchState?.maxRounds || 1,
+        goldBalance: data.goldBalance,
+        weapons: data.weapons,
+        terrain: data.terrain,
+        tankPositions: data.tankPositions,
+        matchState: data.matchState,
+        rejoined: true,
+      });
+    };
+
+    const attemptRejoin = () => {
+      const walletAddress = window.solWallet?.publicKey?.toString();
+      if (walletAddress) {
+        window.socket.emit('rejoinRoom', { walletAddress });
+      }
+    };
+
+    window.socket.on('rejoinSuccess', handleRejoinSuccess);
+
+    // If socket is already connected, try rejoin immediately
+    if (window.socket.connected) {
+      attemptRejoin();
+    }
+    // Also try on each (re)connect
+    window.socket.on('connect', attemptRejoin);
+
+    return () => {
+      window.socket.off('rejoinSuccess', handleRejoinSuccess);
+      window.socket.off('connect', attemptRejoin);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Telegram native back button integration
   const handleTelegramBack = useCallback(() => {

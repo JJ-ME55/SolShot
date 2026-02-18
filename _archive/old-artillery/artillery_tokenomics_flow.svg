@@ -1,0 +1,186 @@
+<svg viewBox="0 0 900 720" xmlns="http://www.w3.org/2000/svg" style="background:#08081a">
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#44ff88"/>
+    </marker>
+    <marker id="arrowOrange" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#ffaa44"/>
+    </marker>
+    <marker id="arrowRed" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#ff6b6b"/>
+    </marker>
+    <marker id="arrowBlue" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#66aaff"/>
+    </marker>
+    <marker id="arrowPurple" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#aa77ff"/>
+    </marker>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Title -->
+  <text x="450" y="32" text-anchor="middle" fill="#fff" font-family="monospace" font-size="16" font-weight="bold">ARTILLERY GAME — DUAL-LAYER TOKENOMICS FLOW</text>
+  <text x="450" y="50" text-anchor="middle" fill="#666" font-family="monospace" font-size="10">Model C: SOL Money Layer + Token Status Layer</text>
+
+  <!-- ==================== -->
+  <!-- LAYER LABELS -->
+  <!-- ==================== -->
+  <rect x="20" y="62" width="420" height="24" rx="4" fill="#44ff8812" stroke="#44ff8833" stroke-width="1"/>
+  <text x="230" y="78" text-anchor="middle" fill="#44ff88" font-family="monospace" font-size="11" font-weight="bold">◆ SOL LAYER (MONEY)</text>
+
+  <rect x="460" y="62" width="420" height="24" rx="4" fill="#ffaa4412" stroke="#ffaa4433" stroke-width="1"/>
+  <text x="670" y="78" text-anchor="middle" fill="#ffaa44" font-family="monospace" font-size="11" font-weight="bold">◆ TOKEN LAYER (STATUS)</text>
+
+  <!-- ==================== -->
+  <!-- PLAYER BOX (center top) -->
+  <!-- ==================== -->
+  <rect x="330" y="100" width="240" height="56" rx="10" fill="#1a1a3a" stroke="#88aaff" stroke-width="2" filter="url(#glow)"/>
+  <text x="450" y="124" text-anchor="middle" fill="#88aaff" font-family="monospace" font-size="14" font-weight="bold">PLAYER</text>
+  <text x="450" y="142" text-anchor="middle" fill="#667" font-family="monospace" font-size="9">Bets SOL · Earns Tokens · Burns for Status</text>
+
+  <!-- ==================== -->
+  <!-- SOL SIDE -->
+  <!-- ==================== -->
+
+  <!-- PvP Wager Pool -->
+  <rect x="60" y="200" width="180" height="50" rx="8" fill="#112a18" stroke="#44ff88" stroke-width="1.5"/>
+  <text x="150" y="222" text-anchor="middle" fill="#44ff88" font-family="monospace" font-size="12" font-weight="bold">PVP WAGER POT</text>
+  <text x="150" y="238" text-anchor="middle" fill="#44ff8888" font-family="monospace" font-size="9">SOL in from players</text>
+
+  <!-- Arrow: Player → Wager -->
+  <line x1="380" y1="156" x2="220" y2="200" stroke="#44ff88" stroke-width="1.5" marker-end="url(#arrow)" stroke-dasharray="4,3"/>
+  <text x="285" y="172" text-anchor="middle" fill="#44ff8899" font-family="monospace" font-size="8">BET SOL</text>
+
+  <!-- Winner Payout -->
+  <rect x="60" y="290" width="180" height="44" rx="8" fill="#0a1a10" stroke="#44ff8866" stroke-width="1"/>
+  <text x="150" y="310" text-anchor="middle" fill="#44ff88" font-family="monospace" font-size="11" font-weight="bold">WINNER: 90%</text>
+  <text x="150" y="324" text-anchor="middle" fill="#44ff8866" font-family="monospace" font-size="9">SOL → player wallet</text>
+
+  <!-- Arrow: Pot → Winner -->
+  <line x1="150" y1="250" x2="150" y2="290" stroke="#44ff88" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Arrow: Winner back to Player -->
+  <path d="M 240 312 Q 340 300 380 156" fill="none" stroke="#44ff8844" stroke-width="1" marker-end="url(#arrow)" stroke-dasharray="3,3"/>
+  <text x="325" y="255" fill="#44ff8866" font-family="monospace" font-size="7">SOL PROFIT</text>
+
+  <!-- Protocol Fee Split -->
+  <rect x="60" y="370" width="180" height="40" rx="8" fill="#1a1520" stroke="#aa77ff" stroke-width="1.5"/>
+  <text x="150" y="394" text-anchor="middle" fill="#aa77ff" font-family="monospace" font-size="11" font-weight="bold">PROTOCOL FEE: 10%</text>
+
+  <!-- Arrow: Pot → Fee -->
+  <line x1="110" y1="250" x2="110" y2="370" stroke="#aa77ff" stroke-width="1.5" marker-end="url(#arrowPurple)"/>
+  <text x="96" y="320" fill="#aa77ff88" font-family="monospace" font-size="8" transform="rotate(-90,96,320)">RAKE</text>
+
+  <!-- Team Revenue -->
+  <rect x="20" y="450" width="130" height="44" rx="8" fill="#1a1220" stroke="#aa77ff88" stroke-width="1"/>
+  <text x="85" y="470" text-anchor="middle" fill="#aa77ff" font-family="monospace" font-size="10" font-weight="bold">TEAM: 7%</text>
+  <text x="85" y="484" text-anchor="middle" fill="#aa77ff66" font-family="monospace" font-size="8">SOL revenue</text>
+
+  <!-- Treasury -->
+  <rect x="170" y="450" width="130" height="44" rx="8" fill="#1a1220" stroke="#aa77ff88" stroke-width="1"/>
+  <text x="235" y="470" text-anchor="middle" fill="#aa77ff" font-family="monospace" font-size="10" font-weight="bold">OPS: 3%</text>
+  <text x="235" y="484" text-anchor="middle" fill="#aa77ff66" font-family="monospace" font-size="8">Infrastructure</text>
+
+  <!-- Arrows: Fee → Team/Treasury -->
+  <line x1="120" y1="410" x2="85" y2="450" stroke="#aa77ff" stroke-width="1" marker-end="url(#arrowPurple)"/>
+  <line x1="180" y1="410" x2="235" y2="450" stroke="#aa77ff" stroke-width="1" marker-end="url(#arrowPurple)"/>
+
+  <!-- Season Pass (SOL) -->
+  <rect x="60" y="530" width="180" height="44" rx="8" fill="#112a18" stroke="#44ff8866" stroke-width="1"/>
+  <text x="150" y="550" text-anchor="middle" fill="#44ff88" font-family="monospace" font-size="10" font-weight="bold">SEASON PASS</text>
+  <text x="150" y="564" text-anchor="middle" fill="#44ff8866" font-family="monospace" font-size="9">0.5 SOL → Team + Content</text>
+
+  <!-- Cosmetic SOL Shop -->
+  <rect x="60" y="590" width="180" height="44" rx="8" fill="#112a18" stroke="#44ff8866" stroke-width="1"/>
+  <text x="150" y="610" text-anchor="middle" fill="#44ff88" font-family="monospace" font-size="10" font-weight="bold">SOL COSMETIC SHOP</text>
+  <text x="150" y="624" text-anchor="middle" fill="#44ff8866" font-family="monospace" font-size="9">Premium bundles → Team</text>
+
+  <!-- Arrows from Player to SOL extras -->
+  <path d="M 350 156 Q 200 500 150 530" fill="none" stroke="#44ff8844" stroke-width="1" marker-end="url(#arrow)" stroke-dasharray="3,3"/>
+  <path d="M 345 156 Q 190 520 150 590" fill="none" stroke="#44ff8844" stroke-width="1" marker-end="url(#arrow)" stroke-dasharray="3,3"/>
+
+
+  <!-- ==================== -->
+  <!-- TOKEN SIDE -->
+  <!-- ==================== -->
+
+  <!-- Token Pool (fixed supply) -->
+  <rect x="660" y="200" width="200" height="56" rx="8" fill="#2a1a08" stroke="#ffaa44" stroke-width="1.5"/>
+  <text x="760" y="222" text-anchor="middle" fill="#ffaa44" font-family="monospace" font-size="12" font-weight="bold">TOKEN POOL</text>
+  <text x="760" y="240" text-anchor="middle" fill="#ffaa4488" font-family="monospace" font-size="9">10M Fixed · Mint Revoked</text>
+
+  <!-- Achievement Drip -->
+  <rect x="500" y="290" width="160" height="44" rx="8" fill="#1a1508" stroke="#ffaa4466" stroke-width="1"/>
+  <text x="580" y="310" text-anchor="middle" fill="#ffaa44" font-family="monospace" font-size="10" font-weight="bold">ACHIEVEMENT DRIP</text>
+  <text x="580" y="324" text-anchor="middle" fill="#ffaa4466" font-family="monospace" font-size="8">~20 tokens/player/mo</text>
+
+  <!-- Arrow: Pool → Drip -->
+  <line x1="690" y1="256" x2="620" y2="290" stroke="#ffaa44" stroke-width="1" marker-end="url(#arrowOrange)" stroke-dasharray="4,3"/>
+  <text x="640" y="268" fill="#ffaa4466" font-family="monospace" font-size="7">TINY DRIP</text>
+
+  <!-- Arrow: Drip → Player -->
+  <line x1="560" y1="290" x2="500" y2="156" stroke="#ffaa44" stroke-width="1" marker-end="url(#arrowOrange)" stroke-dasharray="3,3"/>
+  <text x="515" y="220" fill="#ffaa4466" font-family="monospace" font-size="7">EARN</text>
+
+  <!-- Season Pass Token Rewards -->
+  <rect x="700" y="290" width="160" height="44" rx="8" fill="#1a1508" stroke="#ffaa4466" stroke-width="1"/>
+  <text x="780" y="310" text-anchor="middle" fill="#ffaa44" font-family="monospace" font-size="10" font-weight="bold">SEASON REWARDS</text>
+  <text x="780" y="324" text-anchor="middle" fill="#ffaa4466" font-family="monospace" font-size="8">200 tokens/pass completion</text>
+
+  <!-- Arrow: Pool → Season -->
+  <line x1="780" y1="256" x2="780" y2="290" stroke="#ffaa44" stroke-width="1" marker-end="url(#arrowOrange)" stroke-dasharray="4,3"/>
+
+  <!-- ==================== -->
+  <!-- BURN SINKS (the key part) -->
+  <!-- ==================== -->
+  
+  <text x="670" y="380" fill="#ff6b6b" font-family="monospace" font-size="11" font-weight="bold">🔥 BURN SINKS (ALL PERMANENT)</text>
+
+  <!-- Prestige Burn -->
+  <rect x="490" y="395" width="150" height="52" rx="8" fill="#2a1111" stroke="#ff6b6b" stroke-width="1.5"/>
+  <text x="565" y="415" text-anchor="middle" fill="#ff6b6b" font-family="monospace" font-size="11" font-weight="bold">PRESTIGE</text>
+  <text x="565" y="430" text-anchor="middle" fill="#ff6b6b88" font-family="monospace" font-size="8">200→4000 tokens</text>
+  <text x="565" y="441" text-anchor="middle" fill="#ff6b6b66" font-family="monospace" font-size="7">10 tiers · STATUS ONLY</text>
+
+  <!-- Weapon Skins Burn -->
+  <rect x="660" y="395" width="150" height="52" rx="8" fill="#2a1111" stroke="#ff6b6b" stroke-width="1.5"/>
+  <text x="735" y="415" text-anchor="middle" fill="#ff6b6b" font-family="monospace" font-size="11" font-weight="bold">WEAPON SKINS</text>
+  <text x="735" y="430" text-anchor="middle" fill="#ff6b6b88" font-family="monospace" font-size="8">Token burn → cosmetic</text>
+  <text x="735" y="441" text-anchor="middle" fill="#ff6b6b66" font-family="monospace" font-size="7">No gameplay advantage</text>
+
+  <!-- Tank Skins Burn -->
+  <rect x="490" y="460" width="150" height="48" rx="8" fill="#2a1111" stroke="#ff6b6b88" stroke-width="1"/>
+  <text x="565" y="480" text-anchor="middle" fill="#ff6b6b" font-family="monospace" font-size="10" font-weight="bold">TANK SKINS</text>
+  <text x="565" y="496" text-anchor="middle" fill="#ff6b6b66" font-family="monospace" font-size="8">Kill effects · Trails</text>
+
+  <!-- Battle Pass Premium -->
+  <rect x="660" y="460" width="150" height="48" rx="8" fill="#2a1111" stroke="#ff6b6b88" stroke-width="1"/>
+  <text x="735" y="480" text-anchor="middle" fill="#ff6b6b" font-family="monospace" font-size="10" font-weight="bold">BATTLE PASS</text>
+  <text x="735" y="496" text-anchor="middle" fill="#ff6b6b66" font-family="monospace" font-size="8">Premium track unlock</text>
+
+  <!-- Ranked Entry -->
+  <rect x="490" y="520" width="320" height="40" rx="8" fill="#2a1111" stroke="#ff6b6b55" stroke-width="1"/>
+  <text x="650" y="544" text-anchor="middle" fill="#ff6b6b" font-family="monospace" font-size="10" font-weight="bold">RANKED SEASON ENTRY · LEADERBOARD FEES</text>
+
+  <!-- Arrows: Player → Burns -->
+  <line x1="520" y1="156" x2="565" y2="395" stroke="#ff6b6b" stroke-width="1.5" marker-end="url(#arrowRed)"/>
+  <line x1="530" y1="156" x2="735" y2="395" stroke="#ff6b6b" stroke-width="1" marker-end="url(#arrowRed)" stroke-dasharray="3,3"/>
+  <text x="555" y="280" fill="#ff6b6b88" font-family="monospace" font-size="8" transform="rotate(68,555,280)">BURN TOKENS</text>
+
+  <!-- DESTROYED label -->
+  <rect x="570" y="580" width="160" height="34" rx="6" fill="#ff6b6b15" stroke="#ff6b6b44" stroke-width="1"/>
+  <text x="650" y="602" text-anchor="middle" fill="#ff6b6b" font-family="monospace" font-size="12" font-weight="bold">🔥 DESTROYED</text>
+
+  <!-- Arrow: Burns → Destroyed -->
+  <line x1="650" y1="560" x2="650" y2="580" stroke="#ff6b6b" stroke-width="1.5" marker-end="url(#arrowRed)"/>
+
+  <!-- ==================== -->
+  <!-- KEY RULE BOX -->
+  <!-- ==================== -->
+  <rect x="60" y="660" width="780" height="44" rx="8" fill="#0a0a18" stroke="#ff6b6b44" stroke-width="1"/>
+  <text x="450" y="678" text-anchor="middle" fill="#ff6b6b" font-family="monospace" font-size="11" font-weight="bold">⚠ GOLDEN RULE: PRESTIGE / BURNS NEVER INCREASE EARN RATE — PURE STATUS ONLY</text>
+  <text x="450" y="694" text-anchor="middle" fill="#666" font-family="monospace" font-size="9">The moment burns yield higher future earnings, you've recreated the P2E death spiral</text>
+</svg>

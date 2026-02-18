@@ -3,9 +3,9 @@ import React from 'react';
 const s = {
   button: (disabled) => ({
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 16,
+    fontSize: 18,
     letterSpacing: 4,
-    padding: '10px 36px',
+    padding: '12px 42px',
     borderRadius: 4,
     border: 'none',
     cursor: disabled ? 'default' : 'pointer',

@@ -20,6 +20,9 @@ export const setTerrain = (ctx, width, height, path, terrain) => {
         ctx.closePath()
         ctx.fill()
 
+        // Refresh Phaser texture after base terrain fill
+        terrain.update()
+
         createLayers(ctx, path, terrain)
     }
 
@@ -39,6 +42,7 @@ export const setTerrain = (ctx, width, height, path, terrain) => {
     }
 
     makeDummyTerrain()
+    terrain.update()
 }
 
 /**
@@ -57,7 +61,7 @@ export const drawTerrain = (ctx, width, height, terrain) => {
 const makePath = (width, height) => {
     var x, y, prevX, prevY, radius, angle, factor, path = [];
     x = -200
-    y = height * (1 - Math.random() * Math.random())
+    y = height * 0.65 + height * 0.3 * (1 - Math.random() * Math.random())
     prevX = x
     prevY = y
     path.push({x, y})
@@ -80,7 +84,7 @@ const makePath = (width, height) => {
         if (y > height) {
             y = height
         } 
-        if (y < height/5) {
+        if (y < height * 0.55) {
             y = prevY - radius * Math.sin(angle)
         }
 
@@ -103,10 +107,10 @@ const makePath = (width, height) => {
 
 const getAngle = (x, y, width, height) => {
     var angle = Math.random() * Math.PI - Math.PI/2
-    if (y > height/1.5) {
+    if (y > height * 0.72) {
         angle = (angle - Math.PI/2 * Math.sqrt(Math.random())) / 2
     }
-    if (y < height/1.5) {
+    if (y < height * 0.72) {
         angle = (angle + Math.PI/2 * Math.sqrt(Math.random())) / 2
     }
     if (x < width/2) {
@@ -125,7 +129,7 @@ const createLayers = (ctx, path, terrain) => {
     var angle, img, pattern;
     img = [new Image(), new Image(), new Image(), new Image(), new Image()]
     pattern = [null, null, null, null, null]
-    var layers = [{color: 'rgba(0,190,0,1)', width: 10}, {color: 'rgba(0,180,0,1)', width: 30}, {color: 'rgba(0,160,30,1)', width: 70}, {color: 'rgba(0,140,50,1)', width: 130}, {color: 'rgba(0,120,50,1)', width: 200}]
+    var layers = [{color: 'rgba(107,123,61,1)', width: 10}, {color: 'rgba(92,106,53,1)', width: 30}, {color: 'rgba(74,86,42,1)', width: 70}, {color: 'rgba(58,69,31,1)', width: 130}, {color: 'rgba(42,51,31,1)', width: 200}]
 
     //layers.reverse()
 
@@ -152,6 +156,8 @@ const createLayers = (ctx, path, terrain) => {
             ctx.strokeStyle = pattern[index]
             ctx.globalCompositeOperation = 'source-atop'
             ctx.stroke()
+            // Refresh Phaser CanvasTexture after each layer draw
+            terrain.update()
             if (index === 0) {
                 terrain.scene.events.emit('terrain-finished')
                 return

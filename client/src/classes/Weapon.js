@@ -63,8 +63,11 @@ export class Weapon {
         }
 
         obj.setRotation(rotation)
-        obj.setVelocity(velocity * Math.cos(rotation), velocity * Math.sin(rotation)) 
+        obj.setVelocity(velocity * Math.cos(rotation), velocity * Math.sin(rotation))
         obj.body.setGravityY(gravity)
+        // Wind: horizontal acceleration matching server physics
+        const wind = this.scene.wind || 0
+        obj.body.setAccelerationX(wind)
         obj.setDepth(2)        
         //obj.body.prevCenter = new Phaser.Math.Vector2(obj.body.center.x, obj.body.center.y)
         

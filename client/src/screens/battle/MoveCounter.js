@@ -10,18 +10,18 @@ const s = {
   },
   label: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 7,
+    fontSize: 11,
     color: 'var(--kh)',
     letterSpacing: 1,
     opacity: 0.6,
   },
   dots: {
     display: 'flex',
-    gap: 3,
+    gap: 4,
   },
   dot: (filled) => ({
-    width: 6,
-    height: 6,
+    width: 8,
+    height: 8,
     borderRadius: 1,
     background: filled ? 'var(--am)' : 'rgba(184, 168, 138, 0.15)',
     border: filled ? '1px solid var(--am)' : '1px solid var(--ol)',

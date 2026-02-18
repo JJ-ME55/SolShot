@@ -3,21 +3,26 @@
  *
  * Handles SOL wager management:
  *   - Verify wallet balances
- *   - Process wager deposits (direct transfer to treasury for now)
- *   - Settle matches (distribute winnings)
+ *   - Process wager deposits (escrow PDA when deployed, placeholder otherwise)
+ *   - Settle matches (distribute winnings via on-chain escrow)
  *   - Refund on cancel/disconnect
  *
- * Settlement split:
+ * Settlement split (hardcoded on-chain):
  *   90% → Winner
  *    7% → Treasury (platform revenue)
  *    3% → Ops wallet (running costs)
  *
- * Future: Replace direct transfers with Anchor escrow program
- * when match-escrow program is deployed.
+ * When escrow program is deployed, settleMatch/refundWager delegate to
+ * the on-chain program. Otherwise falls back to logging (dev mode).
  */
 
 import { Connection, PublicKey, Keypair, Transaction, SystemProgram, LAMPORTS_PER_SOL, sendAndConfirmTransaction } from '@solana/web3.js';
 import fs from 'fs';
+import {
+    initEscrow, isEscrowEnabled,
+    createMatchEscrow, settleMatchEscrow, cancelMatchEscrow,
+    buildDepositTransaction, getEscrowState, getEscrowPDA,
+} from './escrow.js';
 
 const SOLANA_RPC = process.env.SOLANA_RPC || 'https://api.devnet.solana.com';
 const TREASURY_WALLET = process.env.TREASURY_WALLET || null;
@@ -30,6 +35,32 @@ const OPS_SHARE = 0.03;
 
 // Valid wager tiers in SOL
 export const WAGER_TIERS = [0, 0.01, 0.05, 0.1, 0.25, 0.5];
+
+// Match modes — litepaper v2.0
+export const MATCH_MODES = {
+    practice:    { label: 'Practice',    wagerRange: [0, 0],      formats: [1] },
+    quick_match: { label: 'Quick Match', wagerRange: [0.01, 0.1], formats: [1, 3] },
+    duel:        { label: 'Duel',        wagerRange: [0.05, 0.25],formats: [3, 5] },
+    high_roller: { label: 'High Roller', wagerRange: [0.25, 0.5], formats: [3, 5] },
+};
+
+/**
+ * Validate wager + matchLength against a match mode
+ */
+export function validateMatchMode(mode, wagerSOL, matchLength) {
+    const config = MATCH_MODES[mode];
+    if (!config) return { valid: false, reason: 'Unknown match mode' };
+    if (wagerSOL < config.wagerRange[0] || wagerSOL > config.wagerRange[1]) {
+        return { valid: false, reason: `Wager must be ${config.wagerRange[0]}-${config.wagerRange[1]} SOL for ${config.label}` };
+    }
+    if (wagerSOL > 0 && !WAGER_TIERS.includes(wagerSOL)) {
+        return { valid: false, reason: 'Invalid wager tier' };
+    }
+    if (!config.formats.includes(matchLength)) {
+        return { valid: false, reason: `${config.label} only supports BO${config.formats.join('/BO')}` };
+    }
+    return { valid: true };
+}
 
 // Solana connection (singleton)
 let connection = null;
@@ -44,18 +75,31 @@ export function initSolana() {
     connection = new Connection(SOLANA_RPC, 'confirmed');
     console.log(`[Solana] Connected to ${SOLANA_RPC}`);
 
-    // Load server keypair if available
+    // Load server keypair — supports file path OR inline JSON (for cloud deploy)
     const keypairPath = process.env.SOLANA_KEYPAIR_PATH;
-    if (keypairPath) {
+    const keypairJson = process.env.SOLANA_KEYPAIR_JSON;
+    if (keypairJson) {
+        try {
+            const secretKey = JSON.parse(keypairJson);
+            serverKeypair = Keypair.fromSecretKey(Uint8Array.from(secretKey));
+            console.log(`[Solana] Server wallet (from env): ${serverKeypair.publicKey.toBase58()}`);
+        } catch (err) {
+            console.warn('[Solana] Failed to parse SOLANA_KEYPAIR_JSON:', err.message);
+        }
+    } else if (keypairPath) {
         try {
             const resolved = keypairPath.replace('~', process.env.HOME || process.env.USERPROFILE || '');
             const secretKey = JSON.parse(fs.readFileSync(resolved, 'utf-8'));
             serverKeypair = Keypair.fromSecretKey(Uint8Array.from(secretKey));
-            console.log(`[Solana] Server wallet: ${serverKeypair.publicKey.toBase58()}`);
+            console.log(`[Solana] Server wallet (from file): ${serverKeypair.publicKey.toBase58()}`);
         } catch (err) {
             console.warn('[Solana] No server keypair loaded:', err.message);
         }
     }
+
+    // Initialize escrow program (if keypair + IDL available)
+    const escrowReady = initEscrow();
+    console.log(`[Solana] Escrow program: ${escrowReady ? 'ENABLED' : 'DISABLED (dev mode)'}`);
 
     return connection;
 }
@@ -155,16 +199,17 @@ export function calculateSettlement(totalWagerSOL) {
 }
 
 /**
- * Settle a match — distribute winnings
- * For now: log the settlement. When escrow program is deployed,
- * this will call the on-chain settle instruction.
+ * Settle a match — distribute winnings.
+ * When escrow is enabled, calls on-chain settle instruction (90/7/3 split).
+ * Falls back to logging in dev mode.
  *
  * @param {string} winnerAddress - Winner's wallet
  * @param {string} loserAddress - Loser's wallet
  * @param {number} wagerSOL - Each player's wager
+ * @param {string} [matchId] - Room ID for escrow PDA lookup
  * @returns {Promise<{success: boolean, settlement: object, txSignature?: string}>}
  */
-export async function settleMatch(winnerAddress, loserAddress, wagerSOL) {
+export async function settleMatch(winnerAddress, loserAddress, wagerSOL, matchId) {
     if (wagerSOL === 0) {
         return { success: true, settlement: { winner: 0, treasury: 0, ops: 0 }, txSignature: null };
     }
@@ -172,7 +217,26 @@ export async function settleMatch(winnerAddress, loserAddress, wagerSOL) {
     const totalPot = wagerSOL * 2;
     const settlement = calculateSettlement(totalPot);
 
-    console.log('[Solana] Settlement:', {
+    // If escrow program is live and we have a matchId, settle on-chain
+    if (isEscrowEnabled() && matchId) {
+        const result = await settleMatchEscrow(matchId, winnerAddress);
+        if (result.success) {
+            console.log('[Solana] On-chain settlement:', {
+                matchId,
+                winner: winnerAddress,
+                txSignature: result.txSignature,
+            });
+            return {
+                success: true,
+                settlement,
+                txSignature: result.txSignature,
+            };
+        }
+        console.error('[Solana] On-chain settle failed, logging only:', result.error);
+    }
+
+    // Fallback: log settlement (dev mode / no escrow)
+    console.log('[Solana] Settlement (off-chain):', {
         winner: winnerAddress,
         winnerSOL: settlement.winner,
         treasurySOL: settlement.treasury,
@@ -180,48 +244,45 @@ export async function settleMatch(winnerAddress, loserAddress, wagerSOL) {
         totalPot,
     });
 
-    // O4: When escrow is deployed, use a SINGLE batched transaction:
-    //
-    // const tx = new Transaction();
-    // tx.add(SystemProgram.transfer({ fromPubkey: escrowPDA, toPubkey: new PublicKey(winnerAddress),
-    //     lamports: Math.round(settlement.winner * LAMPORTS_PER_SOL) }));
-    // tx.add(SystemProgram.transfer({ fromPubkey: escrowPDA, toPubkey: new PublicKey(TREASURY_WALLET),
-    //     lamports: Math.round(settlement.treasury * LAMPORTS_PER_SOL) }));
-    // tx.add(SystemProgram.transfer({ fromPubkey: escrowPDA, toPubkey: new PublicKey(OPS_WALLET),
-    //     lamports: Math.round(settlement.ops * LAMPORTS_PER_SOL) }));
-    // const sig = await sendAndConfirmTransaction(conn, tx, [serverKeypair]);
-    //
-    // One TX = one signature fee, one confirmation wait (3x savings vs separate TXs)
-
     return {
         success: true,
         settlement,
-        txSignature: null, // Will be populated when escrow is live
+        txSignature: null,
     };
 }
 
 /**
- * Refund a cancelled match
+ * Refund a cancelled match — cancel escrow and return funds.
  *
  * @param {string} playerAddress - Player to refund
  * @param {number} wagerSOL - Amount to refund
+ * @param {string} [matchId] - Room ID for escrow lookup
+ * @param {string} [playerOneAddress] - P1 wallet for cancel_match
+ * @param {string} [playerTwoAddress] - P2 wallet for cancel_match
  * @returns {Promise<{success: boolean, txSignature?: string}>}
  */
-export async function refundWager(playerAddress, wagerSOL) {
+export async function refundWager(playerAddress, wagerSOL, matchId, playerOneAddress, playerTwoAddress) {
     if (wagerSOL === 0) {
         return { success: true, txSignature: null };
     }
 
-    console.log('[Solana] Refund:', {
+    // If escrow is live, cancel on-chain (refunds all deposited players)
+    if (isEscrowEnabled() && matchId && playerOneAddress && playerTwoAddress) {
+        const result = await cancelMatchEscrow(matchId, playerOneAddress, playerTwoAddress);
+        if (result.success) {
+            console.log('[Solana] On-chain refund:', { matchId, txSignature: result.txSignature });
+            return { success: true, txSignature: result.txSignature };
+        }
+        console.error('[Solana] On-chain cancel failed:', result.error);
+    }
+
+    // Fallback: log refund
+    console.log('[Solana] Refund (off-chain):', {
         player: playerAddress,
         amount: wagerSOL,
     });
 
-    // Future: Execute on-chain refund via escrow program
-    return {
-        success: true,
-        txSignature: null,
-    };
+    return { success: true, txSignature: null };
 }
 
 /**
@@ -241,5 +302,14 @@ export async function getBalance(walletAddress) {
         return 0;
     }
 }
+
+// Re-export escrow functions for main.js
+export {
+    isEscrowEnabled,
+    createMatchEscrow,
+    buildDepositTransaction,
+    getEscrowState,
+    getEscrowPDA,
+} from './escrow.js';
 
 export { WINNER_SHARE, TREASURY_SHARE, OPS_SHARE };

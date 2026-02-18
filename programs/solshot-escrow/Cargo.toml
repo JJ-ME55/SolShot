@@ -1,0 +1,20 @@
+[package]
+name = "solshot-escrow"
+version = "0.1.0"
+description = "SolShot match escrow program — PDA-based wagering with 90/7/3 split"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "solshot_escrow"
+
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+default = []
+idl-build = ["anchor-lang/idl-build"]
+
+[dependencies]
+anchor-lang = "0.32.1"

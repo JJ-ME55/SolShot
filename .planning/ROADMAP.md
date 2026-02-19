@@ -90,14 +90,14 @@ Plans:
   3. Players in standard modes are paired via a matchmaking queue rather than manual room codes
   4. A player's account records SHOT milestone emissions at each of the 8 defined milestones exactly once
   5. Practice mode awards SHOT at 25% of the standard emission rate; rounds end when one player reaches 0 HP or 20 turns are exhausted (HP-based winner applies); a player can move their tank up to 4 steps per turn; 3 consecutive turn timeouts end the match
-**Plans:** TBD
+**Plans:** 5 plans
 
 Plans:
-- [ ] 03-01: Update wager tiers and add Custom Challenge mode (LP-01, LP-02)
-- [ ] 03-02: Implement matchmaking queue for standard modes (LP-03)
-- [ ] 03-03: Implement SHOT milestone emission table and Practice mode emission rate (LP-04, LP-05)
-- [ ] 03-04: Implement 20-turn limit, tank movement, and 3-forfeit timeout rule (LP-06, LP-07, LP-08)
-- [ ] 03-05: Treasury multisig governance documentation and configuration (LP-09)
+- [ ] 03-01-PLAN.md — Update wager tiers to v2.1 values and add Custom Challenge mode (LP-01, LP-02)
+- [ ] 03-02-PLAN.md — Implement queue-based matchmaking for standard modes (LP-03)
+- [ ] 03-03-PLAN.md — Replace SHOT milestone system with v2.1 emission table and Practice 25% rate (LP-04, LP-05)
+- [ ] 03-04-PLAN.md — Server-side movement enforcement, 3-forfeit timeout rule, enriched milestone callsite (LP-07, LP-08, LP-04 callsite)
+- [ ] 03-05-PLAN.md — Treasury multisig governance documentation (LP-09)
 
 ---
 

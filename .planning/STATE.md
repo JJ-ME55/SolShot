@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 19 Feb 2026)
 
 **Core value:** Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** Phase 2 — TODO Completion (02-01 Task 1 done, paused at human-action checkpoint for WAV sourcing)
+**Current focus:** Phase 2 — TODO Completion (02-01 partial, 02-04 complete; next: 02-02 escrow test, 02-03 token metadata, 02-05 DNS)
 
 ## Current Position
 
 Phase: 2 of 7 (TODO Completion)
-Plan: 1 of 5 in current phase — Task 1 complete, Task 2 blocked on human action
-Status: In progress — 02-01 Task 1 committed (9adf21e), paused at checkpoint:human-action (Task 2)
-Last activity: 19 Feb 2026 — Completed 02-01 Task 1 (7 missing sound preload lines added to MainScene)
+Plan: 4 of 5 in current phase — 02-04 complete; 02-01 partial (Task 2 blocked on WAV files); 02-02, 02-03, 02-05 not started
+Status: In progress — 02-04 complete (ed48f66), 02-01 Task 1 committed (9adf21e)
+Last activity: 19 Feb 2026 — Completed 02-04 (ResponsibleGaming UI, legal doc dates, @SolShotGG Twitter confirmed, jurisdiction deferred)
 
-Progress: [█████░░░░░] ~17% (5/30 plans code-complete; phase 1.1 pending QA sign-off; 02-01 in progress)
+Progress: [██████░░░░] ~20% (6/30 plans complete — 02-04 done; 01.1 QA pending)
 
 ## Performance Metrics
 
@@ -67,6 +67,10 @@ Progress: [█████░░░░░] ~17% (5/30 plans code-complete; phase
 - **[01.1-04] Tasks 1+2 committed atomically as 59a32bd — both modify same file; interactive staging unavailable in non-TTY context**
 - **[01.1-04] Chain Reaction energy arc uses arr[i-2] for previous offset — i is incremented end-of-createBlast, so inside body i = current, i-2 = blast before last**
 - **[01.1-04] Pineapple sub-munitions upgraded rgba(0,255,100,1) radius 1.5 — brighter + slightly larger than original (0,230,80,1) radius 1**
+- **[02-04] Twitter @SolShotGG confirmed created by user**
+- **[02-04] Jurisdiction deferred — [TO BE DETERMINED BY LEGAL COUNSEL] in ToS 12.1 and Privacy Policy 10.1; resolve before mainnet**
+- **[02-04] Contact email deferred — [TBD] in both legal docs; no contact@solshot.gg set**
+- **[02-04] Legal doc GitHub raw URLs used for devnet; update to solshot.gg/terms and solshot.gg/privacy at mainnet**
 
 ### Pending Todos
 
@@ -75,8 +79,8 @@ None yet.
 ### Blockers/Concerns
 - Missing sound WAV files (7 .wav files — TODO-01): preload lines added (9adf21e), WAV files still needed on disk
 - Token metadata (Metaplex) not created yet — TODO-03
-- Social accounts not created yet (Twitter) — TODO-04
-- Legal docs (ToS, Privacy Policy) drafts exist but not finalized — TODO-05, TODO-06
+- Twitter @SolShotGG DONE — TODO-04 closed
+- Legal docs: dates filled, jurisdiction and contact email deferred — TODO-05/06 partially closed (placeholders remain for mainnet)
 - Escrow program not audited — SEC-01
 - **[01-01 Open → WVA-03] Prestige weapons in-game playtesting — CHECKLIST READY, awaiting John sign-off**
 - **[01-01 Open → WVA-03] Heatseeker sprite rotation visual confirmation — John confirmed PERFECT in play-test**
@@ -86,5 +90,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-19 UTC
-Stopped at: 02-01 Task 1 complete (9adf21e), paused at Task 2 human-action checkpoint (WAV sourcing)
-Resume file: None (continuation agent needs "sounds done" signal after John places 7 WAV files)
+Stopped at: 02-04 complete (ed48f66 fix commit + SUMMARY); 02-01 still partial (Task 2 waiting on WAV files)
+Resume file: None (next: pick any of 02-02 escrow test, 02-03 token metadata, or 02-05 DNS; or wait for WAV files to complete 02-01)

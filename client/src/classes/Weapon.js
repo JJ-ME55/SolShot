@@ -191,6 +191,38 @@ export class Weapon {
 
 
 
+    spawnParticle = (x, y, color, size = 1, lifetime = 500, velocity = {x: 0, y: 0}) => {
+        var particle = this.scene.add.circle(x, y, size, color, 1)
+        particle.setDepth(2)
+        this.scene.tweens.add({
+            targets: particle,
+            x: particle.x + velocity.x,
+            y: particle.y + velocity.y,
+            alpha: 0,
+            duration: lifetime,
+            ease: 'Quad.easeOut',
+            onComplete: () => { particle.destroy(true) }
+        })
+        return particle
+    }
+
+
+
+    spawnBurstEffect = (x, y, count = 8, color = 0xffffff, spread = 20, size = 1, lifetime = 400) => {
+        for (let i = 0; i < count; i++) {
+            var angle = Math.random() * Math.PI * 2
+            var dist = Math.random() * spread
+            this.spawnParticle(
+                x + (Math.random() - 0.5) * 4,
+                y + (Math.random() - 0.5) * 4,
+                color, size, lifetime,
+                { x: Math.cos(angle) * dist, y: Math.sin(angle) * dist }
+            )
+        }
+    }
+
+
+
     defaultUpdateScore = (x, y, blastRadius, factor) => {
         if (isNaN(factor)) return
 

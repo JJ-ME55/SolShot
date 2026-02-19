@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 19 Feb 2026)
 
 **Core value:** Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** Phase 2 — TODO Completion (02-01 partial, 02-04 complete; next: 02-02 escrow test, 02-03 token metadata, 02-05 DNS)
+**Current focus:** Phase 2 — TODO Completion (02-01 partial, 02-04 and 02-05 complete; next: 02-02 escrow test, 02-03 token metadata)
 
 ## Current Position
 
 Phase: 2 of 7 (TODO Completion)
-Plan: 4 of 5 in current phase — 02-04 complete; 02-01 partial (Task 2 blocked on WAV files); 02-02, 02-03, 02-05 not started
-Status: In progress — 02-04 complete (ed48f66), 02-01 Task 1 committed (9adf21e)
-Last activity: 19 Feb 2026 — Completed 02-04 (ResponsibleGaming UI, legal doc dates, @SolShotGG Twitter confirmed, jurisdiction deferred)
+Plan: 5 of 5 in current phase — 02-04 complete, 02-05 complete; 02-01 partial (Task 2 blocked on WAV files); 02-02, 02-03 not started
+Status: In progress — 02-04 (ed48f66), 02-05 complete, 02-01 Task 1 committed (9adf21e)
+Last activity: 19 Feb 2026 — Completed 02-05 (DNS A+CNAME set at Spaceship, Vercel configured, render.yaml CORS_ORIGINS updated)
 
-Progress: [██████░░░░] ~20% (6/30 plans complete — 02-04 done; 01.1 QA pending)
+Progress: [██████░░░░] ~23% (7/30 plans complete — 02-04, 02-05 done; 01.1 QA pending)
 
 ## Performance Metrics
 
@@ -71,6 +71,8 @@ Progress: [██████░░░░] ~20% (6/30 plans complete — 02-04 d
 - **[02-04] Jurisdiction deferred — [TO BE DETERMINED BY LEGAL COUNSEL] in ToS 12.1 and Privacy Policy 10.1; resolve before mainnet**
 - **[02-04] Contact email deferred — [TBD] in both legal docs; no contact@solshot.gg set**
 - **[02-04] Legal doc GitHub raw URLs used for devnet; update to solshot.gg/terms and solshot.gg/privacy at mainnet**
+- **[02-05] DNS live: A @ → 216.198.79.1 (Vercel), CNAME www → cname.vercel-dns.com; Vercel configured for solshot.gg + www.solshot.gg**
+- **[02-05] render.yaml CORS_ORIGINS seeds solshot.gg — Render dashboard must ALSO be updated after server deploy (dashboard takes precedence)**
 
 ### Pending Todos
 
@@ -90,5 +92,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-19 UTC
-Stopped at: 02-04 complete (ed48f66 fix commit + SUMMARY); 02-01 still partial (Task 2 waiting on WAV files)
-Resume file: None (next: pick any of 02-02 escrow test, 02-03 token metadata, or 02-05 DNS; or wait for WAV files to complete 02-01)
+Stopped at: 02-05 complete (DNS/CORS done); 02-01 still partial (Task 2 waiting on WAV files)
+Resume file: None (next: 02-02 escrow devnet test or 02-03 SHOT token metadata)

@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 19 Feb 2026)
 ## Current Position
 
 Phase: 1.1 of 7 (Weapon Visual Identity)
-Plan: 0 of 4 in current phase
-Status: Phase inserted, design doc approved, ready to plan
-Last activity: 19 Feb 2026 — Inserted Phase 1.1 after John's play-test feedback
+Plan: 1 of 4 in current phase
+Status: In progress — 1/4 plans complete in phase 1.1
+Last activity: 19 Feb 2026 — Completed 01.1-01 (Tier 1 weapons + spawnParticle utility)
 
-Progress: [██░░░░░░░░] ~7% (2/30 plans complete)
+Progress: [███░░░░░░░] ~10% (3/30 plans complete)
 
 ## Performance Metrics
 
@@ -28,7 +28,7 @@ Progress: [██░░░░░░░░] ~7% (2/30 plans complete)
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-weapon-visual-audit | 2/2 complete | ~53 min | ~27 min |
-| 1.1-weapon-visual-identity | 0/4 | - | - |
+| 1.1-weapon-visual-identity | 1/4 | ~10 min | ~10 min |
 
 *Updated after each plan completion*
 
@@ -52,6 +52,10 @@ Progress: [██░░░░░░░░] ~7% (2/30 plans complete)
 - **[1.1] Heatseeker + Skipper = gold standard — unique flight behavior makes weapon exciting; all others need this level of visual identity**
 - **[1.1] Design doc: docs/plans/2026-02-19-weapon-visual-identity-design.md — full specs for all 20 weapons approved**
 - **[1.1] Zero gameplay changes — purely visual. Server physics.js untouched. Damage/blast values unchanged.**
+- **[01.1-01] spawnParticle/spawnBurstEffect on Weapon base class — Phaser add.circle + tweens.add pattern; all weapons can now emit particles**
+- **[01.1-01] Frame counter pattern: this._dustFrame/_sparkFrame = 0 in constructor AND reset(), guard with groundHit === false**
+- **[01.1-01] Magic Wall rotation: setRotation(rotation + 0.08) applied BEFORE defaultUpdate() to avoid physics override**
+- **[01.1-01] Build tool: use npx react-app-rewired build from client/ directory (not react-scripts, not root)**
 
 ### Pending Todos
 
@@ -69,6 +73,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-19 22:30 UTC
-Stopped at: Inserted Phase 1.1 (Weapon Visual Identity) — design doc approved, roadmap updated, ready to /gsd:plan-phase 1.1
+Last session: 2026-02-19 09:42 UTC
+Stopped at: Completed 01.1-01-PLAN.md (Weapon Visual Identity — Tier 1 weapons + particle utility)
 Resume file: None

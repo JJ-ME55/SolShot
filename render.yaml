@@ -31,7 +31,7 @@ services:
       - key: OPS_WALLET
         value: G2TgxypFAQHvcfwRA1dkJMx2St4gYpDpz37uiG1Q9grx
       - key: CORS_ORIGINS
-        value: https://solshot.gg,https://www.solshot.gg,https://solshot-client.vercel.app
+        value: https://solshot.gg,https://www.solshot.gg,https://sol-shot.vercel.app
       - key: JWT_SECRET
         generateValue: true
       # Set these manually in dashboard (secrets — don't commit):

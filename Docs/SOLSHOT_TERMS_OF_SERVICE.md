@@ -163,4 +163,4 @@ You agree not to:
 For questions about these Terms:
 - Discord: [Discord URL TBD]
 - Twitter: @SolShotGG
-- Email: contact@solshot.gg
+- Email: [TBD]

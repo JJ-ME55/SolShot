@@ -160,4 +160,4 @@ To exercise these rights, contact us via Discord or email. We will respond withi
 For privacy-related questions or data requests:
 - Discord: [Discord URL TBD]
 - Twitter: @SolShotGG
-- Email: contact@solshot.gg
+- Email: [TBD]

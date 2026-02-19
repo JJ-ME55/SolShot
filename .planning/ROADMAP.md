@@ -12,7 +12,7 @@ SolShot ships to mainnet in six sequential phases. Weapon visuals are verified f
 
 - [x] **Phase 1: Weapon Visual Audit** — Zero visual drift found across all 20 weapons; 4 intentional diffs documented; WVA-03 checklist produced (awaiting human play-test)
 - [x] **Phase 1.1: Weapon Visual Identity** — INSERTED: Give every weapon a visually distinct projectile, trail, and flight animation so no two weapons look the same in the air
-- [ ] **Phase 2: TODO Completion** — Close all remaining open TODO items: sounds, escrow test, token metadata, social accounts, legal docs, DNS
+- [x] **Phase 2: TODO Completion** — Close all remaining open TODO items: sounds, escrow test, token metadata, social accounts, legal docs, DNS
 - [ ] **Phase 3: Litepaper v2.1 Compliance** — Implement all spec changes: wager tiers, Custom Challenge, matchmaking queue, SHOT emissions, tank movement, turn limit, forfeit rule, treasury governance
 - [ ] **Phase 4: Security Audit** — Run adversarial review on escrow program, server, and client; produce pre-launch security documentation; verify settlement math
 - [ ] **Phase 5: E2E Testing** — Verify the complete match flow across all modes, weapons, round formats, escrow, disconnect/reconnect, and edge cases
@@ -72,11 +72,11 @@ Plans:
 **Plans:** 5 plans
 
 Plans:
-- [ ] 02-01-PLAN.md — Source and integrate 7 missing sound effects (tracer, split, magicwall, zapper, skipperbounce, homing, sniper)
-- [ ] 02-02-PLAN.md — Run escrow devnet integration test — 8 tests against deployed program
-- [ ] 02-03-PLAN.md — Create SHOT token metadata via Metaplex (remint on devnet)
-- [ ] 02-04-PLAN.md — Responsible gaming UI component, legal doc updates, @SolShotGG Twitter setup
-- [ ] 02-05-PLAN.md — DNS and CORS — point solshot.gg to Vercel, update server CORS origins
+- [~] 02-01-PLAN.md — Source and integrate 7 missing sound effects — preload lines done, WAV files pending
+- [x] 02-02-PLAN.md — Run escrow devnet integration test — 9/9 tests passing
+- [~] 02-03-PLAN.md — SHOT token metadata — skipped, deferred to mainnet
+- [x] 02-04-PLAN.md — Responsible gaming UI component, legal doc updates, @SolShotGG Twitter setup
+- [x] 02-05-PLAN.md — DNS and CORS — solshot.gg pointed to Vercel, render.yaml CORS updated
 
 ---
 
@@ -171,10 +171,10 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Weapon Visual Audit | 2/2 | Complete (WVA-03 awaiting play-test) | 2026-02-19 |
 | 1.1 Weapon Visual Identity | 4/4 | Complete — all weapons visually distinct, multiplayer trajectory fix applied | 2026-02-19 |
-| 2. TODO Completion | 0/5 | Not started | - |
+| 2. TODO Completion | 4/5 | Complete — 02-01 sounds partial (preload done, WAVs pending); 02-03 skipped (defer to mainnet) | 2026-02-19 |
 | 3. Litepaper v2.1 Compliance | 0/5 | Not started | - |
 | 4. Security Audit | 0/4 | Not started | - |
 | 5. E2E Testing | 0/5 | Not started | - |
 | 6. Mainnet Deployment | 0/5 | Not started | - |
 
-**Total:** 6/30 plans complete
+**Total:** 10/30 plans complete

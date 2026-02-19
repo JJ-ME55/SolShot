@@ -69,5 +69,48 @@
 - Token governance voting (future, after governance framework)
 - Age verification checkbox (post-launch compliance)
 
+---
+
 ## Traceability
-Populated after roadmap creation — maps REQ-IDs to phases.
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| WVA-01 | Phase 1 — Weapon Visual Audit | Pending |
+| WVA-02 | Phase 1 — Weapon Visual Audit | Pending |
+| WVA-03 | Phase 1 — Weapon Visual Audit | Pending |
+| TODO-01 | Phase 2 — TODO Completion | Pending |
+| TODO-02 | Phase 2 — TODO Completion | Pending |
+| TODO-03 | Phase 2 — TODO Completion | Pending |
+| TODO-04 | Phase 2 — TODO Completion | Pending |
+| TODO-05 | Phase 2 — TODO Completion | Pending |
+| TODO-06 | Phase 2 — TODO Completion | Pending |
+| TODO-07 | Phase 2 — TODO Completion | Pending |
+| TODO-08 | Phase 2 — TODO Completion | Pending |
+| LP-01 | Phase 3 — Litepaper v2.1 Compliance | Pending |
+| LP-02 | Phase 3 — Litepaper v2.1 Compliance | Pending |
+| LP-03 | Phase 3 — Litepaper v2.1 Compliance | Pending |
+| LP-04 | Phase 3 — Litepaper v2.1 Compliance | Pending |
+| LP-05 | Phase 3 — Litepaper v2.1 Compliance | Pending |
+| LP-06 | Phase 3 — Litepaper v2.1 Compliance | Pending |
+| LP-07 | Phase 3 — Litepaper v2.1 Compliance | Pending |
+| LP-08 | Phase 3 — Litepaper v2.1 Compliance | Pending |
+| LP-09 | Phase 3 — Litepaper v2.1 Compliance | Pending |
+| SEC-01 | Phase 4 — Security Audit | Pending |
+| SEC-02 | Phase 4 — Security Audit | Pending |
+| SEC-03 | Phase 4 — Security Audit | Pending |
+| SEC-04 | Phase 4 — Security Audit | Pending |
+| SEC-05 | Phase 4 — Security Audit | Pending |
+| E2E-01 | Phase 5 — E2E Testing | Pending |
+| E2E-02 | Phase 5 — E2E Testing | Pending |
+| E2E-03 | Phase 5 — E2E Testing | Pending |
+| E2E-04 | Phase 5 — E2E Testing | Pending |
+| E2E-05 | Phase 5 — E2E Testing | Pending |
+| E2E-06 | Phase 5 — E2E Testing | Pending |
+| E2E-07 | Phase 5 — E2E Testing | Pending |
+| MN-01 | Phase 6 — Mainnet Deployment | Pending |
+| MN-02 | Phase 6 — Mainnet Deployment | Pending |
+| MN-03 | Phase 6 — Mainnet Deployment | Pending |
+| MN-04 | Phase 6 — Mainnet Deployment | Pending |
+| MN-05 | Phase 6 — Mainnet Deployment | Pending |
+| MN-06 | Phase 6 — Mainnet Deployment | Pending |
+| MN-07 | Phase 6 — Mainnet Deployment | Pending |

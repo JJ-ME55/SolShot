@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 19 Feb 2026)
 
 **Core value:** Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** Phase 1.1 — Weapon Visual Identity (awaiting human QA checkpoint for plan 01.1-04)
+**Current focus:** Phase 2 — TODO Completion (02-01 Task 1 done, paused at human-action checkpoint for WAV sourcing)
 
 ## Current Position
 
-Phase: 1.1 of 7 (Weapon Visual Identity)
-Plan: 4 of 4 in current phase
-Status: In progress — 01.1-04 code complete, paused at human-verify checkpoint (Task 3)
-Last activity: 19 Feb 2026 — Completed 01.1-04 Tasks 1+2 (Tier 4 prestige weapons: Homing Missile, Cruiser, Chain Reaction, Pineapple)
+Phase: 2 of 7 (TODO Completion)
+Plan: 1 of 5 in current phase — Task 1 complete, Task 2 blocked on human action
+Status: In progress — 02-01 Task 1 committed (9adf21e), paused at checkpoint:human-action (Task 2)
+Last activity: 19 Feb 2026 — Completed 02-01 Task 1 (7 missing sound preload lines added to MainScene)
 
-Progress: [█████░░░░░] ~17% (5/30 plans code-complete; phase 1.1 pending QA sign-off)
+Progress: [█████░░░░░] ~17% (5/30 plans code-complete; phase 1.1 pending QA sign-off; 02-01 in progress)
 
 ## Performance Metrics
 
@@ -73,7 +73,7 @@ Progress: [█████░░░░░] ~17% (5/30 plans code-complete; phase
 None yet.
 
 ### Blockers/Concerns
-- Missing sound effects (7 .wav files — TODO-01)
+- Missing sound WAV files (7 .wav files — TODO-01): preload lines added (9adf21e), WAV files still needed on disk
 - Token metadata (Metaplex) not created yet — TODO-03
 - Social accounts not created yet (Twitter) — TODO-04
 - Legal docs (ToS, Privacy Policy) drafts exist but not finalized — TODO-05, TODO-06
@@ -85,6 +85,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-19 10:21 UTC
-Stopped at: 01.1-04 Tasks 1+2 complete (59a32bd), paused at Task 3 human-verify checkpoint
-Resume file: None (continuation agent needs "approved" signal to create final metadata commit)
+Last session: 2026-02-19 UTC
+Stopped at: 02-01 Task 1 complete (9adf21e), paused at Task 2 human-action checkpoint (WAV sourcing)
+Resume file: None (continuation agent needs "sounds done" signal after John places 7 WAV files)

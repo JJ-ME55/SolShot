@@ -11,7 +11,7 @@ SolShot ships to mainnet in six sequential phases. Weapon visuals are verified f
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
 - [x] **Phase 1: Weapon Visual Audit** — Zero visual drift found across all 20 weapons; 4 intentional diffs documented; WVA-03 checklist produced (awaiting human play-test)
-- [ ] **Phase 1.1: Weapon Visual Identity** — INSERTED: Give every weapon a visually distinct projectile, trail, and flight animation so no two weapons look the same in the air
+- [x] **Phase 1.1: Weapon Visual Identity** — INSERTED: Give every weapon a visually distinct projectile, trail, and flight animation so no two weapons look the same in the air
 - [ ] **Phase 2: TODO Completion** — Close all remaining open TODO items: sounds, escrow test, token metadata, social accounts, legal docs, DNS
 - [ ] **Phase 3: Litepaper v2.1 Compliance** — Implement all spec changes: wager tiers, Custom Challenge, matchmaking queue, SHOT emissions, tank movement, turn limit, forfeit rule, treasury governance
 - [ ] **Phase 4: Security Audit** — Run adversarial review on escrow program, server, and client; produce pre-launch security documentation; verify settlement math
@@ -170,11 +170,11 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Weapon Visual Audit | 2/2 | Complete (WVA-03 awaiting play-test) | 2026-02-19 |
-| 1.1 Weapon Visual Identity | 0/4 | Planned — 4 plans in 3 waves | - |
+| 1.1 Weapon Visual Identity | 4/4 | Complete — all weapons visually distinct, multiplayer trajectory fix applied | 2026-02-19 |
 | 2. TODO Completion | 0/5 | Not started | - |
 | 3. Litepaper v2.1 Compliance | 0/5 | Not started | - |
 | 4. Security Audit | 0/4 | Not started | - |
 | 5. E2E Testing | 0/5 | Not started | - |
 | 6. Mainnet Deployment | 0/5 | Not started | - |
 
-**Total:** 2/30 plans complete
+**Total:** 6/30 plans complete

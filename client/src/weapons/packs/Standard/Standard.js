@@ -148,9 +148,9 @@ export class bigshot {
         canvas.height = 20
         canvas.width = 40
 
-        ctx.fillStyle = 'rgba(250,0,220,1)'
+        ctx.fillStyle = 'rgba(180,0,150,1)'
         ctx.beginPath()
-        ctx.arc(canvas.width/2, canvas.height/2, 2, 0, Math.PI * 2)
+        ctx.arc(canvas.width/2, canvas.height/2, 5, 0, Math.PI * 2)
         ctx.closePath()
         ctx.fill()
 
@@ -169,7 +169,7 @@ export class bigshot {
     }
 
     update = (weapon) => {
-        weapon.updateTail(this.projectile, 16, 4, 4, {r: 250, g: 0, b: 220}, true)
+        weapon.updateTail(this.projectile, 10, 8, 8, {r: 180, g: 0, b: 150}, true)
         weapon.defaultUpdate(this.projectile)
     }
 
@@ -1353,6 +1353,7 @@ export class crazyivan {
         this.particles = []
         this.dissipated = false
         this.frameCount = 0
+        this._colorFrame = 0
     }
 
     reset = () => {
@@ -1360,6 +1361,7 @@ export class crazyivan {
         this.particles = []
         this.dissipated = false
         this.frameCount = 0
+        this._colorFrame = 0
     }
 
     /**
@@ -1373,12 +1375,12 @@ export class crazyivan {
         canvas.height = 20
         canvas.width = 40
 
-        ctx.fillStyle = 'rgba(120,100,255,1)'
+        ctx.fillStyle = 'rgba(180,50,200,1)'
         ctx.beginPath()
         ctx.arc(canvas.width/2, canvas.height/2, 2, 0, Math.PI * 2)
         ctx.closePath()
         ctx.fill()
-    
+
         if (weapon.scene.textures.exists('projectile')) weapon.scene.textures.remove('projectile')
         weapon.scene.textures.addCanvas('projectile', canvas);
 
@@ -1396,7 +1398,12 @@ export class crazyivan {
     update = (weapon) => {
         this.frameCount++
         if (this.dissipated === false) {
-            weapon.updateTail(this.projectile, 18, 4, 4, {r: 120, g: 100, b: 255}, true)
+            this._colorFrame++
+            this.projectile.body.x += (Math.random() - 0.5) * 2
+            this.projectile.body.y += (Math.random() - 0.5) * 2
+            var r = 180 + Math.sin(this._colorFrame * 0.15) * 60
+            var b = 200 - Math.sin(this._colorFrame * 0.15) * 80
+            weapon.updateTail(this.projectile, 18, 4, 4, {r: Math.floor(r), g: 50, b: Math.floor(b)}, false)
             //if (this.dissipated === false)
             weapon.defaultUpdate(this.projectile)
             this.checkCloseToTank(weapon)
@@ -2911,11 +2918,11 @@ export class hailstorm {
         canvas.height = 10
         canvas.width = 80
 
-        ctx.fillStyle = 'rgba(100,255,255,1)'
+        ctx.fillStyle = 'rgba(180,220,255,1)'
         ctx.globalAlpha = 1.0
-        
+
         ctx.beginPath()
-        ctx.arc(canvas.width/2, canvas.height/2, 2, 0, Math.PI * 2)
+        ctx.arc(canvas.width/2, canvas.height/2, 4, 0, Math.PI * 2)
         ctx.closePath()
         ctx.fill()
 
@@ -2961,6 +2968,7 @@ export class hailstorm {
                 this.dissociate(weapon, prevX, prevY)
             }
             else {
+                weapon.spawnBurstEffect(obj.body.x, obj.body.y, 4, 0xDDEEFF, 8, 0.6, 250)
                 var bounce = weapon.defaultBounce(obj, 1, 25)
                 if (bounce) {
                     var slope = weapon.terrain.getSlope(prevX, prevY)
@@ -3014,7 +3022,7 @@ export class hailstorm {
 
     update = (weapon, obj) =>  {
         if (this.projectile !== null) {
-            weapon.updateTail(this.projectile, 15, 5, 4, {r: 100, g: 255, b: 255})
+            weapon.updateTail(this.projectile, 15, 5, 4, {r: 180, g: 220, b: 255})
             weapon.defaultUpdate(this.projectile)
         }
         if (this.projectile === null) {
@@ -3128,19 +3136,22 @@ export class hailstorm {
     createBall = (weapon, index) => {
         var canvas = document.createElement('canvas')
         var ctx = canvas.getContext('2d')
-        
+
         canvas.height = this.ballRadius * 2
         canvas.width = this.ballRadius * 2
 
-        var grd = ctx.createRadialGradient(canvas.width/2, canvas.height/2, 0, canvas.width/2, canvas.height/2, this.ballRadius)
-        grd.addColorStop(0, 'rgba(0,220,255,1)')
-        grd.addColorStop(0.4, 'rgba(0,220,255,0.5)')
-        grd.addColorStop(1, 'rgba(0,220,255,0)')
+        // Ice shard: angular polygon instead of circle
+        ctx.fillStyle = 'rgba(180,230,255,1)'
+        ctx.beginPath()
+        ctx.moveTo(canvas.width/2, canvas.height/2 - 3)
+        ctx.lineTo(canvas.width/2 + 2, canvas.height/2)
+        ctx.lineTo(canvas.width/2 + 1, canvas.height/2 + 3)
+        ctx.lineTo(canvas.width/2 - 1, canvas.height/2 + 2)
+        ctx.lineTo(canvas.width/2 - 2, canvas.height/2 - 1)
+        ctx.closePath()
+        ctx.fill()
 
-        ctx.fillStyle = grd
-        ctx.fillRect(0, 0, canvas.width, canvas.height)
-
-        if (weapon.scene.textures.exists('ball-' + index)) weapon.scene.textures.remove('ball-' + index) 
+        if (weapon.scene.textures.exists('ball-' + index)) weapon.scene.textures.remove('ball-' + index)
         weapon.scene.textures.addCanvas('ball-' + index, canvas)
     }
 
@@ -3736,6 +3747,8 @@ export class skipper {
     skipperBounce = (weapon, obj) => {
         if (this.bounce <= 0) return false
         weapon.scene.sound.play('skipperbounce')
+        var count = Math.max(3, this.bounce + 2)
+        weapon.spawnBurstEffect(obj.body.x, obj.body.y, count, 0xCCBB88, 12, 0.8, 300)
         return weapon.defaultBounce(obj)
     }
 
@@ -4805,15 +4818,14 @@ export class tommygun {
     makeTexture = (weapon, index) => {
         var canvas = document.createElement('canvas')
         var ctx = canvas.getContext('2d')
-        
+
         canvas.height = 10
         canvas.width = 40
 
-        ctx.fillStyle = 'rgba(200,220,255,1)'
-        ctx.beginPath()
-        ctx.arc(canvas.width/2, canvas.height/2, 1, 0, Math.PI * 2)
-        ctx.closePath()
-        ctx.fill()
+        // Alternating blue-white tracers with gold tint for prestige
+        var isBlue = index % 2 === 0
+        ctx.fillStyle = isBlue ? 'rgba(150,180,255,1)' : 'rgba(255,240,200,1)'
+        ctx.fillRect(canvas.width/2 - 2, canvas.height/2 - 0.5, 4, 1)
 
         if (weapon.scene.textures.exists('projectile-' + index)) weapon.scene.textures.remove('projectile-' + index)
         weapon.scene.textures.addCanvas('projectile-' + index, canvas);
@@ -4832,7 +4844,8 @@ export class tommygun {
             projectile.index = i
             this.particles.push(projectile)
             weapon.scene.sound.play('rungun')
-            weapon.defaultShoot(projectile, weapon.tank.power * weapon.powerFactor + vOffset[i], undefined, undefined, weapon.tank.turret.rotation - Math.PI/2 + Phaser.Math.DegToRad(aOffset[i]))  
+            weapon.spawnBurstEffect(weapon.turret.x + (weapon.turret.height/2) * Math.sin(weapon.turret.rotation), weapon.turret.y - (weapon.turret.height/2) * Math.cos(weapon.turret.rotation), 3, 0xFFEECC, 6, 0.5, 100)
+            weapon.defaultShoot(projectile, weapon.tank.power * weapon.powerFactor + vOffset[i], undefined, undefined, weapon.tank.turret.rotation - Math.PI/2 + Phaser.Math.DegToRad(aOffset[i]))
             i++
             if (i === this.particleCount) {
                 this.allShot = true
@@ -4843,7 +4856,8 @@ export class tommygun {
 
     update = (weapon) => {
         this.particles.forEach(obj => {
-            weapon.updateTail(obj, 24, 3, 2, {r: 180, g: 200, b: 255})
+            var c = obj.index % 2 === 0 ? {r: 150, g: 180, b: 255} : {r: 255, g: 240, b: 200}
+            weapon.updateTail(obj, 24, 3, 1, c)
         })
         this.particles.forEach(obj => {
             weapon.defaultUpdate(obj)

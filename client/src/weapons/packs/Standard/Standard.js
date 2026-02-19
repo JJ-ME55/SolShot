@@ -29,9 +29,9 @@ export class singleshot {
         canvas.height = 20
         canvas.width = 80
 
-        ctx.fillStyle = 'rgba(150,220,255,1)'
+        ctx.fillStyle = 'rgba(0,220,255,1)'
         ctx.beginPath()
-        ctx.arc(canvas.width/2, canvas.height/2, 2, 0, Math.PI * 2)
+        ctx.arc(canvas.width/2, canvas.height/2, 3, 0, Math.PI * 2)
         ctx.closePath()
         ctx.fill()
 
@@ -50,7 +50,7 @@ export class singleshot {
     }
 
     update = (weapon) => {
-        weapon.updateTail(this.projectile, 15, 5, 4, {r: 100, g: 200, b: 250})
+        weapon.updateTail(this.projectile, 15, 5, 5, {r: 0, g: 220, b: 255})
         weapon.defaultUpdate(this.projectile)
     }
 
@@ -1877,11 +1877,9 @@ export class sniperrifle {
         canvas.height = 20
         canvas.width = 80
 
-        ctx.fillStyle = 'rgba(220,220,220,1)'
-        ctx.beginPath()
-        ctx.arc(canvas.width/2, canvas.height/2, 1, 0, Math.PI * 2)
-        ctx.closePath()
-        ctx.fill()
+        // Thin white streak — 8px wide, 1px tall
+        ctx.fillStyle = 'rgba(255,255,255,1)'
+        ctx.fillRect(canvas.width/2 - 4, canvas.height/2 - 0.5, 8, 1)
 
         if (weapon.scene.textures.exists('projectile')) weapon.scene.textures.remove('projectile')
         weapon.scene.textures.addCanvas('projectile', canvas);
@@ -1895,10 +1893,14 @@ export class sniperrifle {
     shoot = (weapon) => {
         weapon.defaultShoot(this.projectile)
         weapon.scene.sound.play('launch', {volume: 0.5})
+        // Muzzle flash burst at turret tip
+        var tipX = weapon.turret.x + (weapon.turret.height / 2) * Math.sin(weapon.turret.rotation)
+        var tipY = weapon.turret.y - (weapon.turret.height / 2) * Math.cos(weapon.turret.rotation)
+        weapon.spawnBurstEffect(tipX, tipY, 6, 0xFFFFFF, 8, 0.8, 150)
     }
 
     update = (weapon) => {
-        weapon.updateTail(this.projectile, 15, 5, 2, {r: 220, g: 220, b: 220})
+        weapon.updateTail(this.projectile, 10, 3, 1, {r: 255, g: 255, b: 255})
         weapon.defaultUpdate(this.projectile)
     }
 
@@ -2004,29 +2006,33 @@ export class magicwall {
         this.projectile = null
         this.logoCanvas = Logos.magicwall
         this.groundHit = false
+        this._sparkFrame = 0
     }
 
     reset = () => {
         this.projectile = null
         this.groundHit = false
+        this._sparkFrame = 0
     }
 
     /**
-    * @param {Weapon} weapon 
+    * @param {Weapon} weapon
     */
     create = (weapon) => {
         this.reset()
         var canvas = document.createElement('canvas')
         var ctx = canvas.getContext('2d')
-        
+
         canvas.height = 20
         canvas.width = 80
 
-        ctx.fillStyle = 'rgba(150,100,50,1)'
-        ctx.beginPath()
-        ctx.arc(canvas.width/2, canvas.height/2, 2, 0, Math.PI * 2)
-        ctx.closePath()
-        ctx.fill()
+        // Blue-white rectangular slab with gradient
+        var g = ctx.createLinearGradient(canvas.width/2 - 3, 0, canvas.width/2 + 3, 0)
+        g.addColorStop(0, 'rgba(100,150,255,1)')
+        g.addColorStop(0.5, 'rgba(200,220,255,1)')
+        g.addColorStop(1, 'rgba(100,150,255,1)')
+        ctx.fillStyle = g
+        ctx.fillRect(canvas.width/2 - 3, canvas.height/2 - 1.5, 6, 3)
 
         if (weapon.scene.textures.exists('projectile')) weapon.scene.textures.remove('projectile')
         weapon.scene.textures.addCanvas('projectile', canvas);
@@ -2044,8 +2050,18 @@ export class magicwall {
 
     update = (weapon) => {
         if (this.groundHit === false) {
-            weapon.updateTail(this.projectile, 15, 5, 4, {r: 150, g: 100, b: 50})
+            weapon.updateTail(this.projectile, 15, 5, 4, {r: 150, g: 200, b: 255})
+            this.projectile.setRotation(this.projectile.rotation + 0.08)
             weapon.defaultUpdate(this.projectile)
+            this._sparkFrame++
+            if (this._sparkFrame % 4 === 0) {
+                weapon.spawnParticle(
+                    this.projectile.body.x + (Math.random() - 0.5) * 4,
+                    this.projectile.body.y + (Math.random() - 0.5) * 4,
+                    0xFFFFFF, 0.5, 300,
+                    { x: (Math.random() - 0.5) * 6, y: (Math.random() - 0.5) * 6 }
+                )
+            }
         }
     }
 
@@ -4467,6 +4483,7 @@ export class dirtball {
         this.r = 70
         this.blastTween = null
         this.fixTerrainTween = null
+        this._dustFrame = 0
     }
 
     reset = () => {
@@ -4474,23 +4491,33 @@ export class dirtball {
         this.fixTerrainTween = null
         this.projectile = null
         this.groundHit = false
+        this._dustFrame = 0
     }
 
     /**
-    * @param {Weapon} weapon 
+    * @param {Weapon} weapon
     */
     create = (weapon) => {
         this.reset()
         var canvas = document.createElement('canvas')
         var ctx = canvas.getContext('2d')
-        
+
         canvas.height = 20
         canvas.width = 80
 
-        ctx.fillStyle = 'rgba(250,220,180,1)'
+        // Main dirt body — lumpy brown sphere
+        ctx.fillStyle = 'rgba(140,90,40,1)'
         ctx.beginPath()
-        ctx.arc(canvas.width/2, canvas.height/2, 2, 0, Math.PI * 2)
-        ctx.closePath()
+        ctx.arc(canvas.width/2, canvas.height/2, 3, 0, Math.PI * 2)
+        ctx.fill()
+        // Lumps for irregular shape
+        ctx.fillStyle = 'rgba(120,75,30,1)'
+        ctx.beginPath()
+        ctx.arc(canvas.width/2 + 1.5, canvas.height/2 - 1, 2, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.fillStyle = 'rgba(160,110,50,1)'
+        ctx.beginPath()
+        ctx.arc(canvas.width/2 - 1, canvas.height/2 + 1.5, 2, 0, Math.PI * 2)
         ctx.fill()
 
         if (weapon.scene.textures.exists('projectile')) weapon.scene.textures.remove('projectile')
@@ -4509,8 +4536,17 @@ export class dirtball {
 
     update = (weapon) => {
         if (this.groundHit === false) {
-            weapon.updateTail(this.projectile, 15, 5, 4, {r: 250, g: 220, b: 180})
+            weapon.updateTail(this.projectile, 15, 5, 4, {r: 140, g: 90, b: 40})
             weapon.defaultUpdate(this.projectile)
+            this._dustFrame++
+            if (this._dustFrame % 3 === 0) {
+                weapon.spawnParticle(
+                    this.projectile.body.x,
+                    this.projectile.body.y,
+                    0x8C5A28, 0.8, 600,
+                    { x: (Math.random() - 0.5) * 5, y: 3 + Math.random() * 5 }
+                )
+            }
         }
         else {
             this.blastTween.update()

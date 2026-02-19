@@ -5,30 +5,30 @@
 See: .planning/PROJECT.md (updated 19 Feb 2026)
 
 **Core value:** Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** Phase 1.1 — Weapon Visual Identity (next to plan+execute)
+**Current focus:** Phase 1.1 — Weapon Visual Identity (1 plan remaining)
 
 ## Current Position
 
 Phase: 1.1 of 7 (Weapon Visual Identity)
-Plan: 2 of 4 in current phase
-Status: In progress — 2/4 plans complete in phase 1.1
-Last activity: 19 Feb 2026 — Completed 01.1-02 (Tier 2 weapons: Big Shot, Skipper, Hailstorm, Crazy Ivan, Tommy Gun)
+Plan: 3 of 4 in current phase
+Status: In progress — 3/4 plans complete in phase 1.1
+Last activity: 19 Feb 2026 — Completed 01.1-03 (Tier 3 weapons: 3 Shot, Spider, Pile Driver, Jackhammer, Ground Hog, Napalm)
 
-Progress: [████░░░░░░] ~13% (4/30 plans complete)
+Progress: [█████░░░░░] ~17% (5/30 plans complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 4
-- Average duration: ~23 min
-- Total execution time: ~83 min
+- Total plans completed: 5
+- Average duration: ~20 min
+- Total execution time: ~94 min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-weapon-visual-audit | 2/2 complete | ~53 min | ~27 min |
-| 1.1-weapon-visual-identity | 2/4 | ~30 min | ~15 min |
+| 1.1-weapon-visual-identity | 3/4 | ~41 min | ~14 min |
 
 *Updated after each plan completion*
 
@@ -60,6 +60,10 @@ Progress: [████░░░░░░] ~13% (4/30 plans complete)
 - **[01.1-02] Wobble jitter: projectile.body.x/y += (Math.random()-0.5)*2 each frame for erratic projectile movement**
 - **[01.1-02] Per-bullet effects: obj.index % 2 === 0 for alternating color/style per bullet in multi-projectile weapons**
 - **[01.1-02] Bounce-scaled burst: Math.max(3, this.bounce + 2) to taper spawnBurstEffect particle count on successive bounces**
+- **[01.1-03] Sine throb: _pulseFrame++ + setScale(1 + Math.sin(_pulseFrame * 0.2) * 0.15) for pulsing orb identity (Spider)**
+- **[01.1-03] Terrain surface scan: loop from body.y upward checking alpha===0 — finds surface above tunnel path (Ground Hog)**
+- **[01.1-03] Pile Driver burst ring uses blastCount - 1 index (post-increment) to correctly map ring to just-executed blast depth**
+- **[01.1-03] flameColors array random pick: [0xFF6600, 0xFFAA00, 0xFF4400, 0xFFCC00] for organic Napalm flame variation**
 
 ### Pending Todos
 
@@ -77,6 +81,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-19 09:54 UTC
-Stopped at: Completed 01.1-02-PLAN.md (Weapon Visual Identity — Tier 2 weapons: Big Shot, Skipper, Hailstorm, Crazy Ivan, Tommy Gun)
+Last session: 2026-02-19 10:09 UTC
+Stopped at: Completed 01.1-03-PLAN.md (Weapon Visual Identity — Tier 3 weapons: 3 Shot, Spider, Pile Driver, Jackhammer, Ground Hog, Napalm)
 Resume file: None

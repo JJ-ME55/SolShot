@@ -69,14 +69,14 @@ Plans:
   3. SHOT token appears in Solana explorers with correct name, symbol, and logo image
   4. The @SolShotGG Twitter/X account exists and is accessible
   5. Terms of Service, Privacy Policy, and responsible gaming disclosures are live and reachable from the game client
-**Plans:** TBD
+**Plans:** 5 plans
 
 Plans:
-- [ ] 02-01: Source and integrate 7 missing sound effects
-- [ ] 02-02: Run escrow devnet integration test — full match flow
-- [ ] 02-03: Create SHOT token metadata via Metaplex
-- [ ] 02-04: Set up @SolShotGG account and finalize legal docs (ToS, Privacy Policy, disclosures)
-- [ ] 02-05: DNS and CORS — point solshot.gg to Vercel, verify HTTPS, update server CORS
+- [ ] 02-01-PLAN.md — Source and integrate 7 missing sound effects (tracer, split, magicwall, zapper, skipperbounce, homing, sniper)
+- [ ] 02-02-PLAN.md — Run escrow devnet integration test — 8 tests against deployed program
+- [ ] 02-03-PLAN.md — Create SHOT token metadata via Metaplex (remint on devnet)
+- [ ] 02-04-PLAN.md — Responsible gaming UI component, legal doc updates, @SolShotGG Twitter setup
+- [ ] 02-05-PLAN.md — DNS and CORS — point solshot.gg to Vercel, update server CORS origins
 
 ---
 

@@ -678,6 +678,8 @@ export class jackhammer {
             else {
                 this.jumpCount--
                 this.projectileDiameter--
+                // Cyan spark/dust puff on each bounce contact
+                weapon.spawnBurstEffect(this.projectile.body.x, this.projectile.body.y, 5, 0xAADDFF, 10, 0.7, 250)
                 this.projectile.setVelocity(0, -200)
                 this.drawProjectile(this.projectileDiameter)
             }
@@ -2613,6 +2615,7 @@ export class napalm {
         this.dissipated = false
         this.scoreTween = null
         this.removeTweens = []
+        this._flameFrame = 0
     }
 
     reset = () => {
@@ -2621,6 +2624,7 @@ export class napalm {
         this.particles = []
         this.scoreTween = null
         this.removeTweens = []
+        this._flameFrame = 0
     }
 
     /**
@@ -2634,9 +2638,15 @@ export class napalm {
         canvas.height = 20
         canvas.width = 80
 
-        ctx.fillStyle = 'rgba(0,120,250,1)'
+        // Outer glow ring — warm orange halo
+        ctx.fillStyle = 'rgba(255,100,0,0.3)'
         ctx.beginPath()
-        ctx.arc(canvas.width/2, canvas.height/2, 2, 0, Math.PI * 2)
+        ctx.arc(canvas.width/2, canvas.height/2, 5, 0, Math.PI * 2)
+        ctx.fill()
+        // Core fireball — orange-yellow, 4px radius for visible glowing orb
+        ctx.fillStyle = 'rgba(255,160,40,1)'
+        ctx.beginPath()
+        ctx.arc(canvas.width/2, canvas.height/2, 3, 0, Math.PI * 2)
         ctx.closePath()
         ctx.fill()
 
@@ -2656,7 +2666,23 @@ export class napalm {
 
     update = (weapon) => {
         if (this.dissipated === false) {
-            weapon.updateTail(this.projectile, 15, 5, 4, {r: 0, g: 120, b: 250}, true)
+            // Orange-flame trail
+            weapon.updateTail(this.projectile, 15, 5, 4, {r: 255, g: 120, b: 20}, true)
+            // Flickering flame particles — linger 600-1000ms, creating visible fire trail in wake
+            this._flameFrame++
+            if (this._flameFrame % 2 === 0) {
+                var flameColors = [0xFF6600, 0xFFAA00, 0xFF4400, 0xFFCC00]
+                for (var f = 0; f < 2; f++) {
+                    weapon.spawnParticle(
+                        this.projectile.body.x + (Math.random() - 0.5) * 4,
+                        this.projectile.body.y + (Math.random() - 0.5) * 4,
+                        flameColors[Math.floor(Math.random() * flameColors.length)],
+                        0.8 + Math.random() * 0.8,
+                        600 + Math.random() * 400,
+                        { x: (Math.random() - 0.5) * 3, y: (Math.random() - 0.5) * 3 }
+                    )
+                }
+            }
             weapon.defaultUpdate(this.projectile)
             this.checkCloseToTerrain(weapon, this.projectile)
         }
@@ -3233,12 +3259,14 @@ export class groundhog {
         this.insideTerrain = false
         this.prevState = null
         this.logoCanvas = Logos.groundhog
+        this._eruptFrame = 0
     }
 
     reset = () => {
         this.projectile = null
         this.insideTerrain = false
         this.prevState = null
+        this._eruptFrame = 0
     }
 
     /**
@@ -3293,6 +3321,30 @@ export class groundhog {
             var canvas = this.projectile.canvas
             var ctx = canvas.getContext('2d')
             ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+            // Dirt eruption particles — "mole under a lawn" effect, erupting from surface above tunnel path
+            this._eruptFrame++
+            if (this._eruptFrame % 2 === 0) {
+                // Find surface Y above current underground position (scan upward for transparent pixel)
+                var surfaceY = this.projectile.body.y
+                for (var checkY = this.projectile.body.y; checkY >= 0; checkY--) {
+                    if (weapon.terrain.getPixel(Math.floor(this.projectile.body.x), Math.floor(checkY)).alpha === 0) {
+                        surfaceY = checkY
+                        break
+                    }
+                }
+                // Spawn 3 dirt particles erupting upward from surface
+                for (var d = 0; d < 3; d++) {
+                    weapon.spawnParticle(
+                        this.projectile.body.x + (Math.random() - 0.5) * 6,
+                        surfaceY,
+                        0x8B6914,   // dirt brown
+                        1 + Math.random(),
+                        500,
+                        { x: (Math.random() - 0.5) * 8, y: -(3 + Math.random() * 8) }
+                    )
+                }
+            }
         }
 
         weapon.defaultUpdate(this.projectile)
@@ -3326,7 +3378,7 @@ export class groundhog {
     }
 
     onBounceHit = (weapon, obj) => {
-        
+
     }
 
     checkOutsideTerrain = (weapon) => {
@@ -3335,6 +3387,8 @@ export class groundhog {
                 var [x, y, prevX, prevY] = weapon.retractInAir(this.projectile)
                 this.projectile.body.x = x
                 this.projectile.body.y = y
+                // Debris burst on exit — dramatic dirt spray as projectile erupts from ground
+                weapon.spawnBurstEffect(this.projectile.body.x, this.projectile.body.y, 12, 0x8B6914, 20, 1.5, 400)
                 this.blast(weapon)
             }
         }

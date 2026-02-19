@@ -559,6 +559,7 @@ const mainsocket = (io) => {
                 }
                 // Migrate match state references
                 if (ms.scores[oldSocketId] !== undefined) { ms.scores[client.id] = ms.scores[oldSocketId]; delete ms.scores[oldSocketId] }
+                if (ms.kills[oldSocketId] !== undefined) { ms.kills[client.id] = ms.kills[oldSocketId]; delete ms.kills[oldSocketId] }
                 if (ms.roundWins[oldSocketId] !== undefined) { ms.roundWins[client.id] = ms.roundWins[oldSocketId]; delete ms.roundWins[oldSocketId] }
                 if (ms.hp[oldSocketId] !== undefined) { ms.hp[client.id] = ms.hp[oldSocketId]; delete ms.hp[oldSocketId] }
                 if (ms.currentTurn === oldSocketId) ms.currentTurn = client.id
@@ -581,6 +582,7 @@ const mainsocket = (io) => {
                     delete wi[oldSocketId]
                 }
                 if (ms.scores[oldSocketId] !== undefined) { ms.scores[client.id] = ms.scores[oldSocketId]; delete ms.scores[oldSocketId] }
+                if (ms.kills[oldSocketId] !== undefined) { ms.kills[client.id] = ms.kills[oldSocketId]; delete ms.kills[oldSocketId] }
                 if (ms.roundWins[oldSocketId] !== undefined) { ms.roundWins[client.id] = ms.roundWins[oldSocketId]; delete ms.roundWins[oldSocketId] }
                 if (ms.hp[oldSocketId] !== undefined) { ms.hp[client.id] = ms.hp[oldSocketId]; delete ms.hp[oldSocketId] }
                 if (ms.currentTurn === oldSocketId) ms.currentTurn = client.id
@@ -1376,9 +1378,12 @@ const mainsocket = (io) => {
             // Update match state + Gold
             let goldEarned = 0
             if (ms) {
-                // Update scores
+                // Update scores — track damage DEALT by shooter to opponents
                 for (const [playerId, dmg] of Object.entries(result.damage)) {
-                    ms.scores[playerId] = (ms.scores[playerId] || 0) + dmg
+                    // playerId = who RECEIVED damage, this.id = who FIRED
+                    if (playerId !== this.id && dmg > 0) {
+                        ms.scores[this.id] = (ms.scores[this.id] || 0) + dmg
+                    }
                 }
 
                 // Update HP — apply absolute damage to each affected player
@@ -1434,7 +1439,12 @@ const mainsocket = (io) => {
                     host: room.host ? { x: room.host.pos.x, y: room.host.pos.y } : null,
                     player: room.player ? { x: room.player.pos.x, y: room.player.pos.y } : null,
                     hostId: room.host ? room.host.socketId : null,
-                }
+                },
+                scatterPoints: result.scatterPoints || null,
+                subTrajectories: result.subTrajectories || null,
+                spiderLegs: result.spiderLegs || null,
+                tunnelEntry: result.tunnelEntry || null,
+                tunnelExit: result.tunnelExit || null
             })
 
             // Restart turn timer for the next player

@@ -25,10 +25,11 @@ export class singleshot {
         this.reset()
         var canvas = document.createElement('canvas')
         var ctx = canvas.getContext('2d')
-        
-        canvas.height = 20
+
+        canvas.height = 40
         canvas.width = 80
 
+        // Bright cyan sphere — 3px radius, glowing
         ctx.fillStyle = 'rgba(0,220,255,1)'
         ctx.beginPath()
         ctx.arc(canvas.width/2, canvas.height/2, 3, 0, Math.PI * 2)

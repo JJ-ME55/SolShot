@@ -615,6 +615,7 @@ function processMultiShot(weapon, trajectory, terrain, tanks, shooterId, angle, 
     let newTerrain = terrain;
     let firstImpact = null;
     let firstTrajectory = null;
+    const subTrajectories = [];
 
     // Spread angle: total spread proportional to count
     const totalSpread = count <= 3 ? 0.15 : 0.30; // radians (~8.5° or ~17°)
@@ -635,6 +636,9 @@ function processMultiShot(weapon, trajectory, terrain, tanks, shooterId, angle, 
             newTerrain = deformTerrain(newTerrain, subImpact, weapon.blastRadius);
         }
 
+        // Send ALL sub-trajectories to client for visual split
+        subTrajectories.push(trimTrajectory(subTraj, subImpact.frameIndex));
+
         // Use the first (center) projectile as the primary trajectory for client
         if (i === Math.floor(count / 2)) {
             firstImpact = subImpact;
@@ -652,7 +656,8 @@ function processMultiShot(weapon, trajectory, terrain, tanks, shooterId, angle, 
         trajectory: trimTrajectory(firstTrajectory, firstImpact.frameIndex),
         impact: { x: firstImpact.x, y: firstImpact.y, type: firstImpact.type },
         damage,
-        newTerrain
+        newTerrain,
+        subTrajectories
     };
 }
 
@@ -664,6 +669,7 @@ function processScatterShot(weapon, trajectory, terrain, tanks, shooterId) {
     const impact = calculateImpact(trajectory, terrain, tanks);
     const damage = {};
     let newTerrain = terrain;
+    const scatterPoints = [];
 
     if (impact.type !== 'outOfBounds') {
         const count = weapon.count || 15;
@@ -678,6 +684,7 @@ function processScatterShot(weapon, trajectory, terrain, tanks, shooterId) {
                 y: Math.max(0, Math.min(TERRAIN_HEIGHT - 1, impact.y + offsetY))
             };
 
+            scatterPoints.push({ x: Math.round(subPoint.x), y: Math.round(subPoint.y) });
             const subDmg = calculateDamageWithRadius(subPoint, weapon.blastRadius, weapon.damageFactor, tanks, shooterId);
             mergeDamage(damage, subDmg);
             newTerrain = deformTerrain(newTerrain, subPoint, weapon.blastRadius);
@@ -688,7 +695,8 @@ function processScatterShot(weapon, trajectory, terrain, tanks, shooterId) {
         trajectory: trimTrajectory(trajectory, impact.frameIndex),
         impact: { x: impact.x, y: impact.y, type: impact.type },
         damage,
-        newTerrain
+        newTerrain,
+        scatterPoints
     };
 }
 
@@ -700,6 +708,7 @@ function processSpiderShot(weapon, trajectory, terrain, tanks, shooterId) {
     const impact = calculateImpact(trajectory, terrain, tanks);
     const damage = {};
     let newTerrain = terrain;
+    const spiderLegs = [];
 
     if (impact.type !== 'outOfBounds') {
         // Main impact
@@ -719,6 +728,7 @@ function processSpiderShot(weapon, trajectory, terrain, tanks, shooterId) {
             const subY = newTerrain[subX] !== undefined ? newTerrain[subX] : impact.y;
 
             const subPoint = { x: subX, y: subY };
+            spiderLegs.push({ x: Math.round(subPoint.x), y: Math.round(subPoint.y) });
             const subDmg = calculateDamageWithRadius(subPoint, weapon.blastRadius, weapon.damageFactor, tanks, shooterId);
             mergeDamage(damage, subDmg);
             newTerrain = deformTerrain(newTerrain, subPoint, weapon.blastRadius);
@@ -729,7 +739,8 @@ function processSpiderShot(weapon, trajectory, terrain, tanks, shooterId) {
         trajectory: trimTrajectory(trajectory, impact.frameIndex),
         impact: { x: impact.x, y: impact.y, type: impact.type },
         damage,
-        newTerrain
+        newTerrain,
+        spiderLegs
     };
 }
 
@@ -1281,6 +1292,8 @@ function processTunnelShot(weapon, trajectory, terrain, tanks, shooterId) {
     return {
         trajectory: trimTrajectory(trajectory, impact.frameIndex),
         impact: { x: exitPoint.x, y: exitPoint.y, type: 'terrain' },
+        tunnelEntry: { x: Math.round(impact.x), y: Math.round(impact.y) },
+        tunnelExit: { x: Math.round(exitPoint.x), y: Math.round(exitPoint.y) },
         damage,
         newTerrain
     };

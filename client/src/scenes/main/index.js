@@ -491,6 +491,12 @@ export class MainScene extends Scene {
         this.pendingTurnResult = data;
         // Give blast 3 frames to enter blastArray before checkSwitchTurn can apply
         this._turnResultCooldown = 3;
+      }, {
+        scatterPoints: data.scatterPoints,
+        subTrajectories: data.subTrajectories,
+        spiderLegs: data.spiderLegs,
+        tunnelEntry: data.tunnelEntry,
+        tunnelExit: data.tunnelExit,
       });
     };
 
@@ -604,57 +610,247 @@ export class MainScene extends Scene {
   };
 
   // ── Animate trajectory from server data (for non-firing player) ──
-  animateTrajectory = (weaponId, trajectory, impact, onComplete) => {
+  // Per-weapon projectile visuals for server trajectory animation
+  _trajectoryVisuals = {
+    0:  { color: 0x00DCFF, size: 3, trail: 0x00DCFF, trailSize: 1.5, trailLife: 200 },       // Single Shot — cyan sphere
+    1:  { color: 0xB400B4, size: 5, trail: 0xB400B4, trailSize: 2, trailLife: 350 },          // Big Shot — purple orb
+    2:  { color: 0xFFFF00, size: 3, trail: 0xFFFF00, trailSize: 1.5, trailLife: 200 },        // 3 Shot — yellow
+    4:  { color: 0xFF0099, size: 3, trail: 0xFF0099, trailSize: 1.5, trailLife: 250 },         // Jackhammer — pink
+    5:  { color: 0xFF2200, size: 4, trail: 0xFF6600, trailSize: 2, trailLife: 300, glow: 0xFF4400 }, // Heatseeker — red+fire
+    7:  { color: 0xCC00FF, size: 5, trail: 0xCC66FF, trailSize: 2, trailLife: 400, glow: 0xDD88FF }, // Pile Driver — purple glow
+    9:  { color: 0xDDDD00, size: 3, trail: 0xAAAA00, trailSize: 1.5, trailLife: 200 },        // Crazy Ivan — yellow-green
+    10: { color: 0x00FF66, size: 3, trail: 0x00FF66, trailSize: 1.5, trailLife: 250, glow: 0x00FF44 }, // Spider — green pulsing
+    11: { color: 0xFFFFFF, size: 2, trail: 0xFFFFFF, trailSize: 0.5, trailLife: 80, streak: true }, // Sniper — white streak
+    12: { color: 0x66AAFF, size: 4, trail: 0x88CCFF, trailSize: 1, trailLife: 300, rect: true }, // Magic Wall — blue slab
+    15: { color: 0xFF6600, size: 4, trail: 0xFF4400, trailSize: 2, trailLife: 400 },          // Napalm — orange fire
+    16: { color: 0x88CCFF, size: 3, trail: 0xAADDFF, trailSize: 1, trailLife: 150 },          // Hailstorm — ice blue
+    17: { color: 0x664400, size: 4, trail: 0x885522, trailSize: 1.5, trailLife: 200 },        // Ground Hog — brown
+    20: { color: 0x00AAFF, size: 3, trail: 0x0088CC, trailSize: 1.5, trailLife: 250 },        // Skipper — aqua
+    21: { color: 0xFF8800, size: 4, trail: 0xFFAA00, trailSize: 2, trailLife: 350, glow: 0xFFCC00 }, // Chain Reaction — orange-gold
+    22: { color: 0x00FF66, size: 4, trail: 0x00CC44, trailSize: 2, trailLife: 300 },          // Pineapple — green
+    24: { color: 0x6644CC, size: 4, trail: 0x8866FF, trailSize: 2, trailLife: 350, glow: 0xAA88FF }, // Homing Missile — purple
+    25: { color: 0x8B6914, size: 4, trail: 0x6B4914, trailSize: 1.5, trailLife: 200 },        // Dirt Ball — brown
+    26: { color: 0xFFAA00, size: 2, trail: 0xFF8800, trailSize: 0.5, trailLife: 100 },        // Tommy Gun — orange sparks
+    29: { color: 0xFF0066, size: 4, trail: 0xFF3388, trailSize: 2, trailLife: 400, glow: 0xFF6699 }, // Cruiser — hot pink
+  };
+
+  animateTrajectory = (weaponId, trajectory, impact, onComplete, extra = {}) => {
     if (!trajectory || trajectory.length === 0) {
       if (onComplete) onComplete();
       return;
     }
 
-    // Create a small projectile circle
-    const projectile = this.add.circle(trajectory[0].x, trajectory[0].y, 4, 0xFFFFFF);
+    const { scatterPoints, subTrajectories, spiderLegs, tunnelEntry, tunnelExit } = extra;
+    const vis = this._trajectoryVisuals[weaponId] || { color: 0xFFFFFF, size: 3, trail: 0xFFFFFF, trailSize: 1, trailLife: 200 };
+
+    // ── Multi-shot weapons (3 Shot): animate ALL sub-trajectories in parallel ──
+    if (subTrajectories && subTrajectories.length > 1) {
+      this._animateMultiTrajectory(weaponId, vis, subTrajectories, onComplete);
+      return;
+    }
+
+    // Create weapon-specific projectile
+    const projectile = this.add.circle(trajectory[0].x, trajectory[0].y, vis.size, vis.color);
     projectile.setDepth(5);
 
-    // Animate along trajectory points
+    // Glow ring for weapons that have it
+    let glowRing = null;
+    if (vis.glow) {
+      glowRing = this.add.circle(trajectory[0].x, trajectory[0].y, vis.size + 3, vis.glow, 0.3);
+      glowRing.setDepth(4);
+    }
+
     let frameIndex = 0;
-    let completed = false; // Guard against double-completion
-    const speed = 2; // Points per frame (60fps, so ~30 points/sec)
+    let trailFrame = 0;
+    let completed = false;
+    const speed = 2;
+
+    const spawnTrail = (x, y) => {
+      const p = this.add.circle(
+        x + (Math.random() - 0.5) * 2,
+        y + (Math.random() - 0.5) * 2,
+        vis.trailSize, vis.trail, 0.7
+      );
+      p.setDepth(4);
+      this.tweens.add({
+        targets: p,
+        alpha: 0,
+        scale: 0.3,
+        duration: vis.trailLife,
+        ease: 'Quad.easeOut',
+        onComplete: () => { try { p.destroy(); } catch (_) {} }
+      });
+    };
 
     const moveProjectile = () => {
-      if (completed) return; // Already finished — don't re-trigger
+      if (completed) return;
 
       frameIndex += speed;
       if (frameIndex >= trajectory.length) {
         completed = true;
 
-        // Stop the timer immediately to prevent extra calls
         if (this._trajectoryTimer) {
           this._trajectoryTimer.remove(false);
         }
 
-        // Impact reached — destroy projectile
         try { projectile.destroy(); } catch (_) {}
+        try { if (glowRing) glowRing.destroy(); } catch (_) {}
 
-        // Play explosion visual — creates real Blast in terrain.blastArray
-        if (impact && impact.x !== undefined) {
+        // ── Post-impact effects ──
+        if (weaponId === 9 && scatterPoints && scatterPoints.length > 0) {
+          this.playScatterExplosions(scatterPoints, weaponId);
+        } else if (spiderLegs && spiderLegs.length > 0) {
+          // Spider: animate legs crawling outward then exploding
+          this._animateSpiderLegs(spiderLegs, impact, weaponId);
+        } else if (tunnelEntry && tunnelExit) {
+          // Ground Hog: animate tunnel burrowing then pop-out explosion
+          this._animateTunnel(tunnelEntry, tunnelExit, weaponId, vis);
+        } else if (impact && impact.x !== undefined) {
           this.playExplosionEffect(impact.x, impact.y, weaponId);
-          // Blast created at impact point
         }
 
-        if (onComplete) onComplete();
-        // Trajectory complete, pending turn result queued
+        if (!tunnelEntry) {
+          if (onComplete) onComplete();
+        } else {
+          // Tunnel animation calls onComplete after its own delay
+          this.time.delayedCall(800, () => { if (onComplete) onComplete(); });
+        }
         return;
       }
 
       const point = trajectory[Math.min(Math.floor(frameIndex), trajectory.length - 1)];
       projectile.setPosition(point.x, point.y);
+      if (glowRing) glowRing.setPosition(point.x, point.y);
+
+      // Trail particles every 2nd frame
+      trailFrame++;
+      if (trailFrame % 2 === 0) {
+        spawnTrail(point.x, point.y);
+      }
     };
 
-    // Use Phaser's update loop via a timer event at 60fps
     this._trajectoryTimer = this.time.addEvent({
       delay: 1000 / 60,
       callback: moveProjectile,
       callbackScope: this,
-      repeat: Math.ceil(trajectory.length / speed) + 5, // +5 safety margin
+      repeat: Math.ceil(trajectory.length / speed) + 5,
+    });
+  };
+
+  // ── Multi-trajectory animation (3 Shot, etc.) ──
+  _animateMultiTrajectory = (weaponId, vis, subTrajectories, onComplete) => {
+    let completedCount = 0;
+    const total = subTrajectories.length;
+
+    subTrajectories.forEach((traj, idx) => {
+      if (!traj || traj.length === 0) { completedCount++; return; }
+
+      const proj = this.add.circle(traj[0].x, traj[0].y, vis.size, vis.color);
+      proj.setDepth(5);
+
+      let fi = 0;
+      let tf = 0;
+      let done = false;
+      const spd = 2;
+
+      const timer = this.time.addEvent({
+        delay: 1000 / 60,
+        callback: () => {
+          if (done) return;
+          fi += spd;
+          if (fi >= traj.length) {
+            done = true;
+            timer.remove(false);
+            try { proj.destroy(); } catch (_) {}
+            // Explosion at sub-trajectory end
+            const last = traj[traj.length - 1];
+            if (last) this.playExplosionEffect(last.x, last.y, weaponId);
+            completedCount++;
+            if (completedCount >= total && onComplete) onComplete();
+            return;
+          }
+          const pt = traj[Math.min(Math.floor(fi), traj.length - 1)];
+          proj.setPosition(pt.x, pt.y);
+          // Trail every 2nd frame
+          tf++;
+          if (tf % 2 === 0) {
+            const p = this.add.circle(pt.x + (Math.random() - 0.5) * 2, pt.y + (Math.random() - 0.5) * 2, vis.trailSize, vis.trail, 0.7);
+            p.setDepth(4);
+            this.tweens.add({ targets: p, alpha: 0, scale: 0.3, duration: vis.trailLife, ease: 'Quad.easeOut', onComplete: () => { try { p.destroy(); } catch (_) {} } });
+          }
+        },
+        callbackScope: this,
+        repeat: Math.ceil(traj.length / spd) + 5,
+      });
+    });
+  };
+
+  // ── Spider leg animation: crawl outward from impact then explode ──
+  _animateSpiderLegs = (spiderLegs, impact, weaponId) => {
+    // First play main impact explosion
+    if (impact && impact.x !== undefined) {
+      this.playExplosionEffect(impact.x, impact.y, weaponId);
+    }
+
+    // Stagger spider leg explosions outward
+    spiderLegs.forEach((leg, i) => {
+      const delay = (i + 1) * 80; // 80ms apart for crawl effect
+      // Crawling dot from impact to leg position
+      const dot = this.add.circle(impact.x, impact.y, 2, 0x00FF66);
+      dot.setDepth(5);
+      this.tweens.add({
+        targets: dot,
+        x: leg.x,
+        y: leg.y,
+        duration: delay,
+        ease: 'Linear',
+        onComplete: () => {
+          try { dot.destroy(); } catch (_) {}
+          this.playExplosionEffect(leg.x, leg.y, weaponId);
+        }
+      });
+    });
+  };
+
+  // ── Tunnel animation: burrow underground then pop out ──
+  _animateTunnel = (tunnelEntry, tunnelExit, weaponId, vis) => {
+    // Play entry "dig" effect
+    this.playExplosionEffect(tunnelEntry.x, tunnelEntry.y, weaponId);
+
+    // Animate a dot burrowing underground from entry to exit
+    const digDot = this.add.circle(tunnelEntry.x, tunnelEntry.y + 10, vis.size, vis.color, 0.6);
+    digDot.setDepth(5);
+
+    // Spawn dirt particles along the way
+    const dist = Math.abs(tunnelExit.x - tunnelEntry.x);
+    const duration = Math.max(400, Math.min(1200, dist * 2));
+
+    this.tweens.add({
+      targets: digDot,
+      x: tunnelExit.x,
+      y: tunnelExit.y,
+      duration: duration,
+      ease: 'Sine.easeInOut',
+      onUpdate: () => {
+        // Dirt particles erupting from surface
+        if (Math.random() < 0.3) {
+          const dp = this.add.circle(digDot.x + (Math.random() - 0.5) * 6, digDot.y - Math.random() * 8, 1.5, 0x885522, 0.8);
+          dp.setDepth(5);
+          this.tweens.add({
+            targets: dp,
+            y: dp.y - 10 - Math.random() * 15,
+            alpha: 0,
+            duration: 300,
+            ease: 'Quad.easeOut',
+            onComplete: () => { try { dp.destroy(); } catch (_) {} }
+          });
+        }
+      },
+      onComplete: () => {
+        try { digDot.destroy(); } catch (_) {}
+        // Pop-out explosion at exit
+        this.playExplosionEffect(tunnelExit.x, tunnelExit.y, weaponId);
+      }
     });
   };
 
@@ -708,6 +904,33 @@ export class MainScene extends Scene {
     };
 
     this.terrain.blast(1, Math.floor(x), Math.floor(y), blastRadius, data, true, (weaponId || 0).toString() + '.opp');
+  };
+
+  // ── Crazy Ivan scatter: staggered sub-explosions at server-provided positions ──
+  playScatterExplosions = (scatterPoints, weaponId) => {
+    const info = {
+      radius: 36,
+      grd: [{relativePosition: 0, color: 'rgba(0,0,0,0)'}, {relativePosition: 0.01, color: 'rgba(0,0,0,0.4)'}, {relativePosition: 0.4, color: 'rgba(120,120,0,1)'}, {relativePosition: 1, color: 'rgba(255,255,0,1)'}],
+      thickness: 18,
+      blowPower: 50,
+    };
+    const hitRadius = this.tank1 ? this.tank1.hitRadius : 6;
+    const blastRadius = Math.max(info.radius - hitRadius, 1);
+
+    scatterPoints.forEach((pt, i) => {
+      // Stagger blasts: 40ms apart for rapid-fire cluster effect
+      this.time.delayedCall(i * 40, () => {
+        const data = {
+          thickness: info.thickness,
+          gradient: info.grd,
+          blowPower: info.blowPower,
+          soundEffect: i === 0 ? 'expshort' : (i % 3 === 0 ? 'expshort' : null), // Sound every 3rd blast
+          soundConfig: { volume: 0.2 },
+          visualOnly: true,
+        };
+        this.terrain.blast(1, Math.floor(pt.x), Math.floor(pt.y), blastRadius, data, true, weaponId.toString() + '.scatter' + i);
+      });
+    });
   };
 
   handleType4 = () => {

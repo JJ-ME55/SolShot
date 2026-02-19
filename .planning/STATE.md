@@ -10,25 +10,25 @@ See: .planning/PROJECT.md (updated 19 Feb 2026)
 ## Current Position
 
 Phase: 1.1 of 7 (Weapon Visual Identity)
-Plan: 1 of 4 in current phase
-Status: In progress — 1/4 plans complete in phase 1.1
-Last activity: 19 Feb 2026 — Completed 01.1-01 (Tier 1 weapons + spawnParticle utility)
+Plan: 2 of 4 in current phase
+Status: In progress — 2/4 plans complete in phase 1.1
+Last activity: 19 Feb 2026 — Completed 01.1-02 (Tier 2 weapons: Big Shot, Skipper, Hailstorm, Crazy Ivan, Tommy Gun)
 
-Progress: [███░░░░░░░] ~10% (3/30 plans complete)
+Progress: [████░░░░░░] ~13% (4/30 plans complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 2
-- Average duration: ~27 min
-- Total execution time: ~53 min
+- Total plans completed: 4
+- Average duration: ~23 min
+- Total execution time: ~83 min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-weapon-visual-audit | 2/2 complete | ~53 min | ~27 min |
-| 1.1-weapon-visual-identity | 1/4 | ~10 min | ~10 min |
+| 1.1-weapon-visual-identity | 2/4 | ~30 min | ~15 min |
 
 *Updated after each plan completion*
 
@@ -56,6 +56,10 @@ Progress: [███░░░░░░░] ~10% (3/30 plans complete)
 - **[01.1-01] Frame counter pattern: this._dustFrame/_sparkFrame = 0 in constructor AND reset(), guard with groundHit === false**
 - **[01.1-01] Magic Wall rotation: setRotation(rotation + 0.08) applied BEFORE defaultUpdate() to avoid physics override**
 - **[01.1-01] Build tool: use npx react-app-rewired build from client/ directory (not react-scripts, not root)**
+- **[01.1-02] Color oscillation: sin(_colorFrame * 0.15) * amplitude for smooth purple-to-red color cycling on frame counter**
+- **[01.1-02] Wobble jitter: projectile.body.x/y += (Math.random()-0.5)*2 each frame for erratic projectile movement**
+- **[01.1-02] Per-bullet effects: obj.index % 2 === 0 for alternating color/style per bullet in multi-projectile weapons**
+- **[01.1-02] Bounce-scaled burst: Math.max(3, this.bounce + 2) to taper spawnBurstEffect particle count on successive bounces**
 
 ### Pending Todos
 
@@ -73,6 +77,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-19 09:42 UTC
-Stopped at: Completed 01.1-01-PLAN.md (Weapon Visual Identity — Tier 1 weapons + particle utility)
+Last session: 2026-02-19 09:54 UTC
+Stopped at: Completed 01.1-02-PLAN.md (Weapon Visual Identity — Tier 2 weapons: Big Shot, Skipper, Hailstorm, Crazy Ivan, Tommy Gun)
 Resume file: None

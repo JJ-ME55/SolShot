@@ -1,5 +1,5 @@
 # SOLSHOT — TERMS OF SERVICE
-## Last Updated: [DATE]
+## Last Updated: February 19, 2026
 
 ---
 
@@ -161,6 +161,6 @@ You agree not to:
 ## 13. CONTACT
 
 For questions about these Terms:
-- Discord: discord.gg/solshot
+- Discord: [Discord URL TBD]
 - Twitter: @SolShotGG
-- Email: [TBD]
+- Email: contact@solshot.gg

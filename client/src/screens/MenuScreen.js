@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import Button from '../components/Button';
 import WalletDisplay from '../components/WalletDisplay';
+import ResponsibleGaming from '../components/ResponsibleGaming';
 import { useTelegram } from '../telegram/TelegramContext';
 
 const styles = {
@@ -259,6 +260,9 @@ function MenuScreen({ navigate }) {
 
       {/* Version tag */}
       <div style={styles.versionTag}>v0.5.0-alpha</div>
+
+      {/* Responsible gaming disclosure */}
+      <ResponsibleGaming />
     </div>
   );
 }

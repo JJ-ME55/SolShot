@@ -1,5 +1,5 @@
 # SOLSHOT — PRIVACY POLICY
-## Last Updated: [DATE]
+## Last Updated: February 19, 2026
 
 ---
 
@@ -158,6 +158,6 @@ To exercise these rights, contact us via Discord or email. We will respond withi
 ## 12. CONTACT
 
 For privacy-related questions or data requests:
-- Discord: discord.gg/solshot
+- Discord: [Discord URL TBD]
 - Twitter: @SolShotGG
-- Email: [TBD]
+- Email: contact@solshot.gg

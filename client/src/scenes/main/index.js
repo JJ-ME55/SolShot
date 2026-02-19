@@ -86,6 +86,13 @@ export class MainScene extends Scene {
     this.load.audio('magicbeans_grow', ['assets/sounds/others/magicbeans_grow.wav']);
     this.load.audio('rock', ['assets/sounds/others/rock.wav']);
     this.load.audio('rocket', ['assets/sounds/others/rocket.wav']);
+    this.load.audio('tracer', ['assets/sounds/others/tracer.wav']);
+    this.load.audio('split', ['assets/sounds/others/split.wav']);
+    this.load.audio('magicwall', ['assets/sounds/others/magicwall.wav']);
+    this.load.audio('zapper', ['assets/sounds/others/zapper.wav']);
+    this.load.audio('skipperbounce', ['assets/sounds/others/skipperbounce.wav']);
+    this.load.audio('homing', ['assets/sounds/others/homing.wav']);
+    this.load.audio('sniper', ['assets/sounds/others/sniper.wav']);
   };
 
   create = () => {

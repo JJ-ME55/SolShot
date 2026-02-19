@@ -262,26 +262,28 @@ export class threeshot {
     }
 
     /**
-    * @param {Weapon} weapon 
+    * @param {Weapon} weapon
     */
     create = (weapon) => {
         this.reset()
         const makeProjectile = (index) => {
             var canvas = document.createElement('canvas')
             var ctx = canvas.getContext('2d')
-            
+
             canvas.height = 20
             canvas.width = 60
-    
-            ctx.fillStyle = 'rgba(150,220,255,1)'
+
+            // Each projectile gets a slightly different color — trident spread visual identity
+            var color = index === 2 ? 'rgba(150,220,255,1)' : 'rgba(100,200,255,1)'
+            ctx.fillStyle = color
             ctx.beginPath()
             ctx.arc(canvas.width/2, canvas.height/2, 2, 0, Math.PI * 2)
             ctx.closePath()
             ctx.fill()
-    
+
             if (weapon.scene.textures.exists('projectile-' + index)) weapon.scene.textures.remove('projectile-' + index)
             weapon.scene.textures.addCanvas('projectile-' + index, canvas);
-    
+
             var projectile = weapon.scene.physics.add.sprite(0, 0, 'projectile-' + index)
             projectile.setDepth(3)
             projectile.bounceCount = 3
@@ -289,7 +291,7 @@ export class threeshot {
             projectile.index = index
             return projectile
         }
-        
+
         this.projectile1 = makeProjectile(1)
         this.projectile2 = makeProjectile(2)
         this.projectile3 = makeProjectile(3)
@@ -302,11 +304,19 @@ export class threeshot {
         weapon.defaultShoot(this.projectile2)
         weapon.defaultShoot(this.projectile3, undefined, undefined, undefined, weapon.tank.turret.rotation - Math.PI/2 - Math.PI/36)
         weapon.scene.sound.play('launch', {volume: 0.5})
+        // Split flash at turret muzzle — bright cyan-white burst telegraphing the trident separation
+        weapon.spawnBurstEffect(
+            weapon.turret.x + (weapon.turret.height/2) * Math.sin(weapon.turret.rotation),
+            weapon.turret.y - (weapon.turret.height/2) * Math.cos(weapon.turret.rotation),
+            10, 0xAADDFF, 15, 1, 200
+        )
     }
 
     update = (weapon) => {
         this.projectiles.forEach(obj => {
-            weapon.updateTail(obj, 15, 5, 4, {r: 100, g: 200, b: 250})
+            // Center projectile gets brighter trail, outer two get cooler blue
+            var c = obj.index === 2 ? {r: 150, g: 220, b: 255} : {r: 100, g: 200, b: 255}
+            weapon.updateTail(obj, 15, 5, 4, c)
         })
         this.projectiles.forEach(obj => {
             weapon.defaultUpdate(obj)
@@ -1062,9 +1072,10 @@ export class piledriver {
         canvas.height = 20
         canvas.width = 80
 
-        ctx.fillStyle = 'rgba(240,0,220,1)'
+        // Deeper magenta, heavier 3.5px radius projectile for Pile Driver identity
+        ctx.fillStyle = 'rgba(200,0,180,1)'
         ctx.beginPath()
-        ctx.arc(canvas.width/2, canvas.height/2, 2, 0, Math.PI * 2)
+        ctx.arc(canvas.width/2, canvas.height/2, 3.5, 0, Math.PI * 2)
         ctx.closePath()
         ctx.fill()
 
@@ -1084,21 +1095,25 @@ export class piledriver {
 
     update = (weapon) => {
         if (this.projectile.body === undefined) {
+            // Drilling phase — sequential shockwave rings descending with each blast
             if (this.blastCount < this.maxBlastCount) {
                 this.frameCount++
                 if (this.frameCount % 5 === 0) {
                     this.blastCount++
                     this.blast(weapon, true)
+                    // Growing magenta burst ring — expands with each deeper blast
+                    weapon.spawnBurstEffect(this.impactX, this.impactY + this.blastDepth[this.blastCount - 1], 10, 0xFA00FA, 20 + this.blastCount * 5, 1.2, 350)
                 }
             }
             else {
                 weapon.turret.activeWeapon = null
             }
-        } 
+        }
         else {
-            weapon.updateTail(this.projectile, 15, 5, 4, {r: 240, g: 0, b: 220})
+            // Flight phase — thick blunt magenta trail
+            weapon.updateTail(this.projectile, 15, 12, 6, {r: 200, g: 0, b: 180})
             weapon.defaultUpdate(this.projectile)
-        }      
+        }
     }
 
     onTerrainHit = (weapon, obj) => {
@@ -1586,6 +1601,7 @@ export class spider {
         this.maxAngle = 0
         this.initX = 0
         this.initY = 0
+        this._pulseFrame = 0
     }
 
     reset = () => {
@@ -1598,23 +1614,29 @@ export class spider {
         this.maxAngle = 0
         this.initX = 0
         this.initY = 0
+        this._pulseFrame = 0
     }
 
     /**
-    * @param {Weapon} weapon 
+    * @param {Weapon} weapon
     */
     create = (weapon) => {
         this.reset()
         var canvas = document.createElement('canvas')
         var ctx = canvas.getContext('2d')
-        
+
         canvas.height = 20
         canvas.width = 40
 
-        ctx.fillStyle = 'rgba(200,200,200,1)'
+        // Outer glow ring — semi-transparent halo
+        ctx.fillStyle = 'rgba(200,200,200,0.3)'
         ctx.beginPath()
-        ctx.arc(canvas.width/2, canvas.height/2, 2.5, 0, Math.PI * 2)
-        ctx.closePath()
+        ctx.arc(canvas.width/2, canvas.height/2, 5, 0, Math.PI * 2)
+        ctx.fill()
+        // Core orb — larger solid center for Spider (4px radius)
+        ctx.fillStyle = 'rgba(220,220,220,1)'
+        ctx.beginPath()
+        ctx.arc(canvas.width/2, canvas.height/2, 3, 0, Math.PI * 2)
         ctx.fill()
 
         if (weapon.scene.textures.exists('projectile')) weapon.scene.textures.remove('projectile')
@@ -1633,8 +1655,11 @@ export class spider {
 
     update = (weapon) => {
         if (this.dissipated === false) {
-            weapon.updateTail(this.projectile, 18, 4, 5, {r: 200, g: 200, b: 200}, false)
-            //if (this.dissipated === false)
+            // Pulsing throb — scale oscillates via sine wave for visible throbbing effect
+            this._pulseFrame++
+            var s = 1 + Math.sin(this._pulseFrame * 0.2) * 0.15
+            this.projectile.setScale(s)
+            weapon.updateTail(this.projectile, 18, 4, 6, {r: 200, g: 200, b: 200}, false)
             weapon.defaultUpdate(this.projectile)
             this.checkCloseToTank(weapon)
         }
@@ -1682,6 +1707,8 @@ export class spider {
 
             if ((vx > 0 && angle <= Math.PI/2 && angle >= 0) || (vx <= 0 && angle >= Math.PI/2 && angle <= Math.PI)) {
                 weapon.scene.sound.play('split', {volume: 0.3})
+                // Burst ring flash — bright white ring flash on proximity trigger before legs scatter
+                weapon.spawnBurstEffect(this.projectile.body.x, this.projectile.body.y, 16, 0xFFFFFF, 30, 1.5, 300)
                 weapon.fixCloseToTank(this.projectile, {oppTankDist: 160})
 
                 this.minAngle = (vx > 0 ? 0 : Math.PI/2)

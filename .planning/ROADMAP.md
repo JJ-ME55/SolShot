@@ -30,7 +30,7 @@ SolShot ships to mainnet in six sequential phases. Weapon visuals are verified f
   1. A developer can diff each of the 20 weapon classes against the converted-repo.txt reference and find no unresolved discrepancies
   2. Firing every weapon in a practice match produces the explosion, blast radius, and particle effects documented in the reference
   3. Any visual effect identified as drifted or missing has been corrected and verified in-game
-**Plans:** TBD
+**Plans:** 2 plans
 
 Plans:
 - [x] 01-01: Formal Audit Report — 20-weapon cross-reference confirmed zero drift, 4 intentional diffs documented
@@ -49,13 +49,13 @@ Plans:
   4. Screen recordings of weapon fire look exciting and varied — content-creator ready
   5. Zero gameplay/balance changes — purely visual enhancement; server physics untouched
 **Design doc:** docs/plans/2026-02-19-weapon-visual-identity-design.md
-**Plans:** TBD
+**Plans:** 4 plans
 
 Plans:
-- [ ] 1.1-01: Add spawnParticle() utility to Weapon.js base class + enhance Tier 1 weapons (Single Shot, Dirt Ball, Magic Wall, Sniper Rifle)
-- [ ] 1.1-02: Enhance Tier 2 weapons (Big Shot, Skipper, Hailstorm, Crazy Ivan, Tommy Gun)
-- [ ] 1.1-03: Enhance Tier 3 weapons (3 Shot, Spider, Pile Driver, Jackhammer, Ground Hog, Napalm)
-- [ ] 1.1-04: Enhance Tier 4 prestige weapons (Homing Missile, Cruiser, Chain Reaction, Pineapple) + visual QA pass
+- [ ] 01.1-01-PLAN.md — Add spawnParticle() utility to Weapon.js base class + enhance Tier 1 weapons (Single Shot, Dirt Ball, Magic Wall, Sniper Rifle)
+- [ ] 01.1-02-PLAN.md — Enhance Tier 2 weapons (Big Shot, Skipper, Hailstorm, Crazy Ivan, Tommy Gun)
+- [ ] 01.1-03-PLAN.md — Enhance Tier 3 weapons (3 Shot, Spider, Pile Driver, Jackhammer, Ground Hog, Napalm)
+- [ ] 01.1-04-PLAN.md — Enhance Tier 4 prestige weapons (Homing Missile, Cruiser, Chain Reaction, Pineapple) + visual QA pass
 
 ---
 
@@ -170,7 +170,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Weapon Visual Audit | 2/2 | Complete (WVA-03 awaiting play-test) | 2026-02-19 |
-| 1.1 Weapon Visual Identity | 0/4 | Not started | - |
+| 1.1 Weapon Visual Identity | 0/4 | Planned — 4 plans in 3 waves | - |
 | 2. TODO Completion | 0/5 | Not started | - |
 | 3. Litepaper v2.1 Compliance | 0/5 | Not started | - |
 | 4. Security Audit | 0/4 | Not started | - |

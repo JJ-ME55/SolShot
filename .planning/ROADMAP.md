@@ -11,6 +11,7 @@ SolShot ships to mainnet in six sequential phases. Weapon visuals are verified f
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
 - [x] **Phase 1: Weapon Visual Audit** — Zero visual drift found across all 20 weapons; 4 intentional diffs documented; WVA-03 checklist produced (awaiting human play-test)
+- [ ] **Phase 1.1: Weapon Visual Identity** — INSERTED: Give every weapon a visually distinct projectile, trail, and flight animation so no two weapons look the same in the air
 - [ ] **Phase 2: TODO Completion** — Close all remaining open TODO items: sounds, escrow test, token metadata, social accounts, legal docs, DNS
 - [ ] **Phase 3: Litepaper v2.1 Compliance** — Implement all spec changes: wager tiers, Custom Challenge, matchmaking queue, SHOT emissions, tank movement, turn limit, forfeit rule, treasury governance
 - [ ] **Phase 4: Security Audit** — Run adversarial review on escrow program, server, and client; produce pre-launch security documentation; verify settlement math
@@ -34,6 +35,27 @@ SolShot ships to mainnet in six sequential phases. Weapon visuals are verified f
 Plans:
 - [x] 01-01: Formal Audit Report — 20-weapon cross-reference confirmed zero drift, 4 intentional diffs documented
 - [x] 01-02: Manual Testing Checklist — 789-line VERIFICATION-CHECKLIST.md covering all 20 weapons
+
+---
+
+### Phase 1.1: Weapon Visual Identity
+**Goal:** Every weapon has a visually distinct projectile appearance, trail character, and flight animation — a player can identify which weapon was fired by watching the projectile in flight before impact; prestige weapons feel elite and fear-inducing; screen recordings look exciting and varied
+**Depends on:** Phase 1 (audit confirms current weapon state before modifying visuals)
+**Requirements:** WVI-01, WVI-02, WVI-03, WVI-04
+**Success Criteria** (what must be TRUE):
+  1. A player can identify which weapon was fired by watching the projectile in flight — before impact
+  2. No two weapons have the same projectile size + shape + trail combination
+  3. Prestige weapons are immediately recognizable and feel elite/fear-inducing compared to base weapons
+  4. Screen recordings of weapon fire look exciting and varied — content-creator ready
+  5. Zero gameplay/balance changes — purely visual enhancement; server physics untouched
+**Design doc:** docs/plans/2026-02-19-weapon-visual-identity-design.md
+**Plans:** TBD
+
+Plans:
+- [ ] 1.1-01: Add spawnParticle() utility to Weapon.js base class + enhance Tier 1 weapons (Single Shot, Dirt Ball, Magic Wall, Sniper Rifle)
+- [ ] 1.1-02: Enhance Tier 2 weapons (Big Shot, Skipper, Hailstorm, Crazy Ivan, Tommy Gun)
+- [ ] 1.1-03: Enhance Tier 3 weapons (3 Shot, Spider, Pile Driver, Jackhammer, Ground Hog, Napalm)
+- [ ] 1.1-04: Enhance Tier 4 prestige weapons (Homing Missile, Cruiser, Chain Reaction, Pineapple) + visual QA pass
 
 ---
 
@@ -143,15 +165,16 @@ Plans:
 
 ## Progress
 
-**Execution Order:** 1 → 2 → 3 → 4 → 5 → 6
+**Execution Order:** 1 → 1.1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Weapon Visual Audit | 0/2 | Not started | - |
+| 1. Weapon Visual Audit | 2/2 | Complete (WVA-03 awaiting play-test) | 2026-02-19 |
+| 1.1 Weapon Visual Identity | 0/4 | Not started | - |
 | 2. TODO Completion | 0/5 | Not started | - |
 | 3. Litepaper v2.1 Compliance | 0/5 | Not started | - |
 | 4. Security Audit | 0/4 | Not started | - |
 | 5. E2E Testing | 0/5 | Not started | - |
 | 6. Mainnet Deployment | 0/5 | Not started | - |
 
-**Total:** 0/26 plans complete
+**Total:** 2/30 plans complete

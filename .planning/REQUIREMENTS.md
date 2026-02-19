@@ -5,6 +5,12 @@
 - [x] **WVA-02**: Fix any visual drift or lost effects identified in audit — COMPLETE: No drift found, closed with no action
 - [~] **WVA-03**: Verify all weapon explosion/blast effects match expected behavior — CHECKLIST PRODUCED, awaiting human play-test
 
+## Weapon Visual Identity
+- [ ] **WVI-01**: Add spawnParticle() utility to Weapon.js base class for lingering/burst particle effects
+- [ ] **WVI-02**: Every weapon has a visually distinct projectile (size, shape, color) — no two weapons launch the same 2px circle
+- [ ] **WVI-03**: Every weapon has a visually distinct trail and/or flight animation appropriate to its behavior category
+- [ ] **WVI-04**: Prestige weapons (Homing Missile, Cruiser, Chain Reaction, Pineapple) have elite visual treatment — larger projectiles, heavier trails, dramatic flight phases, fear-inducing spectacle
+
 ## TODO Completion
 - [ ] **TODO-01**: Source and integrate 7 missing sound effects (tracer, split, magicwall, zapper, skipperbounce, homing, sniper)
 - [ ] **TODO-02**: Run escrow integration test — full match flow with devnet wallets
@@ -78,6 +84,10 @@
 | WVA-01 | Phase 1 — Weapon Visual Audit | Pending |
 | WVA-02 | Phase 1 — Weapon Visual Audit | Pending |
 | WVA-03 | Phase 1 — Weapon Visual Audit | Pending |
+| WVI-01 | Phase 1.1 — Weapon Visual Identity | Pending |
+| WVI-02 | Phase 1.1 — Weapon Visual Identity | Pending |
+| WVI-03 | Phase 1.1 — Weapon Visual Identity | Pending |
+| WVI-04 | Phase 1.1 — Weapon Visual Identity | Pending |
 | TODO-01 | Phase 2 — TODO Completion | Pending |
 | TODO-02 | Phase 2 — TODO Completion | Pending |
 | TODO-03 | Phase 2 — TODO Completion | Pending |

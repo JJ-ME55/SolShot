@@ -17,8 +17,9 @@ describe("solshot-escrow", () => {
   const treasury = Keypair.generate();
   const ops = Keypair.generate();
 
-  const WAGER = 0.1 * LAMPORTS_PER_SOL; // 0.1 SOL per player
-  const matchId = "test-match-001";
+  const WAGER = 0.002 * LAMPORTS_PER_SOL; // 0.002 SOL per player (fits within 0.005 funding)
+  const runId = Date.now().toString(36); // unique per run to avoid PDA collisions on devnet
+  const matchId = `test-match-${runId}`;
 
   // Derive PDA
   const [escrowPDA] = PublicKey.findProgramAddressSync(
@@ -27,17 +28,20 @@ describe("solshot-escrow", () => {
   );
 
   before(async () => {
-    // Airdrop SOL to test wallets
+    // Fund test wallets from the dev wallet (avoids devnet airdrop rate limits)
     const conn = provider.connection;
-    const airdrops = [
-      conn.requestAirdrop(playerOne.publicKey, 2 * LAMPORTS_PER_SOL),
-      conn.requestAirdrop(playerTwo.publicKey, 2 * LAMPORTS_PER_SOL),
-      conn.requestAirdrop(authority.publicKey, 2 * LAMPORTS_PER_SOL),
-    ];
-    const sigs = await Promise.all(airdrops);
-    // Confirm all airdrops
-    for (const sig of sigs) {
-      await conn.confirmTransaction(sig, "confirmed");
+    const fundAmount = 0.005 * LAMPORTS_PER_SOL; // 0.005 SOL each — minimal for 0.01 wager + fees
+
+    for (const recipient of [playerOne, playerTwo, treasury, ops]) {
+      const tx = new anchor.web3.Transaction().add(
+        anchor.web3.SystemProgram.transfer({
+          fromPubkey: authority.publicKey,
+          toPubkey: recipient.publicKey,
+          lamports: fundAmount,
+        })
+      );
+      const sig = await provider.sendAndConfirm(tx);
+      console.log(`  Funded ${recipient.publicKey.toBase58().slice(0, 8)}... with 0.05 SOL: ${sig}`);
     }
   });
 
@@ -199,7 +203,7 @@ describe("solshot-escrow", () => {
   // TEST 6: Cancel match with refund
   // ─────────────────────────────────────────────
   describe("cancel flow", () => {
-    const cancelMatchId = "test-cancel-002";
+    const cancelMatchId = `test-cancel-${runId}`;
     const [cancelEscrowPDA] = PublicKey.findProgramAddressSync(
       [Buffer.from("match"), Buffer.from(cancelMatchId)],
       program.programId
@@ -257,7 +261,7 @@ describe("solshot-escrow", () => {
   // TEST 7: Unauthorized settle fails
   // ─────────────────────────────────────────────
   describe("access control", () => {
-    const acMatchId = "test-ac-003";
+    const acMatchId = `test-ac-${runId}`;
     const [acEscrowPDA] = PublicKey.findProgramAddressSync(
       [Buffer.from("match"), Buffer.from(acMatchId)],
       program.programId
@@ -329,15 +333,22 @@ describe("solshot-escrow", () => {
     });
 
     it("non-player cannot deposit", async () => {
-      const npMatchId = "test-np-004";
+      const npMatchId = `test-np-${runId}`;
       const [npEscrowPDA] = PublicKey.findProgramAddressSync(
         [Buffer.from("match"), Buffer.from(npMatchId)],
         program.programId
       );
 
       const randomWallet = Keypair.generate();
-      await provider.connection.requestAirdrop(randomWallet.publicKey, LAMPORTS_PER_SOL);
-      await new Promise(r => setTimeout(r, 1000)); // Wait for airdrop
+      // Fund from dev wallet instead of airdrop (avoids rate limits)
+      const fundTx = new anchor.web3.Transaction().add(
+        anchor.web3.SystemProgram.transfer({
+          fromPubkey: authority.publicKey,
+          toPubkey: randomWallet.publicKey,
+          lamports: 0.005 * LAMPORTS_PER_SOL,
+        })
+      );
+      await provider.sendAndConfirm(fundTx);
 
       await program.methods
         .createMatch(npMatchId, new anchor.BN(WAGER), playerOne.publicKey, playerTwo.publicKey)
@@ -382,7 +393,7 @@ describe("solshot-escrow", () => {
   // ─────────────────────────────────────────────
   it("settlement math: no dust loss across all wager tiers", () => {
     // Verify off-chain that our BPS math loses no lamports
-    const wagerTiers = [0.01, 0.05, 0.1, 0.25, 0.5]; // SOL
+    const wagerTiers = [0.001, 0.005, 0.01, 0.05, 0.1]; // SOL (smaller tiers for devnet)
 
     for (const tierSOL of wagerTiers) {
       const totalPot = Math.round(tierSOL * 2 * LAMPORTS_PER_SOL);

@@ -3881,20 +3881,25 @@ export class chainreaction {
     }
 
     /**
-    * @param {Weapon} weapon 
+    * @param {Weapon} weapon
     */
     create = (weapon) => {
         this.reset()
         var canvas = document.createElement('canvas')
         var ctx = canvas.getContext('2d')
-        
-        canvas.height = 10
-        canvas.width = 10
 
-        ctx.fillStyle = 'rgba(240,240,240,1)'
+        canvas.height = 20
+        canvas.width = 20
+
+        // Outer glow
+        ctx.fillStyle = 'rgba(255,255,200,0.3)'
         ctx.beginPath()
-        ctx.arc(canvas.width/2, canvas.height/2, 0.5, 0, Math.PI * 2)
-        ctx.closePath()
+        ctx.arc(canvas.width/2, canvas.height/2, 6, 0, Math.PI * 2)
+        ctx.fill()
+        // White-hot core
+        ctx.fillStyle = 'rgba(255,255,240,1)'
+        ctx.beginPath()
+        ctx.arc(canvas.width/2, canvas.height/2, 3, 0, Math.PI * 2)
         ctx.fill()
 
         if (weapon.scene.textures.exists('projectile')) weapon.scene.textures.remove('projectile')
@@ -3907,7 +3912,7 @@ export class chainreaction {
 
         canvas = document.createElement('canvas')
         ctx = canvas.getContext('2d')
-        
+
         canvas.height = 10
         canvas.width = 10
 
@@ -3921,10 +3926,10 @@ export class chainreaction {
         weapon.scene.textures.addCanvas('chainparticle', canvas);
 
         this.emitter1 = weapon.scene.add.particles('chainparticle').createEmitter({
-            alpha: { start: 0.4, end: 0.1},
+            alpha: { start: 0.7, end: 0.1},
             speed: 5,
             scale: 0.8,
-            lifespan: 350,
+            lifespan: 500,
         })
 
         this.emitter1.reserve(100)
@@ -3932,7 +3937,7 @@ export class chainreaction {
 
         this.emitter2 = weapon.scene.add.particles('chainparticle').createEmitter({
             alpha: { start: 1, end: 0 },
-            scale: { start: 1, end: 2.5 },
+            scale: { start: 1, end: 3.5 },
             lifespan: 250,
         })
 
@@ -4023,6 +4028,22 @@ export class chainreaction {
                 var data = {thickness: 16, gradient: grd, blowPower: 50, soundEffect: 'expshort', soundConfig: {}}
                 weapon.terrain.blast(1, Math.floor(initX) + offx, Math.floor(initY) + offy, 46 - weapon.scene.tank1.hitRadius, data, blowTank, this.id.toString())
                 weapon.defaultUpdateScore(initX + offx, initY + offy, 46, 20/46)
+
+                // Energy arc from previous blast to current
+                if (i > 1) {
+                    var prevOff = arr[i-2]  // previous blast offset
+                    var dx = offx - prevOff.x
+                    var dy = offy - prevOff.y
+                    for (var arc = 0; arc < 5; arc++) {
+                        var t = arc / 5
+                        weapon.spawnParticle(
+                            Math.floor(initX) + prevOff.x + dx * t,
+                            Math.floor(initY) + prevOff.y + dy * t,
+                            0xFFFFFF, 1, 400,
+                            { x: (Math.random() - 0.5) * 4, y: (Math.random() - 0.5) * 4 }
+                        )
+                    }
+                }
             }
             i++
         }
@@ -4070,28 +4091,45 @@ export class pineapple {
         this.projectile = null
         this.particles = []
         this.dissociated = false
+        this._pulseFrame = 0
     }
 
     /**
-    * @param {Weapon} weapon 
+    * @param {Weapon} weapon
     */
     create = (weapon) => {
         this.reset()
         var canvas = document.createElement('canvas')
         var ctx = canvas.getContext('2d')
-        
-        canvas.height = 20
-        canvas.width = 20
 
-        var g = ctx.createRadialGradient(canvas.width/4, canvas.height/2, 0, canvas.width/4, canvas.height/2, canvas.width)
-        g.addColorStop(0, 'rgba(255,255,255,1)')
-        g.addColorStop(0.3, 'rgba(240,240,240,1)')
-        g.addColorStop(0.6, 'rgba(100,100,100,1)')
-        g.addColorStop(1, 'rgba(0,0,0,1)')
+        canvas.height = 24
+        canvas.width = 24
 
-        ctx.fillStyle = g
-        ctx.arc(canvas.width/2, canvas.height/2, 4, 0, Math.PI * 2)
-        ctx.closePath()
+        // Outer green glow
+        ctx.fillStyle = 'rgba(0,200,50,0.25)'
+        ctx.beginPath()
+        ctx.arc(canvas.width/2, canvas.height/2, 8, 0, Math.PI * 2)
+        ctx.fill()
+        // Grenade body
+        ctx.fillStyle = 'rgba(0,180,60,1)'
+        ctx.beginPath()
+        ctx.arc(canvas.width/2, canvas.height/2, 5, 0, Math.PI * 2)
+        ctx.fill()
+        // Segment lines for grenade look
+        ctx.strokeStyle = 'rgba(0,140,40,0.6)'
+        ctx.lineWidth = 0.5
+        ctx.beginPath()
+        ctx.moveTo(canvas.width/2, canvas.height/2 - 5)
+        ctx.lineTo(canvas.width/2, canvas.height/2 + 5)
+        ctx.stroke()
+        ctx.beginPath()
+        ctx.moveTo(canvas.width/2 - 5, canvas.height/2)
+        ctx.lineTo(canvas.width/2 + 5, canvas.height/2)
+        ctx.stroke()
+        // Bright core
+        ctx.fillStyle = 'rgba(100,255,100,0.5)'
+        ctx.beginPath()
+        ctx.arc(canvas.width/2, canvas.height/2, 2, 0, Math.PI * 2)
         ctx.fill()
 
         if (weapon.scene.textures.exists('projectile')) weapon.scene.textures.remove('projectile')
@@ -4110,12 +4148,32 @@ export class pineapple {
 
     update = (weapon) => {
         if (this.dissociated === false) {
+            // Pulsing green glow
+            if (this._pulseFrame === undefined) this._pulseFrame = 0
+            this._pulseFrame++
+            var s = 1 + Math.sin(this._pulseFrame * 0.15) * 0.12
+            this.projectile.setScale(s)
+
+            // Heavy green particle smoke
+            if (this._pulseFrame % 2 === 0) {
+                for (var g = 0; g < 2; g++) {
+                    weapon.spawnParticle(
+                        this.projectile.body.x + (Math.random() - 0.5) * 6,
+                        this.projectile.body.y + (Math.random() - 0.5) * 6,
+                        Math.random() > 0.5 ? 0x00BB33 : 0x009922,
+                        1 + Math.random(),
+                        700 + Math.random() * 300,
+                        { x: (Math.random() - 0.5) * 4, y: (Math.random() - 0.5) * 4 }
+                    )
+                }
+            }
+
             weapon.defaultUpdate(this.projectile)
             this.checkCloseToTank(weapon)
         }
         if (this.dissociated === true) {
             this.particles.forEach(p => {
-                weapon.updateTail(p, 15, 5, 2, {r: 0, g: 230, b: 80})
+                weapon.updateTail(p, 15, 5, 2, {r: 0, g: 255, b: 100})
                 weapon.defaultUpdate(p)
             })
         }
@@ -4128,6 +4186,8 @@ export class pineapple {
         if (Phaser.Math.Distance.Between(oppTank.centre.x, oppTank.centre.y, this.projectile.body.x, this.projectile.body.y) < 200) {
             weapon.fixCloseToTank(this.projectile, {oppTankDist: 200})
             weapon.scene.sound.play('split')
+            // green flash on scatter
+            weapon.spawnBurstEffect(this.projectile.body.x, this.projectile.body.y, 20, 0x00FF44, 40, 2, 400)
             this.dissociate(weapon)
         }
     }
@@ -4136,13 +4196,13 @@ export class pineapple {
         for (let i = 0; i < this.maxParticles; i++) {
             var canvas = document.createElement('canvas')
             var ctx = canvas.getContext('2d')
-            
+
             canvas.height = 10
             canvas.width = 40
 
-            ctx.fillStyle = 'rgba(0,230,80,1)'
+            ctx.fillStyle = 'rgba(0,255,100,1)'
             ctx.beginPath()
-            ctx.arc(canvas.width/2, canvas.height/2, 1, 0, Math.PI * 2)
+            ctx.arc(canvas.width/2, canvas.height/2, 1.5, 0, Math.PI * 2)
             ctx.closePath()
             ctx.fill()
             
@@ -4426,37 +4486,39 @@ export class homingmissile {
     }
 
     /**
-    * @param {Weapon} weapon 
+    * @param {Weapon} weapon
     */
     create = (weapon) => {
         this.reset()
         var canvas = document.createElement('canvas')
         var ctx = canvas.getContext('2d')
-        
+
         canvas.height = 30
         canvas.width = 30
 
-        ctx.fillStyle = 'rgba(240,240,240,1)'
+        // Wider missile body (bulkier than Heatseeker)
+        ctx.fillStyle = 'rgba(220,80,20,1)'
         ctx.beginPath()
-        ctx.moveTo(5, 14)
-        ctx.lineTo(15, 13)
-        ctx.arc(canvas.width/2, canvas.height/2, 2, -Math.PI/2, Math.PI/2)
-        ctx.lineTo(5, 16)
+        ctx.moveTo(3, 13)
+        ctx.lineTo(16, 12)
+        ctx.arc(canvas.width/2, canvas.height/2, 3, -Math.PI/2, Math.PI/2)
+        ctx.lineTo(3, 17)
+        ctx.closePath()
+        ctx.fill()
+
+        // Larger tail fins (red-orange)
+        ctx.fillStyle = 'rgba(200,40,0,1)'
+        ctx.beginPath()
+        ctx.moveTo(3, 13)
+        ctx.lineTo(11, 13)
+        ctx.lineTo(3, 7)
         ctx.closePath()
         ctx.fill()
 
         ctx.beginPath()
-        ctx.fillStyle = 'rgba(220,0,0,1)'
-        ctx.moveTo(5, 14)
-        ctx.lineTo(12, 14)
-        ctx.lineTo(5, 9)
-        ctx.closePath()
-        ctx.fill()
-
-        ctx.beginPath()
-        ctx.moveTo(5, 16)
-        ctx.lineTo(12, 16)
-        ctx.lineTo(5, 21)
+        ctx.moveTo(3, 17)
+        ctx.lineTo(11, 17)
+        ctx.lineTo(3, 23)
         ctx.closePath()
         ctx.fill()
 
@@ -4475,6 +4537,19 @@ export class homingmissile {
     }
 
     update = (weapon) => {
+        // Exhaust plume -- dense smoke particles trailing behind
+        if (this.projectile.body !== undefined) {
+            for (var e = 0; e < 3; e++) {
+                weapon.spawnParticle(
+                    this.projectile.body.x + (Math.random() - 0.5) * 4,
+                    this.projectile.body.y + (Math.random() - 0.5) * 4,
+                    Math.random() > 0.5 ? 0xAAAAAA : 0x888888,
+                    1.2 + Math.random() * 0.8,
+                    800 + Math.random() * 400,
+                    { x: (Math.random() - 0.5) * 4, y: (Math.random() - 0.5) * 4 }
+                )
+            }
+        }
         weapon.defaultUpdate(this.projectile)
         this.checkAboveTank(weapon)
     }
@@ -4487,6 +4562,8 @@ export class homingmissile {
                 this.canTurn = false
                 weapon.scene.sound.play('homing')
                 this.projectile.body.velocity.setAngle(Math.PI/2)
+                // Stall-and-drop visual: burst of exhaust at stall point
+                weapon.spawnBurstEffect(this.projectile.body.x, this.projectile.body.y, 12, 0xCCCCCC, 15, 1.5, 600)
             }
         }
     }
@@ -5348,22 +5425,28 @@ export class cruiser {
         this.destroyed = false
         this.tail = null
         this.blastTween = null
+        this._rollFrame = 0
     }
 
     /**
-    * @param {Weapon} weapon 
+    * @param {Weapon} weapon
     */
     create = (weapon) => {
         this.reset()
         var canvas = document.createElement('canvas')
         var ctx = canvas.getContext('2d')
-        
+
         canvas.height = 20
         canvas.width = 80
 
-        ctx.fillStyle = 'rgba(240,240,240,1)'
+        // Metallic silver projectile
+        var g = ctx.createRadialGradient(canvas.width/2, canvas.height/2, 0, canvas.width/2, canvas.height/2, 4)
+        g.addColorStop(0, 'rgba(255,255,255,1)')
+        g.addColorStop(0.5, 'rgba(200,210,220,1)')
+        g.addColorStop(1, 'rgba(150,160,170,1)')
+        ctx.fillStyle = g
         ctx.beginPath()
-        ctx.arc(canvas.width/2, canvas.height/2, 2, 0, Math.PI * 2)
+        ctx.arc(canvas.width/2, canvas.height/2, 3.5, 0, Math.PI * 2)
         ctx.closePath()
         ctx.fill()
 
@@ -5383,7 +5466,7 @@ export class cruiser {
 
     update = (weapon) => {
         if (this.rolling === false) {
-            weapon.updateTail(this.projectile, 12, 4, 4, {r: 240, g: 240, b: 240}, true)
+            weapon.updateTail(this.projectile, 12, 5, 5, {r: 200, g: 210, b: 220}, true)
             weapon.defaultUpdate(this.projectile)
         }
         else {
@@ -5521,7 +5604,7 @@ export class cruiser {
         this.tail.setRotation(alpha + correction)
         this.projectile.setRotation(this.projectile.rotation + delta)
 
-        var circle = weapon.scene.add.circle(this.projectile.body.x, this.projectile.body.y, 2, 0xeeeeee, 0.2)
+        var circle = weapon.scene.add.circle(this.projectile.body.x, this.projectile.body.y, 2, 0xDDDDDD, 0.4)
         weapon.scene.tweens.add({
             targets: circle,
             alpha: 0,
@@ -5533,6 +5616,22 @@ export class cruiser {
                 circle.destroy(true)
             }
         })
+
+        // Rolling sparks (every 3rd frame)
+        if (this._rollFrame === undefined) this._rollFrame = 0
+        this._rollFrame++
+        if (this._rollFrame % 3 === 0) {
+            weapon.spawnParticle(
+                this.projectile.body.x, this.projectile.body.y,
+                0xFFDD88, 0.8, 300,
+                { x: (Math.random() - 0.5) * 6, y: -(2 + Math.random() * 4) }
+            )
+            weapon.spawnParticle(
+                this.projectile.body.x, this.projectile.body.y,
+                0xFFEEAA, 0.6, 200,
+                { x: (Math.random() - 0.5) * 8, y: -(1 + Math.random() * 3) }
+            )
+        }
 
         var x = this.projectile.body.x
         var y = this.projectile.body.y

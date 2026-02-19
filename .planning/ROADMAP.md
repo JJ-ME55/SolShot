@@ -10,7 +10,7 @@ SolShot ships to mainnet in six sequential phases. Weapon visuals are verified f
 - Integer phases (1, 2, 3): Planned milestone work
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
-- [ ] **Phase 1: Weapon Visual Audit** — Verify all 20 weapon client classes match the converted-repo.txt reference and fix any visual drift found
+- [x] **Phase 1: Weapon Visual Audit** — Zero visual drift found across all 20 weapons; 4 intentional diffs documented; WVA-03 checklist produced (awaiting human play-test)
 - [ ] **Phase 2: TODO Completion** — Close all remaining open TODO items: sounds, escrow test, token metadata, social accounts, legal docs, DNS
 - [ ] **Phase 3: Litepaper v2.1 Compliance** — Implement all spec changes: wager tiers, Custom Challenge, matchmaking queue, SHOT emissions, tank movement, turn limit, forfeit rule, treasury governance
 - [ ] **Phase 4: Security Audit** — Run adversarial review on escrow program, server, and client; produce pre-launch security documentation; verify settlement math
@@ -32,8 +32,8 @@ SolShot ships to mainnet in six sequential phases. Weapon visuals are verified f
 **Plans:** TBD
 
 Plans:
-- [ ] 01-01: Audit Standard.js — document all 20 weapon classes against converted-repo.txt line by line
-- [ ] 01-02: Fix visual drift — implement corrections for all identified discrepancies
+- [x] 01-01: Formal Audit Report — 20-weapon cross-reference confirmed zero drift, 4 intentional diffs documented
+- [x] 01-02: Manual Testing Checklist — 789-line VERIFICATION-CHECKLIST.md covering all 20 weapons
 
 ---
 

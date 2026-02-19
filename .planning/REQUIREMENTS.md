@@ -1,9 +1,9 @@
 # SolShot v1.0 — Mainnet Launch Requirements
 
 ## Weapon Visual Audit
-- [ ] **WVA-01**: Audit all 20 weapon client classes (Standard.js) against converted-repo.txt reference
-- [ ] **WVA-02**: Fix any visual drift or lost effects identified in audit
-- [ ] **WVA-03**: Verify all weapon explosion/blast effects match expected behavior
+- [x] **WVA-01**: Audit all 20 weapon client classes (Standard.js) against converted-repo.txt reference — COMPLETE: AUDIT-REPORT.md, zero drift
+- [x] **WVA-02**: Fix any visual drift or lost effects identified in audit — COMPLETE: No drift found, closed with no action
+- [~] **WVA-03**: Verify all weapon explosion/blast effects match expected behavior — CHECKLIST PRODUCED, awaiting human play-test
 
 ## TODO Completion
 - [ ] **TODO-01**: Source and integrate 7 missing sound effects (tracer, split, magicwall, zapper, skipperbounce, homing, sniper)

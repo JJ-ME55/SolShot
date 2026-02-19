@@ -5,21 +5,21 @@
 See: .planning/PROJECT.md (updated 19 Feb 2026)
 
 **Core value:** Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** Phase 1.1 — Weapon Visual Identity (1 plan remaining)
+**Current focus:** Phase 1.1 — Weapon Visual Identity (awaiting human QA checkpoint for plan 01.1-04)
 
 ## Current Position
 
 Phase: 1.1 of 7 (Weapon Visual Identity)
-Plan: 3 of 4 in current phase
-Status: In progress — 3/4 plans complete in phase 1.1
-Last activity: 19 Feb 2026 — Completed 01.1-03 (Tier 3 weapons: 3 Shot, Spider, Pile Driver, Jackhammer, Ground Hog, Napalm)
+Plan: 4 of 4 in current phase
+Status: In progress — 01.1-04 code complete, paused at human-verify checkpoint (Task 3)
+Last activity: 19 Feb 2026 — Completed 01.1-04 Tasks 1+2 (Tier 4 prestige weapons: Homing Missile, Cruiser, Chain Reaction, Pineapple)
 
-Progress: [█████░░░░░] ~17% (5/30 plans complete)
+Progress: [█████░░░░░] ~17% (5/30 plans code-complete; phase 1.1 pending QA sign-off)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 5
+- Total plans completed: 5 (+ 01.1-04 code-complete, pending QA)
 - Average duration: ~20 min
 - Total execution time: ~94 min
 
@@ -28,7 +28,7 @@ Progress: [█████░░░░░] ~17% (5/30 plans complete)
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-weapon-visual-audit | 2/2 complete | ~53 min | ~27 min |
-| 1.1-weapon-visual-identity | 3/4 | ~41 min | ~14 min |
+| 1.1-weapon-visual-identity | 4/4 code-complete (QA pending) | ~41 min | ~14 min |
 
 *Updated after each plan completion*
 
@@ -64,6 +64,9 @@ Progress: [█████░░░░░] ~17% (5/30 plans complete)
 - **[01.1-03] Terrain surface scan: loop from body.y upward checking alpha===0 — finds surface above tunnel path (Ground Hog)**
 - **[01.1-03] Pile Driver burst ring uses blastCount - 1 index (post-increment) to correctly map ring to just-executed blast depth**
 - **[01.1-03] flameColors array random pick: [0xFF6600, 0xFFAA00, 0xFF4400, 0xFFCC00] for organic Napalm flame variation**
+- **[01.1-04] Tasks 1+2 committed atomically as 59a32bd — both modify same file; interactive staging unavailable in non-TTY context**
+- **[01.1-04] Chain Reaction energy arc uses arr[i-2] for previous offset — i is incremented end-of-createBlast, so inside body i = current, i-2 = blast before last**
+- **[01.1-04] Pineapple sub-munitions upgraded rgba(0,255,100,1) radius 1.5 — brighter + slightly larger than original (0,230,80,1) radius 1**
 
 ### Pending Todos
 
@@ -78,9 +81,10 @@ None yet.
 - **[01-01 Open → WVA-03] Prestige weapons in-game playtesting — CHECKLIST READY, awaiting John sign-off**
 - **[01-01 Open → WVA-03] Heatseeker sprite rotation visual confirmation — John confirmed PERFECT in play-test**
 - **[01-01 Open] Napalm scoring reconciliation noted for awareness — not a bug, not blocking**
+- **[01.1-04 OPEN] Human QA checkpoint — fire all 20 weapons in Practice mode, verify visual distinctness, type "approved" to complete phase**
 
 ## Session Continuity
 
-Last session: 2026-02-19 10:09 UTC
-Stopped at: Completed 01.1-03-PLAN.md (Weapon Visual Identity — Tier 3 weapons: 3 Shot, Spider, Pile Driver, Jackhammer, Ground Hog, Napalm)
-Resume file: None
+Last session: 2026-02-19 10:21 UTC
+Stopped at: 01.1-04 Tasks 1+2 complete (59a32bd), paused at Task 3 human-verify checkpoint
+Resume file: None (continuation agent needs "approved" signal to create final metadata commit)

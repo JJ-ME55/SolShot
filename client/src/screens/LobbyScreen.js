@@ -5,17 +5,18 @@ import Modal from '../components/Modal';
 import useSocket from '../hooks/useSocket';
 import TANK_COLORS from '../data/colors';
 
-/* ── match modes (mirrors server MATCH_MODES) ── */
+/* ── match modes (mirrors server MATCH_MODES — Litepaper v2.1) ── */
 const MATCH_MODES = {
-  practice:    { label: 'PRACTICE',     wagerRange: [0, 0],      formats: [1],    color: 'var(--kh)' },
-  quick_match: { label: 'QUICK MATCH',  wagerRange: [0.01, 0.1], formats: [1, 3], color: 'var(--sg)' },
-  duel:        { label: 'DUEL',         wagerRange: [0.05, 0.25],formats: [3, 5], color: '#00ccff' },
-  high_roller: { label: 'HIGH ROLLER',  wagerRange: [0.25, 0.5], formats: [3, 5], color: '#ffcc00' },
+  practice:         { label: 'PRACTICE',         wagerRange: [0, 0],          formats: [1],       color: 'var(--kh)' },
+  quick_match:      { label: 'QUICK MATCH',       wagerRange: [0.1, 0.1],      formats: [1, 3],    color: 'var(--sg)' },
+  duel:             { label: 'DUEL',              wagerRange: [0.25, 0.5],     formats: [3, 5],    color: '#00ccff' },
+  high_roller:      { label: 'HIGH ROLLER',       wagerRange: [1.0, 1.0],      formats: [3, 5],    color: '#ffcc00' },
+  custom_challenge: { label: 'CUSTOM CHALLENGE',  wagerRange: [0.1, Infinity], formats: [1, 3, 5], color: '#ff6600' },
 };
 const MODE_KEYS = Object.keys(MATCH_MODES);
 
-/* ── all wager tiers ── */
-const ALL_WAGER_TIERS = [0, 0.01, 0.05, 0.1, 0.25, 0.5];
+/* ── all wager tiers — Litepaper v2.1 ── */
+const ALL_WAGER_TIERS = [0, 0.1, 0.25, 0.5, 1.0];
 
 /* ── all match-length options ── */
 const ALL_MATCH_LENGTHS = [
@@ -280,19 +281,25 @@ function LobbyScreen({ navigate }) {
   const [rooms, setRooms] = useState([]);
   const [matchMode, setMatchMode] = useState('quick_match');
   const [matchLength, setMatchLength] = useState(1); // rounds: 1, 3, 5
-  const [wager, setWager] = useState(0.01);
+  const [wager, setWager] = useState(0.1);
+  const [customWager, setCustomWager] = useState(0.1); // for custom_challenge mode
   const [selectedColor, setSelectedColor] = useState(0); // index into TANK_COLORS
   const [waiting, setWaiting] = useState(false); // waiting for opponent
   const [error, setError] = useState(null);
 
   // Derived: available wagers + formats for current mode
   const modeConfig = MATCH_MODES[matchMode];
-  const availableWagers = ALL_WAGER_TIERS.filter(
-    (t) => t >= modeConfig.wagerRange[0] && t <= modeConfig.wagerRange[1]
-  );
+  const isCustomMode = matchMode === 'custom_challenge';
+  const availableWagers = isCustomMode
+    ? [] // custom mode uses numeric input instead
+    : ALL_WAGER_TIERS.filter(
+        (t) => t >= modeConfig.wagerRange[0] && t <= modeConfig.wagerRange[1]
+      );
   const availableFormats = ALL_MATCH_LENGTHS.filter(
     (m) => modeConfig.formats.includes(m.rounds)
   );
+  // Effective wager — custom mode uses customWager input
+  const effectiveWager = isCustomMode ? customWager : wager;
 
   // Auto-constrain wager + format when mode changes
   useEffect(() => {
@@ -378,20 +385,21 @@ function LobbyScreen({ navigate }) {
 
     const name = getPlayerName();
     const color = TANK_COLORS[selectedColor].phaserHex;
+    const wagerToSend = isCustomMode ? customWager : wager;
 
     window.socket.emit('createRoom', {
       player: {
         name,
         color,
         walletAddress: window.solWallet?.publicKey?.toString() || null,
-        wager,
+        wager: wagerToSend,
         matchLength,
         matchMode,
       },
     });
 
     setWaiting(true);
-  }, [getPlayerName, selectedColor, wager, matchLength, matchMode]);
+  }, [getPlayerName, selectedColor, wager, customWager, isCustomMode, matchLength, matchMode]);
 
   const joinRoom = useCallback((roomId) => {
     if (!window.socket) return;
@@ -485,7 +493,35 @@ function LobbyScreen({ navigate }) {
           </div>
 
           {/* Wager */}
-          {availableWagers.length > 1 && (
+          {isCustomMode ? (
+            <div>
+              <div style={s.sectionLabel}>WAGER (SOL)</div>
+              <div style={s.sublabel}>MINIMUM 0.1 SOL</div>
+              <input
+                type="number"
+                min="0.1"
+                step="0.1"
+                value={customWager}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  if (!isNaN(val) && val >= 0.1) setCustomWager(Math.round(val * 100) / 100);
+                }}
+                style={{
+                  width: '100%',
+                  padding: '8px 10px',
+                  fontFamily: "'Share Tech Mono', monospace",
+                  fontSize: 14,
+                  letterSpacing: 1,
+                  background: 'rgba(255, 102, 0, 0.08)',
+                  border: '1px solid #ff6600',
+                  borderRadius: 3,
+                  color: '#ff6600',
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </div>
+          ) : availableWagers.length > 1 ? (
             <div>
               <div style={s.sectionLabel}>WAGER</div>
               <div style={s.sublabel}>SOL STAKE PER MATCH</div>
@@ -501,7 +537,7 @@ function LobbyScreen({ navigate }) {
                 ))}
               </div>
             </div>
-          )}
+          ) : null}
 
           {/* Color Picker */}
           <div>
@@ -520,12 +556,20 @@ function LobbyScreen({ navigate }) {
 
           {/* Action Buttons */}
           <div style={s.quickBtns}>
-            <Button variant="primary" onClick={quickMatch} style={{ fontSize: 15, padding: '12px 20px' }}>
-              {'FIND ' + modeConfig.label}
-            </Button>
-            <Button variant="secondary" onClick={createRoom} style={{ fontSize: 14, padding: '10px 18px' }}>
-              CREATE MATCH
-            </Button>
+            {isCustomMode ? (
+              <Button variant="primary" onClick={createRoom} style={{ fontSize: 15, padding: '12px 20px', borderColor: '#ff6600', color: '#ff6600' }}>
+                CREATE CHALLENGE
+              </Button>
+            ) : (
+              <>
+                <Button variant="primary" onClick={quickMatch} style={{ fontSize: 15, padding: '12px 20px' }}>
+                  {'FIND ' + modeConfig.label}
+                </Button>
+                <Button variant="secondary" onClick={createRoom} style={{ fontSize: 14, padding: '10px 18px' }}>
+                  CREATE MATCH
+                </Button>
+              </>
+            )}
             <div style={{
               fontFamily: "'Share Tech Mono', monospace",
               fontSize: 13,
@@ -534,7 +578,7 @@ function LobbyScreen({ navigate }) {
               textAlign: 'center',
               opacity: 0.8,
             }}>
-              {wager > 0 ? '◆ ' + wager + ' SOL WAGER' : '◆ FREE MATCH'}
+              {effectiveWager > 0 ? '◆ ' + effectiveWager + ' SOL WAGER' : '◆ FREE MATCH'}
             </div>
           </div>
         </div>
@@ -608,7 +652,7 @@ function LobbyScreen({ navigate }) {
         <div style={s.waitingOverlay}>
           <div style={s.waitingText}>WAITING FOR OPPONENT</div>
           <div style={s.waitingSubtext}>
-            {modeConfig.label + ' / BO' + matchLength + (wager > 0 ? ' / ' + wager + ' SOL' : '')}
+            {modeConfig.label + ' / BO' + matchLength + (effectiveWager > 0 ? ' / ' + effectiveWager + ' SOL' : '')}
           </div>
           <Button
             variant="secondary"

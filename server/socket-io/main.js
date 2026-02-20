@@ -1582,6 +1582,11 @@ const mainsocket = (io) => {
                 const hostId = room.host.socketId
                 const playerId = room.player ? room.player.socketId : null
                 ms.currentTurn = playerId ? getNextTurn(ms, hostId, playerId) : null
+
+                // LP-07: Reset move count for the new current turn player
+                if (ms.moveCounts && ms.currentTurn) {
+                    ms.moveCounts[ms.currentTurn] = 0
+                }
             }
 
             // Track damage and gold
@@ -1774,6 +1779,8 @@ const mainsocket = (io) => {
                 } else {
                     transitionState(ms, MATCH_STATES.ROUND_END)
                     // H023: Reset turnCount for next round
+                    // LP-07: Reset move counts for next round
+                    if (ms.moveCounts) ms.moveCounts = {}
                     resetForNextRound(ms)
                     // Delay roundEnd emit so client can animate the killing blow
                     const roundEndPayload = {
@@ -1973,6 +1980,14 @@ const mainsocket = (io) => {
             const ms = matchStates[client.roomId]
             if (ms && !validateAction(ms.status, 'stepLeft')) return
 
+            // LP-07: Server-side 4-step limit enforcement
+            if (ms) {
+                if (!ms.moveCounts) ms.moveCounts = {}
+                const used = ms.moveCounts[client.id] || 0
+                if (used >= 4) return  // Silent drop — client already prevents, server enforces
+                ms.moveCounts[client.id] = used + 1
+            }
+
             // Track movement server-side so fire handler uses correct position
             const room = findRoom(client.roomId)
             if (room) {
@@ -1996,6 +2011,14 @@ const mainsocket = (io) => {
             if (!client.roomId) return
             const ms = matchStates[client.roomId]
             if (ms && !validateAction(ms.status, 'stepRight')) return
+
+            // LP-07: Server-side 4-step limit enforcement
+            if (ms) {
+                if (!ms.moveCounts) ms.moveCounts = {}
+                const used = ms.moveCounts[client.id] || 0
+                if (used >= 4) return  // Silent drop — client already prevents, server enforces
+                ms.moveCounts[client.id] = used + 1
+            }
 
             // Track movement server-side so fire handler uses correct position
             const room = findRoom(client.roomId)

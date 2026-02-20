@@ -795,7 +795,11 @@ const mainsocket = (io) => {
             // H002: ONLY use server-verified wallet — never trust client payload
             const walletAddress = authenticatedWallets[client.id] || null
 
-            if (wagerAmount > 0 && !isValidWager(wagerAmount)) {
+            // Match mode validation (litepaper v2.1)
+            const rounds = [1, 3, 5].includes(player.matchLength) ? player.matchLength : 1
+            const matchMode = player.matchMode && MATCH_MODES[player.matchMode] ? player.matchMode : null
+
+            if (wagerAmount > 0 && !isValidWager(wagerAmount, matchMode)) {
                 client.emit('createRoomError', { reason: 'Invalid wager tier' })
                 return
             }
@@ -820,10 +824,6 @@ const mainsocket = (io) => {
                 client.emit('createRoomError', { reason: 'Wallet required for wagered matches' })
                 return
             }
-
-            // Match mode validation (litepaper v2.0)
-            const rounds = [1, 3, 5].includes(player.matchLength) ? player.matchLength : 1
-            const matchMode = player.matchMode && MATCH_MODES[player.matchMode] ? player.matchMode : null
             if (matchMode) {
                 const modeCheck = validateMatchMode(matchMode, wagerAmount, rounds)
                 if (!modeCheck.valid) {

@@ -33,15 +33,16 @@ const WINNER_SHARE = 0.90;
 const TREASURY_SHARE = 0.07;
 const OPS_SHARE = 0.03;
 
-// Valid wager tiers in SOL
-export const WAGER_TIERS = [0, 0.01, 0.05, 0.1, 0.25, 0.5];
+// Valid wager tiers in SOL — Source: Litepaper v2.1 Section 05 — SOL Wagering
+export const WAGER_TIERS = [0, 0.1, 0.25, 0.5, 1.0];
 
-// Match modes — litepaper v2.0
+// Match modes — Litepaper v2.1 (keep in sync with client/src/screens/LobbyScreen.js)
 export const MATCH_MODES = {
-    practice:    { label: 'Practice',    wagerRange: [0, 0],      formats: [1] },
-    quick_match: { label: 'Quick Match', wagerRange: [0.01, 0.1], formats: [1, 3] },
-    duel:        { label: 'Duel',        wagerRange: [0.05, 0.25],formats: [3, 5] },
-    high_roller: { label: 'High Roller', wagerRange: [0.25, 0.5], formats: [3, 5] },
+    practice:         { label: 'Practice',         wagerRange: [0, 0],          formats: [1] },
+    quick_match:      { label: 'Quick Match',      wagerRange: [0.1, 0.1],      formats: [1, 3] },
+    duel:             { label: 'Duel',             wagerRange: [0.25, 0.5],     formats: [3, 5] },
+    high_roller:      { label: 'High Roller',      wagerRange: [1.0, 1.0],      formats: [3, 5] },
+    custom_challenge: { label: 'Custom Challenge', wagerRange: [0.1, Infinity], formats: [1, 3, 5] },
 };
 
 /**
@@ -51,9 +52,10 @@ export function validateMatchMode(mode, wagerSOL, matchLength) {
     const config = MATCH_MODES[mode];
     if (!config) return { valid: false, reason: 'Unknown match mode' };
     if (wagerSOL < config.wagerRange[0] || wagerSOL > config.wagerRange[1]) {
-        return { valid: false, reason: `Wager must be ${config.wagerRange[0]}-${config.wagerRange[1]} SOL for ${config.label}` };
+        return { valid: false, reason: `Wager must be ${config.wagerRange[0]}+ SOL for ${config.label}` };
     }
-    if (wagerSOL > 0 && !WAGER_TIERS.includes(wagerSOL)) {
+    // Custom Challenge allows any wager >= 0.1 SOL — skip tier whitelist
+    if (mode !== 'custom_challenge' && wagerSOL > 0 && !WAGER_TIERS.includes(wagerSOL)) {
         return { valid: false, reason: 'Invalid wager tier' };
     }
     if (!config.formats.includes(matchLength)) {
@@ -171,7 +173,9 @@ export async function verifyBalance(walletAddress, wagerSOL) {
  * @param {number} wagerSOL
  * @returns {boolean}
  */
-export function isValidWager(wagerSOL) {
+export function isValidWager(wagerSOL, matchMode) {
+    // Custom Challenge allows any wager >= 0.1 SOL — no tier whitelist
+    if (matchMode === 'custom_challenge') return wagerSOL >= 0.1;
     return WAGER_TIERS.includes(wagerSOL);
 }
 

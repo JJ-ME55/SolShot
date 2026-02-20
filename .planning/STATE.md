@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 19 Feb 2026)
 ## Current Position
 
 Phase: 3 of 7 (Litepaper v2.1 Compliance)
-Plan: 1 of 5 in current phase — 03-05 complete (LP-09 governance doc); 03-01 through 03-04 not started
-Status: In progress — 03-05 complete (f25e91d)
-Last activity: 20 Feb 2026 — Completed 03-05 (treasury multisig governance documentation, LP-09)
+Plan: 2 of 5 in current phase — 03-05 complete (LP-09 governance); 03-03 complete (SHOT v2.1 milestones); 03-01, 03-02, 03-04 not started
+Status: In progress — 03-03 complete (f37e28d, 8f16ef7)
+Last activity: 20 Feb 2026 — Completed 03-03 (SHOT v2.1 8-milestone rewrite, MongoDB persistence)
 
-Progress: [████░░░░░░] ~37% (11/30 plans complete)
+Progress: [████░░░░░░] ~40% (12/30 plans complete)
 
 ## Performance Metrics
 
@@ -74,6 +74,9 @@ Progress: [████░░░░░░] ~37% (11/30 plans complete)
 - **[02-05] DNS live: A @ → 216.198.79.1 (Vercel), CNAME www → cname.vercel-dns.com; Vercel configured for solshot.gg + www.solshot.gg**
 - **[02-05] render.yaml CORS_ORIGINS seeds solshot.gg — Render dashboard must ALSO be updated after server deploy (dashboard takes precedence)**
 - **[03-05] LP-09 is ops-only — escrow program already routes 7% to TREASURY_WALLET env var; set Squads Protocol multisig address in Render before mainnet (Phase 6)**
+- **[03-03] Practice mode earns 25% via rateMultiplier; Math.floor truncates fractional SHOT (integer semantics)**
+- **[03-03] Milestone dedup by ID string; PRESTIGE_WEAPON_IDS=[24,29,26,21,22] exported for usedNoPrestige flag**
+- **[03-03] saveMilestoneState fire-and-forget from both recordMatchPlayed and prestigeBurn; loadMilestoneState on authenticate**
 
 ### Pending Todos
 
@@ -93,5 +96,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-20 UTC
-Stopped at: 03-05 complete (treasury governance doc); 03-01 through 03-04 are the remaining Phase 3 code plans
-Resume file: None (next: 03-01 wager tiers + custom challenge, then 03-02 matchmaking queue, etc.)
+Stopped at: 03-03 complete (SHOT v2.1 milestone rewrite + MongoDB persistence)
+Resume file: None (next: 03-04 main.js integration — recordMatchPlayed call sites need enriched context + loadMilestoneState on auth)

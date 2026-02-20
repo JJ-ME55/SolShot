@@ -94,7 +94,7 @@ Plans:
 
 Plans:
 - [x] 03-01-PLAN.md — Update wager tiers to v2.1 values and add Custom Challenge mode (LP-01, LP-02)
-- [ ] 03-02-PLAN.md — Implement queue-based matchmaking for standard modes (LP-03)
+- [x] 03-02-PLAN.md — Implement queue-based matchmaking for standard modes (LP-03)
 - [x] 03-03-PLAN.md — Replace SHOT milestone system with v2.1 emission table and Practice 25% rate (LP-04, LP-05)
 - [ ] 03-04-PLAN.md — Server-side movement enforcement, 3-forfeit timeout rule, enriched milestone callsite (LP-07, LP-08, LP-04 callsite)
 - [x] 03-05-PLAN.md — Treasury multisig governance documentation (LP-09)
@@ -172,7 +172,7 @@ Plans:
 | 1. Weapon Visual Audit | 2/2 | Complete (WVA-03 awaiting play-test) | 2026-02-19 |
 | 1.1 Weapon Visual Identity | 4/4 | Complete — all weapons visually distinct, multiplayer trajectory fix applied | 2026-02-19 |
 | 2. TODO Completion | 4/5 | Complete — 02-01 sounds partial (preload done, WAVs pending); 02-03 skipped (defer to mainnet) | 2026-02-19 |
-| 3. Litepaper v2.1 Compliance | 3/5 | In progress — 03-01 (wager tiers + Custom Challenge), 03-03 (SHOT milestones), 03-05 (LP-09 governance) complete; 03-02, 03-04 pending | - |
+| 3. Litepaper v2.1 Compliance | 4/5 | In progress — 03-01 (wager tiers + Custom Challenge), 03-02 (matchmaking queue), 03-03 (SHOT milestones), 03-05 (LP-09 governance) complete; 03-04 pending | - |
 | 4. Security Audit | 0/4 | Not started | - |
 | 5. E2E Testing | 0/5 | Not started | - |
 | 6. Mainnet Deployment | 0/5 | Not started | - |

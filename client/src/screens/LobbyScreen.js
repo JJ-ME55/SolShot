@@ -284,7 +284,8 @@ function LobbyScreen({ navigate }) {
   const [wager, setWager] = useState(0.1);
   const [customWager, setCustomWager] = useState(0.1); // for custom_challenge mode
   const [selectedColor, setSelectedColor] = useState(0); // index into TANK_COLORS
-  const [waiting, setWaiting] = useState(false); // waiting for opponent
+  const [waiting, setWaiting] = useState(false); // waiting for opponent (custom_challenge / createRoom)
+  const [queueState, setQueueState] = useState(null); // null | 'searching' | 'matched'
   const [error, setError] = useState(null);
 
   // Derived: available wagers + formats for current mode
@@ -356,6 +357,7 @@ function LobbyScreen({ navigate }) {
   /* ── socket: game starts ── */
   useSocket('startPick', (data) => {
     setWaiting(false);
+    setQueueState(null);
     navigate('shop', data);
   });
 
@@ -378,6 +380,36 @@ function LobbyScreen({ navigate }) {
       window.socket.emit('getRooms');
     }
   });
+
+  /* ── socket: queue events ── */
+  useSocket('queueWaiting', () => {
+    // Server confirmed we are in the queue
+    setQueueState('searching');
+  });
+
+  useSocket('queueMatched', () => {
+    // Match found — server will also emit startPick which navigates to shop
+    setQueueState('matched');
+    setWaiting(false);
+  });
+
+  useSocket('queueError', (data) => {
+    setQueueState(null);
+    setError(data?.reason || 'Queue error');
+  });
+
+  useSocket('queueLeft', () => {
+    setQueueState(null);
+  });
+
+  /* ── cleanup: leave queue on unmount ── */
+  useEffect(() => {
+    return () => {
+      if (window.socket) {
+        window.socket.emit('leaveQueue');
+      }
+    };
+  }, []);
 
   /* ── actions ── */
   const createRoom = useCallback(() => {
@@ -426,18 +458,26 @@ function LobbyScreen({ navigate }) {
     }, 200);
   }, []);
 
-  const quickMatch = useCallback(() => {
-    // Join first available room matching current mode, or create one
-    const modeRoom = rooms.find((r) =>
-      (r.matchMode === matchMode) ||
-      (!r.matchMode && matchMode === 'quick_match' && r.wager >= 0.01 && r.wager <= 0.1)
-    );
-    if (modeRoom) {
-      joinRoom(modeRoom.roomId);
-    } else {
-      createRoom();
-    }
-  }, [rooms, joinRoom, createRoom, matchMode]);
+  const joinQueue = useCallback(() => {
+    if (!window.socket) return;
+    const name = getPlayerName();
+    const color = TANK_COLORS[selectedColor].phaserHex;
+    const wagerToSend = isCustomMode ? customWager : wager;
+    window.socket.emit('joinQueue', {
+      matchMode,
+      matchLength,
+      wager: wagerToSend,
+      playerName: name,
+      tankColor: color,
+    });
+    setQueueState('searching');
+  }, [getPlayerName, selectedColor, matchMode, matchLength, wager, customWager, isCustomMode]);
+
+  const cancelQueue = useCallback(() => {
+    if (!window.socket) return;
+    window.socket.emit('leaveQueue');
+    setQueueState(null);
+  }, []);
 
   /* ── helpers ── */
   const getColorHex = (phaserColor) => {
@@ -453,6 +493,7 @@ function LobbyScreen({ navigate }) {
   return (
     <>
       <TopBar title="DEPLOY" onBack={() => {
+        if (queueState === 'searching') cancelQueue();
         if (waiting) cancelRoom();
         navigate('menu');
       }} />
@@ -561,14 +602,9 @@ function LobbyScreen({ navigate }) {
                 CREATE CHALLENGE
               </Button>
             ) : (
-              <>
-                <Button variant="primary" onClick={quickMatch} style={{ fontSize: 15, padding: '12px 20px' }}>
-                  {'FIND ' + modeConfig.label}
-                </Button>
-                <Button variant="secondary" onClick={createRoom} style={{ fontSize: 14, padding: '10px 18px' }}>
-                  CREATE MATCH
-                </Button>
-              </>
+              <Button variant="primary" onClick={joinQueue} style={{ fontSize: 15, padding: '12px 20px' }}>
+                {'FIND ' + modeConfig.label}
+              </Button>
             )}
             <div style={{
               fontFamily: "'Share Tech Mono', monospace",
@@ -647,7 +683,7 @@ function LobbyScreen({ navigate }) {
         </div>
       </div>
 
-      {/* ═══ WAITING OVERLAY ═══ */}
+      {/* ═══ WAITING OVERLAY (manual room / custom_challenge) ═══ */}
       {waiting && (
         <div style={s.waitingOverlay}>
           <div style={s.waitingText}>WAITING FOR OPPONENT</div>
@@ -657,6 +693,23 @@ function LobbyScreen({ navigate }) {
           <Button
             variant="secondary"
             onClick={cancelRoom}
+            style={{ fontSize: 14, padding: '10px 24px', marginTop: 8 }}
+          >
+            CANCEL
+          </Button>
+        </div>
+      )}
+
+      {/* ═══ QUEUE SEARCHING OVERLAY (standard modes) ═══ */}
+      {queueState === 'searching' && (
+        <div style={s.waitingOverlay}>
+          <div style={s.waitingText}>SEARCHING FOR OPPONENT...</div>
+          <div style={s.waitingSubtext}>
+            {modeConfig.label + ' / BO' + matchLength + (effectiveWager > 0 ? ' / ' + effectiveWager + ' SOL' : ' / FREE')}
+          </div>
+          <Button
+            variant="secondary"
+            onClick={cancelQueue}
             style={{ fontSize: 14, padding: '10px 24px', marginTop: 8 }}
           >
             CANCEL

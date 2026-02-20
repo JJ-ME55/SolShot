@@ -19,7 +19,15 @@ const userSchema = new mongoose.Schema({
         totalSolLost: { type: Number, default: 0 },
         totalShotEarned: { type: Number, default: 0 },
         shotBurned: { type: Number, default: 0 },
-        prestigeTier: { type: Number, default: 0 }
+        prestigeTier: { type: Number, default: 0 },
+        // Litepaper v2.1 milestone state — persisted across server restarts
+        totalMatchesPlayed: { type: Number, default: 0 },
+        wageredMatchesPlayed: { type: Number, default: 0 },
+        wageredWins: { type: Number, default: 0 },
+        consecutiveWins: { type: Number, default: 0 },
+        milestonesEarned: { type: [String], default: [] },
+        shotBalance: { type: Number, default: 0 },
+        totalBurned: { type: Number, default: 0 },
     },
     lastActive: { type: Date, default: Date.now }
 }, {

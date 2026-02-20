@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 19 Feb 2026)
 
 **Core value:** Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** Phase 3 — Litepaper v2.1 Compliance COMPLETE (all 5 plans done: 03-01 through 03-05)
+**Current focus:** Phase 3 VERIFIED ✓ — next: Phase 4 (Security Audit)
 
 ## Current Position
 
-Phase: 3 of 7 (Litepaper v2.1 Compliance)
-Plan: 5 of 5 in current phase — ALL COMPLETE (03-01 wager tiers; 03-02 matchmaking queue; 03-03 SHOT milestones; 03-04 movement+timeout; 03-05 LP-09 governance)
-Status: Phase complete
-Last activity: 20 Feb 2026 — Completed 03-04 (movement enforcement, timeout forfeit, enriched SHOT callsite)
+Phase: 3 of 7 COMPLETE — Phase 4 (Security Audit) next
+Plan: All plans complete through Phase 3
+Status: Phase 3 verified (5/5 must-haves passed)
+Last activity: 20 Feb 2026 — Phase 3 verification passed, all LP requirements confirmed
 
 Progress: [█████░░░░░] ~50% (15/30 plans complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 5 (+ 01.1-04 code-complete, pending QA)
-- Average duration: ~20 min
-- Total execution time: ~94 min
+- Total plans completed: 15 (across 4 phases)
+- Average duration: ~15 min
+- Total execution time: ~140 min
 
 **By Phase:**
 
@@ -29,8 +29,10 @@ Progress: [█████░░░░░] ~50% (15/30 plans complete)
 |-------|-------|-------|----------|
 | 01-weapon-visual-audit | 2/2 complete | ~53 min | ~27 min |
 | 1.1-weapon-visual-identity | 4/4 code-complete (QA pending) | ~41 min | ~14 min |
+| 02-todo-completion | 5/5 complete (02-01 partial, 02-03 skipped) | ~30 min | ~6 min |
+| 03-litepaper-v2.1-compliance | 5/5 complete + verified | ~45 min | ~9 min |
 
-*Updated after each plan completion*
+*Updated after each phase completion*
 
 ## Accumulated Context
 
@@ -106,6 +108,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-20T08:22:13Z
-Stopped at: Completed 03-04-PLAN.md — Phase 3 now complete (all 5 plans)
-Resume file: None (next: Phase 4 planning)
+Last session: 2026-02-20
+Stopped at: Phase 3 verified ✓ — all LP requirements confirmed against codebase
+Resume file: None (next: Phase 4 — Security Audit)

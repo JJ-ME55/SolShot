@@ -22,15 +22,15 @@
 - [ ] **TODO-08**: Point solshot.gg DNS to Vercel, verify HTTPS, update CORS
 
 ## Litepaper v2.1 Compliance
-- [ ] **LP-01**: Update wager tiers to v2.1 (Low: 0.1, Mid: 0.25, High: 0.5, Max: 1.0 SOL)
-- [ ] **LP-02**: Add Custom Challenge mode (0.1 SOL minimum, no cap, any format BO1/BO3/BO5)
-- [ ] **LP-03**: Implement matchmaking queue (queue-based pairing for standard modes)
-- [ ] **LP-04**: Implement SHOT milestone emission table (8 milestones, one-time per account)
-- [ ] **LP-05**: Implement Practice mode 25% SHOT emission rate
-- [ ] **LP-06**: Implement 20-turn limit per round (10 per player), HP-based winner if reached
-- [ ] **LP-07**: Implement tank movement (up to 4 steps left/right per round)
-- [ ] **LP-08**: Implement 3-forfeit timeout rule (3 consecutive timeouts = match end)
-- [ ] **LP-09**: Treasury usage: multisig wallet for 7% treasury fee governance
+- [x] **LP-01**: Update wager tiers to v2.1 (Low: 0.1, Mid: 0.25, High: 0.5, Max: 1.0 SOL)
+- [x] **LP-02**: Add Custom Challenge mode (0.1 SOL minimum, no cap, any format BO1/BO3/BO5)
+- [x] **LP-03**: Implement matchmaking queue (queue-based pairing for standard modes)
+- [x] **LP-04**: Implement SHOT milestone emission table (8 milestones, one-time per account)
+- [x] **LP-05**: Implement Practice mode 25% SHOT emission rate
+- [x] **LP-06**: Implement 20-turn limit per round (10 per player), HP-based winner if reached
+- [x] **LP-07**: Implement tank movement (up to 4 steps left/right per round)
+- [x] **LP-08**: Implement 3-forfeit timeout rule (3 consecutive timeouts = match end)
+- [x] **LP-09**: Treasury usage: multisig wallet for 7% treasury fee governance
 
 ## Security Audit
 - [ ] **SEC-01**: Run /the-fortress adversarial security audit on escrow program (CVSS scoring, attack vectors, fix verification)
@@ -96,15 +96,15 @@
 | TODO-06 | Phase 2 — TODO Completion | Pending |
 | TODO-07 | Phase 2 — TODO Completion | Pending |
 | TODO-08 | Phase 2 — TODO Completion | Pending |
-| LP-01 | Phase 3 — Litepaper v2.1 Compliance | Pending |
-| LP-02 | Phase 3 — Litepaper v2.1 Compliance | Pending |
-| LP-03 | Phase 3 — Litepaper v2.1 Compliance | Pending |
-| LP-04 | Phase 3 — Litepaper v2.1 Compliance | Pending |
-| LP-05 | Phase 3 — Litepaper v2.1 Compliance | Pending |
-| LP-06 | Phase 3 — Litepaper v2.1 Compliance | Pending |
-| LP-07 | Phase 3 — Litepaper v2.1 Compliance | Pending |
-| LP-08 | Phase 3 — Litepaper v2.1 Compliance | Pending |
-| LP-09 | Phase 3 — Litepaper v2.1 Compliance | Pending |
+| LP-01 | Phase 3 — Litepaper v2.1 Compliance | Complete |
+| LP-02 | Phase 3 — Litepaper v2.1 Compliance | Complete |
+| LP-03 | Phase 3 — Litepaper v2.1 Compliance | Complete |
+| LP-04 | Phase 3 — Litepaper v2.1 Compliance | Complete |
+| LP-05 | Phase 3 — Litepaper v2.1 Compliance | Complete |
+| LP-06 | Phase 3 — Litepaper v2.1 Compliance | Complete |
+| LP-07 | Phase 3 — Litepaper v2.1 Compliance | Complete |
+| LP-08 | Phase 3 — Litepaper v2.1 Compliance | Complete |
+| LP-09 | Phase 3 — Litepaper v2.1 Compliance | Complete |
 | SEC-01 | Phase 4 — Security Audit | Pending |
 | SEC-02 | Phase 4 — Security Audit | Pending |
 | SEC-03 | Phase 4 — Security Audit | Pending |

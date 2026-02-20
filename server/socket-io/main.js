@@ -50,6 +50,24 @@ var pendingReconnects = {}
 // Turn timers keyed by roomId
 var turnTimers = {}
 
+// Matchmaking queues — keyed by "matchMode:matchLength" (e.g., "quick_match:1")
+// Each entry: { socketId, wallet, name, color, wager, format, matchMode, queuedAt }
+const matchmakingQueues = new Map();
+
+function getQueueKey(matchMode, matchLength) {
+    return `${matchMode}:${matchLength}`;
+}
+
+function removeFromAllQueues(socketId) {
+    for (const [key, queue] of matchmakingQueues.entries()) {
+        const idx = queue.findIndex(e => e.socketId === socketId);
+        if (idx !== -1) {
+            queue.splice(idx, 1);
+            if (queue.length === 0) matchmakingQueues.delete(key);
+        }
+    }
+}
+
 const SHOP_DURATION = 30; // seconds
 const RECONNECT_WINDOW_MS = 30000; // 30 seconds to reconnect
 const TURN_TIMEOUT_MS = 60000;     // 60 seconds per turn
@@ -428,6 +446,8 @@ const mainsocket = (io) => {
         }
 
         client.on('disconnect', async () => {
+            // Remove from matchmaking queue first (before room cleanup)
+            removeFromAllQueues(client.id);
             trackDisconnection()
             const walletAddress = authenticatedWallets[client.id]
             const roomId = client.roomId
@@ -878,6 +898,155 @@ const mainsocket = (io) => {
             if (wagerAmount > 0) trackWager(wagerAmount * 2)  // Both players wager
             broadcastRooms(io)
         })
+
+
+
+        // ── Queue-based matchmaking (standard modes: practice, quick_match, duel, high_roller) ──
+        client.on('joinQueue', async (data) => {
+            if (!data || typeof data !== 'object') return;
+            const { matchMode, matchLength, wager: wagerAmount, playerName, tankColor } = data;
+
+            // custom_challenge bypasses the queue — must use createRoom
+            if (matchMode === 'custom_challenge') {
+                client.emit('queueError', { reason: 'Custom Challenge uses room codes, not the queue' });
+                return;
+            }
+
+            // Validate mode + wager via existing helper
+            const validation = validateMatchMode(matchMode, wagerAmount, matchLength);
+            if (!validation.valid) {
+                client.emit('queueError', { reason: validation.reason });
+                return;
+            }
+
+            // Remove from any existing queue before re-queuing
+            removeFromAllQueues(client.id);
+
+            const queueKey = getQueueKey(matchMode, matchLength);
+            if (!matchmakingQueues.has(queueKey)) {
+                matchmakingQueues.set(queueKey, []);
+            }
+            const queue = matchmakingQueues.get(queueKey);
+
+            if (queue.length > 0) {
+                // Match found — pop opponent from queue
+                const opponent = queue.shift();
+                if (queue.length === 0) matchmakingQueues.delete(queueKey);
+
+                // Auto-create room — mirrors createRoom + joinRoom exactly
+                const roomId = crypto.randomBytes(4).toString('hex');
+                const roundType = matchLength === 5 ? 'BO5' : matchLength === 3 ? 'BO3' : '1';
+
+                const hostEntry = { name: opponent.name, color: opponent.color, socketId: opponent.socketId, isReady: false, playAgain: false };
+                const playerEntry = { name: sanitizeName(playerName), color: tankColor, socketId: client.id, isReady: false, playAgain: false };
+
+                const roomData = {
+                    roomId,
+                    host: hostEntry,
+                    player: playerEntry,
+                    active: true,
+                    wager: wagerAmount,
+                    matchMode,
+                    totalRounds: matchLength,
+                };
+
+                wagerStates[roomId] = {
+                    amount: wagerAmount,
+                    wallets: {
+                        [opponent.socketId]: opponent.wallet,
+                        [client.id]: authenticatedWallets[client.id] || null,
+                    },
+                };
+
+                matchStates[roomId] = createMatchState(roomId, roundType);
+                rooms.set(roomId, roomData);
+
+                // Join both sockets to the Socket.IO room
+                const opponentSocket = io.sockets.sockets.get(opponent.socketId);
+                if (opponentSocket) {
+                    opponentSocket.roomId = roomId;
+                    opponentSocket.isHost = true;
+                    opponentSocket.name = opponent.name;
+                    opponentSocket.color = opponent.color;
+                    opponentSocket.join(roomId);
+                }
+                client.roomId = roomId;
+                client.isHost = false;
+                client.name = sanitizeName(playerName);
+                client.color = tankColor;
+                client.join(roomId);
+
+                trackMatchCreated();
+                if (wagerAmount > 0) trackWager(wagerAmount * 2);
+                broadcastRooms(io);
+
+                // Escrow creation for wagered queue matches
+                const joinerWallet = authenticatedWallets[client.id] || null;
+                if (wagerAmount > 0 && isEscrowEnabled() && opponent.wallet && joinerWallet) {
+                    try {
+                        const escrowResult = await createMatchEscrow(roomId, wagerAmount, opponent.wallet, joinerWallet);
+                        if (escrowResult.success) {
+                            roomData.escrowPDA = escrowResult.escrowPDA;
+                            const [hostDeposit, joinerDeposit] = await Promise.all([
+                                buildDepositTransaction(roomId, opponent.wallet),
+                                buildDepositTransaction(roomId, joinerWallet),
+                            ]);
+                            if (opponentSocket && hostDeposit.success) {
+                                opponentSocket.emit('escrowDeposit', { roomId, transaction: hostDeposit.transaction, escrowPDA: escrowResult.escrowPDA, wager: wagerAmount });
+                            }
+                            if (joinerDeposit.success) {
+                                client.emit('escrowDeposit', { roomId, transaction: joinerDeposit.transaction, escrowPDA: escrowResult.escrowPDA, wager: wagerAmount });
+                            }
+                        } else {
+                            console.error(`[Queue] Escrow creation failed for ${roomId}:`, escrowResult.error);
+                        }
+                    } catch (err) {
+                        console.error(`[Queue] Escrow error for ${roomId}:`, err.message);
+                    }
+                }
+
+                // Emit queueMatched to both players so client can clear searching UI
+                const matchData = {
+                    roomId,
+                    matchMode,
+                    matchLength,
+                    wager: wagerAmount,
+                    host: { name: opponent.name, color: opponent.color },
+                    player: { name: sanitizeName(playerName), color: tankColor },
+                    isHost: false, // from joiner's perspective
+                };
+                if (opponentSocket) {
+                    opponentSocket.emit('queueMatched', { ...matchData, isHost: true });
+                }
+                client.emit('queueMatched', matchData);
+
+                // Emit startPick — same final event as manual joinRoom flow
+                io.sockets.in(roomId).emit('startPick', { host: hostEntry, player: playerEntry, wager: wagerAmount });
+
+                console.log(`[Queue] Matched: ${opponent.name} vs ${sanitizeName(playerName)} in ${matchMode} (${roundType}) @ ${wagerAmount} SOL — room ${roomId}`);
+            } else {
+                // No match available — add to queue
+                const sanitizedName = sanitizeName(playerName);
+                queue.push({
+                    socketId: client.id,
+                    wallet: authenticatedWallets[client.id] || null,
+                    name: sanitizedName,
+                    color: tankColor,
+                    wager: wagerAmount,
+                    format: matchLength,
+                    matchMode,
+                    queuedAt: Date.now(),
+                });
+                client.emit('queueWaiting', { matchMode, matchLength, position: queue.length });
+                console.log(`[Queue] ${sanitizedName} queued for ${matchMode} (${matchLength}) @ ${wagerAmount} SOL — ${queue.length} waiting`);
+            }
+        });
+
+        client.on('leaveQueue', () => {
+            removeFromAllQueues(client.id);
+            client.emit('queueLeft');
+            console.log(`[Queue] Player ${client.id} left queue`);
+        });
 
 
 

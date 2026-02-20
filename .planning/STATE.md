@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 19 Feb 2026)
 
 **Core value:** Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** Phase 2 — TODO Completion (02-01 partial, 02-04 and 02-05 complete; next: 02-02 escrow test, 02-03 token metadata)
+**Current focus:** Phase 3 — Litepaper v2.1 Compliance (03-01, 03-03, 03-05 complete; 03-02 queue and 03-04 movement next)
 
 ## Current Position
 
 Phase: 3 of 7 (Litepaper v2.1 Compliance)
-Plan: 2 of 5 in current phase — 03-05 complete (LP-09 governance); 03-03 complete (SHOT v2.1 milestones); 03-01, 03-02, 03-04 not started
-Status: In progress — 03-03 complete (f37e28d, 8f16ef7)
-Last activity: 20 Feb 2026 — Completed 03-03 (SHOT v2.1 8-milestone rewrite, MongoDB persistence)
+Plan: 3 of 5 in current phase — 03-01 complete (wager tiers + Custom Challenge); 03-03 complete (SHOT v2.1 milestones); 03-05 complete (LP-09 governance)
+Status: In progress — 03-01 complete (746a4ea, 62f5d7f)
+Last activity: 20 Feb 2026 — Completed 03-01 (v2.1 wager tiers, custom_challenge mode server+client)
 
-Progress: [████░░░░░░] ~40% (12/30 plans complete)
+Progress: [████░░░░░░] ~42% (13/30 plans complete)
 
 ## Performance Metrics
 
@@ -77,6 +77,9 @@ Progress: [████░░░░░░] ~40% (12/30 plans complete)
 - **[03-03] Practice mode earns 25% via rateMultiplier; Math.floor truncates fractional SHOT (integer semantics)**
 - **[03-03] Milestone dedup by ID string; PRESTIGE_WEAPON_IDS=[24,29,26,21,22] exported for usedNoPrestige flag**
 - **[03-03] saveMilestoneState fire-and-forget from both recordMatchPlayed and prestigeBurn; loadMilestoneState on authenticate**
+- **[03-01] WAGER_TIERS=[0,0.1,0.25,0.5,1.0]; custom_challenge wagerRange=[0.1,Infinity]; old values 0.01/0.05 now rejected**
+- **[03-01] isValidWager(amount, matchMode) — always pass matchMode in createRoom; matchMode extracted before this call (order matters)**
+- **[03-01] Client customWager state separate from wager — avoids contaminating tier buttons when switching between modes**
 
 ### Pending Todos
 
@@ -96,5 +99,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-20 UTC
-Stopped at: 03-03 complete (SHOT v2.1 milestone rewrite + MongoDB persistence)
-Resume file: None (next: 03-04 main.js integration — recordMatchPlayed call sites need enriched context + loadMilestoneState on auth)
+Stopped at: 03-01 complete (wager tiers v2.1 + custom_challenge server + client)
+Resume file: None (next: 03-02 matchmaking queue OR 03-04 movement enforcement)

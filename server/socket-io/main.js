@@ -227,17 +227,79 @@ function startTurnTimer(io, roomId) {
         const currentTurnId = ms.currentTurn
         if (!currentTurnId) return
 
-        // The player whose turn it is forfeits the turn — advance to next player
         const hostId = room.host ? room.host.socketId : null
         const playerId = room.player ? room.player.socketId : null
 
+        // LP-08: Track consecutive timeouts per player
+        if (!ms.consecutiveTimeouts) ms.consecutiveTimeouts = {}
+        ms.consecutiveTimeouts[currentTurnId] = (ms.consecutiveTimeouts[currentTurnId] || 0) + 1
+
+        // LP-08: 3-forfeit rule — end match if timed-out player hit 3 consecutive timeouts
+        if (ms.consecutiveTimeouts[currentTurnId] >= 3) {
+            clearTurnTimer(roomId)
+            const opponentId = currentTurnId === hostId ? playerId : hostId
+
+            console.log(`[Forfeit] Player ${currentTurnId} timed out 3 consecutive turns — opponent ${opponentId} wins`)
+
+            // Emit standard matchEnd event with forfeitReason for client compatibility
+            // Uses existing matchEnd event — no separate forfeitMatchEnd event needed
+            io.sockets.in(roomId).emit('matchEnd', {
+                winner: opponentId,
+                forfeitReason: '3 consecutive turn timeouts',
+                forfeitPlayerId: currentTurnId,
+                scores: ms.scores || {},
+                hp: ms.hp || {},
+            })
+
+            // Transition to SETTLING
+            transitionState(ms, MATCH_STATES.SETTLING)
+
+            // Settle wager if applicable
+            // settleMatch signature: settleMatch(winnerAddress, loserAddress, wagerSOL, matchId)
+            // Must use wallet addresses from wagerStates — NOT socketIds
+            const wsState = wagerStates[roomId]
+            if (wsState && wsState.amount > 0) {
+                const winnerWallet = wsState.wallets ? wsState.wallets[opponentId] : null
+                const loserWallet = wsState.wallets ? wsState.wallets[currentTurnId] : null
+                if (winnerWallet && loserWallet) {
+                    try {
+                        await settleMatch(winnerWallet, loserWallet, wsState.amount, roomId)
+                    } catch (err) {
+                        console.error(`[Forfeit] Settlement error for room ${roomId}:`, err.message)
+                    }
+                } else {
+                    console.warn(`[Forfeit] Missing wallet addresses for settlement in room ${roomId}`)
+                }
+            }
+
+            // SHOT milestone recording for forfeit — wired in Task 3 (step 6)
+            // Task 3 will add enriched recordMatchPlayed calls here using roomId (NOT this.roomId)
+
+            transitionState(ms, MATCH_STATES.COMPLETE)
+
+            // Room teardown — startTurnTimer is module-level so cleanupRoom (defined inside
+            // connection closure) is not in scope. Perform teardown directly using module-level
+            // helpers. Wager settlement already done above.
+            io.sockets.in(roomId).emit('opponentLeft', {})
+            await removeRoom(roomId)
+            broadcastRooms(io)
+            io.socketsLeave(roomId)
+
+            return
+        }
+
+        // Normal timeout — advance turn
         ms.turnCount++
         ms.currentTurn = getNextTurn(ms, hostId, playerId)
+
+        // LP-07: Reset move count for the new turn player
+        if (ms.moveCounts) ms.moveCounts[ms.currentTurn] = 0
 
         io.sockets.in(roomId).emit('turnTimeout', {
             timedOutPlayer: currentTurnId,
             nextTurn: ms.currentTurn,
             turnCount: ms.turnCount,
+            consecutiveTimeouts: ms.consecutiveTimeouts[currentTurnId],
         })
 
         // Restart timer for the next player
@@ -1461,6 +1523,11 @@ const mainsocket = (io) => {
                         this.emit('fireRejected', { reason: 'Weapon not owned' })
                         return
                     }
+                }
+
+                // LP-08: Reset consecutive timeout counter on successful fire
+                if (ms.consecutiveTimeouts) {
+                    ms.consecutiveTimeouts[this.id] = 0
                 }
             }
 

@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 19 Feb 2026)
 
 ## Current Position
 
-Phase: 2 of 7 (TODO Completion)
-Plan: 5 of 5 in current phase — 02-04 complete, 02-05 complete; 02-01 partial (Task 2 blocked on WAV files); 02-02, 02-03 not started
-Status: In progress — 02-04 (ed48f66), 02-05 complete, 02-01 Task 1 committed (9adf21e)
-Last activity: 19 Feb 2026 — Completed 02-05 (DNS A+CNAME set at Spaceship, Vercel configured, render.yaml CORS_ORIGINS updated)
+Phase: 3 of 7 (Litepaper v2.1 Compliance)
+Plan: 1 of 5 in current phase — 03-05 complete (LP-09 governance doc); 03-01 through 03-04 not started
+Status: In progress — 03-05 complete (f25e91d)
+Last activity: 20 Feb 2026 — Completed 03-05 (treasury multisig governance documentation, LP-09)
 
-Progress: [██████░░░░] ~23% (7/30 plans complete — 02-04, 02-05 done; 01.1 QA pending)
+Progress: [████░░░░░░] ~37% (11/30 plans complete)
 
 ## Performance Metrics
 
@@ -73,6 +73,7 @@ Progress: [██████░░░░] ~23% (7/30 plans complete — 02-04, 
 - **[02-04] Legal doc GitHub raw URLs used for devnet; update to solshot.gg/terms and solshot.gg/privacy at mainnet**
 - **[02-05] DNS live: A @ → 216.198.79.1 (Vercel), CNAME www → cname.vercel-dns.com; Vercel configured for solshot.gg + www.solshot.gg**
 - **[02-05] render.yaml CORS_ORIGINS seeds solshot.gg — Render dashboard must ALSO be updated after server deploy (dashboard takes precedence)**
+- **[03-05] LP-09 is ops-only — escrow program already routes 7% to TREASURY_WALLET env var; set Squads Protocol multisig address in Render before mainnet (Phase 6)**
 
 ### Pending Todos
 
@@ -91,6 +92,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-19 UTC
-Stopped at: 02-05 complete (DNS/CORS done); 02-01 still partial (Task 2 waiting on WAV files)
-Resume file: None (next: 02-02 escrow devnet test or 02-03 SHOT token metadata)
+Last session: 2026-02-20 UTC
+Stopped at: 03-05 complete (treasury governance doc); 03-01 through 03-04 are the remaining Phase 3 code plans
+Resume file: None (next: 03-01 wager tiers + custom challenge, then 03-02 matchmaking queue, etc.)

@@ -8,7 +8,7 @@ import { initGold, getBalance, earnGold, spendGold, awardKillBonus, awardRoundWi
 import { WEAPON_CATALOG, getWeapon, getWeaponCost, getAllLaunchWeapons } from '../models/Weapon.js';
 import { handleAuthenticate } from '../middleware/auth.js';
 import { verifyBalance, isValidWager, settleMatch, refundWager, WAGER_TIERS, MATCH_MODES, validateMatchMode, isEscrowEnabled, createMatchEscrow, buildDepositTransaction, getEscrowState } from '../services/solana.js';
-import { recordMatchPlayed, prestigeBurn, getPrestigeInfo, getShotBalance, PRESTIGE_TIERS, verifyBurnTransaction } from '../services/shot-token.js';
+import { recordMatchPlayed, prestigeBurn, getPrestigeInfo, getShotBalance, PRESTIGE_TIERS, PRESTIGE_WEAPON_IDS, loadMilestoneState, saveMilestoneState, verifyBurnTransaction } from '../services/shot-token.js';
 import { trackConnection, trackDisconnection, trackMatchCreated, trackMatchCompleted, trackMatchCancelled, trackWager, trackSettlement, trackForfeit, trackShot, trackDamage, trackGoldEarned, trackShotEmission, trackShotBurn, trackError } from '../services/monitoring.js';
 import { requireAuth, validatePayload, validateFireParams, sanitizeName, withLock, safeHandler } from '../middleware/guards.js';
 
@@ -272,8 +272,39 @@ function startTurnTimer(io, roomId) {
                 }
             }
 
-            // SHOT milestone recording for forfeit — wired in Task 3 (step 6)
-            // Task 3 will add enriched recordMatchPlayed calls here using roomId (NOT this.roomId)
+            // LP-04: Enriched SHOT milestone recording for forfeit path
+            // Uses roomId (closure variable) — NOT this.roomId (no socket context here)
+            {
+                const forfeitMatchId = `${roomId}:forfeit:${Date.now()}`
+                const isForfeitWagered = wsState && wsState.amount > 0
+                const hostWalletF = wsState?.wallets?.[hostId] || authenticatedWallets[hostId] || null
+                const playerWalletF = wsState?.wallets?.[playerId] || authenticatedWallets[playerId] || null
+
+                if (hostWalletF) {
+                    const forfeitResult = recordMatchPlayed(hostWalletF, {
+                        turnCount: ms.turnCount || 0,
+                        matchId: forfeitMatchId,
+                        isWagered: isForfeitWagered,
+                        isWinner: opponentId === hostId,
+                        maxRoundDamage: (ms.maxRoundDamage && ms.maxRoundDamage[hostId]) || 0,
+                        weaponsUsed: ms.weaponsUsed && ms.weaponsUsed[hostId]
+                            ? Array.from(ms.weaponsUsed[hostId]) : [],
+                    })
+                    if (forfeitResult.earned > 0) trackShotEmission(forfeitResult.earned)
+                }
+                if (playerWalletF) {
+                    const forfeitResult = recordMatchPlayed(playerWalletF, {
+                        turnCount: ms.turnCount || 0,
+                        matchId: forfeitMatchId,
+                        isWagered: isForfeitWagered,
+                        isWinner: opponentId === playerId,
+                        maxRoundDamage: (ms.maxRoundDamage && ms.maxRoundDamage[playerId]) || 0,
+                        weaponsUsed: ms.weaponsUsed && ms.weaponsUsed[playerId]
+                            ? Array.from(ms.weaponsUsed[playerId]) : [],
+                    })
+                    if (forfeitResult.earned > 0) trackShotEmission(forfeitResult.earned)
+                }
+            }
 
             transitionState(ms, MATCH_STATES.COMPLETE)
 
@@ -415,7 +446,7 @@ const mainsocket = (io) => {
 
 
         // === WALLET AUTHENTICATION (Phase 4) ===
-        client.on('authenticate', (data) => {
+        client.on('authenticate', async (data) => {
             // H015: Null payload guard
             if (!data || typeof data !== 'object') {
                 client.emit('authResult', { success: false, reason: 'Missing payload' })
@@ -425,6 +456,14 @@ const mainsocket = (io) => {
             if (result.success) {
                 authenticatedWallets[client.id] = result.walletAddress
                 console.log(`[Auth] Socket ${client.id} authenticated as ${result.walletAddress}`)
+                // LP-04: Load persisted milestone state from MongoDB so server restarts
+                // don't reset milestone progress
+                try {
+                    await loadMilestoneState(result.walletAddress)
+                } catch (err) {
+                    console.warn(`[Auth] Failed to load milestone state:`, err.message)
+                    // Continue — in-memory defaults are fine, milestones just won't be restored
+                }
             }
             client.emit('authResult', result)
         })
@@ -1644,6 +1683,20 @@ const mainsocket = (io) => {
                     }
                 }
 
+                // LP-04: Track per-round damage dealt for milestone 500_damage_round
+                // result.damage is { recipientId: damageAmount } — iterate to sum damage dealt by shooter
+                for (const [recipientId, dmg] of Object.entries(result.damage || {})) {
+                    if (recipientId !== this.id && dmg > 0) {
+                        if (!ms.roundDamage) ms.roundDamage = {}
+                        ms.roundDamage[this.id] = (ms.roundDamage[this.id] || 0) + dmg
+                    }
+                }
+
+                // LP-04: Track weapons used per player for milestone no_prestige_win
+                if (!ms.weaponsUsed) ms.weaponsUsed = {}
+                if (!ms.weaponsUsed[this.id]) ms.weaponsUsed[this.id] = new Set()
+                ms.weaponsUsed[this.id].add(weaponId)
+
                 // Advance turn
                 ms.turnCount++
                 const hostId = room.host.socketId
@@ -1768,20 +1821,46 @@ const mainsocket = (io) => {
                             trackSettlement(settlementInfo)
                         }
 
+                        // LP-04: Finalize maxRoundDamage from last round (round-end path handles
+                        // this for BO3/BO5, but match-over fires directly without roundEnd path)
+                        if (!ms.maxRoundDamage) ms.maxRoundDamage = {}
+                        for (const pid of Object.keys(ms.roundDamage || {})) {
+                            ms.maxRoundDamage[pid] = Math.max(ms.maxRoundDamage[pid] || 0, ms.roundDamage[pid] || 0)
+                        }
+
                         // === SHOT TOKEN MILESTONES (Phase 6) ===
+                        // LP-04: Enriched context with v2.1 milestone data
                         const shotResults = {}
                         const wsState = wagerStates[this.roomId]
-                        // H033: Pass match info for farming protection
-                        const matchInfo = { turnCount: ms.turnCount, matchId: `${this.roomId}:${ms.currentRound}:${Date.now()}` }
+                        const matchId = `${this.roomId}:${ms.currentRound}:${Date.now()}`
+                        const isWagered = wsState && wsState.amount > 0
+
                         // Record match for both players (use wallet if available)
                         const hostWallet = wsState?.wallets?.[hostId] || authenticatedWallets[hostId] || null
                         const playerWallet = wsState?.wallets?.[playerId] || authenticatedWallets[playerId] || null
+
                         if (hostWallet) {
-                            shotResults[hostId] = recordMatchPlayed(hostWallet, matchInfo)
+                            shotResults[hostId] = recordMatchPlayed(hostWallet, {
+                                turnCount: ms.turnCount,
+                                matchId,
+                                isWagered,
+                                isWinner: matchResult.winner === hostId,
+                                maxRoundDamage: (ms.maxRoundDamage && ms.maxRoundDamage[hostId]) || 0,
+                                weaponsUsed: ms.weaponsUsed && ms.weaponsUsed[hostId]
+                                    ? Array.from(ms.weaponsUsed[hostId]) : [],
+                            })
                             if (shotResults[hostId].earned > 0) trackShotEmission(shotResults[hostId].earned)
                         }
                         if (playerWallet) {
-                            shotResults[playerId] = recordMatchPlayed(playerWallet, matchInfo)
+                            shotResults[playerId] = recordMatchPlayed(playerWallet, {
+                                turnCount: ms.turnCount,
+                                matchId,
+                                isWagered,
+                                isWinner: matchResult.winner === playerId,
+                                maxRoundDamage: (ms.maxRoundDamage && ms.maxRoundDamage[playerId]) || 0,
+                                weaponsUsed: ms.weaponsUsed && ms.weaponsUsed[playerId]
+                                    ? Array.from(ms.weaponsUsed[playerId]) : [],
+                            })
                             if (shotResults[playerId].earned > 0) trackShotEmission(shotResults[playerId].earned)
                         }
 
@@ -1848,6 +1927,12 @@ const mainsocket = (io) => {
                     // H023: Reset turnCount for next round
                     // LP-07: Reset move counts for next round
                     if (ms.moveCounts) ms.moveCounts = {}
+                    // LP-04: Update maxRoundDamage before resetting roundDamage for next round
+                    if (!ms.maxRoundDamage) ms.maxRoundDamage = {}
+                    for (const pid of Object.keys(ms.roundDamage || {})) {
+                        ms.maxRoundDamage[pid] = Math.max(ms.maxRoundDamage[pid] || 0, ms.roundDamage[pid] || 0)
+                    }
+                    ms.roundDamage = {} // reset for next round
                     resetForNextRound(ms)
                     // Delay roundEnd emit so client can animate the killing blow
                     const roundEndPayload = {

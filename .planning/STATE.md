@@ -5,17 +5,17 @@
 See: .planning/PROJECT.md (updated 21 Feb 2026)
 
 **Core value:** Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** v1.1 Security Hardening — Phase 1 Plan 01 complete, Plan 02 next
+**Current focus:** v1.1 Security Hardening — Phase 1 Plans 01-02 complete, Plan 03 (integration testing) next
 
 ## Current Position
 
 Milestone: v1.1 — Security Hardening
 Phase: 1 of 8 — On-Chain Program Redesign (in progress)
-Plan: 01 of TBD — completed 01-01 (Rewrite lib.rs)
+Plan: 02 of TBD — completed 01-02 (Build + IDL + escrow.js)
 Status: In progress
-Last activity: 21 Feb 2026 — Completed 01-01-PLAN.md (escrow program rewrite)
+Last activity: 21 Feb 2026 — Completed 01-02-PLAN.md (anchor build, IDL copy, escrow.js config PDA integration)
 
-Progress: [█░░░░░░░░░] ~5% (1/~20 plans estimated)
+Progress: [██░░░░░░░░] ~10% (2/~20 plans estimated)
 
 ## Performance Metrics
 
@@ -54,10 +54,15 @@ Progress: [█░░░░░░░░░] ~5% (1/~20 plans estimated)
 - **[v1.1 01-01] OC-13 (upgrade authority transfer) deferred to mainnet — keeps devnet iteration speed**
 - **[v1.1 01-01] declare_id! kept as old devnet ID until Plan 02 (fresh deploy + new program ID)**
 - **[v1.1 01-01] GlobalConfig::SEED = b"config"; MatchEscrow::SPACE = 168 — all server code must use these**
+- **[v1.1 01-02] anchor build succeeded on Windows; IDL generated from actual compilation (not hand-edited)**
+- **[v1.1 01-02] PROGRAM_ID unchanged at CqvRC6mSJe2CrBtENVfCEPkgRW3WwxLSL9C1hgXz7GtD until fresh deploy (OC-14)**
+- **[v1.1 01-02] getConfigPDA() uses Buffer.from('config') — always call this function, never derive manually**
+- **[v1.1 01-02] initializeConfig() must be called once after fresh deploy before any match can be created**
 
 ### Pending Todos
 
-- Plan 02: anchor build, devnet deploy, update declare_id!, copy IDL, update escrow.js (PROGRAM_ID + getConfigPDA() + all instruction .accounts() calls)
+- Plan 03: end-to-end integration testing (create → deposit → settle flow) using updated IDL and escrow.js
+- OC-14 deploy checklist: fresh program deploy, update declare_id!, call initializeConfig()
 
 ### Blockers/Concerns
 - Escrow program source is complete — Plan 02 requires Anchor CLI + Solana devnet access for deploy
@@ -67,6 +72,6 @@ Progress: [█░░░░░░░░░] ~5% (1/~20 plans estimated)
 
 ## Session Continuity
 
-Last session: 2026-02-21T18:36:21Z
-Stopped at: Completed 01-01-PLAN.md — escrow program rewrite (lib.rs) with OC-01 through OC-12
-Resume file: None (next: execute 01-02-PLAN.md — anchor build + IDL + server integration)
+Last session: 2026-02-21T18:43:14Z
+Stopped at: Completed 01-02-PLAN.md — anchor build, IDL copy, escrow.js config PDA integration (OC-14)
+Resume file: None (next: Plan 03 — end-to-end integration testing)

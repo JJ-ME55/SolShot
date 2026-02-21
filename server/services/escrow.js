@@ -6,15 +6,19 @@
  * After match ends, server calls settle or cancel.
  *
  * Instructions:
- *   createMatch   — server creates PDA escrow for a room
- *   settleMatch   — server distributes pot (90/7/3 split)
- *   cancelMatch   — server refunds both players
+ *   initializeConfig — one-time setup of GlobalConfig PDA after deploy (OC-01)
+ *   pauseProgram     — emergency pause via config PDA (OC-04)
+ *   unpauseProgram   — resume after emergency pause (OC-04)
+ *   updateConfig     — rotate authority/treasury/ops addresses
+ *   createMatch      — server creates PDA escrow for a room
+ *   settleMatch      — server distributes pot (90/7/3 split)
+ *   cancelMatch      — server refunds both players
  *
  * Client-side (not here):
- *   depositWager  — player signs + sends from their wallet
+ *   depositWager     — player signs + sends from their wallet
  */
 
-import { Connection, PublicKey, Keypair, Transaction, TransactionInstruction, LAMPORTS_PER_SOL } from '@solana/web3.js';
+import { Connection, PublicKey, Keypair, Transaction, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { AnchorProvider, Program, Wallet } from '@coral-xyz/anchor';
 import BN from 'bn.js';
 import fs from 'fs';
@@ -28,6 +32,7 @@ const __dirname = path.dirname(__filename);
 const IDL_PATH = path.join(__dirname, '..', 'idl', 'solshot_escrow.json');
 
 // Program ID — must match deployed program
+// NOTE: This ID will change after fresh deploy — see OC-14 deploy checklist
 const PROGRAM_ID = new PublicKey('CqvRC6mSJe2CrBtENVfCEPkgRW3WwxLSL9C1hgXz7GtD');
 
 // Config from environment
@@ -74,8 +79,11 @@ export function initEscrow() {
         const idl = JSON.parse(fs.readFileSync(IDL_PATH, 'utf-8'));
         program = new Program(idl, provider);
 
+        const [configPDA] = getConfigPDA();
+
         console.log(`[Escrow] Initialized — authority: ${serverKeypair.publicKey.toBase58()}`);
         console.log(`[Escrow] Program ID: ${PROGRAM_ID.toBase58()}`);
+        console.log(`[Escrow] Config PDA: ${configPDA.toBase58()}`);
         console.log(`[Escrow] Treasury: ${TREASURY_WALLET || 'NOT SET'}`);
         console.log(`[Escrow] Ops: ${OPS_WALLET || 'NOT SET'}`);
 
@@ -107,8 +115,164 @@ export function getEscrowPDA(matchId) {
 }
 
 /**
- * Create a match escrow on-chain.
+ * Derive the global config PDA (OC-01).
+ * Seeds: [b"config"]
+ *
+ * @returns {[PublicKey, number]} [pda, bump]
+ */
+export function getConfigPDA() {
+    return PublicKey.findProgramAddressSync(
+        [Buffer.from('config')],
+        PROGRAM_ID
+    );
+}
+
+// ─── CONFIG MANAGEMENT ────────────────────────────────────────────────────────
+
+/**
+ * One-time initialization of the GlobalConfig PDA (OC-01).
+ * Call immediately after fresh program deploy.
+ * Authority, treasury, and ops must all be distinct addresses.
+ *
+ * @param {string} authorityPubkey — server hot wallet address (base58)
+ * @param {string} treasuryAddress — treasury wallet address (base58)
+ * @param {string} opsAddress — ops wallet address (base58)
+ * @returns {Promise<{success: boolean, txSignature?: string, configPDA?: string, error?: string}>}
+ */
+export async function initializeConfig(authorityPubkey, treasuryAddress, opsAddress) {
+    if (!program) return { success: false, error: 'Escrow not initialized' };
+    try {
+        const [configPDA] = getConfigPDA();
+        const authority = new PublicKey(authorityPubkey);
+        const treasury = new PublicKey(treasuryAddress);
+        const ops = new PublicKey(opsAddress);
+        const tx = await program.methods
+            .initializeConfig(authority, treasury, ops)
+            .accounts({
+                config: configPDA,
+                payer: serverKeypair.publicKey,
+                systemProgram: PublicKey.default,
+            })
+            .rpc();
+        console.log(`[Escrow] Config initialized — TX: ${tx}`);
+        return { success: true, txSignature: tx, configPDA: configPDA.toBase58() };
+    } catch (err) {
+        console.error('[Escrow] initializeConfig failed:', err.message);
+        return { success: false, error: err.message };
+    }
+}
+
+/**
+ * Update config fields (authority/treasury/ops). Pass null to keep current value.
+ * Requires current authority as signer.
+ *
+ * @param {string|null} newAuthority — new authority pubkey (base58) or null
+ * @param {string|null} newTreasury — new treasury pubkey (base58) or null
+ * @param {string|null} newOps — new ops pubkey (base58) or null
+ * @returns {Promise<{success: boolean, txSignature?: string, error?: string}>}
+ */
+export async function updateConfig(newAuthority, newTreasury, newOps) {
+    if (!program) return { success: false, error: 'Escrow not initialized' };
+    try {
+        const [configPDA] = getConfigPDA();
+        const tx = await program.methods
+            .updateConfig(
+                newAuthority ? new PublicKey(newAuthority) : null,
+                newTreasury ? new PublicKey(newTreasury) : null,
+                newOps ? new PublicKey(newOps) : null
+            )
+            .accounts({
+                config: configPDA,
+                authority: serverKeypair.publicKey,
+            })
+            .rpc();
+        console.log(`[Escrow] Config updated — TX: ${tx}`);
+        return { success: true, txSignature: tx };
+    } catch (err) {
+        console.error('[Escrow] updateConfig failed:', err.message);
+        return { success: false, error: err.message };
+    }
+}
+
+/**
+ * Emergency pause — halts all economic instructions (OC-04).
+ * Idempotent — safe to call even if already paused.
+ *
+ * @returns {Promise<{success: boolean, txSignature?: string, error?: string}>}
+ */
+export async function pauseProgram() {
+    if (!program) return { success: false, error: 'Escrow not initialized' };
+    try {
+        const [configPDA] = getConfigPDA();
+        const tx = await program.methods
+            .pauseProgram()
+            .accounts({
+                config: configPDA,
+                authority: serverKeypair.publicKey,
+            })
+            .rpc();
+        console.log(`[Escrow] Program paused — TX: ${tx}`);
+        return { success: true, txSignature: tx };
+    } catch (err) {
+        console.error('[Escrow] pauseProgram failed:', err.message);
+        return { success: false, error: err.message };
+    }
+}
+
+/**
+ * Emergency unpause — resumes economic instructions (OC-04).
+ * Idempotent — safe to call even if already unpaused.
+ *
+ * @returns {Promise<{success: boolean, txSignature?: string, error?: string}>}
+ */
+export async function unpauseProgram() {
+    if (!program) return { success: false, error: 'Escrow not initialized' };
+    try {
+        const [configPDA] = getConfigPDA();
+        const tx = await program.methods
+            .unpauseProgram()
+            .accounts({
+                config: configPDA,
+                authority: serverKeypair.publicKey,
+            })
+            .rpc();
+        console.log(`[Escrow] Program unpaused — TX: ${tx}`);
+        return { success: true, txSignature: tx };
+    } catch (err) {
+        console.error('[Escrow] unpauseProgram failed:', err.message);
+        return { success: false, error: err.message };
+    }
+}
+
+/**
+ * Fetch the global config PDA state.
+ * Returns null if config not yet initialized.
+ *
+ * @returns {Promise<{authority: string, treasury: string, ops: string, isPaused: boolean}|null>}
+ */
+export async function getConfigState() {
+    if (!program) return null;
+    try {
+        const [configPDA] = getConfigPDA();
+        const config = await program.account.globalConfig.fetch(configPDA);
+        return {
+            authority: config.authority.toBase58(),
+            treasury: config.treasury.toBase58(),
+            ops: config.ops.toBase58(),
+            isPaused: config.isPaused,
+        };
+    } catch (err) {
+        // Config not initialized or account doesn't exist
+        return null;
+    }
+}
+
+// ─── MATCH LIFECYCLE ──────────────────────────────────────────────────────────
+
+/**
+ * Create a match escrow on-chain (OC-04, OC-06, OC-08, OC-12).
  * Called by server when both players have joined a wagered room.
+ * Requires config PDA for pause guard.
  *
  * @param {string} matchId — unique room ID
  * @param {number} wagerSOL — wager per player in SOL
@@ -126,12 +290,14 @@ export async function createMatchEscrow(matchId, wagerSOL, playerOneAddress, pla
         const playerOne = new PublicKey(playerOneAddress);
         const playerTwo = new PublicKey(playerTwoAddress);
         const [escrowPDA] = getEscrowPDA(matchId);
+        const [configPDA] = getConfigPDA();
 
         const tx = await program.methods
             .createMatch(matchId, new BN(wagerLamports), playerOne, playerTwo)
             .accounts({
                 escrow: escrowPDA,
                 authority: serverKeypair.publicKey,
+                config: configPDA,
                 systemProgram: PublicKey.default,
             })
             .rpc();
@@ -150,9 +316,10 @@ export async function createMatchEscrow(matchId, wagerSOL, playerOneAddress, pla
 }
 
 /**
- * Build the deposit_wager instruction for a player to sign client-side.
+ * Build the deposit_wager instruction for a player to sign client-side (OC-04, OC-07, OC-09).
  * The server doesn't sign this — it returns the serialized transaction
  * for the client to sign with their wallet.
+ * Requires config PDA for pause guard.
  *
  * @param {string} matchId
  * @param {string} playerAddress — depositor's wallet (base58)
@@ -166,6 +333,7 @@ export async function buildDepositTransaction(matchId, playerAddress) {
     try {
         const player = new PublicKey(playerAddress);
         const [escrowPDA] = getEscrowPDA(matchId);
+        const [configPDA] = getConfigPDA();
 
         // Build unsigned transaction for client to sign
         const ix = await program.methods
@@ -173,6 +341,7 @@ export async function buildDepositTransaction(matchId, playerAddress) {
             .accounts({
                 escrow: escrowPDA,
                 player: player,
+                config: configPDA,
                 systemProgram: PublicKey.default,
             })
             .instruction();
@@ -206,11 +375,13 @@ export async function buildDepositTransaction(matchId, playerAddress) {
 
 /**
  * Settle a match — distribute pot to winner (90%), treasury (7%), ops (3%).
- * Called by server after match ends.
+ * Called by server after match ends (OC-02, OC-03, OC-04, OC-07, OC-09, OC-10, OC-11).
+ * Treasury and ops are validated on-chain against config PDA.
+ * Requires config PDA for validated treasury/ops pubkeys and pause guard.
  *
  * @param {string} matchId
  * @param {string} winnerAddress — winner's wallet (base58)
- * @returns {Promise<{success: boolean, txSignature?: string, settlement?: object, error?: string}>}
+ * @returns {Promise<{success: boolean, txSignature?: string, error?: string}>}
  */
 export async function settleMatchEscrow(matchId, winnerAddress) {
     if (!program) {
@@ -226,6 +397,7 @@ export async function settleMatchEscrow(matchId, winnerAddress) {
         const treasury = new PublicKey(TREASURY_WALLET);
         const ops = new PublicKey(OPS_WALLET);
         const [escrowPDA] = getEscrowPDA(matchId);
+        const [configPDA] = getConfigPDA();
 
         const tx = await program.methods
             .settleMatch(winner)
@@ -235,12 +407,11 @@ export async function settleMatchEscrow(matchId, winnerAddress) {
                 winner: winner,
                 treasury: treasury,
                 ops: ops,
+                config: configPDA,
                 systemProgram: PublicKey.default,
             })
             .rpc();
 
-        // Fetch settlement amounts from the escrow before it was closed
-        // (we already know the math: 90/7/3)
         console.log(`[Escrow] Settled match ${matchId} — winner: ${winnerAddress}, TX: ${tx}`);
 
         return {
@@ -254,8 +425,9 @@ export async function settleMatchEscrow(matchId, winnerAddress) {
 }
 
 /**
- * Cancel a match — refund all deposited players.
+ * Cancel a match — refund all deposited players (OC-04, OC-05, OC-07, OC-09, OC-10).
  * Called by server on room cancel, disconnect timeout, etc.
+ * Requires config PDA for authority pubkey + pause guard.
  *
  * @param {string} matchId
  * @param {string} playerOneAddress
@@ -271,6 +443,7 @@ export async function cancelMatchEscrow(matchId, playerOneAddress, playerTwoAddr
         const playerOne = new PublicKey(playerOneAddress);
         const playerTwo = new PublicKey(playerTwoAddress);
         const [escrowPDA] = getEscrowPDA(matchId);
+        const [configPDA] = getConfigPDA();
 
         const tx = await program.methods
             .cancelMatch()
@@ -279,6 +452,7 @@ export async function cancelMatchEscrow(matchId, playerOneAddress, playerTwoAddr
                 caller: serverKeypair.publicKey,
                 playerOne: playerOne,
                 playerTwo: playerTwo,
+                config: configPDA,
                 systemProgram: PublicKey.default,
             })
             .rpc();
@@ -298,6 +472,7 @@ export async function cancelMatchEscrow(matchId, playerOneAddress, playerTwoAddr
 /**
  * Fetch escrow account data for a match.
  * Useful for verifying deposit status.
+ * Returns activated_at field (OC-07) — 0 means match not yet active.
  *
  * @param {string} matchId
  * @returns {Promise<object|null>}
@@ -319,6 +494,7 @@ export async function getEscrowState(matchId) {
             playerTwoDeposited: escrow.playerTwoDeposited,
             state: Object.keys(escrow.state)[0],
             createdAt: escrow.createdAt.toNumber(),
+            activatedAt: escrow.activatedAt?.toNumber() || 0,
         };
     } catch (err) {
         // Account doesn't exist or was closed

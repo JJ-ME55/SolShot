@@ -2,6 +2,7 @@
 seeds = false
 skip-lint = false
 
+# NOTE: Program ID will change after deploy — see OC-14 deploy checklist
 [programs.localnet]
 solshot_escrow = "CqvRC6mSJe2CrBtENVfCEPkgRW3WwxLSL9C1hgXz7GtD"
 

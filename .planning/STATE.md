@@ -2,37 +2,39 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 19 Feb 2026)
+See: .planning/PROJECT.md (updated 21 Feb 2026)
 
 **Core value:** Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** Phase 3 VERIFIED ✓ — next: Phase 4 (Security Audit)
+**Current focus:** v1.1 Security Hardening — Phase 1 Plan 01 complete, Plan 02 next
 
 ## Current Position
 
-Phase: 3 of 7 COMPLETE — Phase 4 (Security Audit) next
-Plan: All plans complete through Phase 3
-Status: Phase 3 verified (5/5 must-haves passed)
-Last activity: 20 Feb 2026 — Phase 3 verification passed, all LP requirements confirmed
+Milestone: v1.1 — Security Hardening
+Phase: 1 of 8 — On-Chain Program Redesign (in progress)
+Plan: 01 of TBD — completed 01-01 (Rewrite lib.rs)
+Status: In progress
+Last activity: 21 Feb 2026 — Completed 01-01-PLAN.md (escrow program rewrite)
 
-Progress: [█████░░░░░] ~50% (15/30 plans complete)
+Progress: [█░░░░░░░░░] ~5% (1/~20 plans estimated)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 15 (across 4 phases)
-- Average duration: ~15 min
-- Total execution time: ~140 min
+- v1.0 plans completed: 15 (across 4 phases)
+- v1.1 plans completed: 1
 
-**By Phase:**
+**By Phase (v1.1):**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01-weapon-visual-audit | 2/2 complete | ~53 min | ~27 min |
-| 1.1-weapon-visual-identity | 4/4 code-complete (QA pending) | ~41 min | ~14 min |
-| 02-todo-completion | 5/5 complete (02-01 partial, 02-03 skipped) | ~30 min | ~6 min |
-| 03-litepaper-v2.1-compliance | 5/5 complete + verified | ~45 min | ~9 min |
-
-*Updated after each phase completion*
+| 01-on-chain-program-redesign | 1/TBD | 3min | 3min |
+| 02-server-financial-security | 0/TBD | — | — |
+| 03-server-auth-game-integrity | 0/TBD | — | — |
+| 04-secrets-key-management | 0/TBD | — | — |
+| 05-client-supply-chain-security | 0/TBD | — | — |
+| 06-token-economy-hardening | 0/TBD | — | — |
+| 07-infrastructure-monitoring | 0/TBD | — | — |
+| 08-verification-re-audit | 0/TBD | — | — |
 
 ## Accumulated Context
 
@@ -42,72 +44,29 @@ Progress: [█████░░░░░] ~50% (15/30 plans complete)
 - 90/7/3 BPS split hardcoded in escrow program
 - SHOT mint authority burned (no changes possible)
 - MongoDB Atlas M0 free tier for stats persistence
-- **[01-01] WVA-02 closed with no action taken — zero visual drift in any of 20 active weapon classes**
-- **[01-01] Do not revert heatseeker: diff*0.15 turn rate + explicit angle-toward-tank = correct improved values (git 2e86aab)**
-- **[01-01] Pineapple 32/20, Homing Missile 80px/60/80, Cruiser 80/80 — all correct server-matched values; converted-repo.txt is pre-rebalance reference**
-- **[01-01] Spider dual blast: 80px proximity burst + 28px sub-segments — WEAPON_DATA.blastRadius=28 refers to sub-munitions only**
-- **[01-01] Napalm client proximity scoring vs server burst model is known design divergence — acceptable for v1.0**
-- **[01-02] WVA-03 checklist produced — 789-line QA worksheet covering all 20 weapons**
-- **[01-02] Cruiser behavior: arc → land → roll ~2s along terrain → final 80px blast (full 80/80 damage factor)**
-- **[1.1] Weapon Visual Identity phase inserted — John's play-test confirmed all weapons function correctly but 15/20 are visually indistinguishable in flight**
-- **[1.1] Implementation: Option A (enhance existing updateTail system) + surgical spawnParticle() utility for lingering effects**
-- **[1.1] Heatseeker + Skipper = gold standard — unique flight behavior makes weapon exciting; all others need this level of visual identity**
-- **[1.1] Design doc: docs/plans/2026-02-19-weapon-visual-identity-design.md — full specs for all 20 weapons approved**
-- **[1.1] Zero gameplay changes — purely visual. Server physics.js untouched. Damage/blast values unchanged.**
-- **[01.1-01] spawnParticle/spawnBurstEffect on Weapon base class — Phaser add.circle + tweens.add pattern; all weapons can now emit particles**
-- **[01.1-01] Frame counter pattern: this._dustFrame/_sparkFrame = 0 in constructor AND reset(), guard with groundHit === false**
-- **[01.1-01] Magic Wall rotation: setRotation(rotation + 0.08) applied BEFORE defaultUpdate() to avoid physics override**
-- **[01.1-01] Build tool: use npx react-app-rewired build from client/ directory (not react-scripts, not root)**
-- **[01.1-02] Color oscillation: sin(_colorFrame * 0.15) * amplitude for smooth purple-to-red color cycling on frame counter**
-- **[01.1-02] Wobble jitter: projectile.body.x/y += (Math.random()-0.5)*2 each frame for erratic projectile movement**
-- **[01.1-02] Per-bullet effects: obj.index % 2 === 0 for alternating color/style per bullet in multi-projectile weapons**
-- **[01.1-02] Bounce-scaled burst: Math.max(3, this.bounce + 2) to taper spawnBurstEffect particle count on successive bounces**
-- **[01.1-03] Sine throb: _pulseFrame++ + setScale(1 + Math.sin(_pulseFrame * 0.2) * 0.15) for pulsing orb identity (Spider)**
-- **[01.1-03] Terrain surface scan: loop from body.y upward checking alpha===0 — finds surface above tunnel path (Ground Hog)**
-- **[01.1-03] Pile Driver burst ring uses blastCount - 1 index (post-increment) to correctly map ring to just-executed blast depth**
-- **[01.1-03] flameColors array random pick: [0xFF6600, 0xFFAA00, 0xFF4400, 0xFFCC00] for organic Napalm flame variation**
-- **[01.1-04] Tasks 1+2 committed atomically as 59a32bd — both modify same file; interactive staging unavailable in non-TTY context**
-- **[01.1-04] Chain Reaction energy arc uses arr[i-2] for previous offset — i is incremented end-of-createBlast, so inside body i = current, i-2 = blast before last**
-- **[01.1-04] Pineapple sub-munitions upgraded rgba(0,255,100,1) radius 1.5 — brighter + slightly larger than original (0,230,80,1) radius 1**
-- **[02-04] Twitter @SolShotGG confirmed created by user**
-- **[02-04] Jurisdiction deferred — [TO BE DETERMINED BY LEGAL COUNSEL] in ToS 12.1 and Privacy Policy 10.1; resolve before mainnet**
-- **[02-04] Contact email deferred — [TBD] in both legal docs; no contact@solshot.gg set**
-- **[02-04] Legal doc GitHub raw URLs used for devnet; update to solshot.gg/terms and solshot.gg/privacy at mainnet**
-- **[02-05] DNS live: A @ → 216.198.79.1 (Vercel), CNAME www → cname.vercel-dns.com; Vercel configured for solshot.gg + www.solshot.gg**
-- **[02-05] render.yaml CORS_ORIGINS seeds solshot.gg — Render dashboard must ALSO be updated after server deploy (dashboard takes precedence)**
-- **[03-05] LP-09 is ops-only — escrow program already routes 7% to TREASURY_WALLET env var; set Squads Protocol multisig address in Render before mainnet (Phase 6)**
-- **[03-03] Practice mode earns 25% via rateMultiplier; Math.floor truncates fractional SHOT (integer semantics)**
-- **[03-03] Milestone dedup by ID string; PRESTIGE_WEAPON_IDS=[24,29,26,21,22] exported for usedNoPrestige flag**
-- **[03-03] saveMilestoneState fire-and-forget from both recordMatchPlayed and prestigeBurn; loadMilestoneState on authenticate**
-- **[03-01] WAGER_TIERS=[0,0.1,0.25,0.5,1.0]; custom_challenge wagerRange=[0.1,Infinity]; old values 0.01/0.05 now rejected**
-- **[03-01] isValidWager(amount, matchMode) — always pass matchMode in createRoom; matchMode extracted before this call (order matters)**
-- **[03-01] Client customWager state separate from wager — avoids contaminating tier buttons when switching between modes**
-- **[03-02] matchmakingQueues Map key format: matchMode:matchLength (e.g., quick_match:1) — concurrent queues per mode+format**
-- **[03-02] Server emits both queueMatched (clears UI) and startPick (navigates to shop) on match — reuses existing startPick flow**
-- **[03-02] Standard modes queue-only; Custom Challenge uses createRoom (no queue); CREATE MATCH button removed for standard modes**
-- **[03-02] removeFromAllQueues called at top of disconnect handler before any room cleanup**
-- **[03-04] cleanupRoom not callable from module-level startTurnTimer (closure scope) — forfeit uses removeRoom+io.socketsLeave directly**
-- **[03-04] maxRoundDamage finalized in BOTH match-over path (BO1) AND round-end path (BO3/BO5) — critical for 500_damage_round milestone**
-- **[03-04] Forfeit emits standard matchEnd with forfeitReason field — no new forfeitMatchEnd event type needed**
-- **[03-04] moveCounts lazy-init per move; reset per turn-advance (fire+timeout) and per round-end; consecutiveTimeouts lazy-init per timeout**
+- **[v1.0] All v1.0 decisions preserved — see previous STATE.md in git history**
+- **[v1.1] Three audits complete: SOS 7C/6H/6M/4L, DB 8C/17H/15M/1L, BOK 24/24 pass 8 gaps**
+- **[v1.1] H029 (unverifiable winner oracle / outcome verification) deferred to v1.2 — requires protocol-level design decisions**
+- **[v1.1] H060 (horizontal scaling) deferred — not exploitable on single instance**
+- **[v1.1] On-chain redesign is Phase 1 because ALL off-chain code depends on the new IDL**
+- **[v1.1 01-01] SETTLEMENT_TIMEOUT_SECONDS = 3600 (1 hour) — long enough to avoid false-positives, short enough to protect players**
+- **[v1.1 01-01] activated_at fallback to created_at when 0 — backward compat for matches pre-OC-07**
+- **[v1.1 01-01] OC-13 (upgrade authority transfer) deferred to mainnet — keeps devnet iteration speed**
+- **[v1.1 01-01] declare_id! kept as old devnet ID until Plan 02 (fresh deploy + new program ID)**
+- **[v1.1 01-01] GlobalConfig::SEED = b"config"; MatchEscrow::SPACE = 168 — all server code must use these**
 
 ### Pending Todos
 
-None yet.
+- Plan 02: anchor build, devnet deploy, update declare_id!, copy IDL, update escrow.js (PROGRAM_ID + getConfigPDA() + all instruction .accounts() calls)
 
 ### Blockers/Concerns
-- Missing sound WAV files (7 .wav files — TODO-01): preload lines added (9adf21e), WAV files still needed on disk
-- Token metadata (Metaplex) not created yet — TODO-03
-- Twitter @SolShotGG DONE — TODO-04 closed
-- Legal docs: dates filled, jurisdiction and contact email deferred — TODO-05/06 partially closed (placeholders remain for mainnet)
-- Escrow program not audited — SEC-01
-- **[01-01 Open → WVA-03] Prestige weapons in-game playtesting — CHECKLIST READY, awaiting John sign-off**
-- **[01-01 Open → WVA-03] Heatseeker sprite rotation visual confirmation — John confirmed PERFECT in play-test**
-- **[01-01 Open] Napalm scoring reconciliation noted for awareness — not a bug, not blocking**
-- **[01.1-04 OPEN] Human QA checkpoint — fire all 20 weapons in Practice mode, verify visual distinctness, type "approved" to complete phase**
+- Escrow program source is complete — Plan 02 requires Anchor CLI + Solana devnet access for deploy
+- Key rotation (KM-01) requires new program deploy with updated authority — coordinated with Plan 02 program redesign
+- SOS finding H029 (outcome verification / dispute mechanism) is deferred — requires game theory analysis beyond code remediation
+- BFG git history rewrite (KM-01) will force-push all branches — coordinate with any open PRs
 
 ## Session Continuity
 
-Last session: 2026-02-20
-Stopped at: Phase 3 verified ✓ — all LP requirements confirmed against codebase
-Resume file: None (next: Phase 4 — Security Audit)
+Last session: 2026-02-21T18:36:21Z
+Stopped at: Completed 01-01-PLAN.md — escrow program rewrite (lib.rs) with OC-01 through OC-12
+Resume file: None (next: execute 01-02-PLAN.md — anchor build + IDL + server integration)

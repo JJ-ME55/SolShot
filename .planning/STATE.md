@@ -3,32 +3,31 @@
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 21 Feb 2026)
-
 **Core value:** Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** v1.1 Security Hardening — Phase 1 complete, Phase 2 next (Server Financial Security)
+**Current focus:** v1.1 Security Hardening — Phase 2 in progress (Server Financial Security)
 
 ## Current Position
 
 Milestone: v1.1 — Security Hardening
-Phase: 1 of 8 — On-Chain Program Redesign (**COMPLETE**)
-Plans: 3/3 complete (01-01 lib.rs, 01-02 IDL+escrow.js, 01-03 tests)
-Status: Phase 1 complete — test execution deferred (McAfee blocks local validator)
-Last activity: 21 Feb 2026 — Phase 1 verified (14/14 requirements, VERIFICATION.md written)
+Phase: 2 of 8 — Server Financial Security (**In progress**)
+Plans: 1/TBD complete (02-01 rate limiter + queue validation + deposit verification)
+Status: In progress
+Last activity: 22 Feb 2026 — Completed 02-01-PLAN.md (SF-01/SF-04/SF-05 closed)
 
-Progress: [██░░░░░░░░] ~12.5% (1/8 phases complete)
+Progress: [███░░░░░░░] ~18.75% (1.75/8 phases equiv — Phase 1 complete + 1 plan in Phase 2)
 
 ## Performance Metrics
 
 **Velocity:**
 - v1.0 plans completed: 15 (across 4 phases)
-- v1.1 plans completed: 3
+- v1.1 plans completed: 4
 
 **By Phase (v1.1):**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-on-chain-program-redesign | 3/3 | ~10min | ~3min |
-| 02-server-financial-security | 0/TBD | — | — |
+| 02-server-financial-security | 1/TBD | ~12min | ~12min |
 | 03-server-auth-game-integrity | 0/TBD | — | — |
 | 04-secrets-key-management | 0/TBD | — | — |
 | 05-client-supply-chain-security | 0/TBD | — | — |
@@ -54,12 +53,16 @@ Progress: [██░░░░░░░░] ~12.5% (1/8 phases complete)
 - **[v1.1 Phase 1] PROGRAM_ID unchanged at CqvRC6mSJe2CrBtENVfCEPkgRW3WwxLSL9C1hgXz7GtD — fresh deploy requires new ID + initializeConfig()**
 - **[v1.1 Phase 1] anchor build works on Windows; IDL at server/idl/ matches program; escrow.js passes config PDA to all instructions**
 - **[v1.1 Phase 1] Test execution deferred — McAfee LiveSafe blocks solana-test-validator genesis archive extraction (os error 5)**
+- **[v1.1 Phase 2 / 02-01] Float64Array for ring buffers — Date.now() ~1.77T overflows Int32Array max 2.1B in 2026**
+- **[v1.1 Phase 2 / 02-01] getEscrowState() PDA booleans over getParsedTransaction() — PDA is ground truth after on-chain deposit settles**
+- **[v1.1 Phase 2 / 02-01] isEscrowEnabled() guard pattern: wrap all escrow RPC in conditional — dev mode skips verification gracefully**
+- **[v1.1 Phase 2 / 02-01] Peek-then-consume queue pattern: queue[0] to validate wager, queue.shift() only after equality confirmed**
 
 ### Pending Todos
 
 - Run 25-test suite when McAfee exclusion is configured (`anchor test --provider.cluster localnet`)
 - Fresh devnet deploy with new program ID + initializeConfig() call
-- Phase 2: Server Financial Security — verify deposits on-chain, propagate settlement failures, fix rate limiter
+- Phase 2 remaining plans: settlement failure propagation and remaining server financial hardening
 
 ### Blockers/Concerns
 - McAfee LiveSafe blocks solana-test-validator on Windows — need folder exclusion or temp disable to run tests
@@ -69,6 +72,6 @@ Progress: [██░░░░░░░░] ~12.5% (1/8 phases complete)
 
 ## Session Continuity
 
-Last session: 2026-02-21
-Stopped at: Phase 1 complete (all 3 plans executed, verified 14/14 OC requirements)
-Resume file: None (next: /gsd:plan-phase for Phase 2)
+Last session: 2026-02-22T07:15:37Z
+Stopped at: Completed 02-01-PLAN.md (SF-01 on-chain deposit verification, SF-04 rate limiter fix, SF-05 queue wager validation)
+Resume file: None (next: 02-02-PLAN.md)

@@ -2221,6 +2221,20 @@ const mainsocket = (io) => {
             const clampedY = Math.min(800, Math.max(0, y))
             var room = findRoom(client.roomId)
             if (!room) return
+            // SA-04: Distance validation during battle — reject teleportation (DB: H034, H035)
+            const ms = matchStates[client.roomId]
+            if (ms && ms.status === MATCH_STATES.BATTLE) {
+                const isHost = room.host && room.host.socketId === client.id
+                const currentPos = isHost ? room.host.pos : (room.player ? room.player.pos : null)
+                if (currentPos) {
+                    const dx = Math.abs(clampedX - currentPos.x)
+                    const dy = Math.abs(clampedY - currentPos.y)
+                    if (dx > 400 || dy > 200) {
+                        // Reject — position jump too large (likely cheating or desync)
+                        return
+                    }
+                }
+            }
             if (room.host && room.host.socketId === client.id) {
                 room.host.pos.x = clampedX
                 room.host.pos.y = clampedY

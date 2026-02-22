@@ -10,17 +10,17 @@ See: .planning/PROJECT.md (updated 21 Feb 2026)
 
 Milestone: v1.1 — Security Hardening
 Phase: 4 of 8 — Secrets & Key Management (In progress)
-Plans: 1/3 complete (04-01 KM-03/KM-04 centralized key loading + zeroization)
-Status: In progress — plan 04-01 complete, 04-02 and 04-03 remain
-Last activity: 22 Feb 2026 — Completed 04-01-PLAN.md (keys.js + escrow/solana refactor)
+Plans: 2/3 complete (04-01 keys.js + zeroization, 04-02 startup init + SIGHUP + Render secrets)
+Status: In progress — plan 04-02 complete, 04-03 remains
+Last activity: 22 Feb 2026 — Completed 04-02-PLAN.md (startup init, SIGHUP reload, render.yaml secrets)
 
-Progress: [██████░░░░] ~42% (Phases 1-3 complete; Phase 4: 1/3)
+Progress: [██████░░░░] ~46% (Phases 1-3 complete; Phase 4: 2/3)
 
 ## Performance Metrics
 
 **Velocity:**
 - v1.0 plans completed: 15 (across 4 phases)
-- v1.1 plans completed: 9
+- v1.1 plans completed: 10
 
 **By Phase (v1.1):**
 
@@ -29,7 +29,7 @@ Progress: [██████░░░░] ~42% (Phases 1-3 complete; Phase 4: 1
 | 01-on-chain-program-redesign | 3/3 | ~10min | ~3min |
 | 02-server-financial-security | 2/2 | ~21min | ~10.5min |
 | 03-server-auth-game-integrity | 3/3 | ~5min | ~1.7min |
-| 04-secrets-key-management | 1/3 | ~3min | ~3min |
+| 04-secrets-key-management | 2/3 | ~5min | ~2.5min |
 | 05-client-supply-chain-security | 0/TBD | — | — |
 | 06-token-economy-hardening | 0/TBD | — | — |
 | 07-infrastructure-monitoring | 0/TBD | — | — |
@@ -76,6 +76,9 @@ Progress: [██████░░░░] ~42% (Phases 1-3 complete; Phase 4: 1
 - **[v1.1 Phase 4 / 04-01] KM-04: bytes.fill(0) zeroes input Uint8Array after Keypair.fromSecretKey() — secret lives only inside Keypair object**
 - **[v1.1 Phase 4 / 04-01] initEscrow() always reconstructs provider/program (no short-circuit) — supports SIGHUP key reload in plan 04-02**
 - **[v1.1 Phase 4 / 04-01] isEscrowEnabled() uses isKeysReady() from keys.js — single source of truth for key availability**
+- **[v1.1 Phase 4 / 04-02] KM-05: SIGHUP on Linux, direct reload on Windows — avoids ENOSYS errors in dev**
+- **[v1.1 Phase 4 / 04-02] KM-05: ADMIN_API_KEY safe default — missing env var always returns 401 (never open)**
+- **[v1.1 Phase 4 / 04-02] KM-02: render.yaml sync:false for SOLANA_KEYPAIR_JSON, ADMIN_API_KEY, MONGODB_URI**
 
 ### Pending Todos
 
@@ -91,5 +94,5 @@ Progress: [██████░░░░] ~42% (Phases 1-3 complete; Phase 4: 1
 ## Session Continuity
 
 Last session: 2026-02-22
-Stopped at: Completed 04-01-PLAN.md (centralized key loading + zeroization)
-Resume file: None (next: 04-02-PLAN.md — SIGHUP key reload)
+Stopped at: Completed 04-02-PLAN.md (startup init, SIGHUP reload, Render secrets)
+Resume file: None (next: 04-03-PLAN.md — dotenv-safe / .env audit)

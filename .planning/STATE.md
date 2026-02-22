@@ -4,24 +4,24 @@
 
 See: .planning/PROJECT.md (updated 21 Feb 2026)
 **Core value:** Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** v1.1 Security Hardening — Phase 5 in progress (Client & Supply Chain Security)
+**Current focus:** v1.1 Security Hardening — Phase 5 complete, Phase 6 next (Token Economy Hardening)
 
 ## Current Position
 
 Milestone: v1.1 — Security Hardening
-Phase: 5 of 8 — Client & Supply Chain Security (In progress)
-Plans: 2/TBD complete
-Status: In progress — 05-01 (CS-01 + CS-04) and 05-02 (CS-02 + CS-03) complete
-Last activity: 22 Feb 2026 — Completed 05-02-PLAN.md (self-hosted Telegram SDK + CSP meta/Helmet)
+Phase: 5 of 8 — Client & Supply Chain Security (Complete)
+Plans: 2/2 complete
+Status: Complete — verified 9/9 must-haves
+Last activity: 22 Feb 2026 — Phase 5 verified and complete
 
-Progress: [█████████░] ~65% (Phases 1-5.2 complete; 05-03 + Phases 6-8 remaining)
+Progress: [█████████░] ~69% (Phases 1-5 complete; Phases 6-8 remaining)
 
 
 ## Performance Metrics
 
 **Velocity:**
 - v1.0 plans completed: 15 (across 4 phases)
-- v1.1 plans completed: 15
+- v1.1 plans completed: 15 (13 prior + 2 Phase 5)
 
 **By Phase (v1.1):**
 
@@ -32,7 +32,7 @@ Progress: [█████████░] ~65% (Phases 1-5.2 complete; 05-03 + 
 | 03-server-auth-game-integrity | 3/3 | ~5min | ~1.7min |
 | 04-secrets-key-management | 3/3 | ~15min | ~5min |
 | 04.1-doc-code-alignment | 2/2 | ~8min | ~4min |
-| 05-client-supply-chain-security | 2/TBD | ~22min | ~11min |
+| 05-client-supply-chain-security | 2/2 | ~22min | ~11min |
 | 06-token-economy-hardening | 0/TBD | — | — |
 | 07-infrastructure-monitoring | 0/TBD | — | — |
 | 08-verification-re-audit | 0/TBD | — | — |
@@ -93,6 +93,17 @@ Progress: [█████████░] ~65% (Phases 1-5.2 complete; 05-03 + 
 - **[v1.1 Phase 4.1 / 04.1-02] DCA-02: PermissionlessReclaim has NO config account — intentionally bypasses pause guard (safety net must always work)**
 - **[v1.1 Phase 4.1 / 04.1-02] DCA-02: Anchor 0.32.x IDL uses snake_case instruction names; JS SDK converts to camelCase at runtime**
 - **[v1.1 Phase 4.1 / 04.1-02] Fresh devnet deploy required after lib.rs changes — program ID will change**
+- **[v1.1 Phase 5 / 05-01] CS-01: validateEscrowTransaction() checks program ID + 8-byte Anchor discriminator before signing; COMPUTE_BUDGET_PROGRAM_ID whitelisted**
+- **[v1.1 Phase 5 / 05-01] CS-01: deposit_wager has args: [] — wager amount stored on-chain at create_match, not in instruction data; byte-level wager comparison impossible**
+- **[v1.1 Phase 5 / 05-01] CS-01: Dev mode bypass — ESCROW_PROGRAM_ID null when REACT_APP_ESCROW_PROGRAM_ID not set; validation returns {valid: true}**
+- **[v1.1 Phase 5 / 05-01] CS-01: suspiciousTx socket event emitted on validation failure — silent server monitoring, no UI alert to attacker**
+- **[v1.1 Phase 5 / 05-01] CS-04: window.solWallet useEffect deleted; all 7 consumers migrated to useSolShotWallet() or useWallet()**
+- **[v1.1 Phase 5 / 05-01] CS-04: App.js uses useWallet() adapter hook (not useSolShotWallet) — only needs publicKey + signMessage for rejoin**
+- **[v1.1 Phase 5 / 05-01] CS-04: connected added to SolShotWalletContext value — required by WalletDisplay and BarracksScreen after polling removal**
+- **[v1.1 Phase 5 / 05-02] CS-02: Telegram SDK self-hosted at /js/telegram-web-app.js — SRI rejected because Telegram updates URL in-place without versioning**
+- **[v1.1 Phase 5 / 05-02] CS-03: CSP meta tag in index.html + Helmet header on server — defense in depth; script-src 'self' only**
+- **[v1.1 Phase 5 / 05-02] CS-03: INLINE_RUNTIME_CHUNK=false in client .env — CRA emits runtime as separate .js file instead of inline script**
+- **[v1.1 Phase 5 / 05-02] CS-03: connect-src uses explicit origin allowlist — no bare ws:/wss: wildcards; Solana RPC + Render + localhost only**
 - **[v1.1 Phase 5 / 05-01] CS-01: TX validation scope is program ID + deposit_wager discriminator — wager amount not in instruction data (args: [] in IDL)**
 - **[v1.1 Phase 5 / 05-01] CS-01: COMPUTE_BUDGET_PROGRAM_ID whitelisted — server may prepend priority fee instructions**
 - **[v1.1 Phase 5 / 05-01] CS-01: suspiciousTx socket event emitted silently on TX validation failure — server-side monitoring without revealing detection**
@@ -122,9 +133,9 @@ Progress: [█████████░] ~65% (Phases 1-5.2 complete; 05-03 + 
 
 ## Session Continuity
 
-Last session: 2026-02-22T23:29:21Z
-Stopped at: Phase 5, plan 05-02 complete — CS-02 self-hosted SDK + CS-03 CSP meta/Helmet
-Resume file: None (next: Phase 5, plan 05-03 if it exists, else Phase 6)
+Last session: 2026-02-23T00:00:00Z
+Stopped at: Phase 5 complete — all 9 must-haves verified (CS-01, CS-02, CS-03, CS-04)
+Resume file: None (next: Phase 6 — Token Economy Hardening)
 
 ### Roadmap Evolution
 - Phase 4.1 inserted after Phase 4: Doc-Code Alignment (URGENT) — litepaper QA revealed deposit countdown, permissionless reclaim, HP-based forfeit, and dead code gaps between docs and codebase

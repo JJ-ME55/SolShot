@@ -58,10 +58,10 @@ Derived from three completed audits:
 
 ## Client & Supply Chain Security
 
-- [ ] **CS-01**: Client-side TX validation — parse and verify transaction instructions in `signAndSendEscrowDeposit()` before signing; verify program ID, instruction type, and destination accounts (DB: H019)
-- [ ] **CS-02**: Add SRI hash to Telegram SDK — pin version and add `integrity` attribute to Telegram Web App SDK script tag at `index.html:7` (DB: H031)
-- [ ] **CS-03**: Enable Content Security Policy — remove `contentSecurityPolicy: false` at `server/index.js:31-34`; configure strict `script-src` (DB: H031)
-- [ ] **CS-04**: Remove window.solWallet global — replace with React context or message passing for Phaser access; eliminate direct global exposure of wallet signing functions (DB: H031/H032)
+- [x] **CS-01**: Client-side TX validation — parse and verify transaction instructions in `signAndSendEscrowDeposit()` before signing; verify program ID, instruction type, and destination accounts (DB: H019)
+- [x] **CS-02**: Self-host Telegram SDK — download and serve from same origin at `/js/telegram-web-app.js`; eliminates external CDN dependency *(deviation: SRI hash replaced by self-hosting — Telegram updates URL in-place without versioning)* (DB: H031)
+- [x] **CS-03**: Enable Content Security Policy — CSP meta tag in index.html + Helmet CSP on server; `script-src 'self'` blocks inline scripts and unknown origins (DB: H031)
+- [x] **CS-04**: Remove window.solWallet global — all 7 consumer files migrated to `useSolShotWallet()` context hook or `useWallet()` adapter hook; no signing functions exposed as globals (DB: H031/H032)
 
 ## Token Economy Hardening
 

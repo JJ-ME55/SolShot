@@ -16,7 +16,7 @@ SolShot's three security audits (SOS, DB, BOK) revealed 15 CRITICAL and 23 HIGH-
 - [x] **Phase 3: Server Auth & Game Integrity** — Auth guards on all handlers, rejoin re-verification, remove terrain/position manipulation vectors *(completed 2026-02-22)*
 - [x] **Phase 4: Secrets & Key Management** — Rotate keypair, purge git history, centralize key loading with zeroization, add SIGHUP rotation mechanism *(completed 2026-02-22)*
 - [x] **Phase 4.1: Doc-Code Alignment** — Deposit countdown timer, permissionless reclaim instruction, HP-based disconnect settlement, dead code cleanup *(completed 2026-02-22)*
-- [ ] **Phase 5: Client & Supply Chain Security** — TX validation before signing, SRI hashes, CSP headers, remove global wallet exposure
+- [x] **Phase 5: Client & Supply Chain Security** — TX validation before signing, self-hosted Telegram SDK, CSP headers, remove global wallet exposure *(completed 2026-02-22)*
 - [ ] **Phase 6: Token Economy Hardening** — Persist deduplication Sets to MongoDB, fail-hard on emission counter reset
 - [ ] **Phase 7: Infrastructure & Monitoring** — npm security, endpoint auth, connection limits, logging, terrain entropy
 - [ ] **Phase 8: Verification & Re-Audit** — Re-run SOS, DB, BOK on hardened codebase; generate pre-launch security documentation
@@ -121,16 +121,20 @@ Plans:
 ---
 
 ### Phase 5: Client & Supply Chain Security
-**Goal:** The client validates transaction instructions before signing; external CDN scripts have SRI integrity checks; CSP prevents arbitrary script injection; wallet signing functions are not exposed as globals
+**Goal:** The client validates transaction instructions before signing; the Telegram SDK is self-hosted (no external CDN dependency); CSP prevents arbitrary script injection; wallet signing functions are not exposed as globals
 **Depends on:** Phase 1 (new program IDL needed for TX instruction validation)
 **Requirements:** CS-01, CS-02, CS-03, CS-04
 **Findings addressed:** DB: H019, H031, H032
 **Success Criteria** (what must be TRUE):
   1. `signAndSendEscrowDeposit()` parses the deserialized transaction and verifies the program ID matches the escrow program — a transaction targeting a different program is rejected
-  2. The Telegram SDK script tag has an `integrity` attribute with a valid SRI hash
+  2. The Telegram SDK is self-hosted at `/js/telegram-web-app.js` (same origin) — no external CDN dependency *(deviation: SRI hash replaced by self-hosting because Telegram updates the SDK URL in-place without versioning)*
   3. Helmet CSP is enabled with a `script-src` that blocks inline scripts and unknown CDN origins
   4. `window.solWallet` is undefined — Phaser accesses wallet functions through a controlled interface (React context or message bus)
-**Plans:** TBD
+**Plans:** 2/2
+
+Plans:
+- [x] 05-01: TX instruction validation in signAndSendEscrowDeposit (CS-01) + window.solWallet removal (CS-04)
+- [x] 05-02: Self-host Telegram SDK (CS-02) + CSP meta tag and Helmet (CS-03)
 
 ---
 

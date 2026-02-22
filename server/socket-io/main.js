@@ -366,13 +366,13 @@ const mainsocket = (io) => {
         // Per-event throttle for room creation (max 3 per 60 seconds)
         const RL_MAX_CREATES = 3
         const RL_CREATE_WINDOW = 60000
-        const createRing = new Int32Array(RL_MAX_CREATES + 1)
+        const createRing = new Float64Array(RL_MAX_CREATES + 1)
         let createHead = 0
 
         // Ring buffers — fixed-size circular arrays, O(1) insert + count
-        const eventRing = new Int32Array(RL_MAX_EVENTS + 1)  // timestamps mod windowMs
+        const eventRing = new Float64Array(RL_MAX_EVENTS + 1)  // timestamps mod windowMs
         let eventHead = 0
-        const fireRing = new Int32Array(RL_MAX_FIRES + 1)
+        const fireRing = new Float64Array(RL_MAX_FIRES + 1)
         let fireHead = 0
 
         // Escalation tracking
@@ -1030,8 +1030,16 @@ const mainsocket = (io) => {
             const queue = matchmakingQueues.get(queueKey);
 
             if (queue.length > 0) {
-                // Match found — pop opponent from queue
-                const opponent = queue.shift();
+                // SF-05: Validate wager matches before pairing (DB: H017)
+                const opponent = queue[0]; // peek first, don't consume
+                if (opponent.wager !== wagerAmount) {
+                    // Wager mismatch — do not pair, push joiner to queue instead
+                    queue.push({ name: sanitizeName(playerName), color: tankColor, socketId: client.id, wallet: authenticatedWallets[client.id] || null, wager: wagerAmount });
+                    client.emit('queueWaiting', { matchMode, matchLength, position: queue.length });
+                    console.log(`[Queue] Wager mismatch: opponent=${opponent.wager} SOL, joiner=${wagerAmount} SOL — queued separately`);
+                    return;
+                }
+                queue.shift(); // now safe to consume
                 if (queue.length === 0) matchmakingQueues.delete(queueKey);
 
                 // Auto-create room — mirrors createRoom + joinRoom exactly

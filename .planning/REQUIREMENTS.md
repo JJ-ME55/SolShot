@@ -49,6 +49,13 @@ Derived from three completed audits:
 - [x] **KM-04**: Key material zeroization — zeroize secret key Uint8Array after `Keypair.fromSecretKey()` to prevent heap dump exposure (DB: H005)
 - [x] **KM-05**: Key rotation mechanism — implement SIGHUP-triggered credential reload; support key versioning for graceful rotation without restart (DB: H045)
 
+## Doc-Code Alignment (INSERTED)
+
+- [ ] **DCA-01**: Deposit countdown timer — implement 2-3 minute server-side timer when only one player has deposited; visible to both players; full refund + PDA close on expiry (Litepaper: Escrow Flow Q2)
+- [ ] **DCA-02**: Permissionless reclaim instruction — add new Anchor instruction allowing anyone to trigger refund after 2x timeout; separate from cancel_match which requires player signature (Litepaper: Escrow Flow Q3/Q4)
+- [ ] **DCA-03**: HP-based disconnect settlement — distinguish connection drops from intentional quits; forfeit to player ahead on HP/rounds for connection drops; refund both if genuinely even (Litepaper: Crypto Explainer Q3)
+- [ ] **DCA-04**: Delete dead raydium.js — remove unused config file that references outdated Raydium integration (Litepaper: Token Economics Q5)
+
 ## Client & Supply Chain Security
 
 - [ ] **CS-01**: Client-side TX validation — parse and verify transaction instructions in `signAndSendEscrowDeposit()` before signing; verify program ID, instruction type, and destination accounts (DB: H019)

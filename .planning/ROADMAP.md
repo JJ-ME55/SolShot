@@ -15,6 +15,7 @@ SolShot's three security audits (SOS, DB, BOK) revealed 15 CRITICAL and 23 HIGH-
 - [x] **Phase 2: Server Financial Security** — Verify deposits on-chain, propagate settlement failures, fix rate limiter, add recovery mechanisms *(completed 2026-02-22)*
 - [x] **Phase 3: Server Auth & Game Integrity** — Auth guards on all handlers, rejoin re-verification, remove terrain/position manipulation vectors *(completed 2026-02-22)*
 - [x] **Phase 4: Secrets & Key Management** — Rotate keypair, purge git history, centralize key loading with zeroization, add SIGHUP rotation mechanism *(completed 2026-02-22)*
+- [ ] **Phase 4.1: Doc-Code Alignment** — Deposit countdown timer, permissionless reclaim instruction, HP-based disconnect settlement, dead code cleanup *(INSERTED)*
 - [ ] **Phase 5: Client & Supply Chain Security** — TX validation before signing, SRI hashes, CSP headers, remove global wallet exposure
 - [ ] **Phase 6: Token Economy Hardening** — Persist deduplication Sets to MongoDB, fail-hard on emission counter reset
 - [ ] **Phase 7: Infrastructure & Monitoring** — npm security, endpoint auth, connection limits, logging, terrain entropy
@@ -101,6 +102,23 @@ Plans:
 
 ---
 
+### Phase 4.1: Doc-Code Alignment (INSERTED)
+**Goal:** Code matches all 39 litepaper/doc decisions — deposit countdown timer implemented, permissionless reclaim instruction added to escrow program, disconnect handler uses HP-based settlement for connection drops, dead code removed
+**Depends on:** Phase 4 (keys must be rotated before program changes), Phase 1 (Anchor program must be updated for new instruction)
+**Requirements:** DCA-01, DCA-02, DCA-03, DCA-04
+**Findings addressed:** Litepaper QA — escrow flow, crypto explainer, token economics alignment
+**Success Criteria** (what must be TRUE):
+  1. After both players join a wagered match, a 2-3 minute deposit countdown starts — if only one player deposits before expiry, full refund occurs and PDA closes
+  2. A `permissionless_reclaim` instruction exists in lib.rs that allows anyone to trigger refund after 2x the normal timeout — separate from `cancel_match`
+  3. When a player disconnects (not intentional quit), the server checks HP and round scores — the player ahead wins the wager; genuinely even → refund both
+  4. `server/services/raydium.js` is deleted (dead code, never imported)
+**Plans:** TBD
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 4.1 to break down)
+
+---
+
 ### Phase 5: Client & Supply Chain Security
 **Goal:** The client validates transaction instructions before signing; external CDN scripts have SRI integrity checks; CSP prevents arbitrary script injection; wallet signing functions are not exposed as globals
 **Depends on:** Phase 1 (new program IDL needed for TX instruction validation)
@@ -159,7 +177,7 @@ Plans:
 
 ## Progress
 
-**Execution Order:** 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
+**Execution Order:** 1 → 2 → 3 → 4 → **4.1** → 5 → 6 → 7 → 8
 (Phases 5-7 can partially overlap after Phase 1 is done; Phase 7 is independent)
 
 | Phase | Plans Complete | Status | Completed |
@@ -168,12 +186,13 @@ Plans:
 | 2. Server Financial Security | 2/2 | Complete | 2026-02-22 |
 | 3. Server Auth & Game Integrity | 3/3 | Complete | 2026-02-22 |
 | 4. Secrets & Key Management | 3/3 | Complete | 2026-02-22 |
+| 4.1 Doc-Code Alignment | 0/TBD | Not started (INSERTED) | - |
 | 5. Client & Supply Chain Security | 0/TBD | Not started | - |
 | 6. Token Economy Hardening | 0/TBD | Not started | - |
 | 7. Infrastructure & Monitoring | 0/TBD | Not started | - |
 | 8. Verification & Re-Audit | 0/TBD | Not started | - |
 
-**Total:** 11/11+ plans complete (Phases 1-4 done; Phases 5-8 TBD)
+**Total:** 11/11+ plans complete (Phases 1-4 done; Phase 4.1 inserted; Phases 5-8 TBD)
 
 ---
 

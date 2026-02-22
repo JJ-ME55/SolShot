@@ -18,12 +18,13 @@
  *   depositWager     — player signs + sends from their wallet
  */
 
-import { Connection, PublicKey, Keypair, Transaction, LAMPORTS_PER_SOL } from '@solana/web3.js';
+import { Connection, PublicKey, Transaction, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { AnchorProvider, Program, Wallet } from '@coral-xyz/anchor';
 import BN from 'bn.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { getEscrowKeypair, isKeysReady } from './keys.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,7 +43,6 @@ const OPS_WALLET = process.env.OPS_WALLET;
 
 let program = null;
 let provider = null;
-let serverKeypair = null;
 
 /**
  * Initialize the escrow service.
@@ -51,25 +51,21 @@ let serverKeypair = null;
  * @returns {boolean} true if initialized, false if keypair missing
  */
 export function initEscrow() {
-    const keypairPath = process.env.SOLANA_KEYPAIR_PATH;
-    const keypairJson = process.env.SOLANA_KEYPAIR_JSON;
-    if (!keypairPath && !keypairJson) {
-        console.warn('[Escrow] No SOLANA_KEYPAIR_PATH/JSON — escrow disabled (practice mode only)');
+    // Reset module state — supports re-initialization after SIGHUP key reload (04-02)
+    provider = null;
+    program = null;
+
+    // Dev-mode guard: no keypair means escrow is disabled
+    if (!isKeysReady()) {
+        console.warn('[Escrow] No keypair configured — escrow disabled (practice mode only)');
         return false;
     }
 
     try {
-        let secretKey;
-        if (keypairJson) {
-            secretKey = JSON.parse(keypairJson);
-        } else {
-            const resolved = keypairPath.replace('~', process.env.HOME || process.env.USERPROFILE || '');
-            secretKey = JSON.parse(fs.readFileSync(resolved, 'utf-8'));
-        }
-        serverKeypair = Keypair.fromSecretKey(Uint8Array.from(secretKey));
+        const escrowKeypair = getEscrowKeypair();
 
         const connection = new Connection(SOLANA_RPC, 'confirmed');
-        const wallet = new Wallet(serverKeypair);
+        const wallet = new Wallet(escrowKeypair);
         provider = new AnchorProvider(connection, wallet, {
             commitment: 'confirmed',
             preflightCommitment: 'confirmed',
@@ -81,7 +77,7 @@ export function initEscrow() {
 
         const [configPDA] = getConfigPDA();
 
-        console.log(`[Escrow] Initialized — authority: ${serverKeypair.publicKey.toBase58()}`);
+        console.log(`[Escrow] Initialized — authority: ${escrowKeypair.publicKey.toBase58()}`);
         console.log(`[Escrow] Program ID: ${PROGRAM_ID.toBase58()}`);
         console.log(`[Escrow] Config PDA: ${configPDA.toBase58()}`);
         console.log(`[Escrow] Treasury: ${TREASURY_WALLET || 'NOT SET'}`);
@@ -98,7 +94,7 @@ export function initEscrow() {
  * Check if escrow service is available
  */
 export function isEscrowEnabled() {
-    return program !== null && serverKeypair !== null;
+    return program !== null && isKeysReady();
 }
 
 /**
@@ -150,7 +146,7 @@ export async function initializeConfig(authorityPubkey, treasuryAddress, opsAddr
             .initializeConfig(authority, treasury, ops)
             .accounts({
                 config: configPDA,
-                payer: serverKeypair.publicKey,
+                payer: getEscrowKeypair().publicKey,
                 systemProgram: PublicKey.default,
             })
             .rpc();
@@ -183,7 +179,7 @@ export async function updateConfig(newAuthority, newTreasury, newOps) {
             )
             .accounts({
                 config: configPDA,
-                authority: serverKeypair.publicKey,
+                authority: getEscrowKeypair().publicKey,
             })
             .rpc();
         console.log(`[Escrow] Config updated — TX: ${tx}`);
@@ -208,7 +204,7 @@ export async function pauseProgram() {
             .pauseProgram()
             .accounts({
                 config: configPDA,
-                authority: serverKeypair.publicKey,
+                authority: getEscrowKeypair().publicKey,
             })
             .rpc();
         console.log(`[Escrow] Program paused — TX: ${tx}`);
@@ -233,7 +229,7 @@ export async function unpauseProgram() {
             .unpauseProgram()
             .accounts({
                 config: configPDA,
-                authority: serverKeypair.publicKey,
+                authority: getEscrowKeypair().publicKey,
             })
             .rpc();
         console.log(`[Escrow] Program unpaused — TX: ${tx}`);
@@ -296,7 +292,7 @@ export async function createMatchEscrow(matchId, wagerSOL, playerOneAddress, pla
             .createMatch(matchId, new BN(wagerLamports), playerOne, playerTwo)
             .accounts({
                 escrow: escrowPDA,
-                authority: serverKeypair.publicKey,
+                authority: getEscrowKeypair().publicKey,
                 config: configPDA,
                 systemProgram: PublicKey.default,
             })
@@ -403,7 +399,7 @@ export async function settleMatchEscrow(matchId, winnerAddress) {
             .settleMatch(winner)
             .accounts({
                 escrow: escrowPDA,
-                authority: serverKeypair.publicKey,
+                authority: getEscrowKeypair().publicKey,
                 winner: winner,
                 treasury: treasury,
                 ops: ops,
@@ -449,7 +445,7 @@ export async function cancelMatchEscrow(matchId, playerOneAddress, playerTwoAddr
             .cancelMatch()
             .accounts({
                 escrow: escrowPDA,
-                caller: serverKeypair.publicKey,
+                caller: getEscrowKeypair().publicKey,
                 playerOne: playerOne,
                 playerTwo: playerTwo,
                 config: configPDA,

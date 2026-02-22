@@ -6,7 +6,7 @@ import { processShot, generateTerrain, generateTankPositions, generateWind, WEAP
 import { createMatchState, validateAction, transitionState, getNextTurn, isRoundOver, isMatchOver, getRoundWinner, resetForNextRound, MATCH_STATES } from '../services/match.js';
 import { initGold, getBalance, earnGold, spendGold, awardKillBonus, awardRoundWinBonus } from '../services/gold.js';
 import { WEAPON_CATALOG, getWeapon, getWeaponCost, getAllLaunchWeapons } from '../models/Weapon.js';
-import { handleAuthenticate } from '../middleware/auth.js';
+import { handleAuthenticate, verifyAuthMessage, verifyWalletSignature } from '../middleware/auth.js';
 import { verifyBalance, isValidWager, settleMatch, refundWager, WAGER_TIERS, MATCH_MODES, validateMatchMode, isEscrowEnabled, createMatchEscrow, buildDepositTransaction, getEscrowState } from '../services/solana.js';
 import { cancelMatchEscrow } from '../services/escrow.js';
 import { recordMatchPlayed, prestigeBurn, getPrestigeInfo, getShotBalance, PRESTIGE_TIERS, PRESTIGE_WEAPON_IDS, loadMilestoneState, saveMilestoneState, verifyBurnTransaction } from '../services/shot-token.js';
@@ -705,13 +705,35 @@ const mainsocket = (io) => {
 
 
         // === RECONNECT: Rejoin a match after disconnect ===
-        client.on('rejoinRoom', (data) => {
+        client.on('rejoinRoom', async (data) => {
             if (!data || !data.walletAddress) {
                 client.emit('rejoinError', { reason: 'Missing wallet address' })
                 return
             }
 
             const walletAddress = data.walletAddress
+
+            // SA-02: Ed25519 re-verification before restoring auth (DB: H006)
+            const { message, signature, timestamp } = data
+            if (!message || !signature || !timestamp) {
+                client.emit('rejoinError', { reason: 'Signature required for rejoin' })
+                return
+            }
+
+            // Verify the auth message format and timestamp
+            const msgCheck = verifyAuthMessage(message, walletAddress, timestamp)
+            if (!msgCheck.valid) {
+                client.emit('rejoinError', { reason: msgCheck.reason || 'Invalid auth message' })
+                return
+            }
+
+            // Verify the Ed25519 signature
+            const sigCheck = verifyWalletSignature(walletAddress, message, signature)
+            if (!sigCheck.valid) {
+                client.emit('rejoinError', { reason: sigCheck.reason || 'Signature verification failed' })
+                return
+            }
+
             const pending = pendingReconnects[walletAddress]
             if (!pending) {
                 client.emit('rejoinError', { reason: 'No active match to rejoin' })

@@ -320,6 +320,7 @@ function startTurnTimer(io, roomId) {
             // Settle wager if applicable
             // settleMatch signature: settleMatch(winnerAddress, loserAddress, wagerSOL, matchId)
             // Must use wallet addresses from wagerStates — NOT socketIds
+            let settlementSucceeded = true
             const wsState = wagerStates[roomId]
             if (wsState && wsState.amount > 0) {
                 const winnerWallet = wsState.wallets ? wsState.wallets[opponentId] : null
@@ -332,10 +333,12 @@ function startTurnTimer(io, roomId) {
                         const result = await settleMatch(winnerWallet, loserWallet, wsState.amount, roomId)
                         // SF-02: Check for propagated failure
                         if (!result.success) {
+                            settlementSucceeded = false
                             console.error(`[Forfeit] Settlement returned failure for room ${roomId}:`, result.error)
                             await handleSettlementFailure(roomId, roomSnapshot, wsSnapshot, result.error)
                         }
                     } catch (err) {
+                        settlementSucceeded = false
                         console.error(`[Forfeit] Settlement error for room ${roomId}:`, err.message)
                         await handleSettlementFailure(roomId, roomSnapshot, wsSnapshot, err.message)
                     }
@@ -378,7 +381,8 @@ function startTurnTimer(io, roomId) {
                 }
             }
 
-            transitionState(ms, MATCH_STATES.COMPLETE)
+            // SF-03: Transition to CANCELLED if settlement failed — not unconditional COMPLETE
+            transitionState(ms, settlementSucceeded ? MATCH_STATES.COMPLETE : MATCH_STATES.CANCELLED)
 
             // Room teardown — startTurnTimer is module-level so cleanupRoom (defined inside
             // connection closure) is not in scope. Perform teardown directly using module-level

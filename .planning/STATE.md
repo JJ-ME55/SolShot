@@ -4,17 +4,17 @@
 
 See: .planning/PROJECT.md (updated 21 Feb 2026)
 **Core value:** Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** v1.1 Security Hardening — Phase 2 complete, Phase 3 next (Server Auth & Game Integrity)
+**Current focus:** v1.1 Security Hardening — Phase 3 in progress (Server Auth & Game Integrity)
 
 ## Current Position
 
 Milestone: v1.1 — Security Hardening
-Phase: 2 of 8 — Server Financial Security (**Complete**)
-Plans: 2/2 complete (02-01 rate limiter + queue validation + deposit verification; 02-02 settlement failure propagation + recovery)
-Status: Complete — verified 5/5 must-haves
-Last activity: 22 Feb 2026 — Phase 2 verified and closed; all 5 security fixes committed
+Phase: 3 of 8 — Server Auth & Game Integrity (**In progress**)
+Plans: 1/3 complete (03-01 auth guards SA-01 + turn ownership SA-05 + cross-room isolation SA-06)
+Status: In progress — 03-01 complete, 03-02 and 03-03 next
+Last activity: 22 Feb 2026 — Completed 03-01-PLAN.md
 
-Progress: [████░░░░░░] ~25% (Phases 1-2 complete; Phase 3 next)
+Progress: [████░░░░░░] ~28% (Phases 1-2 complete; Phase 3 in progress 1/3)
 
 ## Performance Metrics
 
@@ -28,7 +28,7 @@ Progress: [████░░░░░░] ~25% (Phases 1-2 complete; Phase 3 ne
 |-------|-------|-------|----------|
 | 01-on-chain-program-redesign | 3/3 | ~10min | ~3min |
 | 02-server-financial-security | 2/2 | ~21min | ~10.5min |
-| 03-server-auth-game-integrity | 0/TBD | — | — |
+| 03-server-auth-game-integrity | 1/3 | ~2min | ~2min |
 | 04-secrets-key-management | 0/TBD | — | — |
 | 05-client-supply-chain-security | 0/TBD | — | — |
 | 06-token-economy-hardening | 0/TBD | — | — |
@@ -61,6 +61,10 @@ Progress: [████░░░░░░] ~25% (Phases 1-2 complete; Phase 3 ne
 - **[v1.1 Phase 2 / 02-02] cancelMatchEscrow imported directly from escrow.js in main.js — not re-exported via solana.js**
 - **[v1.1 Phase 2 / 02-02] handleSettlementFailure() pattern: immediate cancel attempt + failedSettlements Map retry (60s, max 5 attempts)**
 - **[v1.1 Phase 2 / 02-02] Capture room/ws snapshots BEFORE settlement call — removeRoom() destroys live state**
+- **[v1.1 Phase 3 / 03-01] joinQueue auth is conditional (wagerAmount > 0) — practice matches stay accessible unauthenticated**
+- **[v1.1 Phase 3 / 03-01] fire handler uses inline this.isAuthenticated (not requireAuth) — fireRejected != fireError naming convention**
+- **[v1.1 Phase 3 / 03-01] SA-06 scope is escrowDepositConfirm only — only handler with client-supplied roomId targeting own room**
+- **[v1.1 Phase 3 / 03-01] SA-05 guard ordering: validateAction then turn ownership — mirrors fire handler pattern**
 
 ### Pending Todos
 
@@ -75,6 +79,6 @@ Progress: [████░░░░░░] ~25% (Phases 1-2 complete; Phase 3 ne
 
 ## Session Continuity
 
-Last session: 2026-02-22T08:30:00Z
-Stopped at: Phase 2 complete — all 5 security fixes verified (5/5); ready for Phase 3
-Resume file: None (next: `/gsd:plan-phase 3` for Server Auth & Game Integrity)
+Last session: 2026-02-22T09:40:25Z
+Stopped at: Completed 03-01-PLAN.md — SA-01/SA-05/SA-06 implemented (2/2 tasks, 2 commits)
+Resume file: None (next: 03-02-PLAN.md for rejoinRoom auth hardening / session fixation)

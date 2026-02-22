@@ -1481,13 +1481,55 @@ const mainsocket = (io) => {
         client.on('escrowDepositConfirm', async (data) => {
             if (!data || typeof data !== 'object') return
             const { roomId: rid, txSignature } = data
-            if (!rid || !txSignature) return
+            if (!rid || !txSignature || typeof txSignature !== 'string') return
 
             const room = findRoom(rid)
             if (!room) return
 
             const ws = wagerStates[rid]
             if (!ws) return
+
+            // SF-01: Verify deposit on-chain before accepting (DB: H013, H049, H051)
+            if (isEscrowEnabled()) {
+                try {
+                    // Single retry with 2s delay for devnet confirmation lag
+                    let escrowState = await getEscrowState(rid)
+                    if (!escrowState) {
+                        // Retry once after delay — TX may not be confirmed yet
+                        await new Promise(r => setTimeout(r, 2000))
+                        escrowState = await getEscrowState(rid)
+                    }
+
+                    if (!escrowState) {
+                        client.emit('escrowError', { reason: 'Escrow PDA not found on-chain' })
+                        return
+                    }
+
+                    // Determine which player this is
+                    const isHost = room.host?.socketId === client.id
+                    const depositConfirmed = isHost
+                        ? escrowState.playerOneDeposited
+                        : escrowState.playerTwoDeposited
+
+                    if (!depositConfirmed) {
+                        client.emit('escrowError', { reason: 'Deposit not confirmed on-chain' })
+                        return
+                    }
+
+                    // Verify wager amount matches (guard against amount spoofing)
+                    const LAMPORTS_PER_SOL = 1_000_000_000
+                    const expectedLamports = Math.round(ws.amount * LAMPORTS_PER_SOL)
+                    if (escrowState.wagerLamports !== expectedLamports) {
+                        client.emit('escrowError', { reason: 'On-chain wager amount mismatch' })
+                        return
+                    }
+                } catch (err) {
+                    console.error(`[Escrow] On-chain deposit verification failed for room ${rid}:`, err.message)
+                    client.emit('escrowError', { reason: 'Deposit verification failed' })
+                    return
+                }
+            }
+            // If escrow not enabled (dev mode), skip verification — same pattern as prestige burns
 
             // Track which players have confirmed deposits
             if (!ws.deposits) ws.deposits = {}

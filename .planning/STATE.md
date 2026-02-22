@@ -4,17 +4,17 @@
 
 See: .planning/PROJECT.md (updated 21 Feb 2026)
 **Core value:** Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** v1.1 Security Hardening — Phase 4 complete, Phase 5 next (Client & Supply Chain Security)
+**Current focus:** v1.1 Security Hardening — Phase 4 complete, Phase 4.1 next (Doc-Code Alignment)
 
 ## Current Position
 
 Milestone: v1.1 — Security Hardening
-Phase: 4 of 8 — Secrets & Key Management (Complete)
-Plans: 3/3 complete (04-01 keys.js + zeroization, 04-02 startup init + SIGHUP + Render secrets, 04-03 BFG purge + new keypair)
-Status: Complete — all 3 plans executed, verification passed 13/13
-Last activity: 22 Feb 2026 — Completed Phase 4 (BFG history purge, reclone to SolShot-clean)
+Phase: 4.1 of 8 — Doc-Code Alignment (In progress)
+Plans: 1/TBD complete (04.1-01: deposit timer + HP settlement + dead code removal)
+Status: In progress — 04.1-01 executed, remaining 04.1 plans next
+Last activity: 22 Feb 2026 — Completed 04.1-01-PLAN.md
 
-Progress: [████████░░] ~50% (Phases 1-4 complete; Phases 5-8 remain)
+Progress: [████████░░] ~52% (Phases 1-4 + 04.1-01 complete)
 
 ## Performance Metrics
 
@@ -83,6 +83,10 @@ Progress: [████████░░] ~50% (Phases 1-4 complete; Phases 5-8
 - **[v1.1 Phase 4 / 04-03] KM-01: New keypair at ~/.config/solana/solshot-server.json (pubkey: 3bpnmDhG3mv9HCfd9Jt1utAweVvhnJQUzZ74xiJ7oLYj)**
 - **[v1.1 Phase 4 / 04-03] KM-01: On-chain authority transfer deferred until devnet SOL available for program redeploy**
 - **[v1.1 Phase 4 / 04-03] Repo recloned to SolShot-clean after BFG force push — all SHAs rewritten, old clone invalid**
+- **[v1.1 Phase 4.1 / 04.1-01] DCA-01: depositTimers map + DEPOSIT_TIMEOUT_MS=120s; both joinRoom and joinQueue emit paths start timer; escrowDepositConfirm clears it**
+- **[v1.1 Phase 4.1 / 04.1-01] DCA-01: depositDeadlineMs field added to escrowDeposit event payload for client countdown rendering**
+- **[v1.1 Phase 4.1 / 04.1-01] DCA-03: reconnect_timeout uses roundWins→HP→scores decision chain; 'leave' reason always forfeits unconditionally**
+- **[v1.1 Phase 4.1 / 04.1-01] DCA-04: server/services/raydium.js deleted — config-only dead code, zero imports found**
 
 ### Pending Todos
 
@@ -100,6 +104,9 @@ Progress: [████████░░] ~50% (Phases 1-4 complete; Phases 5-8
 
 ## Session Continuity
 
-Last session: 2026-02-22
-Stopped at: Completed Phase 4 — all plans executed, verification passed 13/13, planning docs updated
-Resume file: None (next: `/gsd:discuss-phase 5` — Client & Supply Chain Security)
+Last session: 2026-02-22T21:58:29Z
+Stopped at: Completed 04.1-01-PLAN.md (deposit countdown timer + HP-based disconnect settlement + raydium.js deletion)
+Resume file: None (next: 04.1-02)
+
+### Roadmap Evolution
+- Phase 4.1 inserted after Phase 4: Doc-Code Alignment (URGENT) — litepaper QA revealed deposit countdown, permissionless reclaim, HP-based forfeit, and dead code gaps between docs and codebase

@@ -12,7 +12,7 @@ SolShot's three security audits (SOS, DB, BOK) revealed 15 CRITICAL and 23 HIGH-
 ## Phases
 
 - [x] **Phase 1: On-Chain Program Redesign** — Rewrite escrow program with config PDA, multisig authority, account constraints, pause mechanism, checked arithmetic, and all SOS CRITICAL/HIGH fixes *(completed 2026-02-21; test execution deferred — McAfee blocks local validator)*
-- [ ] **Phase 2: Server Financial Security** — Verify deposits on-chain, propagate settlement failures, fix rate limiter, add recovery mechanisms
+- [x] **Phase 2: Server Financial Security** — Verify deposits on-chain, propagate settlement failures, fix rate limiter, add recovery mechanisms *(completed 2026-02-22)*
 - [ ] **Phase 3: Server Auth & Game Integrity** — Auth guards on all handlers, rejoin re-verification, remove terrain/position manipulation vectors
 - [ ] **Phase 4: Secrets & Key Management** — Rotate keypair, purge git history, separate keys per service, add rotation mechanism
 - [ ] **Phase 5: Client & Supply Chain Security** — TX validation before signing, SRI hashes, CSP headers, remove global wallet exposure
@@ -57,8 +57,8 @@ Plans:
   5. A joiner whose wager doesn't match the queue's required wager is rejected before pairing
 **Plans:** 2 plans
 Plans:
-- [ ] 02-01-PLAN.md -- Fix Float64Array rate limiter (SF-04), queue wager validation (SF-05), on-chain deposit verification (SF-01)
-- [ ] 02-02-PLAN.md -- Settlement failure propagation (SF-02) and recovery via cancelMatchEscrow (SF-03)
+- [x] 02-01-PLAN.md -- Fix Float64Array rate limiter (SF-04), queue wager validation (SF-05), on-chain deposit verification (SF-01)
+- [x] 02-02-PLAN.md -- Settlement failure propagation (SF-02) and recovery via cancelMatchEscrow (SF-03)
 
 ---
 
@@ -157,7 +157,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. On-Chain Program Redesign | 3/3 | Complete (tests deferred) | 2026-02-21 |
-| 2. Server Financial Security | 0/2 | Planned | - |
+| 2. Server Financial Security | 2/2 | Complete | 2026-02-22 |
 | 3. Server Auth & Game Integrity | 0/TBD | Not started | - |
 | 4. Secrets & Key Management | 0/TBD | Not started | - |
 | 5. Client & Supply Chain Security | 0/TBD | Not started | - |
@@ -165,7 +165,7 @@ Plans:
 | 7. Infrastructure & Monitoring | 0/TBD | Not started | - |
 | 8. Verification & Re-Audit | 0/TBD | Not started | - |
 
-**Total:** 3/5+ plans complete (Phase 1 done; Phase 2 planned; Phases 3-8 TBD)
+**Total:** 5/7+ plans complete (Phases 1-2 done; Phases 3-8 TBD)
 
 ---
 
@@ -205,20 +205,20 @@ Plans:
 |---------|----------|-------|-------------|--------|
 | H001 | CRITICAL | 4 | KM-01 | Pending |
 | H006 | CRITICAL | 3 | SA-02 | Pending |
-| H013 | CRITICAL | 2 | SF-01 | Pending |
+| H013 | CRITICAL | 2 | SF-01 | ✅ Resolved |
 | H019 | CRITICAL | 5 | CS-01 | Pending |
 | H031 | CRITICAL | 5 | CS-02, CS-03 | Pending |
 | H047 | CRITICAL | 4 | KM-01 (downstream) | Pending |
-| H049 | CRITICAL | 2 | SF-01, SF-02 | Pending |
+| H049 | CRITICAL | 2 | SF-01, SF-02 | ✅ Resolved |
 | H053 | CRITICAL | 1 | OC-01 | ✅ Resolved |
 | H002 | HIGH | 4 | KM-02 | Pending |
 | H004 | HIGH | 4 | KM-03 | Pending |
 | H005 | HIGH | 4 | KM-04 | Pending |
 | H008 | HIGH | 3 | SA-01 | Pending |
-| H015 | HIGH | 2 | SF-02 | Pending |
-| H017 | HIGH | 2 | SF-05 | Pending |
-| H020/H050 | HIGH | 2 | SF-03 | Pending |
-| H021/H054 | HIGH | 2 | SF-04 | Pending |
+| H015 | HIGH | 2 | SF-02 | ✅ Resolved |
+| H017 | HIGH | 2 | SF-05 | ✅ Resolved |
+| H020/H050 | HIGH | 2 | SF-03 | ✅ Resolved |
+| H021/H054 | HIGH | 2 | SF-04 | ✅ Resolved |
 | H025 | HIGH | 6 | TE-01 | Pending |
 | H028 | HIGH | 6 | TE-03 | Pending |
 | H029 | HIGH | 6 | TE-02 | Pending |

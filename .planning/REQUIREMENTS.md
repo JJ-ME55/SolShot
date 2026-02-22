@@ -26,11 +26,11 @@ Derived from three completed audits:
 
 ## Server Financial Security
 
-- [ ] **SF-01**: Verify escrow deposits on-chain — call `connection.getParsedTransaction(txSignature)` in `escrowDepositConfirm` handler; verify amount, escrow PDA, and player match expected values (DB: H013, H049, H051)
-- [ ] **SF-02**: Propagate settlement failure — remove silent fallback at `solana.js:239-255`; return `{ success: false }` when escrow settlement fails (DB: H015)
-- [ ] **SF-03**: Add settlement failure recovery — call `cancelMatchEscrow()` on settlement failure; implement persistent failed-settlement queue with retry; preserve escrowPDA mapping before room teardown (DB: H020/H050)
-- [ ] **SF-04**: Fix Int32 rate limiter — replace `Int32Array` with `Float64Array` at `main.js:369-375` to restore all socket rate limiting (DB: H021/H054)
-- [ ] **SF-05**: Queue wager validation — validate joiner's wager matches queued match mode's required wager before pairing (DB: H017)
+- [x] **SF-01**: Verify escrow deposits on-chain — `getEscrowState(rid)` PDA boolean verification in `escrowDepositConfirm` handler; verifies deposit flags + wager amount on-chain (DB: H013, H049, H051)
+- [x] **SF-02**: Propagate settlement failure — `settleMatch()` returns `{ success: false }` when escrow settlement fails; no silent fallback (DB: H015)
+- [x] **SF-03**: Add settlement failure recovery — `handleSettlementFailure()` calls `cancelMatchEscrow()` immediately; `failedSettlements` Map retries every 60s (max 5); all 3 call sites transition to CANCELLED on failure (DB: H020/H050)
+- [x] **SF-04**: Fix Int32 rate limiter — `Float64Array` ring buffers at all 3 declarations; Date.now() timestamps stored correctly (DB: H021/H054)
+- [x] **SF-05**: Queue wager validation — peek `queue[0].wager` before `queue.shift()`; mismatch queues joiner separately with `queueWaiting` emit (DB: H017)
 
 ## Server Auth & Game Integrity
 

@@ -4,30 +4,30 @@
 
 See: .planning/PROJECT.md (updated 21 Feb 2026)
 **Core value:** Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** v1.1 Security Hardening — Phase 2 in progress (Server Financial Security)
+**Current focus:** v1.1 Security Hardening — Phase 2 complete, Phase 3 next (Server Auth & Game Integrity)
 
 ## Current Position
 
 Milestone: v1.1 — Security Hardening
-Phase: 2 of 8 — Server Financial Security (**In progress**)
-Plans: 2/TBD complete (02-01 rate limiter + queue validation + deposit verification; 02-02 settlement failure propagation + recovery)
-Status: In progress
-Last activity: 22 Feb 2026 — Completed 02-02-PLAN.md (SF-02/SF-03 closed: settlement failure propagation + cancelMatchEscrow recovery)
+Phase: 2 of 8 — Server Financial Security (**Complete**)
+Plans: 2/2 complete (02-01 rate limiter + queue validation + deposit verification; 02-02 settlement failure propagation + recovery)
+Status: Complete — verified 5/5 must-haves
+Last activity: 22 Feb 2026 — Phase 2 verified and closed; all 5 security fixes committed
 
-Progress: [███░░░░░░░] ~20% (Phase 1 complete + 2 plans in Phase 2)
+Progress: [████░░░░░░] ~25% (Phases 1-2 complete; Phase 3 next)
 
 ## Performance Metrics
 
 **Velocity:**
 - v1.0 plans completed: 15 (across 4 phases)
-- v1.1 plans completed: 4
+- v1.1 plans completed: 5
 
 **By Phase (v1.1):**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-on-chain-program-redesign | 3/3 | ~10min | ~3min |
-| 02-server-financial-security | 2/TBD | ~21min | ~10.5min |
+| 02-server-financial-security | 2/2 | ~21min | ~10.5min |
 | 03-server-auth-game-integrity | 0/TBD | — | — |
 | 04-secrets-key-management | 0/TBD | — | — |
 | 05-client-supply-chain-security | 0/TBD | — | — |
@@ -66,7 +66,6 @@ Progress: [███░░░░░░░] ~20% (Phase 1 complete + 2 plans in P
 
 - Run 25-test suite when McAfee exclusion is configured (`anchor test --provider.cluster localnet`)
 - Fresh devnet deploy with new program ID + initializeConfig() call
-- Phase 2 remaining plans: remaining server financial hardening (DB findings beyond H015/H020/H050)
 
 ### Blockers/Concerns
 - McAfee LiveSafe blocks solana-test-validator on Windows — need folder exclusion or temp disable to run tests
@@ -76,6 +75,6 @@ Progress: [███░░░░░░░] ~20% (Phase 1 complete + 2 plans in P
 
 ## Session Continuity
 
-Last session: 2026-02-22T07:37:48Z
-Stopped at: Completed 02-02-PLAN.md (SF-02 settlement failure propagation, SF-03 cancelMatchEscrow recovery at all 3 call sites)
-Resume file: None (next: next plan in Phase 2)
+Last session: 2026-02-22T08:30:00Z
+Stopped at: Phase 2 complete — all 5 security fixes verified (5/5); ready for Phase 3
+Resume file: None (next: `/gsd:plan-phase 3` for Server Auth & Game Integrity)

@@ -19,6 +19,9 @@ const BPS_DENOMINATOR: u64 = 10000;
 /// 24-hour timeout for auto-refund after match activation (in seconds)
 const TIMEOUT_SECONDS: i64 = 86400;
 
+/// 48-hour permissionless reclaim timeout (2x normal timeout) — DCA-02
+const PERMISSIONLESS_RECLAIM_TIMEOUT: i64 = TIMEOUT_SECONDS * 2; // 172800 seconds
+
 /// 1-hour settlement deadline after match activation (OC-07)
 const SETTLEMENT_TIMEOUT_SECONDS: i64 = 3600;
 
@@ -371,6 +374,68 @@ pub mod solshot_escrow {
 
         Ok(())
     }
+
+    /// DCA-02: Permissionless reclaim — anyone can trigger refund after 48 hours
+    /// Separate from cancel_match (which requires authority or player).
+    /// The caller receives PDA rent lamports as economic incentive.
+    pub fn permissionless_reclaim(ctx: Context<PermissionlessReclaim>) -> Result<()> {
+        // Read all values before any mutable borrow (Rust borrow checker)
+        let player_one_deposited = ctx.accounts.escrow.player_one_deposited;
+        let player_two_deposited = ctx.accounts.escrow.player_two_deposited;
+        let wager_lamports = ctx.accounts.escrow.wager_lamports;
+        let match_id = ctx.accounts.escrow.match_id.clone();
+        let escrow_state = ctx.accounts.escrow.state;
+
+        // Cannot reclaim already-terminal escrows
+        require!(
+            escrow_state != MatchState::Settled
+                && escrow_state != MatchState::Cancelled,
+            EscrowError::InvalidState
+        );
+
+        // Use activated_at if match was activated; otherwise created_at
+        let timeout_reference = if ctx.accounts.escrow.activated_at > 0 {
+            ctx.accounts.escrow.activated_at
+        } else {
+            ctx.accounts.escrow.created_at
+        };
+
+        // Checked arithmetic for 2x timeout
+        let reclaim_deadline = timeout_reference
+            .checked_add(PERMISSIONLESS_RECLAIM_TIMEOUT)
+            .ok_or(EscrowError::ArithmeticOverflow)?;
+
+        require!(
+            Clock::get()?.unix_timestamp > reclaim_deadline,
+            EscrowError::TooEarlyToReclaim
+        );
+
+        // Set terminal state BEFORE transfers (defense-in-depth)
+        {
+            let escrow = &mut ctx.accounts.escrow;
+            escrow.state = MatchState::Cancelled;
+        } // mutable borrow dropped
+
+        // Refund player one if they deposited
+        if player_one_deposited {
+            **ctx.accounts.escrow.to_account_info().try_borrow_mut_lamports()? -= wager_lamports;
+            **ctx.accounts.player_one.to_account_info().try_borrow_mut_lamports()? += wager_lamports;
+        }
+
+        // Refund player two if they deposited
+        if player_two_deposited {
+            **ctx.accounts.escrow.to_account_info().try_borrow_mut_lamports()? -= wager_lamports;
+            **ctx.accounts.player_two.to_account_info().try_borrow_mut_lamports()? += wager_lamports;
+        }
+
+        emit!(MatchCancelled {
+            match_id,
+            refunded_one: player_one_deposited,
+            refunded_two: player_two_deposited,
+        });
+
+        Ok(())
+    }
 }
 
 // ─────────────────────────────────────────────
@@ -583,6 +648,38 @@ pub struct CancelMatch<'info> {
     pub system_program: Program<'info, System>,
 }
 
+/// PermissionlessReclaim — anyone can reclaim after 2x timeout (DCA-02)
+/// No authority or player check. Caller receives PDA rent as incentive.
+#[derive(Accounts)]
+pub struct PermissionlessReclaim<'info> {
+    #[account(
+        mut,
+        seeds = [b"match", escrow.match_id.as_bytes()],
+        bump = escrow.bump,
+        close = caller,
+    )]
+    pub escrow: Account<'info, MatchEscrow>,
+
+    #[account(mut)]
+    pub caller: Signer<'info>,
+
+    /// CHECK: Must match escrow.player_one for refund routing
+    #[account(
+        mut,
+        constraint = player_one.key() == escrow.player_one @ EscrowError::InvalidPlayer,
+    )]
+    pub player_one: UncheckedAccount<'info>,
+
+    /// CHECK: Must match escrow.player_two for refund routing
+    #[account(
+        mut,
+        constraint = player_two.key() == escrow.player_two @ EscrowError::InvalidPlayer,
+    )]
+    pub player_two: UncheckedAccount<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
 // ─────────────────────────────────────────────
 // STATE
 // ─────────────────────────────────────────────
@@ -753,4 +850,6 @@ pub enum EscrowError {
     InvalidConfig,
     #[msg("Settlement deadline has passed")]
     SettlementExpired,
+    #[msg("Cannot reclaim before 2x timeout has elapsed")]
+    TooEarlyToReclaim,
 }

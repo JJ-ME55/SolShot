@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 21 Feb 2026)
 
 Milestone: v1.1 — Security Hardening
 Phase: 2 of 8 — Server Financial Security (**In progress**)
-Plans: 1/TBD complete (02-01 rate limiter + queue validation + deposit verification)
+Plans: 2/TBD complete (02-01 rate limiter + queue validation + deposit verification; 02-02 settlement failure propagation + recovery)
 Status: In progress
-Last activity: 22 Feb 2026 — Completed 02-01-PLAN.md (SF-01/SF-04/SF-05 closed)
+Last activity: 22 Feb 2026 — Completed 02-02-PLAN.md (SF-02/SF-03 closed: settlement failure propagation + cancelMatchEscrow recovery)
 
-Progress: [███░░░░░░░] ~18.75% (1.75/8 phases equiv — Phase 1 complete + 1 plan in Phase 2)
+Progress: [███░░░░░░░] ~20% (Phase 1 complete + 2 plans in Phase 2)
 
 ## Performance Metrics
 
@@ -27,7 +27,7 @@ Progress: [███░░░░░░░] ~18.75% (1.75/8 phases equiv — Phas
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-on-chain-program-redesign | 3/3 | ~10min | ~3min |
-| 02-server-financial-security | 1/TBD | ~12min | ~12min |
+| 02-server-financial-security | 2/TBD | ~21min | ~10.5min |
 | 03-server-auth-game-integrity | 0/TBD | — | — |
 | 04-secrets-key-management | 0/TBD | — | — |
 | 05-client-supply-chain-security | 0/TBD | — | — |
@@ -57,12 +57,16 @@ Progress: [███░░░░░░░] ~18.75% (1.75/8 phases equiv — Phas
 - **[v1.1 Phase 2 / 02-01] getEscrowState() PDA booleans over getParsedTransaction() — PDA is ground truth after on-chain deposit settles**
 - **[v1.1 Phase 2 / 02-01] isEscrowEnabled() guard pattern: wrap all escrow RPC in conditional — dev mode skips verification gracefully**
 - **[v1.1 Phase 2 / 02-01] Peek-then-consume queue pattern: queue[0] to validate wager, queue.shift() only after equality confirmed**
+- **[v1.1 Phase 2 / 02-02] settleMatch() returns { success: false } on escrow failure — no silent fallthrough to dev-mode (SF-02/H015)**
+- **[v1.1 Phase 2 / 02-02] cancelMatchEscrow imported directly from escrow.js in main.js — not re-exported via solana.js**
+- **[v1.1 Phase 2 / 02-02] handleSettlementFailure() pattern: immediate cancel attempt + failedSettlements Map retry (60s, max 5 attempts)**
+- **[v1.1 Phase 2 / 02-02] Capture room/ws snapshots BEFORE settlement call — removeRoom() destroys live state**
 
 ### Pending Todos
 
 - Run 25-test suite when McAfee exclusion is configured (`anchor test --provider.cluster localnet`)
 - Fresh devnet deploy with new program ID + initializeConfig() call
-- Phase 2 remaining plans: settlement failure propagation and remaining server financial hardening
+- Phase 2 remaining plans: remaining server financial hardening (DB findings beyond H015/H020/H050)
 
 ### Blockers/Concerns
 - McAfee LiveSafe blocks solana-test-validator on Windows — need folder exclusion or temp disable to run tests
@@ -72,6 +76,6 @@ Progress: [███░░░░░░░] ~18.75% (1.75/8 phases equiv — Phas
 
 ## Session Continuity
 
-Last session: 2026-02-22T07:15:37Z
-Stopped at: Completed 02-01-PLAN.md (SF-01 on-chain deposit verification, SF-04 rate limiter fix, SF-05 queue wager validation)
-Resume file: None (next: 02-02-PLAN.md)
+Last session: 2026-02-22T07:37:48Z
+Stopped at: Completed 02-02-PLAN.md (SF-02 settlement failure propagation, SF-03 cancelMatchEscrow recovery at all 3 call sites)
+Resume file: None (next: next plan in Phase 2)

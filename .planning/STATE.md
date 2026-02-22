@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 21 Feb 2026)
 
 Milestone: v1.1 — Security Hardening
 Phase: 5 of 8 — Client & Supply Chain Security (In progress)
-Plans: 1/TBD complete
-Status: In progress — 05-01 complete (CS-01 + CS-04)
-Last activity: 22 Feb 2026 — Completed 05-01-PLAN.md (TX validation + window.solWallet removal)
+Plans: 2/TBD complete
+Status: In progress — 05-01 (CS-01 + CS-04) and 05-02 (CS-02 + CS-03) complete
+Last activity: 22 Feb 2026 — Completed 05-02-PLAN.md (self-hosted Telegram SDK + CSP meta/Helmet)
 
-Progress: [█████████░] ~62% (Phases 1-5.1 complete; 05-02 + Phases 6-8 remaining)
+Progress: [█████████░] ~65% (Phases 1-5.2 complete; 05-03 + Phases 6-8 remaining)
 
 
 ## Performance Metrics
 
 **Velocity:**
 - v1.0 plans completed: 15 (across 4 phases)
-- v1.1 plans completed: 14
+- v1.1 plans completed: 15
 
 **By Phase (v1.1):**
 
@@ -32,7 +32,7 @@ Progress: [█████████░] ~62% (Phases 1-5.1 complete; 05-02 + 
 | 03-server-auth-game-integrity | 3/3 | ~5min | ~1.7min |
 | 04-secrets-key-management | 3/3 | ~15min | ~5min |
 | 04.1-doc-code-alignment | 2/2 | ~8min | ~4min |
-| 05-client-supply-chain-security | 1/TBD | ~10min | ~10min |
+| 05-client-supply-chain-security | 2/TBD | ~22min | ~11min |
 | 06-token-economy-hardening | 0/TBD | — | — |
 | 07-infrastructure-monitoring | 0/TBD | — | — |
 | 08-verification-re-audit | 0/TBD | — | — |
@@ -100,6 +100,10 @@ Progress: [█████████░] ~62% (Phases 1-5.1 complete; 05-02 + 
 - **[v1.1 Phase 5 / 05-01] CS-04: App.js rejoin uses useWallet() adapter hook directly — only needs publicKey + signMessage, not full SolShot context**
 - **[v1.1 Phase 5 / 05-01] CS-04: connected added to SolShotWalletContext value — required after polling removal in WalletDisplay and BarracksScreen**
 - **[v1.1 Phase 5 / 05-01] CS-04: WalletDisplay 1s polling interval eliminated — context provides reactive updates**
+- **[v1.1 Phase 5 / 05-02] CS-02: Self-hosting Telegram SDK at same origin — SRI on telegram.org CDN rejected (updates in-place, breaks hashes unpredictably)**
+- **[v1.1 Phase 5 / 05-02] CS-03: Defense-in-depth CSP: meta tag in index.html (SPA) + Helmet header (API) — both needed; Render may not forward headers**
+- **[v1.1 Phase 5 / 05-02] CS-03: INLINE_RUNTIME_CHUNK=false in .env — gitignored file, must be set manually in each dev environment (documented in .env.example)**
+- **[v1.1 Phase 5 / 05-02] Build uses react-app-rewired (not react-scripts) — config-overrides.js required for crypto/stream/buffer webpack polyfills**
 
 ### Pending Todos
 
@@ -114,13 +118,13 @@ Progress: [█████████░] ~62% (Phases 1-5.1 complete; 05-02 + 
 - Devnet wallet at 0.97 SOL — need ~2.12 SOL for program deploy (airdrop rate-limited)
 - SOS finding H029 (outcome verification / dispute mechanism) is deferred — requires game theory analysis beyond code remediation
 - Working directory is now SolShot-clean (not SolShot) — needs directory swap
-- Pre-existing build error: webpack 5 crypto polyfill missing for @toruslabs/eccrypto — unrelated to Phase 5 changes
+- Pre-existing build error resolved by using `npm run build` (react-app-rewired) not `npx react-scripts build`
 
 ## Session Continuity
 
-Last session: 2026-02-22T23:25:43Z
-Stopped at: Phase 5, plan 05-01 complete — CS-01 TX validation + CS-04 window.solWallet removal
-Resume file: None (next: Phase 5, plan 05-02)
+Last session: 2026-02-22T23:29:21Z
+Stopped at: Phase 5, plan 05-02 complete — CS-02 self-hosted SDK + CS-03 CSP meta/Helmet
+Resume file: None (next: Phase 5, plan 05-03 if it exists, else Phase 6)
 
 ### Roadmap Evolution
 - Phase 4.1 inserted after Phase 4: Doc-Code Alignment (URGENT) — litepaper QA revealed deposit countdown, permissionless reclaim, HP-based forfeit, and dead code gaps between docs and codebase

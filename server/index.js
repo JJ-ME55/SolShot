@@ -34,9 +34,31 @@ const io = new socket.Server(server, {
     }
 })
 
-// Security headers
+// CS-03: Enable Content Security Policy (DB: H031)
 app.use(helmet({
-    contentSecurityPolicy: false,  // CSP handled by client/CDN
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            imgSrc: ["'self'", "data:", "blob:"],
+            connectSrc: [
+                "'self'",
+                "https://api.devnet.solana.com",
+                "wss://api.devnet.solana.com",
+                "https://api.mainnet-beta.solana.com",
+                "wss://api.mainnet-beta.solana.com",
+                "https://solshot-server.onrender.com",
+                "wss://solshot-server.onrender.com",
+                "ws://localhost:5001",
+                "wss://localhost:5001",
+            ],
+            fontSrc: ["'self'", "https://fonts.gstatic.com"],
+            frameSrc: ["'none'"],
+            objectSrc: ["'none'"],
+            baseUri: ["'self'"],
+        },
+    },
     crossOriginEmbedderPolicy: false,
 }))
 

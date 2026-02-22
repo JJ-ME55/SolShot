@@ -8,6 +8,7 @@ import { initGold, getBalance, earnGold, spendGold, awardKillBonus, awardRoundWi
 import { WEAPON_CATALOG, getWeapon, getWeaponCost, getAllLaunchWeapons } from '../models/Weapon.js';
 import { handleAuthenticate } from '../middleware/auth.js';
 import { verifyBalance, isValidWager, settleMatch, refundWager, WAGER_TIERS, MATCH_MODES, validateMatchMode, isEscrowEnabled, createMatchEscrow, buildDepositTransaction, getEscrowState } from '../services/solana.js';
+import { cancelMatchEscrow } from '../services/escrow.js';
 import { recordMatchPlayed, prestigeBurn, getPrestigeInfo, getShotBalance, PRESTIGE_TIERS, PRESTIGE_WEAPON_IDS, loadMilestoneState, saveMilestoneState, verifyBurnTransaction } from '../services/shot-token.js';
 import { trackConnection, trackDisconnection, trackMatchCreated, trackMatchCompleted, trackMatchCancelled, trackWager, trackSettlement, trackForfeit, trackShot, trackDamage, trackGoldEarned, trackShotEmission, trackShotBurn, trackError } from '../services/monitoring.js';
 import { requireAuth, validatePayload, validateFireParams, sanitizeName, withLock, safeHandler } from '../middleware/guards.js';
@@ -66,6 +67,68 @@ function removeFromAllQueues(socketId) {
             if (queue.length === 0) matchmakingQueues.delete(key);
         }
     }
+}
+
+// SF-03: In-memory store for failed settlements — retry via cancelMatchEscrow (DB: H020/H050)
+const failedSettlements = new Map();
+// Shape: { [roomId]: { matchId, escrowPDA, p1wallet, p2wallet, wagerSOL, failedAt, attempts, error } }
+
+// SF-03: Retry failed settlements every 60 seconds
+setInterval(async () => {
+    for (const [matchId, data] of failedSettlements.entries()) {
+        if (data.attempts >= 5) {
+            console.error(`[Recovery] Giving up on settlement recovery for ${matchId} after ${data.attempts} attempts`);
+            failedSettlements.delete(matchId);
+            continue;
+        }
+        try {
+            console.log(`[Recovery] Retrying cancel for ${matchId} (attempt ${data.attempts + 1})`);
+            const result = await cancelMatchEscrow(matchId, data.p1wallet, data.p2wallet);
+            if (result.success) {
+                console.log(`[Recovery] Successfully cancelled escrow for ${matchId}: ${result.txSignature}`);
+                failedSettlements.delete(matchId);
+            } else {
+                data.attempts++;
+                console.warn(`[Recovery] Cancel retry failed for ${matchId}: ${result.error}`);
+            }
+        } catch (err) {
+            data.attempts++;
+            console.error(`[Recovery] Cancel retry threw for ${matchId}:`, err.message);
+        }
+    }
+}, 60_000);
+
+// SF-03: Attempt cancel recovery and store for retry if needed
+async function handleSettlementFailure(roomId, room, ws, error) {
+    const p1wallet = ws?.wallets?.[room?.host?.socketId] || null;
+    const p2wallet = ws?.wallets?.[room?.player?.socketId] || null;
+    const escrowPDA = room?.escrowPDA || null;
+
+    if (p1wallet && p2wallet) {
+        try {
+            const cancelResult = await cancelMatchEscrow(roomId, p1wallet, p2wallet);
+            if (cancelResult.success) {
+                console.log(`[Recovery] Immediate cancel succeeded for ${roomId}: ${cancelResult.txSignature}`);
+                return; // Recovery succeeded, no need to store
+            }
+            console.warn(`[Recovery] Immediate cancel failed for ${roomId}: ${cancelResult.error}`);
+        } catch (err) {
+            console.error(`[Recovery] Immediate cancel threw for ${roomId}:`, err.message);
+        }
+    }
+
+    // Store for retry
+    failedSettlements.set(roomId, {
+        matchId: roomId,
+        escrowPDA,
+        p1wallet,
+        p2wallet,
+        wagerSOL: ws?.amount || 0,
+        failedAt: Date.now(),
+        attempts: 1,
+        error: error || 'unknown',
+    });
+    console.warn(`[Recovery] Stored failed settlement for retry: ${roomId}`);
 }
 
 const SHOP_DURATION = 30; // seconds
@@ -262,10 +325,19 @@ function startTurnTimer(io, roomId) {
                 const winnerWallet = wsState.wallets ? wsState.wallets[opponentId] : null
                 const loserWallet = wsState.wallets ? wsState.wallets[currentTurnId] : null
                 if (winnerWallet && loserWallet) {
+                    // SF-03: Capture room/ws before settlement — removeRoom() destroys them
+                    const roomSnapshot = room ? { host: room.host, player: room.player, escrowPDA: room.escrowPDA } : null
+                    const wsSnapshot = wsState ? { amount: wsState.amount, wallets: { ...wsState.wallets } } : null
                     try {
-                        await settleMatch(winnerWallet, loserWallet, wsState.amount, roomId)
+                        const result = await settleMatch(winnerWallet, loserWallet, wsState.amount, roomId)
+                        // SF-02: Check for propagated failure
+                        if (!result.success) {
+                            console.error(`[Forfeit] Settlement returned failure for room ${roomId}:`, result.error)
+                            await handleSettlementFailure(roomId, roomSnapshot, wsSnapshot, result.error)
+                        }
                     } catch (err) {
                         console.error(`[Forfeit] Settlement error for room ${roomId}:`, err.message)
+                        await handleSettlementFailure(roomId, roomSnapshot, wsSnapshot, err.message)
                     }
                 } else {
                     console.warn(`[Forfeit] Missing wallet addresses for settlement in room ${roomId}`)
@@ -505,24 +577,36 @@ const mainsocket = (io) => {
                         const opponentWallet = opponentId ? ws.wallets[opponentId] : null
 
                         if (opponentWallet && disconnectorWallet) {
+                            // SF-03: Capture room/ws snapshots before settlement
+                            const roomSnap = room ? { host: room.host, player: room.player, escrowPDA: room.escrowPDA } : null
+                            const wsSnap = ws ? { amount: ws.amount, wallets: { ...ws.wallets } } : null
                             try {
                                 const settlementResult = await settleMatch(opponentWallet, disconnectorWallet, ws.amount, roomId)
-                                console.log(`[Solana] Forfeit settlement (${reason}):`, settlementResult)
-                                trackForfeit()
-                                if (settlementResult.settlement) trackSettlement({ winnerPayout: settlementResult.settlement.winner, treasuryFee: settlementResult.settlement.treasury, opsFee: settlementResult.settlement.ops })
-                                transitionState(currentMs, MATCH_STATES.COMPLETE)
-                                if (opponentId) {
-                                    io.to(opponentId).emit('matchSettled', {
-                                        type: 'forfeit',
-                                        winner: opponentId,
-                                        settlement: settlementResult.settlement,
-                                        txSignature: settlementResult.txSignature
-                                    })
+                                // SF-02: Check for propagated failure
+                                if (!settlementResult.success) {
+                                    console.error(`[Solana] Forfeit settlement failed (${reason}):`, settlementResult.error)
+                                    transitionState(currentMs, MATCH_STATES.CANCELLED)
+                                    trackError(new Error(settlementResult.error || 'settlement_failed'), 'forfeit_settlement')
+                                    await handleSettlementFailure(roomId, roomSnap, wsSnap, settlementResult.error)
+                                } else {
+                                    console.log(`[Solana] Forfeit settlement (${reason}):`, settlementResult)
+                                    trackForfeit()
+                                    if (settlementResult.settlement) trackSettlement({ winnerPayout: settlementResult.settlement.winner, treasuryFee: settlementResult.settlement.treasury, opsFee: settlementResult.settlement.ops })
+                                    transitionState(currentMs, MATCH_STATES.COMPLETE)
+                                    if (opponentId) {
+                                        io.to(opponentId).emit('matchSettled', {
+                                            type: 'forfeit',
+                                            winner: opponentId,
+                                            settlement: settlementResult.settlement,
+                                            txSignature: settlementResult.txSignature
+                                        })
+                                    }
                                 }
                             } catch (err) {
                                 console.error(`[Solana] Forfeit settlement error (${reason}):`, err.message)
                                 transitionState(currentMs, MATCH_STATES.CANCELLED)
                                 trackError(err, 'forfeit_settlement')
+                                await handleSettlementFailure(roomId, roomSnap, wsSnap, err.message)
                             }
                         } else {
                             transitionState(currentMs, MATCH_STATES.CANCELLED)
@@ -1837,25 +1921,39 @@ const mainsocket = (io) => {
                             const loserId = matchResult.winner === hostId ? playerId : hostId
                             const loserWallet = ws.wallets[loserId] || null
                             if (winnerWallet && loserWallet) {
+                                // SF-03: Capture room/ws snapshots before settlement
+                                const roomSnap = findRoom(roomId)
+                                const roomSnapData = roomSnap ? { host: roomSnap.host, player: roomSnap.player, escrowPDA: roomSnap.escrowPDA } : null
+                                const wsSnapData = ws ? { amount: ws.amount, wallets: { ...ws.wallets } } : null
                                 try {
                                     const sResult = await settleMatch(winnerWallet, loserWallet, ws.amount, roomId)
-                                    settlementInfo = {
-                                        wager: ws.amount,
-                                        totalPot: ws.amount * 2,
-                                        winnerPayout: sResult.settlement.winner,
-                                        treasuryFee: sResult.settlement.treasury,
-                                        opsFee: sResult.settlement.ops,
-                                        txSignature: sResult.txSignature
+                                    // SF-02: Check for propagated failure
+                                    if (!sResult.success) {
+                                        console.error('[Solana] Settlement returned failure:', sResult.error)
+                                        settlementInfo = { error: sResult.error, wager: ws.amount }
+                                        transitionState(ms, MATCH_STATES.CANCELLED)
+                                        trackError(new Error(sResult.error || 'settlement_failed'), 'settlement')
+                                        await handleSettlementFailure(roomId, roomSnapData, wsSnapData, sResult.error)
+                                    } else {
+                                        settlementInfo = {
+                                            wager: ws.amount,
+                                            totalPot: ws.amount * 2,
+                                            winnerPayout: sResult.settlement.winner,
+                                            treasuryFee: sResult.settlement.treasury,
+                                            opsFee: sResult.settlement.ops,
+                                            txSignature: sResult.txSignature
+                                        }
+                                        console.log('[Solana] Match settled:', settlementInfo)
+                                        // H064: Only transition to COMPLETE on success
+                                        transitionState(ms, MATCH_STATES.COMPLETE)
                                     }
-                                    console.log('[Solana] Match settled:', settlementInfo)
-                                    // H064: Only transition to COMPLETE on success
-                                    transitionState(ms, MATCH_STATES.COMPLETE)
                                 } catch (err) {
                                     console.error('[Solana] Settlement error:', err.message)
                                     settlementInfo = { error: err.message, wager: ws.amount }
                                     // H064: Transition to CANCELLED on error, NOT COMPLETE
                                     transitionState(ms, MATCH_STATES.CANCELLED)
                                     trackError(err, 'settlement')
+                                    await handleSettlementFailure(roomId, roomSnapData, wsSnapData, err.message)
                                 }
                             } else {
                                 // No wallets — no wager settlement needed

@@ -34,12 +34,12 @@ Derived from three completed audits:
 
 ## Server Auth & Game Integrity
 
-- [ ] **SA-01**: Add auth guards to all socket handlers — apply `requireAuth(client)` to all 24 unguarded handlers that affect game state or financial operations (DB: H008)
-- [ ] **SA-02**: Require Ed25519 re-verification on rejoin — add signature check in `rejoinRoom` handler before restoring `isAuthenticated` (DB: H006)
-- [ ] **SA-03**: Remove or gate terrainPath handler — delete handler entirely or restrict to pre-BATTLE states and host-only (DB: H033)
-- [ ] **SA-04**: Fix position manipulation — remove fire handler position writeback; use server position as authoritative; add distance validation to `positionUpdate` (DB: H034, H035)
-- [ ] **SA-05**: Add turn ownership to step handlers — add `ms.currentTurn !== client.id` check to stepLeft/stepRight (DB: H036)
-- [ ] **SA-06**: Cross-room event isolation — validate `roomId` against socket's actual room membership in all handlers accepting client-supplied roomId (DB: H009)
+- [x] **SA-01**: Add auth guards to all socket handlers — apply `requireAuth(client)` to all 24 unguarded handlers that affect game state or financial operations (DB: H008)
+- [x] **SA-02**: Require Ed25519 re-verification on rejoin — add signature check in `rejoinRoom` handler before restoring `isAuthenticated` (DB: H006)
+- [x] **SA-03**: Remove or gate terrainPath handler — delete handler entirely or restrict to pre-BATTLE states and host-only (DB: H033)
+- [x] **SA-04**: Fix position manipulation — remove fire handler position writeback; use server position as authoritative; add distance validation to `positionUpdate` (DB: H034, H035)
+- [x] **SA-05**: Add turn ownership to step handlers — add `ms.currentTurn !== client.id` check to stepLeft/stepRight (DB: H036)
+- [x] **SA-06**: Cross-room event isolation — validate `roomId` against socket's actual room membership in all handlers accepting client-supplied roomId (DB: H009)
 
 ## Secrets & Key Management
 

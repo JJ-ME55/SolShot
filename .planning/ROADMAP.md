@@ -13,7 +13,7 @@ SolShot's three security audits (SOS, DB, BOK) revealed 15 CRITICAL and 23 HIGH-
 
 - [x] **Phase 1: On-Chain Program Redesign** — Rewrite escrow program with config PDA, multisig authority, account constraints, pause mechanism, checked arithmetic, and all SOS CRITICAL/HIGH fixes *(completed 2026-02-21; test execution deferred — McAfee blocks local validator)*
 - [x] **Phase 2: Server Financial Security** — Verify deposits on-chain, propagate settlement failures, fix rate limiter, add recovery mechanisms *(completed 2026-02-22)*
-- [ ] **Phase 3: Server Auth & Game Integrity** — Auth guards on all handlers, rejoin re-verification, remove terrain/position manipulation vectors
+- [x] **Phase 3: Server Auth & Game Integrity** — Auth guards on all handlers, rejoin re-verification, remove terrain/position manipulation vectors *(completed 2026-02-22)*
 - [ ] **Phase 4: Secrets & Key Management** — Rotate keypair, purge git history, separate keys per service, add rotation mechanism
 - [ ] **Phase 5: Client & Supply Chain Security** — TX validation before signing, SRI hashes, CSP headers, remove global wallet exposure
 - [ ] **Phase 6: Token Economy Hardening** — Persist deduplication Sets to MongoDB, fail-hard on emission counter reset
@@ -76,9 +76,9 @@ Plans:
   6. Sending an event with a roomId the socket is not in is rejected
 **Plans:** 3 plans
 Plans:
-- [ ] 03-01-PLAN.md -- Auth guards on 14 handlers (SA-01) + turn ownership on step handlers (SA-05) + cross-room isolation (SA-06)
-- [ ] 03-02-PLAN.md -- Delete terrainPath handler (SA-03) + fix fire position writeback + positionUpdate distance validation (SA-04)
-- [ ] 03-03-PLAN.md -- Ed25519 rejoin re-verification on server + client (SA-02)
+- [x] 03-01-PLAN.md -- Auth guards on 14 handlers (SA-01) + turn ownership on step handlers (SA-05) + cross-room isolation (SA-06)
+- [x] 03-02-PLAN.md -- Delete terrainPath handler (SA-03) + fix fire position writeback + positionUpdate distance validation (SA-04)
+- [x] 03-03-PLAN.md -- Ed25519 rejoin re-verification on server + client (SA-02)
 
 ---
 
@@ -162,14 +162,14 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. On-Chain Program Redesign | 3/3 | Complete (tests deferred) | 2026-02-21 |
 | 2. Server Financial Security | 2/2 | Complete | 2026-02-22 |
-| 3. Server Auth & Game Integrity | 0/3 | Planned | - |
+| 3. Server Auth & Game Integrity | 3/3 | Complete | 2026-02-22 |
 | 4. Secrets & Key Management | 0/TBD | Not started | - |
 | 5. Client & Supply Chain Security | 0/TBD | Not started | - |
 | 6. Token Economy Hardening | 0/TBD | Not started | - |
 | 7. Infrastructure & Monitoring | 0/TBD | Not started | - |
 | 8. Verification & Re-Audit | 0/TBD | Not started | - |
 
-**Total:** 5/8+ plans complete (Phases 1-2 done; Phase 3 planned; Phases 4-8 TBD)
+**Total:** 8/8+ plans complete (Phases 1-3 done; Phases 4-8 TBD)
 
 ---
 
@@ -208,7 +208,7 @@ Plans:
 | Finding | Severity | Phase | Requirement | Status |
 |---------|----------|-------|-------------|--------|
 | H001 | CRITICAL | 4 | KM-01 | Pending |
-| H006 | CRITICAL | 3 | SA-02 | Pending |
+| H006 | CRITICAL | 3 | SA-02 | ✅ Resolved |
 | H013 | CRITICAL | 2 | SF-01 | ✅ Resolved |
 | H019 | CRITICAL | 5 | CS-01 | Pending |
 | H031 | CRITICAL | 5 | CS-02, CS-03 | Pending |
@@ -218,7 +218,7 @@ Plans:
 | H002 | HIGH | 4 | KM-02 | Pending |
 | H004 | HIGH | 4 | KM-03 | Pending |
 | H005 | HIGH | 4 | KM-04 | Pending |
-| H008 | HIGH | 3 | SA-01 | Pending |
+| H008 | HIGH | 3 | SA-01 | ✅ Resolved |
 | H015 | HIGH | 2 | SF-02 | ✅ Resolved |
 | H017 | HIGH | 2 | SF-05 | ✅ Resolved |
 | H020/H050 | HIGH | 2 | SF-03 | ✅ Resolved |
@@ -226,9 +226,9 @@ Plans:
 | H025 | HIGH | 6 | TE-01 | Pending |
 | H028 | HIGH | 6 | TE-03 | Pending |
 | H029 | HIGH | 6 | TE-02 | Pending |
-| H033 | HIGH | 3 | SA-03 | Pending |
-| H035 | HIGH | 3 | SA-04 | Pending |
-| H036 | HIGH | 3 | SA-05 | Pending |
+| H033 | HIGH | 3 | SA-03 | ✅ Resolved |
+| H035 | HIGH | 3 | SA-04 | ✅ Resolved |
+| H036 | HIGH | 3 | SA-05 | ✅ Resolved |
 | H045 | HIGH | 4 | KM-05 | Pending |
 | H048 | HIGH | 1 | OC-03 | ✅ Resolved |
 

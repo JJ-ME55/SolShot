@@ -4,23 +4,23 @@
 
 See: .planning/PROJECT.md (updated 21 Feb 2026)
 **Core value:** Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** v1.1 Security Hardening — Phase 3 in progress (Server Auth & Game Integrity)
+**Current focus:** v1.1 Security Hardening — Phase 4 next (Secrets & Key Management)
 
 ## Current Position
 
 Milestone: v1.1 — Security Hardening
 Phase: 3 of 8 — Server Auth & Game Integrity (**Phase complete**)
 Plans: 3/3 complete (03-01 SA-01/SA-05/SA-06; 03-02 SA-03/SA-04; 03-03 SA-02 rejoin Ed25519)
-Status: Phase 3 complete — ready for Phase 4 (secrets/key management)
-Last activity: 22 Feb 2026 — Completed 03-03-PLAN.md
+Status: Phase 3 verified and complete — ready for Phase 4 (secrets/key management)
+Last activity: 22 Feb 2026 — Phase 3 verified (6/6 must-haves passed)
 
-Progress: [█████░░░░░] ~35% (Phases 1-2 complete; Phase 3 complete; Phase 4 next)
+Progress: [█████░░░░░] ~37.5% (Phases 1-3 complete; Phase 4 next)
 
 ## Performance Metrics
 
 **Velocity:**
 - v1.0 plans completed: 15 (across 4 phases)
-- v1.1 plans completed: 5
+- v1.1 plans completed: 8
 
 **By Phase (v1.1):**
 
@@ -28,7 +28,7 @@ Progress: [█████░░░░░] ~35% (Phases 1-2 complete; Phase 3 co
 |-------|-------|-------|----------|
 | 01-on-chain-program-redesign | 3/3 | ~10min | ~3min |
 | 02-server-financial-security | 2/2 | ~21min | ~10.5min |
-| 03-server-auth-game-integrity | 2/3 | ~4min | ~2min |
+| 03-server-auth-game-integrity | 3/3 | ~5min | ~1.7min |
 | 04-secrets-key-management | 0/TBD | — | — |
 | 05-client-supply-chain-security | 0/TBD | — | — |
 | 06-token-economy-hardening | 0/TBD | — | — |
@@ -86,6 +86,6 @@ Progress: [█████░░░░░] ~35% (Phases 1-2 complete; Phase 3 co
 
 ## Session Continuity
 
-Last session: 2026-02-22T09:48:05Z
-Stopped at: Completed 03-03-PLAN.md — SA-02 rejoin Ed25519 verification (2/2 tasks, 2 commits)
+Last session: 2026-02-22
+Stopped at: Phase 3 complete — all 3 plans executed, 6/6 must-haves verified, planning docs updated
 Resume file: None (next: Phase 4 — secrets/key management)

@@ -74,7 +74,11 @@ Plans:
   4. Firing with a position > 50px from server position uses server position — client position is not written back to server state
   5. Calling `stepLeft` during the opponent's turn is rejected — turn ownership check enforced
   6. Sending an event with a roomId the socket is not in is rejected
-**Plans:** TBD
+**Plans:** 3 plans
+Plans:
+- [ ] 03-01-PLAN.md -- Auth guards on 14 handlers (SA-01) + turn ownership on step handlers (SA-05) + cross-room isolation (SA-06)
+- [ ] 03-02-PLAN.md -- Delete terrainPath handler (SA-03) + fix fire position writeback + positionUpdate distance validation (SA-04)
+- [ ] 03-03-PLAN.md -- Ed25519 rejoin re-verification on server + client (SA-02)
 
 ---
 
@@ -158,14 +162,14 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. On-Chain Program Redesign | 3/3 | Complete (tests deferred) | 2026-02-21 |
 | 2. Server Financial Security | 2/2 | Complete | 2026-02-22 |
-| 3. Server Auth & Game Integrity | 0/TBD | Not started | - |
+| 3. Server Auth & Game Integrity | 0/3 | Planned | - |
 | 4. Secrets & Key Management | 0/TBD | Not started | - |
 | 5. Client & Supply Chain Security | 0/TBD | Not started | - |
 | 6. Token Economy Hardening | 0/TBD | Not started | - |
 | 7. Infrastructure & Monitoring | 0/TBD | Not started | - |
 | 8. Verification & Re-Audit | 0/TBD | Not started | - |
 
-**Total:** 5/7+ plans complete (Phases 1-2 done; Phases 3-8 TBD)
+**Total:** 5/8+ plans complete (Phases 1-2 done; Phase 3 planned; Phases 4-8 TBD)
 
 ---
 

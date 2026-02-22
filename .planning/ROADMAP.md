@@ -93,7 +93,11 @@ Plans:
   3. `escrow.js` and `solana.js` load different keypairs (or the same key via a single shared module — not independently)
   4. After server startup, the secret key bytes are zeroed out in the original Uint8Array
   5. The server supports SIGHUP-triggered credential reload without restart
-**Plans:** TBD
+**Plans:** 3 plans
+Plans:
+- [ ] 04-01-PLAN.md -- Centralized key module (keys.js) with zeroization; refactor escrow.js + solana.js to use it (KM-03, KM-04)
+- [ ] 04-02-PLAN.md -- SIGHUP credential reload + admin endpoint in index.js; render.yaml secrets; .gitignore hardening (KM-02, KM-05)
+- [ ] 04-03-PLAN.md -- Git history purge via BFG; generate new keypair; reclone (KM-01) [manual]
 
 ---
 
@@ -163,13 +167,13 @@ Plans:
 | 1. On-Chain Program Redesign | 3/3 | Complete (tests deferred) | 2026-02-21 |
 | 2. Server Financial Security | 2/2 | Complete | 2026-02-22 |
 | 3. Server Auth & Game Integrity | 3/3 | Complete | 2026-02-22 |
-| 4. Secrets & Key Management | 0/TBD | Not started | - |
+| 4. Secrets & Key Management | 0/3 | Planned | - |
 | 5. Client & Supply Chain Security | 0/TBD | Not started | - |
 | 6. Token Economy Hardening | 0/TBD | Not started | - |
 | 7. Infrastructure & Monitoring | 0/TBD | Not started | - |
 | 8. Verification & Re-Audit | 0/TBD | Not started | - |
 
-**Total:** 8/8+ plans complete (Phases 1-3 done; Phases 4-8 TBD)
+**Total:** 8/11+ plans complete (Phases 1-3 done; Phase 4 planned; Phases 5-8 TBD)
 
 ---
 

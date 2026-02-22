@@ -29,3 +29,7 @@ test-ledger/
 *-keypair.json
 nul
 _archive/junk/nul
+
+# Keypair files — never commit raw secret keys
+solshot-dev.json
+solshot-server.json

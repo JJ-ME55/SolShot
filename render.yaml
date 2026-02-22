@@ -1,10 +1,10 @@
 # Render deployment config for SolShot server
 # Deploy: Connect GitHub repo → Render detects this file automatically
 #
-# After connecting repo, set these SECRET env vars in the Render dashboard:
-#   SOLANA_KEYPAIR_JSON  — paste contents of solshot-dev.json (the JSON byte array)
-#   JWT_SECRET           — auto-generated below, or set your own
-#   MONGODB_URI          — from MongoDB Atlas (optional for devnet testing)
+# After connecting repo, these secrets are prompted during Blueprint setup (sync: false):
+#   SOLANA_KEYPAIR_JSON  — server authority keypair (JSON byte array)
+#   ADMIN_API_KEY        — for /api/admin/reload-keys endpoint
+#   MONGODB_URI          — from MongoDB Atlas
 
 services:
   - type: web
@@ -34,8 +34,11 @@ services:
         value: https://solshot.gg,https://www.solshot.gg,https://sol-shot.vercel.app
       - key: JWT_SECRET
         generateValue: true
-      # Set these manually in dashboard (secrets — don't commit):
-      # - SOLANA_KEYPAIR_JSON  (paste the raw JSON array from solshot-dev.json)
-      # - MONGODB_URI          (from Atlas, or omit for no persistence)
+      - key: SOLANA_KEYPAIR_JSON
+        sync: false
+      - key: ADMIN_API_KEY
+        sync: false
+      - key: MONGODB_URI
+        sync: false
     healthCheckPath: /health
     autoDeploy: true

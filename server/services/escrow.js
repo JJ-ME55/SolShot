@@ -12,13 +12,14 @@
  *   updateConfig     — rotate authority/treasury/ops addresses
  *   createMatch      — server creates PDA escrow for a room
  *   settleMatch      — server distributes pot (90/7/3 split)
- *   cancelMatch      — server refunds both players
+ *   cancelMatch              — server refunds both players
+ *   permissionlessReclaim    — anyone triggers 48h safety refund (DCA-02)
  *
  * Client-side (not here):
  *   depositWager     — player signs + sends from their wallet
  */
 
-import { Connection, PublicKey, Transaction, LAMPORTS_PER_SOL } from '@solana/web3.js';
+import { Connection, PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { AnchorProvider, Program, Wallet } from '@coral-xyz/anchor';
 import BN from 'bn.js';
 import fs from 'fs';
@@ -461,6 +462,46 @@ export async function cancelMatchEscrow(matchId, playerOneAddress, playerTwoAddr
         };
     } catch (err) {
         console.error(`[Escrow] cancelMatch failed for ${matchId}:`, err.message);
+        return { success: false, error: err.message };
+    }
+}
+
+/**
+ * DCA-02: Permissionless reclaim — anyone can trigger refund after 48 hours.
+ * Caller receives PDA rent as incentive. No authority/player restriction.
+ *
+ * @param {string} matchId
+ * @param {string} playerOneAddress
+ * @param {string} playerTwoAddress
+ * @returns {Promise<{success: boolean, txSignature?: string, error?: string}>}
+ */
+export async function permissionlessReclaimEscrow(matchId, playerOneAddress, playerTwoAddress) {
+    if (!program) return { success: false, error: 'Escrow not initialized' };
+
+    try {
+        const [escrowPDA] = PublicKey.findProgramAddressSync(
+            [Buffer.from('match'), Buffer.from(matchId)],
+            program.programId,
+        );
+
+        const playerOnePubkey = new PublicKey(playerOneAddress);
+        const playerTwoPubkey = new PublicKey(playerTwoAddress);
+
+        const tx = await program.methods
+            .permissionlessReclaim()
+            .accounts({
+                escrow: escrowPDA,
+                caller: provider.wallet.publicKey,
+                playerOne: playerOnePubkey,
+                playerTwo: playerTwoPubkey,
+                systemProgram: SystemProgram.programId,
+            })
+            .rpc();
+
+        console.log(`[Escrow] Permissionless reclaim TX: ${tx}`);
+        return { success: true, txSignature: tx };
+    } catch (err) {
+        console.error(`[Escrow] Permissionless reclaim failed for ${matchId}:`, err.message);
         return { success: false, error: err.message };
     }
 }

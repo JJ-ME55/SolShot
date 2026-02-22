@@ -361,6 +361,67 @@
       "args": []
     },
     {
+      "name": "permissionless_reclaim",
+      "docs": [
+        "DCA-02: Permissionless reclaim — anyone can trigger refund after 48 hours",
+        "Separate from cancel_match (which requires authority or player).",
+        "The caller receives PDA rent lamports as economic incentive."
+      ],
+      "discriminator": [
+        106,
+        139,
+        210,
+        3,
+        39,
+        23,
+        153,
+        59
+      ],
+      "accounts": [
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  116,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "escrow.match_id",
+                "account": "MatchEscrow"
+              }
+            ]
+          }
+        },
+        {
+          "name": "caller",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "player_one",
+          "writable": true
+        },
+        {
+          "name": "player_two",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "settle_match",
       "docs": [
         "Settle match — distribute pot to winner, treasury, ops (OC-02, OC-03, OC-04, OC-07, OC-09, OC-10, OC-11).",
@@ -767,6 +828,11 @@
       "code": 6018,
       "name": "SettlementExpired",
       "msg": "Settlement deadline has passed"
+    },
+    {
+      "code": 6019,
+      "name": "TooEarlyToReclaim",
+      "msg": "Cannot reclaim before 2x timeout has elapsed"
     }
   ],
   "types": [

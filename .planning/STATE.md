@@ -4,23 +4,23 @@
 
 See: .planning/PROJECT.md (updated 21 Feb 2026)
 **Core value:** Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** v1.1 Security Hardening — Phase 4 complete, Phase 4.1 in progress (Doc-Code Alignment)
+**Current focus:** v1.1 Security Hardening — Phase 4.1 complete, Phase 5 next (Client & Supply Chain Security)
 
 ## Current Position
 
 Milestone: v1.1 — Security Hardening
-Phase: 4.1 of 8 — Doc-Code Alignment (In progress)
-Plans: 2/TBD complete (04.1-01: deposit timer + HP settlement, 04.1-02: permissionless reclaim)
-Status: In progress — 04.1-02 executed, remaining 04.1 plans next
-Last activity: 22 Feb 2026 — Completed 04.1-02-PLAN.md
+Phase: 4.1 of 8 — Doc-Code Alignment (Complete)
+Plans: 2/2 complete
+Status: Complete — verified 20/20 must-haves
+Last activity: 22 Feb 2026 — Phase 4.1 verified and complete
 
-Progress: [████████░░] ~54% (Phases 1-4 + 04.1-01 + 04.1-02 complete)
+Progress: [████████░░] ~56% (Phases 1-4.1 complete; Phases 5-8 remaining)
 
 ## Performance Metrics
 
 **Velocity:**
 - v1.0 plans completed: 15 (across 4 phases)
-- v1.1 plans completed: 11
+- v1.1 plans completed: 13
 
 **By Phase (v1.1):**
 
@@ -30,6 +30,7 @@ Progress: [████████░░] ~54% (Phases 1-4 + 04.1-01 + 04.1-02 
 | 02-server-financial-security | 2/2 | ~21min | ~10.5min |
 | 03-server-auth-game-integrity | 3/3 | ~5min | ~1.7min |
 | 04-secrets-key-management | 3/3 | ~15min | ~5min |
+| 04.1-doc-code-alignment | 2/2 | ~8min | ~4min |
 | 05-client-supply-chain-security | 0/TBD | — | — |
 | 06-token-economy-hardening | 0/TBD | — | — |
 | 07-infrastructure-monitoring | 0/TBD | — | — |
@@ -108,9 +109,9 @@ Progress: [████████░░] ~54% (Phases 1-4 + 04.1-01 + 04.1-02 
 
 ## Session Continuity
 
-Last session: 2026-02-22T22:04:46Z
-Stopped at: Completed 04.1-02-PLAN.md (permissionless_reclaim instruction, IDL rebuild, escrow.js wrapper)
-Resume file: None (next: remaining 04.1 plans)
+Last session: 2026-02-22T23:30:00Z
+Stopped at: Phase 4.1 complete — all 4 DCA requirements verified
+Resume file: None (next: Phase 5 — Client & Supply Chain Security)
 
 ### Roadmap Evolution
 - Phase 4.1 inserted after Phase 4: Doc-Code Alignment (URGENT) — litepaper QA revealed deposit countdown, permissionless reclaim, HP-based forfeit, and dead code gaps between docs and codebase

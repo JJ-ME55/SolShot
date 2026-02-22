@@ -15,7 +15,7 @@ SolShot's three security audits (SOS, DB, BOK) revealed 15 CRITICAL and 23 HIGH-
 - [x] **Phase 2: Server Financial Security** — Verify deposits on-chain, propagate settlement failures, fix rate limiter, add recovery mechanisms *(completed 2026-02-22)*
 - [x] **Phase 3: Server Auth & Game Integrity** — Auth guards on all handlers, rejoin re-verification, remove terrain/position manipulation vectors *(completed 2026-02-22)*
 - [x] **Phase 4: Secrets & Key Management** — Rotate keypair, purge git history, centralize key loading with zeroization, add SIGHUP rotation mechanism *(completed 2026-02-22)*
-- [ ] **Phase 4.1: Doc-Code Alignment** — Deposit countdown timer, permissionless reclaim instruction, HP-based disconnect settlement, dead code cleanup *(INSERTED)*
+- [x] **Phase 4.1: Doc-Code Alignment** — Deposit countdown timer, permissionless reclaim instruction, HP-based disconnect settlement, dead code cleanup *(completed 2026-02-22)*
 - [ ] **Phase 5: Client & Supply Chain Security** — TX validation before signing, SRI hashes, CSP headers, remove global wallet exposure
 - [ ] **Phase 6: Token Economy Hardening** — Persist deduplication Sets to MongoDB, fail-hard on emission counter reset
 - [ ] **Phase 7: Infrastructure & Monitoring** — npm security, endpoint auth, connection limits, logging, terrain entropy
@@ -112,10 +112,11 @@ Plans:
   2. A `permissionless_reclaim` instruction exists in lib.rs that allows anyone to trigger refund after 2x the normal timeout — separate from `cancel_match`
   3. When a player disconnects (not intentional quit), the server checks HP and round scores — the player ahead wins the wager; genuinely even → refund both
   4. `server/services/raydium.js` is deleted (dead code, never imported)
-**Plans:** TBD
+**Plans:** 2/2
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 4.1 to break down)
+- [x] 04.1-01: Deposit countdown timer + HP-based disconnect settlement + dead code removal
+- [x] 04.1-02: Permissionless reclaim instruction + IDL rebuild + escrow.js wrapper
 
 ---
 
@@ -186,13 +187,13 @@ Plans:
 | 2. Server Financial Security | 2/2 | Complete | 2026-02-22 |
 | 3. Server Auth & Game Integrity | 3/3 | Complete | 2026-02-22 |
 | 4. Secrets & Key Management | 3/3 | Complete | 2026-02-22 |
-| 4.1 Doc-Code Alignment | 0/TBD | Not started (INSERTED) | - |
+| 4.1 Doc-Code Alignment | 2/2 | Complete | 2026-02-22 |
 | 5. Client & Supply Chain Security | 0/TBD | Not started | - |
 | 6. Token Economy Hardening | 0/TBD | Not started | - |
 | 7. Infrastructure & Monitoring | 0/TBD | Not started | - |
 | 8. Verification & Re-Audit | 0/TBD | Not started | - |
 
-**Total:** 11/11+ plans complete (Phases 1-4 done; Phase 4.1 inserted; Phases 5-8 TBD)
+**Total:** 13/13+ plans complete (Phases 1-4.1 done; Phases 5-8 TBD)
 
 ---
 

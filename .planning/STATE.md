@@ -4,23 +4,23 @@
 
 See: .planning/PROJECT.md (updated 21 Feb 2026)
 **Core value:** Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** v1.1 Security Hardening — Phase 4 next (Secrets & Key Management)
+**Current focus:** v1.1 Security Hardening — Phase 4 in progress (Secrets & Key Management)
 
 ## Current Position
 
 Milestone: v1.1 — Security Hardening
-Phase: 3 of 8 — Server Auth & Game Integrity (**Phase complete**)
-Plans: 3/3 complete (03-01 SA-01/SA-05/SA-06; 03-02 SA-03/SA-04; 03-03 SA-02 rejoin Ed25519)
-Status: Phase 3 verified and complete — ready for Phase 4 (secrets/key management)
-Last activity: 22 Feb 2026 — Phase 3 verified (6/6 must-haves passed)
+Phase: 4 of 8 — Secrets & Key Management (In progress)
+Plans: 1/3 complete (04-01 KM-03/KM-04 centralized key loading + zeroization)
+Status: In progress — plan 04-01 complete, 04-02 and 04-03 remain
+Last activity: 22 Feb 2026 — Completed 04-01-PLAN.md (keys.js + escrow/solana refactor)
 
-Progress: [█████░░░░░] ~37.5% (Phases 1-3 complete; Phase 4 next)
+Progress: [██████░░░░] ~42% (Phases 1-3 complete; Phase 4: 1/3)
 
 ## Performance Metrics
 
 **Velocity:**
 - v1.0 plans completed: 15 (across 4 phases)
-- v1.1 plans completed: 8
+- v1.1 plans completed: 9
 
 **By Phase (v1.1):**
 
@@ -29,7 +29,7 @@ Progress: [█████░░░░░] ~37.5% (Phases 1-3 complete; Phase 4 
 | 01-on-chain-program-redesign | 3/3 | ~10min | ~3min |
 | 02-server-financial-security | 2/2 | ~21min | ~10.5min |
 | 03-server-auth-game-integrity | 3/3 | ~5min | ~1.7min |
-| 04-secrets-key-management | 0/TBD | — | — |
+| 04-secrets-key-management | 1/3 | ~3min | ~3min |
 | 05-client-supply-chain-security | 0/TBD | — | — |
 | 06-token-economy-hardening | 0/TBD | — | — |
 | 07-infrastructure-monitoring | 0/TBD | — | — |
@@ -72,6 +72,10 @@ Progress: [█████░░░░░] ~37.5% (Phases 1-3 complete; Phase 4 
 - **[v1.1 Phase 3 / 03-03] SA-02: disconnect timer NOT cleared on failed rejoin verification — legitimate player retains full 30s window**
 - **[v1.1 Phase 3 / 03-03] SA-02: signature-first guard in rejoinRoom — no pendingReconnects lookup until signature passes (avoids membership leakage)**
 - **[v1.1 Phase 3 / 03-03] SA-02: client retry-once pattern (_retried flag on attemptRejoin) — handles async wallet adapter init on cold page load**
+- **[v1.1 Phase 4 / 04-01] KM-03: keys.js is the ONLY module that reads SOLANA_KEYPAIR_PATH/JSON — escrow.js and solana.js import from keys.js**
+- **[v1.1 Phase 4 / 04-01] KM-04: bytes.fill(0) zeroes input Uint8Array after Keypair.fromSecretKey() — secret lives only inside Keypair object**
+- **[v1.1 Phase 4 / 04-01] initEscrow() always reconstructs provider/program (no short-circuit) — supports SIGHUP key reload in plan 04-02**
+- **[v1.1 Phase 4 / 04-01] isEscrowEnabled() uses isKeysReady() from keys.js — single source of truth for key availability**
 
 ### Pending Todos
 
@@ -87,5 +91,5 @@ Progress: [█████░░░░░] ~37.5% (Phases 1-3 complete; Phase 4 
 ## Session Continuity
 
 Last session: 2026-02-22
-Stopped at: Phase 3 complete — all 3 plans executed, 6/6 must-haves verified, planning docs updated
-Resume file: None (next: Phase 4 — secrets/key management)
+Stopped at: Completed 04-01-PLAN.md (centralized key loading + zeroization)
+Resume file: None (next: 04-02-PLAN.md — SIGHUP key reload)

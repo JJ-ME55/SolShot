@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 21 Feb 2026)
 
 Milestone: v1.1 — Security Hardening
 Phase: 3 of 8 — Server Auth & Game Integrity (**In progress**)
-Plans: 1/3 complete (03-01 auth guards SA-01 + turn ownership SA-05 + cross-room isolation SA-06)
-Status: In progress — 03-01 complete, 03-02 and 03-03 next
-Last activity: 22 Feb 2026 — Completed 03-01-PLAN.md
+Plans: 2/3 complete (03-01 auth guards SA-01 + turn ownership SA-05 + cross-room isolation SA-06; 03-02 SA-03/SA-04 terrain handler deletion + position authority)
+Status: In progress — 03-01 and 03-02 complete, 03-03 next
+Last activity: 22 Feb 2026 — Completed 03-02-PLAN.md
 
-Progress: [████░░░░░░] ~28% (Phases 1-2 complete; Phase 3 in progress 1/3)
+Progress: [████░░░░░░] ~30% (Phases 1-2 complete; Phase 3 in progress 2/3)
 
 ## Performance Metrics
 
@@ -28,7 +28,7 @@ Progress: [████░░░░░░] ~28% (Phases 1-2 complete; Phase 3 in
 |-------|-------|-------|----------|
 | 01-on-chain-program-redesign | 3/3 | ~10min | ~3min |
 | 02-server-financial-security | 2/2 | ~21min | ~10.5min |
-| 03-server-auth-game-integrity | 1/3 | ~2min | ~2min |
+| 03-server-auth-game-integrity | 2/3 | ~4min | ~2min |
 | 04-secrets-key-management | 0/TBD | — | — |
 | 05-client-supply-chain-security | 0/TBD | — | — |
 | 06-token-economy-hardening | 0/TBD | — | — |
@@ -65,6 +65,9 @@ Progress: [████░░░░░░] ~28% (Phases 1-2 complete; Phase 3 in
 - **[v1.1 Phase 3 / 03-01] fire handler uses inline this.isAuthenticated (not requireAuth) — fireRejected != fireError naming convention**
 - **[v1.1 Phase 3 / 03-01] SA-06 scope is escrowDepositConfirm only — only handler with client-supplied roomId targeting own room**
 - **[v1.1 Phase 3 / 03-01] SA-05 guard ordering: validateAction then turn ownership — mirrors fire handler pattern**
+- **[v1.1 Phase 3 / 03-02] SA-03: deleted terrainPath + getTerrainPath handlers — React client never emits these, only old Phaser codebase did**
+- **[v1.1 Phase 3 / 03-02] SA-04: fire handler reads client position within tolerance for trajectory but NEVER writes back to serverPos**
+- **[v1.1 Phase 3 / 03-02] SA-04: positionUpdate distance thresholds (400px H, 200px V) are BATTLE-state-only — setup positions may jump legitimately**
 
 ### Pending Todos
 
@@ -79,6 +82,6 @@ Progress: [████░░░░░░] ~28% (Phases 1-2 complete; Phase 3 in
 
 ## Session Continuity
 
-Last session: 2026-02-22T09:40:25Z
-Stopped at: Completed 03-01-PLAN.md — SA-01/SA-05/SA-06 implemented (2/2 tasks, 2 commits)
-Resume file: None (next: 03-02-PLAN.md for rejoinRoom auth hardening / session fixation)
+Last session: 2026-02-22T09:44:33Z
+Stopped at: Completed 03-02-PLAN.md — SA-03/SA-04 implemented (2/2 tasks, 2 commits)
+Resume file: None (next: 03-03-PLAN.md)

@@ -14,7 +14,7 @@ SolShot's three security audits (SOS, DB, BOK) revealed 15 CRITICAL and 23 HIGH-
 - [x] **Phase 1: On-Chain Program Redesign** — Rewrite escrow program with config PDA, multisig authority, account constraints, pause mechanism, checked arithmetic, and all SOS CRITICAL/HIGH fixes *(completed 2026-02-21; test execution deferred — McAfee blocks local validator)*
 - [x] **Phase 2: Server Financial Security** — Verify deposits on-chain, propagate settlement failures, fix rate limiter, add recovery mechanisms *(completed 2026-02-22)*
 - [x] **Phase 3: Server Auth & Game Integrity** — Auth guards on all handlers, rejoin re-verification, remove terrain/position manipulation vectors *(completed 2026-02-22)*
-- [ ] **Phase 4: Secrets & Key Management** — Rotate keypair, purge git history, separate keys per service, add rotation mechanism
+- [x] **Phase 4: Secrets & Key Management** — Rotate keypair, purge git history, centralize key loading with zeroization, add SIGHUP rotation mechanism *(completed 2026-02-22)*
 - [ ] **Phase 5: Client & Supply Chain Security** — TX validation before signing, SRI hashes, CSP headers, remove global wallet exposure
 - [ ] **Phase 6: Token Economy Hardening** — Persist deduplication Sets to MongoDB, fail-hard on emission counter reset
 - [ ] **Phase 7: Infrastructure & Monitoring** — npm security, endpoint auth, connection limits, logging, terrain entropy
@@ -95,9 +95,9 @@ Plans:
   5. The server supports SIGHUP-triggered credential reload without restart
 **Plans:** 3 plans
 Plans:
-- [ ] 04-01-PLAN.md -- Centralized key module (keys.js) with zeroization; refactor escrow.js + solana.js to use it (KM-03, KM-04)
-- [ ] 04-02-PLAN.md -- SIGHUP credential reload + admin endpoint in index.js; render.yaml secrets; .gitignore hardening (KM-02, KM-05)
-- [ ] 04-03-PLAN.md -- Git history purge via BFG; generate new keypair; reclone (KM-01) [manual]
+- [x] 04-01-PLAN.md -- Centralized key module (keys.js) with zeroization; refactor escrow.js + solana.js to use it (KM-03, KM-04)
+- [x] 04-02-PLAN.md -- SIGHUP credential reload + admin endpoint in index.js; render.yaml secrets; .gitignore hardening (KM-02, KM-05)
+- [x] 04-03-PLAN.md -- Git history purge via BFG; generate new keypair; reclone (KM-01) [manual checkpoint]
 
 ---
 
@@ -167,13 +167,13 @@ Plans:
 | 1. On-Chain Program Redesign | 3/3 | Complete (tests deferred) | 2026-02-21 |
 | 2. Server Financial Security | 2/2 | Complete | 2026-02-22 |
 | 3. Server Auth & Game Integrity | 3/3 | Complete | 2026-02-22 |
-| 4. Secrets & Key Management | 0/3 | Planned | - |
+| 4. Secrets & Key Management | 3/3 | Complete | 2026-02-22 |
 | 5. Client & Supply Chain Security | 0/TBD | Not started | - |
 | 6. Token Economy Hardening | 0/TBD | Not started | - |
 | 7. Infrastructure & Monitoring | 0/TBD | Not started | - |
 | 8. Verification & Re-Audit | 0/TBD | Not started | - |
 
-**Total:** 8/11+ plans complete (Phases 1-3 done; Phase 4 planned; Phases 5-8 TBD)
+**Total:** 11/11+ plans complete (Phases 1-4 done; Phases 5-8 TBD)
 
 ---
 
@@ -211,17 +211,17 @@ Plans:
 
 | Finding | Severity | Phase | Requirement | Status |
 |---------|----------|-------|-------------|--------|
-| H001 | CRITICAL | 4 | KM-01 | Pending |
+| H001 | CRITICAL | 4 | KM-01 | ✅ Resolved |
 | H006 | CRITICAL | 3 | SA-02 | ✅ Resolved |
 | H013 | CRITICAL | 2 | SF-01 | ✅ Resolved |
 | H019 | CRITICAL | 5 | CS-01 | Pending |
 | H031 | CRITICAL | 5 | CS-02, CS-03 | Pending |
-| H047 | CRITICAL | 4 | KM-01 (downstream) | Pending |
+| H047 | CRITICAL | 4 | KM-01 (downstream) | ✅ Resolved |
 | H049 | CRITICAL | 2 | SF-01, SF-02 | ✅ Resolved |
 | H053 | CRITICAL | 1 | OC-01 | ✅ Resolved |
-| H002 | HIGH | 4 | KM-02 | Pending |
-| H004 | HIGH | 4 | KM-03 | Pending |
-| H005 | HIGH | 4 | KM-04 | Pending |
+| H002 | HIGH | 4 | KM-02 | ✅ Resolved |
+| H004 | HIGH | 4 | KM-03 | ✅ Resolved |
+| H005 | HIGH | 4 | KM-04 | ✅ Resolved |
 | H008 | HIGH | 3 | SA-01 | ✅ Resolved |
 | H015 | HIGH | 2 | SF-02 | ✅ Resolved |
 | H017 | HIGH | 2 | SF-05 | ✅ Resolved |
@@ -233,7 +233,7 @@ Plans:
 | H033 | HIGH | 3 | SA-03 | ✅ Resolved |
 | H035 | HIGH | 3 | SA-04 | ✅ Resolved |
 | H036 | HIGH | 3 | SA-05 | ✅ Resolved |
-| H045 | HIGH | 4 | KM-05 | Pending |
+| H045 | HIGH | 4 | KM-05 | ✅ Resolved |
 | H048 | HIGH | 1 | OC-03 | ✅ Resolved |
 
 ### BOK Coverage Gaps

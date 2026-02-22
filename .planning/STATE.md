@@ -4,23 +4,23 @@
 
 See: .planning/PROJECT.md (updated 21 Feb 2026)
 **Core value:** Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** v1.1 Security Hardening — Phase 4 in progress (Secrets & Key Management)
+**Current focus:** v1.1 Security Hardening — Phase 4 complete, Phase 5 next (Client & Supply Chain Security)
 
 ## Current Position
 
 Milestone: v1.1 — Security Hardening
-Phase: 4 of 8 — Secrets & Key Management (In progress)
-Plans: 2/3 complete (04-01 keys.js + zeroization, 04-02 startup init + SIGHUP + Render secrets)
-Status: In progress — plan 04-02 complete, 04-03 remains
-Last activity: 22 Feb 2026 — Completed 04-02-PLAN.md (startup init, SIGHUP reload, render.yaml secrets)
+Phase: 4 of 8 — Secrets & Key Management (Complete)
+Plans: 3/3 complete (04-01 keys.js + zeroization, 04-02 startup init + SIGHUP + Render secrets, 04-03 BFG purge + new keypair)
+Status: Complete — all 3 plans executed, verification passed 13/13
+Last activity: 22 Feb 2026 — Completed Phase 4 (BFG history purge, reclone to SolShot-clean)
 
-Progress: [██████░░░░] ~46% (Phases 1-3 complete; Phase 4: 2/3)
+Progress: [████████░░] ~50% (Phases 1-4 complete; Phases 5-8 remain)
 
 ## Performance Metrics
 
 **Velocity:**
 - v1.0 plans completed: 15 (across 4 phases)
-- v1.1 plans completed: 10
+- v1.1 plans completed: 11
 
 **By Phase (v1.1):**
 
@@ -29,7 +29,7 @@ Progress: [██████░░░░] ~46% (Phases 1-3 complete; Phase 4: 2
 | 01-on-chain-program-redesign | 3/3 | ~10min | ~3min |
 | 02-server-financial-security | 2/2 | ~21min | ~10.5min |
 | 03-server-auth-game-integrity | 3/3 | ~5min | ~1.7min |
-| 04-secrets-key-management | 2/3 | ~5min | ~2.5min |
+| 04-secrets-key-management | 3/3 | ~15min | ~5min |
 | 05-client-supply-chain-security | 0/TBD | — | — |
 | 06-token-economy-hardening | 0/TBD | — | — |
 | 07-infrastructure-monitoring | 0/TBD | — | — |
@@ -79,20 +79,27 @@ Progress: [██████░░░░] ~46% (Phases 1-3 complete; Phase 4: 2
 - **[v1.1 Phase 4 / 04-02] KM-05: SIGHUP on Linux, direct reload on Windows — avoids ENOSYS errors in dev**
 - **[v1.1 Phase 4 / 04-02] KM-05: ADMIN_API_KEY safe default — missing env var always returns 401 (never open)**
 - **[v1.1 Phase 4 / 04-02] KM-02: render.yaml sync:false for SOLANA_KEYPAIR_JSON, ADMIN_API_KEY, MONGODB_URI**
+- **[v1.1 Phase 4 / 04-03] KM-01: BFG Repo-Cleaner purged solshot-dev.json from all 172 commits — zero trace in git log**
+- **[v1.1 Phase 4 / 04-03] KM-01: New keypair at ~/.config/solana/solshot-server.json (pubkey: 3bpnmDhG3mv9HCfd9Jt1utAweVvhnJQUzZ74xiJ7oLYj)**
+- **[v1.1 Phase 4 / 04-03] KM-01: On-chain authority transfer deferred until devnet SOL available for program redeploy**
+- **[v1.1 Phase 4 / 04-03] Repo recloned to SolShot-clean after BFG force push — all SHAs rewritten, old clone invalid**
 
 ### Pending Todos
 
 - Run 25-test suite when McAfee exclusion is configured (`anchor test --provider.cluster localnet`)
 - Fresh devnet deploy with new program ID + initializeConfig() call
+- On-chain authority transfer to new keypair (needs devnet SOL)
+- Rename SolShot-clean → SolShot (swap directories)
+- Update server/.env with SOLANA_KEYPAIR_PATH=~/.config/solana/solshot-server.json
 
 ### Blockers/Concerns
 - McAfee LiveSafe blocks solana-test-validator on Windows — need folder exclusion or temp disable to run tests
 - Devnet wallet at 0.97 SOL — need ~2.12 SOL for program deploy (airdrop rate-limited)
-- Key rotation (KM-01) requires new program deploy with updated authority — coordinated with Phase 4
 - SOS finding H029 (outcome verification / dispute mechanism) is deferred — requires game theory analysis beyond code remediation
+- Working directory is now SolShot-clean (not SolShot) — needs directory swap
 
 ## Session Continuity
 
 Last session: 2026-02-22
-Stopped at: Completed 04-02-PLAN.md (startup init, SIGHUP reload, Render secrets)
-Resume file: None (next: 04-03-PLAN.md — dotenv-safe / .env audit)
+Stopped at: Completed Phase 4 — all plans executed, verification passed 13/13, planning docs updated
+Resume file: None (next: `/gsd:discuss-phase 5` — Client & Supply Chain Security)

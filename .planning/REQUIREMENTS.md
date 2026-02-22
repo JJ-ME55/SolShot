@@ -43,11 +43,11 @@ Derived from three completed audits:
 
 ## Secrets & Key Management
 
-- [ ] **KM-01**: Rotate server keypair and purge from git — generate new keypair, update on-chain authority, remove `_archive/junk/tilde-dir/.config/solana/solshot-dev.json` from git history using BFG (DB: H001)
-- [ ] **KM-02**: Use Render secrets for keypair — move `SOLANA_KEYPAIR_JSON` from plaintext env var to Render secret (DB: H002)
-- [ ] **KM-03**: Separate keys per service — use distinct keys for escrow operations vs token operations; no shared keypair between `escrow.js` and `solana.js` (DB: H004)
-- [ ] **KM-04**: Key material zeroization — zeroize secret key Uint8Array after `Keypair.fromSecretKey()` to prevent heap dump exposure (DB: H005)
-- [ ] **KM-05**: Key rotation mechanism — implement SIGHUP-triggered credential reload; support key versioning for graceful rotation without restart (DB: H045)
+- [x] **KM-01**: Rotate server keypair and purge from git — generate new keypair, update on-chain authority, remove `_archive/junk/tilde-dir/.config/solana/solshot-dev.json` from git history using BFG (DB: H001)
+- [x] **KM-02**: Use Render secrets for keypair — move `SOLANA_KEYPAIR_JSON` from plaintext env var to Render secret (DB: H002)
+- [x] **KM-03**: Separate keys per service — use distinct keys for escrow operations vs token operations; no shared keypair between `escrow.js` and `solana.js` (DB: H004)
+- [x] **KM-04**: Key material zeroization — zeroize secret key Uint8Array after `Keypair.fromSecretKey()` to prevent heap dump exposure (DB: H005)
+- [x] **KM-05**: Key rotation mechanism — implement SIGHUP-triggered credential reload; support key versioning for graceful rotation without restart (DB: H045)
 
 ## Client & Supply Chain Security
 

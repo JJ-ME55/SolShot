@@ -236,7 +236,9 @@ export async function settleMatch(winnerAddress, loserAddress, wagerSOL, matchId
                 txSignature: result.txSignature,
             };
         }
-        console.error('[Solana] On-chain settle failed, logging only:', result.error);
+        // SF-02: Propagate failure — do NOT fall through to dev-mode fallback (DB: H015)
+        console.error('[Solana] On-chain settle failed:', result.error);
+        return { success: false, error: result.error, settlement };
     }
 
     // Fallback: log settlement (dev mode / no escrow)

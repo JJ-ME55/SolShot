@@ -49,10 +49,37 @@ function AppInner() {
       });
     };
 
-    const attemptRejoin = () => {
+    const attemptRejoin = async () => {
       const walletAddress = window.solWallet?.publicKey?.toString();
-      if (walletAddress) {
-        window.socket.emit('rejoinRoom', { walletAddress });
+      const signMessage = window.solWallet?.signMessage;
+      if (!walletAddress || !signMessage) {
+        // Wallet not ready yet — retry once after 2s (covers async wallet adapter init)
+        if (!attemptRejoin._retried) {
+          attemptRejoin._retried = true;
+          setTimeout(attemptRejoin, 2000);
+        }
+        return;
+      }
+      // Reset retry flag on successful attempt
+      attemptRejoin._retried = false;
+
+      try {
+        const timestamp = Date.now();
+        const message = `SolShot Auth: ${walletAddress} at ${timestamp}`;
+        const encodedMessage = new TextEncoder().encode(message);
+        const signature = await signMessage(encodedMessage);
+        const signatureBase64 = btoa(String.fromCharCode(...signature));
+
+        window.socket.emit('rejoinRoom', {
+          walletAddress,
+          message,
+          signature: signatureBase64,
+          timestamp,
+        });
+      } catch (err) {
+        console.warn('[SolShot] Rejoin signature failed:', err.message);
+        // Don't block — if signMessage fails (user rejects), the 30s reconnect window
+        // allows another attempt on next socket connect event
       }
     };
 

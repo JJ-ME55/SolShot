@@ -16,8 +16,7 @@
  * the on-chain program. Otherwise falls back to logging (dev mode).
  */
 
-import { Connection, PublicKey, Keypair, Transaction, SystemProgram, LAMPORTS_PER_SOL, sendAndConfirmTransaction } from '@solana/web3.js';
-import fs from 'fs';
+import { Connection, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import {
     initEscrow, isEscrowEnabled,
     createMatchEscrow, settleMatchEscrow, cancelMatchEscrow,
@@ -67,9 +66,6 @@ export function validateMatchMode(mode, wagerSOL, matchLength) {
 // Solana connection (singleton)
 let connection = null;
 
-// Server keypair for signing settlement transactions
-let serverKeypair = null;
-
 /**
  * Initialize Solana connection
  */
@@ -77,29 +73,7 @@ export function initSolana() {
     connection = new Connection(SOLANA_RPC, 'confirmed');
     console.log(`[Solana] Connected to ${SOLANA_RPC}`);
 
-    // Load server keypair — supports file path OR inline JSON (for cloud deploy)
-    const keypairPath = process.env.SOLANA_KEYPAIR_PATH;
-    const keypairJson = process.env.SOLANA_KEYPAIR_JSON;
-    if (keypairJson) {
-        try {
-            const secretKey = JSON.parse(keypairJson);
-            serverKeypair = Keypair.fromSecretKey(Uint8Array.from(secretKey));
-            console.log(`[Solana] Server wallet (from env): ${serverKeypair.publicKey.toBase58()}`);
-        } catch (err) {
-            console.warn('[Solana] Failed to parse SOLANA_KEYPAIR_JSON:', err.message);
-        }
-    } else if (keypairPath) {
-        try {
-            const resolved = keypairPath.replace('~', process.env.HOME || process.env.USERPROFILE || '');
-            const secretKey = JSON.parse(fs.readFileSync(resolved, 'utf-8'));
-            serverKeypair = Keypair.fromSecretKey(Uint8Array.from(secretKey));
-            console.log(`[Solana] Server wallet (from file): ${serverKeypair.publicKey.toBase58()}`);
-        } catch (err) {
-            console.warn('[Solana] No server keypair loaded:', err.message);
-        }
-    }
-
-    // Initialize escrow program (if keypair + IDL available)
+    // Initialize escrow program (keypair loaded via keys.js)
     const escrowReady = initEscrow();
     console.log(`[Solana] Escrow program: ${escrowReady ? 'ENABLED' : 'DISABLED (dev mode)'}`);
 

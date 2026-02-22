@@ -836,6 +836,7 @@ const mainsocket = (io) => {
 
 
         client.on('deleteRoom', async () => {
+            if (!requireAuth(client, 'deleteRoom')) return
             if (client.roomId !== null) {
                 // H003: Only host can delete the room
                 if (!client.isHost) {
@@ -1108,6 +1109,9 @@ const mainsocket = (io) => {
                 return;
             }
 
+            // SA-01: Auth required for wagered queue matches
+            if (wagerAmount > 0 && !requireAuth(client, 'joinQueue')) return;
+
             // Remove from any existing queue before re-queuing
             removeFromAllQueues(client.id);
 
@@ -1248,6 +1252,7 @@ const mainsocket = (io) => {
 
 
         client.on('ready', () => {
+            if (!requireAuth(client, 'ready')) return
             var room = findRoom(client.roomId)
             if (!room) return
 
@@ -1337,6 +1342,7 @@ const mainsocket = (io) => {
 
         // Client buys a weapon during shop phase
         client.on('buyWeapon', (data) => {
+            if (!requireAuth(client, 'buyWeapon')) return
             // H015: Null payload guard
             if (!data || typeof data !== 'object') return
             const { weaponId } = data
@@ -1400,6 +1406,7 @@ const mainsocket = (io) => {
 
         // Client done shopping
         client.on('shopDone', () => {
+            if (!requireAuth(client, 'shopDone')) return
             const room = findRoom(client.roomId)
             if (!room) return
 
@@ -1512,6 +1519,7 @@ const mainsocket = (io) => {
 
 
         client.on('createWeaponArray', (data) => {
+            if (!requireAuth(client, 'createWeaponArray')) return
             // H015: Null payload guard
             if (!data || typeof data !== 'object') return
             const { count, max } = data
@@ -1567,6 +1575,7 @@ const mainsocket = (io) => {
         // === ESCROW: Deposit confirmation from client ===
         // Client signs the deposit TX and sends back the signature
         client.on('escrowDepositConfirm', async (data) => {
+            if (!requireAuth(client, 'escrowDepositConfirm')) return
             if (!data || typeof data !== 'object') return
             const { roomId: rid, txSignature } = data
             if (!rid || !txSignature || typeof txSignature !== 'string') return
@@ -1656,6 +1665,12 @@ const mainsocket = (io) => {
                 return
             }
             const { angle, power, weaponId } = data
+
+            // SA-01: Auth guard (inline — fire uses fireRejected, not fireError)
+            if (!this.isAuthenticated) {
+                this.emit('fireRejected', { reason: 'Authentication required' })
+                return
+            }
 
             const room = findRoom(this.roomId)
             if (!room) return
@@ -2107,6 +2122,7 @@ const mainsocket = (io) => {
         // Both host and non-host emit requestTerrain. First request generates;
         // subsequent requests re-send cached terrain (fixes round 2 race condition).
         client.on('requestTerrain', () => {
+            if (!requireAuth(client, 'requestTerrain')) return
             const room = findRoom(client.roomId)
             if (!room) return
 
@@ -2193,6 +2209,7 @@ const mainsocket = (io) => {
 
         // After blast knockback, client reports its new tank position
         client.on('positionUpdate', (data) => {
+            if (!requireAuth(client, 'positionUpdate')) return
             if (!data || typeof data !== 'object') return
             const { x, y } = data
             if (!Number.isFinite(x) || !Number.isFinite(y)) return
@@ -2280,6 +2297,7 @@ const mainsocket = (io) => {
 
 
         client.on('stepLeft', () => {
+            if (!requireAuth(client, 'stepLeft')) return
             if (!client.roomId) return
             const ms = matchStates[client.roomId]
             if (ms && !validateAction(ms.status, 'stepLeft')) return
@@ -2312,6 +2330,7 @@ const mainsocket = (io) => {
 
 
         client.on('stepRight', () => {
+            if (!requireAuth(client, 'stepRight')) return
             if (!client.roomId) return
             const ms = matchStates[client.roomId]
             if (ms && !validateAction(ms.status, 'stepRight')) return
@@ -2354,6 +2373,7 @@ const mainsocket = (io) => {
 
 
         client.on('requestTurn', () => {
+            if (!requireAuth(client, 'requestTurn')) return
             if (!client.roomId) return
             const ms = matchStates[client.roomId]
             if (ms && !validateAction(ms.status, 'requestTurn')) return
@@ -2363,6 +2383,7 @@ const mainsocket = (io) => {
 
 
         client.on('playAgainRequest', () => {
+            if (!requireAuth(client, 'playAgainRequest')) return
             var room = findRoom(client.roomId)
             if (!room) return
 

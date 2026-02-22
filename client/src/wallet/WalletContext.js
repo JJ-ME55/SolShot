@@ -5,13 +5,11 @@
  * Supports Phantom, Solflare, and other Solana wallets.
  *
  * Usage in React:
+ *   import { useSolShotWallet } from './wallet/WalletContext';
+ *   const { balance, walletAddress, signAndSendEscrowDeposit } = useSolShotWallet();
+ *
  *   import { useWallet } from '@solana/wallet-adapter-react';
  *   const { publicKey, connected, signMessage } = useWallet();
- *
- * Usage in Phaser (via window):
- *   window.solWallet.publicKey  - connected wallet address
- *   window.solWallet.balance    - SOL balance
- *   window.solWallet.connected  - boolean
  */
 
 import React, { useMemo, useEffect, useCallback, useState, createContext, useContext } from 'react';
@@ -32,6 +30,64 @@ const RPC_URL = process.env.REACT_APP_SOLANA_RPC || clusterApiUrl(NETWORK);
 const SHOT_TOKEN_MINT = process.env.REACT_APP_SHOT_TOKEN_MINT
     ? new PublicKey(process.env.REACT_APP_SHOT_TOKEN_MINT)
     : null;
+
+// CS-01: Escrow program ID for TX validation
+const ESCROW_PROGRAM_ID = process.env.REACT_APP_ESCROW_PROGRAM_ID
+    ? new PublicKey(process.env.REACT_APP_ESCROW_PROGRAM_ID)
+    : null;
+
+// CS-01: Known deposit_wager discriminator (SHA-256 of "global:deposit_wager" first 8 bytes)
+// Verified from IDL: [234, 73, 235, 136, 168, 103, 239, 207]
+const DEPOSIT_WAGER_DISCRIMINATOR = Buffer.from([234, 73, 235, 136, 168, 103, 239, 207]);
+
+// CS-01: Allowed program IDs in escrow deposit transactions
+const COMPUTE_BUDGET_PROGRAM_ID = new PublicKey('ComputeBudget111111111111111111111111111111');
+
+/**
+ * CS-01: Validate escrow deposit transaction instructions before signing.
+ * Returns { valid: true } or { valid: false, reason: string }
+ */
+function validateEscrowTransaction(tx) {
+    if (!ESCROW_PROGRAM_ID) {
+        // Dev mode — no program ID configured, skip validation
+        return { valid: true };
+    }
+
+    const instructions = tx.instructions;
+    if (!instructions || instructions.length === 0) {
+        return { valid: false, reason: 'Transaction has no instructions' };
+    }
+
+    let hasDepositInstruction = false;
+
+    for (const ix of instructions) {
+        const programId = ix.programId.toBase58();
+
+        if (ix.programId.equals(ESCROW_PROGRAM_ID)) {
+            // Escrow program instruction — verify it's deposit_wager
+            if (ix.data.length < 8) {
+                return { valid: false, reason: 'Escrow instruction data too short' };
+            }
+            const discriminator = ix.data.slice(0, 8);
+            if (!Buffer.from(discriminator).equals(DEPOSIT_WAGER_DISCRIMINATOR)) {
+                return { valid: false, reason: `Unknown escrow instruction (discriminator mismatch)` };
+            }
+            hasDepositInstruction = true;
+        } else if (ix.programId.equals(COMPUTE_BUDGET_PROGRAM_ID)) {
+            // ComputeBudget is allowed (server may add compute unit price/limit)
+            continue;
+        } else {
+            // Unknown program — reject
+            return { valid: false, reason: `Unexpected program: ${programId}` };
+        }
+    }
+
+    if (!hasDepositInstruction) {
+        return { valid: false, reason: 'No deposit_wager instruction found' };
+    }
+
+    return { valid: true };
+}
 
 // Context for SolShot-specific wallet state
 const SolShotWalletContext = createContext({
@@ -155,6 +211,21 @@ function SolShotWalletInner({ children }) {
             const txBuffer = Buffer.from(serializedTxBase64, 'base64');
             const tx = Transaction.from(txBuffer);
 
+            // CS-01: Validate transaction instructions before signing
+            const validation = validateEscrowTransaction(tx);
+            if (!validation.valid) {
+                console.error('[SolShot] TX validation FAILED:', validation.reason);
+                // Silent report to server (don't reveal detection details to attacker)
+                const socket = window.socket;
+                if (socket) {
+                    socket.emit('suspiciousTx', {
+                        reason: validation.reason,
+                        roomId,
+                    });
+                }
+                return null;
+            }
+
             // Send via wallet adapter (prompts user to sign)
             const signature = await sendTransaction(tx, connection);
             console.log('[SolShot] Escrow deposit TX sent:', signature);
@@ -224,20 +295,6 @@ function SolShotWalletInner({ children }) {
         }
     }, [publicKey, sendTransaction, connection]);
 
-    // Expose wallet state to Phaser via window
-    useEffect(() => {
-        window.solWallet = {
-            publicKey: walletAddress,
-            balance,
-            connected,
-            refreshBalance,
-            shotBalance,
-            prestigeInfo,
-            signAndSendEscrowDeposit,
-            signAndBurnShot,
-        };
-    }, [walletAddress, balance, connected, refreshBalance, shotBalance, prestigeInfo, signAndSendEscrowDeposit, signAndBurnShot]);
-
     // Listen for auth result from server
     useEffect(() => {
         const checkSocket = () => {
@@ -288,13 +345,14 @@ function SolShotWalletInner({ children }) {
         balance,
         refreshBalance,
         walletAddress,
+        connected,
         isAuthenticated,
         authenticate,
         shotBalance,
         prestigeInfo,
         signAndSendEscrowDeposit,
         signAndBurnShot,
-    }), [balance, refreshBalance, walletAddress, isAuthenticated, authenticate, shotBalance, prestigeInfo, signAndSendEscrowDeposit, signAndBurnShot]);
+    }), [balance, refreshBalance, walletAddress, connected, isAuthenticated, authenticate, shotBalance, prestigeInfo, signAndSendEscrowDeposit, signAndBurnShot]);
 
     return (
         <SolShotWalletContext.Provider value={value}>

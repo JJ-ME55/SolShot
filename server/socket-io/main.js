@@ -1579,6 +1579,11 @@ const mainsocket = (io) => {
             if (!data || typeof data !== 'object') return
             const { roomId: rid, txSignature } = data
             if (!rid || !txSignature || typeof txSignature !== 'string') return
+            // SA-06: Cross-room isolation — reject events for rooms socket isn't in (DB: H009)
+            if (client.roomId !== rid) {
+                client.emit('escrowError', { reason: 'Room ID mismatch' })
+                return
+            }
 
             const room = findRoom(rid)
             if (!room) return
@@ -2301,6 +2306,8 @@ const mainsocket = (io) => {
             if (!client.roomId) return
             const ms = matchStates[client.roomId]
             if (ms && !validateAction(ms.status, 'stepLeft')) return
+            // SA-05: Turn ownership — only current-turn player can move (DB: H036)
+            if (ms && ms.currentTurn && ms.currentTurn !== client.id) return
 
             // LP-07: Server-side 4-step limit enforcement
             if (ms) {
@@ -2334,6 +2341,8 @@ const mainsocket = (io) => {
             if (!client.roomId) return
             const ms = matchStates[client.roomId]
             if (ms && !validateAction(ms.status, 'stepRight')) return
+            // SA-05: Turn ownership — only current-turn player can move (DB: H036)
+            if (ms && ms.currentTurn && ms.currentTurn !== client.id) return
 
             // LP-07: Server-side 4-step limit enforcement
             if (ms) {

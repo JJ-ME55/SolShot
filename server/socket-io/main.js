@@ -179,7 +179,6 @@ async function persistRoom(room) {
         const update = {
             active: room.active,
             randomArray: room.randomArray,
-            terrainPath: room.terrainPath,
         };
         if (room.host) {
             update.host = {
@@ -1748,8 +1747,7 @@ const mainsocket = (io) => {
                 if (dx <= 400 && dy <= 200) {
                     startX = data.position.x
                     startY = data.position.y
-                    serverPos.x = startX
-                    serverPos.y = startY
+                    // SA-04: Do NOT write startX/startY back to serverPos — server position is authoritative (DB: H034, H035)
                 }
             }
 
@@ -2232,72 +2230,7 @@ const mainsocket = (io) => {
             }
         })
 
-        // LEGACY: terrain relay (still works for current client)
-        // Fix 3: Validate positions to prevent cheater-injected coordinates
-        // O6: Remove unnecessary spread copies — these are overwritten every call
-        client.on('terrainPath', (data) => {
-            if (!data || typeof data !== 'object') return
-            const { path, hostPos, playerPos } = data
-
-            var room = findRoom(client.roomId)
-            if (!room || !room.host || !room.player) return
-
-            // Validate path is an array with reasonable length
-            if (!Array.isArray(path) || path.length === 0 || path.length > 2400) return
-
-            // Validate positions are objects with finite numbers within canvas bounds
-            // Canvas: 1200 x 800
-            if (!hostPos || !playerPos) return
-            if (!Number.isFinite(hostPos.x) || !Number.isFinite(hostPos.y)) return
-            if (!Number.isFinite(playerPos.x) || !Number.isFinite(playerPos.y)) return
-            if (hostPos.x < 0 || hostPos.x > 1200 || hostPos.y < 0 || hostPos.y > 800) return
-            if (playerPos.x < 0 || playerPos.x > 1200 || playerPos.y < 0 || playerPos.y > 800) return
-
-            // O6: Assign directly — no spread needed, overwritten every call
-            room.terrainPath = path
-            room.host.pos = { x: hostPos.x, y: hostPos.y }
-            room.player.pos = { x: playerPos.x, y: playerPos.y }
-
-            // Also build heightmap from path for server physics
-            const heightmap = new Array(1200).fill(800)
-            const sorted = path.filter(p =>
-                p && Number.isFinite(p.x) && Number.isFinite(p.y) &&
-                p.x >= 0 && p.x < 1200
-            ).sort((a, b) => a.x - b.x)
-            if (sorted.length > 1) {
-                for (let i = 0; i < sorted.length - 1; i++) {
-                    const p1 = sorted[i]
-                    const p2 = sorted[i + 1]
-                    const startX = Math.max(0, Math.floor(p1.x))
-                    const endX = Math.min(1199, Math.floor(p2.x))
-                    for (let x = startX; x <= endX; x++) {
-                        const t = (p2.x - p1.x) !== 0 ? (x - p1.x) / (p2.x - p1.x) : 0
-                        heightmap[x] = Math.floor(p1.y + t * (p2.y - p1.y))
-                    }
-                }
-            }
-            room.heightmap = heightmap
-
-            // Snap positions to terrain surface (prevent floating/underground cheats)
-            if (room.heightmap) {
-                const hx = Math.min(1199, Math.max(0, Math.floor(room.host.pos.x)))
-                const px = Math.min(1199, Math.max(0, Math.floor(room.player.pos.x)))
-                room.host.pos.y = room.heightmap[hx]
-                room.player.pos.y = room.heightmap[px]
-            }
-
-            persistRoom(room);
-            client.to(client.roomId).emit('setTerrainPath', {path: room.terrainPath, hostPos: room.host.pos, playerPos: room.player.pos})
-        })
-
-
-
-        client.on('getTerrainPath', () => {
-            var room = findRoom(client.roomId)
-            if (room && room.terrainPath !== undefined && room.terrainPath !== null) {
-                client.emit('setTerrainPath', {path: room.terrainPath})
-            }
-        })
+        // SA-03: terrainPath + getTerrainPath handlers deleted — terrain is server-generated via requestTerrain (DB: H033)
 
 
 

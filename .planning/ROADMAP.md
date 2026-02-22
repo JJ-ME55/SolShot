@@ -55,7 +55,10 @@ Plans:
   3. On settlement failure, the server calls `cancelMatchEscrow()` as a recovery mechanism
   4. The rate limiter correctly blocks the 31st event per second from a single socket
   5. A joiner whose wager doesn't match the queue's required wager is rejected before pairing
-**Plans:** TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 02-01-PLAN.md -- Fix Float64Array rate limiter (SF-04), queue wager validation (SF-05), on-chain deposit verification (SF-01)
+- [ ] 02-02-PLAN.md -- Settlement failure propagation (SF-02) and recovery via cancelMatchEscrow (SF-03)
 
 ---
 
@@ -154,7 +157,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. On-Chain Program Redesign | 3/3 | Complete (tests deferred) | 2026-02-21 |
-| 2. Server Financial Security | 0/TBD | Not started | - |
+| 2. Server Financial Security | 0/2 | Planned | - |
 | 3. Server Auth & Game Integrity | 0/TBD | Not started | - |
 | 4. Secrets & Key Management | 0/TBD | Not started | - |
 | 5. Client & Supply Chain Security | 0/TBD | Not started | - |
@@ -162,7 +165,7 @@ Plans:
 | 7. Infrastructure & Monitoring | 0/TBD | Not started | - |
 | 8. Verification & Re-Audit | 0/TBD | Not started | - |
 
-**Total:** 3/3+ plans complete (Phase 1 done; Phases 2-8 TBD)
+**Total:** 3/5+ plans complete (Phase 1 done; Phase 2 planned; Phases 3-8 TBD)
 
 ---
 

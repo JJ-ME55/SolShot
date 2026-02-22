@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 21 Feb 2026)
 ## Current Position
 
 Milestone: v1.1 — Security Hardening
-Phase: 3 of 8 — Server Auth & Game Integrity (**In progress**)
-Plans: 2/3 complete (03-01 auth guards SA-01 + turn ownership SA-05 + cross-room isolation SA-06; 03-02 SA-03/SA-04 terrain handler deletion + position authority)
-Status: In progress — 03-01 and 03-02 complete, 03-03 next
-Last activity: 22 Feb 2026 — Completed 03-02-PLAN.md
+Phase: 3 of 8 — Server Auth & Game Integrity (**Phase complete**)
+Plans: 3/3 complete (03-01 SA-01/SA-05/SA-06; 03-02 SA-03/SA-04; 03-03 SA-02 rejoin Ed25519)
+Status: Phase 3 complete — ready for Phase 4 (secrets/key management)
+Last activity: 22 Feb 2026 — Completed 03-03-PLAN.md
 
-Progress: [████░░░░░░] ~30% (Phases 1-2 complete; Phase 3 in progress 2/3)
+Progress: [█████░░░░░] ~35% (Phases 1-2 complete; Phase 3 complete; Phase 4 next)
 
 ## Performance Metrics
 
@@ -68,6 +68,10 @@ Progress: [████░░░░░░] ~30% (Phases 1-2 complete; Phase 3 in
 - **[v1.1 Phase 3 / 03-02] SA-03: deleted terrainPath + getTerrainPath handlers — React client never emits these, only old Phaser codebase did**
 - **[v1.1 Phase 3 / 03-02] SA-04: fire handler reads client position within tolerance for trajectory but NEVER writes back to serverPos**
 - **[v1.1 Phase 3 / 03-02] SA-04: positionUpdate distance thresholds (400px H, 200px V) are BATTLE-state-only — setup positions may jump legitimately**
+- **[v1.1 Phase 3 / 03-03] SA-02: rejoinRoom verifies Ed25519 signature before any state restore — walletAddress alone never trusted on reconnect**
+- **[v1.1 Phase 3 / 03-03] SA-02: disconnect timer NOT cleared on failed rejoin verification — legitimate player retains full 30s window**
+- **[v1.1 Phase 3 / 03-03] SA-02: signature-first guard in rejoinRoom — no pendingReconnects lookup until signature passes (avoids membership leakage)**
+- **[v1.1 Phase 3 / 03-03] SA-02: client retry-once pattern (_retried flag on attemptRejoin) — handles async wallet adapter init on cold page load**
 
 ### Pending Todos
 
@@ -82,6 +86,6 @@ Progress: [████░░░░░░] ~30% (Phases 1-2 complete; Phase 3 in
 
 ## Session Continuity
 
-Last session: 2026-02-22T09:44:33Z
-Stopped at: Completed 03-02-PLAN.md — SA-03/SA-04 implemented (2/2 tasks, 2 commits)
-Resume file: None (next: 03-03-PLAN.md)
+Last session: 2026-02-22T09:48:05Z
+Stopped at: Completed 03-03-PLAN.md — SA-02 rejoin Ed25519 verification (2/2 tasks, 2 commits)
+Resume file: None (next: Phase 4 — secrets/key management)

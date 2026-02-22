@@ -51,6 +51,10 @@ var pendingReconnects = {}
 // Turn timers keyed by roomId
 var turnTimers = {}
 
+// DCA-01: Deposit countdown timers keyed by roomId — 2-minute window after escrow emit
+const DEPOSIT_TIMEOUT_MS = 120_000  // 2 minutes — litepaper escrow flow
+var depositTimers = {}
+
 // Matchmaking queues — keyed by "matchMode:matchLength" (e.g., "quick_match:1")
 // Each entry: { socketId, wallet, name, color, wager, format, matchMode, queuedAt }
 const matchmakingQueues = new Map();
@@ -217,6 +221,10 @@ async function removeRoom(roomId) {
     if (shopTimers[roomId]) {
         clearTimeout(shopTimers[roomId]);
         delete shopTimers[roomId];
+    }
+    if (depositTimers[roomId]) {
+        clearTimeout(depositTimers[roomId]);
+        delete depositTimers[roomId];
     }
     if (room && room._matchId && isDbConnected()) {
         try {
@@ -583,33 +591,92 @@ const mainsocket = (io) => {
                             // SF-03: Capture room/ws snapshots before settlement
                             const roomSnap = room ? { host: room.host, player: room.player, escrowPDA: room.escrowPDA } : null
                             const wsSnap = ws ? { amount: ws.amount, wallets: { ...ws.wallets } } : null
-                            try {
-                                const settlementResult = await settleMatch(opponentWallet, disconnectorWallet, ws.amount, roomId)
-                                // SF-02: Check for propagated failure
-                                if (!settlementResult.success) {
-                                    console.error(`[Solana] Forfeit settlement failed (${reason}):`, settlementResult.error)
-                                    transitionState(currentMs, MATCH_STATES.CANCELLED)
-                                    trackError(new Error(settlementResult.error || 'settlement_failed'), 'forfeit_settlement')
-                                    await handleSettlementFailure(roomId, roomSnap, wsSnap, settlementResult.error)
-                                } else {
-                                    console.log(`[Solana] Forfeit settlement (${reason}):`, settlementResult)
-                                    trackForfeit()
-                                    if (settlementResult.settlement) trackSettlement({ winnerPayout: settlementResult.settlement.winner, treasuryFee: settlementResult.settlement.treasury, opsFee: settlementResult.settlement.ops })
-                                    transitionState(currentMs, MATCH_STATES.COMPLETE)
-                                    if (opponentId) {
-                                        io.to(opponentId).emit('matchSettled', {
-                                            type: 'forfeit',
-                                            winner: opponentId,
-                                            settlement: settlementResult.settlement,
-                                            txSignature: settlementResult.txSignature
-                                        })
+
+                            // DCA-03: HP-based disconnect settlement
+                            // For reconnect_timeout (connection drops), check who was winning
+                            // For leave/disconnect (intentional quit), always forfeit to opponent
+                            let winnerWallet = opponentWallet
+                            let loserWallet = disconnectorWallet
+                            let shouldRefund = false
+
+                            if (reason === 'reconnect_timeout' && currentMs) {
+                                const disconnectorId = client.id
+                                const opponentSid = opponentId
+
+                                // Decision chain: roundWins -> HP -> scores -> refund if all even
+                                const dRounds = (currentMs.roundWins && currentMs.roundWins[disconnectorId]) || 0
+                                const oRounds = (currentMs.roundWins && currentMs.roundWins[opponentSid]) || 0
+                                const dHp = (currentMs.hp && currentMs.hp[disconnectorId] !== undefined) ? currentMs.hp[disconnectorId] : 250
+                                const oHp = (currentMs.hp && currentMs.hp[opponentSid] !== undefined) ? currentMs.hp[opponentSid] : 250
+                                const dScore = (currentMs.scores && currentMs.scores[disconnectorId]) || 0
+                                const oScore = (currentMs.scores && currentMs.scores[opponentSid]) || 0
+
+                                if (dRounds > oRounds) {
+                                    winnerWallet = disconnectorWallet
+                                    loserWallet = opponentWallet
+                                } else if (dRounds === oRounds) {
+                                    if (dHp > oHp) {
+                                        winnerWallet = disconnectorWallet
+                                        loserWallet = opponentWallet
+                                    } else if (dHp === oHp) {
+                                        if (dScore > oScore) {
+                                            winnerWallet = disconnectorWallet
+                                            loserWallet = opponentWallet
+                                        } else if (dScore === oScore) {
+                                            shouldRefund = true
+                                        }
                                     }
                                 }
-                            } catch (err) {
-                                console.error(`[Solana] Forfeit settlement error (${reason}):`, err.message)
+                            }
+
+                            if (shouldRefund) {
+                                const p1w = ws.wallets[room.host?.socketId]
+                                const p2w = ws.wallets[room.player?.socketId]
+                                if (p1w && p2w && isEscrowEnabled()) {
+                                    try {
+                                        await cancelMatchEscrow(roomId, p1w, p2w)
+                                        console.log(`[Solana] Even disconnect refund (${reason}): room ${roomId}`)
+                                    } catch (err) {
+                                        console.error(`[Solana] Even disconnect refund failed:`, err.message)
+                                        await handleSettlementFailure(roomId, roomSnap, wsSnap, err.message)
+                                    }
+                                }
                                 transitionState(currentMs, MATCH_STATES.CANCELLED)
-                                trackError(err, 'forfeit_settlement')
-                                await handleSettlementFailure(roomId, roomSnap, wsSnap, err.message)
+                                if (opponentId) {
+                                    io.to(opponentId).emit('matchSettled', {
+                                        type: 'refund',
+                                        reason: 'even_disconnect',
+                                    })
+                                }
+                            } else {
+                                try {
+                                    const settlementResult = await settleMatch(winnerWallet, loserWallet, ws.amount, roomId)
+                                    // SF-02: Check for propagated failure
+                                    if (!settlementResult.success) {
+                                        console.error(`[Solana] Forfeit settlement failed (${reason}):`, settlementResult.error)
+                                        transitionState(currentMs, MATCH_STATES.CANCELLED)
+                                        trackError(new Error(settlementResult.error || 'settlement_failed'), 'forfeit_settlement')
+                                        await handleSettlementFailure(roomId, roomSnap, wsSnap, settlementResult.error)
+                                    } else {
+                                        console.log(`[Solana] Forfeit settlement (${reason}):`, settlementResult)
+                                        trackForfeit()
+                                        if (settlementResult.settlement) trackSettlement({ winnerPayout: settlementResult.settlement.winner, treasuryFee: settlementResult.settlement.treasury, opsFee: settlementResult.settlement.ops })
+                                        transitionState(currentMs, MATCH_STATES.COMPLETE)
+                                        if (opponentId) {
+                                            io.to(opponentId).emit('matchSettled', {
+                                                type: 'forfeit',
+                                                winner: opponentId,
+                                                settlement: settlementResult.settlement,
+                                                txSignature: settlementResult.txSignature
+                                            })
+                                        }
+                                    }
+                                } catch (err) {
+                                    console.error(`[Solana] Forfeit settlement error (${reason}):`, err.message)
+                                    transitionState(currentMs, MATCH_STATES.CANCELLED)
+                                    trackError(err, 'forfeit_settlement')
+                                    await handleSettlementFailure(roomId, roomSnap, wsSnap, err.message)
+                                }
                             }
                         } else {
                             transitionState(currentMs, MATCH_STATES.CANCELLED)
@@ -967,12 +1034,15 @@ const mainsocket = (io) => {
 
                             // Send deposit instructions to each player
                             const hostSocket = io.sockets.sockets.get(room.host.socketId)
+                            // DCA-01: Compute deposit deadline before emitting so both players get same value
+                            const depositDeadline = Date.now() + DEPOSIT_TIMEOUT_MS
                             if (hostSocket && hostDeposit.success) {
                                 hostSocket.emit('escrowDeposit', {
                                     roomId,
                                     transaction: hostDeposit.transaction,
                                     escrowPDA: escrowResult.escrowPDA,
                                     wager: roomWager,
+                                    depositDeadlineMs: depositDeadline,
                                 })
                             }
                             if (joinerDeposit.success) {
@@ -981,8 +1051,34 @@ const mainsocket = (io) => {
                                     transaction: joinerDeposit.transaction,
                                     escrowPDA: escrowResult.escrowPDA,
                                     wager: roomWager,
+                                    depositDeadlineMs: depositDeadline,
                                 })
                             }
+                            // DCA-01: Deposit countdown — cancel escrow if not both deposited within 2 min
+                            depositTimers[roomId] = setTimeout(async () => {
+                                delete depositTimers[roomId]
+                                const wsCheck = wagerStates[roomId]
+                                const roomCheck = findRoom(roomId)
+                                if (!roomCheck || !wsCheck) return
+                                // If both already deposited, nothing to do
+                                const hostDep = wsCheck.deposits && wsCheck.deposits[roomCheck.host?.socketId]
+                                const playerDep = wsCheck.deposits && wsCheck.deposits[roomCheck.player?.socketId]
+                                if (hostDep && playerDep) return
+                                // Cancel escrow and refund
+                                const p1wallet = wsCheck.wallets[roomCheck.host?.socketId]
+                                const p2wallet = wsCheck.wallets[roomCheck.player?.socketId]
+                                if (p1wallet && p2wallet && isEscrowEnabled()) {
+                                    try {
+                                        await cancelMatchEscrow(roomId, p1wallet, p2wallet)
+                                    } catch (err) {
+                                        console.error(`[Escrow] Deposit timeout cancel failed for ${roomId}:`, err.message)
+                                    }
+                                }
+                                io.sockets.in(roomId).emit('escrowDepositTimeout', { roomId })
+                                await removeRoom(roomId)
+                                broadcastRooms(io)
+                                io.socketsLeave(roomId)
+                            }, DEPOSIT_TIMEOUT_MS)
                         } else {
                             console.error(`[Match] Escrow creation failed for ${roomId}:`, escrowResult.error)
                         }
@@ -1213,12 +1309,39 @@ const mainsocket = (io) => {
                                 buildDepositTransaction(roomId, opponent.wallet),
                                 buildDepositTransaction(roomId, joinerWallet),
                             ]);
+                            // DCA-01: Compute deposit deadline before emitting so both players get same value
+                            const depositDeadline = Date.now() + DEPOSIT_TIMEOUT_MS
                             if (opponentSocket && hostDeposit.success) {
-                                opponentSocket.emit('escrowDeposit', { roomId, transaction: hostDeposit.transaction, escrowPDA: escrowResult.escrowPDA, wager: wagerAmount });
+                                opponentSocket.emit('escrowDeposit', { roomId, transaction: hostDeposit.transaction, escrowPDA: escrowResult.escrowPDA, wager: wagerAmount, depositDeadlineMs: depositDeadline });
                             }
                             if (joinerDeposit.success) {
-                                client.emit('escrowDeposit', { roomId, transaction: joinerDeposit.transaction, escrowPDA: escrowResult.escrowPDA, wager: wagerAmount });
+                                client.emit('escrowDeposit', { roomId, transaction: joinerDeposit.transaction, escrowPDA: escrowResult.escrowPDA, wager: wagerAmount, depositDeadlineMs: depositDeadline });
                             }
+                            // DCA-01: Deposit countdown — cancel escrow if not both deposited within 2 min
+                            depositTimers[roomId] = setTimeout(async () => {
+                                delete depositTimers[roomId]
+                                const wsCheck = wagerStates[roomId]
+                                const roomCheck = findRoom(roomId)
+                                if (!roomCheck || !wsCheck) return
+                                // If both already deposited, nothing to do
+                                const hostDep = wsCheck.deposits && wsCheck.deposits[roomCheck.host?.socketId]
+                                const playerDep = wsCheck.deposits && wsCheck.deposits[roomCheck.player?.socketId]
+                                if (hostDep && playerDep) return
+                                // Cancel escrow and refund
+                                const p1wallet = wsCheck.wallets[roomCheck.host?.socketId]
+                                const p2wallet = wsCheck.wallets[roomCheck.player?.socketId]
+                                if (p1wallet && p2wallet && isEscrowEnabled()) {
+                                    try {
+                                        await cancelMatchEscrow(roomId, p1wallet, p2wallet)
+                                    } catch (err) {
+                                        console.error(`[Escrow] Deposit timeout cancel failed for ${roomId}:`, err.message)
+                                    }
+                                }
+                                io.sockets.in(roomId).emit('escrowDepositTimeout', { roomId })
+                                await removeRoom(roomId)
+                                broadcastRooms(io)
+                                io.socketsLeave(roomId)
+                            }, DEPOSIT_TIMEOUT_MS)
                         } else {
                             console.error(`[Queue] Escrow creation failed for ${roomId}:`, escrowResult.error);
                         }
@@ -1665,6 +1788,11 @@ const mainsocket = (io) => {
 
             if (hostDeposited && playerDeposited) {
                 // Both players deposited — escrow is now active
+                // DCA-01: Clear deposit countdown — both players deposited in time
+                if (depositTimers[rid]) {
+                    clearTimeout(depositTimers[rid])
+                    delete depositTimers[rid]
+                }
                 console.log(`[Escrow] Both deposits confirmed for room ${rid} — match is escrowed`)
                 io.sockets.in(rid).emit('escrowActive', {
                     roomId: rid,

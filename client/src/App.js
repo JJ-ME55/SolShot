@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import { useWallet } from '@solana/wallet-adapter-react';
 import { socket } from './socket/index';
 import { SolShotWalletProvider } from './wallet/WalletContext';
 import { TelegramProvider } from './telegram/TelegramContext';
@@ -21,6 +22,9 @@ window.socket = socket;
 function AppInner() {
   const [screen, setScreen] = useState('loading');
   const [screenData, setScreenData] = useState({});
+
+  // CS-04: Use wallet adapter hook directly for rejoin logic (avoids window.solWallet)
+  const { publicKey, signMessage } = useWallet();
 
   // Navigate between screens — spread copy to avoid stale refs
   const navigate = useCallback((nextScreen, data = {}) => {
@@ -50,8 +54,7 @@ function AppInner() {
     };
 
     const attemptRejoin = async () => {
-      const walletAddress = window.solWallet?.publicKey?.toString();
-      const signMessage = window.solWallet?.signMessage;
+      const walletAddress = publicKey?.toBase58();
       if (!walletAddress || !signMessage) {
         // Wallet not ready yet — retry once after 2s (covers async wallet adapter init)
         if (!attemptRejoin._retried) {
@@ -96,7 +99,7 @@ function AppInner() {
       window.socket.off('rejoinSuccess', handleRejoinSuccess);
       window.socket.off('connect', attemptRejoin);
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [publicKey, signMessage, navigate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Telegram native back button integration
   const handleTelegramBack = useCallback(() => {

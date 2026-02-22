@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
+import { useSolShotWallet } from '../wallet/WalletContext';
 
 const styles = {
   container: {
@@ -31,27 +32,10 @@ const styles = {
 };
 
 function WalletDisplay({ compact = false }) {
-  const [walletState, setWalletState] = useState({
-    balance: 0,
-    shotBalance: 0,
-    connected: false,
-  });
+  // CS-04: Use context hook instead of polling window.solWallet
+  const { balance, shotBalance, connected } = useSolShotWallet();
 
-  // Poll window.solWallet for updates
-  useEffect(() => {
-    const poll = setInterval(() => {
-      if (window.solWallet) {
-        setWalletState({
-          balance: window.solWallet.balance || 0,
-          shotBalance: window.solWallet.shotBalance || 0,
-          connected: window.solWallet.connected || false,
-        });
-      }
-    }, 1000);
-    return () => clearInterval(poll);
-  }, []);
-
-  if (!walletState.connected) {
+  if (!connected) {
     return (
       <div style={styles.container}>
         <WalletMultiButton />
@@ -65,7 +49,7 @@ function WalletDisplay({ compact = false }) {
       <div style={styles.chip}>
         <span style={{ ...styles.icon, color: 'var(--sg)' }}>{'\u25C6'}</span>
         <span style={styles.solValue}>
-          {walletState.balance.toFixed(2)} SOL
+          {balance.toFixed(2)} SOL
         </span>
       </div>
 
@@ -74,7 +58,7 @@ function WalletDisplay({ compact = false }) {
         <div style={styles.chip}>
           <span style={{ ...styles.icon, color: 'var(--am)' }}>{'\u2B21'}</span>
           <span style={styles.shotValue}>
-            {walletState.shotBalance.toLocaleString()} SHOT
+            {shotBalance.toLocaleString()} SHOT
           </span>
         </div>
       )}

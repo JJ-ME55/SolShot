@@ -4,6 +4,7 @@ import Button from '../components/Button';
 import Modal from '../components/Modal';
 import useSocket from '../hooks/useSocket';
 import TANK_COLORS from '../data/colors';
+import { useSolShotWallet } from '../wallet/WalletContext';
 
 /* ── match modes (mirrors server MATCH_MODES — Litepaper v2.1) ── */
 const MATCH_MODES = {
@@ -288,6 +289,9 @@ function LobbyScreen({ navigate }) {
   const [queueState, setQueueState] = useState(null); // null | 'searching' | 'matched'
   const [error, setError] = useState(null);
 
+  // CS-04: Use context hook instead of window.solWallet
+  const { signAndSendEscrowDeposit, walletAddress } = useSolShotWallet();
+
   // Derived: available wagers + formats for current mode
   const modeConfig = MATCH_MODES[matchMode];
   const isCustomMode = matchMode === 'custom_challenge';
@@ -318,15 +322,13 @@ function LobbyScreen({ navigate }) {
     }
   }, [matchMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* ── derived player name from wallet ── */
+  /* ── derived player name from wallet context ── */
   const getPlayerName = useCallback(() => {
-    const wallet = window.solWallet;
-    if (wallet && wallet.connected && wallet.publicKey) {
-      const addr = wallet.publicKey.toString();
-      return addr.slice(0, 4) + '...' + addr.slice(-4);
+    if (walletAddress) {
+      return walletAddress.slice(0, 4) + '...' + walletAddress.slice(-4);
     }
     return 'SOLDIER';
-  }, []);
+  }, [walletAddress]);
 
   /* ── fetch rooms on mount ── */
   useEffect(() => {
@@ -345,9 +347,8 @@ function LobbyScreen({ navigate }) {
   /* ── socket: escrow deposit (sign wager before match starts) ── */
   useSocket('escrowDeposit', async (data) => {
     if (!data?.transaction) return;
-    const signFn = window.solWallet?.signAndSendEscrowDeposit;
-    if (signFn) {
-      const sig = await signFn(data.transaction, data.roomId);
+    if (signAndSendEscrowDeposit) {
+      const sig = await signAndSendEscrowDeposit(data.transaction, data.roomId);
       if (!sig) {
         setError('Failed to deposit wager. Try again or lower your wager.');
       }
@@ -423,7 +424,7 @@ function LobbyScreen({ navigate }) {
       player: {
         name,
         color,
-        walletAddress: window.solWallet?.publicKey?.toString() || null,
+        walletAddress: walletAddress || null,
         wager: wagerToSend,
         matchLength,
         matchMode,
@@ -431,7 +432,7 @@ function LobbyScreen({ navigate }) {
     });
 
     setWaiting(true);
-  }, [getPlayerName, selectedColor, wager, customWager, isCustomMode, matchLength, matchMode]);
+  }, [getPlayerName, selectedColor, wager, customWager, isCustomMode, matchLength, matchMode, walletAddress]);
 
   const joinRoom = useCallback((roomId) => {
     if (!window.socket) return;
@@ -443,10 +444,10 @@ function LobbyScreen({ navigate }) {
       roomId,
       name,
       color,
-      walletAddress: window.solWallet?.publicKey?.toString() || null,
+      walletAddress: walletAddress || null,
       wager,
     });
-  }, [getPlayerName, selectedColor, wager]);
+  }, [getPlayerName, selectedColor, wager, walletAddress]);
 
   const cancelRoom = useCallback(() => {
     if (!window.socket) return;

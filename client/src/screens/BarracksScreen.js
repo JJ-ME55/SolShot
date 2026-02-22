@@ -3,6 +3,7 @@ import TopBar from '../components/TopBar';
 import Button from '../components/Button';
 import CombatCard from '../components/CombatCard';
 import { PRESTIGE_TIERS } from '../data/tiers';
+import { useSolShotWallet } from '../wallet/WalletContext';
 
 /* ── styles ── */
 const s = {
@@ -172,20 +173,15 @@ const s = {
 
 
 function BarracksScreen({ navigate }) {
-  const [walletAddr, setWalletAddr] = useState(null);
-  const [prestige, setPrestige] = useState({ tier: 0, tierName: 'Unranked' });
   const [stats, setStats] = useState(null); // null = loading, object = loaded
   const [showCard, setShowCard] = useState(false);
 
-  useEffect(() => {
-    const wallet = window.solWallet;
-    if (wallet && wallet.connected && wallet.publicKey) {
-      setWalletAddr(wallet.publicKey.toString());
-    }
-    if (wallet && wallet.prestigeInfo) {
-      setPrestige(wallet.prestigeInfo);
-    }
+  // CS-04: Use context hook instead of window.solWallet
+  const { walletAddress, connected, prestigeInfo: contextPrestige } = useSolShotWallet();
 
+  const prestige = contextPrestige || { tier: 0, tierName: 'Unranked' };
+
+  useEffect(() => {
     // Fetch persistent stats from server
     const socket = window.socket;
     if (socket) {
@@ -205,8 +201,9 @@ function BarracksScreen({ navigate }) {
   }, []);
 
   const currentTier = PRESTIGE_TIERS[prestige.tier] || PRESTIGE_TIERS[0];
-  const displayAddr = walletAddr
-    ? walletAddr.slice(0, 6) + '...' + walletAddr.slice(-6)
+
+  const displayAddr = walletAddress
+    ? walletAddress.slice(0, 6) + '...' + walletAddress.slice(-6)
     : 'NOT CONNECTED';
 
   // Derived stats

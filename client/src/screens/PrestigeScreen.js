@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import TopBar from '../components/TopBar';
 import Button from '../components/Button';
 import { PRESTIGE_TIERS } from '../data/tiers';
+import { useSolShotWallet } from '../wallet/WalletContext';
 
 /* ── styles ── */
 const s = {
@@ -188,16 +189,18 @@ function PrestigeScreen({ navigate }) {
   const [burning, setBurning] = useState(false);
   const [burnResult, setBurnResult] = useState(null); // { success, message, tierName, color }
 
-  // Read prestige info from wallet
+  // CS-04: Use context hook instead of window.solWallet
+  const { prestigeInfo, shotBalance: contextShotBalance, signAndBurnShot } = useSolShotWallet();
+
+  // Sync prestige info from context
   useEffect(() => {
-    const wallet = window.solWallet;
-    if (wallet && wallet.prestigeInfo) {
-      setCurrentTier(wallet.prestigeInfo.tier || 0);
+    if (prestigeInfo) {
+      setCurrentTier(prestigeInfo.tier || 0);
     }
-    if (wallet && wallet.shotBalance !== undefined) {
-      setShotBalance(wallet.shotBalance);
+    if (contextShotBalance !== undefined) {
+      setShotBalance(contextShotBalance);
     }
-  }, []);
+  }, [prestigeInfo, contextShotBalance]);
 
   // Listen for prestige result from server
   useEffect(() => {
@@ -215,11 +218,6 @@ function PrestigeScreen({ navigate }) {
           tierName: data.tierName,
           color: data.color,
         });
-        // Update wallet context too
-        if (window.solWallet) {
-          window.solWallet.prestigeInfo = { tier: data.tier, tierName: data.tierName };
-          window.solWallet.shotBalance = data.balance;
-        }
       } else {
         setBurnResult({
           success: false,
@@ -242,8 +240,7 @@ function PrestigeScreen({ navigate }) {
   const handleBurn = async () => {
     if (!canBurn || !nextTier) return;
 
-    const wallet = window.solWallet;
-    if (!wallet || !wallet.signAndBurnShot) {
+    if (!signAndBurnShot) {
       setBurnResult({ success: false, message: 'Wallet not connected' });
       setTimeout(() => setBurnResult(null), 3000);
       return;
@@ -254,7 +251,7 @@ function PrestigeScreen({ navigate }) {
 
     try {
       // Step 1: Burn SHOT tokens on-chain (player signs)
-      const txSignature = await wallet.signAndBurnShot(nextTier.cost);
+      const txSignature = await signAndBurnShot(nextTier.cost);
 
       if (!txSignature) {
         setBurning(false);
@@ -352,8 +349,8 @@ function PrestigeScreen({ navigate }) {
                   <div style={s.tierInfo}>
                     <div style={s.tierName(tier.color)}>
                       {tier.name.toUpperCase()}
-                      {isCompleted && ' ✓'}
-                      {isNext && ' ◄'}
+                      {isCompleted && ' \u2713'}
+                      {isNext && ' \u25C4'}
                     </div>
                     <div style={s.tierCost}>
                       {tier.cost === 0 ? 'DEFAULT' : tier.cost.toLocaleString() + ' SHOT'}

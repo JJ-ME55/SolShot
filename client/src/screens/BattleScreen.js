@@ -6,6 +6,7 @@ import useSocket from '../hooks/useSocket';
 import BattleHUD from './battle/BattleHUD';
 import ExitMenu from './battle/ExitMenu';
 import Modal from '../components/Modal';
+import { useSolShotWallet } from '../wallet/WalletContext';
 
 /* -- styles -- */
 const s = {
@@ -96,6 +97,9 @@ function BattleScreen({ navigate, screenData }) {
   const [disconnectCountdown, setDisconnectCountdown] = useState(null);
   const countdownRef = useRef(null);
 
+  // CS-04: Use context hook instead of window.solWallet
+  const { signAndSendEscrowDeposit } = useSolShotWallet();
+
   // Initialize bridge once
   if (!bridgeRef.current) {
     bridgeRef.current = new GameBridge();
@@ -122,9 +126,8 @@ function BattleScreen({ navigate, screenData }) {
   /* -- Socket: escrowDeposit -> auto-sign deposit transaction -- */
   useSocket('escrowDeposit', async (data) => {
     if (!data?.transaction) return;
-    const signFn = window.solWallet?.signAndSendEscrowDeposit;
-    if (signFn) {
-      const sig = await signFn(data.transaction, data.roomId || screenData?.roomId);
+    if (signAndSendEscrowDeposit) {
+      const sig = await signAndSendEscrowDeposit(data.transaction, data.roomId || screenData?.roomId);
       if (sig) {
         console.log('[Battle] Escrow deposit signed:', sig);
       } else {

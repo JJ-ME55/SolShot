@@ -4,17 +4,17 @@
 
 See: .planning/PROJECT.md (updated 21 Feb 2026)
 **Core value:** Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** v1.1 Security Hardening — Phase 4 complete, Phase 4.1 next (Doc-Code Alignment)
+**Current focus:** v1.1 Security Hardening — Phase 4 complete, Phase 4.1 in progress (Doc-Code Alignment)
 
 ## Current Position
 
 Milestone: v1.1 — Security Hardening
 Phase: 4.1 of 8 — Doc-Code Alignment (In progress)
-Plans: 1/TBD complete (04.1-01: deposit timer + HP settlement + dead code removal)
-Status: In progress — 04.1-01 executed, remaining 04.1 plans next
-Last activity: 22 Feb 2026 — Completed 04.1-01-PLAN.md
+Plans: 2/TBD complete (04.1-01: deposit timer + HP settlement, 04.1-02: permissionless reclaim)
+Status: In progress — 04.1-02 executed, remaining 04.1 plans next
+Last activity: 22 Feb 2026 — Completed 04.1-02-PLAN.md
 
-Progress: [████████░░] ~52% (Phases 1-4 + 04.1-01 complete)
+Progress: [████████░░] ~54% (Phases 1-4 + 04.1-01 + 04.1-02 complete)
 
 ## Performance Metrics
 
@@ -87,6 +87,10 @@ Progress: [████████░░] ~52% (Phases 1-4 + 04.1-01 complete)
 - **[v1.1 Phase 4.1 / 04.1-01] DCA-01: depositDeadlineMs field added to escrowDeposit event payload for client countdown rendering**
 - **[v1.1 Phase 4.1 / 04.1-01] DCA-03: reconnect_timeout uses roundWins→HP→scores decision chain; 'leave' reason always forfeits unconditionally**
 - **[v1.1 Phase 4.1 / 04.1-01] DCA-04: server/services/raydium.js deleted — config-only dead code, zero imports found**
+- **[v1.1 Phase 4.1 / 04.1-02] DCA-02: permissionless_reclaim instruction — any wallet, 48h timeout (2x TIMEOUT_SECONDS), caller gets rent**
+- **[v1.1 Phase 4.1 / 04.1-02] DCA-02: PermissionlessReclaim has NO config account — intentionally bypasses pause guard (safety net must always work)**
+- **[v1.1 Phase 4.1 / 04.1-02] DCA-02: Anchor 0.32.x IDL uses snake_case instruction names; JS SDK converts to camelCase at runtime**
+- **[v1.1 Phase 4.1 / 04.1-02] Fresh devnet deploy required after lib.rs changes — program ID will change**
 
 ### Pending Todos
 
@@ -104,9 +108,9 @@ Progress: [████████░░] ~52% (Phases 1-4 + 04.1-01 complete)
 
 ## Session Continuity
 
-Last session: 2026-02-22T21:58:29Z
-Stopped at: Completed 04.1-01-PLAN.md (deposit countdown timer + HP-based disconnect settlement + raydium.js deletion)
-Resume file: None (next: 04.1-02)
+Last session: 2026-02-22T22:04:46Z
+Stopped at: Completed 04.1-02-PLAN.md (permissionless_reclaim instruction, IDL rebuild, escrow.js wrapper)
+Resume file: None (next: remaining 04.1 plans)
 
 ### Roadmap Evolution
 - Phase 4.1 inserted after Phase 4: Doc-Code Alignment (URGENT) — litepaper QA revealed deposit countdown, permissionless reclaim, HP-based forfeit, and dead code gaps between docs and codebase

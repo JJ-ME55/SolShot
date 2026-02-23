@@ -2289,14 +2289,20 @@ const mainsocket = (io) => {
                 return
             }
 
-            const seed = crypto.randomInt(1000000)
-            const { path, heightmap } = generateTerrain(1200, 800, seed)
+            // IM-05: 128-bit CSPRNG entropy for terrain seed (DB: H038)
+            const fullSeed = crypto.randomBytes(16).toString('hex');
+            // Derive 32-bit unsigned int for mulberry32 PRNG (first 4 bytes = 32 bits)
+            // mulberry32's seededRandom() uses s |= 0 which truncates to 32-bit signed;
+            // >>> 0 ensures unsigned interpretation
+            const seed32 = parseInt(fullSeed.slice(0, 8), 16) >>> 0;
+
+            const { path, heightmap } = generateTerrain(1200, 800, seed32)
             const tankPositions = generateTankPositions(heightmap)
             const wind = generateWind()
 
             // Store server-side
             room.heightmap = heightmap
-            room.terrainSeed = seed
+            room.terrainSeed = fullSeed
             room.wind = wind
             if (room.host) room.host.pos = tankPositions.host
             if (room.player) room.player.pos = tankPositions.player
@@ -2326,7 +2332,7 @@ const mainsocket = (io) => {
                 path,
                 heightmap,
                 tankPositions,
-                seed,
+                seed: fullSeed,
                 wind,
                 firstTurn: ms ? ms.currentTurn : null,
                 seq: ms ? ms.turnSequence : 0  // Fix 4: initial nonce for first fire

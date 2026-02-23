@@ -112,18 +112,19 @@ if (MONGODB_URI) {
     mongoose.connect(MONGODB_URI)
         .then(async () => {
             console.log('MongoDB connected');
-            // Fix 6: Load persisted SHOT emission counter before accepting connections
-            await initShotState();
+            try {
+                await initShotState();
+            } catch (err) {
+                console.error('[FATAL] initShotState failed — cannot start with unknown emission state:', err.message);
+                process.exit(1);
+            }
             server.listen(PORT, '0.0.0.0', function () {
                 console.log(`SolShot server listening on 0.0.0.0:${PORT}`);
             });
         })
         .catch((err) => {
-            console.error('MongoDB connection error:', err.message);
-            // Start server anyway so socket.io still works during development
-            server.listen(PORT, '0.0.0.0', function () {
-                console.log(`SolShot server listening on 0.0.0.0:${PORT} (no DB)`);
-            });
+            console.error('[FATAL] MongoDB connection failed — cannot start with unknown emission state:', err.message);
+            process.exit(1);
         });
 } else {
     console.warn('MONGODB_URI not set — running without database');

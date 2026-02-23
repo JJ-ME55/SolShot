@@ -147,7 +147,11 @@ Plans:
   1. After server restart, replaying a previously verified burn TX signature returns "already verified" — the Set is restored from MongoDB
   2. After server restart, replaying a previously claimed match ID returns "already claimed" — the Set is restored from MongoDB
   3. If MongoDB is unreachable at startup, the server exits with code 1 — it never starts with a zeroed emission counter
-**Plans:** TBD
+**Plans:** 2 plans
+
+Plans:
+- [ ] 06-01-PLAN.md -- Schema fields (verifiedBurnTxs, claimedMatchIds) + fail-hard startup (TE-03)
+- [ ] 06-02-PLAN.md -- Set persistence in shot-token.js: load/save verifiedBurnTxs (TE-01) + claimedMatchIds (TE-02)
 
 ---
 
@@ -192,12 +196,12 @@ Plans:
 | 3. Server Auth & Game Integrity | 3/3 | Complete | 2026-02-22 |
 | 4. Secrets & Key Management | 3/3 | Complete | 2026-02-22 |
 | 4.1 Doc-Code Alignment | 2/2 | Complete | 2026-02-22 |
-| 5. Client & Supply Chain Security | 0/TBD | Not started | - |
-| 6. Token Economy Hardening | 0/TBD | Not started | - |
+| 5. Client & Supply Chain Security | 2/2 | Complete | 2026-02-22 |
+| 6. Token Economy Hardening | 0/2 | Not started | - |
 | 7. Infrastructure & Monitoring | 0/TBD | Not started | - |
 | 8. Verification & Re-Audit | 0/TBD | Not started | - |
 
-**Total:** 13/13+ plans complete (Phases 1-4.1 done; Phases 5-8 TBD)
+**Total:** 15/17+ plans complete (Phases 1-5 done; Phases 6-8 remaining)
 
 ---
 

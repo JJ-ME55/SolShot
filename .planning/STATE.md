@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 21 Feb 2026)
 ## Current Position
 
 Milestone: v1.1 — Security Hardening
-Phase: 6 of 8 — Token Economy Hardening (In progress)
-Plans: 1/2 complete
-Status: In progress — completed 06-01 (schema foundation + fail-hard startup)
-Last activity: 23 Feb 2026 — Completed 06-01-PLAN.md
+Phase: 6 of 8 — Token Economy Hardening (Complete)
+Plans: 2/2 complete
+Status: Phase 6 complete — both plans done
+Last activity: 23 Feb 2026 — Completed 06-02-PLAN.md
 
-Progress: [█████████░] ~72% (Phases 1-6 in progress; 06-01 done; 06-02, Phases 7-8 remaining)
+Progress: [█████████░] ~78% (Phases 1-6 complete; Phases 7-8 remaining)
 
 
 ## Performance Metrics
@@ -33,7 +33,7 @@ Progress: [█████████░] ~72% (Phases 1-6 in progress; 06-01 d
 | 04-secrets-key-management | 3/3 | ~15min | ~5min |
 | 04.1-doc-code-alignment | 2/2 | ~8min | ~4min |
 | 05-client-supply-chain-security | 2/2 | ~22min | ~11min |
-| 06-token-economy-hardening | 1/2 | ~3min | ~3min |
+| 06-token-economy-hardening | 2/2 | ~5min | ~2.5min |
 | 07-infrastructure-monitoring | 0/TBD | — | — |
 | 08-verification-re-audit | 0/TBD | — | — |
 
@@ -120,6 +120,9 @@ Progress: [█████████░] ~72% (Phases 1-6 in progress; 06-01 d
 - **[v1.1 Phase 6 / 06-01] TE-03: persistBurnTx() uses $addToSet — idempotent, prevents duplicates atomically; fire-and-forget (errors logged)**
 - **[v1.1 Phase 6 / 06-01] Fail-hard startup: both mongoose.connect .catch() AND initShotState() error call process.exit(1) — server never starts with unknown emission state when MONGODB_URI set**
 - **[v1.1 Phase 6 / 06-01] Dev mode (no MONGODB_URI) else branch unchanged — fail-hard only when MONGODB_URI is configured**
+- **[v1.1 Phase 6 / 06-02] TE-01 complete: initShotState() hydrates verifiedBurnTxs Set from loadServerState() return; verifyBurnTransaction() calls persistBurnTx() fire-and-forget after in-memory add**
+- **[v1.1 Phase 6 / 06-02] TE-02 complete: loadMilestoneState() restores claimedMatchIds via new Set(user.stats.claimedMatchIds); saveMilestoneState() writes [...state.claimedMatchIds] to stats.claimedMatchIds**
+- **[v1.1 Phase 6 / 06-02] Round-trip dedup Set pattern: Set in memory → Array in MongoDB → new Set(array) on restore — both verifiedBurnTxs and claimedMatchIds use this pattern**
 
 ### Pending Todos
 
@@ -138,9 +141,9 @@ Progress: [█████████░] ~72% (Phases 1-6 in progress; 06-01 d
 
 ## Session Continuity
 
-Last session: 2026-02-23T11:07:31Z
-Stopped at: Completed 06-01-PLAN.md — schema foundation + fail-hard startup (2 tasks, 2 commits)
-Resume file: None (next: Phase 6 Plan 02 — burn tx replay persistence + claimedMatchIds wiring)
+Last session: 2026-02-23T11:13:56Z
+Stopped at: Completed 06-02-PLAN.md — Set persistence wiring for TE-01 and TE-02 (2 tasks, 1 commit)
+Resume file: None (next: Phase 7 — Infrastructure & Monitoring)
 
 ### Roadmap Evolution
 - Phase 4.1 inserted after Phase 4: Doc-Code Alignment (URGENT) — litepaper QA revealed deposit countdown, permissionless reclaim, HP-based forfeit, and dead code gaps between docs and codebase

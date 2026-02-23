@@ -28,6 +28,7 @@ const userSchema = new mongoose.Schema({
         milestonesEarned: { type: [String], default: [] },
         shotBalance: { type: Number, default: 0 },
         totalBurned: { type: Number, default: 0 },
+        claimedMatchIds: { type: [String], default: [] },
     },
     lastActive: { type: Date, default: Date.now }
 }, {

@@ -4,17 +4,17 @@
 
 See: .planning/PROJECT.md (updated 21 Feb 2026)
 **Core value:** Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** v1.1 Security Hardening — Phase 5 complete, Phase 6 next (Token Economy Hardening)
+**Current focus:** v1.1 Security Hardening — Phase 6 in progress (Token Economy Hardening)
 
 ## Current Position
 
 Milestone: v1.1 — Security Hardening
-Phase: 5 of 8 — Client & Supply Chain Security (Complete)
-Plans: 2/2 complete
-Status: Complete — verified 9/9 must-haves
-Last activity: 22 Feb 2026 — Phase 5 verified and complete
+Phase: 6 of 8 — Token Economy Hardening (In progress)
+Plans: 1/2 complete
+Status: In progress — completed 06-01 (schema foundation + fail-hard startup)
+Last activity: 23 Feb 2026 — Completed 06-01-PLAN.md
 
-Progress: [█████████░] ~69% (Phases 1-5 complete; Phases 6-8 remaining)
+Progress: [█████████░] ~72% (Phases 1-6 in progress; 06-01 done; 06-02, Phases 7-8 remaining)
 
 
 ## Performance Metrics
@@ -33,7 +33,7 @@ Progress: [█████████░] ~69% (Phases 1-5 complete; Phases 6-8
 | 04-secrets-key-management | 3/3 | ~15min | ~5min |
 | 04.1-doc-code-alignment | 2/2 | ~8min | ~4min |
 | 05-client-supply-chain-security | 2/2 | ~22min | ~11min |
-| 06-token-economy-hardening | 0/TBD | — | — |
+| 06-token-economy-hardening | 1/2 | ~3min | ~3min |
 | 07-infrastructure-monitoring | 0/TBD | — | — |
 | 08-verification-re-audit | 0/TBD | — | — |
 
@@ -115,6 +115,11 @@ Progress: [█████████░] ~69% (Phases 1-5 complete; Phases 6-8
 - **[v1.1 Phase 5 / 05-02] CS-03: Defense-in-depth CSP: meta tag in index.html (SPA) + Helmet header (API) — both needed; Render may not forward headers**
 - **[v1.1 Phase 5 / 05-02] CS-03: INLINE_RUNTIME_CHUNK=false in .env — gitignored file, must be set manually in each dev environment (documented in .env.example)**
 - **[v1.1 Phase 5 / 05-02] Build uses react-app-rewired (not react-scripts) — config-overrides.js required for crypto/stream/buffer webpack polyfills**
+- **[v1.1 Phase 6 / 06-01] TE-03: loadServerState() throws on readyState !== 1 AND Mongoose query errors — no try-catch, callers handle (only caller is initShotState in index.js)**
+- **[v1.1 Phase 6 / 06-01] TE-03: loadServerState() returns { totalShotEmitted, verifiedBurnTxs } — shape extended for burn tx replay persistence**
+- **[v1.1 Phase 6 / 06-01] TE-03: persistBurnTx() uses $addToSet — idempotent, prevents duplicates atomically; fire-and-forget (errors logged)**
+- **[v1.1 Phase 6 / 06-01] Fail-hard startup: both mongoose.connect .catch() AND initShotState() error call process.exit(1) — server never starts with unknown emission state when MONGODB_URI set**
+- **[v1.1 Phase 6 / 06-01] Dev mode (no MONGODB_URI) else branch unchanged — fail-hard only when MONGODB_URI is configured**
 
 ### Pending Todos
 
@@ -133,9 +138,9 @@ Progress: [█████████░] ~69% (Phases 1-5 complete; Phases 6-8
 
 ## Session Continuity
 
-Last session: 2026-02-23T00:00:00Z
-Stopped at: Phase 5 complete — all 9 must-haves verified (CS-01, CS-02, CS-03, CS-04)
-Resume file: None (next: Phase 6 — Token Economy Hardening)
+Last session: 2026-02-23T11:07:31Z
+Stopped at: Completed 06-01-PLAN.md — schema foundation + fail-hard startup (2 tasks, 2 commits)
+Resume file: None (next: Phase 6 Plan 02 — burn tx replay persistence + claimedMatchIds wiring)
 
 ### Roadmap Evolution
 - Phase 4.1 inserted after Phase 4: Doc-Code Alignment (URGENT) — litepaper QA revealed deposit countdown, permissionless reclaim, HP-based forfeit, and dead code gaps between docs and codebase

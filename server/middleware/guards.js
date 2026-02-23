@@ -1,7 +1,8 @@
 /**
  * SolShot Security Guards
  *
- * Reusable middleware for socket event handlers:
+ * Reusable middleware for socket event handlers and Express routes:
+ *   - requireAdminKey: gate admin HTTP endpoints behind x-admin-key header
  *   - requireAuth: gate wager-related events behind authentication
  *   - validatePayload: null-guard + type-check socket payloads
  *   - validateFireParams: dedicated fire handler input validation
@@ -9,10 +10,25 @@
  *   - withLock: async mutex to prevent concurrent settlement
  *   - safeHandler: try/catch wrapper for async socket handlers
  *
- * Fixes: H006, H015, H009, H017, H020, H062
+ * Fixes: H006, H015, H009, H017, H020, H062, IM-02
  */
 
 import { trackError } from '../services/monitoring.js';
+
+// ─── requireAdminKey ────────────────────────────────────────
+// Express middleware — checks x-admin-key header against ADMIN_API_KEY env var.
+// Returns 401 if key is missing, wrong, or ADMIN_API_KEY is not configured.
+// Usage: app.get('/stats', requireAdminKey, getStats)
+//
+// Fixes: IM-02 — unauthenticated /stats endpoint exposing financial metrics
+
+export function requireAdminKey(req, res, next) {
+    const apiKey = req.headers['x-admin-key'];
+    if (!process.env.ADMIN_API_KEY || apiKey !== process.env.ADMIN_API_KEY) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+    next();
+}
 
 // ─── requireAuth ────────────────────────────────────────────
 // Checks client.isAuthenticated. Emits error if not authed.

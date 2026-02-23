@@ -11,6 +11,7 @@ import { healthCheck, getStats } from './services/monitoring.js'
 import { initShotState } from './services/shot-token.js'
 import { initKeys } from './services/keys.js';
 import { initEscrow } from './services/escrow.js';
+import { requireAdminKey } from './middleware/guards.js';
 
 dotenv.config()
 
@@ -86,14 +87,10 @@ app.get('/', (req, res) => {
 
 // Monitoring endpoints
 app.get('/health', healthCheck)
-app.get('/stats', getStats)
+app.get('/stats', requireAdminKey, getStats)  // IM-02: auth guard on financial metrics
 
-// KM-05: Protected key reload endpoint
-app.post('/api/admin/reload-keys', (req, res) => {
-    const apiKey = req.headers['x-admin-key'];
-    if (!process.env.ADMIN_API_KEY || apiKey !== process.env.ADMIN_API_KEY) {
-        return res.status(401).json({ error: 'Unauthorized' });
-    }
+// KM-05: Protected key reload endpoint (IM-02: auth via requireAdminKey middleware)
+app.post('/api/admin/reload-keys', requireAdminKey, (req, res) => {
     if (process.platform === 'linux') {
         // On Linux/Render: self-signal SIGHUP (triggers the handler above)
         process.kill(process.pid, 'SIGHUP');

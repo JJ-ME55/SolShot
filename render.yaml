@@ -13,7 +13,7 @@ services:
     region: oregon
     plan: starter
     rootDir: server
-    buildCommand: npm install
+    buildCommand: npm ci --ignore-scripts
     startCommand: node index.js
     envVars:
       - key: NODE_ENV

@@ -184,7 +184,13 @@ Plans:
   2. DB re-audit shows 0 CRITICAL and 0 HIGH findings
   3. BOK re-verification shows all 8 gaps either fixed or documented as accepted risk
   4. A pre-launch security document exists at `.planning/SECURITY_SUMMARY.md` suitable for public disclosure
-**Plans:** TBD
+**Plans:** 4 plans
+
+Plans:
+- [ ] 08-01-PLAN.md -- SOS re-audit: fresh Fortress run on hardened lib.rs, gate check 0 CRIT/0 HIGH (VR-01)
+- [ ] 08-02-PLAN.md -- DB re-audit: fresh Bulwark run on hardened server+client, gate check 0 CRIT/0 HIGH (VR-02)
+- [ ] 08-03-PLAN.md -- BOK re-verification: fresh math verification on updated program arithmetic (VR-03)
+- [ ] 08-04-PLAN.md -- Pre-launch security summary document at .planning/SECURITY_SUMMARY.md (VR-04)
 
 ---
 
@@ -202,10 +208,10 @@ Plans:
 | 4.1 Doc-Code Alignment | 2/2 | Complete | 2026-02-22 |
 | 5. Client & Supply Chain Security | 2/2 | Complete | 2026-02-22 |
 | 6. Token Economy Hardening | 2/2 | Complete | 2026-02-23 |
-| 7. Infrastructure & Monitoring | 0/2 | Planned | - |
-| 8. Verification & Re-Audit | 0/TBD | Not started | - |
+| 7. Infrastructure & Monitoring | 2/2 | Complete | 2026-02-23 |
+| 8. Verification & Re-Audit | 0/4 | Planned | - |
 
-**Total:** 17/19 plans complete (Phases 1-6 done; Phase 7 planned; Phase 8 remaining)
+**Total:** 21/25 plans complete (Phases 1-7 done; Phase 8 planned)
 
 ---
 
@@ -215,25 +221,25 @@ Plans:
 
 | Finding | Severity | Phase | Requirement | Status |
 |---------|----------|-------|-------------|--------|
-| S001 | CRITICAL | 1 | OC-02, OC-03 | ✅ Resolved |
-| H008 | CRITICAL | 1 | OC-02 | ✅ Resolved |
-| H001 | CRITICAL | 1 | OC-03 | ✅ Resolved |
-| H026 | CRITICAL | 1 | OC-01 | ✅ Resolved |
+| S001 | CRITICAL | 1 | OC-02, OC-03 | Resolved |
+| H008 | CRITICAL | 1 | OC-02 | Resolved |
+| H001 | CRITICAL | 1 | OC-03 | Resolved |
+| H026 | CRITICAL | 1 | OC-01 | Resolved |
 | H029 | CRITICAL | — | Out of scope (v1.2) | Deferred |
-| H007 | CRITICAL | 1 | OC-01 | ✅ Resolved |
-| H003 | CRITICAL | 1 | OC-03 | ✅ Resolved |
-| H009 | HIGH | 1 | OC-05 | ✅ Resolved |
-| S004 | HIGH | 1 | OC-05 | ✅ Resolved |
-| S005 | HIGH | 1 | OC-06 | ✅ Resolved |
-| H002 | HIGH | 1 | OC-02 | ✅ Resolved |
-| H022 | HIGH | 1 | OC-07 | ✅ Resolved |
-| H028 | HIGH | 1 | OC-04 | ✅ Resolved |
-| S003 | MEDIUM | 1 | OC-11 | ✅ Resolved |
-| H015 | MEDIUM | 1 | — | ✅ Resolved (via H022) |
-| H027 | MEDIUM | 1 | OC-13 | ⏳ Deferred to mainnet |
+| H007 | CRITICAL | 1 | OC-01 | Resolved |
+| H003 | CRITICAL | 1 | OC-03 | Resolved |
+| H009 | HIGH | 1 | OC-05 | Resolved |
+| S004 | HIGH | 1 | OC-05 | Resolved |
+| S005 | HIGH | 1 | OC-06 | Resolved |
+| H002 | HIGH | 1 | OC-02 | Resolved |
+| H022 | HIGH | 1 | OC-07 | Resolved |
+| H028 | HIGH | 1 | OC-04 | Resolved |
+| S003 | MEDIUM | 1 | OC-11 | Resolved |
+| H015 | MEDIUM | 1 | — | Resolved (via H022) |
+| H027 | MEDIUM | 1 | OC-13 | Deferred to mainnet |
 | H014 | MEDIUM | — | Accepted risk | N/A |
-| H024 | MEDIUM | 1 | OC-07 | ✅ Resolved |
-| H017 | MEDIUM | 1 | OC-08 | ✅ Resolved |
+| H024 | MEDIUM | 1 | OC-07 | Resolved |
+| H017 | MEDIUM | 1 | OC-08 | Resolved |
 | H018 | LOW | — | Nice-to-have | Optional |
 | H016 | LOW | — | Nice-to-have | Optional |
 | H031 | LOW | — | Nice-to-have | Optional |
@@ -243,40 +249,40 @@ Plans:
 
 | Finding | Severity | Phase | Requirement | Status |
 |---------|----------|-------|-------------|--------|
-| H001 | CRITICAL | 4 | KM-01 | ✅ Resolved |
-| H006 | CRITICAL | 3 | SA-02 | ✅ Resolved |
-| H013 | CRITICAL | 2 | SF-01 | ✅ Resolved |
-| H019 | CRITICAL | 5 | CS-01 | Pending |
-| H031 | CRITICAL | 5 | CS-02, CS-03 | Pending |
-| H047 | CRITICAL | 4 | KM-01 (downstream) | ✅ Resolved |
-| H049 | CRITICAL | 2 | SF-01, SF-02 | ✅ Resolved |
-| H053 | CRITICAL | 1 | OC-01 | ✅ Resolved |
-| H002 | HIGH | 4 | KM-02 | ✅ Resolved |
-| H004 | HIGH | 4 | KM-03 | ✅ Resolved |
-| H005 | HIGH | 4 | KM-04 | ✅ Resolved |
-| H008 | HIGH | 3 | SA-01 | ✅ Resolved |
-| H015 | HIGH | 2 | SF-02 | ✅ Resolved |
-| H017 | HIGH | 2 | SF-05 | ✅ Resolved |
-| H020/H050 | HIGH | 2 | SF-03 | ✅ Resolved |
-| H021/H054 | HIGH | 2 | SF-04 | ✅ Resolved |
-| H025 | HIGH | 6 | TE-01 | ✅ Resolved |
-| H028 | HIGH | 6 | TE-03 | ✅ Resolved |
-| H029 | HIGH | 6 | TE-02 | ✅ Resolved |
-| H033 | HIGH | 3 | SA-03 | ✅ Resolved |
-| H035 | HIGH | 3 | SA-04 | ✅ Resolved |
-| H036 | HIGH | 3 | SA-05 | ✅ Resolved |
-| H045 | HIGH | 4 | KM-05 | ✅ Resolved |
-| H048 | HIGH | 1 | OC-03 | ✅ Resolved |
+| H001 | CRITICAL | 4 | KM-01 | Resolved |
+| H006 | CRITICAL | 3 | SA-02 | Resolved |
+| H013 | CRITICAL | 2 | SF-01 | Resolved |
+| H019 | CRITICAL | 5 | CS-01 | Resolved |
+| H031 | CRITICAL | 5 | CS-02, CS-03 | Resolved |
+| H047 | CRITICAL | 4 | KM-01 (downstream) | Resolved |
+| H049 | CRITICAL | 2 | SF-01, SF-02 | Resolved |
+| H053 | CRITICAL | 1 | OC-01 | Resolved |
+| H002 | HIGH | 4 | KM-02 | Resolved |
+| H004 | HIGH | 4 | KM-03 | Resolved |
+| H005 | HIGH | 4 | KM-04 | Resolved |
+| H008 | HIGH | 3 | SA-01 | Resolved |
+| H015 | HIGH | 2 | SF-02 | Resolved |
+| H017 | HIGH | 2 | SF-05 | Resolved |
+| H020/H050 | HIGH | 2 | SF-03 | Resolved |
+| H021/H054 | HIGH | 2 | SF-04 | Resolved |
+| H025 | HIGH | 6 | TE-01 | Resolved |
+| H028 | HIGH | 6 | TE-03 | Resolved |
+| H029 | HIGH | 6 | TE-02 | Resolved |
+| H033 | HIGH | 3 | SA-03 | Resolved |
+| H035 | HIGH | 3 | SA-04 | Resolved |
+| H036 | HIGH | 3 | SA-05 | Resolved |
+| H045 | HIGH | 4 | KM-05 | Resolved |
+| H048 | HIGH | 1 | OC-03 | Resolved |
 
 ### BOK Coverage Gaps
 
 | Gap | Severity | Phase | Requirement | Status |
 |-----|----------|-------|-------------|--------|
-| GAP-001 | MEDIUM | 1 | OC-08 | ✅ Resolved |
-| GAP-002 | LOW | 1 | OC-09 | ✅ Resolved |
-| GAP-003 | HIGH | 1 | OC-03 | ✅ Resolved |
-| GAP-004 | LOW | 1 | OC-10 | ✅ Resolved |
-| GAP-005 | LOW | 1 | OC-10 | ✅ Resolved |
-| GAP-006 | LOW | 1 | OC-09 (comment) | ✅ Resolved |
-| GAP-007 | LOW | 1 | OC-09 | ✅ Resolved |
-| GAP-008 | LOW | 1 | OC-12 | ✅ Resolved |
+| GAP-001 | MEDIUM | 1 | OC-08 | Resolved |
+| GAP-002 | LOW | 1 | OC-09 | Resolved |
+| GAP-003 | HIGH | 1 | OC-03 | Resolved |
+| GAP-004 | LOW | 1 | OC-10 | Resolved |
+| GAP-005 | LOW | 1 | OC-10 | Resolved |
+| GAP-006 | LOW | 1 | OC-09 (comment) | Resolved |
+| GAP-007 | LOW | 1 | OC-09 | Resolved |
+| GAP-008 | LOW | 1 | OC-12 | Resolved |

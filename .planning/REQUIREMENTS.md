@@ -71,11 +71,11 @@ Derived from three completed audits:
 
 ## Infrastructure & Monitoring
 
-- [ ] **IM-01**: Use `npm ci --ignore-scripts` on Render — change `render.yaml:16` build command to prevent malicious lifecycle scripts from executing with access to secrets (DB: H041)
-- [ ] **IM-02**: Authenticate /stats endpoint — add auth guard to prevent unauthenticated financial metric exposure (DB: H043)
-- [ ] **IM-03**: Connection limiting — add `maxConnections` to Socket.IO and per-IP connection limiting (DB: H024)
-- [ ] **IM-04**: Structured logging with redaction — replace cleartext wallet/balance logging with structured logger that redacts sensitive fields (DB: H040)
-- [ ] **IM-05**: Increase terrain seed entropy — increase from 20-bit to 128+ bit seeds to prevent terrain prediction (DB: H038)
+- [x] **IM-01**: Use `npm ci --ignore-scripts` on Render — render.yaml buildCommand changed to `npm ci --ignore-scripts`; deterministic lock-file install, lifecycle scripts suppressed (DB: H041)
+- [x] **IM-02**: Authenticate /stats endpoint — `requireAdminKey` Express middleware in guards.js; applied to /stats and /api/admin/reload-keys; /health remains public (DB: H043)
+- [x] **IM-03**: Connection limiting — `io.use()` Map-based per-IP counter; MAX_CONNECTIONS_PER_IP=100; x-forwarded-for for Render proxy (DB: H024)
+- [x] **IM-04**: Structured logging with redaction — pino logger with `redact` paths for wallet/address/balance fields; 9 sensitive console.log calls replaced (DB: H040)
+- [x] **IM-05**: Increase terrain seed entropy — `crypto.randomBytes(16)` (128 bits) replacing `randomInt(1000000)` (~20 bits); 32-bit derivation for mulberry32 PRNG (DB: H038)
 
 ## Verification
 

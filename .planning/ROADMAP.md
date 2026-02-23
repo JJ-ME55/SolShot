@@ -18,7 +18,7 @@ SolShot's three security audits (SOS, DB, BOK) revealed 15 CRITICAL and 23 HIGH-
 - [x] **Phase 4.1: Doc-Code Alignment** — Deposit countdown timer, permissionless reclaim instruction, HP-based disconnect settlement, dead code cleanup *(completed 2026-02-22)*
 - [x] **Phase 5: Client & Supply Chain Security** — TX validation before signing, self-hosted Telegram SDK, CSP headers, remove global wallet exposure *(completed 2026-02-22)*
 - [x] **Phase 6: Token Economy Hardening** — Persist deduplication Sets to MongoDB, fail-hard on emission counter reset *(completed 2026-02-23)*
-- [ ] **Phase 7: Infrastructure & Monitoring** — npm security, endpoint auth, connection limits, logging, terrain entropy
+- [x] **Phase 7: Infrastructure & Monitoring** — npm security, endpoint auth, connection limits, logging, terrain entropy *(completed 2026-02-23)*
 - [ ] **Phase 8: Verification & Re-Audit** — Re-run SOS, DB, BOK on hardened codebase; generate pre-launch security documentation
 
 ---
@@ -166,11 +166,11 @@ Plans:
   3. More than 100 connections from a single IP are rejected
   4. No wallet addresses or balances appear in cleartext in stdout logs
   5. Terrain seeds are 128+ bits of CSPRNG entropy
-**Plans:** 2 plans
+**Plans:** 2/2
 
 Plans:
-- [ ] 07-01-PLAN.md -- Secure build command (IM-01) + /stats auth guard (IM-02) + per-IP connection limiting (IM-03)
-- [ ] 07-02-PLAN.md -- Structured logging with pino redaction (IM-04) + 128-bit terrain seed entropy (IM-05)
+- [x] 07-01: Secure build command (IM-01) + /stats auth guard (IM-02) + per-IP connection limiting (IM-03)
+- [x] 07-02: Structured logging with pino redaction (IM-04) + 128-bit terrain seed entropy (IM-05)
 
 ---
 

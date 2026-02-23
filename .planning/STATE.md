@@ -4,24 +4,24 @@
 
 See: .planning/PROJECT.md (updated 21 Feb 2026)
 **Core value:** Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** v1.1 Security Hardening — Phase 6 complete; Phase 7 next (Infrastructure & Monitoring)
+**Current focus:** v1.1 Security Hardening — Phase 7 complete, Phase 8 next (Verification & Re-Audit)
 
 ## Current Position
 
 Milestone: v1.1 — Security Hardening
-Phase: 6 of 8 — Token Economy Hardening (Complete)
+Phase: 7 of 8 — Infrastructure & Monitoring (Complete)
 Plans: 2/2 complete
-Status: Phase 6 complete — both plans done
-Last activity: 23 Feb 2026 — Completed 06-02-PLAN.md
+Status: Complete — verified 10/10 must-haves
+Last activity: 23 Feb 2026 — Phase 7 verified and complete
 
-Progress: [█████████░] ~78% (Phases 1-6 complete; Phases 7-8 remaining)
+Progress: [█████████░] ~88% (Phases 1-7 complete; Phase 8 remaining)
 
 
 ## Performance Metrics
 
 **Velocity:**
 - v1.0 plans completed: 15 (across 4 phases)
-- v1.1 plans completed: 17 (15 prior + 2 Phase 6)
+- v1.1 plans completed: 19 (15 prior + 2 Phase 6 + 2 Phase 7)
 
 **By Phase (v1.1):**
 
@@ -34,7 +34,7 @@ Progress: [█████████░] ~78% (Phases 1-6 complete; Phases 7-8
 | 04.1-doc-code-alignment | 2/2 | ~8min | ~4min |
 | 05-client-supply-chain-security | 2/2 | ~22min | ~11min |
 | 06-token-economy-hardening | 2/2 | ~5min | ~2.5min |
-| 07-infrastructure-monitoring | 0/TBD | — | — |
+| 07-infrastructure-monitoring | 2/2 | ~8min | ~4min |
 | 08-verification-re-audit | 0/TBD | — | — |
 
 ## Accumulated Context
@@ -123,6 +123,9 @@ Progress: [█████████░] ~78% (Phases 1-6 complete; Phases 7-8
 - **[v1.1 Phase 6 / 06-02] TE-01 complete: initShotState() hydrates verifiedBurnTxs Set from loadServerState() return; verifyBurnTransaction() calls persistBurnTx() fire-and-forget after in-memory add**
 - **[v1.1 Phase 6 / 06-02] TE-02 complete: loadMilestoneState() restores claimedMatchIds via new Set(user.stats.claimedMatchIds); saveMilestoneState() writes [...state.claimedMatchIds] to stats.claimedMatchIds**
 - **[v1.1 Phase 6 / 06-02] Round-trip dedup Set pattern: Set in memory → Array in MongoDB → new Set(array) on restore — both verifiedBurnTxs and claimedMatchIds use this pattern**
+- **[v1.1 Phase 7 / 07-01] IM-01: npm ci --ignore-scripts in render.yaml buildCommand — deterministic lock-file install, lifecycle scripts suppressed**
+- **[v1.1 Phase 7 / 07-01] IM-02: requireAdminKey Express middleware in guards.js — applies to /stats and /api/admin/reload-keys; /health remains public (Render healthCheckPath)**
+- **[v1.1 Phase 7 / 07-01] IM-03: io.use() Map-based per-IP counter (MAX=100); x-forwarded-for first (Render reverse proxy); registered before mainsocket(io)**
 
 ### Pending Todos
 
@@ -141,9 +144,9 @@ Progress: [█████████░] ~78% (Phases 1-6 complete; Phases 7-8
 
 ## Session Continuity
 
-Last session: 2026-02-23T11:13:56Z
-Stopped at: Completed 06-02-PLAN.md — Set persistence wiring for TE-01 and TE-02 (2 tasks, 1 commit)
-Resume file: None (next: Phase 7 — Infrastructure & Monitoring)
+Last session: 2026-02-23T18:00:00Z
+Stopped at: Phase 7 complete — all 10 must-haves verified (IM-01 through IM-05)
+Resume file: None (next: Phase 8 — Verification & Re-Audit)
 
 ### Roadmap Evolution
 - Phase 4.1 inserted after Phase 4: Doc-Code Alignment (URGENT) — litepaper QA revealed deposit countdown, permissionless reclaim, HP-based forfeit, and dead code gaps between docs and codebase

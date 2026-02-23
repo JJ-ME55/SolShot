@@ -29,6 +29,7 @@
 import { Connection, PublicKey } from '@solana/web3.js';
 import { loadServerState, saveServerState, persistBurnTx } from '../models/ServerState.js';
 import User from '../models/User.js';
+import logger from './logger.js';
 
 // Solana connection for burn verification
 const SOLANA_RPC = process.env.SOLANA_RPC || 'https://api.devnet.solana.com';
@@ -178,7 +179,7 @@ export async function loadMilestoneState(walletAddress) {
         // Keep legacy field in sync
         state.matchesPlayed = state.totalMatchesPlayed;
 
-        console.log(`[SHOT] Loaded state for ${walletAddress}: tier=${state.prestigeTier}, balance=${state.balance}, wageredMatches=${state.wageredMatchesPlayed}`);
+        logger.info({ tier: state.prestigeTier, wageredMatches: state.wageredMatchesPlayed }, '[SHOT] Loaded player state');
     } catch (err) {
         console.error(`[SHOT] Failed to load milestone state for ${walletAddress}:`, err.message);
     }
@@ -382,7 +383,7 @@ export function prestigeBurn(walletAddress) {
     // Persist updated state (fire-and-forget)
     saveMilestoneState(walletAddress);
 
-    console.log(`[SHOT] Prestige burn: ${walletAddress} → Tier ${nextTier.tier} (${nextTier.name}), burned ${nextTier.burnCost} SHOT`);
+    logger.info({ tier: nextTier.tier, tierName: nextTier.name, burned: nextTier.burnCost }, '[SHOT] Prestige burn');
 
     return {
         success: true,

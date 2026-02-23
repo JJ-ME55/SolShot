@@ -18,6 +18,7 @@
  * Client-side (not here):
  *   depositWager     — player signs + sends from their wallet
  */
+import logger from './logger.js';
 
 import { Connection, PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { AnchorProvider, Program, Wallet } from '@coral-xyz/anchor';
@@ -409,7 +410,7 @@ export async function settleMatchEscrow(matchId, winnerAddress) {
             })
             .rpc();
 
-        console.log(`[Escrow] Settled match ${matchId} — winner: ${winnerAddress}, TX: ${tx}`);
+        logger.info({ matchId, tx }, '[Escrow] Settled match');
 
         return {
             success: true,

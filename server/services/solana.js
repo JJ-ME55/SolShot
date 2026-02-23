@@ -22,6 +22,7 @@ import {
     createMatchEscrow, settleMatchEscrow, cancelMatchEscrow,
     buildDepositTransaction, getEscrowState, getEscrowPDA,
 } from './escrow.js';
+import logger from './logger.js';
 
 const SOLANA_RPC = process.env.SOLANA_RPC || 'https://api.devnet.solana.com';
 const TREASURY_WALLET = process.env.TREASURY_WALLET || null;
@@ -199,11 +200,7 @@ export async function settleMatch(winnerAddress, loserAddress, wagerSOL, matchId
     if (isEscrowEnabled() && matchId) {
         const result = await settleMatchEscrow(matchId, winnerAddress);
         if (result.success) {
-            console.log('[Solana] On-chain settlement:', {
-                matchId,
-                winner: winnerAddress,
-                txSignature: result.txSignature,
-            });
+            logger.info({ matchId, txSignature: result.txSignature }, '[Solana] On-chain settlement');
             return {
                 success: true,
                 settlement,
@@ -216,13 +213,7 @@ export async function settleMatch(winnerAddress, loserAddress, wagerSOL, matchId
     }
 
     // Fallback: log settlement (dev mode / no escrow)
-    console.log('[Solana] Settlement (off-chain):', {
-        winner: winnerAddress,
-        winnerSOL: settlement.winner,
-        treasurySOL: settlement.treasury,
-        opsSOL: settlement.ops,
-        totalPot,
-    });
+    logger.info({ winnerSOL: settlement.winner, treasurySOL: settlement.treasury, opsSOL: settlement.ops, totalPot }, '[Solana] Settlement (off-chain)');
 
     return {
         success: true,
@@ -257,10 +248,7 @@ export async function refundWager(playerAddress, wagerSOL, matchId, playerOneAdd
     }
 
     // Fallback: log refund
-    console.log('[Solana] Refund (off-chain):', {
-        player: playerAddress,
-        amount: wagerSOL,
-    });
+    logger.info({ amount: wagerSOL }, '[Solana] Refund (off-chain)');
 
     return { success: true, txSignature: null };
 }

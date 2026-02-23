@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import mongoose from 'mongoose';
+import logger from '../services/logger.js';
 import Match from '../models/Match.js';
 import User from '../models/User.js';
 import { processShot, generateTerrain, generateTankPositions, generateWind, WEAPON_DATA } from '../services/physics.js';
@@ -538,7 +539,7 @@ const mainsocket = (io) => {
             const result = handleAuthenticate(client, data)
             if (result.success) {
                 authenticatedWallets[client.id] = result.walletAddress
-                console.log(`[Auth] Socket ${client.id} authenticated as ${result.walletAddress}`)
+                logger.info({ socketId: client.id }, '[Auth] Socket authenticated')
                 // LP-04: Load persisted milestone state from MongoDB so server restarts
                 // don't reset milestone progress
                 try {
@@ -1634,7 +1635,7 @@ const mainsocket = (io) => {
                 if (result.success) {
                     const tier = PRESTIGE_TIERS[result.tier]
                     if (tier) trackShotBurn(tier.burnCost)
-                    console.log(`[Prestige] On-chain burn verified: ${wallet} → Tier ${result.tier} (${result.tierName}), tx: ${txSignature}`)
+                    logger.info({ tier: result.tier, tierName: result.tierName, tx: txSignature }, '[Prestige] On-chain burn verified')
                 }
                 client.emit('prestigeResult', result)
             } catch (err) {
@@ -2234,7 +2235,7 @@ const mainsocket = (io) => {
                                             { upsert: true }
                                         )
                                     }
-                                    console.log('[Stats] Persisted match stats for', winnerAddr?.slice(0,8), '(W) /', loserAddr?.slice(0,8), '(L)')
+                                    logger.info('[Stats] Persisted match stats')
                                 } catch (err) {
                                     console.error('[Stats] Failed to persist:', err.message)
                                 }

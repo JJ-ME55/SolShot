@@ -27,7 +27,7 @@
  */
 
 import { Connection, PublicKey } from '@solana/web3.js';
-import { loadServerState, saveServerState } from '../models/ServerState.js';
+import { loadServerState, saveServerState, persistBurnTx } from '../models/ServerState.js';
 import User from '../models/User.js';
 
 // Solana connection for burn verification
@@ -95,7 +95,11 @@ let savePending = false;
 export async function initShotState() {
     const state = await loadServerState();
     totalShotEmitted = state.totalShotEmitted;
-    console.log(`[SHOT] Initialized: totalShotEmitted = ${totalShotEmitted}`);
+    // TE-01: Restore verified burn tx signatures from MongoDB
+    if (state.verifiedBurnTxs && state.verifiedBurnTxs.length > 0) {
+        state.verifiedBurnTxs.forEach(tx => verifiedBurnTxs.add(tx));
+    }
+    console.log(`[SHOT] Initialized: totalShotEmitted = ${totalShotEmitted}, verifiedBurnTxs = ${verifiedBurnTxs.size}`);
 }
 
 /**
@@ -166,6 +170,10 @@ export async function loadMilestoneState(walletAddress) {
         if (s.shotBalance > 0) state.balance = s.shotBalance;
         if (s.totalBurned > 0) state.totalBurned = s.totalBurned;
         if (s.prestigeTier > 0) state.prestigeTier = s.prestigeTier;
+        // TE-02: Restore claimed match IDs from MongoDB
+        if (s.claimedMatchIds && s.claimedMatchIds.length > 0) {
+            state.claimedMatchIds = new Set(s.claimedMatchIds);
+        }
 
         // Keep legacy field in sync
         state.matchesPlayed = state.totalMatchesPlayed;
@@ -202,6 +210,7 @@ export function saveMilestoneState(walletAddress) {
                 'stats.shotBalance': state.balance,
                 'stats.totalBurned': state.totalBurned,
                 'stats.prestigeTier': state.prestigeTier,
+                'stats.claimedMatchIds': [...state.claimedMatchIds],
             },
             $max: {
                 'stats.totalShotEarned': state.balance + state.totalBurned,
@@ -537,6 +546,8 @@ export async function verifyBurnTransaction(txSignature, walletAddress, expected
 
         // Mark tx as used (replay protection)
         verifiedBurnTxs.add(txSignature);
+        // TE-01: Persist to MongoDB so replay protection survives restart
+        persistBurnTx(txSignature);
 
         return { valid: true };
     } catch (err) {

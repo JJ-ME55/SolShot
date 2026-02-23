@@ -65,9 +65,9 @@ Derived from three completed audits:
 
 ## Token Economy Hardening
 
-- [ ] **TE-01**: Persist verifiedBurnTxs to MongoDB — add to User schema; restore Set from DB on startup; prevent prestige burn TX replay after server restart (DB: H025)
-- [ ] **TE-02**: Persist claimedMatchIds to MongoDB — add to User schema; restore in `loadMilestoneState()`; prevent match reward double-claim after restart (DB: H029)
-- [ ] **TE-03**: Fail hard on initShotState failure — `process.exit(1)` if MongoDB query for emission counter fails at startup; prevent supply cap bypass from reset counter (DB: H028)
+- [x] **TE-01**: Persist verifiedBurnTxs to MongoDB — add to User schema; restore Set from DB on startup; prevent prestige burn TX replay after server restart (DB: H025)
+- [x] **TE-02**: Persist claimedMatchIds to MongoDB — add to User schema; restore in `loadMilestoneState()`; prevent match reward double-claim after restart (DB: H029)
+- [x] **TE-03**: Fail hard on initShotState failure — `process.exit(1)` if MongoDB query for emission counter fails at startup; prevent supply cap bypass from reset counter (DB: H028)
 
 ## Infrastructure & Monitoring
 

@@ -4,7 +4,7 @@
 
 See: .planning/PROJECT.md (updated 21 Feb 2026)
 **Core value:** Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** v1.1 Security Hardening — Phase 6 in progress (Token Economy Hardening)
+**Current focus:** v1.1 Security Hardening — Phase 6 complete; Phase 7 next (Infrastructure & Monitoring)
 
 ## Current Position
 
@@ -21,7 +21,7 @@ Progress: [█████████░] ~78% (Phases 1-6 complete; Phases 7-8
 
 **Velocity:**
 - v1.0 plans completed: 15 (across 4 phases)
-- v1.1 plans completed: 15 (13 prior + 2 Phase 5)
+- v1.1 plans completed: 17 (15 prior + 2 Phase 6)
 
 **By Phase (v1.1):**
 

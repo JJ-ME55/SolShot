@@ -17,7 +17,7 @@ SolShot's three security audits (SOS, DB, BOK) revealed 15 CRITICAL and 23 HIGH-
 - [x] **Phase 4: Secrets & Key Management** — Rotate keypair, purge git history, centralize key loading with zeroization, add SIGHUP rotation mechanism *(completed 2026-02-22)*
 - [x] **Phase 4.1: Doc-Code Alignment** — Deposit countdown timer, permissionless reclaim instruction, HP-based disconnect settlement, dead code cleanup *(completed 2026-02-22)*
 - [x] **Phase 5: Client & Supply Chain Security** — TX validation before signing, self-hosted Telegram SDK, CSP headers, remove global wallet exposure *(completed 2026-02-22)*
-- [ ] **Phase 6: Token Economy Hardening** — Persist deduplication Sets to MongoDB, fail-hard on emission counter reset
+- [x] **Phase 6: Token Economy Hardening** — Persist deduplication Sets to MongoDB, fail-hard on emission counter reset *(completed 2026-02-23)*
 - [ ] **Phase 7: Infrastructure & Monitoring** — npm security, endpoint auth, connection limits, logging, terrain entropy
 - [ ] **Phase 8: Verification & Re-Audit** — Re-run SOS, DB, BOK on hardened codebase; generate pre-launch security documentation
 
@@ -150,8 +150,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 06-01-PLAN.md -- Schema fields (verifiedBurnTxs, claimedMatchIds) + fail-hard startup (TE-03)
-- [ ] 06-02-PLAN.md -- Set persistence in shot-token.js: load/save verifiedBurnTxs (TE-01) + claimedMatchIds (TE-02)
+- [x] 06-01-PLAN.md -- Schema fields (verifiedBurnTxs, claimedMatchIds) + fail-hard startup (TE-03)
+- [x] 06-02-PLAN.md -- Set persistence in shot-token.js: load/save verifiedBurnTxs (TE-01) + claimedMatchIds (TE-02)
 
 ---
 
@@ -197,11 +197,11 @@ Plans:
 | 4. Secrets & Key Management | 3/3 | Complete | 2026-02-22 |
 | 4.1 Doc-Code Alignment | 2/2 | Complete | 2026-02-22 |
 | 5. Client & Supply Chain Security | 2/2 | Complete | 2026-02-22 |
-| 6. Token Economy Hardening | 0/2 | Not started | - |
+| 6. Token Economy Hardening | 2/2 | Complete | 2026-02-23 |
 | 7. Infrastructure & Monitoring | 0/TBD | Not started | - |
 | 8. Verification & Re-Audit | 0/TBD | Not started | - |
 
-**Total:** 15/17+ plans complete (Phases 1-5 done; Phases 6-8 remaining)
+**Total:** 17/19+ plans complete (Phases 1-6 done; Phases 7-8 remaining)
 
 ---
 
@@ -255,9 +255,9 @@ Plans:
 | H017 | HIGH | 2 | SF-05 | ✅ Resolved |
 | H020/H050 | HIGH | 2 | SF-03 | ✅ Resolved |
 | H021/H054 | HIGH | 2 | SF-04 | ✅ Resolved |
-| H025 | HIGH | 6 | TE-01 | Pending |
-| H028 | HIGH | 6 | TE-03 | Pending |
-| H029 | HIGH | 6 | TE-02 | Pending |
+| H025 | HIGH | 6 | TE-01 | ✅ Resolved |
+| H028 | HIGH | 6 | TE-03 | ✅ Resolved |
+| H029 | HIGH | 6 | TE-02 | ✅ Resolved |
 | H033 | HIGH | 3 | SA-03 | ✅ Resolved |
 | H035 | HIGH | 3 | SA-04 | ✅ Resolved |
 | H036 | HIGH | 3 | SA-05 | ✅ Resolved |

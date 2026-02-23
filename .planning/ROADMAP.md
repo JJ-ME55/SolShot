@@ -166,7 +166,11 @@ Plans:
   3. More than 100 connections from a single IP are rejected
   4. No wallet addresses or balances appear in cleartext in stdout logs
   5. Terrain seeds are 128+ bits of CSPRNG entropy
-**Plans:** TBD
+**Plans:** 2 plans
+
+Plans:
+- [ ] 07-01-PLAN.md -- Secure build command (IM-01) + /stats auth guard (IM-02) + per-IP connection limiting (IM-03)
+- [ ] 07-02-PLAN.md -- Structured logging with pino redaction (IM-04) + 128-bit terrain seed entropy (IM-05)
 
 ---
 
@@ -198,10 +202,10 @@ Plans:
 | 4.1 Doc-Code Alignment | 2/2 | Complete | 2026-02-22 |
 | 5. Client & Supply Chain Security | 2/2 | Complete | 2026-02-22 |
 | 6. Token Economy Hardening | 2/2 | Complete | 2026-02-23 |
-| 7. Infrastructure & Monitoring | 0/TBD | Not started | - |
+| 7. Infrastructure & Monitoring | 0/2 | Planned | - |
 | 8. Verification & Re-Audit | 0/TBD | Not started | - |
 
-**Total:** 17/19+ plans complete (Phases 1-6 done; Phases 7-8 remaining)
+**Total:** 17/19 plans complete (Phases 1-6 done; Phase 7 planned; Phase 8 remaining)
 
 ---
 

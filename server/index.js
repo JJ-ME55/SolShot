@@ -35,6 +35,37 @@ const io = new socket.Server(server, {
     }
 })
 
+// IM-03: Per-IP connection limiting (DB: H024)
+// Render is a reverse proxy — x-forwarded-for carries the real client IP.
+// split(',')[0].trim() extracts the leftmost (original client) IP from the forwarded chain.
+const MAX_CONNECTIONS_PER_IP = 100;
+const ipConnectionCounts = new Map();
+
+io.use((socket, next) => {
+    const ip = (socket.handshake.headers['x-forwarded-for'] || '')
+                    .split(',')[0]
+                    .trim()
+               || socket.handshake.address;
+
+    const current = ipConnectionCounts.get(ip) || 0;
+    if (current >= MAX_CONNECTIONS_PER_IP) {
+        return next(new Error('connection limit exceeded'));
+    }
+
+    ipConnectionCounts.set(ip, current + 1);
+
+    socket.on('disconnect', () => {
+        const count = ipConnectionCounts.get(ip) || 1;
+        if (count <= 1) {
+            ipConnectionCounts.delete(ip);
+        } else {
+            ipConnectionCounts.set(ip, count - 1);
+        }
+    });
+
+    next();
+});
+
 // CS-03: Enable Content Security Policy (DB: H031)
 app.use(helmet({
     contentSecurityPolicy: {

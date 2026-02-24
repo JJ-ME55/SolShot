@@ -11,6 +11,7 @@ Complete these items for the Jupiter integration to function. Claude automated a
 | Status | Variable | Source | Add to |
 |--------|----------|--------|--------|
 | [ ] | `JUP_API_KEY` | portal.jup.ag → Create account → API Keys → Create Lite tier key (free, 60 req/min) | `server/.env` |
+| [ ] | `REACT_APP_REOWN_PROJECT_ID` | dashboard.reown.com → Create account → New Project → copy Project ID | `client/.env` |
 
 ## Account Setup
 
@@ -19,12 +20,24 @@ Complete these items for the Jupiter integration to function. Claude automated a
   - Skip if: Already have account
   - Note: The Lite tier is free and provides 60 requests/minute — sufficient for this integration
 
+- [ ] **Create Reown (WalletConnect) account**
+  - URL: https://dashboard.reown.com
+  - Skip if: Already have account
+  - Note: Reown project ID is required for Jupiter Mobile wallet adapter (QR code scan to connect Jupiter Mobile app)
+
 ## Dashboard Configuration
 
-- [ ] **Create API key**
+- [ ] **Create API key** (Jupiter)
   - Location: portal.jup.ag → API Keys → Create key
   - Tier: Lite (free)
   - Copy the key and add to `server/.env` as `JUP_API_KEY`
+
+- [ ] **Create Reown Project ID**
+  - Location: dashboard.reown.com → New Project
+  - App name: SolShot
+  - App URL: https://solshot.gg (or localhost for dev)
+  - Copy the Project ID and add to `client/.env` as `REACT_APP_REOWN_PROJECT_ID`
+  - Note: Without this ID, Jupiter Mobile will be hidden from the wallet list (graceful degradation — no crash)
 
 ## Verification
 

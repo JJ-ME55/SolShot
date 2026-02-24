@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 24 Feb 2026)
 
 Milestone: v1.2 — Launch Readiness
 Phase: 9 of 14 (Jupiter Integration)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: In progress
-Last activity: 24 Feb 2026 — Completed 09-01-PLAN.md
+Last activity: 24 Feb 2026 — Completed 09-02-PLAN.md
 
-Progress: [█░░░░░░░░░] ~3%
+Progress: [██░░░░░░░░] ~6%
 
 
 ## Performance Metrics
@@ -54,6 +54,10 @@ Progress: [█░░░░░░░░░] ~3%
 - **[09-01] Use api.jup.ag/price/v3 (not deprecated lite-api.jup.ag); requires free API key from portal.jup.ag**
 - **[09-01] CSP frame-src changed from none→plugin.jup.ag; Plugin may use iframes internally**
 - **[09-01] Price service returns null gracefully when API key missing (dev-mode safe)**
+- **[09-02] useWrappedReownAdapter returns {reownAdapter, jupiterAdapter} — not a direct adapter**
+- **[09-02] React hooks must be called unconditionally — gate wallets list not hook call**
+- **[09-02] DISABLE_ESLINT_PLUGIN=true in client/.env (gitignored) — pre-existing ESLint webpack worker bug**
+- **[09-02] REACT_APP_REOWN_PROJECT_ID required for Jupiter Mobile to appear — without it adapter hidden gracefully**
 
 ### Pending Todos
 
@@ -69,6 +73,6 @@ Progress: [█░░░░░░░░░] ~3%
 
 ## Session Continuity
 
-Last session: 2026-02-24T11:57:55Z
-Stopped at: Completed 09-01-PLAN.md
+Last session: 2026-02-24T12:27:56Z
+Stopped at: Completed 09-02-PLAN.md
 Resume file: None

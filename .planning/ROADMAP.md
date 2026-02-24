@@ -121,14 +121,14 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|---------------|--------|-----------|
-| 9. Jupiter Integration | 1/3 | In progress | - |
+| 9. Jupiter Integration | 2/3 | In progress | - |
 | 10. UI — Global, Landing & Lobby | 0/TBD | Not started | - |
 | 11. Post-Match & Stats Pipeline | 0/TBD | Not started | - |
 | 12. Onboarding & Mobile Polish | 0/TBD | Not started | - |
 | 13. Client Security | 0/TBD | Not started | - |
 | 14. Checklist Alignment & Re-Audit | 0/TBD | Not started | - |
 
-**Total:** 1/3+ plans complete
+**Total:** 2/3+ plans complete
 
 ---
 *Roadmap created: 24 Feb 2026*

@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 24 Feb 2026)
 
 Milestone: v1.2 — Launch Readiness
 Phase: 10 of 14 (UI Global Landing Lobby) — In progress
-Plan: 3 of ? in current phase
+Plan: 02 complete (10-02-PLAN.md done, 10-03 also done)
 Status: In progress
-Last activity: 24 Feb 2026 — Completed 10-03-PLAN.md
+Last activity: 24 Feb 2026 — Completed 10-02-PLAN.md
 
 Progress: [███░░░░░░░] ~9%
 
@@ -64,6 +64,9 @@ Progress: [███░░░░░░░] ~9%
 - **[10-03] formatWagerWithPayout: pot = amount*2, winner payout = pot*0.90 — mirrors escrow 90/7/3 BPS split**
 - **[10-03] PRESTIGE_WEAPON_META: module-level map (weapon ID -> tierName/burnCost/color) built from PRESTIGE_TIERS — authoritative prestige lookup**
 - **[10-03] String concatenation (not template literals) in JSX — avoids Collider.js ESLint webpack worker bug**
+- **[10-02] PARTNERS module-level constant array for ecosystem badges — CSS text badges only, no external images, no CSP changes**
+- **[10-02] LEARN MORE href="#" placeholder — update to litepaper URL when published**
+- **[10-02] partnerBadge(color) function style factory — dynamic inline style object keyed on brand color hex**
 
 ### Pending Todos
 
@@ -79,6 +82,6 @@ Progress: [███░░░░░░░] ~9%
 
 ## Session Continuity
 
-Last session: 2026-02-24T13:35:50Z
-Stopped at: Completed 10-03-PLAN.md (Phase 10 plan 3 complete)
+Last session: 2026-02-24T13:42:02Z
+Stopped at: Completed 10-02-PLAN.md (MenuScreen landing page overhaul)
 Resume file: None

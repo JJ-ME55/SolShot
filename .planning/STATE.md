@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 24 Feb 2026)
 
 Milestone: v1.2 — Launch Readiness
 Phase: 11 of 14 (Post-Match & Stats Pipeline) — In progress
-Plan: 1 of 3 in current phase
-Status: In progress — 11-01 complete
-Last activity: 24 Feb 2026 — Completed 11-01-PLAN.md
+Plan: 2 of 3 in current phase
+Status: In progress — 11-02 complete
+Last activity: 24 Feb 2026 — Completed 11-02-PLAN.md
 
-Progress: [████░░░░░░] ~35%
+Progress: [████░░░░░░] ~38%
 
 
 ## Performance Metrics
@@ -74,6 +74,10 @@ Progress: [████░░░░░░] ~35%
 - **[11-01] Milestone snapshot diff: take Set of milestonesEarned before recordMatchPlayed, diff after — captures ALL milestones earned in match**
 - **[11-01] buildWeaponIncs helper: iterates weaponShotsFired to build $inc dot-notation keys for nested Map update**
 - **[11-01] client._lastStatsFetch: per-socket rate limit state attached to socket object — 1 req/sec for getStats**
+- **[11-02] Post-match tab structure: Result (immediate rewards/stats) / Progress (milestones/prestige bar) / Action (rematch+swap)**
+- **[11-02] earnedMilestones[myId] pattern: double-guard on screenData AND myId before array access**
+- **[11-02] localStorage 'solshot_escrow_seen': one-time escrow explainer on first wager > 0 click in LobbyScreen**
+- **[11-02] opponentLeft Modal outside tab conditionals — critical UX shown regardless of active tab**
 
 ### Pending Todos
 
@@ -89,6 +93,6 @@ Progress: [████░░░░░░] ~35%
 
 ## Session Continuity
 
-Last session: 2026-02-24T15:05:34Z
-Stopped at: Completed 11-01-PLAN.md — 2 tasks, User schema + match tracking + enriched matchEnd
+Last session: 2026-02-24T15:18:36Z
+Stopped at: Completed 11-02-PLAN.md — 2 tasks, tabbed WinScreen/LoseScreen + LobbyScreen escrow modal
 Resume file: None

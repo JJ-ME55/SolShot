@@ -4,6 +4,13 @@ import WalletDisplay from '../components/WalletDisplay';
 import ResponsibleGaming from '../components/ResponsibleGaming';
 import { useTelegram } from '../telegram/TelegramContext';
 
+const PARTNERS = [
+  { name: 'SOLANA',  color: '#9945FF' },
+  { name: 'JUPITER', color: '#C7F284' },
+  { name: 'METEORA', color: '#00D4AA' },
+  { name: 'CLAUDE',  color: '#D97706' },
+];
+
 const styles = {
   container: {
     display: 'flex',
@@ -87,31 +94,39 @@ const styles = {
     textTransform: 'uppercase',
   },
 
-  // Solana badge
-  solanaBadge: {
+  subTagline: {
+    fontFamily: "'Share Tech Mono', monospace",
+    fontSize: 11,
+    color: 'var(--kh)',
+    opacity: 0.5,
+    letterSpacing: 2,
+    marginTop: 4,
+    textTransform: 'uppercase',
+    textAlign: 'center',
+    zIndex: 1,
+  },
+
+  // Ecosystem partners row
+  partnersRow: {
     display: 'flex',
+    gap: 8,
     alignItems: 'center',
-    gap: 6,
-    padding: '3px 10px',
-    border: '1px solid rgba(20, 241, 149, 0.2)',
-    borderRadius: 3,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
     marginTop: 10,
     marginBottom: 20,
+    zIndex: 1,
   },
-  solanaDot: {
-    width: 8,
-    height: 8,
-    borderRadius: '50%',
-    background: 'var(--sg)',
-    boxShadow: '0 0 6px rgba(20, 241, 149, 0.4)',
-  },
-  solanaText: {
+  partnerBadge: (color) => ({
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 12,
-    color: 'var(--sg)',
-    letterSpacing: 3,
-    textTransform: 'uppercase',
-  },
+    fontSize: 10,
+    color: color,
+    letterSpacing: 2,
+    padding: '2px 8px',
+    border: '1px solid ' + color + '44',
+    borderRadius: 2,
+    background: color + '0A',
+  }),
 
   // Nav buttons
   navButtons: {
@@ -159,6 +174,30 @@ const styles = {
     opacity: 0.3,
     zIndex: 1,
   },
+
+  jupiterCallout: {
+    fontFamily: "'Share Tech Mono', monospace",
+    fontSize: 10,
+    color: '#C7F284',
+    opacity: 0.6,
+    letterSpacing: 1,
+    textAlign: 'center',
+    marginTop: 4,
+    zIndex: 1,
+  },
+
+  learnMoreLink: {
+    fontFamily: "'Share Tech Mono', monospace",
+    fontSize: 11,
+    color: 'var(--kh)',
+    opacity: 0.5,
+    letterSpacing: 2,
+    textDecoration: 'none',
+    textTransform: 'uppercase',
+    zIndex: 1,
+    marginTop: 6,
+    display: 'block',
+  },
 };
 
 function MenuScreen({ navigate }) {
@@ -168,7 +207,7 @@ function MenuScreen({ navigate }) {
   const onLogoError = useCallback(() => setLogoFailed(true), []);
 
   const navItems = [
-    { id: 'deploy', label: 'DEPLOY', variant: 'primary', screen: 'lobby' },
+    { id: 'deploy', label: 'PLAY FREE', variant: 'primary', screen: 'lobby' },
     { id: 'armory', label: 'ARMORY', variant: 'secondary', screen: 'armory' },
     { id: 'prestige', label: 'PRESTIGE', variant: 'secondary', screen: 'prestige' },
     { id: 'barracks', label: 'BARRACKS', variant: 'secondary', screen: 'barracks' },
@@ -195,13 +234,15 @@ function MenuScreen({ navigate }) {
             style={{ width: 300, height: 'auto', objectFit: 'contain', marginBottom: 6 }}
           />
         )}
-        <div style={styles.tagline}>ARTILLERY COMBAT ON SOLANA</div>
+        <div style={styles.tagline}>SKILL, NOT LUCK</div>
+        <div style={styles.subTagline}>WAGER 0.1 — 1.0 SOL | NO DOWNLOAD REQUIRED</div>
       </div>
 
-      {/* Solana badge */}
-      <div style={styles.solanaBadge}>
-        <div style={styles.solanaDot} />
-        <span style={styles.solanaText}>POWERED BY SOLANA</span>
+      {/* Ecosystem partners row */}
+      <div style={styles.partnersRow}>
+        {PARTNERS.map((p) => (
+          <span key={p.name} style={styles.partnerBadge(p.color)}>{p.name}</span>
+        ))}
       </div>
 
       {/* Navigation buttons */}
@@ -257,6 +298,12 @@ function MenuScreen({ navigate }) {
       <div style={styles.walletSection}>
         <WalletDisplay />
       </div>
+
+      {/* Jupiter Mobile callout */}
+      <div style={styles.jupiterCallout}>NEW TO CRYPTO? USE JUPITER MOBILE</div>
+
+      {/* Learn More link */}
+      <a href="#" style={styles.learnMoreLink}>LEARN MORE</a>
 
       {/* Version tag */}
       <div style={styles.versionTag}>v0.5.0-alpha</div>

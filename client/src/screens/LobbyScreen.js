@@ -486,9 +486,11 @@ function LobbyScreen({ navigate }) {
     return found ? found.hex : '#FFFFFF';
   };
 
-  const formatWager = (amount) => {
+  const formatWagerWithPayout = (amount) => {
     if (amount === 0) return 'FREE';
-    return amount + ' SOL';
+    const pot = (amount * 2).toFixed(2);
+    const payout = (amount * 2 * 0.90).toFixed(3);
+    return pot + ' SOL pot \u2014 winner takes ' + payout + ' SOL';
   };
 
   return (
@@ -516,6 +518,19 @@ function LobbyScreen({ navigate }) {
                 </div>
               ))}
             </div>
+            {matchMode === 'practice' && (
+              <div style={{
+                fontFamily: "'Share Tech Mono', monospace",
+                fontSize: 11,
+                color: 'var(--sg)',
+                opacity: 0.8,
+                letterSpacing: 2,
+                marginTop: 4,
+                textTransform: 'uppercase',
+              }}>
+                PRACTICE FREE. EARN SHOT. WAGER WHEN READY.
+              </div>
+            )}
           </div>
 
           {/* Match Length */}
@@ -666,7 +681,7 @@ function LobbyScreen({ navigate }) {
                     </div>
 
                     <div style={s.wagerBadge(room.wager || 0)}>
-                      {formatWager(room.wager || 0)}
+                      {formatWagerWithPayout(room.wager || 0)}
                     </div>
 
                     <Button

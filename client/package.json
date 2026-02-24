@@ -4,6 +4,10 @@
   "private": true,
   "dependencies": {
     "@ampproject/remapping": "^2.3.0",
+    "@jup-ag/jup-mobile-adapter": "^0.0.2",
+    "@reown/appkit": "^1.8.18",
+    "@reown/appkit-adapter-solana": "^1.8.18",
+    "@reown/appkit-wallet-button": "^1.8.18",
     "@solana/spl-token": "^0.4.14",
     "@solana/wallet-adapter-base": "^0.9.27",
     "@solana/wallet-adapter-react": "^0.15.39",
@@ -48,10 +52,15 @@
     ]
   },
   "devDependencies": {
+    "assert": "^2.1.0",
     "buffer": "^6.0.3",
     "crypto-browserify": "^3.12.1",
+    "https-browserify": "^1.0.0",
+    "os-browserify": "^0.3.0",
     "process": "^0.11.10",
     "react-app-rewired": "^2.2.1",
-    "stream-browserify": "^3.0.0"
+    "stream-browserify": "^3.0.0",
+    "stream-http": "^3.2.0",
+    "url": "^0.11.4"
   }
 }

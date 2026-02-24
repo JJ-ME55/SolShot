@@ -1,663 +1,553 @@
-# 01 - Access Control Audit
+# Access Control & Account Validation Analysis
 
-**Auditor**: Claude Opus 4.6 (automated static analysis)
-**Date**: 2026-02-14
-**Scope**: All server-side source files in `server/`
-**Focus**: Authentication enforcement, authorization checks, role-based access, privilege escalation
+<!-- CONDENSED_SUMMARY_START -->
+
+## Condensed Summary
+
+### Scope
+- **File:** `programs/solshot-escrow/src/lib.rs` (855 LOC, single-file Anchor program)
+- **Instructions analyzed:** 7 (initialize_config, update_config, pause_program, unpause_program, create_match, deposit_wager, settle_match, cancel_match, permissionless_reclaim)
+- **Account structs analyzed:** 7
+- **Estimated coverage:** 100% of on-chain access control surface
+
+### Key Findings
+
+**1. One-step authority transfer (update_config) -- centralization + lockout risk**
+`update_config` (line 70) allows the current authority to instantly set a new authority via `new_authority: Option<Pubkey>`. There is no two-step (propose/accept) pattern. If the authority is set to an incorrect or uncontrolled pubkey, the entire program becomes permanently ungovernable. Additionally, there is no validation that `new_authority != treasury`, `new_authority != ops`, or that the three addresses remain distinct after an update. The distinct-address invariant enforced in `initialize_config` (lines 53-55) is NOT re-enforced in `update_config`.
+
+**2. CreateMatch does not verify authority matches config.authority**
+The `CreateMatch` account struct (line 510) requires `authority` as a `Signer<'info>` and uses it as the payer, but it does NOT have `has_one = authority` on the `config` account. The `config` account is only used for the pause guard. This means ANY signer can create a match, not just `config.authority`. The match's `escrow.authority` is then set to whoever called it (line 133). However, `settle_match` requires `has_one = authority` on the escrow (line 565) AND `has_one = authority` on config (line 604). So settlement requires both: (a) the signer who created the match, AND (b) the current `config.authority`. If they differ, settlement is impossible, and funds are stuck until the 24h/48h cancel/reclaim timeouts trigger.
+
+**3. Permissionless reclaim bypasses pause guard by design (DCA-02)**
+`PermissionlessReclaim` (line 654) intentionally omits the `config` account and therefore has no pause guard. This is by design as an escape hatch, but it means a paused program still allows permissionless reclaim after 48h. This is noted as a design decision (DCA-02), not a vulnerability.
+
+**4. CancelMatch caller receives PDA rent -- economic incentive misalignment**
+The `close = caller` constraint on `CancelMatch` (line 619) means whoever calls cancel receives the PDA rent lamports. This creates an incentive for the authority or players to cancel rather than settle, since cancellation returns the wager AND gives rent to the caller. The rent for a 168-byte account is approximately 0.00146 SOL. At small wagers (0.00001 SOL minimum), the PDA rent can be 146x the wager amount, creating a perverse incentive.
+
+### Invariants
+- I1: Only `config.authority` can settle, pause, unpause, or update config
+- I2: Only registered players (player_one or player_two) can deposit
+- I3: Winner must be player_one or player_two
+- I4: Treasury and ops accounts must match config values and be distinct
+- I5: Authority cannot be a player in the match it creates
+- I6: Program cannot create matches, deposit, settle, or cancel while paused (except permissionless_reclaim)
+- I7: Config is a singleton PDA -- only one exists per program
+
+### Cross-Focus Handoffs
+- **To CPI Agent:** `system_program::transfer` CPI in `deposit_wager` (line 179) passes player's signer authority to system program. Direct lamport manipulation in settle/cancel/reclaim (lines 284-291, 359-367, 421-428). Verify no privilege escalation.
+- **To State Machine Agent:** Authority-gated state transitions: only authority can settle (Active -> Settled); authority-only cancel restricted to AwaitingDeposits state. Player cancel requires timeout for Active state. Verify state guards cannot be bypassed.
+- **To Token/Economic Agent:** Authority controls fee destination addresses (treasury/ops) via `update_config`. Fee BPS are hardcoded constants (not admin-changeable). The `close = caller` / `close = authority` rent reclamation creates economic incentives that should be analyzed.
+- **To Timing Agent:** Settlement deadline (1h) is authority-only. Cancel timeout (24h) gates player access. Permissionless reclaim (48h) opens to anyone. All timing checks interact with access control tiers.
+
+### Risks Requiring Investigation
+- R1: `update_config` can break the distinct-address invariant from `initialize_config`
+- R2: `CreateMatch` has no `has_one = authority` on config -- anyone can create matches
+- R3: One-step authority transfer with no acceptance step or timelock
+- R4: PDA rent incentive for cancellation over settlement at low wagers
+- R5: No CPI guard on any instruction -- all instructions are callable via CPI from other programs
+
+<!-- CONDENSED_SUMMARY_END -->
 
 ---
 
 ## Executive Summary
 
-The SolShot server has **no enforced authentication on any socket event** and **no authorization middleware on HTTP endpoints**. Authentication exists as an optional client-initiated ceremony (`authenticate` event) but is never required before executing privileged actions such as creating wagered matches, joining rooms, firing weapons, or deleting rooms. Every socket event handler operates on a trust-the-client model. The `/stats` HTTP endpoint exposes financial and operational telemetry to the public internet without any authentication.
+The SolShot escrow program implements a server-authority model where a single `config.authority` pubkey controls all privileged operations: match settlement, emergency pause/unpause, config updates, and (partially) match creation. The program uses Anchor's type system (`Signer<'info>`, `has_one`, `Account<'info, T>`) consistently for authority enforcement, with all 7 account structs containing appropriate signer constraints. The pause guard (OC-04) is applied to all 4 economic instructions via `constraint = !config.is_paused`.
 
-**Total findings**: 14
-- CRITICAL: 5
-- HIGH: 5
-- MEDIUM: 3
-- LOW: 1
+However, the analysis reveals several access control observations that warrant investigation:
 
----
+1. The `CreateMatch` instruction does not validate that the calling authority matches `config.authority`, meaning anyone can create match escrows. While settlement requires config authority, mismatched creation authority leads to stuck funds requiring timeout-based recovery.
 
-## Inventory: All Endpoints and Socket Events
+2. The `update_config` instruction uses a one-step authority transfer pattern without a propose/accept flow, creating lockout risk. It also does not re-validate the distinct-address invariant, allowing the authority to set overlapping treasury/ops/authority addresses after initialization.
 
-### HTTP Endpoints (server/index.js)
+3. All instructions lack CPI guards, making them callable as inner instructions from other programs. While the program's trust model assumes direct invocation by the server, CPI-based invocation could create unexpected interaction patterns.
 
-| Endpoint | Auth Required? | Auth Enforced? | Notes |
-|---|---|---|---|
-| `GET /` | No | N/A | Status page, harmless |
-| `GET /health` | No | No | Health check, low risk |
-| `GET /stats` | **Should be** | **No** | Exposes SOL financial data, error logs |
-
-### Socket Events (server/socket-io/main.js)
-
-| Event | Auth Required? | Auth Enforced? | Host-Only? | Host Check? | State Check? |
-|---|---|---|---|---|---|
-| `authenticate` | N/A | N/A | No | N/A | No |
-| `createRoom` | For wagers | **No** | N/A | N/A | No |
-| `joinRoom` | For wagers | **No** | No | N/A | No |
-| `deleteRoom` | Yes | **No** | **Yes** | **No** | No |
-| `leaveRoom` | No | N/A | No | N/A | No |
-| `getRooms` | No | N/A | No | N/A | No |
-| `ready` | No | No | No | Partial | No |
-| `buyWeapon` | No | No | No | N/A | Yes |
-| `shopDone` | No | No | No | N/A | Yes |
-| `fire` | No | No | No | N/A | Yes (turn) |
-| `requestTerrain` | No | No | No | No | No |
-| `createWeaponArray` | No | No | No | No | No |
-| `terrainPath` | No | No | No | No | No |
-| `playAgainRequest` | No | No | No | Partial | No |
-| `getShotInfo` | Optional | No | No | N/A | No |
-| `prestigeBurn` | Yes | Partial | No | N/A | No |
-| `shoot` (legacy) | No | No | No | No | No |
-| `weaponPick` | No | No | No | No | No |
-| `weaponChange` | No | No | No | No | No |
-| `angleChange` | No | No | No | No | No |
-| `powerChange` | No | No | No | No | No |
-| `stepLeft` | No | No | No | No | No |
-| `stepRight` | No | No | No | No | No |
-| `giveTurn` | No | No | No | No | No |
-| `requestTurn` | No | No | No | No | No |
-| `getWeaponArray` | No | No | No | No | No |
-| `getTerrainPath` | No | No | No | No | No |
+The overall access control architecture is well-structured for a server-authority escrow. The tiered timeout system (1h settlement, 24h player cancel, 48h permissionless reclaim) provides progressive access escalation that prevents permanent fund lockup.
 
 ---
 
-## Findings
+## Scope
+
+- **Files analyzed:** `programs/solshot-escrow/src/lib.rs` (855 LOC)
+- **Functions analyzed:** `initialize_config`, `update_config`, `pause_program`, `unpause_program`, `create_match`, `deposit_wager`, `settle_match`, `cancel_match`, `permissionless_reclaim` (9 instruction handlers)
+- **Account structs analyzed:** `InitializeConfig`, `UpdateConfig`, `PauseProgram`, `UnpauseProgram`, `CreateMatch`, `DepositWager`, `SettleMatch`, `CancelMatch`, `PermissionlessReclaim` (9 structs)
+- **Estimated coverage:** 100% of on-chain access control surface
 
 ---
 
-### AC-01: JWT Generated But Never Validated on Subsequent Events
+## Key Mechanisms
 
-**Severity**: CRITICAL
-**Location**: `server/middleware/auth.js:86-92`, `server/socket-io/main.js:170-177`
-**CWE**: CWE-306 (Missing Authentication for Critical Function)
+### Mechanism 1: Global Config Initialization (OC-01)
 
-**Description**:
-The `handleAuthenticate` function generates a JWT token (line 131 of auth.js) and returns it to the client, but no socket event handler ever calls `verifyToken()` to validate the JWT on subsequent requests. The `verifyToken` function exists (auth.js:100-107) but is exported and never imported or used anywhere in the codebase. Authentication is purely ceremonial -- the server marks `client.isAuthenticated = true` and `client.walletAddress` on the socket object, but no event handler checks `client.isAuthenticated` before executing.
+**Location:** `lib.rs:47-65` (handler), `lib.rs:446-461` (account struct)
 
-**Evidence**:
-```
-// auth.js:131 - Token generated
-const token = generateToken(walletAddress);
+**Purpose:**
+One-time initialization of the program's global configuration PDA, which stores the authority pubkey, treasury address, ops address, pause flag, and PDA bump.
 
-// main.js:170-176 - authenticate event stores state but nothing checks it
-client.on('authenticate', (data) => {
-    const result = handleAuthenticate(client, data)
-    if (result.success) {
-        authenticatedWallets[client.id] = result.walletAddress
-    }
-    client.emit('authResult', result)
-})
-```
+**How it works:**
+1. Line 447-455: Anchor `init` constraint creates the config PDA with seeds `[b"config"]` and canonical bump. The `init` constraint ensures this can only be called once -- subsequent calls fail because the account already exists.
+2. Line 458: `payer` is a `Signer<'info>` that pays rent. This is the deployer, but the payer is NOT necessarily the authority.
+3. Lines 53-55: Three `require!` checks enforce that authority, treasury, and ops are all distinct pubkeys.
+4. Lines 57-63: The config fields are set. Notably, `config.authority = authority` where `authority` is a parameter, not the payer's key. The payer and authority can be different addresses.
 
-No event handler contains `if (!client.isAuthenticated)` or calls `verifyToken()`.
+**Assumptions:**
+- The deployer is trusted to provide correct authority, treasury, and ops addresses at initialization time.
+- `init` constraint prevents reinitialization (Anchor discriminator check).
+- The payer is trusted not to pass malicious addresses. There is no on-chain verification that the authority key is actually controlled by anyone -- it is a raw `Pubkey` parameter.
 
-**Exploit Scenario**:
-An attacker connects a raw WebSocket client, skips the `authenticate` event entirely, and immediately emits `createRoom` with `player.wager: 0.5` and a fabricated `player.walletAddress`. The server creates a wagered room associated with an unverified wallet address.
+**Invariants:**
+- I7: Only one GlobalConfig PDA can exist per program (PDA seeds `[b"config"]` are fixed).
+- After initialization: `authority != treasury`, `authority != ops`, `treasury != ops`.
 
-**Recommendation**:
-Add authentication middleware to Socket.IO that intercepts all events requiring a wallet. Validate the JWT on the `connection` handshake or implement a per-event guard:
-```js
-function requireAuth(client) {
-    if (!client.isAuthenticated || !authenticatedWallets[client.id]) {
-        client.emit('error', { reason: 'Authentication required' });
-        return false;
-    }
-    return true;
-}
-```
-Apply this guard to: `createRoom`, `joinRoom`, `deleteRoom`, `fire`, `buyWeapon`, `shopDone`, `requestTerrain`, `playAgainRequest`, `prestigeBurn`.
+**Concerns:**
+- The authority is set from a function parameter, not from the signer. A malicious deployer could set authority to any pubkey, including an address nobody controls, immediately bricking the program.
+- There is no event emitted for initialization. Monitoring cannot detect when/how the config was initialized.
 
 ---
 
-### AC-02: deleteRoom Has No Host-Only Check
+### Mechanism 2: Config Update / Authority Transfer
 
-**Severity**: CRITICAL
-**Location**: `server/socket-io/main.js:274-284`
-**CWE**: CWE-285 (Improper Authorization)
+**Location:** `lib.rs:70-89` (handler), `lib.rs:464-475` (account struct)
 
-**Description**:
-The `deleteRoom` event handler checks only `if (client.roomId !== null)` before destroying the room. It does not check `client.isHost`. Any player in the room -- the joiner (non-host) -- can emit `deleteRoom` and the server will destroy the room, remove all associated state (match state, gold, wagers, inventories), and notify all players with `opponentLeft`.
+**Purpose:**
+Allows the current authority to update any combination of authority, treasury, and ops addresses.
 
-**Evidence**:
-```js
-// main.js:274-284
-client.on('deleteRoom', async () => {
-    if (client.roomId !== null) {         // <-- Only checks room membership, not host role
-        client.leave(client.roomId)
-        await removeRoom(client.roomId)   // <-- Destroys ALL room state
-        io.sockets.in(client.roomId).emit('opponentLeft', {})
-        io.emit('setRooms', {rooms: getOpenRooms()})
-        io.socketsLeave(client.roomId);
-        client.roomId = null
-        client.isHost = false
-    }
-})
-```
+**How it works:**
+1. Line 466-471: Account struct requires `config` with `has_one = authority @ EscrowError::Unauthorized` and `authority: Signer<'info>`. This ensures only the current config authority can call this instruction.
+2. Lines 78-86: Each field is updated only if the corresponding `Option` parameter is `Some`. If `None`, the current value is preserved.
+3. Line 79: `config.authority = a` -- immediate one-step transfer. No pending state, no acceptance by new authority.
 
-Compare with `ready` event (line 414-508) which does check `client.isHost`.
+**Assumptions:**
+- The authority is trusted to provide valid new addresses.
+- The authority will not accidentally set authority to an uncontrolled key.
+- No distinct-address re-validation is needed after initialization (this assumption is INCORRECT -- see concerns).
 
-**Exploit Scenario**:
-During an active wagered match, the losing player emits `deleteRoom`. The room is immediately destroyed. Because `removeRoom()` is called instead of the forfeit logic in `leaveRoom`, the wager settlement is bypassed entirely -- no forfeit settlement occurs, and the opponent loses their wager with no recourse.
+**Invariants:**
+- I1: Only `config.authority` (as signer) can update config.
 
-**Recommendation**:
-Add a host check:
-```js
-client.on('deleteRoom', async () => {
-    if (client.roomId !== null && client.isHost === true) {
-```
-Additionally, `deleteRoom` during an active wagered match should trigger the same forfeit settlement logic as `leaveRoom`/`disconnect`.
+**Concerns:**
+- **One-step authority transfer (EP-069/SP-017 pattern):** Line 79 sets authority immediately. If `new_authority` is set to an incorrect pubkey (typo, uncontrolled key, zero address), the program becomes permanently ungovernable. The secure pattern is two-step: propose + accept (SP-017). This is the highest-priority access control observation.
+- **Distinct-address invariant not re-validated:** `initialize_config` enforces `authority != treasury`, `authority != ops`, `treasury != ops` (lines 53-55). However, `update_config` does NOT re-check these invariants. An authority could:
+  - Set `new_authority` to the same address as treasury or ops.
+  - Set `new_treasury` to the same address as ops.
+  - Set `new_authority` to the same address as `new_treasury` AND `new_ops` by calling `update_config` twice (first update treasury, then update authority to match).
+  - This breaks the `treasury != ops` check in `SettleMatch` (line 588), but since that check compares the accounts passed to the instruction (not the config values), an attacker could pass different accounts. Wait -- the constraint `treasury.key() == config.treasury` (line 587) and `ops.key() == config.ops` (line 596) bind the instruction accounts to config. If `config.treasury == config.ops`, then the same account must be passed for both, which would violate `treasury.key() != ops.key()` (line 588). So settlement would fail. The authority could set treasury == ops and effectively prevent settlement, requiring cancel/reclaim timeout recovery.
+- **No event emitted:** Authority changes are not logged on-chain. An authority rotation would be invisible to monitoring unless indexing transaction logs.
 
 ---
 
-### AC-03: No Authentication Required for Wager Room Creation
+### Mechanism 3: Emergency Pause/Unpause (OC-04)
 
-**Severity**: CRITICAL
-**Location**: `server/socket-io/main.js:354-410`
-**CWE**: CWE-306 (Missing Authentication for Critical Function)
+**Location:** `lib.rs:93-103` (handlers), `lib.rs:480-505` (account structs)
 
-**Description**:
-The `createRoom` handler accepts a `player.wager` amount and `player.walletAddress` directly from the client payload without verifying that the socket has been authenticated or that the wallet address belongs to the connected user. An unauthenticated client can create a room with any wallet address and any wager tier.
+**Purpose:**
+Emergency pause mechanism that halts all economic instructions.
 
-**Evidence**:
-```js
-// main.js:354 - No auth check at entry
-client.on('createRoom', async ({player}) => {
-    // ...
-    const wagerAmount = player.wager || 0          // Client-supplied
-    const walletAddress = player.walletAddress || authenticatedWallets[client.id] || null  // Falls back, but client-supplied takes priority
-    if (wagerAmount > 0 && !isValidWager(wagerAmount)) {
-        // Only validates tier, not auth
-    }
-    wagerStates[roomId] = {
-        amount: wagerAmount,
-        wallets: { [client.id]: walletAddress }     // Unverified wallet stored
-    }
-```
+**How it works:**
+1. Both `PauseProgram` and `UnpauseProgram` account structs require `has_one = authority` on the config account and `authority: Signer<'info>`.
+2. Pause sets `config.is_paused = true` (line 94). Unpause sets it to `false` (line 101).
+3. Both are idempotent -- calling pause when already paused is a no-op (no error).
+4. The pause guard appears as `constraint = !config.is_paused @ EscrowError::ProgramPaused` on 4 instructions: `CreateMatch` (line 527), `DepositWager` (line 551), `SettleMatch` (line 605), `CancelMatch` (line 644).
 
-The `walletAddress` from the payload takes priority over the authenticated wallet via the `||` chain. This means even if the socket IS authenticated with wallet A, the client can pass wallet B in the payload.
+**Assumptions:**
+- The authority will use pause judiciously and not permanently pause to grief users.
+- The pause guard covers all economically sensitive instructions.
+- `permissionless_reclaim` intentionally bypasses pause (DCA-02 design).
 
-**Exploit Scenario**:
-1. Attacker connects without authenticating.
-2. Emits `createRoom` with `{ player: { name: "attacker", wager: 0.5, walletAddress: "<victim_wallet>" } }`.
-3. Server creates a wagered room with the victim's wallet address as the host's wallet.
-4. If settlement occurs, funds would be directed based on the forged wallet address.
+**Invariants:**
+- I1: Only `config.authority` can pause/unpause.
+- I6: Paused state blocks create_match, deposit_wager, settle_match, cancel_match.
 
-**Recommendation**:
-1. Require authentication before `createRoom` with any wager > 0.
-2. Always use the authenticated wallet address, never trust client-supplied wallet:
-```js
-const walletAddress = authenticatedWallets[client.id] || null;
-if (wagerAmount > 0 && !walletAddress) {
-    client.emit('createRoomError', { reason: 'Wallet authentication required for wagers' });
-    return;
-}
-```
+**Concerns:**
+- **Pause blocks cancel_match but not permissionless_reclaim:** During a pause, players cannot cancel active matches. They must wait the full 48h for permissionless reclaim. The 24h cancel window is frozen during pause. If the authority pauses the program with Active matches, those matches can only be recovered via permissionless_reclaim (48h). This is a known design tradeoff documented as DCA-02.
+- **Pause blocks settlement:** If the authority pauses the program, it also blocks itself from settling active matches. This means: pause -> cannot settle -> wait 48h -> permissionless reclaim refunds both players. The authority cannot selectively settle during pause.
+- **Same authority for pause and unpause:** A compromised authority can pause the program to prevent settlements, then let timeouts trigger refunds for matches where it should have settled a winner. This is a denial-of-service vector, not a fund theft vector, since refunds go to the correct players.
 
 ---
 
-### AC-04: joinRoom Accepts Unverified Wallet Address
+### Mechanism 4: Match Creation Authority
 
-**Severity**: CRITICAL
-**Location**: `server/socket-io/main.js:288-344`
-**CWE**: CWE-285 (Improper Authorization), CWE-345 (Insufficient Verification of Data Authenticity)
+**Location:** `lib.rs:110-152` (handler), `lib.rs:510-532` (account struct)
 
-**Description**:
-The `joinRoom` handler accepts `walletAddress` directly from the client payload and stores it in the wager state without verifying ownership. Similar to AC-03, the client-supplied wallet takes priority over the authenticated wallet.
+**Purpose:**
+Creates a new match escrow PDA with two registered players and a wager amount.
 
-**Evidence**:
-```js
-// main.js:288
-client.on('joinRoom', async ({roomId, name, color, walletAddress, wager}) => {
-    // ...
-    const joinerWallet = walletAddress || authenticatedWallets[client.id] || null
-    // ...
-    // main.js:332-334
-    if (ws) {
-        ws.wallets[client.id] = joinerWallet   // Unverified wallet stored for settlement
-    }
-```
+**How it works:**
+1. Line 510-518: The `escrow` account is initialized with `init`, `payer = authority`, seeds `[b"match", match_id.as_bytes()]`.
+2. Line 520-521: `authority` is `Signer<'info>` and `mut` (pays rent).
+3. Line 524-529: `config` is loaded with pause guard but NO `has_one = authority` constraint.
+4. Lines 117-129: Input validation -- match_id length, wager bounds, distinct players, authority != player.
+5. Line 133: `escrow.authority = ctx.accounts.authority.key()` -- stores the signer's pubkey as the match authority.
 
-**Exploit Scenario**:
-1. Player A creates a wagered room (0.5 SOL) with legitimate wallet.
-2. Attacker joins with `walletAddress: "<someone_else_wallet>"`.
-3. Attacker intentionally loses. Settlement sends funds to the forged wallet address as the "loser" -- but since settlement is a stub (returns success without actual transfer), the attacker risks nothing while the system records the wrong wallet for future settlement.
-4. When actual on-chain settlement is implemented, this becomes a direct fund theft vector.
+**Assumptions:**
+- The calling authority is the server keypair that will later settle the match.
+- The server ensures match_id uniqueness (PDA seeds enforce on-chain uniqueness).
 
-**Recommendation**:
-Same as AC-03. Never trust client-supplied wallet addresses. Always derive from authenticated session:
-```js
-const joinerWallet = authenticatedWallets[client.id] || null;
-if (roomWager > 0 && !joinerWallet) {
-    client.emit('joinRoomError', { reason: 'Wallet authentication required' });
-    return;
-}
-```
+**Invariants:**
+- I5: `player_one != player_two` AND `authority != player_one` AND `authority != player_two`.
+- The match PDA is unique per match_id (PDA derivation).
+
+**Concerns:**
+- **Missing `has_one = authority` on config (OBSERVATION):** The `CreateMatch` account struct does NOT validate that the signer matches `config.authority`. Any signer can create a match, paying their own SOL for rent. The `config` account is only used for the `!is_paused` constraint. This means:
+  - A random user could create match escrows with arbitrary players and wager amounts.
+  - The created escrow's `authority` field would be set to the random user's pubkey.
+  - Later, `settle_match` requires BOTH `escrow.has_one = authority` (line 565) AND `config.has_one = authority` (line 604). If the escrow's authority differs from config's authority, settlement is impossible.
+  - The match would require timeout-based cancel (24h by player, 48h by anyone).
+  - This is likely by design for the server model (only the server has the keypair and sends create_match transactions), but is not enforced on-chain.
+  - **5 Whys:** Why is there no `has_one = authority` on CreateMatch? Likely because the server is the only expected caller. Why is this a concern? Because on-chain enforcement should not rely on off-chain assumptions. Why would an attacker create a match? To lock up SOL in unresolvable escrows (grief) or to create matches where they are both player_one and player_two (self-play). Why can't they self-play? Because `player_one != player_two` is enforced (line 125), but both could be controlled by the same entity via separate keypairs.
 
 ---
 
-### AC-05: /stats Endpoint Exposes Financial Data Without Authentication
+### Mechanism 5: Deposit Authorization
 
-**Severity**: CRITICAL
-**Location**: `server/index.js:34`, `server/services/monitoring.js:166-211`
-**CWE**: CWE-200 (Exposure of Sensitive Information to an Unauthorized Actor)
+**Location:** `lib.rs:156-223` (handler), `lib.rs:536-556` (account struct)
 
-**Description**:
-The `GET /stats` endpoint is publicly accessible with no authentication, rate limiting, or IP restriction. It exposes:
-- Total SOL wagered across all matches
-- Total SOL settled to winners
-- Treasury and ops fee totals
-- Number of forfeits
-- SHOT token emission/burn totals
-- Last 5 server errors (which may contain stack traces, wallet addresses, or internal state)
-- Active connection count
-- Peak connection count
+**Purpose:**
+Allows registered players to deposit their wager into the escrow PDA.
 
-**Evidence**:
-```js
-// index.js:34
-app.get('/stats', getStats)    // No middleware
+**How it works:**
+1. Line 544-545: `player: Signer<'info>` -- the depositor must sign.
+2. Lines 163-166: State check -- must be `AwaitingDeposits`.
+3. Lines 168-170: Player identity check -- depositor must be `escrow.player_one` or `escrow.player_two`.
+4. Lines 172-176: Double-deposit prevention -- checks `player_one_deposited` / `player_two_deposited` flags.
+5. Lines 179-188: System program CPI transfer from player to escrow PDA.
+6. Lines 193-197: Update deposit flags.
+7. Lines 206-209: If both deposited, transition to Active and record `activated_at`.
 
-// monitoring.js:189-194 - Financial data exposed
-sol: {
-    totalWagered: stats.totalWagered.toFixed(4),
-    totalSettled: stats.totalSettled.toFixed(4),
-    treasuryFees: stats.totalTreasuryFees.toFixed(4),
-    opsFees: stats.totalOpsFees.toFixed(4),
-    forfeits: stats.totalForfeits,
-},
+**Assumptions:**
+- The system program CPI correctly transfers lamports.
+- `player.key()` comparison against stored pubkeys is sufficient for identity verification.
+- A player with insufficient lamports will have the CPI fail, preventing state corruption.
 
-// monitoring.js:207-209 - Error details exposed
-errors: {
-    count: stats.errorCount,
-    recent: stats.errors.slice(-5),   // May contain wallet addresses, internal errors
-},
-```
+**Invariants:**
+- I2: Only player_one or player_two can deposit.
+- Each player can deposit exactly once.
+- Deposit amount equals `escrow.wager_lamports` (read from escrow state, not from instruction params).
 
-**Exploit Scenario**:
-1. An attacker hits `GET /stats` to learn the platform's financial volume, error patterns, and active user count.
-2. Error messages may leak wallet addresses, internal state, or exploitable information.
-3. Connection counts reveal peak usage times for timing attacks.
-4. Financial totals reveal platform revenue for competitive intelligence.
-
-**Recommendation**:
-1. Add authentication middleware (API key, JWT, or IP whitelist) to `/stats`.
-2. Separate the public-safe metrics (uptime, match count) from sensitive data (SOL totals, errors).
-3. Strip wallet addresses and internal details from error objects before exposing:
-```js
-app.get('/stats', requireAdminAuth, getStats);
-```
+**Concerns:**
+- No concerns identified. The deposit authorization is well-implemented. The player must be the signer, must match a registered player address, must not have already deposited, and the deposit amount is read from the escrow (not user-supplied).
 
 ---
 
-### AC-06: No Room-Membership Validation on Relay Events
+### Mechanism 6: Settlement Authorization
 
-**Severity**: HIGH
-**Location**: `server/socket-io/main.js:631-666`, `918-1000`
-**CWE**: CWE-284 (Improper Access Control)
+**Location:** `lib.rs:228-305` (handler), `lib.rs:560-610` (account struct)
 
-**Description**:
-Numerous relay events (`weaponPick`, `shoot`, `weaponChange`, `angleChange`, `powerChange`, `stepLeft`, `stepRight`, `giveTurn`, `requestTurn`) blindly relay to `client.roomId` without verifying:
-1. That the client is actually in a room (`client.roomId` could be stale)
-2. That the client is a legitimate participant in that room (not an observer or stale connection)
-3. That it is the client's turn (for action events)
+**Purpose:**
+Authority-only settlement that distributes the pot to winner, treasury, and ops.
 
-**Evidence**:
-```js
-// main.js:664 - Legacy shoot relay: no validation at all
-client.on('shoot', ({selectedWeapon, power, rotation, ...}) => {
-    client.to(client.roomId).emit('opponentShoot', {...})
-})
+**How it works:**
+1. Line 560-567: `escrow` has `has_one = authority` (the match creator authority) and `close = authority`.
+2. Line 570-571: `authority: Signer<'info>`.
+3. Line 574-580: `winner: UncheckedAccount` with constraint `winner.key() == escrow.player_one || winner.key() == escrow.player_two`.
+4. Line 585-590: `treasury: UncheckedAccount` with constraints `treasury.key() == config.treasury` AND `treasury.key() != ops.key()`.
+5. Line 594-597: `ops: UncheckedAccount` with constraint `ops.key() == config.ops`.
+6. Line 601-606: `config` with `has_one = authority` (the config authority) AND `!config.is_paused`.
 
-// main.js:924 - angleChange: no room or turn check
-client.on('angleChange', ({rotation}) => {
-    client.to(client.roomId).emit('opponentAngleChange', {rotation})
-})
-```
+**Assumptions:**
+- The match creator authority is the same as config.authority. If they differ, settlement is impossible.
+- The authority is trusted to honestly report the winner.
+- UncheckedAccount for winner/treasury/ops is safe because all are validated via constraints.
 
-**Exploit Scenario**:
-A client that has been disconnected from a room (but whose socket is still alive) could send relay events that get broadcast to the room they were previously in, causing state confusion. Alternatively, a malicious client could manipulate `client.roomId` by calling `joinRoom` with a target room, then send `shoot` events to interfere with another match.
+**Invariants:**
+- I1: Only config.authority AND escrow.authority (must be same key) can settle.
+- I3: Winner must be one of the two registered players.
+- I4: Treasury matches config.treasury, ops matches config.ops, treasury != ops.
 
-**Recommendation**:
-Add a helper that validates room membership:
-```js
-function isInRoom(client, roomId) {
-    const room = findRoom(roomId);
-    if (!room) return false;
-    return room.host?.socketId === client.id || room.player?.socketId === client.id;
-}
-```
-Apply this check to all relay events.
+**Concerns:**
+- **Dual authority requirement:** Settlement requires the signer to match BOTH `escrow.authority` (via `has_one` on escrow, line 565) AND `config.authority` (via `has_one` on config, line 604). If `config.authority` was rotated between match creation and settlement, old matches become unsettleable. The authority must remain stable during the 1h settlement window, or delegate to the same key.
+- **Winner determination is authority-only:** The authority (server) decides who won. There is no on-chain game logic or dispute resolution. The authority could declare the wrong winner. This is an inherent trust assumption of the server-authority model.
+- **UncheckedAccount for winner is appropriate:** The winner is a wallet address, not a program-owned account. `UncheckedAccount` with the constraint validation is the correct Anchor pattern here. The `/// CHECK:` comment is present (line 574).
+- **UncheckedAccount for treasury/ops is appropriate:** Same reasoning. These are destination wallets, not program-owned accounts.
 
 ---
 
-### AC-07: createWeaponArray Can Be Called By Any Room Member
+### Mechanism 7: Cancellation Authorization (OC-05)
 
-**Severity**: HIGH
-**Location**: `server/socket-io/main.js:645-659`
-**CWE**: CWE-285 (Improper Authorization)
+**Location:** `lib.rs:310-376` (handler), `lib.rs:614-649` (account struct)
 
-**Description**:
-The `createWeaponArray` event generates a random weapon array and broadcasts it to all room members. There is no check that the caller is the host. Either player can overwrite the weapon array at any time, and there is no state machine validation (no match state check).
+**Purpose:**
+Two-tier cancellation: authority can cancel AwaitingDeposits; players can cancel AwaitingDeposits immediately or any state after 24h timeout.
 
-**Evidence**:
-```js
-// main.js:645
-client.on('createWeaponArray', ({count, max}) => {
-    var room = findRoom(client.roomId)
-    if (!room) return
-    // No host check, no state check
-    var x, randomArray = []
-    for (let index = 0; index < count; index++) {
-        x = Math.floor(Math.random() * max)
-        randomArray.push(x)
-    }
-    room.randomArray = randomArray
-    persistRoom(room);
-    io.sockets.in(client.roomId).emit('setWeaponArray', {randomArray: room.randomArray})
-})
-```
+**How it works:**
+1. Line 614-624: `escrow` with `close = caller`. `caller: Signer<'info>`.
+2. Lines 627-638: `player_one` and `player_two` are `UncheckedAccount` validated against escrow records.
+3. Line 641-646: `config` with pause guard but NO `has_one = authority`. The config is used for `config.authority` comparison (line 312, 336) and pause check.
+4. Lines 336-344: Authorization logic:
+   - `is_authority = caller == config_authority` (line 336)
+   - `is_player = caller == escrow.player_one || caller == escrow.player_two` (lines 337-338)
+   - Authority can cancel ONLY if state is `AwaitingDeposits` (line 341)
+   - Player can cancel if state is `AwaitingDeposits` OR if `is_timed_out` (line 342)
+5. Lines 346-349: Terminal state check -- cannot cancel Settled or Cancelled.
 
-**Exploit Scenario**:
-A non-host player emits `createWeaponArray` with `{count: 100, max: 1}` to force all weapons to index 0 (the weakest weapon), manipulating the game state in their favor.
+**Assumptions:**
+- `config.authority` read from the config account is the current authority (it is -- Anchor deserializes the account).
+- The 24h timeout correctly prevents premature cancellation.
+- The caller (authority or player) is an appropriate recipient for PDA rent.
 
-**Recommendation**:
-1. Add a host check: `if (!client.isHost) return;`
-2. Add match state validation (only valid during lobby/weapon_shop)
-3. Validate `count` and `max` parameters for reasonable bounds.
+**Invariants:**
+- Authority can only cancel pre-deposit matches.
+- Players can cancel pre-deposit matches immediately, or any non-terminal match after 24h.
+- The caller receives PDA rent (incentive to clean up stale matches).
+
+**Concerns:**
+- **No `has_one = authority` on config:** The `CancelMatch` config account does NOT use `has_one = authority`. Instead, the handler reads `config.authority` (line 312) and compares it manually with `caller.key()` (line 336). This is functionally equivalent but differs from the pattern used in `SettleMatch` (which does use `has_one`). The manual comparison is safe because it reads from the validated config PDA, but it is an inconsistency.
+- **Authority cancel vs. player cancel ambiguity:** If the authority is also a player (which is prevented by OC-06 in `create_match`, line 128-129), this would create ambiguity. Since OC-06 prevents authority-as-player, the `is_authority` and `is_player` paths are mutually exclusive for any given match.
+- **Unauthorized caller who is neither authority nor player:** If someone who is neither authority nor a player calls cancel, both `is_authority` and `is_player` are false, and the `require!` on line 340-344 fails with `Unauthorized`. This is correct.
 
 ---
 
-### AC-08: terrainPath Can Be Overwritten By Any Room Member
+### Mechanism 8: Permissionless Reclaim (DCA-02)
 
-**Severity**: HIGH
-**Location**: `server/socket-io/main.js:937-964`
-**CWE**: CWE-285 (Improper Authorization)
+**Location:** `lib.rs:381-438` (handler), `lib.rs:654-681` (account struct)
 
-**Description**:
-The `terrainPath` event allows any room member to set the terrain path, host positions, and heightmap for the room. There is no host check and no state validation. This is a state mutation that affects the server-authoritative physics engine.
+**Purpose:**
+Escape hatch allowing anyone to trigger refund after 48 hours, with PDA rent going to the caller as incentive.
 
-**Evidence**:
-```js
-// main.js:937
-client.on('terrainPath', ({path, hostPos, playerPos}) => {
-    var room = findRoom(client.roomId)
-    if (!room) return
-    // No host check, no state check
-    room.terrainPath = [...path]
-    room.host.pos = {...hostPos}       // Client controls host position
-    room.player.pos = {...playerPos}   // Client controls player position
-    room.heightmap = heightmap         // Client controls physics terrain
-```
+**How it works:**
+1. Line 654-664: `escrow` with `close = caller`. `caller: Signer<'info>`. No `config` account.
+2. Lines 667-678: `player_one` and `player_two` validated against escrow records.
+3. Lines 390-394: Terminal state check.
+4. Lines 396-411: 48h timeout check from `activated_at` or `created_at`.
+5. Lines 414-428: Set state to Cancelled, refund depositors.
 
-**Exploit Scenario**:
-1. A malicious joiner emits `terrainPath` with `hostPos` placed off-screen or inside terrain.
-2. The server updates `room.host.pos`, so subsequent `fire` events use the manipulated positions for damage calculations.
-3. The attacker sets `playerPos` to a position that is unreachable by projectiles (e.g., `{x: 0, y: 0}`).
+**Assumptions:**
+- Anyone with a valid signer (any keypair) can call this after 48h.
+- The PDA rent is sufficient incentive for a third party to submit the transaction.
+- No pause guard is needed because this is an emergency escape hatch.
 
-**Recommendation**:
-1. Add a host check: only the host should be able to set terrain.
-2. Better: use `requestTerrain` (server-generated terrain) exclusively and remove the legacy `terrainPath` event.
-3. If legacy support is needed, validate that positions are within terrain bounds.
+**Invariants:**
+- Only callable after 48h from activation (or creation if never activated).
+- Cannot reclaim Settled or Cancelled matches.
+- Refunds go to the correct player addresses (validated via constraints).
+
+**Concerns:**
+- **No pause guard (by design):** This is the escape hatch. Even if the authority pauses the program and refuses to settle, anyone can reclaim after 48h. This is a deliberate design choice.
+- **Caller receives rent but not wager:** The caller receives PDA rent (~0.00146 SOL for 168 bytes). For very small wagers, this rent is larger than the wager itself. This is not a vulnerability but is economically noteworthy.
+- **No config account needed:** This instruction does not load the config PDA at all. It is fully self-contained using only the escrow PDA. This means it works even if the config has been corrupted or the authority has been lost.
 
 ---
 
-### AC-09: requestTerrain Has No Role or State Checks
+## Trust Model
 
-**Severity**: HIGH
-**Location**: `server/socket-io/main.js:877-914`
-**CWE**: CWE-285 (Improper Authorization)
-
-**Description**:
-The `requestTerrain` event generates new terrain and transitions the match state to `BATTLE`. There is no check on who called it or whether the match is in the correct state for terrain generation. Either player can call this at any time, repeatedly regenerating terrain mid-battle.
-
-**Evidence**:
-```js
-// main.js:877
-client.on('requestTerrain', () => {
-    const room = findRoom(client.roomId)
-    if (!room) return
-    // No host check, no state check
-    const seed = Math.floor(Math.random() * 1000000)
-    const { path, heightmap } = generateTerrain(1200, 534, seed)
-    // ...
-    if (ms.status !== MATCH_STATES.BATTLE) {
-        transitionState(ms, MATCH_STATES.BATTLE)   // Forces state transition
-    }
-    ms.currentTurn = getNextTurn(...)               // Resets turn order
-```
-
-**Exploit Scenario**:
-1. Mid-battle, the losing player emits `requestTerrain`.
-2. Server regenerates the entire terrain, resets tank positions, and resets the turn order.
-3. This effectively nullifies any progress the opponent made.
-
-**Recommendation**:
-1. Only allow `requestTerrain` when match state is `WEAPON_SHOP` or `LOBBY` (post-ready, pre-battle).
-2. Add a host-only or once-per-round guard.
-3. Validate state transitions:
-```js
-if (ms && ms.status !== MATCH_STATES.WEAPON_SHOP && ms.status !== MATCH_STATES.LOBBY) {
-    return; // Terrain already generated for this round
-}
-```
+| Entity | Trust Level | What They Control | Trust Assumption |
+|--------|------------|-------------------|------------------|
+| `config.authority` (server keypair) | FULL | Settlement (winner determination), pause/unpause, config updates, match creation (by convention) | Trusted to honestly report winners, not abuse pause, not set invalid config |
+| Players (player_one, player_two) | LIMITED | Deposit their own wagers, cancel after timeout | Trusted only to act in self-interest; constrained by on-chain logic |
+| Permissionless caller (anyone) | NONE | Reclaim after 48h | Zero trust; fully constrained by 48h timeout and refund-only logic |
+| Deployer (payer of initialize_config) | ONE-TIME | Initial config setup | Trusted at deploy time to set correct addresses; no ongoing trust |
 
 ---
 
-### AC-10: Player Can Act On Opponent's Behalf via Legacy Relay Events
+## State Analysis
 
-**Severity**: HIGH
-**Location**: `server/socket-io/main.js:664-666`, `991-993`
-**CWE**: CWE-284 (Improper Access Control)
+### State Read by Access Control Logic
+- `config.authority` -- compared against signer in update_config, pause, unpause, settle_match, cancel_match
+- `config.treasury` -- compared against instruction account in settle_match
+- `config.ops` -- compared against instruction account in settle_match
+- `config.is_paused` -- checked in create_match, deposit_wager, settle_match, cancel_match
+- `escrow.authority` -- used for `has_one` in settle_match
+- `escrow.player_one`, `escrow.player_two` -- used for player identity checks in deposit, settle (winner), cancel (player validation), reclaim (refund routing)
+- `escrow.state` -- checked in deposit, settle, cancel, reclaim
+- `escrow.player_one_deposited`, `escrow.player_two_deposited` -- checked in deposit (double-deposit prevention), cancel/reclaim (refund routing)
+- `escrow.activated_at`, `escrow.created_at` -- used for timeout calculations in settle, cancel, reclaim
 
-**Description**:
-Legacy relay events like `shoot` and `giveTurn` are direct relays that broadcast to the opponent without any identity or turn validation. The `shoot` event in particular allows a client to emit an `opponentShoot` event to the other player at any time, potentially triggering client-side damage calculations that bypass the server-authoritative `fire` system.
-
-**Evidence**:
-```js
-// main.js:664 - Shoot relay: no identity check, no turn check
-client.on('shoot', ({selectedWeapon, power, rotation, rotation1, rotation2, position1, position2}) => {
-    client.to(client.roomId).emit('opponentShoot', {selectedWeapon, power, rotation, rotation1, rotation2, position1, position2})
-})
-
-// main.js:991 - Turn relay: opponent can force a turn transfer
-client.on('giveTurn', ({terrainData, pos1, pos2, rotation1, rotation2}) => {
-    client.to(client.roomId).emit('recieveTurn', {terrainData, pos1, pos2, rotation1, rotation2})
-})
-```
-
-**Exploit Scenario**:
-1. If the client still uses the legacy `shoot` event (for backward compatibility), a player can emit `shoot` out of turn, causing the opponent's client to process an extra shot that was never validated server-side.
-2. A player emits `giveTurn` to transfer the turn to their opponent at an arbitrary time, disrupting the turn order on the opponent's client while the server's `matchStates` still thinks it is the attacker's turn.
-
-**Recommendation**:
-Remove legacy relay events (`shoot`, `giveTurn`, `requestTurn`) or gate them behind the same turn and state validation as the `fire` event. If backward compatibility is required, add:
-```js
-client.on('shoot', (...) => {
-    if (ms && ms.currentTurn !== client.id) return; // Turn check
-    // ... relay
-})
-```
+### State Written by Access Control Logic
+- `config.authority`, `config.treasury`, `config.ops` -- modified by update_config
+- `config.is_paused` -- modified by pause/unpause
+- `escrow.authority` -- set once in create_match
+- `escrow.player_one_deposited`, `escrow.player_two_deposited` -- set in deposit_wager
+- `escrow.state` -- transitions in deposit (AwaitingDeposits -> Active), settle (Active -> Settled), cancel (-> Cancelled), reclaim (-> Cancelled)
 
 ---
 
-### AC-11: playAgainRequest Wipes Wager State Without Settlement Check
+## Dependencies
 
-**Severity**: MEDIUM
-**Location**: `server/socket-io/main.js:1004-1053`
-**CWE**: CWE-285 (Improper Authorization)
-
-**Description**:
-The `playAgainRequest` handler deletes `wagerStates[client.roomId]` when both players agree. However, there is no check that the match has been properly settled before wiping wager data. If the match state is `SETTLING` or `BATTLE` (due to a race condition or state confusion), the wager is silently destroyed.
-
-**Evidence**:
-```js
-// main.js:1014-1019 - Wager state wiped without settlement verification
-matchStates[client.roomId] = createMatchState(client.roomId)
-delete goldStates[client.roomId]
-delete weaponInventories[client.roomId]
-delete shopReady[client.roomId]
-delete wagerStates[client.roomId]     // <-- Wager gone, no settlement check
-```
-
-**Exploit Scenario**:
-1. Match completes, settlement is attempted but fails (e.g., RPC error in future implementation).
-2. Both players immediately click "play again" before checking settlement status.
-3. Wager state is deleted, making it impossible to retry settlement.
-
-**Recommendation**:
-Only allow `playAgainRequest` when match state is `COMPLETE`:
-```js
-const ms = matchStates[client.roomId];
-if (ms && ms.status !== MATCH_STATES.COMPLETE) return;
-```
+- `anchor_lang::prelude::*` -- Anchor framework providing account validation, PDA derivation, signer enforcement
+- `anchor_lang::system_program` -- System program CPI for SOL transfers in deposit_wager
+- `Clock::get()?` -- Solana clock sysvar for timestamp reads (lines 140, 209, 241, 333, 409)
+- No external oracle programs
+- No SPL Token program
+- No third-party CPI targets
 
 ---
 
-### AC-12: No Nonce/Replay Prevention in Authentication
+## Focus-Specific Analysis
 
-**Severity**: MEDIUM
-**Location**: `server/middleware/auth.js:72-73`
-**CWE**: CWE-294 (Authentication Bypass by Capture-replay)
+### Complete Role Matrix
 
-**Description**:
-The authentication message uses a timestamp with a 5-minute window but no nonce or replay tracking. A captured authentication payload can be replayed within the 5-minute window to authenticate as the same wallet on a different socket.
+| Role | Who | Instructions | Accounts Controlled | Trust Level |
+|------|-----|-------------|---------------------|-------------|
+| **Authority** | `config.authority` (server hot wallet) | `update_config`, `pause_program`, `unpause_program`, `settle_match`, `cancel_match` (AwaitingDeposits only) | GlobalConfig (mut), MatchEscrow (via has_one) | FULL |
+| **Match Creator** | `escrow.authority` (set at create time) | `create_match`, `settle_match` (must also be config.authority) | MatchEscrow (init, close on settle) | FULL (must = config.authority for settlement) |
+| **Player** | `escrow.player_one` or `escrow.player_two` | `deposit_wager`, `cancel_match` (with timeout for Active) | MatchEscrow (deposit flags, state) | LIMITED |
+| **Deployer/Payer** | Whoever calls `initialize_config` | `initialize_config` (one-time) | GlobalConfig (init) | ONE-TIME |
+| **Anyone** | Any signer | `permissionless_reclaim` (after 48h), `create_match` (see concern) | MatchEscrow (close, state to Cancelled) | NONE (time-gated) |
 
-**Evidence**:
-```js
-// auth.js:72-73
-const age = Date.now() - timestamp;
-if (age > AUTH_TIMEOUT || age < -60000) {    // 5 minute window
-    return { valid: false, reason: 'Auth message expired' };
-}
-// No nonce, no used-signature tracking
-```
+### Authority Transfer Analysis
 
-**Exploit Scenario**:
-1. Attacker intercepts a legitimate authentication message (via MITM on the wildcard CORS WebSocket, network sniffing, etc.).
-2. Within 5 minutes, attacker replays the exact same `{ walletAddress, message, signature, timestamp }` on their own socket.
-3. Server accepts the replayed authentication and marks the attacker's socket as the legitimate wallet.
+| Authority Field | Transfer Mechanism | One-Step or Two-Step | Timelock | Lockout Risk |
+|----------------|-------------------|---------------------|---------|-------------|
+| `config.authority` | `update_config(new_authority: Some(pubkey))` | **ONE-STEP** | **NONE** | **YES** -- setting to wrong key permanently bricks governance |
+| `config.treasury` | `update_config(new_treasury: Some(pubkey))` | ONE-STEP | NONE | LOW -- can be corrected by authority |
+| `config.ops` | `update_config(new_ops: Some(pubkey))` | ONE-STEP | NONE | LOW -- can be corrected by authority |
+| `escrow.authority` | Set once at `create_match` (line 133); never changeable | IMMUTABLE | N/A | If config.authority rotates, old escrows cannot be settled (requires timeout recovery) |
 
-**Recommendation**:
-1. Include a nonce in the auth message: `"SolShot Auth: <wallet> at <timestamp> nonce <random>"`.
-2. Track used nonces/signatures in a time-bounded set:
-```js
-const usedNonces = new Map(); // nonce -> expiry timestamp
-// Reject if nonce already used
-```
+**Assessment:** The one-step authority transfer is the highest-priority access control concern. SP-017 (Two-Step Authority Transfer) is the secure pattern. The program should implement a `propose_new_authority` + `accept_authority` pattern. At minimum, the update should validate that the new authority is not the zero address and that the three addresses remain distinct.
 
----
+### Missing Check Inventory
 
-### AC-13: CORS Wildcard Allows Any Origin
+| Instruction | State Modified | Signer Check | Authority Validated Against Config | Observation |
+|-------------|---------------|-------------|-----------------------------------|-------------|
+| `initialize_config` | GlobalConfig (init) | `payer: Signer` | N/A (first init) | Payer != authority by design. No issue. |
+| `update_config` | GlobalConfig (mut) | `authority: Signer` | `has_one = authority` | **Missing: distinct-address re-validation** |
+| `pause_program` | GlobalConfig (mut) | `authority: Signer` | `has_one = authority` | Correct |
+| `unpause_program` | GlobalConfig (mut) | `authority: Signer` | `has_one = authority` | Correct |
+| `create_match` | MatchEscrow (init) | `authority: Signer` | **NOT validated** (no has_one) | **Missing: config.authority check** |
+| `deposit_wager` | MatchEscrow (mut) | `player: Signer` | N/A (player, not authority) | Correct |
+| `settle_match` | MatchEscrow (mut, close) | `authority: Signer` | `has_one = authority` (both escrow and config) | Correct |
+| `cancel_match` | MatchEscrow (mut, close) | `caller: Signer` | Manual comparison (line 336) | Functionally correct but inconsistent pattern |
+| `permissionless_reclaim` | MatchEscrow (mut, close) | `caller: Signer` | N/A (permissionless) | Correct by design |
 
-**Severity**: MEDIUM
-**Location**: `server/index.js:16-19`, `server/index.js:22`
-**CWE**: CWE-346 (Origin Validation Error)
+### Key Management Assessment
 
-**Description**:
-Both the Socket.IO server and the Express app use `origin: "*"` CORS configuration, allowing connections from any domain. This enables cross-site WebSocket hijacking and cross-origin API access.
+| Key | Storage | Single Key or Multisig | Hot or Cold | Assessment |
+|-----|---------|----------------------|-------------|------------|
+| `config.authority` | On-chain in GlobalConfig PDA | **Single key** | **Hot wallet** (server keypair) | Server hot wallet is a single point of failure. Compromise = arbitrary settlement, config changes, pause abuse. |
+| Upgrade authority | Off-chain (Solana program authority) | Single key (currently) | Unknown | Comment at line 1 notes OC-13: must transfer to multisig before mainnet. |
+| Treasury destination | On-chain in GlobalConfig PDA | Wallet address (not key management) | N/A | Receives 7% fees. Authority-changeable. |
+| Ops destination | On-chain in GlobalConfig PDA | Wallet address (not key management) | N/A | Receives 3% fees. Authority-changeable. |
 
-**Evidence**:
-```js
-// index.js:15-19 - Socket.IO wildcard CORS
-const io = new socket.Server(server, {
-    cors: {
-        origin: "*",
-        methods: ["GET", "POST"]
-    }
-})
-
-// index.js:22 - Express wildcard CORS
-app.use(cors())
-```
-
-**Exploit Scenario**:
-1. Attacker hosts a malicious website at `evil.com` with JavaScript that connects to the SolShot WebSocket server.
-2. If a SolShot user visits `evil.com` while their wallet is connected, the malicious page can emit socket events as the user (since origin is unrestricted).
-3. The attacker's page can create rooms, join matches, and interact with the server on the user's behalf.
-
-**Recommendation**:
-Restrict CORS origins to the actual client domain(s):
-```js
-const ALLOWED_ORIGINS = [
-    'https://solshot.gg',
-    'http://localhost:3000',  // dev only
-];
-const io = new socket.Server(server, {
-    cors: { origin: ALLOWED_ORIGINS, methods: ["GET", "POST"] }
-});
-app.use(cors({ origin: ALLOWED_ORIGINS }));
-```
+**Assessment:** The server keypair is a single hot wallet controlling all privileged operations. For mainnet, this should be a multisig or at minimum have the upgrade authority transferred to a multisig (as noted in OC-13). The server keypair creates matches, settles matches, and can update all config fields. If compromised, an attacker can: (1) settle matches to the wrong winner, (2) change treasury/ops to attacker-controlled wallets, (3) change authority to lock out the team, (4) pause the program indefinitely.
 
 ---
 
-### AC-14: Hardcoded JWT Secret in Source Code
+## Cross-Focus Intersections
 
-**Severity**: LOW
-**Location**: `server/middleware/auth.js:17`
-**CWE**: CWE-798 (Use of Hard-coded Credentials)
+### Access Control x State Machine
+- State transitions are authority-gated: only authority can trigger `Active -> Settled`. Players can trigger `* -> Cancelled` with timeout constraints. The state machine agent should verify that the access control tiers correctly prevent unauthorized state transitions.
+- The `cancel_match` handler has complex conditional logic (lines 340-344) that combines role checks with state checks. The state machine agent should verify this logic exhaustively.
 
-**Description**:
-The JWT secret has a hardcoded fallback value `'solshot-dev-secret-change-me'`. If the `JWT_SECRET` environment variable is not set (which is common in development and may accidentally occur in production), all JWTs are signed with a publicly known secret.
+### Access Control x Arithmetic
+- No direct intersection. The authority does not control any arithmetic parameters (fee BPS are hardcoded constants).
 
-**Evidence**:
-```js
-// auth.js:17
-const JWT_SECRET = process.env.JWT_SECRET || 'solshot-dev-secret-change-me';
-```
+### Access Control x CPI
+- The `deposit_wager` instruction performs CPI to system program with the player's signer authority. The CPI agent should verify that the system program CPI cannot be exploited.
+- Settlement and cancellation use direct lamport manipulation (not CPI). The lamport transfers are performed AFTER the mutable borrow is dropped (lines 284-291), which is correct for Anchor's borrow checker safety but is not technically a CPI concern.
 
-**Exploit Scenario**:
-If deployed without setting `JWT_SECRET`, an attacker can forge valid JWT tokens for any wallet address using the known default secret, then use those tokens to impersonate any wallet.
+### Access Control x Token/Economic
+- The authority controls fee destination addresses via `update_config`. The Token/Economic agent should analyze the impact of destination changes on pending settlements.
+- Fee BPS (700, 300) are hardcoded constants -- the authority CANNOT change fee percentages without a program upgrade.
 
-**Note**: Since JWTs are currently never validated (see AC-01), this is LOW severity today but becomes CRITICAL when JWT validation is implemented.
-
-**Recommendation**:
-1. Fail fast if `JWT_SECRET` is not set in production:
-```js
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET && process.env.NODE_ENV === 'production') {
-    throw new Error('JWT_SECRET must be set in production');
-}
-```
-2. Use a cryptographically random secret of at least 256 bits.
+### Access Control x Timing
+- All three timeout tiers (1h settlement, 24h cancel, 48h reclaim) interact with access control by expanding who can act as time progresses. The timing agent should verify that the timeout boundaries are correct and that Clock manipulation (validator time skew) cannot bypass access control tiers prematurely.
 
 ---
 
-## Summary Matrix
+## Cross-Reference Handoffs
 
-| ID | Severity | Location | Title |
-|---|---|---|---|
-| AC-01 | CRITICAL | auth.js:86-92, main.js:170-177 | JWT generated but never validated on any event |
-| AC-02 | CRITICAL | main.js:274-284 | deleteRoom has no host-only check |
-| AC-03 | CRITICAL | main.js:354-410 | No authentication required for wager room creation |
-| AC-04 | CRITICAL | main.js:288-344 | joinRoom accepts unverified wallet address |
-| AC-05 | CRITICAL | index.js:34, monitoring.js:166-211 | /stats exposes financial data without auth |
-| AC-06 | HIGH | main.js:631-666, 918-1000 | No room-membership validation on relay events |
-| AC-07 | HIGH | main.js:645-659 | createWeaponArray callable by any room member |
-| AC-08 | HIGH | main.js:937-964 | terrainPath overwrites physics state without auth |
-| AC-09 | HIGH | main.js:877-914 | requestTerrain has no role or state checks |
-| AC-10 | HIGH | main.js:664-666, 991-993 | Legacy relay events enable acting on opponent's behalf |
-| AC-11 | MEDIUM | main.js:1004-1053 | playAgainRequest wipes wager without settlement check |
-| AC-12 | MEDIUM | auth.js:72-73 | No nonce/replay prevention in authentication |
-| AC-13 | MEDIUM | index.js:16-19, 22 | CORS wildcard allows any origin |
-| AC-14 | LOW | auth.js:17 | Hardcoded JWT secret fallback |
+- **To CPI Agent:** The `system_program::transfer` CPI in `deposit_wager` (line 179) passes the player's signer authority. Verify that no privilege escalation is possible. Also check: the system_program is validated via `Program<'info, System>` (lines 531, 555, 609, 648, 680) -- this is the secure pattern.
+- **To State Machine Agent:** The `cancel_match` handler (lines 340-344) combines access control with state checks in a single `require!`. Verify that all state/role combinations are correctly handled: authority+AwaitingDeposits=OK, authority+Active=DENIED, player+AwaitingDeposits=OK, player+Active+timed_out=OK, player+Active+not_timed_out=DENIED, nobody+any=DENIED.
+- **To Token/Economic Agent:** The authority can change treasury and ops addresses at any time via `update_config`. This means the authority can redirect fee income. The economic impact should be analyzed: is there a window where a settlement uses old treasury/ops addresses after an update? Answer: No, because `settle_match` reads `config.treasury` and `config.ops` at instruction execution time, and the config is loaded fresh each time. But: if the authority updates config in one instruction and settles in the next instruction of the same transaction, the settlement uses the new addresses. This is consistent behavior but should be documented.
+- **To Timing Agent:** The settlement deadline check (line 236) has a conditional: `if ctx.accounts.escrow.activated_at > 0`. This means matches with `activated_at == 0` (which should be impossible for Active matches, since `activated_at` is set on Active transition at line 209) skip the deadline check entirely. Verify that no code path can set state to Active without also setting `activated_at`.
 
 ---
 
-## Systemic Root Cause
+## Risk Observations
 
-The fundamental issue is **architectural**: authentication and authorization are implemented as an optional client-initiated ceremony rather than as server-enforced middleware. The `authenticate` socket event exists, but:
+- **R1: update_config breaks distinct-address invariant.** `initialize_config` enforces `authority != treasury != ops`, but `update_config` does not re-validate this. An authority could set `treasury == ops`, making settlement impossible (the `treasury != ops` constraint on SettleMatch would fail). This is a self-grief by the authority, not a third-party attack, but it could leave active matches unresolvable via settlement.
 
-1. No socket middleware intercepts events to verify authentication.
-2. No per-handler guard checks `client.isAuthenticated`.
-3. The JWT is generated but never consumed.
-4. Client-supplied wallet addresses override authenticated wallets.
-5. The `isHost` flag on the socket is set by the server but never checked for host-only operations (except `ready` and `playAgainRequest`, which have partial checks).
+- **R2: CreateMatch has no config authority gate.** Any signer can create match escrows. While this does not directly enable fund theft (settlement requires config.authority), it enables: (a) escrow griefing -- creating many matches that occupy PDA space, (b) creating matches where escrow.authority differs from config.authority, making them unsettleable, (c) wasting SOL on escrow rent for matches that can never be properly settled.
 
-**Recommended Architecture**:
-1. **Socket.IO middleware**: Add `io.use()` middleware that validates authentication on connection or first event.
-2. **Per-event guards**: Create `requireAuth()` and `requireHost()` helper functions applied consistently to all state-mutating events.
-3. **Wallet binding**: After authentication, always use `authenticatedWallets[client.id]` for wallet operations. Never accept client-supplied wallet addresses in event payloads.
-4. **HTTP middleware**: Add admin authentication to `/stats` and any future API endpoints.
-5. **Remove legacy relay events**: The coexistence of server-authoritative (`fire`) and client-relay (`shoot`) events creates a dual-path vulnerability where attackers can bypass server validation by using the legacy path.
+- **R3: One-step authority transfer.** Setting `config.authority` to a wrong key is an irreversible lockout. This is the most impactful access control risk. The program would continue to function for existing matches (timeout recovery works), but no new settlements, no config changes, and no pause/unpause would be possible.
+
+- **R4: PDA rent incentive imbalance at low wagers.** The minimum wager is 10,000 lamports (0.00001 SOL). The PDA rent for 168 bytes is approximately 1,461,600 lamports (~0.00146 SOL). The PDA rent is 146x the minimum wager. For cancellation: the caller receives rent. For settlement: the authority receives rent. This creates a situation where the rent is more valuable than the wager itself at low wager amounts. Not a vulnerability, but an economic quirk worth analyzing.
+
+- **R5: No CPI guard on any instruction.** None of the 9 instructions check whether they are being invoked via CPI or directly. This means another Solana program could invoke any instruction as an inner instruction. While the signer requirements still apply, CPI-based invocation opens interaction patterns not considered in the server-authority model. For example, a wrapper program could invoke `create_match` + `deposit_wager` + `deposit_wager` in a single transaction, or invoke `cancel_match` from within a CPI chain.
+
+---
+
+## Novel Attack Surface Observations
+
+- **Authority rotation during active matches:** If the authority is rotated via `update_config` while matches are Active, those matches become permanently unsettleable (because `settle_match` requires `has_one = authority` on BOTH escrow and config). The escrow stores the old authority; the config now has the new authority. The only recovery path is timeout-based cancellation (24h by player, 48h by anyone). This is a unique interaction between the immutable escrow authority and the mutable config authority. An attacker who compromises the authority for even one transaction could: (1) rotate authority to an attacker-controlled key, (2) settle pending matches with the wrong winner (using the brief window where they ARE the authority), then (3) the real team loses all future governance. This is the standard authority compromise scenario, but the dual-authority requirement in `settle_match` creates a unique wrinkle: the attacker must act in the same transaction/before any matches are created with the new authority.
+
+- **Match ID collision for PDA occupancy attack:** Match IDs are strings up to 32 characters (line 117). PDA seeds are `[b"match", match_id.as_bytes()]`. If an attacker can predict or observe match IDs that the server will use, they could pre-create escrow PDAs with those IDs (since `create_match` has no config authority gate). The server's subsequent `create_match` call would fail because the PDA already exists (`init` constraint). This is a denial-of-service vector: the attacker creates escrows with common match IDs (e.g., "room-1", "room-2", ...), blocking the server from creating legitimate matches with those IDs. The server must use unpredictable match IDs (e.g., UUIDs) to mitigate this. Note: each pre-created escrow costs the attacker ~0.00146 SOL in rent, which they recover 48h later via permissionless_reclaim.
+
+---
+
+## Questions for Other Focus Areas
+
+- **For State Machine focus:** Can the state reach `Active` without `activated_at` being set? Line 207-209 sets state to Active and `activated_at` in the same block, but is there a scenario where only one update persists? (Answer should be no -- Anchor serialization is atomic within an instruction, but verify.)
+
+- **For Arithmetic focus:** The u128 -> u64 cast at line 260 (`as u64`) and line 267 (`as u64`) -- are these safe given the MAX_WAGER bound? Max total_pot = 200 SOL = 200e9 lamports. Max treasury = 200e9 * 700 / 10000 = 14e9. Max ops = 200e9 * 300 / 10000 = 6e9. All fit in u64. But verify the intermediate u128 values are correctly bounded before the cast.
+
+- **For CPI focus:** The `system_program::transfer` in `deposit_wager` (line 179) -- is the `system_program` account validated? Yes, via `Program<'info, System>` (line 555). Confirm this is the correct pattern.
+
+- **For Timing focus:** The settlement deadline check at line 236 uses `if activated_at > 0`. What happens if a match transitions to Active with `activated_at = 0`? This should be impossible (line 209 reads Clock), but if the Clock returns 0 (which it should never do on mainnet), the settlement deadline check would be skipped.
+
+- **For Token/Economic focus:** At minimum wager (10,000 lamports), the fee calculations yield: treasury = 20000 * 700 / 10000 = 1,400 lamports. ops = 20000 * 300 / 10000 = 600 lamports. Winner = 20000 - 1400 - 600 = 18,000 lamports. All values are > 0. But verify the dust-loss scenario at this minimum.
+
+---
+
+## Raw Notes
+
+### Signer Map (All 9 `Signer<'info>` instances)
+
+| Line | Account Name | Instruction | Purpose |
+|------|-------------|------------|---------|
+| 458 | `payer` | InitializeConfig | Pays rent for config PDA |
+| 474 | `authority` | UpdateConfig | Must match config.authority |
+| 489 | `authority` | PauseProgram | Must match config.authority |
+| 504 | `authority` | UnpauseProgram | Must match config.authority |
+| 521 | `authority` | CreateMatch | Pays rent for escrow PDA (NOT validated against config) |
+| 545 | `player` | DepositWager | Must be player_one or player_two |
+| 571 | `authority` | SettleMatch | Must match both escrow.authority and config.authority |
+| 624 | `caller` | CancelMatch | Must be authority or player (logic in handler) |
+| 664 | `caller` | PermissionlessReclaim | Any signer (permissionless) |
+
+### has_one Map (All 5 `has_one` constraints)
+
+| Line | Account | Field | Instruction | Error |
+|------|---------|-------|------------|-------|
+| 470 | config | authority | UpdateConfig | Unauthorized |
+| 485 | config | authority | PauseProgram | Unauthorized |
+| 500 | config | authority | UnpauseProgram | Unauthorized |
+| 565 | escrow | authority | SettleMatch | (default) |
+| 604 | config | authority | SettleMatch | Unauthorized |
+
+### UncheckedAccount Inventory
+
+| Line | Account | Instruction | CHECK Comment | Constraint Validation | Safe? |
+|------|---------|------------|---------------|----------------------|-------|
+| 581 | `winner` | SettleMatch | "Constrained to escrow.player_one or escrow.player_two" | `winner.key() == escrow.player_one \|\| winner.key() == escrow.player_two` | YES |
+| 590 | `treasury` | SettleMatch | "Constrained to config.treasury; uniqueness check vs ops" | `treasury.key() == config.treasury` AND `treasury.key() != ops.key()` | YES |
+| 598 | `ops` | SettleMatch | "Constrained to config.ops" | `ops.key() == config.ops` | YES |
+| 631 | `player_one` | CancelMatch | "Must match escrow.player_one" | `player_one.key() == escrow.player_one` | YES |
+| 638 | `player_two` | CancelMatch | "Must match escrow.player_two" | `player_two.key() == escrow.player_two` | YES |
+| 671 | `player_one` | PermissionlessReclaim | "Must match escrow.player_one for refund routing" | `player_one.key() == escrow.player_one` | YES |
+| 678 | `player_two` | PermissionlessReclaim | "Must match escrow.player_two for refund routing" | `player_two.key() == escrow.player_two` | YES |
+
+All 7 UncheckedAccount instances have `/// CHECK:` comments and are validated via Anchor constraints. No unvalidated UncheckedAccounts found.
+
+### Pause Guard Coverage
+
+| Instruction | Has Pause Guard | Line |
+|-------------|----------------|------|
+| initialize_config | No (one-time init) | N/A |
+| update_config | No (admin meta-operation) | N/A |
+| pause_program | No (must work to activate) | N/A |
+| unpause_program | No (must work to deactivate) | N/A |
+| create_match | YES | 527 |
+| deposit_wager | YES | 551 |
+| settle_match | YES | 605 |
+| cancel_match | YES | 644 |
+| permissionless_reclaim | **No (DCA-02 escape hatch)** | N/A |
+
+### PDA Derivation Catalog
+
+| PDA | Seeds | Bump Handling | Collision Risk |
+|-----|-------|--------------|----------------|
+| GlobalConfig | `[b"config"]` | Canonical bump stored at init (line 62), referenced with `bump = config.bump` | None (singleton) |
+| MatchEscrow | `[b"match", match_id.as_bytes()]` | Canonical bump stored at init (line 142), referenced with `bump = escrow.bump` | Low (match_id must be unique; enforced by PDA derivation) |
+
+Both PDAs use Anchor's canonical bump pattern (SP-001, SP-009). No non-canonical bump vulnerabilities.

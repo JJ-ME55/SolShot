@@ -1,1111 +1,605 @@
-# The Fortress - Final Audit Report
+# Stronghold of Security - Final Audit Report
 
-**Project:** SolShot
-**Audit Date:** 2026-02-14
-**Auditor:** The Fortress v1.0
-**Scope:** Full codebase adversarial security analysis
-**Ecosystem:** Node.js / Socket.IO / Solana (Anchor-adjacent)
-**Branch:** dev
+**Audit ID:** sos-solshot-escrow-clean-2026-02-23
+**Program:** SolShot Escrow (`programs/solshot-escrow/src/lib.rs`)
+**Protocol Type:** Escrow/Wagering (SOL-only)
+**Ecosystem:** Solana / Anchor
+**LOC:** 855 (single file)
+**Git Ref:** `ecfd03ba15f64bd17606ce16ab2a29dcbd0d7361`
+**Audit Date:** 2026-02-23
+**Audit Tier:** Quick (coverage verification skipped)
+**Auditor:** The Fortress v2.0 / Stronghold of Security
 
 ---
 
-## Executive Summary
+## 1. Executive Summary
 
 ### Overall Security Posture
 
-SolShot is a browser-based multiplayer artillery game with Solana wallet integration and SOL wager settlement. The security posture is **critically deficient across every subsystem**. Of 35 attack hypotheses investigated, 34 were confirmed and 1 was rated potential — a 97% confirmation rate that indicates systemic rather than isolated failures.
+SolShot Escrow is a single-file Anchor program (855 LOC) implementing a 1v1 wagered match escrow using native SOL. The program's arithmetic is sound (u128 widening, checked operations, overflow-checks=true), the state machine lifecycle is well-guarded (OC-10 state-before-transfer pattern), and the CPI surface is minimal (single System Program call for deposits). The permissionless_reclaim instruction provides an effective 48h escape hatch ensuring no funds are permanently stuck.
 
-The codebase has three foundational security failures that compound into a non-deployable state: (1) **Authentication is decorative** — wallet signature verification exists but is never enforced on any gameplay event, meaning every socket handler is accessible to anonymous connections. (2) **Input validation is absent** — every socket event payload passes directly from untrusted clients into state mutations, physics calculations, and economic operations without type checking, bounds checking, or sanitization. (3) **Concurrency is unmanaged** — all 8 in-memory state stores are mutated by multiple async handlers without locks, creating reliable double-settlement race conditions.
+However, the program's security posture is **critically compromised by centralization risk and missing access control gates**. The server authority has unilateral, instantaneous, irreversible power over: winner selection, fee destinations, program pause, and its own transfer -- all without timelock, multisig, or propose/accept patterns. A single authority key compromise enables complete protocol takeover and fund extraction within a single transaction bundle.
 
-The SOL settlement system is currently a stub (returns `success: true` without on-chain execution), which masks the severity of the wager logic bugs. When real escrow is implemented, the existing codebase has at least 4 distinct paths to double-pay or zero-pay outcomes. The SHOT token system has no supply cap enforcement and can be infinitely farmed. All economic state is ephemeral — a server restart wipes balances, milestones, prestige tiers, and active wagers with no recovery mechanism. **This codebase must not handle real funds in its current state.**
+Three CRITICAL-severity findings define the threat landscape:
+
+1. **S004 (CVSS 9.3):** The `create_match` instruction lacks `has_one = authority`, enabling any wallet to pre-squat PDA namespaces. Combined with public roomId broadcast via WebSocket, this allows an automated attacker to silently disable on-chain wager escrow for every match at near-zero cost.
+
+2. **S001 (CVSS 8.7):** A chain attack combining authority takeover (H001) + fee redirect (H002) + winner fraud (H005) enables 100% fund extraction from all active matches plus permanent governance lockout upon authority key compromise.
+
+3. **H001 (CVSS 8.7):** One-step authority transfer with no propose/accept, no timelock, no zero-address guard. Historical precedent: Raydium $4.4M, Step Finance $30-40M.
+
+The program has strong defenses against flash loans, sandwich attacks, oracle manipulation, reentrancy, and arithmetic overflow. The primary attack surface is governance centralization and a single missing access control constraint on `create_match`.
 
 ### Key Statistics
 
 | Metric | Count |
 |--------|-------|
-| Total Attack Hypotheses Investigated | 35 |
-| CONFIRMED Vulnerabilities | 34 |
-| POTENTIAL Issues | 1 |
-| Investigated & Cleared | 0 |
-| Requires Manual Review | 0 |
+| Total Strategies Investigated | 34 |
+| CONFIRMED Vulnerabilities | 12 |
+| POTENTIAL Issues (conditional) | 5 |
+| NOT VULNERABLE (cleared) | 17 |
+| Confirmation Rate | 50% (17/34 actionable) |
 
-### Severity Distribution
+---
 
-| Severity | Count | CVSS Range | Requires Immediate Action |
-|----------|-------|------------|---------------------------|
-| CRITICAL | 13 | 9.0 - 10.0 | YES - Block deployment |
-| HIGH | 20 | 7.0 - 8.9 | YES - Fix before launch |
-| MEDIUM | 1 | 4.0 - 6.9 | Recommended before launch |
-| LOW | 1 | 0.1 - 3.9 | Address when convenient |
-| INFO | 0 | N/A | No action required |
+## 2. Scope and Methodology
+
+### Scope
+
+| Attribute | Value |
+|-----------|-------|
+| Program | `programs/solshot-escrow/src/lib.rs` (855 LOC) |
+| Framework | Anchor (Solana) |
+| Protocol Type | 1v1 SOL escrow/wagering |
+| Instructions | 9 (initialize_config, update_config, pause_program, unpause_program, create_match, deposit_wager, settle_match, cancel_match, permissionless_reclaim) |
+| CPI Surface | System Program only (deposit_wager) |
+| Token Types | Native SOL only (no SPL tokens) |
+| Off-chain Dependencies | Server socket handlers referenced for S004 analysis |
+
+### Methodology
+
+This audit followed the Stronghold of Security (SOS) methodology:
+
+1. **Phase 0/0.5 -- Pre-Flight & Static Scan:** Configuration detection, KB manifest generation, hot-spot pattern scanning
+2. **Phase 1/1.5 -- Parallel Context Building:** 6 specialized auditor agents (Access Control, Arithmetic, State Machine, CPI/External, Token/Economic, Timing/Ordering) analyzed the program independently
+3. **Phase 2/3 -- Architecture Synthesis & Strategy Generation:** Unified architectural understanding, 30 primary + 4 supplemental attack strategies generated across 3 tiers
+4. **Phase 4/4.5 -- Parallel Investigation:** All 34 strategies investigated with evidence-based status determination
+5. **Phase 5 -- Final Synthesis:** Combination matrix, attack trees, severity re-calibration, this report
+
+### Coverage Notes
+
+- **Quick tier:** Coverage verification was SKIPPED. All 34 strategies were investigated.
+- **Not a stacked audit:** No previous findings or HANDOVER.md.
+- **Off-chain code referenced:** Server socket handlers (`main.js`) were analyzed for S004 to verify the public roomId broadcast and missing retry logic. The on-chain program remains the primary audit target.
+
+---
+
+## 3. Severity Breakdown
+
+| Severity | Count | Finding IDs |
+|----------|-------|-------------|
+| **CRITICAL** | 3 | S004, S001, H001 |
+| **HIGH** | 9 | H002, H003, H005(P), H006, H007, H008, H011, H014(P), S002 |
+| **MEDIUM** | 4 | H009(P), H010, H017(P), H027(P) |
+| **LOW** | 1 | H016 |
+| **NOT VULNERABLE** | 17 | H004, H012-H013, H015, H018-H026, H028-H030, S003 |
+
+(P) = POTENTIAL status -- vulnerability exists conditionally, typically requiring authority compromise as precondition.
 
 ### CVSS Score Summary
 
-| ID | Finding | CVSS Score | Vector |
-|----|---------|------------|--------|
-| H006 | Auth bypass — no enforcement | 9.8 | `CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H` |
-| H001 | Unauthenticated wager room creation | 9.8 | `CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:N/I:H/A:H` |
-| H002 | Wallet address spoofing | 9.8 | `CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:N/I:H/A:H` |
-| H061 | No uncaughtException handler | 9.4 | `CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:H` |
-| H062 | Fire handler unhandled rejection | 9.4 | `CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:H` |
-| H020 | Double settlement race condition | 9.1 | `CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:C/C:N/I:H/A:H` |
-| H027 | Fail-open balance check | 9.1 | `CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:H` |
-| H038 | Unfunded wager room creation | 9.1 | `CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:H` |
-| H037 | Play-again wager deletion | 9.1 | `CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:C/C:N/I:H/A:N` |
-| H011 | Negative wager bypass | 8.6 | `CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:L` |
-| H015 | Null payload crash | 8.6 | `CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:L/A:H` |
-| H069 | Disconnect during settling | 9.1 | `CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:C/C:N/I:H/A:H` |
-| H021 | playAgainRequest wipes wager | 9.1 | `CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:C/C:N/I:H/A:N` |
+| ID | Finding | Status | CVSS | Vector |
+|----|---------|--------|------|--------|
+| S004 | PDA Namespace Pre-Squatting DoS | CONFIRMED | 9.3 | `AV:N/AC:L/PR:N/UI:N/S:C/C:N/I:H/A:H` |
+| S001 | Chain: Authority Takeover + Fee Redirect + Winner Fraud | CONFIRMED | 8.7 | `AV:N/AC:L/PR:H/UI:N/S:C/C:N/I:H/A:H` |
+| H001 | One-Step Authority Transfer Takeover | CONFIRMED | 8.7 | `AV:N/AC:L/PR:H/UI:N/S:C/C:N/I:H/A:H` |
+| H003 | update_config Distinctness Bypass -> Settlement DoS | CONFIRMED | 8.7 | `AV:N/AC:L/PR:H/UI:N/S:C/C:N/I:H/A:H` |
+| H008 | CreateMatch PDA Occupancy DoS | CONFIRMED | 8.2 | `AV:N/AC:L/PR:N/UI:N/S:C/C:N/I:L/A:H` |
+| H002 | Fee Destination Hijack via update_config | CONFIRMED | 8.7* | `AV:N/AC:L/PR:H/UI:N/S:C/C:N/I:H/A:H` |
+| H006 | 23-Hour Dead Zone Fund Lockup | CONFIRMED | 8.7* | `AV:N/AC:L/PR:H/UI:N/S:C/C:N/I:H/A:H` |
+| H007 | Pause-as-Griefing on Active Matches | CONFIRMED | 8.7* | `AV:N/AC:L/PR:H/UI:N/S:C/C:N/I:H/A:H` |
+| H011 | Config Treasury Self-Redirect | CONFIRMED | 8.7* | `AV:N/AC:L/PR:H/UI:N/S:C/C:N/I:H/A:H` |
+| S002 | Chain: Distinctness Poison + Pause Double Lock | CONFIRMED | 8.7* | `AV:N/AC:L/PR:H/UI:N/S:C/C:N/I:H/A:H` |
 
-**Average CVSS (CONFIRMED only):** 8.2
-**Highest CVSS:** H006 at 9.8
-
-### Top 5 Priority Items
-
-| Priority | ID | Finding | Severity | Location |
-|----------|-----|---------|----------|----------|
-| 1 | H006 | Auth bypass — isAuthenticated never checked | CRITICAL | `server/socket-io/main.js` |
-| 2 | H001+H002 | Unauthenticated wager + wallet spoofing | CRITICAL | `server/socket-io/main.js:288-410` |
-| 3 | H020+H069 | Double settlement race (fire + disconnect) | CRITICAL | `server/socket-io/main.js:180-830` |
-| 4 | H061+H062 | No error handlers — single event crashes server | CRITICAL | `server/index.js`, `main.js:671` |
-| 5 | H027+H038 | Fail-open balance + unfunded room creation | CRITICAL | `main.js:305-317`, `solana.js:80-102` |
+*Scores for PR:H findings reflect post-compromise blast radius. Operational severity should be treated as higher given hot wallet authority model.
 
 ---
 
-## Critical Findings
+## 4. Detailed Findings
 
-> **ACTION REQUIRED**: These findings MUST be addressed before any deployment.
-
----
-
-### CRITICAL-01: Authentication Never Enforced (H006)
-
-**ID:** H006
-**Severity:** CRITICAL
-**CVSS Score:** 9.8 (`CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H`)
-**Status:** CONFIRMED
-**Location:** `server/socket-io/main.js` (all 27 event handlers)
-
-#### Description
-
-`client.isAuthenticated` is set to `false` on connection (line 166) and set to `true` in `handleAuthenticate()` (auth.js:135). However, `isAuthenticated` is **never read or checked** anywhere in the codebase after assignment. Every single socket event handler executes unconditionally for any connected socket.
-
-#### Attack Scenario
-
-An attacker could:
-1. Connect a raw Socket.IO client — never call `authenticate`
-2. Emit `createRoom` with a spoofed wallet address and 0.5 SOL wager
-3. Play the entire match, fire weapons, trigger settlement
-4. **Result:** Full game participation and wager settlement without any authentication
-
-#### Impact
-
-- **Financial:** Unlimited fund theft when real settlement is implemented
-- **Users Affected:** All players — any attacker on the internet
-- **Protocol State:** Complete compromise of the wager system
-
-#### Evidence
-
-```javascript
-// main.js:166 — set on connect
-client.isAuthenticated = false
-
-// auth.js:135 — set on auth success
-client.isAuthenticated = true;
-
-// NOWHERE in the codebase:
-// if (!client.isAuthenticated) return  ← DOES NOT EXIST
-```
-
-All 27 socket event handlers have zero auth guards.
-
-#### Recommended Fix
-
-```javascript
-// Create auth middleware for wager-related events
-function requireAuth(client) {
-    if (!client.isAuthenticated || !authenticatedWallets[client.id]) {
-        client.emit('error', { reason: 'Authentication required' });
-        return false;
-    }
-    return true;
-}
-
-// Apply to all sensitive handlers:
-client.on('createRoom', async ({player}) => {
-    if (player.wager > 0 && !requireAuth(client)) return;
-    // ...
-});
-```
-
-#### Verification
-
-After fix, verify:
-- [ ] Anonymous sockets cannot create wagered rooms
-- [ ] Anonymous sockets cannot join wagered rooms
-- [ ] All wager-related wallet addresses come from `authenticatedWallets[client.id]`, never from payload
+### CRITICAL FINDINGS
 
 ---
 
-### CRITICAL-02: Unauthenticated Wager Room Creation (H001)
+#### CRITICAL-01: S004 -- PDA Namespace Pre-Squatting DoS
 
-**ID:** H001
-**Severity:** CRITICAL
-**CVSS Score:** 9.8
-**Status:** CONFIRMED
-**Location:** `server/socket-io/main.js:354-410`
+**Status:** CONFIRMED | **Confidence:** 9/10
+**CVSS:** 9.3 (`AV:N/AC:L/PR:N/UI:N/S:C/C:N/I:H/A:H`)
+**Location:** `lib.rs:507-532` (CreateMatch struct), `server/socket-io/main.js:1163,1204`
+**Category:** Access Control, Resource/DoS
+**Precedent:** EP-084 (resource exhaustion)
 
-#### Description
+**Description:** The `CreateMatch` account struct has no `has_one = authority` constraint on config, meaning any funded wallet can create MatchEscrow PDAs. The server generates 32-bit roomIds (`crypto.randomBytes(4)`) that are publicly broadcast to all connected clients via `setRooms` WebSocket event BEFORE the escrow is created. An attacker monitors the lobby feed, observes the exact roomId when a wagered room appears, and races `create_match` with that ID before the server's own escrow creation call (which only fires when a second player joins). The server has no retry logic -- failed escrow creation silently drops the wager.
 
-The `createRoom` handler has zero authentication checks. There is no guard that verifies `client.isAuthenticated === true` or that `authenticatedWallets[client.id]` exists. No balance check is performed on the creator's wallet (only the joiner gets a balance check). The wallet address is taken from the untrusted payload.
+**Impact:** 100% of wagered matches can be silently de-escrowed. Sustainable at ~0.00001 SOL per match (two transaction fees). Rent fully recoverable via `permissionless_reclaim` after 48h.
 
-#### Attack Scenario
+**Root Cause:** Missing `has_one = authority` on CreateMatch config account (lib.rs:523-529).
 
-1. Attacker connects raw Socket.IO client (no wallet, no auth)
-2. Emits `createRoom` with `{ player: { wager: 0.5, walletAddress: "SpoofedWallet" } }`
-3. Server creates room — no balance verification on creator
-4. Legitimate player joins, passes (broken) balance check
-5. **Result:** Attacker risks nothing; legitimate player's funds at stake
-
-#### Evidence
-
-```javascript
-// main.js:354-378 — zero auth, zero balance check on creator
-client.on('createRoom', async ({player}) => {
-    const wagerAmount = player.wager || 0
-    const walletAddress = player.walletAddress || authenticatedWallets[client.id] || null
-    if (wagerAmount > 0 && !isValidWager(wagerAmount)) { return }
-    wagerStates[roomId] = { amount: wagerAmount, wallets: { [client.id]: walletAddress } }
+**Fix:**
+```rust
+// Add to CreateMatch config constraint:
+has_one = authority @ EscrowError::Unauthorized,
 ```
 
-#### Recommended Fix
+Secondary: Increase roomId entropy from 4 bytes to 16 bytes. Tertiary: Add server-side retry with new roomId on escrow failure.
 
-```javascript
-if (wagerAmount > 0) {
-    if (!requireAuth(client)) return;
-    const wallet = authenticatedWallets[client.id]; // NEVER from payload
-    const balance = await verifyBalance(wallet, wagerAmount);
-    if (!balance.sufficient) { client.emit('createRoomError', { reason: 'Insufficient balance' }); return; }
-}
+---
+
+#### CRITICAL-02: S001 -- Combined Authority Takeover + Fee Redirect + Winner Fraud
+
+**Status:** CONFIRMED | **Confidence:** 9/10
+**CVSS:** 8.7 (`AV:N/AC:L/PR:H/UI:N/S:C/C:N/I:H/A:H`)
+**Location:** `lib.rs:70-89` (update_config), `lib.rs:228-305` (settle_match), `lib.rs:573-580` (winner constraint)
+**Category:** Access Control, Token/Economic (chain attack)
+**Precedent:** EP-068 chain (Step Finance $30-40M, Garden Finance $11M)
+
+**Description:** A single authority key compromise enables a three-step chain: (1) TX0: `update_config(new_treasury=attacker, new_ops=attacker)` redirects 10% fees instantly; (2) TX1-N: `settle_match(winner=colluding_player)` extracts 90% per match; (3) TX_final: `update_config(new_authority=attacker_key)` permanently locks out governance. Combined extraction: 100% of all deposited funds in matches where attacker controls a registered player, plus 10% fee theft on all other settlements, plus permanent protocol takeover.
+
+The developer annotated constraints referencing S001 awareness (OC-02, OC-03), but the mitigations (winner must be registered player, treasury must match config) are insufficient -- the attacker trivially satisfies these by pre-registering as a player (create_match is ungated) and redirecting config before settlement.
+
+**Impact:** Complete protocol takeover. Up to 100% fund extraction per match. Permanent governance lockout without program upgrade.
+
+**Fix:** Three mandatory layers: (1) Two-step propose/accept authority transfer; (2) Timelock on treasury/ops changes (24h); (3) Multisig authority before mainnet.
+
+---
+
+#### CRITICAL-03: H001 -- One-Step Authority Transfer Takeover
+
+**Status:** CONFIRMED | **Confidence:** 9/10
+**CVSS:** 8.7 (`AV:N/AC:L/PR:H/UI:N/S:C/C:N/I:H/A:H`)
+**Location:** `lib.rs:79` (assignment), `lib.rs:464-475` (UpdateConfig struct), `lib.rs:690-702` (GlobalConfig)
+**Category:** Access Control
+**Precedent:** EP-068 (Raydium $4.4M, Pump.fun $1.9M, Step Finance $30-40M)
+
+**Description:** `update_config` at line 79 performs `config.authority = a` -- immediate, irreversible, no propose/accept, no timelock, no zero-address guard. GlobalConfig has no `pending_authority` field. Once the authority key is compromised, the attacker transfers governance in a single transaction with zero recovery path.
+
+**Impact:** Complete protocol takeover. Winner manipulation, fee redirection, program pause, permanent governance lockout.
+
+**Fix:**
+```rust
+// Add to GlobalConfig:
+pub pending_authority: Option<Pubkey>,
+
+// Split into propose_authority + accept_authority instructions
+// New authority must sign to accept (proves key control)
 ```
 
 ---
 
-### CRITICAL-03: Wallet Address Spoofing (H002)
-
-**ID:** H002
-**Severity:** CRITICAL
-**CVSS Score:** 9.8
-**Status:** CONFIRMED
-**Location:** `server/socket-io/main.js:296,370`
-
-#### Description
-
-Both `joinRoom` (line 296) and `createRoom` (line 370) accept wallet addresses from the untrusted payload first, using the authenticated wallet only as fallback: `walletAddress || authenticatedWallets[client.id] || null`. An attacker can authenticate as Wallet A, then submit Wallet B in the payload.
-
-#### Attack Scenario
-
-1. Authenticate as empty wallet (WalletA, 0 SOL)
-2. Emit `joinRoom` with `{ walletAddress: "RichWalletAddress" }`
-3. Balance check runs against rich wallet — passes
-4. `wagerStates` stores the spoofed wallet
-5. **Result:** Settlement references wrong wallet; attacker risks nothing
-
-#### Recommended Fix
-
-Never accept wallet addresses from payload for wager operations. Always use `authenticatedWallets[client.id]`.
+### HIGH FINDINGS
 
 ---
 
-### CRITICAL-04: Fail-Open Balance Check (H027)
+#### HIGH-01: H002 -- Fee Destination Hijack via update_config
 
-**ID:** H027
-**Severity:** CRITICAL
-**CVSS Score:** 9.1
-**Status:** CONFIRMED
-**Location:** `server/socket-io/main.js:305-317`, `server/services/solana.js:80-102`
+**Status:** CONFIRMED | **Confidence:** 9/10 | **CVSS:** 8.7
+**Location:** `lib.rs:81-86` (treasury/ops assignment)
 
-#### Description
+`update_config` accepts arbitrary pubkeys for treasury/ops with zero validation -- no distinctness re-check, no timelock, no event emission. Compromised authority redirects 10% of all settlement pots silently. Players still receive 90%, making the attack low-noise and potentially undetected.
 
-Two bypass paths: (1) When wallet has exactly 0 SOL, `verifyBalance()` returns `{ sufficient: false, balance: 0 }`. The guard `balanceCheck.balance > 0 && !balanceCheck.sufficient` evaluates to `false` when balance is 0 — player joins. (2) When RPC fails, the catch block logs a warning and continues — no rejection.
-
-#### Recommended Fix
-
-```javascript
-if (!balanceCheck.sufficient) {
-    client.emit('joinRoomError', { reason: 'Insufficient balance' });
-    return;
-}
-// AND in catch block:
-} catch (err) {
-    client.emit('joinRoomError', { reason: 'Balance check failed' });
-    return;
-}
-```
+**Fix:** Add distinctness re-validation mirroring `initialize_config` checks. Add timelock. Emit `ConfigUpdated` event.
 
 ---
 
-### CRITICAL-05: Unfunded Wager Room Creation (H038)
+#### HIGH-02: H003 -- update_config Distinctness Bypass -> Settlement DoS
 
-**ID:** H038
-**Severity:** CRITICAL
-**CVSS Score:** 9.1
-**Status:** CONFIRMED
-**Location:** `server/socket-io/main.js:354-410`
+**Status:** CONFIRMED | **Confidence:** 9/10 | **CVSS:** 8.7
+**Location:** `lib.rs:70-89` (no re-validation), `lib.rs:588` (DuplicateFeeAccount constraint)
 
-#### Description
+Setting `treasury == ops` via `update_config` creates an unsatisfiable logical contradiction in `SettleMatch`: lines 587/596 require both accounts to match config (now identical), but line 588 requires `treasury.key() != ops.key()`. Exhaustive proof: no valid account combination satisfies all three constraints. All active matches become unsettleable until config is repaired. 24-48h fund lockup.
 
-`createRoom` performs zero `verifyBalance()` call on the room creator. Only `joinRoom` has a balance check (which itself fails open — H027). The creator can set a 0.5 SOL wager with an empty wallet.
-
-#### Recommended Fix
-
-Add `verifyBalance()` for the creator before storing the wager state.
+**Fix:** Add `require!(config.treasury != config.ops, EscrowError::DuplicateFeeAccount)` at end of `update_config`.
 
 ---
 
-### CRITICAL-06: Double Settlement Race Condition (H020)
+#### HIGH-03: H005 -- Authority Winner Selection Fraud (POTENTIAL)
 
-**ID:** H020
-**Severity:** CRITICAL
-**CVSS Score:** 9.1
-**Status:** CONFIRMED
-**Location:** `server/socket-io/main.js:180-830`
+**Status:** POTENTIAL | **Confidence:** 9/10 | **CVSS:** 8.7
+**Location:** `lib.rs:573-581` (winner constraint), `lib.rs:228-305` (settle_match)
+**Precondition:** Authority compromise
 
-#### Description
+Winner is constrained to player_one/player_two (blocks third-party injection), but authority freely selects between the two with no on-chain game state verification. Combined with ungated create_match (H008), attacker can pre-register as player and always win.
 
-No mutex, lock, or `settlingRooms` Set exists anywhere. Two async paths (`fire` handler at line 814 and `disconnect` handler at line 198) can both call `settleMatch()` concurrently. The `BATTLE→SETTLING` transition is invalid (not in transition table), so state stays `BATTLE`, allowing disconnect handler to enter settlement while fire handler is mid-settle.
-
-#### Recommended Fix
-
-```javascript
-const settlingRooms = new Set();
-// Before any settlement:
-if (settlingRooms.has(roomId)) return;
-settlingRooms.add(roomId);
-try { await settleMatch(...) } finally { settlingRooms.delete(roomId) }
-```
+**Fix:** Commit-reveal scheme for winner. Multisig settlement. On-chain game state verification.
 
 ---
 
-### CRITICAL-07: playAgainRequest Wipes Wager Mid-Settlement (H021)
+#### HIGH-04: H006 -- 23-Hour Dead Zone Fund Lockup Griefing
 
-**ID:** H021
-**Severity:** CRITICAL
-**CVSS Score:** 9.1
-**Status:** CONFIRMED
-**Location:** `server/socket-io/main.js:1004-1053`
+**Status:** CONFIRMED | **Confidence:** 9/10 | **CVSS:** 8.7
+**Location:** `lib.rs:20` (TIMEOUT=86400), `lib.rs:26` (SETTLEMENT_TIMEOUT=3600)
 
-#### Description
+SETTLEMENT_TIMEOUT=3600s (1h) vs TIMEOUT=86400s (24h) creates an 82,800-second gap. After 1h, authority cannot settle. Before 24h, players cannot cancel Active matches. Up to 200 SOL per match locked for 23 hours with zero on-chain recourse.
 
-`playAgainRequest` executes `delete wagerStates[client.roomId]` unconditionally when both players agree. No check on `matchStates[client.roomId].status`. During async settlement, this deletes the wager data that `settleMatch()` needs.
-
-#### Recommended Fix
-
-Add state validation: only allow in COMPLETE state, after settlement confirmed.
+**Fix:** Reduce TIMEOUT_SECONDS to 2*SETTLEMENT_TIMEOUT (7200s). Or allow player cancel immediately after settlement deadline expires.
 
 ---
 
-### CRITICAL-08: Play-Again Wager Deletion (H037)
+#### HIGH-05: H007 -- Pause-as-Griefing Attack on Active Matches
 
-**ID:** H037
-**Severity:** CRITICAL
-**CVSS Score:** 9.1
-**Status:** CONFIRMED
-**Location:** `server/socket-io/main.js:1019,1043`
+**Status:** CONFIRMED | **Confidence:** 9/10 | **CVSS:** 8.7
+**Location:** `lib.rs:93-95` (pause handler), `lib.rs:644` (cancel pause guard)
 
-#### Description
+`pause_program` blocks both `settle_match` and `cancel_match`. Only escape: `permissionless_reclaim` at 48h. Compromised authority pauses program -> all active match funds locked for up to 48 hours.
 
-After play-again, `wagerStates` is deleted. The rematch has no wager — settlement is skipped entirely. A player who won Match 1 profits, but the losing player's Match 2 win has no settlement. Asymmetric outcomes from what should be symmetric matches.
-
-#### Recommended Fix
-
-Either preserve wager state across rematches (re-verify balances) or require fresh room creation for each wagered match.
+**Fix:** Remove pause guard from `cancel_match`. Players should always be able to exit. Keep pause on `settle_match` and `create_match` only.
 
 ---
 
-### CRITICAL-09: Negative Wager Bypass (H011)
+#### HIGH-06: H008 -- CreateMatch PDA Occupancy DoS
 
-**ID:** H011
-**Severity:** CRITICAL
-**CVSS Score:** 8.6
-**Status:** CONFIRMED
-**Location:** `server/socket-io/main.js:369-374`
+**Status:** CONFIRMED | **Confidence:** 9/10 | **CVSS:** 8.2
+**Location:** `lib.rs:507-532` (CreateMatch struct, no authority gate)
 
-#### Description
+Any signer can call `create_match` and occupy PDA namespace. Cost: ~0.00146 SOL rent per PDA (fully recoverable at 48h via permissionless_reclaim). Matches created by non-authority are permanently unsettleable. See S004 for the refined exploitation path via public roomId observation.
 
-The guard `wagerAmount > 0 && !isValidWager(wagerAmount)` means negative values bypass `isValidWager()` entirely. A wager of `-0.1` is stored, producing negative settlement amounts. Forfeit on disconnect is also skipped since `-0.1 > 0` is false.
-
-#### Recommended Fix
-
-```javascript
-const wagerAmount = Number(player.wager) || 0;
-if (wagerAmount < 0) { client.emit('createRoomError', { reason: 'Invalid wager' }); return; }
-if (wagerAmount > 0 && !isValidWager(wagerAmount)) { return; }
-```
+**Fix:** Add `has_one = authority @ EscrowError::Unauthorized` to CreateMatch config constraint.
 
 ---
 
-### CRITICAL-10: Null Payload Crash (H015)
+#### HIGH-07: H011 -- Config Treasury Self-Redirect
 
-**ID:** H015
-**Severity:** CRITICAL
-**CVSS Score:** 8.6
-**Status:** CONFIRMED
-**Location:** `server/socket-io/main.js` (multiple handlers)
+**Status:** CONFIRMED | **Confidence:** 9/10 | **CVSS:** 8.7
+**Location:** `lib.rs:70-89` (no distinctness in update), `lib.rs:583-598` (SettleMatch constraints)
 
-#### Description
+No constraint prevents `config.treasury == config.authority`. Authority sets treasury to own wallet, receives 7% fee on every settlement in addition to operational role. Silent ongoing fee capture.
 
-Multiple handlers destructure incoming payload directly (e.g., `async ({angle, power, ...}) =>`). Sending `null` causes `TypeError: Cannot destructure property of null`. Socket.IO catches this and disconnects the socket, triggering the `disconnect` handler which runs settlement/forfeit logic and `removeRoom()`.
-
-#### Recommended Fix
-
-Add null guard at top of every handler: `if (!data || typeof data !== 'object') return;`
+**Fix:** Add `require!(config.treasury != config.authority)` in `update_config`. Add `constraint = treasury.key() != authority.key()` in SettleMatch.
 
 ---
 
-### CRITICAL-11: No uncaughtException Handler (H061)
+#### HIGH-08: H014 -- Authority Collusion: Settle to Controlled Winner (POTENTIAL)
 
-**ID:** H061
-**Severity:** CRITICAL
-**CVSS Score:** 9.4
-**Status:** CONFIRMED
-**Location:** `server/index.js`
+**Status:** POTENTIAL | **Confidence:** 9/10 | **CVSS:** 8.7
+**Location:** `lib.rs:507-532` (ungated create_match), `lib.rs:573-581` (winner constraint)
+**Precondition:** Authority compromise
 
-#### Description
+Overlaps H005. create_match is ungated so attacker registers controlled wallet as player_one. Combined with authority's winner selection power, enables systematic extraction.
 
-Zero `process.on('uncaughtException')`, `process.on('unhandledRejection')`, or `process.on('SIGTERM')` handlers. Any unhandled error terminates the process, wiping all 8 in-memory state stores — rooms, matches, wagers, Gold, SHOT balances.
-
-#### Recommended Fix
-
-Add process-level error handlers and graceful shutdown logic to `server/index.js`.
+**Fix:** Gate create_match with `has_one = authority`. Mitigates this, H008, and S004.
 
 ---
 
-### CRITICAL-12: Fire Handler Unhandled Rejection (H062)
+#### HIGH-09: S002 -- Distinctness Poison + Pause Double Lock
 
-**ID:** H062
-**Severity:** CRITICAL
-**CVSS Score:** 9.4
-**Status:** CONFIRMED
-**Location:** `server/socket-io/main.js:671-872`
+**Status:** CONFIRMED | **Confidence:** 9/10 | **CVSS:** 8.7
+**Location:** `lib.rs:70-89` (update_config), `lib.rs:93-95` (pause), `lib.rs:644` (cancel pause guard)
 
-#### Description
+Two independent mechanisms combine: (1) config poison (treasury==ops) breaks all settlement permanently, (2) pause blocks cancel_match. Only escape: 48h `permissionless_reclaim`. Can be atomic in a single TX with optional authority rotation.
 
-The `fire` handler is a 200-line `async` function with no top-level try/catch. The only try/catch covers `settleMatch()` (lines 813-827). Everything else is unprotected. Any throw produces an unhandled rejection that terminates the process on Node.js 15+.
-
-#### Recommended Fix
-
-Wrap the entire handler body in try/catch. Apply the same pattern to all async handlers.
+**Fix:** Fix A: Add distinctness checks to update_config. Fix B: Remove pause guard from cancel_match. Fix C: Multisig authority.
 
 ---
 
-### CRITICAL-13: Disconnect During Settling Destroys State (H069)
-
-**ID:** H069
-**Severity:** CRITICAL
-**CVSS Score:** 9.1
-**Status:** CONFIRMED
-**Location:** `server/socket-io/main.js:180-228`
-
-#### Description
-
-The disconnect handler calls `removeRoom()` unconditionally. No check for SETTLING state. If a player disconnects during `await settleMatch()`, the handler triggers a second settlement AND deletes all state via `removeRoom()` while the first settlement is still in-flight.
-
-#### Recommended Fix
-
-Check for settlement-in-progress before cleanup. Never call `removeRoom()` during async settlement.
+### MEDIUM FINDINGS
 
 ---
 
-## High Priority Findings
+#### MEDIUM-01: H009 -- Executable Account as Fee Destination (POTENTIAL)
 
-> **IMPORTANT**: These findings should be fixed before mainnet launch.
+**Status:** POTENTIAL | **Confidence:** 7/10 | **CVSS:** ~6.5
+**Location:** `lib.rs:582-598` (UncheckedAccount for treasury/ops)
+**Precondition:** Authority sets treasury/ops to executable account
 
----
+Treasury/ops accounts are `UncheckedAccount`. If set to a program-owned executable account, lamport transfers via `try_borrow_mut_lamports` may succeed but funds become irrecoverable. Requires devnet verification.
 
-### HIGH-01: deleteRoom Host-Only Bypass (H003)
-
-**ID:** H003
-**Severity:** HIGH
-**Status:** CONFIRMED
-**Location:** `server/socket-io/main.js:274-284`
-
-#### Description
-
-`deleteRoom` performs no host verification. Any player in the room can call it. `removeRoom()` deletes all state including `wagerStates` without settlement.
-
-#### Recommended Fix
-
-Add `if (!client.isHost) return` guard. If match active and wagered, treat deletion as forfeit.
+**Fix:** Add `constraint = !treasury.executable` and `constraint = !ops.executable` checks in SettleMatch.
 
 ---
 
-### HIGH-02: JWT Secret Hardcoded Fallback (H007)
+#### MEDIUM-02: H010 -- Deposit Ordering Asymmetry
 
-**ID:** H007
-**Severity:** HIGH
-**Status:** CONFIRMED
-**Location:** `server/middleware/auth.js:17`
+**Status:** CONFIRMED | **Confidence:** 9/10 | **CVSS:** ~5.5
+**Location:** `lib.rs:156-222` (deposit_wager), `lib.rs:336-344` (cancel auth logic)
 
-#### Description
+First depositor's funds are locked immediately. However, cancel from AwaitingDeposits is available to players without timeout (lib.rs:336-344 branch succeeds without timeout check), mitigating the asymmetry to MEDIUM.
 
-`const JWT_SECRET = process.env.JWT_SECRET || 'solshot-dev-secret-change-me'`. If env var not set, all JWTs signed with well-known string. Additionally, `verifyToken()` is exported but never called anywhere.
-
-#### Recommended Fix
-
-Remove hardcoded fallback. Require env var and fail startup if not set. Either use JWTs for session validation or remove the JWT system entirely.
+**Fix:** Consider adding a deposit deadline separate from match timeout.
 
 ---
 
-### HIGH-03: CORS Wildcard (H008)
+#### MEDIUM-03: H017 -- Config State Read During Same-TX Mutation (POTENTIAL)
 
-**ID:** H008
-**Severity:** HIGH
-**Status:** CONFIRMED
-**Location:** `server/index.js:15-22`
+**Status:** POTENTIAL | **Confidence:** 8/10 | **CVSS:** ~5.5
+**Location:** `lib.rs:70-89` (update_config), Solana TX atomicity
+**Precondition:** Authority compromise
 
-#### Description
+Authority can compose `update_config -> settle_match -> update_config(restore)` atomically in one TX. Settlement reads config at execution time, seeing the mutated state. Config appears clean post-TX. Stealth fee redirect.
 
-Both Socket.IO and Express use `origin: "*"`. Any website can open Socket.IO connections and make HTTP requests to the server. Combined with H006 (no auth), any website can control the game server.
-
-#### Recommended Fix
-
-Replace with explicit allowlist of trusted origins.
+**Fix:** Timelock on config changes. Event emission for monitoring.
 
 ---
 
-### HIGH-04: NaN Injection via Fire Handler (H009)
+#### MEDIUM-04: H027 -- Authority Self-Play Bypass (OC-06) (POTENTIAL)
 
-**ID:** H009
-**Severity:** HIGH
-**Status:** CONFIRMED
-**Location:** `server/socket-io/main.js:671`, `server/services/physics.js:59-84`
+**Status:** POTENTIAL | **Confidence:** 9/10 | **CVSS:** ~5.0
+**Location:** `lib.rs:127-129` (OC-06 checks)
+**Precondition:** Malicious authority
 
-#### Description
+OC-06 checks `authority != player_one && authority != player_two` against signing key only. Authority uses secondary wallet to play and always settles in their favor. Design limitation, not code bug.
 
-No type validation on `angle`, `power`, `startX`, `startY`. NaN values propagate through 3000-step trajectory calculation, contaminate scores, and cause the host to always win via tiebreak logic.
-
-#### Recommended Fix
-
-Add `typeof` + `isFinite()` validation at top of fire handler for all numeric inputs.
+**Fix:** Off-chain monitoring. Multisig authority. Commit-reveal settlement.
 
 ---
 
-### HIGH-05: Arbitrary Position Spoofing (H012)
-
-**ID:** H012
-**Severity:** HIGH
-**Status:** CONFIRMED
-**Location:** `server/socket-io/main.js:671,725-734`
-
-#### Description
-
-The `fire` handler accepts client-supplied `startX`/`startY` for the projectile origin. The server stores authoritative tank positions but uses them only for hit detection targets, not for the firing origin. A player can fire from the opponent's exact position.
-
-#### Recommended Fix
-
-Replace client-supplied coordinates with server-stored tank positions.
+### LOW FINDINGS
 
 ---
 
-### HIGH-06: createWeaponArray Denial-of-Service (H013)
+#### LOW-01: H016 -- AwaitingDeposits Cancel Without Depositing (Rent Theft)
 
-**ID:** H013
-**Severity:** HIGH
-**Status:** CONFIRMED
-**Location:** `server/socket-io/main.js:645-658`
+**Status:** CONFIRMED | **Confidence:** 9/10 | **CVSS:** ~2.5
+**Location:** `lib.rs:619` (`close = caller`), `lib.rs:336-344`
 
-#### Description
+Player who never deposited can cancel and receive the PDA rent (~0.002 SOL) that was paid by the match creator. Nuisance, not economically significant.
 
-No validation on `count` parameter. Client-supplied value directly controls loop iteration count. `count: 1e9` blocks the event loop for seconds/minutes. `count: Infinity` freezes the server permanently.
-
-#### Recommended Fix
-
-Cap `count` at a reasonable maximum (e.g., 20). Validate type and bounds.
+**Fix:** Change `close = caller` to `close = authority` or add check that caller deposited before receiving rent.
 
 ---
 
-### HIGH-07: Megabyte Player Name Broadcast (H017)
-
-**ID:** H017
-**Severity:** HIGH
-**Status:** CONFIRMED
-**Location:** `server/socket-io/main.js:354,288`
-
-#### Description
-
-No length validation on player names. A 10MB name is stored in memory, broadcast to ALL clients via `setRooms`, and written to MongoDB. Multiple oversized rooms saturate bandwidth.
-
-#### Recommended Fix
-
-Enforce max name length (e.g., 20 characters). Set Socket.IO `maxHttpBufferSize`.
-
----
-
-### HIGH-08: Ready Event During BATTLE Resets Gold (H019)
-
-**ID:** H019
-**Severity:** HIGH
-**Status:** CONFIRMED
-**Location:** `server/socket-io/main.js:414-507`
-
-#### Description
-
-The `ready` handler performs zero match-state validation. Emitting `ready` during BATTLE unconditionally overwrites `goldStates` (resetting to 1000 Gold) and `weaponInventories` (resetting to `[0]`).
-
-#### Recommended Fix
-
-Add `validateAction(ms.status, 'ready')` check at handler top.
-
----
-
-### HIGH-09: BATTLE→SETTLING Missing Transition (H022)
-
-**ID:** H022
-**Severity:** HIGH
-**Status:** CONFIRMED
-**Location:** `server/services/match.js:21-29`
-
-#### Description
-
-The TRANSITIONS table does not include SETTLING as valid from BATTLE. `transitionState()` returns `false` but the return value is ignored at all 7 call sites. State gets stuck in BATTLE during settlement, enabling the double-settlement race.
-
-#### Recommended Fix
-
-Add SETTLING to BATTLE transitions. Check `transitionState()` return values at all call sites.
-
----
-
-### HIGH-10: turnCount Never Resets Between Rounds (H023)
-
-**ID:** H023
-**Severity:** HIGH
-**Status:** CONFIRMED
-**Location:** `server/socket-io/main.js:786-870`, `server/services/match.js:125-127`
-
-#### Description
-
-`turnCount` is never reset between rounds. After round 1 ends at `turnCount=20`, round 2's first shot increments to 21, which satisfies `turnCount >= turnsPerRound (20)`. Every round after the first is exactly 1 turn.
-
-#### Recommended Fix
-
-Reset `ms.turnCount = 0` in the round-end logic before transitioning to the next round.
-
----
-
-### HIGH-11: SHOT Token Unlimited Farming (H033)
-
-**ID:** H033
-**Severity:** HIGH
-**Status:** CONFIRMED
-**Location:** `server/services/shot-token.js:95-129`
-
-#### Description
-
-No deduplication on match completion. No minimum match duration or turn count. Colluding players can complete matches in <5 seconds, earning ~7,200 SHOT/hour from recurring milestones.
-
-#### Recommended Fix
-
-Add minimum match duration, turn count, and rate limiting per wallet.
-
----
-
-### HIGH-12: SHOT Supply Cap Not Enforced (H034)
-
-**ID:** H034
-**Severity:** HIGH
-**Status:** CONFIRMED
-**Location:** `server/services/shot-token.js:29-39`
-
-#### Description
-
-`SHOT_TOKEN_CONFIG.rewardPool` (7M) is defined but never referenced in emission logic. No global counter tracks total emissions. SHOT can be emitted infinitely past the intended cap.
-
-#### Recommended Fix
-
-Add global emission counter. Check before every emission.
-
----
-
-### HIGH-13: Gold Farming via Position Spoofing (H036)
-
-**ID:** H036
-**Severity:** HIGH
-**Status:** CONFIRMED
-**Location:** `server/socket-io/main.js:671,725-734`
-
-#### Description
-
-Client-supplied `startX`/`startY` allows guaranteed direct hits. Gold is earned from damage dealt (`floor(damage * 15)`). Maximum damage every turn = maximum Gold farming.
-
-#### Recommended Fix
-
-Use server-stored tank positions (same fix as H012).
-
----
-
-### HIGH-14: Weapon Firing Without Purchase (H039)
-
-**ID:** H039
-**Severity:** HIGH
-**Status:** CONFIRMED
-**Location:** `server/socket-io/main.js:691-695`
-
-#### Description
-
-Fire handler checks `WEAPON_DATA[weaponId]` exists but never checks `weaponInventories`. A player starts with weapon 0 but can fire any of the 13 weapons without purchasing.
-
-#### Recommended Fix
-
-Add inventory ownership check after weapon existence check.
-
----
-
-### HIGH-15: Prestige Burn Reversal (H035)
-
-**ID:** H035
-**Severity:** HIGH
-**Status:** CONFIRMED
-**Location:** `server/services/shot-token.js:64-65`
-
-#### Description
-
-`playerShotState` is stored in-memory only — no persistence to MongoDB, file, or any durable storage. Server restart wipes all SHOT balances, milestones, and prestige tiers. Burns are effectively reversed.
-
-#### Recommended Fix
-
-Persist `playerShotState` to MongoDB. Load on startup. Write on every mutation.
-
----
-
-### HIGH-16: Settlement Error Still Transitions to COMPLETE (H064)
-
-**ID:** H064
-**Severity:** HIGH
-**Status:** CONFIRMED
-**Location:** `server/socket-io/main.js:802-835`
-
-#### Description
-
-`transitionState(ms, MATCH_STATES.COMPLETE)` executes unconditionally — whether settlement succeeded, failed, or was skipped. Failed settlement marks match COMPLETE with no retry mechanism.
-
-#### Recommended Fix
-
-Check settlement result before transitioning. Stay in SETTLING and schedule retry on failure.
-
----
-
-### HIGH-17: Concurrent Fire Events During Settlement (H068)
-
-**ID:** H068
-**Severity:** HIGH
-**Status:** CONFIRMED
-**Location:** `server/socket-io/main.js:671-872`
-
-#### Description
-
-During `await settleMatch()`, the event loop is free to process more `fire` events. Since BATTLE→SETTLING transition fails, `validateAction('battle', 'fire')` returns true. Multiple fires during settlement = multiple settlements.
-
-#### Recommended Fix
-
-Add `settlingRooms` Set guard at top of fire handler.
-
----
-
-### HIGH-18: Room Deletion During Active Settlement (H070)
-
-**ID:** H070
-**Severity:** HIGH
-**Status:** CONFIRMED
-**Location:** `server/socket-io/main.js:274-284`
-
-#### Description
-
-`deleteRoom` has no match state check and no host-only check. Unlike `disconnect`, it does not attempt forfeit settlement — the wager is simply deleted.
-
-#### Recommended Fix
-
-Add host-only check. Prevent deletion during BATTLE/SETTLING. Trigger forfeit settlement if match active.
-
----
-
-### HIGH-19: playAgainRequest During Async Settlement (H073)
-
-**ID:** H073
-**Severity:** HIGH
-**Status:** CONFIRMED
-**Location:** `server/socket-io/main.js:1004-1054`
-
-#### Description
-
-No state check prevents `playAgainRequest` from executing during settlement. `delete wagerStates[client.roomId]` corrupts in-flight settlement. SHOT token emissions reference deleted wallet data.
-
-#### Recommended Fix
-
-Only allow `playAgainRequest` when `ms.status === MATCH_STATES.COMPLETE`.
-
----
-
-### HIGH-20: Event Flooding DoS (H074)
-
-**ID:** H074
-**Severity:** HIGH
-**Status:** CONFIRMED
-**Location:** `server/index.js`, `server/socket-io/main.js`
-
-#### Description
-
-Zero rate limiting on any socket event or HTTP endpoint. 23 event handlers registered per socket with no throttling. Express body parser allows 30MB payloads. A single attacker can saturate the server.
-
-#### Recommended Fix
-
-Add per-socket rate limiting. Set `maxHttpBufferSize` to 64KB. Reduce body parser limit. Add connection rate limiting per IP.
-
----
-
-## Medium Priority Findings
-
-> **RECOMMENDED**: Address these before launch if possible.
-
-| ID | Title | Location | Issue | Recommendation |
-|----|-------|----------|-------|----------------|
-| H024 | Legacy shoot relay | `main.js:663-666` | Unvalidated relay bypasses server-authoritative physics | Remove legacy handler or add full validation |
-
-### Details
-
-<details>
-<summary>MEDIUM-01: Legacy Shoot Relay (H024)</summary>
-
-**Location:** `server/socket-io/main.js:663-666`
-
-The `shoot` event handler performs zero validation — no state check, no turn check, no weapon validation. It relays arbitrary data to the opponent. If the client processes `opponentShoot` events for rendering, an attacker can forge visual states.
-
-**Fix:** Remove the legacy `shoot` relay if all clients use the `fire` event. If backward compatibility needed, add full validation.
-
-</details>
-
----
-
-## Low Priority Findings
-
-> **OPTIONAL**: Minor issues that can be addressed over time.
-
-| ID | Title | Location | Issue | Recommendation |
-|----|-------|----------|-------|----------------|
-| H016 | Float-point settlement rounding | `solana.js:121-127` | Sub-lamport rounding errors in settlement math | Use integer lamport arithmetic instead of float SOL |
-
----
-
-## Combination Attack Analysis
-
-> **CRITICAL SECTION**: Findings that chain together for amplified impact.
-
-### Chain 1: "Zero-Cost Wager Theft"
-
-**Combined Severity:** CRITICAL (higher than individual findings)
-
-**Component Findings:**
-
-| ID | Individual Severity | Role in Chain |
-|----|---------------------|---------------|
-| H006 | CRITICAL | Skip authentication entirely |
-| H001 | CRITICAL | Create wagered room without auth or balance check |
-| H002 | CRITICAL | Spoof wallet address to avoid real risk |
-| H027 | CRITICAL | Even if balance checked, 0-SOL wallets pass |
-| H038 | CRITICAL | Creator balance never verified |
-
-**Combined Attack:**
-1. Attacker skips `authenticate` (H006)
-2. Creates 0.5 SOL wager room with spoofed wallet address (H001 + H002)
-3. Server never checks creator's balance (H038)
-4. Legitimate player joins — their balance check may pass or fail-open (H027)
-5. Attacker wins the match using position spoofing (H012)
-6. Settlement pays attacker 0.9 SOL from a wallet they don't own
-
-**Why This Is Worse:** Each finding alone might be mitigated by other checks. Together, they form a complete zero-cost theft pipeline requiring no authentication, no real wallet, and no real funds.
-
-**Mitigation:** Fix H006 first — requiring authentication blocks the entire chain.
-
----
-
-### Chain 2: "Server Kill Switch"
-
-**Combined Severity:** CRITICAL
-
-**Component Findings:**
-
-| ID | Individual Severity | Role in Chain |
-|----|---------------------|---------------|
-| H015 | CRITICAL | Null payload triggers TypeError |
-| H061 | CRITICAL | No uncaughtException handler |
-| H062 | CRITICAL | Fire handler has no try/catch |
-| H074 | HIGH | No rate limiting to slow attacks |
-| H008 | HIGH | CORS wildcard allows attack from any website |
-
-**Combined Attack:**
-1. Attacker opens Socket.IO connection from any website (H008)
-2. Sends rapid null payloads to async handlers (H015 + H074)
-3. TypeError propagates as unhandled rejection (H062)
-4. Node.js terminates — no uncaughtException handler (H061)
-5. ALL in-memory state destroyed — rooms, wagers, Gold, SHOT
-
-**Why This Is Worse:** A single null payload can crash the entire server, destroying all active matches and economic state for all players simultaneously. Rate limiting absence allows millions of crash attempts.
-
-**Mitigation:** Fix H061 first (add process error handlers), then H015 (null guards).
-
----
-
-### Chain 3: "Double-Pay Settlement"
-
-**Combined Severity:** CRITICAL
-
-**Component Findings:**
-
-| ID | Individual Severity | Role in Chain |
-|----|---------------------|---------------|
-| H022 | HIGH | BATTLE→SETTLING transition fails, state stays BATTLE |
-| H020 | CRITICAL | Fire + disconnect race condition |
-| H069 | CRITICAL | Disconnect during settling runs second settlement |
-| H068 | HIGH | Additional fire events during settlement |
-| H064 | HIGH | Settlement error doesn't prevent COMPLETE transition |
-
-**Combined Attack:**
-1. Match is in BATTLE. Player A fires winning shot.
-2. `transitionState(ms, SETTLING)` fails — state stays BATTLE (H022)
-3. `await settleMatch()` begins (fire handler, line 814)
-4. Player B disconnects during the `await` (H069)
-5. Disconnect handler sees status=BATTLE, calls `settleMatch()` again (H020)
-6. Two concurrent `settleMatch()` calls execute for the same wager
-7. Winner receives payout twice
-
-**Why This Is Worse:** The missing transition (H022) is the root enabler — it keeps the state in BATTLE, which allows every guard that checks for BATTLE to proceed during settlement.
-
-**Mitigation:** Fix H022 first (add SETTLING to BATTLE transitions), then add `settlingRooms` Set.
-
----
-
-### Chain 4: "Infinite SHOT Token Printer"
-
-**Combined Severity:** HIGH
-
-**Component Findings:**
-
-| ID | Individual Severity | Role in Chain |
-|----|---------------------|---------------|
-| H033 | HIGH | No min gameplay requirement for match credit |
-| H034 | HIGH | No supply cap enforcement |
-| H035 | HIGH | State lost on restart — milestones re-earnable |
-| H012 | HIGH | Position spoofing ends matches in 1 shot |
-| H061 | CRITICAL | Crash → restart → milestones reset |
-
-**Combined Attack:**
-1. Two colluding accounts create free rooms, instant-complete matches via position spoofing (H012)
-2. Each match credits both accounts — no dedup, no min turns (H033)
-3. After 100 matches (~8 min), recurring 500 SHOT/50 matches begins
-4. Emissions exceed 7M cap with no enforcement (H034)
-5. Crash the server (H061) to reset `playerShotState` — re-earn one-time milestones (H035)
-6. Repeat indefinitely
-
-**Mitigation:** Fix H034 (supply cap) and H035 (persistence) first, then H033 (match requirements).
-
----
+## 5. Combination Attack Analysis
+
+### N x N Combination Matrix (Actionable Findings)
+
+The 17 actionable findings (12 CONFIRMED + 5 POTENTIAL) were analyzed pairwise. Key amplifying combinations:
+
+| Finding A | Finding B | Combination Effect | Combined Severity |
+|-----------|-----------|--------------------|-------------------|
+| H001 (authority takeover) | H002 (fee redirect) | Takeover enables total fee redirection | CRITICAL (S001) |
+| H001 (authority takeover) | H005 (winner fraud) | Takeover enables systematic winner manipulation | CRITICAL (S001) |
+| H003 (distinctness bypass) | H007 (pause griefing) | Poison + pause = 48h maximum lockup | HIGH (S002) |
+| H008 (PDA DoS) | S004 (pre-squatting) | S004 is the weaponized form of H008 with public roomId | CRITICAL |
+| H002 (fee redirect) | H011 (treasury self-redirect) | Overlapping fee capture vectors | HIGH |
+| H001 (authority takeover) | H007 (pause griefing) | Takeover enables indefinite pause | CRITICAL |
+| H006 (dead zone) | H007 (pause griefing) | 23h gap + pause = 48h lockup | HIGH |
 
 ### Findings That Enable Others
 
-| Finding | Enables | Combined Impact |
-|---------|---------|-----------------|
-| H006 (No auth) | H001, H002, H003, H008, H038 | Every wager exploit requires no auth |
-| H022 (Missing transition) | H020, H068, H069, H073 | All settlement races depend on state stuck in BATTLE |
-| H061 (No error handler) | H015, H062, H035 | Any crash wipes all state |
-| H074 (No rate limit) | H013, H015, H017, H033 | Amplifies every DoS and farming attack |
-| H012 (Position spoofing) | H036, H033 | Enables Gold farming and instant match completion |
+| Enabler Finding | Findings Enabled | Why |
+|-----------------|------------------|-----|
+| H001 (one-step transfer) | H002, H005, H007, H011, S001, S002 | Key compromise gives unrestricted admin power |
+| H008 (ungated create_match) | S004, H014 | Permissionless match creation enables DoS and collusion |
+| H003 (distinctness bypass) | S002 | Config poison breaks settlement for all matches |
+| H007 (pause griefing) | S002 | Pause blocks the cancel escape hatch |
 
 ---
 
-## Investigated & Cleared
+## 6. Attack Trees
 
-> **GOOD NEWS**: These attack vectors were investigated and found not vulnerable.
+### Attack Tree 1: Fund Drain (Authority Compromise)
 
-<details>
-<summary>Click to expand cleared items (0 total)</summary>
+```
+[ROOT: Drain all active match funds]
+  |
+  +-- [PRECONDITION: Compromise authority key]
+  |     |-- Phishing / social engineering
+  |     |-- Leaked .env / server breach
+  |     |-- Insider threat
+  |
+  +-- [STEP 1: Redirect fees] -- H002
+  |     `-- update_config(new_treasury=attacker, new_ops=attacker)
+  |         `-- No timelock, no event, instant effect
+  |
+  +-- [STEP 2: Settle matches with wrong winner] -- H005
+  |     |-- For matches where attacker is player: 90% extraction
+  |     `-- For all matches: 10% fee theft via redirected treasury/ops
+  |
+  +-- [STEP 3: Lock out governance] -- H001
+  |     `-- update_config(new_authority=attacker_key2)
+  |         `-- One-step, irreversible, no recovery
+  |
+  +-- [OPTIONAL: Maximum disruption] -- H007
+        `-- pause_program -> 48h fund lockup for all remaining matches
 
-No hypotheses were cleared as not vulnerable. All 34 confirmed, 1 potential.
+  CRITICAL FIX NODES:
+  [*] Two-step authority transfer -- breaks Step 3
+  [*] Timelock on config changes -- breaks Step 1
+  [*] Multisig authority -- eliminates the precondition
+```
 
-</details>
+### Attack Tree 2: Protocol DoS / Fund Lockup
 
----
+```
+[ROOT: Block all wager escrow or lock all funds]
+  |
+  +-- [PATH A: PDA Pre-Squatting] -- S004
+  |     |-- Monitor setRooms WebSocket (no auth needed)
+  |     |-- Observe roomId for wagered rooms
+  |     |-- Race create_match with observed ID
+  |     |-- Server escrow creation fails silently
+  |     `-- Cost: ~0.00001 SOL per blocked match
+  |
+  +-- [PATH B: Settlement DoS via Config Poison] -- H003 + S002
+  |     |-- Requires authority compromise
+  |     |-- update_config(treasury=X, ops=X) -- poisons settlement
+  |     |-- Optional: pause_program -- blocks cancel
+  |     `-- All matches locked 24-48h
+  |
+  +-- [PATH C: Dead Zone Exploitation] -- H006
+        |-- Authority intentionally does not settle within 1h
+        `-- Funds locked 23h (gap between 1h settle deadline and 24h cancel)
 
-## Recommendations Summary
-
-### Immediate Actions (Before ANY Deployment)
-
-> **BLOCKING**: Do not deploy until these are resolved.
-
-1. [ ] **Fix H006**: Add authentication enforcement middleware for all wager-related events
-2. [ ] **Fix H001+H002**: Use `authenticatedWallets[client.id]` exclusively — never accept wallet from payload
-3. [ ] **Fix H061+H062**: Add `process.on('uncaughtException')` and wrap all async handlers in try/catch
-4. [ ] **Fix H015**: Add null/type guards at top of every socket handler
-5. [ ] **Fix H022**: Add SETTLING to BATTLE transitions in state machine
-6. [ ] **Fix H020+H069**: Implement `settlingRooms` Set for settlement concurrency control
-7. [ ] **Fix H027+H038**: Fix balance check logic and add creator balance verification
-8. [ ] **Fix H011**: Reject negative and non-numeric wager values
-9. [ ] **Fix H012**: Replace client-supplied startX/startY with server-stored tank positions
-10. [ ] **Break Chain 1**: Fix H006 to prevent zero-cost wager theft pipeline
-
-### Pre-Launch Requirements
-
-> **REQUIRED**: Complete before mainnet launch.
-
-1. [ ] Fix all HIGH findings (H003, H007-H009, H013, H017, H019, H023, H033-H039, H064, H068, H070, H073, H074)
-2. [ ] Implement rate limiting on all socket events and HTTP endpoints
-3. [ ] Restrict CORS to production origins
-4. [ ] Persist all economic state (wagerStates, goldStates, playerShotState) to database
-5. [ ] Implement real escrow/deposit at room creation — not post-hoc settlement
-6. [ ] Enforce SHOT supply cap with global emission counter
-7. [ ] Add weapon ownership check in fire handler
-8. [ ] Reset turnCount between rounds
-9. [ ] Remove legacy `shoot` relay or add full validation
-10. [ ] Re-audit after fixes
-
-### Post-Launch Improvements
-
-> **RECOMMENDED**: Address after stable launch.
-
-1. [ ] Address H016 (float-point rounding) — use integer lamport arithmetic
-2. [ ] Add turn timer to prevent stalling/griefing
-3. [ ] Add nonce/replay prevention to authentication
-4. [ ] Replace `Math.random()` with CSPRNG for security-relevant decisions
-5. [ ] Add monitoring alerts for anomalous wager patterns
-
-### Ongoing Security Practices
-
-> **CONTINUOUS**: Security is an ongoing process.
-
-- **Code Review**: All changes should go through security-focused review
-- **Input Validation**: Establish validation middleware pattern for all socket events
-- **Monitoring**: Implement transaction monitoring for anomalous wager/settlement patterns
-- **Bug Bounty**: Launch a bug bounty program before handling real funds
-- **Re-Audits**: Schedule security review after each major feature addition
-- **Incident Response**: Have a plan for settlement failures and state recovery
+  CRITICAL FIX NODES:
+  [*] has_one=authority on CreateMatch -- blocks Path A entirely
+  [*] Distinctness checks in update_config -- blocks Path B
+  [*] Remove pause from cancel_match -- reduces Path B to 24h
+  [*] Reduce TIMEOUT to 2h -- eliminates Path C
+```
 
 ---
 
-## Audit Coverage
+## 7. Severity Calibration
 
-### Files Analyzed
+### Re-Calibration Table
 
-<details>
-<summary>Click to expand file list (12 files)</summary>
+| Finding | Strategy Tier | Investigation Severity | Final Severity | Reason for Change |
+|---------|---------------|----------------------|----------------|-------------------|
+| S004 | Supplemental (HIGH est.) | HIGH | **CRITICAL** | Upgraded: PR:None (no privileges), CVSS 9.3, silently voids protocol's core economic guarantee, fully automated, near-zero cost. Per severity-calibration.md "always CRITICAL" pattern: permissionless DoS on core protocol function. |
+| S001 | Tier 1 (CRITICAL est.) | CRITICAL | **CRITICAL** | Confirmed. Chain is worse than individual components. |
+| H001 | Tier 1 (CRITICAL est.) | CRITICAL | **CRITICAL** | Confirmed. Historical precedent: 4 incidents totaling >$50M losses. |
+| H003 | Tier 1 (CRITICAL est.) | HIGH | **HIGH** | No permanent fund loss (cancel/reclaim paths work). Recoverable by authority. |
+| H008 | Tier 2 (HIGH est.) | HIGH | **HIGH** | Subsumed by S004 for the weaponized variant. Standalone impact is still HIGH. |
+| H010 | Tier 2 (HIGH est.) | MEDIUM | **MEDIUM** | Downgraded from strategy estimate: cancel from AwaitingDeposits is available without timeout, mitigating the asymmetry significantly. |
+| H016 | Tier 2 (HIGH est.) | LOW | **LOW** | Downgraded: ~0.002 SOL per exploit. Nuisance, not economically significant. |
+| H005 | Tier 1 (CRITICAL est.) | HIGH (POTENTIAL) | **HIGH** | Downgraded from CRITICAL estimate: requires authority compromise precondition (PR:H). Winner constraint provides partial mitigation. |
 
-| File | Focus Areas | Findings |
-|------|-------------|----------|
-| `server/socket-io/main.js` | All 10 focuses | H001-H003, H006, H009, H011-H013, H015, H017, H019-H024, H036, H038-H039, H061-H062, H064, H068-H070, H073-H074 |
-| `server/middleware/auth.js` | Access Control, Account Validation, Admin | H006, H007 |
-| `server/services/solana.js` | Token/Economic, External Calls, Error Handling | H011, H016, H027, H064 |
-| `server/services/physics.js` | Arithmetic, State Machine | H009, H012, H036 |
-| `server/services/match.js` | State Machine, Timing | H019, H020, H022, H023 |
-| `server/services/shot-token.js` | Token/Economic | H033, H034, H035 |
-| `server/services/gold.js` | Token/Economic | H019, H036 |
-| `server/services/monitoring.js` | Error Handling, Admin | H061 |
-| `server/models/Weapon.js` | Account Validation | H039 |
-| `server/models/Match.js` | State Machine, External | — |
-| `server/index.js` | All focuses | H008, H061, H074 |
-| `server/package.json` | External Calls | — |
+### Calibration Notes
 
-</details>
+- **S004 upgrade rationale:** The severity-calibration.md identifies "permissionless denial of core protocol function" as an always-CRITICAL pattern. S004 requires no privileges (PR:None), no authentication, and silently disables on-chain wager enforcement for every match. The CVSS score of 9.3 reflects the combination of PR:None + Changed Scope + High Integrity/Availability impact.
 
-### Analysis Depth by Area
-
-| Focus Area | Files Covered | Findings |
-|------------|---------------|----------|
-| Access Control | 3 | 6 |
-| Arithmetic & Input | 4 | 7 |
-| State Machine | 3 | 6 |
-| Token & Economic | 5 | 8 |
-| Error Handling & Timing | 4 | 8 |
-| **Total** | **12** | **35** |
+- **Authority-compromise findings (H001, H002, H003, H005, H006, H007, H011, S001, S002):** All scored with PR:High per CVSS, producing 8.7 base scores. Operationally, these should be treated as CRITICAL given the hot wallet authority model and historical precedent (EP-068: four incidents, $50M+ combined losses).
 
 ---
 
-## Methodology
+## 8. Strategic Recommendations
 
-This audit was performed using The Fortress methodology:
+### Priority 1: Immediate (Block Deployment)
 
-### Phase 0: Pre-Flight Analysis
-- Analyzed codebase metrics: 12 source files, ~2,500 LOC
-- Detected ecosystem: Node.js / Socket.IO / Solana
-- Protocol patterns: PvP wager game, SPL token emissions, wallet authentication
-- Recommended tier: standard (75 strategies, batch size 5)
+| # | Fix | Findings Addressed | Attack Paths Broken |
+|---|-----|--------------------|---------------------|
+| 1 | Add `has_one = authority` to CreateMatch config | S004, H008, H014 | PDA pre-squatting, namespace DoS |
+| 2 | Implement two-step propose/accept authority transfer | H001, S001 (TX_final) | Governance lockout |
+| 3 | Add distinctness re-validation to update_config | H002, H003, H011, S001 (TX0), S002 | Fee hijack, settlement DoS, treasury self-redirect |
+| 4 | Remove pause guard from cancel_match | H007, S002 | Pause griefing, double-lock |
+| 5 | Emit events on all config changes | H002, H017 | Silent fee redirect detection |
 
-### Phase 0.5: Static Pre-Scan
-- Ran grep-based pattern scan across all source files
-- Generated HOT_SPOTS.md with risk-prioritized file listing
-- Identified 50+ hot-spot patterns across 6 categories
+### Priority 2: Pre-Mainnet (Required)
 
-### Phase 1: Parallel Context Building
-- 10 specialized auditors analyzed the entire codebase
-- Each auditor focused on one security domain
-- Applied micro-first analysis (5 Whys, 5 Hows, First Principles)
+| # | Fix | Findings Addressed |
+|---|-----|--------------------|
+| 6 | Migrate authority to multisig (Squads Protocol) | Entire authority-compromise class |
+| 7 | Add timelock on treasury/ops config changes (24h) | H002, H017, S001 |
+| 8 | Reduce TIMEOUT_SECONDS to 7200 (2h) or allow cancel after settlement deadline | H006 |
+| 9 | Add `constraint = !treasury.executable` and `!ops.executable` in SettleMatch | H009 |
+| 10 | Increase roomId entropy from 4 bytes to 16 bytes | S004 (defense-in-depth) |
+| 11 | Add server retry logic on escrow creation failure with new roomId | S004 (defense-in-depth) |
+| 12 | Add zero-address guard on new_authority in update_config | H001 |
+| 13 | Change CancelMatch `close = caller` to `close = authority` | H016 |
 
-### Phase 2: Architectural Synthesis
-- Merged all 10 context analyses
-- Identified cross-cutting concerns
-- Built unified security model with trust boundaries
-- Documented 8 violated economic invariants
+### Priority 3: Post-Launch
 
-### Phase 3: Attack Strategy Generation
-- Generated 75 attack hypotheses
-- Drew from historical Solana exploits and DeFi attack patterns
-- Tailored strategies to codebase-specific attack surface
-- Prioritized into Tier 1 (8), Tier 2 (17), Tier 3 (50)
+| # | Fix | Findings Addressed |
+|---|-----|--------------------|
+| 14 | Implement commit-reveal or VRF-based winner selection | H005, H014, H027 |
+| 15 | Add separate deposit deadline (shorter than match timeout) | H010 |
+| 16 | Add on-chain monitoring hooks for anomalous settlement patterns | General |
+| 17 | Consider on-chain game state for winner verification | H005, H014 |
 
-### Phase 4: Parallel Investigation
-- 35 Tier 1/2 strategies investigated by 5 parallel agents
-- Evidence-based determination of vulnerability status
-- 34 CONFIRMED, 1 POTENTIAL, 0 cleared
+### Critical Fix Nodes (highest ROI fixes)
 
-### Phase 5: Final Synthesis
-- Aggregated all findings
-- Performed combination attack analysis (4 chains identified)
-- CVSS scoring and prioritization
-- Generated this report
+These 5 fixes break the most attack chains:
 
----
-
-## Disclaimer
-
-This automated security audit represents a comprehensive starting point for security hardening but does not guarantee the absence of vulnerabilities.
-
-**This audit does NOT replace:**
-- Manual expert security review
-- Formal verification where applicable
-- Comprehensive test coverage
-- Bug bounty programs
-- Ongoing security monitoring
-
-**Limitations:**
-- 40 Tier 3 strategies were not investigated due to context constraints
-- Business logic correctness is partially out of scope
-- Economic attack viability requires market analysis
-- Some findings may require verification against deployed infrastructure
-- New vulnerabilities may emerge after code changes
-
-**Recommendation:** Engage a professional security firm for a manual audit before mainnet deployment, especially given the volume of critical findings in the wager settlement system.
+1. **`has_one = authority` on CreateMatch** -- fixes S004, H008, H014 (3 findings, blocks entire PDA DoS tree)
+2. **Distinctness checks in update_config** -- fixes H002, H003, H011, S001(partial), S002(partial) (5 findings)
+3. **Two-step authority transfer** -- fixes H001, S001(TX_final) (2 findings, blocks governance lockout)
+4. **Remove pause from cancel_match** -- fixes H007, S002(partial) (2 findings, ensures player exit path)
+5. **Multisig authority** -- mitigates the entire authority-compromise class (H001, H002, H003, H005, H006, H007, H011, H014, H027, S001, S002 -- 11 findings)
 
 ---
 
-## Report Metadata
+## 9. NOT VULNERABLE Summary
 
-| Field | Value |
-|-------|-------|
-| Report Generated | 2026-02-14 |
-| The Fortress Version | 1.0.0 |
-| Total Agent Invocations | ~30 |
-| Context Files Generated | 10 |
-| Strategies Generated | 75 |
-| Strategies Investigated | 35 |
-| Confirmation Rate | 97% (34/35) |
+The following 17 hypotheses were investigated and found NOT VULNERABLE:
+
+| ID | Title | Why Safe |
+|----|-------|----------|
+| H004 | PDA Close-and-Revive | OC-10 drains funds before close; re-created PDA is fresh/empty |
+| H012 | Lamport Underflow on Cancel/Reclaim | 3 independent layers: invariant check, overflow-checks profile, runtime conservation |
+| H013 | PDA Rent Extraction at Low Wagers | Rent cycle is economically neutral for authority (pay at create, recover at settle) |
+| H015 | Concurrent Double-Deposit by Same Player | Solana runtime account locking serializes same-PDA writes + AlreadyDeposited flag |
+| H018 | ZeroWager Dead Code | MIN_WAGER=10,000 enforced at lib.rs:148; zero wager is dead code |
+| H019 | Narrowing Cast Overflow | `as u64` casts safe; overflow requires ~131 trillion SOL (impossible) |
+| H020 | Clock Drift at Settlement Deadline | 1-2s drift immaterial on 3600s window |
+| H021 | Permissionless Reclaim During Active Pause | Intentional design (DCA-02 escape hatch) -- unaffected by pause |
+| H022 | GlobalConfig Re-Initialization | Anchor `init` constraint prevents re-initialization |
+| H023 | PDA Account Revival After Close | Re-created PDA has fresh state; harmless |
+| H024 | Settlement Deadline Bypass via activated_at | activated_at always set on Active transition (lib.rs:209) |
+| H025 | Match ID Collision for PDA Hijack | Server CSPRNG + Anchor init uniqueness; collision negligible |
+| H026 | Escrow PDA Lamport Inflation (Donation) | Attacker loses money; authority gains -- economically irrational |
+| H028 | BPS Constant Manipulation via Upgrade | Constants hardcoded; no runtime modification. Upgrade is separate governance concern |
+| H029 | Error Propagation in try_borrow_mut_lamports | Solana TX atomicity ensures all-or-nothing; `?` propagation fail-fast |
+| H030 | Cancel from AwaitingDeposits Refund Logic | Independent deposit flags checked correctly for all 3 scenarios |
+| S003 | Authority == Treasury Economic Consolidation | Duplicate of H011 (same underlying vulnerability, merged) |
+
+---
+
+## 10. Appendix
+
+### A. Methodology Reference
+
+This audit used the Stronghold of Security (SOS) methodology v2.0:
+- 6 parallel context auditor agents with independent focus areas
+- 128 exploit patterns (EP-001 through EP-128) cross-referenced
+- CVSS v3.1 scoring with Solana-specific calibration (Beosin/Sec3 adapted)
+- N x N combination matrix for finding interactions
+- Attack tree construction with critical fix node identification
+- Severity re-calibration against historical incident database
+
+### B. Files Analyzed
+
+| File | LOC | Focus Areas | Finding Count |
+|------|-----|-------------|---------------|
+| `programs/solshot-escrow/src/lib.rs` | 855 | All 6 focuses | 34 strategies |
+| `server/socket-io/main.js` (referenced) | ~1800 | S004 verification | 1 finding (S004) |
+
+### C. Finding Cross-Reference
+
+| Finding | Root Cause Location | Fix Location |
+|---------|--------------------|--------------|
+| H001 | `lib.rs:79` | Add pending_authority to GlobalConfig, new propose/accept instructions |
+| H002 | `lib.rs:81-86` | `lib.rs:70-89` (add re-validation) |
+| H003 | `lib.rs:70-89` (missing checks) | `lib.rs:70-89` (add require! checks) |
+| H005 | `lib.rs:573-581` (design) | New commit-reveal/VRF mechanism |
+| H006 | `lib.rs:20,26` (timeout constants) | Reduce TIMEOUT_SECONDS |
+| H007 | `lib.rs:644` (cancel pause guard) | Remove pause guard from CancelMatch |
+| H008 | `lib.rs:523-529` (missing has_one) | Add `has_one = authority` to CreateMatch |
+| H009 | `lib.rs:582-598` (UncheckedAccount) | Add `!executable` constraint |
+| H010 | `lib.rs:336-344` (cancel auth) | Add deposit deadline |
+| H011 | `lib.rs:70-89` (missing checks) | Add authority/treasury distinctness |
+| H014 | `lib.rs:507-532` (ungated) | Gate create_match with authority |
+| H016 | `lib.rs:619` (close = caller) | Change to close = authority |
+| H017 | Solana TX atomicity + lib.rs:70-89 | Add timelock |
+| H027 | `lib.rs:127-129` (design) | Off-chain monitoring, multisig |
+| S001 | H001 + H002 + H005 combined | Fixes for all three components |
+| S002 | H003 + H007 combined | Fixes for both components |
+| S004 | `lib.rs:523-529` + `main.js:1163` | Add has_one + increase entropy |
+
+### D. Historical Precedent Reference
+
+| Incident | Date | Loss | Relevant Findings |
+|----------|------|------|-------------------|
+| Raydium | Dec 2022 | $4.4M | H001, S001 (admin key compromise, immediate withdrawal) |
+| Pump.fun | May 2024 | $1.9M | H001, S001 (admin key compromise via insider) |
+| Garden Finance | Oct 2025 | $11M | H001, H005, S001 (settlement authority abuse) |
+| Step Finance | Jan 2026 | $30-40M | H001, S001 (hot wallet key exfiltration, governance lock) |
+| Vaultka | 2024 | Critical | H002, H011 (fee routing redirect) |
+| Cetus | Jun 2023 | $223M | H019 (overflow -- cleared as safe here) |
+| Solend | 2022 | N/A | H008, S004 (PDA rent theft pattern) |
+
+### E. Audit Configuration
+
+| Parameter | Value |
+|-----------|-------|
+| Audit Tier | Quick |
+| Strategy Count | 30 + 4 supplemental = 34 |
+| Batch Size | 5 |
+| Coverage Verification | SKIPPED |
+| Context Auditors | 6 (Access Control, Arithmetic, State Machine, CPI/External, Token/Economic, Timing/Ordering) |
+| Stacked Audit | No |
 
 ---
 
 **End of Report**
+
+*Generated by Stronghold of Security v2.0 on 2026-02-23*
+*Audit ID: sos-solshot-escrow-clean-2026-02-23*

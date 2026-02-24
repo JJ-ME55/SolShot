@@ -1,18 +1,18 @@
 # Unified Architectural Understanding
 
-**Project:** SolShot
-**Generated:** 2026-02-14
-**Source:** The Fortress Phase 2 Synthesis (10 parallel context auditors)
+**Project:** SolShot Escrow (solshot-escrow)
+**Generated:** 2026-02-23
+**Source:** The Fortress Phase 2 Synthesis (6 context auditor summaries)
 
 ---
 
 ## Executive Summary
 
-SolShot is a browser-based multiplayer artillery game (Pocket Tanks clone) built on Phaser.js (client) with a Node.js/Express/Socket.IO backend and a Solana integration layer for wallet authentication and SOL wager settlement. The server processes all game logic server-side (physics, damage, Gold economy, SHOT token emissions) but performs **virtually zero input validation** on any socket event payload, **no authentication enforcement** on gameplay events, and **no authorization checks** on privileged operations like room deletion.
+SolShot Escrow is a single-file Anchor program (855 LOC) implementing a 1v1 wagered match escrow using native SOL. The program is architecturally simple: two players deposit equal wagers into a PDA, a server authority designates a winner, and the pot is split 90/7/3 (winner/treasury/ops) via BPS math. The program has no SPL token interactions, no oracle dependencies, no pool-based pricing, and a single CPI call to the System Program.
 
-The architecture has three fundamental security failures that pervade every subsystem: (1) **The validation layer is absent** -- socket payloads pass directly from untrusted clients into state mutations, physics calculations, and economic operations. (2) **Authentication is decorative** -- wallet signature verification exists but is optional, JWT tokens are generated but never validated, and wallet addresses in gameplay payloads override authenticated identities. (3) **Concurrency is unmanaged** -- all 8 in-memory state stores are mutated by async handlers without locks, creating double-settlement race conditions that would cause direct fund loss if real SOL transfers were implemented.
+From a security perspective, the program's attack surface is dominated by **centralization risk**, not code-level vulnerabilities. The server authority has unilateral power over: winner selection, fee destination addresses, match lifecycle (pause/unpause), and its own transfer (one-step, no propose/accept). The arithmetic is sound (u128 widening, checked ops, overflow-checks=true in Cargo.toml), the state machine is well-guarded (OC-10 state-before-transfer pattern), and the CPI surface is minimal. The primary concerns are: (1) one-step authority transfer enabling instant takeover, (2) update_config lacking distinctness re-validation, (3) a 23-hour dead zone between settlement expiry and player cancellation, and (4) the authority's total economic control without timelock or multisig.
 
-The SOL settlement system is currently a stub (returns `success: true` without on-chain execution), which masks the severity of the wager logic bugs. When real escrow is implemented, the existing codebase has at least 4 distinct paths to double-pay or zero-pay outcomes. The SHOT token system has no supply cap enforcement and can be infinitely farmed by colluding players. All economic state is ephemeral -- a server restart wipes balances, milestones, prestige tiers, and active wagers with no recovery mechanism.
+The program is immune to flash loans, sandwich attacks, oracle manipulation, and reentrancy. The permissionless_reclaim instruction provides an effective escape hatch ensuring no funds are permanently stuck.
 
 ---
 
@@ -22,63 +22,31 @@ The SOL settlement system is currently a stub (returns `success: true` without o
 
 | Component | Purpose | Location | Security Role |
 |-----------|---------|----------|---------------|
-| Express HTTP Server | Static endpoints, health, stats | `server/index.js` | Exposes unauthenticated financial data |
-| Socket.IO Server | Real-time game events (27 event types) | `server/socket-io/main.js` | Primary attack surface (1058 LOC, zero validation) |
-| Auth Middleware | Wallet signature verification, JWT | `server/middleware/auth.js` | Optional, never enforced post-authenticate |
-| Physics Engine | Ballistic trajectory, damage calculation | `server/services/physics.js` | Trusts all inputs (angle, power, startX/Y) |
-| Match State Machine | Game state transitions (LOBBY→BATTLE→COMPLETE) | `server/services/match.js` | Transitions exist but return values are universally ignored |
-| Solana Service | Balance verification, settlement | `server/services/solana.js` | Settlement is a stub; balance check fails open |
-| Gold Service | Per-match Gold economy | `server/services/gold.js` | All state in-memory, no persistence |
-| SHOT Token Service | Milestone emissions, prestige burns | `server/services/shot-token.js` | No supply cap, no deduplication, no persistence |
-| Monitoring | Metrics tracking, /health, /stats | `server/services/monitoring.js` | trackError() imported but never called |
-| Weapon Catalog | Weapon definitions, pricing | `server/models/Weapon.js` | Dual catalog (WEAPON_DATA vs WEAPON_CATALOG) creates confusion |
-| Match Model | MongoDB persistence | `server/models/Match.js` | Only persists room metadata, not economic state |
+| GlobalConfig | Protocol settings (authority, treasury, ops, pause) | `lib.rs` PDA `["config"]` | Single authority controls all admin functions |
+| MatchEscrow | Per-match state (players, wager, deposits, state) | `lib.rs` PDA `["match", match_id]` | Holds deposited SOL, enforces lifecycle |
+| MatchState | 4-state enum lifecycle | `lib.rs` enum | Guards instruction access per state |
+| 9 Instructions | Full program API | `lib.rs:90-855` | Each instruction validates state + access |
 
 ### Data Flow Diagram
 
 ```
-Client (Phaser.js/React)
-    │
-    │  Socket.IO (origin: "*")
-    ▼
-┌──────────────────────────────────────────────────────────┐
-│  Socket Event Handler (main.js)                          │
-│  ┌──────────────────────────────────────────────────┐    │
-│  │ ❌ NO INPUT VALIDATION                           │    │
-│  │ ❌ NO AUTH ENFORCEMENT                           │    │
-│  │ ❌ NO RATE LIMITING                              │    │
-│  └──────────────────────────────────────────────────┘    │
-│                     │                                     │
-│         ┌───────────┼───────────┐                         │
-│         ▼           ▼           ▼                         │
-│  ┌──────────┐ ┌──────────┐ ┌──────────────┐              │
-│  │ Physics  │ │ Match    │ │ Solana       │              │
-│  │ Engine   │ │ State    │ │ Service      │              │
-│  │          │ │ Machine  │ │              │              │
-│  │ Trusts   │ │ Returns  │ │ Fails open   │              │
-│  │ NaN/Inf  │ │ ignored  │ │ Stub settle  │              │
-│  └──────────┘ └──────────┘ └──────────────┘              │
-│         │           │           │                         │
-│         ▼           ▼           ▼                         │
-│  ┌────────────────────────────────────────────────┐      │
-│  │         8 IN-MEMORY STATE STORES               │      │
-│  │  rooms, matchStates, goldStates, wagerStates,  │      │
-│  │  weaponInventories, shopTimers, shopReady,      │      │
-│  │  authenticatedWallets                           │      │
-│  │                                                 │      │
-│  │  ❌ NO MUTEX/LOCKS                             │      │
-│  │  ❌ NO PERSISTENCE (except partial MongoDB)    │      │
-│  └────────────────────────────────────────────────┘      │
-│                     │                                     │
-│                     ▼                                     │
-│         ┌─────────────────────┐                           │
-│         │  MongoDB (optional) │                           │
-│         │  Stores: room meta  │                           │
-│         │  Missing: wagers,   │                           │
-│         │  Gold, SHOT, match  │                           │
-│         │  states, weapons    │                           │
-│         └─────────────────────┘                           │
-└──────────────────────────────────────────────────────────┘
+Player A ─── deposit_wager ──→ MatchEscrow PDA ←── deposit_wager ─── Player B
+                                     │
+                            (both deposited)
+                                     │
+                              ┌──────┴──────┐
+                              ▼              ▼
+Authority ─ settle_match ─→ Split:      Player ─ cancel_match ─→ Refund:
+  90% → Winner                24h timeout      exact wager back
+  7%  → Treasury                                to each depositor
+  3%  → Ops wallet
+                              │              │
+                              ▼              ▼
+                        [Account closed]  [Account closed]
+                                     │
+                              ┌──────┘
+                              ▼
+Anyone ── permissionless_reclaim ──→ Refund (48h timeout)
 ```
 
 ---
@@ -89,40 +57,33 @@ Client (Phaser.js/React)
 
 | Actor | Trust Level | Capabilities | Entry Points |
 |-------|-------------|--------------|--------------|
-| Anonymous Socket | UNTRUSTED | All socket events; create/join rooms; fire weapons; delete rooms; trigger settlement | All 27 socket events — no auth required |
-| Authenticated Socket | UNTRUSTED (effectively) | Identical to anonymous — auth adds `authenticatedWallets[id]` entry but is never checked | `authenticate` event; then all 27 events |
-| HTTP Client | UNTRUSTED | Read financial data, health info | `GET /`, `/health`, `/stats` |
-| Solana RPC | SEMI-TRUSTED | Provides wallet balances | `verifyBalance()`, `getBalance()` |
-| MongoDB | TRUSTED | State persistence (partial) | `mongoose.connect()` |
-| Server Admin | N/A | No admin interface exists | No entry points |
+| Authority (Server) | TRUSTED (centralized) | Configure protocol, create matches, settle matches, pause/unpause, transfer authority | initialize_config, update_config, pause_program, unpause_program, create_match, settle_match |
+| Player | PARTIAL | Deposit wager, cancel match (after timeout) | deposit_wager, cancel_match |
+| Anyone | UNTRUSTED | Reclaim stuck funds (after 48h) | permissionless_reclaim |
 
 ### Trust Boundaries
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    UNTRUSTED ZONE                        │
-│    - ALL socket event payloads (no validation)          │
-│    - ALL client-supplied wallet addresses                │
-│    - ALL numeric values (angle, power, startX/Y)        │
-│    - ALL string values (name, color, roomId)             │
-│    - Solana RPC responses (can fail, return stale)       │
-├─────────────────────────────────────────────────────────┤
-│                 ❌ VALIDATION LAYER (ABSENT)             │
-│    - No input type checking                              │
-│    - No bounds checking                                  │
-│    - No sanitization                                     │
-│    - No auth enforcement                                 │
-│    - No null/undefined guards                            │
-├─────────────────────────────────────────────────────────┤
-│                    "TRUSTED" ZONE                        │
-│    - Server state stores (unprotected from above)       │
-│    - Physics engine (processes NaN/Infinity)              │
-│    - Settlement logic (double-pay race conditions)       │
-│    - Gold/SHOT emission (no caps, no dedup)              │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                      UNTRUSTED ZONE                          │
+│  - All instruction arguments (match_id, winner, wager)       │
+│  - All user-provided accounts (player wallets)               │
+│  - Clock timestamp (1-2s drift, immaterial for 1h+ windows)  │
+├─────────────────────────────────────────────────────────────┤
+│                    ANCHOR VALIDATION LAYER                    │
+│  - Program<'info, System> enforces System Program ID         │
+│  - has_one = authority on config-gated instructions           │
+│  - PDA seeds enforce account derivation ["match", match_id]  │
+│  - State enum guards (require!(escrow.state == ...))         │
+│  - Constraint expressions (player matching, deposit flags)   │
+├─────────────────────────────────────────────────────────────┤
+│                      TRUSTED ZONE                            │
+│  - GlobalConfig PDA (authority, treasury, ops, is_paused)    │
+│  - MatchEscrow PDA (validated state, stored pubkeys)         │
+│  - Hardcoded BPS constants (700, 300, 10000)                 │
+│  - Wager bounds (MIN=10,000, MAX=100,000,000,000 lamports)   │
+└─────────────────────────────────────────────────────────────┘
 ```
-
-**Critical observation:** The validation layer that should exist between the untrusted and trusted zones is completely absent. Data flows directly from socket payloads into state mutations, physics calculations, and economic operations.
 
 ---
 
@@ -130,188 +91,110 @@ Client (Phaser.js/React)
 
 ### Critical State Variables
 
-| State | Location | Modified By | Read By | Invariants | Persisted? |
-|-------|----------|-------------|---------|------------|------------|
-| `rooms[]` | `main.js:19` | createRoom, deleteRoom, removeRoom | findRoom, getOpenRooms, all handlers | Each room has exactly one host and 0-1 players | No |
-| `matchStates{}` | `main.js:22` | createMatchState, transitionState, fire | isRoundOver, getNextTurn, all battle logic | State machine: LOBBY→PICK→SHOP→BATTLE→ROUND_END→COMPLETE | No |
-| `goldStates{}` | `main.js:25` | initGold, addGold, deductGold | getGold, buyWeapon | Gold >= 0 per player | No |
-| `wagerStates{}` | `main.js:37` | createRoom, joinRoom, playAgainRequest | fire, disconnect, leaveRoom | Amount matches valid tier; wallets match authenticated | No |
-| `weaponInventories{}` | `main.js:28` | buyWeapon, fire handler | fire, shopPhase | Player owns weapon before firing | No |
-| `shopTimers{}` | `main.js:31` | shopPhase, shopDone | clearTimeout on completion | Timer cleared before state transition | No |
-| `authenticatedWallets{}` | `main.js:40` | authenticate | createRoom, joinRoom (fallback) | Wallet verified via signature | No |
-| `playerShotState{}` | `shot-token.js:65` | recordMatchPlayed, prestigeBurn | getShotInfo | Balance >= 0; milestones earned once; prestige tier monotonic | No |
+| State | Location | Modified By | Read By | Invariants |
+|-------|----------|-------------|---------|------------|
+| GlobalConfig.authority | PDA ["config"] | initialize_config, update_config | All admin instructions | Must be a signer for admin ops |
+| GlobalConfig.treasury | PDA ["config"] | initialize_config, update_config | settle_match | Receives 7% BPS fee |
+| GlobalConfig.ops | PDA ["config"] | initialize_config, update_config | settle_match | Receives 3% BPS fee |
+| GlobalConfig.is_paused | PDA ["config"] | pause_program, unpause_program | create_match, deposit_wager, settle_match, cancel_match | NOT checked by permissionless_reclaim (by design) |
+| MatchEscrow.state | PDA ["match", id] | deposit_wager, settle_match, cancel_match, permissionless_reclaim | All match instructions | 4-state lifecycle, monotonic transitions only |
+| MatchEscrow.activated_at | PDA ["match", id] | deposit_wager (when both deposit) | settle_match, cancel_match, permissionless_reclaim | Set once, never modified |
+| MatchEscrow.created_at | PDA ["match", id] | create_match | cancel_match (AwaitingDeposits timeout ref) | Set once, never modified |
 
-**Key invariant violations found:**
-
-1. **`wagerStates` wallet integrity**: Wallets stored in wagerStates come from untrusted payload, NOT from `authenticatedWallets` (AC-04, V-01, V-02, V-07)
-2. **`matchStates` transition integrity**: `transitionState()` return value is ignored at all 7 call sites — invalid transitions silently proceed (SM-15, SM-16)
-3. **`goldStates` monotonicity**: Gold can go negative due to missing bounds check in `deductGold` (E-10 via arbitrary startX/Y Gold farming)
-4. **`playerShotState` supply cap**: No global emission counter; total SHOT emitted can exceed 7M reward pool (E-04)
-5. **`weaponInventories` ownership**: Fire handler does NOT check weapon ownership — any player can fire any weapon (V-19)
-
-### Match State Lifecycle
+### State Lifecycle
 
 ```
-LOBBY ──(both ready)──→ WEAPON_PICK ──(both picked)──→ WEAPON_SHOP
-                                                           │
-                                                    (timer/both done)
-                                                           │
-                                                           ▼
-                                                        BATTLE
-                                                           │
-                        ┌──────────────────────────────────┤
-                        │                                  │
-                   (turnCount >= turnsPerRound)    (HP <= 0: match over)
-                        │                                  │
-                        ▼                                  ▼
-                    ROUND_END                          ❌ SETTLING
-                        │                          (NOT in transition
-                        │                           table — SM-15)
-                   (if more rounds)                        │
-                        │                                  ▼
-                        ▼                              COMPLETE
-                    WEAPON_SHOP ───→ BATTLE                │
-                                                    (SHOT awarded,
-                                                     settlement stub)
+                create_match
+                     │
+                     ▼
+            ┌─────────────────┐
+            │ AwaitingDeposits │ ←── deposit_wager (1st player)
+            └────────┬────────┘
+                     │ deposit_wager (2nd player → activated_at set)
+                     ▼
+              ┌────────────┐
+              │   Active    │
+              └──┬───┬───┬──┘
+                 │   │   │
+    settle_match │   │   │ cancel_match (24h timeout)
+    (≤1h window) │   │   │
+                 ▼   │   ▼
+          ┌────────┐ │ ┌───────────┐
+          │Settled │ │ │ Cancelled │
+          └────────┘ │ └───────────┘
+                     │
+                     │ permissionless_reclaim (48h timeout)
+                     ▼
+              ┌───────────┐
+              │ Cancelled │
+              └───────────┘
 
-NOTES:
-- BATTLE→SETTLING transition is NOT in the transition table
-- transitionState() returns false, but return value is ignored
-- State gets stuck in BATTLE during settlement
-- playAgainRequest wipes state during any phase
+  Cancel from AwaitingDeposits: cancel_match (24h from created_at)
+  Cancel from Active: cancel_match (24h from activated_at)
+  Reclaim from any non-terminal: permissionless_reclaim (48h)
 ```
 
 ---
 
 ## Key Mechanisms
 
-### Mechanism 1: Wallet Authentication
+### Mechanism 1: BPS Fee Calculation (settle_match)
 
-**Purpose:** Verify player wallet ownership for wager matches
-
-**How it works:**
-1. Client signs message `"SolShot Auth: <wallet> at <timestamp>"` with wallet private key
-2. Client emits `authenticate` event with `{walletAddress, message, signature, timestamp}`
-3. Server verifies ed25519 signature via tweetnacl, checks timestamp within 5-minute window
-4. Server stores `authenticatedWallets[socket.id] = walletAddress` and generates JWT
-5. JWT is returned to client but **never validated on subsequent events**
-6. Subsequent events (`createRoom`, `joinRoom`) accept wallet address from payload, using authenticated wallet only as fallback
-
-**Key files:**
-- `server/middleware/auth.js`: Signature verification, JWT generation (never consumed)
-- `server/socket-io/main.js:170-177`: Authenticate event handler
-
-**Security failures (7 agents flagged):**
-- JWT generated but never validated (AC-01, UA-03, EXT-16)
-- No nonce/replay prevention — same signature replayable within 5 min (OD-06, T-06, V-20)
-- Payload wallet overrides authenticated wallet (AC-04, V-01, V-02, V-07)
-- `atob()` used for Base64 decoding instead of Node.js `Buffer.from()` (V-06, EXT-15)
-- Hardcoded JWT secret fallback `'solshot-dev-secret-change-me'` (UA-02)
-- Auth timestamp allows 60s future manipulation (OD-05)
-- `PublicKey.isOnCurve()` check only runs during authenticate, not on payload wallets (V-21)
-
-### Mechanism 2: SOL Wager System
-
-**Purpose:** Allow players to wager SOL on match outcomes
+**Purpose:** Split the pot 90/7/3 between winner, treasury, and ops.
 
 **How it works:**
-1. Room creator sets wager tier (0, 0.01, 0.05, 0.1, 0.25, 0.5 SOL)
-2. Room joiner's balance is checked via Solana RPC (creator's is NOT checked)
-3. No deposit/escrow occurs — wager is recorded in-memory only
-4. On match completion, `settleMatch()` is called — returns `success: true` without moving SOL
-5. `matchSettled` event is emitted to clients with phantom settlement data
+1. Widen to u128: `total_pot_128 = (wager_lamports as u128).checked_mul(2)`
+2. Treasury: `(total_pot_128 * 700 / 10000) as u64`
+3. Ops: `(total_pot_128 * 300 / 10000) as u64`
+4. Winner: `total_pot - treasury - ops` (remainder strategy)
 
-**Key files:**
-- `server/socket-io/main.js:354-410`: Room creation with wager
-- `server/socket-io/main.js:288-344`: Room joining with balance check
-- `server/services/solana.js:139-163`: Settlement stub
-- `server/services/solana.js:80-102`: Balance verification
+**Security considerations:**
+- u128 widening prevents overflow at max wager (200 SOL * 700 = 1.4e14, safe in u128)
+- Remainder-to-winner prevents dust loss
+- `as u64` narrowing casts are safe ONLY because MAX_WAGER bounds the domain
 
-**Security failures (8 agents flagged):**
-- Settlement is a stub — no real SOL transfers (E-06, OD-12)
-- Balance check fails open — zero-balance wallets pass (E-16, OD-01, EH-04)
-- Room creator balance never verified (E-17)
-- Negative wager values bypass validation (E-08, ARITH-03)
-- Double settlement via disconnect/fire race condition (E-14, T-01, SM-06)
-- `playAgainRequest` deletes wager state — rematch always free (E-12)
-- `deleteRoom` skips settlement — any player can call (E-15, UA-11, AC-06)
-- Devnet RPC fallback in production (OD-03)
+### Mechanism 2: Direct Lamport Manipulation (settle/cancel/reclaim)
 
-### Mechanism 3: Physics & Fire Event
-
-**Purpose:** Server-authoritative ballistic simulation and damage calculation
+**Purpose:** Transfer SOL without CPI (only the single deposit uses CPI).
 
 **How it works:**
-1. Client emits `fire` with `{angle, power, weaponId, startX, startY}`
-2. Server calls `processShot()` which computes trajectory via Euler integration (3000 max steps)
-3. Damage is calculated per tank within blast radius
-4. Gold is awarded based on damage dealt
-5. Turn alternates; after turnsPerRound turns, round ends
+1. Set terminal state (Settled/Cancelled) — OC-10 pattern
+2. `try_borrow_mut_lamports()` on escrow PDA and recipient accounts
+3. Debit escrow, credit recipient(s)
 
-**Key files:**
-- `server/socket-io/main.js:671-872`: Fire event handler (200 lines, async, no try/catch)
-- `server/services/physics.js:59-84`: Trajectory calculation
-- `server/services/physics.js:189-201`: Damage calculation
+**Security considerations:**
+- Recipients are `UncheckedAccount` — validated via `constraint` against stored pubkeys
+- No check that recipient is non-executable — if treasury/ops set to program address, lamport credit may silently fail
+- Transaction atomicity prevents partial transfers (any `?` error reverts all)
 
-**Security failures (5 agents flagged):**
-- No type/bounds validation on angle, power, startX, startY (V-04, ARITH-01, E-10)
-- Client-supplied startX/startY overrides server tank position — arbitrary aim (E-10, V-04)
-- NaN/Infinity inputs produce NaN damage, contaminating scores (ARITH-04)
-- No weapon ownership check — fire any weapon without purchasing (V-19)
-- No top-level try/catch — unhandled errors crash server (EH-02)
-- Async handler without mutex — concurrent fires during settlement (T-02, T-11)
+### Mechanism 3: Three-Tier Timeout Hierarchy
 
-### Mechanism 4: Gold Economy
-
-**Purpose:** Per-match currency for purchasing weapons during shop phases
+**Purpose:** Ensure funds are never permanently stuck.
 
 **How it works:**
-1. Both players start with 1000 Gold (initGold)
-2. Gold earned from damage dealt: `floor(damage * 15)` per hit
-3. Gold spent in weapon shop during WEAPON_SHOP phase
-4. Gold resets on play-again
+1. Settlement window: ≤1h from activated_at (authority-only)
+2. Player cancel: >24h from activated_at or created_at (either depositing player)
+3. Permissionless reclaim: >48h from activated_at or created_at (anyone)
 
-**Security failures:**
-- Arbitrary startX/startY allows guaranteed max damage for Gold farming (E-10)
-- turnCount never resets between rounds — rounds end instantly after round 1 (E-02)
-- Gold state is ephemeral — lost on server restart (E-19)
-
-### Mechanism 5: SHOT Token Emissions
-
-**Purpose:** Reward long-term play with SHOT tokens via milestones
-
-**How it works:**
-1. On match completion, `recordMatchPlayed(wallet)` increments match count
-2. Milestones at 1, 5, 10, 25, 50, 100 matches award SHOT bonuses
-3. Recurring milestone: 500 SHOT every 50 matches after 100
-4. Prestige system burns SHOT for cosmetic tiers
-
-**Security failures (3 agents flagged):**
-- No supply cap enforcement — emissions can exceed 7M pool (E-04)
-- No match deduplication — same match could credit twice (E-03)
-- No minimum gameplay requirement — trivial matches count (E-13)
-- All state ephemeral — server restart reverses burns and resets balances (E-05, E-19)
-- Colluding players can grind unlimited SHOT via rapid trivial matches (E-03, E-13)
+**Security considerations:**
+- Creates 23-hour dead zone between settlement expiry (1h) and player cancel (24h)
+- Pause mechanism blocks cancel_match but NOT permissionless_reclaim (escape hatch)
 
 ---
 
 ## External Dependencies
 
-### External Services
+### CPI Targets
 
-| Service | Purpose | Validation | Trust Level | Failure Mode |
-|---------|---------|------------|-------------|--------------|
-| Solana RPC | Wallet balance checks | None — no staleness check, no quorum | SEMI-TRUSTED | Fails open (returns 0, player enters match) |
-| MongoDB | Match persistence | Mongoose schema typing | TRUSTED | Graceful degradation (server runs without DB) |
+| Program | Purpose | Validation | Trust Level |
+|---------|---------|------------|-------------|
+| System Program | SOL transfer (deposit_wager only) | `Program<'info, System>` | HIGH (native) |
 
-### npm Dependencies (28 vulnerabilities found)
+### Oracles/External Data
 
-| Package | Version | Risk | Notes |
-|---------|---------|------|-------|
-| Express | 4.18.1 | HIGH | Multiple known CVEs (EXT-01) |
-| Socket.IO | 4.5.1 | HIGH | Parser DoS, ws vulnerabilities (EXT-02) |
-| nodemon | ^1.3.3 | MEDIUM | Dev tool in production deps, ancient version (UA-08) |
-| jsonwebtoken | ^9.0.0 | LOW | Current version, but JWTs are never validated |
+| Source | Data Type | Usage | Validation |
+|--------|-----------|-------|------------|
+| Clock Sysvar | unix_timestamp | Deadline enforcement (5 locations) | `Clock::get()` syscall (no injection risk) |
 
 ---
 
@@ -319,21 +202,19 @@ NOTES:
 
 ### Permission Matrix
 
-| Operation | Anonymous | Authenticated | Host | Notes |
-|-----------|-----------|---------------|------|-------|
-| Connect | Yes | Yes | N/A | No rate limit |
-| Create room (free) | **Yes** | Yes | N/A | No auth required |
-| Create room (wager) | **Yes** | Yes | N/A | No auth required, no balance check |
-| Join room (free) | **Yes** | Yes | N/A | No auth required |
-| Join room (wager) | **Yes** | Yes | N/A | Balance check fails open |
-| Delete room | **Yes** | Yes | **Should be** | No host check (AC-06, UA-11) |
-| Fire weapon | **Yes** | Yes | N/A | No auth, no validation |
-| Buy weapon | **Yes** | Yes | N/A | No auth required |
-| Delete room during match | **Yes** | Yes | **Should be** | Skips settlement |
-| View /stats | **Yes** | Yes | N/A | Financial data exposed |
-| Admin actions | N/A | N/A | N/A | **No admin interface exists** |
+| Operation | Anyone | Player | Authority |
+|-----------|--------|--------|-----------|
+| initialize_config | - | - | Yes (one-time) |
+| update_config | - | - | Yes |
+| pause_program | - | - | Yes |
+| unpause_program | - | - | Yes |
+| create_match | Yes* | Yes* | Yes |
+| deposit_wager | - | Yes (matching player) | - |
+| settle_match | - | - | Yes (within 1h) |
+| cancel_match | - | Yes (after 24h) | - |
+| permissionless_reclaim | Yes (after 48h) | Yes (after 48h) | Yes (after 48h) |
 
-**Summary:** Every operation is available to anonymous, unauthenticated connections.
+*create_match lacks `has_one = authority` — any signer can create, but matches created by non-authority are unsettleable.
 
 ---
 
@@ -342,150 +223,100 @@ NOTES:
 ### Value Flows
 
 ```
-                         ┌─────────────────┐
-                         │  Player Wallets  │
-                         └────────┬────────┘
-                                  │
-                           (no deposit taken)
-                                  │
-                                  ▼
-                    ┌──────────────────────────┐
-                    │   wagerStates{} (memory) │
-                    │   amount + wallet mapping │
-                    └────────────┬─────────────┘
-                                 │
-                          (match completes)
-                                 │
-                                 ▼
-                    ┌──────────────────────────┐
-                    │   settleMatch() — STUB   │
-                    │   Returns success: true  │
-                    │   Transfers: $0 actual   │
-                    └────────────┬─────────────┘
-                                 │
-                    ┌────────────┼────────────┐
-                    │            │            │
-                    ▼            ▼            ▼
-              Winner 90%   Treasury 7%   Ops 3%
-              (phantom)    (phantom)     (phantom)
+Player A (wager) ──CPI──→ Escrow PDA ←──CPI── Player B (wager)
+                              │
+                     ┌────────┴────────┐
+                     │   SETTLEMENT    │
+                     │   (authority)   │
+                     └───┬───┬───┬────┘
+                         │   │   │
+               ┌─────────┘   │   └─────────┐
+               ▼             ▼             ▼
+          Winner (90%)  Treasury (7%)   Ops (3%)
+          + remainder   via config      via config
+          + rent
 
-
-   Gold Economy:           SHOT Token Economy:
-   ┌──────────────┐        ┌────────────────────┐
-   │ 1000 start   │        │ Milestone rewards   │
-   │ +damage*15   │        │ No supply cap ❌    │
-   │ -weapon cost │        │ No dedup check ❌   │
-   │ Per-match    │        │ No min gameplay ❌  │
-   │ Ephemeral ❌ │        │ Ephemeral ❌        │
-   └──────────────┘        │                    │
-                           │ Prestige burns     │
-                           │ (reversed on       │
-                           │  restart) ❌       │
-                           └────────────────────┘
+         OR: CANCELLATION → each player gets exact wager back
+         OR: RECLAIM → each depositing player gets exact wager back
 ```
 
 ### Fee Structure
 
-| Fee Type | Rate | Collection Point | Destination | Implemented? |
-|----------|------|------------------|-------------|--------------|
-| Winner payout | 90% | Match completion | Winner wallet | NO (stub) |
-| Treasury fee | 7% | Match completion | Treasury wallet | NO (stub) |
-| Operations fee | 3% | Match completion | Ops wallet | NO (stub) |
+| Fee Type | Rate (BPS) | Collection Point | Destination |
+|----------|-----------|------------------|-------------|
+| Treasury | 700 (7%) | settle_match | config.treasury |
+| Operations | 300 (3%) | settle_match | config.ops |
+| Winner | 9000 (90%) + remainder | settle_match | winner account |
 
-### Economic Invariants (ALL VIOLATED)
+### Economic Invariants
 
-| Invariant | Status | Violation |
-|-----------|--------|-----------|
-| Winner + Treasury + Ops = Total Pot | Correct math (E-07) | N/A — never executes |
-| Balance >= wager before entering match | **VIOLATED** | 0-balance wallets pass (E-16, OD-01) |
-| SHOT emitted <= 7M reward pool | **VIOLATED** | No enforcement (E-04) |
-| Prestige burns are permanent | **VIOLATED** | Lost on restart (E-05) |
-| Each match settled exactly once | **VIOLATED** | Double settle via race (E-14, T-01) |
-| Wager preserved across rematch | **VIOLATED** | playAgainRequest deletes (E-12) |
-| Host always wins tiebreak (fairness) | **BY DESIGN (unfair)** | Systematic advantage (E-22) |
-| Gold earned proportional to skill | **VIOLATED** | Arbitrary startX/Y bypasses physics (E-10) |
+| Invariant | Where Enforced | Status |
+|-----------|---------------|--------|
+| total_distributed ≤ total_pot | Lines 270-274: remainder strategy | HOLDS |
+| winner + treasury + ops == total_pot | Lines 253-274: checked math | HOLDS |
+| Each player deposits/refunds exactly wager_lamports | Lines 179-188 / 358-367 | HOLDS |
+| Fees ≥ 1 lamport per recipient | MIN_WAGER=10,000 guarantees | HOLDS |
+| No value extraction beyond designed paths | All lamport movements in 5 instructions | HOLDS |
 
 ---
 
 ## High-Complexity Areas
 
-### Area 1: Fire Event Handler (main.js:671-872)
+### Area 1: update_config Missing Distinctness Re-Validation
 
-**Identified by:** Arithmetic, State Machine, Timing, Error Handling, Account Validation, Token/Economic (6/10 agents)
-
-**Why complex:**
-- 200 lines of async code with no top-level try/catch
-- Processes physics, damage, Gold, turn management, round-end detection, match-end detection, settlement, and SHOT emissions in a single handler
-- No mutex — concurrent fires and disconnects interleave
-- Client-supplied startX/startY bypasses server-authoritative positioning
-- NaN/Infinity inputs propagate through entire calculation chain
-- Settlement (async, potentially slow) runs without state lock
-
-**Key code:** `main.js:671-872`
-
-### Area 2: Disconnect/LeaveRoom Settlement Race
-
-**Identified by:** State Machine, Timing, Error Handling, Token/Economic, CPI/External (5/10 agents)
+**Identified by:** Access Control (01), State Machine (03), Token/Economic (05)
 
 **Why complex:**
-- Both `disconnect` (main.js:178-224) and `leaveRoom` (main.js:228-263) contain duplicate settlement logic
-- Both are async handlers that call `settleMatch()` and `removeRoom()`
-- If both players disconnect simultaneously: both handlers read `wagerStates[roomId]` before either completes, resulting in two settlements
-- `removeRoom()` deletes state that in-flight fire handlers are still reading
-- No settlement lock — the `settlingRooms` Set recommended by multiple agents is absent
+- initialize_config enforces authority ≠ treasury ≠ ops
+- update_config allows arbitrary Pubkey changes without re-checking distinctness
+- Could set treasury == ops (settlement failure at account constraint), treasury == authority (fee redirection), or ops to executable account (silent lamport loss)
 
-**Key code:** `main.js:178-263`
+**Key code:** `lib.rs:70-88`
 
-### Area 3: Authentication-to-Wager Trust Chain
+### Area 2: Authority Centralization
 
-**Identified by:** Access Control, Account Validation, Oracle/External, Admin/Upgrade, Error Handling (5/10 agents)
+**Identified by:** Access Control (01), State Machine (03), Token/Economic (05), Timing (08)
 
 **Why complex:**
-- Authentication is optional
-- Authenticated wallet is stored but never enforced on subsequent events
-- Payload wallet overrides authenticated wallet via `||` fallback chain
-- Balance check fails open (RPC error = balance 0 = allowed)
-- Creator balance never checked at all
-- JWT exists but is never validated
-- CORS wildcard allows any origin to connect and authenticate
+- Single key controls: winner selection, fee destinations, pause/unpause, authority transfer
+- One-step authority transfer (no propose/accept pattern) — immediate, irreversible
+- No timelock on any configuration change
+- Authority cannot be a player (OC-06), preventing direct fund theft, but can always select winners
 
-**Key code:** `auth.js`, `main.js:170-177,288-344,354-410`
+**Key code:** `lib.rs:56-88` (config management), `lib.rs:228-305` (settlement)
+
+### Area 3: 23-Hour Dead Zone
+
+**Identified by:** State Machine (03), Timing (08)
+
+**Why complex:**
+- Settlement expires at 1h (authority can no longer settle)
+- Player cancel not available until 24h
+- 23 hours where Active match with deposits is stuck — neither party can act
+- Not permanently stuck (cancel available at 24h), but creates significant fund lockup
+
+**Key code:** `lib.rs:236-244` (settlement deadline), `lib.rs:329-333` (cancel timeout)
 
 ---
 
 ## Cross-Cutting Concerns
 
-### Deduplicated Observations (Same Issue Found by Multiple Agents)
+### Patterns Used Across Codebase
 
-| Issue | Agents That Found It | Finding IDs |
-|-------|---------------------|-------------|
-| No input validation on socket payloads | 06, 02, 05, 09, 01 | V-04, ARITH-01, E-10, EH-08, AC-09 |
-| JWT generated but never validated | 01, 08, 04, 06 | AC-01, UA-03, EXT-16, V-07 |
-| Balance check fails open (zero-balance bypass) | 05, 07, 09, 04 | E-16, OD-01, EH-04, EXT-04 |
-| Double settlement race condition | 03, 10, 05 | SM-06, T-01, E-14 |
-| deleteRoom has no host-only check | 01, 08, 05 | AC-06, UA-11, E-15 |
-| /stats exposes financial data without auth | 01, 08, 07, 05 | AC-13, UA-01, OD-13, E-20 |
-| CORS wildcard on Express + Socket.IO | 01, 08, 04 | AC-14, UA-13, EXT-20 |
-| Settlement stub returns success without transfer | 05, 07, 04 | E-06, OD-12, EXT-07 |
-| No rate limiting on any endpoint/event | 04, 08, 10 | EXT-19, UA-15, T-14 |
-| All state ephemeral (lost on restart) | 05, 03, 09 | E-19, SM-19, EH-11 |
-| No nonce/replay prevention in auth | 07, 10, 06 | OD-06, T-06, V-20 |
-| Math.random() for security-relevant decisions | 07, 03 | OD-08/09/10, SM-07 |
-| atob() browser API in Node.js | 06, 04 | V-06, EXT-15 |
-| Player names never sanitized (XSS) | 06, 01 | V-03, V-18 |
-| Negative wager bypasses validation | 05, 02 | E-08, ARITH-03 |
-| transitionState() return value ignored | 03 | SM-15, SM-16 |
-| Hardcoded JWT secret fallback | 08, 04 | UA-02, EXT-15 |
-| No turn timer (stalling griefing) | 05, 10 | E-18 |
+| Pattern | Usage Count | Locations | Consistency |
+|---------|-------------|-----------|-------------|
+| OC-10: State-before-transfer | 3 | settle (L279), cancel (L355), reclaim (L417) | Consistent |
+| checked_add for timestamps | 5 | create, deposit, settle, cancel, reclaim | Consistent |
+| try_borrow_mut_lamports | 9 | settle (3x), cancel (2x), reclaim (2x) | Consistent |
+| Pause guard | 4 | create, deposit, settle, cancel | Consistent (reclaim excluded by design) |
+| Anchor has_one = authority | 6/9 | All admin instructions | Missing on CreateMatch |
 
-### Shared Assumptions (All Incorrect)
+### Shared Assumptions
 
-1. **"Clients send valid data"**: Relied upon by physics, Gold, match state, weapons, wagers — violated by every socket event
-2. **"Players authenticate before playing"**: Relied upon by wager system — violated by lack of enforcement
-3. **"Settlement happens exactly once"**: Relied upon by wager system — violated by concurrent async handlers
-4. **"Math.random() is sufficient randomness"**: Relied upon by terrain, turns, room IDs, weapon arrays — violated by xorshift128+ predictability
-5. **"Server stays running"**: Relied upon by all 8 in-memory stores — violated by any restart/crash/deploy
-6. **"Solana RPC is available"**: Relied upon by balance checks — violated by fail-open error handling
+1. **Authority is honest and operational:** All match outcomes depend on authority settling correctly within 1h. No dispute mechanism exists.
+2. **Authority key is secure:** One-step transfer means a compromised key immediately transfers all protocol control.
+3. **Treasury/ops are valid wallet addresses:** No validation that fee destinations are non-executable, system-owned wallets.
+4. **Players will act to protect their funds:** Cancel and reclaim are player-initiated — no automatic refund mechanism.
 
 ---
 
@@ -495,31 +326,32 @@ NOTES:
 
 | Risk Level | Entry Point | Why This Risk |
 |------------|-------------|---------------|
-| CRITICAL | `fire` event | No validation, arbitrary position, async settlement race, NaN/Inf injection |
-| CRITICAL | `createRoom` event | Spoofed wallet, negative wager, no creator balance check |
-| CRITICAL | `joinRoom` event | Spoofed wallet, fail-open balance check, 0-SOL bypass |
-| CRITICAL | `disconnect` handler | Double settlement race, state destruction during async operations |
-| HIGH | `deleteRoom` event | No host check, skips settlement, wipes wager state |
-| HIGH | `leaveRoom` event | Duplicate settlement logic, race with disconnect |
-| HIGH | `createWeaponArray` event | Unbounded loop (DoS), PRNG state leakage |
-| HIGH | `authenticate` event | Replay within 5 min, no nonce, hardcoded JWT secret |
-| HIGH | `GET /stats` | Unauthenticated financial data + error messages |
-| HIGH | `playAgainRequest` event | Wipes wager state during active settlement |
-| MEDIUM | `buyWeapon` event | No type check on weaponId, no auth |
-| MEDIUM | `terrainPath` event | Unbounded array copy, prototype pollution risk |
-| MEDIUM | `ready` event | No state check, can reset Gold mid-battle |
-| LOW | `weaponPick`, `angleChange`, `powerChange` | Unvalidated relay to opponent (client XSS risk) |
+| HIGH | `update_config` | Changes authority, treasury, ops with no timelock or distinctness check |
+| HIGH | `settle_match` | Authority unilaterally selects winner — total economic control |
+| MEDIUM | `create_match` | Not authority-gated — PDA namespace spam possible |
+| MEDIUM | `cancel_match` | 24h delay creates timing asymmetry |
+| LOW | `deposit_wager` | Single CPI call, well-validated |
+| LOW | `permissionless_reclaim` | Intentional escape hatch, 48h delay |
 
-### Known Protections (Few)
+### Known Constraints
 
-| Protection | Location | Effectiveness |
-|------------|----------|---------------|
-| Wager tier validation | `solana.js:isValidWager()` | Works for positive values, bypassed by negatives |
-| Weapon catalog lookup | `Weapon.js:getWeapon()` | Returns null for unknown IDs, but `fire` uses different catalog |
-| Room existence check | `main.js:findRoom()` | Prevents operations on nonexistent rooms |
-| Turn check in fire | `main.js:681-684` | Prevents out-of-turn firing (but not concurrent fires) |
-| Shop timer | `main.js:476-505` | Forces shop phase to end after 30s |
-| Mongoose schema types | `Match.js`, `User.js` | Prevents MongoDB injection at DB layer only |
+- `overflow-checks = true` in Cargo.toml release profile: native arithmetic panics on overflow
+- `Program<'info, System>` on all CPI contexts: System Program ID enforced by Anchor
+- PDA seeds `["match", match_id]` with canonical bump: no seed manipulation
+- Terminal state set before any lamport transfer (OC-10): reentrancy mitigation
+- Wager bounds [10,000 .. 100,000,000,000] lamports: prevents zero-fee and overflow edge cases
+
+### Novel Attack Surface Observations
+
+1. **PDA rent incentive imbalance:** At minimum wager (10,000 lamports ≈ $0.002), the rent-exempt minimum for the escrow PDA (~0.0015 SOL) may exceed the wager itself. Authority pays rent at creation, recovers it at settlement. Economic incentive to create-and-settle matches for rent profit at low wagers.
+2. **Escrow PDA lamport inflation:** Anyone can send lamports to the escrow PDA via system transfer. Extra lamports above 2*wager+rent would be swept to the authority on account close. Potential for donation-based economic manipulation.
+3. **Match ID as string-based PDA seed:** The match_id is a string that becomes PDA seed bytes. Long or adversarial match_id strings could affect PDA derivation costs or create collisions if the string space is predictable.
+
+### Open Questions
+
+1. Is one-step authority transfer an intentional design choice or an oversight? (No propose/accept or timelock)
+2. Should the 23-hour dead zone be narrowed? (e.g., allow player cancel at 2h instead of 24h)
+3. Should create_match require authority? (Current behavior allows spam but spammer loses rent)
 
 ---
 
@@ -527,31 +359,23 @@ NOTES:
 
 ### Where Focus Areas Intersected
 
-| Focus A | Focus B | Intersection Point | Finding Cluster |
-|---------|---------|-------------------|----------------|
-| Access Control (01) | Account Validation (06) | Wallet address spoofing in wager events | AC-04 + V-01/V-02/V-07 |
-| Arithmetic (02) | Account Validation (06) | NaN/Infinity in fire handler | ARITH-01 + V-04 |
-| State Machine (03) | Timing (10) | Double settlement from concurrent handlers | SM-06 + T-01 |
-| CPI/External (04) | Oracle/Data (07) | RPC fail-open balance bypass | EXT-04 + OD-01 |
-| Token/Economic (05) | State Machine (03) | Match completion triggering ephemeral rewards | E-03 + SM-19 |
-| Token/Economic (05) | Timing (10) | Settlement + wager state deletion races | E-14 + T-09 |
-| Error Handling (09) | Timing (10) | Unhandled async errors during concurrent operations | EH-02 + T-11 |
-| Admin/Upgrade (08) | Access Control (01) | /stats endpoint exposure | UA-01 + AC-13 |
-| Oracle/Data (07) | Account Validation (06) | Auth replay + wallet spoofing | OD-06 + V-07 |
+| Focus A | Focus B | Intersection Point | Notes |
+|---------|---------|-------------------|-------|
+| Access Control (01) | Token/Economic (05) | update_config distinctness | Both flag missing re-validation |
+| Access Control (01) | Token/Economic (05) | create_match ungated | Both flag PDA spam risk |
+| State Machine (03) | Timing (08) | 23-hour dead zone | Both flag with consistent analysis |
+| State Machine (03) | CPI/External (04) | OC-10 state-before-transfer | Both confirm correct implementation |
+| Token/Economic (05) | CPI/External (04) | BPS fee → lamport transfer | Both confirm arithmetic soundness |
+| Timing (08) | State Machine (03) | Pause + active match = 48h lock | Both flag with consistent analysis |
 
-### Aggregate Finding Counts Across All Agents
+### Contradictions or Tensions
 
-| Severity | Count | Key Themes |
-|----------|-------|------------|
-| CRITICAL | 26 | No auth enforcement, settlement stub, double settlement, ephemeral state, SHOT supply unlimited, fail-open balance, null payload crash, no process handlers |
-| HIGH | 48 | Input validation absent, wallet spoofing, PRNG predictable, CORS wildcard, JWT unused, race conditions, negative wagers, deleteRoom unprotected |
-| MEDIUM | 33 | Relay event validation, prototype pollution, turn timer absent, health endpoint info leak, error message leakage, nodemon in prod deps |
-| LOW | 10 | Auth nonce, PublicKey.isOnCurve scope, floating-point stats, security headers |
-| INFO | 6 | Settlement math correct, no runtime config mutation, no process management exposed |
-
-**Total unique findings (after deduplication): ~95** — many overlap across agents as documented above.
+| Area | Observation A | Observation B | Resolution |
+|------|---------------|---------------|------------|
+| CPI (04) vs Economic (05) | "Direct lamport manipulation is safe" | "UncheckedAccount recipient could be executable" | Both correct — safe for valid wallets, edge case for misconfigured config |
+| State Machine (03) vs Timing (08) | "activated_at backward-compat guard is redundant" | "Settlement deadline check is sound" | Consistent — both agree guard is redundant-but-safe |
 
 ---
 
-**This document synthesizes findings from 10 parallel context audits.**
-**Use this as the foundation for attack strategy generation in Phase 3.**
+**This document synthesizes findings from 6 parallel context audits.**
+**Use this as the foundation for attack strategy generation.**

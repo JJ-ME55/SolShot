@@ -1,671 +1,553 @@
-# 05 - Token & Economic Security Audit
+# Token & Economic Analysis
 
-**Auditor focus:** Gold economy, SHOT token emissions, SOL wager settlement, prestige system, economic griefing vectors.
+<!-- CONDENSED_SUMMARY_START -->
 
-**Files analyzed:**
-- `server/services/gold.js` (115 LOC)
-- `server/services/shot-token.js` (217 LOC)
-- `server/services/solana.js` (209 LOC)
-- `server/services/match.js` (178 LOC)
-- `server/services/physics.js` (459 LOC)
-- `server/services/monitoring.js` (212 LOC)
-- `server/services/raydium.js` (73 LOC)
-- `server/socket-io/main.js` (1059 LOC)
-- `server/middleware/auth.js` (139 LOC)
-- `server/models/Weapon.js` (113 LOC)
-- `server/models/Match.js` (61 LOC)
-- `server/index.js` (60 LOC)
+## Condensed Summary
 
----
+### Protocol Economics
 
-## Finding E-01: Gold Earned From Self-Damage Calculation Loophole
+SolShot Escrow is a pure SOL escrow for 1v1 wagered matches. No SPL tokens, no liquidity pools, no oracle-driven pricing, no share-based accounting. Economics are:
+- **Deposit:** Each player deposits a fixed `wager_lamports` into a PDA (system_program::transfer CPI).
+- **Settlement:** Authority-only. Pot = 2 x wager. Split: 90% winner, 7% treasury, 3% ops. BPS math uses u128 widening. Remainder (dust) goes to winner.
+- **Cancellation/Refund:** Each depositing player receives exact `wager_lamports` back. No fees deducted.
+- **Rent:** PDA rent paid by authority at creation; reclaimed by authority (settle), caller (cancel), or anyone (permissionless reclaim after 48h).
 
-**Severity:** HIGH
-**Location:** `server/socket-io/main.js:750-755`, `server/services/physics.js:189-201`
+### Key Findings
 
-**Description:**
-The Gold-earning logic in the `fire` handler awards Gold for any damage entry where `playerId !== client.id && dmg > 0`. However, the physics engine (`calculateDamage`) uses negative values for self-damage and positive values for opponent damage. The vulnerability is that the damage map keys are the *recipient* of damage (the tank hit), not the dealer. When player A fires and hits player B, `result.damage[B_id] = +60`. The Gold loop then checks `if (playerId !== client.id && dmg > 0)`, which correctly identifies B as the target. This part is actually **correct**.
+1. **Fee calculation is arithmetically sound.** u128 widening prevents overflow. Remainder-to-winner prevents dust loss. BPS constants are hardcoded (immutable without upgrade). Min wager (10,000 lamports) guarantees both treasury and ops fees >= 1 lamport at current BPS rates. Verified across min/max/pathological wager values.
 
-However, there is a subtler issue: when a projectile deals splash damage, the `calculateDamage` function accumulates damage per tank with `(damage[tank.id] || 0) + ...`. If a weapon hits the ground between both tanks and splashes both, the shooter gets negative self-damage AND the opponent gets positive damage, which correctly awards Gold only for opponent damage. The logic is sound for standard weapons.
+2. **update_config lacks re-validation of address distinctness.** `initialize_config` enforces authority != treasury != ops, but `update_config` (lines 70-88) applies changes without re-checking. Authority could set treasury == ops (settlement would fail due to constraint at line 588), treasury == authority (fee redirection), or ops to a program address (settlement DoS). This is an observation for Access Control focus.
 
-**BUT** -- the `fire` handler at line 671 does **not validate `angle` or `power` bounds**. A client can send `power: 0` with a carefully chosen angle that causes the projectile to land directly on themselves, dealing self-damage only. Since self-damage is negative, no Gold is awarded. This is not directly exploitable for Gold inflation. Reclassifying:
+3. **Authority has total economic control.** Server authority is sole winner selector, sole match creator (in practice), and can change all fee destinations instantly via update_config. No timelock, no multisig. Combined with OC-06 (authority cannot be player), the authority cannot directly steal deposited funds, but can always choose which player wins and redirect all fees to controlled addresses.
 
-**Revised severity:** LOW (no Gold exploit, but unbounded inputs remain a concern -- see E-10).
+4. **create_match is not authority-gated.** Any signer can call it (no `has_one = authority` on config in CreateMatch struct). However, settle_match requires BOTH escrow.authority and config.authority to match the signer. So matches created by non-authority are unsettleable by the config authority, making them economically useless (they time out to cancellation). Spam creates an economic nuisance (PDA space usage) but the spammer loses rent.
 
----
+5. **Flash loan immunity.** Protocol has no price-dependent calculations, no pool-based pricing, no share accounting, no reward distribution. Flash loans cannot manipulate any economic invariant.
 
-## Finding E-02: Gold State Not Reset Between Rounds (Accumulation by Design, but Carry-Over Risk)
+6. **overflow-checks = true in Cargo.toml release profile.** This makes native Rust arithmetic panic on overflow (instead of wrapping), providing defense-in-depth beyond checked_* methods.
 
-**Severity:** MEDIUM
-**Location:** `server/socket-io/main.js:420-507` (ready handler), `server/socket-io/main.js:786-870` (round end vs match end)
+### Critical Economic Invariants
 
-**Description:**
-Gold is initialized once at match start (when both players ready up) via `initGold()` at lines 423 and 469. Each player starts with 1,000 Gold. During gameplay, Gold accumulates from damage dealt. When a round ends (but the match is not over), the `roundEnd` event is emitted at line 863, and the match transitions to `ROUND_END`. However, **Gold state is never reset between rounds**. The match state's `turnCount` is incremented but never reset to 0 for the next round, meaning `isRoundOver()` will return true forever after the first round ends.
+| Invariant | Where Enforced | Status |
+|-----------|---------------|--------|
+| total_distributed <= total_pot (no minting) | Lines 270-274: winner = pot - treasury - ops | HOLDS |
+| winner_amount + treasury_amount + ops_amount == total_pot | Lines 253-274: remainder strategy | HOLDS (modulo rounding always in protocol's favor) |
+| Each player deposits exactly wager_lamports, refunded exactly wager_lamports | Lines 179-188 (deposit), 358-367 (refund) | HOLDS |
+| Fees are >= 1 lamport per fee recipient | MIN_WAGER=10,000, minimum treasury=1,400, minimum ops=600 | HOLDS |
+| No value extraction beyond designed paths | All lamport movements in 5 instructions only | HOLDS |
 
-**Exploit scenario:**
-In a BO3 or BO5 match, after round 1 ends, `turnCount` stays >= `turnsPerRound` (20). Every subsequent fire will immediately trigger `isRoundOver()` again. The match state machine transitions `ROUND_END -> WEAPON_SHOP -> BATTLE`, but as soon as any fire happens, the round immediately ends again because `turnCount` was never reset. This means:
-1. Gold accumulated in round 1 carries into round 2's shop phase (intended? likely yes).
-2. But `turnCount` never resets, so round 2 ends after 0 actual turns of play.
-3. A player who dominated round 1 (earned lots of Gold) immediately wins subsequent rounds with no gameplay.
+### Cross-Focus Handoffs
 
-**Root cause:** `createMatchState` initializes `turnCount: 0` but there is no round-reset function. The `currentRound` is incremented at line 793 but `turnCount` is not reset.
+- **Access Control:** update_config missing distinctness re-validation; create_match not authority-gated; authority as sole winner selector (centralization risk)
+- **Arithmetic:** `as u64` narrowing casts on lines 260, 265, 267 are safe ONLY because MAX_WAGER bounds the domain; if MAX_WAGER increases, these casts need re-analysis
+- **Timing:** Settlement deadline (1h) + cancel timeout (24h) + permissionless reclaim (48h) create economic forcing functions; authority non-settlement griefing possible within these windows
+- **State Machine:** Terminal state-before-transfer pattern (OC-10) prevents economic re-entry; `close` attribute handles rent sweep
 
-**Recommendation:**
-After `roundEnd` emission, reset `ms.turnCount = 0` and `ms.scores = {}` (or per-round scores). Add a `resetRound(ms)` function to `match.js`.
+<!-- CONDENSED_SUMMARY_END -->
 
 ---
 
-## Finding E-03: SHOT Token Milestones -- No Match Completion Validation
+## Executive Summary
 
-**Severity:** CRITICAL
-**Location:** `server/services/shot-token.js:95-129`, `server/socket-io/main.js:838-850`
+The SolShot Escrow program implements a straightforward 1v1 wagering system using native SOL (lamports). The economic model is intentionally simple: two players each deposit a fixed wager, the server authority designates a winner, and the pot is split 90/7/3 (winner/treasury/ops) using basis-point math with u128 widening.
 
-**Description:**
-`recordMatchPlayed(walletAddress)` increments `state.matchesPlayed++` unconditionally and checks milestones. It is called at main.js:844-849 inside the `matchEnd` block. The function itself has **no deduplication** -- it trusts that the caller invokes it exactly once per completed match. However, there is no match ID or nonce passed to prevent double-counting.
+From a token and economic perspective, the program demonstrates strong defensive design: all arithmetic is checked, the fee calculation uses a remainder-to-winner strategy that eliminates dust loss, wager bounds prevent both too-small fees and too-large escrows, and the protocol is entirely immune to flash loan attacks due to the absence of pool-based pricing or oracle-dependent calculations.
 
-**Exploit scenario (SHOT inflation via play-again loop):**
-1. Two colluding players create a room with 0 wager.
-2. They play a trivially fast match (20 turns of deliberate misses -- fire out of bounds with angle 0, power 0).
-3. Match completes, both earn SHOT milestone credit.
-4. Both click "playAgain" -- `playAgainRequest` at line 1004 resets match state, Gold, and wager, then emits `playAgain`.
-5. Repeat rapidly. Each match takes ~20 socket events (fire with instant miss).
-6. Since the match state machine is fully in-memory and there is no rate limit, players can grind matches extremely fast.
-7. Each completion calls `recordMatchPlayed()`, incrementing `matchesPlayed`.
+The primary economic risks are centralization concerns rather than code-level vulnerabilities: the server authority has unilateral power over winner selection and fee destination addresses, with no timelock or multisig requirement on configuration changes. The update_config function lacks the distinctness re-validation present in initialize_config, creating a potential fee destination manipulation path for a compromised authority.
 
-While milestone deduplication (`milestonesEarned.includes(ms.matches)`) prevents claiming the same milestone twice, the recurring milestone at line 114 awards 500 SHOT every 50 matches after 100. Two colluding players can grind unlimited 500-SHOT payouts by farming completions.
+## Scope
 
-**Economic impact:** The 7M SHOT reward pool has no enforcement. There is no global counter tracking total emissions against the 7M cap. `trackShotEmission()` in monitoring.js is purely informational. A grinder can drain the entire conceptual reward pool.
+- **Files analyzed:** `programs/solshot-escrow/src/lib.rs` (855 lines), `Cargo.toml` (workspace + program)
+- **Functions analyzed:** `initialize_config`, `update_config`, `pause_program`, `unpause_program`, `create_match`, `deposit_wager`, `settle_match`, `cancel_match`, `permissionless_reclaim`
+- **Constants analyzed:** `TREASURY_BPS`, `OPS_BPS`, `BPS_DENOMINATOR`, `MIN_WAGER_LAMPORTS`, `MAX_WAGER_LAMPORTS`, `TIMEOUT_SECONDS`, `PERMISSIONLESS_RECLAIM_TIMEOUT`, `SETTLEMENT_TIMEOUT_SECONDS`
+- **Estimated coverage:** 100% of on-chain economic logic
 
-**Recommendation:**
-1. Add a global `totalEmitted` counter in `shot-token.js` that caps at `SHOT_TOKEN_CONFIG.rewardPool` (7M).
-2. Add minimum match duration or minimum damage threshold to qualify for SHOT rewards.
-3. Rate-limit `recordMatchPlayed()` per wallet (e.g., max 1 per 60 seconds).
-4. Pass a match ID to `recordMatchPlayed()` and track claimed match IDs to prevent double-counting.
+## Key Mechanisms
 
----
+### Fee Calculation (BPS Math)
 
-## Finding E-04: SHOT Reward Pool Has No Supply Cap Enforcement
-
-**Severity:** CRITICAL
-**Location:** `server/services/shot-token.js:95-129`, `server/services/shot-token.js:29-39`
-
-**Description:**
-`SHOT_TOKEN_CONFIG.rewardPool` is defined as 7,000,000 but is purely a documentation constant. The `recordMatchPlayed()` function adds rewards to `state.balance` without ever checking if total emissions across all players have exceeded 7M. The `totalShotEmitted` counter in monitoring.js is informational only and is not consulted before awarding tokens.
+**Location:** `lib.rs:252-274`
 
-**Exploit scenario:**
-Even without collusion, organic gameplay over time will eventually exceed the 7M pool because there is no enforcement. Once the reward pool is conceptually "drained," the system continues to emit tokens, inflating supply beyond the advertised 10M total.
+**Purpose:**
+Calculate the 90/7/3 split of the total pot between winner, treasury, and ops.
 
-**Recommendation:**
-```js
-let globalEmitted = 0;
-const REWARD_CAP = SHOT_TOKEN_CONFIG.rewardPool; // 7M
+**How it works:**
+1. Line 253-255: `total_pot_128 = (wager_lamports as u128).checked_mul(2)` -- widens to u128 BEFORE multiplication to prevent overflow at max wager (100 SOL x 2 = 200 SOL = 200,000,000,000 lamports; 200e9 x 700 = 1.4e14 which would overflow u64 but is safe in u128)
+2. Lines 257-260: `treasury_amount = (total_pot_128.checked_mul(TREASURY_BPS as u128)? / BPS_DENOMINATOR as u128) as u64` -- BPS numerator product is in u128, division produces a value that fits in u64 given current MAX_WAGER
+3. Lines 262-265: Same pattern for `ops_amount` with OPS_BPS=300
+4. Line 267: `total_pot = total_pot_128 as u64` -- safe because max value is 200e9 which fits in u64
+5. Lines 270-274: `winner_amount = total_pot.checked_sub(treasury_amount)?.checked_sub(ops_amount)?` -- remainder strategy ensures winner_amount + treasury_amount + ops_amount == total_pot exactly
 
-function recordMatchPlayed(walletAddress) {
-    // ... existing logic ...
-    if (globalEmitted + totalEarned > REWARD_CAP) {
-        totalEarned = Math.max(0, REWARD_CAP - globalEmitted);
-    }
-    globalEmitted += totalEarned;
-    state.balance += totalEarned;
-}
-```
+**Assumptions:**
+- MAX_WAGER_LAMPORTS (100e9) bounds the domain such that `as u64` narrowing casts are safe after division by BPS_DENOMINATOR
+- BPS_DENOMINATOR is 10,000 (standard basis point denominator)
+- Treasury BPS + Ops BPS = 1,000 (10%), leaving 9,000 BPS (90%) for winner
+- Integer division truncates toward zero; truncation on fees means protocol never over-distributes
 
----
+**Invariants:**
+- winner_amount + treasury_amount + ops_amount == total_pot (enforced by remainder strategy)
+- treasury_amount >= 1 lamport when MIN_WAGER >= 10,000 and TREASURY_BPS >= 1
+- ops_amount >= 1 lamport when MIN_WAGER >= 10,000 and OPS_BPS >= 1
+- No value is created (all outputs come from deposited lamports)
 
-## Finding E-05: Prestige Burn Is Reversible via Server Restart
+**Concerns:**
+- Line 260: `as u64` narrowing cast -- safe given current MAX_WAGER. If MAX_WAGER increases beyond u64::MAX / 700 (~2.6e16 lamports = ~26 million SOL), the cast would truncate. This is far above the current 100 SOL limit.
+- Line 265: Same concern for ops cast (threshold even higher at u64::MAX / 300).
+- Line 267: `total_pot_128 as u64` -- safe when MAX_WAGER <= u64::MAX / 2. Current MAX_WAGER of 100e9 is far below.
+- The division on lines 260 and 265 is NOT checked (uses native `/`). However, BPS_DENOMINATOR is a non-zero constant (10,000), so division by zero is impossible.
 
-**Severity:** HIGH
-**Location:** `server/services/shot-token.js:64-65`, `server/services/shot-token.js:137-173`
+### Wager Deposit (System Transfer CPI)
 
-**Description:**
-All SHOT token state is stored in `const playerShotState = {}` -- a plain in-memory object. When the server restarts, all state is lost:
-- Balances reset to 0
-- `matchesPlayed` resets to 0
-- `milestonesEarned` resets to `[]`
-- `prestigeTier` resets to 0
-- `totalBurned` resets to 0
+**Location:** `lib.rs:156-222`
 
-**Exploit scenario:**
-1. Player earns 4,000 SHOT through milestones, reaches Diamond prestige (tier 4), burning 200+500+1200+4000 = 5,900 SHOT total.
-2. Server restarts (crash, deploy, maintenance).
-3. Player's state resets to tier 0 with 0 balance.
-4. Player re-grinds milestones and earns another 3,850 SHOT from milestones (50+100+200+500+1000+2000).
-5. The previously burned 5,900 SHOT is effectively "unburned" -- the deflationary mechanism is reversed.
-6. The player can prestige again, burning SHOT that was already supposed to be permanently removed from circulation.
+**Purpose:**
+Transfer exactly `wager_lamports` from each player's wallet to the escrow PDA via System Program CPI.
 
-**Impact:** The prestige burn mechanism, designed to be deflationary, becomes inflationary over server restarts. The total burned amount is fictional.
+**How it works:**
+1. Lines 160-161: Read `wager` and `match_id` from escrow BEFORE any mutable borrow
+2. Lines 163-176: Validate state (AwaitingDeposits), player identity, not-already-deposited
+3. Lines 179-188: `system_program::transfer(CpiContext::new(...), wager)` -- CPI to System Program
+4. Lines 191-197: Mutable borrow to update deposit flags
+5. Lines 206-219: If both deposited, transition to Active, set activated_at, emit MatchActive
 
-**Recommendation:**
-1. Persist `playerShotState` to MongoDB (or Redis) on every mutation.
-2. On server start, load state from DB.
-3. Track burns on-chain when the SPL token is deployed.
+**Assumptions:**
+- Player has sufficient lamports to cover wager + transaction fees
+- System Program transfer is atomic and correct (trusted system program)
+- `wager_lamports` was validated at create_match time (MIN <= wager <= MAX)
+- The CPI context correctly transfers FROM player TO escrow PDA
 
----
+**Invariants:**
+- Post-deposit: escrow PDA balance increased by exactly `wager_lamports`
+- Post-deposit: player balance decreased by exactly `wager_lamports` (plus transaction fees)
+- Each player deposits at most once (enforced by player_X_deposited boolean flags)
+- Total pot = 2 x wager_lamports when both have deposited
 
-## Finding E-06: SOL Settlement Is a Stub -- No Actual Transfers
+**Concerns:**
+- Line 187: The `wager` variable is a copy of `ctx.accounts.escrow.wager_lamports` from line 160. Between reading and CPI, the escrow account is not mutated, so this is safe. But this read-before-borrow pattern is a Rust-specific idiom that must be maintained in any refactoring.
 
-**Severity:** CRITICAL
-**Location:** `server/services/solana.js:139-163`
+### Settlement Distribution (Direct Lamport Transfer)
 
-**Description:**
-`settleMatch()` performs zero on-chain transactions. It calculates the settlement split and returns `{ success: true, txSignature: null }`. The function is a complete stub. This means:
-1. No SOL is actually transferred to winners.
-2. No SOL is deposited into escrow at match start.
-3. The entire wager system is purely cosmetic.
+**Location:** `lib.rs:276-291`
 
-While this is acknowledged as "future: escrow program," the client receives `matchSettled` events with `settlement` data, presenting the illusion that SOL has moved. If players believe wagers are real, this constitutes a deceptive UX.
+**Purpose:**
+Move calculated amounts from escrow PDA to winner, treasury, and ops accounts via direct lamport manipulation.
 
-**Exploit scenario:**
-1. Player A creates a 0.5 SOL wager room. No deposit is taken.
-2. Player B joins. No deposit is taken.
-3. Player A wins. Server emits `matchSettled` with `winnerPayout: 0.9 SOL`. No transfer occurs.
-4. Both players' wallets are unchanged. The "wager" was meaningless.
-5. Alternatively: a malicious operator could claim wagers are real, collect SOL off-chain through social engineering, and never settle.
+**How it works:**
+1. Lines 277-280: Set state to `Settled` BEFORE transfers (OC-10 defense-in-depth)
+2. Lines 284-285: Deduct winner_amount from escrow, credit to winner
+3. Lines 287-288: Deduct treasury_amount from escrow, credit to treasury
+4. Lines 290-291: Deduct ops_amount from escrow, credit to ops
+5. After all explicit transfers, escrow has exactly rent remaining
+6. Anchor's `close = authority` (line 566) then sweeps rent to authority
 
-**Recommendation:**
-1. Either implement escrow (even a server-side custodial transfer) or disable wager creation entirely.
-2. If wagers are not yet functional, reject `wager > 0` in `createRoom` with a clear message.
-3. Never show settlement amounts to users without a real `txSignature`.
+**Assumptions:**
+- `try_borrow_mut_lamports()` succeeds on all accounts (they are all marked `mut`)
+- No account is on the reserved account list or executable (which would cause write-demotion per EP-106)
+- winner, treasury, and ops are distinct accounts (enforced by constraints)
+- The escrow PDA has sufficient lamports (total_pot + rent) to cover all transfers
 
----
+**Invariants:**
+- Post-settlement: escrow balance = rent_exempt_minimum (total_pot was distributed)
+- Post-settlement: no more operations possible (state = Settled, terminal)
+- Total outflow from escrow = winner_amount + treasury_amount + ops_amount = total_pot
 
-## Finding E-07: Winner Can Never Claim More Than Pot (Split Math Is Correct)
+**Concerns:**
+- Lines 284-291: Direct lamport manipulation (not CPI). If any `try_borrow_mut_lamports()` fails, the transaction fails atomically (all-or-nothing). Partial success is impossible because Solana transactions are atomic.
+- EP-106 risk: If winner/treasury/ops were executable or reserved accounts, write would fail. Winner is constrained to player_one/player_two (who must sign to deposit, so they hold private keys and are not programs). Treasury/ops are set by authority via config and could theoretically be set to program addresses via update_config. This would cause settlement DoS (not theft).
 
-**Severity:** INFORMATIONAL
-**Location:** `server/services/solana.js:27-29`, `server/services/solana.js:121-127`
+### Wager Refund (Cancel/Reclaim)
 
-**Description:**
-The settlement split constants are `0.90 + 0.07 + 0.03 = 1.00` exactly. JavaScript floating-point confirms:
-```js
-0.90 + 0.07 + 0.03 === 1.0  // true (this specific combination is exact in IEEE 754)
-```
-The `calculateSettlement` function computes each share as `totalWagerSOL * share`. For typical wager values (0.01, 0.05, 0.1, 0.25, 0.5 SOL), the results are:
+**Location:** `lib.rs:351-367` (cancel_match), `lib.rs:413-428` (permissionless_reclaim)
 
-| Total Pot | Winner (90%) | Treasury (7%) | Ops (3%) | Sum |
-|-----------|-------------|---------------|----------|-----|
-| 0.02 | 0.018 | 0.0014 | 0.0006 | 0.02 |
-| 0.10 | 0.09 | 0.007 | 0.003 | 0.10 |
-| 0.20 | 0.18 | 0.014 | 0.006 | 0.20 |
-| 0.50 | 0.45 | 0.035 | 0.015 | 0.50 |
-| 1.00 | 0.90 | 0.07 | 0.03 | 1.00 |
+**Purpose:**
+Return deposited wagers to players. No fees deducted on cancellation/refund.
 
-All sums are exact for the defined tiers. However, when converting to lamports (integers), truncation could cause a 1-lamport discrepancy. This is not exploitable given the stub settlement, but should be addressed when real transfers are implemented.
+**How it works:**
+1. Set state to Cancelled BEFORE transfers (OC-10)
+2. If player_one_deposited: transfer wager_lamports from escrow to player_one
+3. If player_two_deposited: transfer wager_lamports from escrow to player_two
+4. Anchor `close` sweeps remaining rent to caller
 
-**Recommendation:**
-When implementing real transfers, compute `opsLamports = totalLamports - winnerLamports - treasuryLamports` (remainder-based) instead of multiplying each share independently.
+**Assumptions:**
+- Each player receives exactly their deposited amount (no fee on refund)
+- Player accounts match escrow records (enforced by constraints on player_one/player_two)
 
----
+**Invariants:**
+- Post-refund: each depositing player receives exactly wager_lamports
+- Post-refund: escrow balance = rent (all wagers refunded)
+- No fees collected on cancellation/refund
+
+**Concerns:**
+- If only one player deposited: only one refund occurs. Escrow holds wager_lamports + rent. After one refund, rent remains. Anchor `close` sweeps it. The non-depositing player gets nothing (correct -- they deposited nothing).
+- If neither deposited: no refunds needed. Escrow holds only rent. Anchor `close` sweeps it.
 
-## Finding E-08: Wager Validation Allows Type Confusion
+### Wager Bounds Enforcement
 
-**Severity:** HIGH
-**Location:** `server/socket-io/main.js:369-374`, `server/services/solana.js:111-113`
+**Location:** `lib.rs:119-123` (in create_match)
 
-**Description:**
-The `createRoom` handler extracts `wagerAmount = player.wager || 0`. This uses JavaScript's falsy coercion: `null`, `undefined`, `""`, `0`, `false`, and `NaN` all become `0`. The validation `isValidWager(wagerAmount)` uses `WAGER_TIERS.includes(wagerSOL)`.
+**Purpose:**
+Ensure wager amount is within safe economic bounds.
 
-`WAGER_TIERS = [0, 0.01, 0.05, 0.1, 0.25, 0.5]`
+**How it works:**
+1. Line 120: `require!(wager_lamports >= MIN_WAGER_LAMPORTS, EscrowError::WagerTooSmall)` -- 10,000 lamports minimum
+2. Line 123: `require!(wager_lamports <= MAX_WAGER_LAMPORTS, EscrowError::WagerTooLarge)` -- 100 SOL maximum
 
-**Exploit scenarios:**
+**Assumptions:**
+- MIN_WAGER_LAMPORTS (10,000) ensures both fee amounts are >= 1 lamport with current BPS rates
+- MAX_WAGER_LAMPORTS (100e9) bounds the domain for u128/u64 cast safety
 
-1. **String injection:** Client sends `wager: "0.1"`. `"0.1" || 0` = `"0.1"`. `WAGER_TIERS.includes("0.1")` = `false` (strict equality, string !== number). The check `wagerAmount > 0` evaluates `"0.1" > 0` = `true`, so validation runs. `isValidWager("0.1")` returns `false`, so it rejects. This path is safe.
+**Invariants:**
+- 10,000 <= wager_lamports <= 100,000,000,000 for all matches
+- At MIN: treasury = 1,400 lamports, ops = 600 lamports (both > 0)
+- At MAX: total_pot = 200e9, max intermediate product = 1.4e14 (fits u128, post-division fits u64)
 
-2. **NaN injection:** Client sends `wager: NaN`. `NaN || 0` = `0`. This creates a free room. No harm.
+**Concerns:**
+- MIN_WAGER comment says "ensures both fees are at least 1 lamport" (OC-08). Verification: min_pot = 20,000. treasury = 20,000 x 700 / 10,000 = 1,400. ops = 20,000 x 300 / 10,000 = 600. Both > 0. Correct.
+- If TREASURY_BPS or OPS_BPS were changed (requires program upgrade since constants are hardcoded), the MIN_WAGER would need recalculation. For fee >= 1 lamport: min_pot >= ceil(10,000 / BPS). With current min_pot = 20,000 and BPS = 300 (lowest), floor(20,000 x 300 / 10,000) = 600 >= 1.
 
-3. **Negative wager:** Client sends `wager: -0.1`. `-0.1 || 0` = `-0.1`. `-0.1 > 0` = `false`, so validation is skipped. `wagerStates[roomId] = { amount: -0.1, ... }`. A negative wager is stored. During settlement: `totalPot = -0.1 * 2 = -0.2`. `settlement.winner = -0.2 * 0.9 = -0.18`. This would mean the "winner" owes SOL. With the stub, no harm, but with real transfers this would reverse the payment direction.
+### Config Update (Fee Destination Management)
 
-4. **Infinity wager:** Client sends `wager: Infinity`. `Infinity > 0` = `true`. `WAGER_TIERS.includes(Infinity)` = `false`. Rejected. Safe.
+**Location:** `lib.rs:70-88`
 
-5. **Wager of exactly 0:** Bypasses the `> 0` check, stored as 0. No issue.
+**Purpose:**
+Allow the authority to update fee destination addresses (treasury, ops) and rotate the authority key itself.
 
-**The real bug:** Negative wagers bypass all validation because the `if (wagerAmount > 0)` guard is only checked before calling `isValidWager`. Negative values skip this entire block and are stored directly.
+**How it works:**
+1. Lines 76-86: If `new_authority`, `new_treasury`, or `new_ops` is `Some(pubkey)`, overwrite the corresponding config field
+2. No validation on the new values (no distinctness check, no blacklist check)
+3. Protected by `has_one = authority` on UpdateConfig struct (line 470)
 
-**Recommendation:**
-```js
-const wagerAmount = Number(player.wager) || 0;
-if (wagerAmount !== 0 && !isValidWager(wagerAmount)) {
-    client.emit('createRoomError', { reason: 'Invalid wager tier' });
-    return;
-}
-```
-Also add to `isValidWager`: `if (typeof wagerSOL !== 'number' || !isFinite(wagerSOL)) return false;`
+**Assumptions:**
+- Authority is trusted to set valid, distinct addresses
+- No re-validation that authority != treasury != ops after updates
+- One-step authority transfer (no pending + accept pattern)
 
----
+**Invariants:**
+- NONE explicitly enforced on update. The distinctness invariant from initialize_config is NOT re-checked.
 
-## Finding E-09: Free-Play Room Cannot Be Converted to Wager Mid-Match
+**Concerns:**
+- Authority could set treasury = ops: settlement would fail (line 588 constraint: treasury != ops). This is a liveness issue.
+- Authority could set treasury = authority's own address: fees go to authority. This is fee redirection (centralization risk, relates to EP-119).
+- Authority could set treasury/ops to an executable account: settlement would fail (EP-106). Liveness issue.
+- One-step authority transfer: if authority sets new_authority to a wrong address, the authority is permanently locked out. No recovery mechanism.
+- No timelock: config changes are instant. No delay for players to exit before fee changes take effect.
 
-**Severity:** INFORMATIONAL
-**Location:** `server/socket-io/main.js:368-378`
+## Trust Model
 
-**Description:**
-The wager amount is set at room creation time (line 375) and stored in `wagerStates[roomId]`. There is no socket event that allows modifying `wagerStates[roomId].amount` after creation. The `joinRoom` handler reads the existing wager state (line 294-295) but never writes to `ws.amount`. The `playAgainRequest` handler (line 1019) deletes `wagerStates[client.roomId]` entirely, and the new match starts with no wager state.
+| Entity | Trust Level | Economic Powers |
+|--------|------------|-----------------|
+| Config Authority (server) | FULL | Create matches, choose winner, settle, cancel (AwaitingDeposits only), set fee destinations, pause/unpause |
+| Players | LIMITED | Deposit wager, cancel (immediate in AwaitingDeposits, after 24h in Active) |
+| Permissionless Caller | NONE (by design) | Reclaim after 48h (receives PDA rent as incentive) |
+| System Program | TRUSTED (system) | Execute SOL transfers via CPI |
+| Clock Sysvar | TRUSTED (system) | Provide timestamps for deadline enforcement |
 
-**Assessment:** A free-play room cannot be converted to a wager room mid-match through normal socket events. However, since there is no input validation on the raw socket data, a modified client could attempt to inject additional properties, but none of the handlers would read them as wager modifications.
+**Key trust assumption:** The server authority is honest in selecting the correct winner. No on-chain verification of game outcomes exists. This is fundamental to the protocol design (server-authoritative gaming) and cannot be mitigated on-chain without a verifiable game execution layer.
 
-**Recommendation:** No action required for this specific vector. The `playAgainRequest` wager deletion is actually a separate concern (see E-12).
+## State Analysis
 
----
+### State Read in Economic Operations
 
-## Finding E-10: Fire Handler Lacks Bounds Validation on angle/power
+| State Field | Read By | Economic Relevance |
+|-------------|---------|-------------------|
+| `escrow.wager_lamports` | deposit_wager, settle_match, cancel_match, permissionless_reclaim | Determines all transfer amounts |
+| `escrow.player_one_deposited` | deposit_wager (guard), cancel_match (refund routing), permissionless_reclaim (refund routing) | Determines who gets refunded |
+| `escrow.player_two_deposited` | Same as above | Same as above |
+| `escrow.state` | All match instructions | Guards against invalid economic operations |
+| `config.treasury` | settle_match (via constraint) | Validates treasury recipient |
+| `config.ops` | settle_match (via constraint) | Validates ops recipient |
+| `config.is_paused` | create/deposit/settle/cancel | Blocks all economic operations when paused |
 
-**Severity:** HIGH
-**Location:** `server/socket-io/main.js:671`
+### State Written in Economic Operations
 
-**Description:**
-The `fire` event handler accepts `{angle, power, weaponId, startX, startY}` with no numeric bounds validation:
-- `angle`: No check. Should be `[0, 2*PI]`. Value of `NaN` or `Infinity` will produce `NaN` trajectory coordinates.
-- `power`: No check. Should be `[0, 100]`. Negative power reverses trajectory. `power: 1000000` sends projectile at 8,000,000 velocity, instantly out of bounds (no damage, no Gold -- just wasted turn). But `power: -100` or extremely small negative values could aim the projectile backward onto the shooter's own position for self-damage manipulation.
-- `startX`, `startY`: No check. A player can claim their turret is at position (600, 100) -- directly above the opponent -- regardless of actual tank position. The server stores tank positions in `room.host.pos` / `room.player.pos` (line 700-717) and passes them to physics, but `startX/startY` from the client overrides the launch point. The physics engine uses the client-provided `startX/startY` as the projectile origin, NOT the server's stored tank position.
+| State Field | Written By | Economic Effect |
+|-------------|-----------|----------------|
+| `escrow.state = Active` | deposit_wager (line 207) | Enables settlement |
+| `escrow.state = Settled` | settle_match (line 279) | Prevents re-settlement |
+| `escrow.state = Cancelled` | cancel_match (line 354), permissionless_reclaim (line 416) | Prevents re-cancellation |
+| `escrow.activated_at` | deposit_wager (line 209) | Sets timeout reference for settlement deadline |
+| `escrow.player_X_deposited = true` | deposit_wager (lines 194, 196) | Prevents double-deposit |
+| `config.treasury` | update_config | Changes fee destination |
+| `config.ops` | update_config | Changes fee destination |
 
-**Exploit scenario (Gold farming via arbitrary startX/startY):**
-1. Player fires with `startX` directly above opponent tank, `power: 1`, `angle: PI/2` (straight down).
-2. Projectile spawns above opponent and immediately hits them for full damage.
-3. Player earns Gold from damage dealt: `Math.floor(damage * 15)`.
-4. With weapon 0 (Single Shot), max damage = `ceil(46 * 60/46) = 60 HP`. Gold = `floor(60 * 15) = 900 Gold`.
-5. Repeat every turn. In 10 turns, earn 9,000 Gold -- enough to buy any weapon.
+## Dependencies
 
-**Impact:** Complete Gold economy bypass. Any player can earn maximum Gold every turn regardless of skill.
+- **anchor_lang::system_program** -- System Program CPI for deposit transfers (line 5, used at line 179)
+- **anchor_lang::prelude::Clock** -- Timestamp access for deadline enforcement (lines 140, 209, 241, 333, 409)
+- **No SPL Token dependency** -- All value transfer is native SOL (lamports)
+- **No oracle dependency** -- No external price data
 
-**Recommendation:**
-Replace client-provided `startX/startY` with server-authoritative tank positions:
-```js
-const shooterPos = client.isHost ? room.host.pos : room.player.pos;
-const startX = shooterPos.x;  // Ignore client value
-const startY = shooterPos.y;  // Ignore client value
-```
-Add bounds validation:
-```js
-if (typeof angle !== 'number' || !isFinite(angle)) return;
-if (typeof power !== 'number' || !isFinite(power) || power < 0 || power > 100) return;
-```
+## Focus-Specific Analysis
 
----
-
-## Finding E-11: Weapon Purchase Has No Prestige Tier Check
-
-**Severity:** MEDIUM
-**Location:** `server/socket-io/main.js:515-571`, `server/models/Weapon.js:56-58`
-
-**Description:**
-The `buyWeapon` handler calls `getWeapon(weaponId)` which only searches `WEAPON_CATALOG` (the 13 launch weapons). Prestige weapons are in a separate `PRESTIGE_WEAPONS` object. The `getWeapon` function at Weapon.js:57 returns `WEAPON_CATALOG[weaponId] || null`, so prestige weapon IDs (21, 24, 26, 27, 29) return `null` and the purchase is rejected with "Unknown weapon."
-
-**However**, this means there is currently NO way to purchase prestige weapons at all, even for players who have unlocked the tier. The prestige system unlocks weapon IDs (e.g., tier 1 unlocks weapon 26/Tommy Gun) but the buy flow cannot resolve those IDs.
-
-**Assessment:** The prestige unlock system is non-functional. This is not an exploit (players cannot buy things they shouldn't), but it is a broken feature. When prestige weapons are enabled, the `getWeapon` function must be updated to include `PRESTIGE_WEAPONS` and the buy handler must verify the player's prestige tier.
-
-**Recommendation:**
-When enabling prestige weapons, update `getWeapon()`:
-```js
-export function getWeapon(weaponId) {
-    return WEAPON_CATALOG[weaponId] || PRESTIGE_WEAPONS[weaponId] || null;
-}
-```
-And add prestige tier check in `buyWeapon`:
-```js
-if (isPrestigeWeapon(weaponId)) {
-    const wallet = authenticatedWallets[client.id];
-    const info = getPrestigeInfo(wallet);
-    if (!info.unlockedWeapons.includes(weaponId)) {
-        client.emit('buyWeaponResult', { success: false, reason: 'Prestige tier too low' });
-        return;
-    }
-}
-```
-
----
-
-## Finding E-12: Play-Again Deletes Wager State -- Second Match Is Always Free
-
-**Severity:** HIGH
-**Location:** `server/socket-io/main.js:1019`, `server/socket-io/main.js:1043`
-
-**Description:**
-When both players agree to play again, `playAgainRequest` executes `delete wagerStates[client.roomId]` at line 1019/1043. The new match starts with no wager state. Any subsequent match in the same room is effectively a free-play match, regardless of the original wager amount.
-
-**Exploit scenario:**
-1. Player A creates a 0.5 SOL wager room. Player B joins.
-2. They play match 1. Settlement is calculated (though not executed -- see E-06).
-3. Both click play again. Wager state is deleted.
-4. Match 2 has no wager. Settlement checks `if (ws && ws.amount > 0)` at line 808 -- `ws` is now `undefined`, so no settlement occurs.
-5. The loser of match 2 loses nothing. The winner of match 2 gains nothing.
-
-**Impact:** This undermines any "best of" or rematch wager expectations. If real wagers existed, a losing player could propose a rematch knowing it would be free.
-
-**Recommendation:**
-Preserve the wager state across play-again, or explicitly re-negotiate wagers with both players' consent:
-```js
-// Option A: Preserve wager
-// Don't delete wagerStates[roomId] in playAgainRequest
-
-// Option B: Reset wallets but keep amount
-const prevWager = wagerStates[client.roomId];
-// ... reset other state ...
-if (prevWager) {
-    wagerStates[client.roomId] = { amount: prevWager.amount, wallets: prevWager.wallets };
-}
-```
-
----
-
-## Finding E-13: SHOT Tokens Awarded Without Real Match Validation
-
-**Severity:** HIGH
-**Location:** `server/socket-io/main.js:838-850`, `server/services/shot-token.js:95-129`
-
-**Description:**
-SHOT tokens are awarded when a match reaches the `COMPLETE` state (line 831) and `recordMatchPlayed()` is called for each player with a wallet. There is no validation that:
-1. The match had any meaningful gameplay (zero damage dealt is fine).
-2. The match lasted a minimum duration.
-3. Both players are distinct (different wallets).
-4. The same wallet isn't used by both players (colluding with two browser tabs).
-
-**Exploit scenario (single-person SHOT farming):**
-1. Attacker opens two browser tabs, each with a different socket connection.
-2. Tab 1 creates a room. Tab 2 joins.
-3. Both authenticate with the same wallet (or two wallets the attacker controls).
-4. They rapid-fire 20 turns of intentional misses (fire out of bounds: `power: 100, angle: 0`).
-5. Match completes. Both wallets get `recordMatchPlayed()` called.
-6. Click play-again. Repeat.
-7. Each match takes seconds. The 50-SHOT welcome bonus is immediate. After 100 matches (~minutes), the attacker earns 50+100+200+500+1000+2000 = 3,850 SHOT.
-8. Recurring milestones award 500 SHOT every 50 matches after 100.
-
-**Recommendation:**
-1. Require minimum total damage (e.g., > 100 combined) for a match to count.
-2. Require minimum match duration (e.g., > 60 seconds).
-3. Block same-wallet from being both host and player.
-4. Implement server-side rate limiting per wallet address.
-
----
-
-## Finding E-14: Disconnect/Leave Race Condition in Settlement
-
-**Severity:** HIGH
-**Location:** `server/socket-io/main.js:180-229` (disconnect), `server/socket-io/main.js:233-270` (leaveRoom)
-
-**Description:**
-The disconnect and leaveRoom handlers both execute settlement logic asynchronously (`await settleMatch()`). If both players disconnect simultaneously (e.g., network partition), both handlers fire concurrently:
-1. Player A disconnects -> handler reads `wagerStates[roomId]`, starts settlement for B as winner.
-2. Player B disconnects -> handler reads `wagerStates[roomId]` (still exists), starts settlement for A as winner.
-3. Both `settleMatch()` calls succeed (it's a stub returning `success: true`).
-4. Two contradictory settlements are logged.
-
-With real transfers, this would mean both players receive the winner's share, doubling the pot payout.
-
-Additionally, after settlement, both handlers call `removeRoom(client.roomId)` which deletes `wagerStates[roomId]`. The second handler's `removeRoom` is a no-op (room already removed), but the settlement has already been calculated before removal.
-
-**Recommendation:**
-Add a settlement lock per room:
-```js
-const settlingRooms = new Set();
-
-// In disconnect/leaveRoom:
-if (settlingRooms.has(client.roomId)) return; // Already settling
-settlingRooms.add(client.roomId);
-try {
-    const result = await settleMatch(...);
-    // ...
-} finally {
-    settlingRooms.delete(client.roomId);
-}
-```
-
----
-
-## Finding E-15: deleteRoom Has No Host-Only Check and Skips Settlement
-
-**Severity:** HIGH
-**Location:** `server/socket-io/main.js:274-284`
-
-**Description:**
-The `deleteRoom` handler allows any player in the room to delete it. There is no check that `client.isHost === true`. More critically, `deleteRoom` calls `removeRoom()` directly without any wager settlement or refund logic. If a wager match is in progress:
-1. The non-host player emits `deleteRoom`.
-2. `removeRoom()` is called, which deletes `wagerStates[roomId]` (line 96).
-3. No settlement occurs. No refund occurs.
-4. Both players' wagers are lost (if real transfers existed).
-
-**Exploit scenario:**
-A losing player in a wager match can emit `deleteRoom` to cancel the match and avoid losing their wager. Neither player gets paid, but the losing player avoids a loss.
-
-**Recommendation:**
-1. Add host-only check: `if (!client.isHost) return;`
-2. Add settlement/refund logic matching `leaveRoom` handler.
-3. Consider only allowing `deleteRoom` in LOBBY state.
-
----
-
-## Finding E-16: Balance Check Fail-Open Allows Unfunded Wagers
-
-**Severity:** HIGH
-**Location:** `server/socket-io/main.js:306-317`, `server/services/solana.js:80-102`
-
-**Description:**
-When a player joins a wager room, the balance check (main.js:307) wraps `verifyBalance` in a try-catch. If the RPC call fails (network error, rate limit, node down), the catch block at line 315 logs a warning and **continues execution** -- the player is allowed to join.
-
-Even worse, the balance check at line 308 has a flawed condition:
-```js
-if (balanceCheck.balance > 0 && !balanceCheck.sufficient) {
-```
-This means:
-- If `balance === 0` (broke wallet), the condition is `false` (0 > 0 is false), and the player is **allowed to join**.
-- If `balance > 0` but insufficient, the player is rejected.
-- If the RPC errors out, `verifyBalance` returns `{ sufficient: false, balance: 0, required: ... }`. The condition `0 > 0` is false, so the player joins.
-
-**A player with 0 SOL can join any wager room.**
-
-**Recommendation:**
-Fix the condition:
-```js
-if (!balanceCheck.sufficient) {
-    client.emit('joinRoomError', { reason: `Insufficient SOL balance.` });
-    return;
-}
-```
-Also add balance verification for room creators, not just joiners.
-
----
-
-## Finding E-17: Room Creator's Balance Is Never Verified
-
-**Severity:** HIGH
-**Location:** `server/socket-io/main.js:354-410`
-
-**Description:**
-The `createRoom` handler validates the wager tier (`isValidWager`) but never calls `verifyBalance()` for the room creator. Only the joining player gets a (broken) balance check. The creator can set any valid wager tier (up to 0.5 SOL) without having any SOL.
-
-**Exploit scenario:**
-1. Player with 0 SOL creates a 0.5 SOL wager room.
-2. Legitimate player with 0.5+ SOL joins (passes balance check).
-3. Match plays out. If the creator wins, they "receive" 0.9 SOL they never wagered.
-4. (Currently no real transfer, but with escrow this is critical.)
-
-**Recommendation:**
-Add balance verification in `createRoom`:
-```js
-if (wagerAmount > 0 && walletAddress) {
-    const check = await verifyBalance(walletAddress, wagerAmount);
-    if (!check.sufficient) {
-        client.emit('createRoomError', { reason: 'Insufficient SOL' });
-        return;
-    }
-}
-```
-
----
-
-## Finding E-18: Economic Griefing -- Time-Wasting and Stalling
-
-**Severity:** MEDIUM
-**Location:** `server/socket-io/main.js` (general), `server/services/match.js:95`
-
-**Description:**
-There is no turn timer. The match state tracks turns (`turnCount`, `turnsPerRound: 20`) but has no mechanism to force a player to fire within a time limit. A malicious player can:
-1. Join a wager room.
-2. Never fire, holding the opponent hostage indefinitely.
-3. The opponent must either disconnect (forfeit, losing the wager) or wait forever.
-
-The only timeout is the shop phase timer (`SHOP_DURATION = 30` seconds). There is no battle-phase turn timer.
-
-**Recommendation:**
-Add a per-turn timer (e.g., 60 seconds). If a player does not fire within the timer, auto-forfeit the turn (skip it, or deal self-damage).
-
----
-
-## Finding E-19: All Economic State Is Ephemeral (Server Restart = Total Wipe)
-
-**Severity:** CRITICAL
-**Location:** `server/socket-io/main.js:19-41`, `server/services/shot-token.js:65`
-
-**Description:**
-Seven in-memory stores hold all economic state:
-- `rooms` (line 19): active match data
-- `matchStates` (line 22): match state machines
-- `goldStates` (line 25): per-match Gold balances
-- `weaponInventories` (line 28): per-match weapon purchases
-- `shopTimers` (line 31): active timers
-- `wagerStates` (line 37): wager amounts and wallet mappings
-- `playerShotState` (shot-token.js:65): SHOT balances, milestones, prestige
-
-None of these are persisted to MongoDB or any durable store. A server restart, crash, or deployment wipes everything:
-- Active wager matches lose their settlement (SOL stuck in limbo if escrow existed).
-- SHOT balances, milestones, and prestige tiers reset to zero.
-- In-progress Gold and weapon purchases vanish.
-
-The MongoDB persistence in `persistRoom()` (line 56) only saves room metadata (active status, terrain, player info) -- not Gold, weapons, match state, or wager data.
-
-**Recommendation:**
-1. Critical: Persist `wagerStates` and active match settlements to DB.
-2. High: Persist `playerShotState` to DB (or replace with on-chain SPL token).
-3. Medium: Persist `matchStates` and `goldStates` for crash recovery.
-
----
-
-## Finding E-20: Stats Endpoint Leaks Financial Data Without Authentication
-
-**Severity:** MEDIUM
-**Location:** `server/index.js:34`, `server/services/monitoring.js:166-211`
-
-**Description:**
-The `/stats` endpoint exposes total SOL wagered, settled, treasury fees, ops fees, SHOT emissions, and burn counts to any unauthenticated HTTP request. This provides competitive intelligence and could be used to:
-1. Gauge platform revenue for extortion purposes.
-2. Identify peak activity periods for timing attacks.
-3. Verify whether settlement is actually occurring (all values stay at 0, revealing the stub).
-
-**Recommendation:**
-Add authentication (API key or admin JWT) to the `/stats` endpoint. The `/health` endpoint can remain public.
-
----
-
-## Finding E-21: Monitoring Tracks SOL Amounts With Floating-Point Accumulation
-
-**Severity:** LOW
-**Location:** `server/services/monitoring.js:94-102`
-
-**Description:**
-`trackSettlement()` accumulates SOL amounts using `+=` on floating-point numbers:
-```js
-stats.totalSettled += winnerPayout || 0;
-stats.totalTreasuryFees += treasuryFee || 0;
-```
-Over many matches, floating-point drift will cause the reported totals to diverge from the true sum. For example, after 10,000 matches at 0.1 SOL each, the accumulated total could be off by several lamports.
-
-**Recommendation:**
-Track in lamports (integers) and convert only for display:
-```js
-stats.totalSettledLamports += Math.round(winnerPayout * LAMPORTS_PER_SOL);
-```
-
----
-
-## Finding E-22: Host Always Wins Tiebreaks -- Systematic Advantage
-
-**Severity:** MEDIUM
-**Location:** `server/services/match.js:155-156`, `server/services/match.js:176`
-
-**Description:**
-Two tiebreak scenarios always favor the host:
-1. `isMatchOver()` line 156: When all rounds are played and scores are tied, `winner: hostId` is returned.
-2. `getRoundWinner()` line 176: When round scores are tied, `return hostId`.
-
-In a wager match, this gives the host a systematic advantage. In the edge case where both players deal identical total damage, the host always wins and collects the pot.
-
-**Exploit scenario:**
-A player who always creates rooms (never joins) has a permanent tiebreak advantage. In close matches, this could decide the outcome.
-
-**Recommendation:**
-Use a fair tiebreak mechanism:
-- Sudden death round
-- Coin flip (`Math.random() < 0.5`)
-- Player who dealt damage first wins
-- Or declare a draw and refund wagers
-
----
-
-## Findings Summary Table
-
-| ID | Severity | Category | One-Line Description |
-|----|----------|----------|---------------------|
-| E-01 | LOW | Gold | Self-damage check is correct; no Gold from self-hits |
-| E-02 | MEDIUM | Match State | turnCount never resets between rounds in BO3/BO5 |
-| E-03 | CRITICAL | SHOT Token | No match deduplication; collusion grinds unlimited SHOT |
-| E-04 | CRITICAL | SHOT Token | Reward pool (7M) has no supply cap enforcement |
-| E-05 | HIGH | SHOT Token | Server restart reverses all prestige burns and balances |
-| E-06 | CRITICAL | SOL Wager | Settlement is a stub; no real SOL transfers occur |
-| E-07 | INFO | SOL Wager | 90/7/3 split sums correctly for defined tiers |
-| E-08 | HIGH | SOL Wager | Negative wager values bypass validation |
-| E-09 | INFO | SOL Wager | Free rooms cannot become wager rooms mid-match |
-| E-10 | HIGH | Gold / Input | Unvalidated startX/startY allows arbitrary damage for Gold |
-| E-11 | MEDIUM | Prestige | Prestige weapons are unlocked but cannot be purchased |
-| E-12 | HIGH | SOL Wager | Play-again deletes wager state; rematch is always free |
-| E-13 | HIGH | SHOT Token | No minimum gameplay required for SHOT milestone credit |
-| E-14 | HIGH | SOL Wager | Concurrent disconnect causes double settlement |
-| E-15 | HIGH | SOL Wager | deleteRoom skips settlement; any player can call it |
-| E-16 | HIGH | SOL Wager | Balance check fail-open allows 0-SOL players into wager rooms |
-| E-17 | HIGH | SOL Wager | Room creator balance is never verified |
-| E-18 | MEDIUM | Griefing | No turn timer; player can stall indefinitely |
-| E-19 | CRITICAL | All State | All economic state is ephemeral; server restart = total wipe |
-| E-20 | MEDIUM | Info Leak | /stats endpoint exposes financial data without auth |
-| E-21 | LOW | Monitoring | Floating-point accumulation drift in SOL tracking |
-| E-22 | MEDIUM | Fairness | Host always wins tiebreaks; systematic wager advantage |
-
----
-
-## Risk Heat Map
+### Token Flow Diagram
 
 ```
-                    Gold     SHOT Token   SOL Wager   State Mgmt   Griefing
-                   ------   ----------   ---------   ----------   --------
-Inflation/Drain:    E-10      E-03,04       --          --          --
-Loss of Funds:       --         --        E-06,14      E-19         --
-Bypass Controls:     --        E-13      E-08,16,17    --          E-15
-Fairness:            --         --        E-12,22       --          E-18
-Persistence:         --        E-05         --         E-19         --
+DEPOSIT PHASE (per player):
+  Player Wallet --[wager_lamports]--> Escrow PDA  (system_program::transfer CPI)
+
+SETTLEMENT (authority-only):
+  Escrow PDA --[winner_amount = pot - treasury_fee - ops_fee]--> Winner Account   (direct lamport)
+  Escrow PDA --[treasury_amount = pot * 700 / 10000]--> Treasury Account          (direct lamport)
+  Escrow PDA --[ops_amount = pot * 300 / 10000]--> Ops Account                    (direct lamport)
+  Escrow PDA --[rent_lamports]--> Authority  (Anchor close)
+
+CANCELLATION/REFUND:
+  Escrow PDA --[wager_lamports]--> Player One (if deposited)  (direct lamport)
+  Escrow PDA --[wager_lamports]--> Player Two (if deposited)  (direct lamport)
+  Escrow PDA --[rent_lamports]--> Caller  (Anchor close)
+
+PERMISSIONLESS RECLAIM (48h):
+  Escrow PDA --[wager_lamports]--> Player One (if deposited)  (direct lamport)
+  Escrow PDA --[wager_lamports]--> Player Two (if deposited)  (direct lamport)
+  Escrow PDA --[rent_lamports]--> Any Caller  (Anchor close = DCA-02 incentive)
 ```
 
----
+### Fee Analysis
 
-## Priority Remediation Order
+| Fee | Formula | Rounding Direction | Recipient | Can Destination Change? | Can Rate Change? |
+|-----|---------|-------------------|-----------|------------------------|-----------------|
+| Treasury (7%) | `(pot_u128 * 700 / 10000) as u64` | Truncate (toward zero, favors winner) | `config.treasury` | Yes, via `update_config` (no timelock) | No (hardcoded constant, requires upgrade) |
+| Ops (3%) | `(pot_u128 * 300 / 10000) as u64` | Truncate (toward zero, favors winner) | `config.ops` | Yes, via `update_config` (no timelock) | No (hardcoded constant, requires upgrade) |
+| Winner (90%) | `pot - treasury - ops` (remainder) | N/A (gets remainder = exact) | player_one or player_two | No (constrained at instruction level) | No (computed as remainder) |
 
-### P0 -- Fix Before Any Real-Money Launch
-1. **E-06:** Implement real escrow/settlement or disable wagers entirely.
-2. **E-10:** Use server-authoritative tank positions for fire origin.
-3. **E-14:** Add settlement lock to prevent double-settlement race condition.
-4. **E-16 + E-17:** Fix balance check logic and add creator verification.
-5. **E-19:** Persist wager state and SHOT state to durable storage.
+**Rounding direction analysis:** Truncation on treasury and ops fees means the protocol slightly under-collects fees. The winner receives the remainder, which may be 1-2 lamports more than exactly 90%. This is the correct direction: the protocol never distributes more than the pot. The winner is favored, which is acceptable in a wagering context.
 
-### P1 -- Fix Before SHOT Token Launch
-6. **E-04:** Enforce 7M reward pool cap globally.
-7. **E-03 + E-13:** Add match deduplication and minimum gameplay thresholds.
-8. **E-05:** Persist SHOT state to DB.
-9. **E-08:** Validate wager type and reject negatives.
-10. **E-15:** Add host-only check and settlement to deleteRoom.
+**Minimum fee verification at MIN_WAGER (10,000 lamports per player):**
+- total_pot = 20,000
+- treasury = floor(20,000 * 700 / 10,000) = 1,400 lamports
+- ops = floor(20,000 * 300 / 10,000) = 600 lamports
+- winner = 20,000 - 1,400 - 600 = 18,000 lamports
+- All amounts > 0. Sum = 20,000. Correct.
 
-### P2 -- Fix Before Competitive Play
-11. **E-02:** Reset turnCount between rounds.
-12. **E-12:** Preserve or re-negotiate wager on play-again.
-13. **E-18:** Add turn timer.
-14. **E-22:** Implement fair tiebreak mechanism.
+**Maximum fee verification at MAX_WAGER (100 SOL = 100,000,000,000 lamports per player):**
+- total_pot = 200,000,000,000
+- treasury = floor(200e9 * 700 / 10,000) = 14,000,000,000 lamports (14 SOL)
+- ops = floor(200e9 * 300 / 10,000) = 6,000,000,000 lamports (6 SOL)
+- winner = 200e9 - 14e9 - 6e9 = 180,000,000,000 lamports (180 SOL)
+- All amounts fit in u64. Sum = 200e9. Correct.
 
-### P3 -- Housekeeping
-15. **E-11:** Enable prestige weapon purchases with tier validation.
-16. **E-20:** Add auth to /stats endpoint.
-17. **E-21:** Track SOL in lamports.
+**Pathological case (non-clean BPS division, wager = 10,001):**
+- total_pot = 20,002
+- treasury = floor(20,002 * 700 / 10,000) = floor(14,001,400 / 10,000) = 1,400
+- ops = floor(20,002 * 300 / 10,000) = floor(6,000,600 / 10,000) = 600
+- winner = 20,002 - 1,400 - 600 = 18,002
+- Sum = 20,002. Correct. 2 lamports of rounding "dust" go to winner.
+
+### Economic Invariant List
+
+1. **Conservation of value:** Total lamports distributed (winner + treasury + ops) == total lamports deposited (2 * wager_lamports). No value created or destroyed.
+   - **Enforced at:** Lines 270-274 (remainder strategy ensures equality)
+   - **Verified:** At all wager values in [MIN, MAX], integer division truncation means treasury + ops <= floor(pot * 1000 / 10000) and winner = pot - treasury - ops, so sum is exactly pot.
+
+2. **Non-negative fees:** Treasury and ops fees are always >= 1 lamport for any valid wager.
+   - **Enforced at:** Line 120 (MIN_WAGER >= 10,000) combined with BPS constants
+   - **Proof:** min_treasury = floor(20,000 * 700 / 10,000) = 1,400 > 0. min_ops = floor(20,000 * 300 / 10,000) = 600 > 0.
+
+3. **No double-spend on deposits:** Each player can deposit at most once per match.
+   - **Enforced at:** Lines 173, 175 (player_X_deposited boolean check before deposit)
+
+4. **Exact refund on cancellation:** Each player receives exactly their deposited wager, no more, no less.
+   - **Enforced at:** Lines 358-366, 420-428 (conditional refund of `wager_lamports` per depositing player)
+
+5. **Fee destinations match config:** Settlement recipients are validated against GlobalConfig.
+   - **Enforced at:** Lines 587 (treasury == config.treasury), 596 (ops == config.ops)
+
+6. **No stuck funds:** Every escrow eventually resolves via settlement, cancellation, or permissionless reclaim.
+   - **Enforced by:** Three-tier timeout (1h settlement expiry, 24h player cancel, 48h permissionless reclaim)
+
+7. **Winner is a registered player:** Settlement can only send the winner's share to player_one or player_two.
+   - **Enforced at:** Lines 577-578 (Anchor constraint: winner.key() == escrow.player_one || == escrow.player_two)
+
+### Flash Loan Impact Analysis
+
+| Economic Operation | Flash Loan Vulnerable? | Reason |
+|-------------------|----------------------|--------|
+| deposit_wager | No | Fixed wager amount, no price calculation, no share minting |
+| settle_match | No | Fixed BPS split, no external price input, authority-controlled |
+| cancel_match | No | Exact refund of deposited amount, no calculation |
+| permissionless_reclaim | No | Exact refund, time-gated (48h minimum) |
+
+**Analysis:** This protocol is entirely immune to flash loan attacks. There are no price-dependent calculations, no pool reserves to manipulate, no share-based accounting, and no oracle inputs. The only "calculation" is the deterministic BPS split of a known pot size. A flash loan could fund a deposit, but this provides no advantage -- the winner is decided by the server authority, not by any on-chain mechanism that could be manipulated.
+
+### Value Extraction Matrix
+
+**Legitimate value exits:**
+
+| Path | Trigger | Amount | Recipient |
+|------|---------|--------|-----------|
+| Winner payout | settle_match | ~90% of pot | player_one or player_two |
+| Treasury fee | settle_match | 7% of pot | config.treasury address |
+| Ops fee | settle_match | 3% of pot | config.ops address |
+| Player refund | cancel_match / permissionless_reclaim | exact wager per player | depositing player(s) |
+| PDA rent reclaim (settle) | settle_match (Anchor close) | ~0.00143 SOL | config authority |
+| PDA rent reclaim (cancel) | cancel_match (Anchor close) | ~0.00143 SOL | caller (authority or player) |
+| PDA rent reclaim (reclaim) | permissionless_reclaim (Anchor close) | ~0.00143 SOL | any caller (DCA-02 incentive) |
+
+**Potential attack value exits:**
+
+| Path | Precondition | Amount | Mitigated By |
+|------|-------------|--------|-------------|
+| Authority awards wrong winner | Compromised server | 90% of pot (per match) | On-chain constraint: winner must be player_one or player_two (OC-02) |
+| Authority redirects fees | update_config to self-controlled address | 10% of pot (per match) | No on-chain mitigation (centralization risk, relates to EP-119) |
+| Authority colludes with player | Server + one player cooperate | 100% of pot across many matches | Off-chain monitoring (OC-11 events), game integrity systems |
+| Authority DoS (non-settlement) | Authority ignores matches | Delays refund by up to 48h | Timeout system (24h cancel, 48h permissionless reclaim) |
+| Match creation spam | Any signer creates matches | Spammer's rent (~0.00143 SOL per match) | Self-punishing (spammer pays rent, loses it to reclaimer after 48h) |
+
+## Cross-Focus Intersections
+
+| This Focus (Token/Economic) | Intersects With | Intersection Point |
+|----------------------------|----------------|-------------------|
+| Fee calculation arithmetic | Arithmetic | u128 widening, `as u64` casts, checked_* operations |
+| Settlement authorization | Access Control | Authority as sole winner selector, has_one constraints |
+| Fee destination management | Access Control / Admin | update_config without re-validation |
+| Settlement/cancel timing | Timing | 1h/24h/48h deadline enforcement affects fund availability |
+| State-before-transfer pattern | State Machine | OC-10 terminal state prevents economic re-entry |
+| Direct lamport transfers | CPI | system_program::transfer for deposits, direct manipulation for settlements |
+
+## Cross-Reference Handoffs
+
+- **Access Control Agent:** update_config (lines 70-88) does not re-validate that authority, treasury, and ops remain distinct after updates. This could allow authority to set treasury = authority (fee redirection to self) or treasury = ops (settlement bricking). The Access Control agent should assess whether this lacks sufficient validation for a production deployment. Additionally, create_match (lines 510-531) is not gated by config authority -- any signer can create matches, though only matches where escrow.authority matches config.authority can be settled.
+
+- **Arithmetic Agent:** The `as u64` narrowing casts on lines 260, 265, and 267 are safe ONLY because MAX_WAGER_LAMPORTS (100e9) bounds the domain. The Arithmetic agent should verify this bound is sufficient and document the maximum safe MAX_WAGER value for each cast. Specifically: line 260 is safe up to MAX_WAGER ~2.6e16 (26M SOL), line 265 up to ~6.1e16 (61M SOL), line 267 up to ~9.2e18 (9.2 billion SOL). Also, the native division on lines 260 and 265 (not `checked_div`) is safe only because BPS_DENOMINATOR is a non-zero constant.
+
+- **State Machine Agent:** The terminal state-before-transfer pattern (OC-10) is critical for economic safety. The State Machine agent should verify that no code path can reach the lamport transfer lines (284-291, 358-366, 420-428) without first setting the terminal state. Also verify that Anchor's `close` attribute correctly handles the rent sweep after explicit lamport transfers have reduced the PDA balance.
+
+- **Timing Agent:** The 1-hour settlement deadline (lines 236-244) creates an economic forcing function. If the authority cannot settle within 1 hour, the match enters a limbo state where it can only be cancelled (not settled). The Timing agent should assess whether this deadline is appropriate and whether Clock manipulation (+/- a few seconds) could affect settlement outcomes at the exact boundary. Additionally, verify that activated_at is always > 0 in Active state (line 236 has a defensive guard that skips the deadline check if activated_at == 0).
+
+## Risk Observations
+
+- **update_config lacks distinctness re-validation (lines 70-88):** initialize_config enforces authority != treasury != ops, but update_config applies Optional changes without re-checking this invariant. If authority sets config.treasury = config.ops via two separate updates, settle_match would fail due to the treasury != ops constraint (line 588), creating a liveness issue. If authority sets treasury = authority's own address, fees are redirected. This is a centralization concern, not a code bug, but the absence of re-validation is worth documenting for production readiness.
+
+- **One-step authority transfer (line 79):** update_config immediately overwrites config.authority with no pending/accept pattern. If the new authority address is incorrect (typo, burned key), authority is permanently locked out. All economic operations requiring authority (settle, pause, unpause) become unavailable. Matches would be resolvable only via player cancel (24h) or permissionless reclaim (48h).
+
+- **Create_match not config-authority-gated (lines 510-531):** The CreateMatch struct does not include `has_one = authority` on the config account. Any signer can call create_match. While matches created by non-authority signers are unsettleable (settle_match requires both escrow.authority AND config.authority to match), this allows anyone to create PDA accounts (burning their own rent) with arbitrary player_one/player_two values. These matches would time out and be reclaimable via permissionless_reclaim, but they consume PDA namespace during that window.
+
+- **Authority as sole winner selector:** The protocol's economic model fundamentally trusts the server authority to honestly select winners. A compromised authority can extract value by always designating a colluding player as winner. On-chain constraints prevent authority from being a player (OC-06) and require the winner to be player_one or player_two (OC-02), but these do not prevent authority-player collusion.
+
+- **Rent subsidy from authority to cancel callers:** The authority pays PDA rent at create_match (line 513: `payer = authority`). On cancellation, rent goes to `caller` (which may be a player, not the authority). This creates a small value transfer (~0.00143 SOL) from authority to player on every cancelled match. At scale, this could accumulate, but the amount is economically insignificant relative to wager sizes.
+
+- **EP-106 risk on treasury/ops accounts (lines 287-291):** If config.treasury or config.ops is set to an executable account address (via update_config), the direct lamport transfers in settle_match would fail due to the Solana runtime's write-demotion on executable accounts. This would brick settlement for all Active matches until the config is corrected, forcing 24h/48h timeout resolution. Players are not harmed (they get refunds via cancel), but the protocol loses fee revenue.
+
+## Novel Attack Surface Observations
+
+- **Selective non-settlement griefing:** Because the authority decides WHEN to settle (within the 1h window) and because settlement is the only path that deducts fees, the authority could selectively not settle matches where the "undesired" player won. The match would then time out, and both players get refunded (no fees collected). This allows the authority to effectively "void" match outcomes without a visible on-chain authority action -- the match simply expires. Detection: monitor for matches that expire without settlement when they were clearly Active (both deposited). This is a novel griefing pattern unique to server-authoritative escrow with settlement deadlines. It is not detectable from the escrow program alone; off-chain monitoring of the MatchActive -> MatchCancelled event sequence (without an intervening MatchSettled) is needed.
+
+- **Match ID collision for PDA denial-of-service:** Since match escrow PDAs are derived from `[b"match", match_id.as_bytes()]` and match_id is a string up to 32 characters, an attacker who knows upcoming match IDs could pre-create matching PDAs (since create_match is callable by anyone). The legitimate authority's create_match would then fail because the PDA already exists (Anchor `init` fails on existing accounts). The attacker's match would be unsettleable and eventually reclaimed, but the legitimate match is blocked until the PDA is freed (48h + reclaim). Mitigation: the server should use unpredictable match IDs (per MEMORY.md, the server already uses CSPRNG for room IDs). The risk is proportional to the predictability of match IDs.
+
+## Questions for Other Focus Areas
+
+- **For Access Control focus:** Is the absence of `has_one = authority` (linking to config.authority) in CreateMatch intentional? It means anyone can create matches. Was this a design decision (to allow future decentralization) or an oversight? The economic consequence is that non-authority-created matches waste PDA space and are unsettleable.
+
+- **For Arithmetic focus:** The BPS division on lines 260 and 265 uses native `/` (not `checked_div`). While the divisor is a non-zero constant, should this be documented as an explicit exception to the "all arithmetic is checked" invariant (OC-09)?
+
+- **For State Machine focus:** After Anchor's `close` attribute processes (zeroing data, transferring ownership to System Program), can the same PDA (same seeds `[b"match", match_id.as_bytes()]`) be re-initialized in a subsequent transaction? If so, is there a risk of re-initialization with different parameters that could affect pending off-chain state tracking?
+
+- **For Timing focus:** The settlement deadline check on line 236 has a defensive guard: `if ctx.accounts.escrow.activated_at > 0`. The comment says "backward compat with matches created pre-OC-07." Is there a scenario where `activated_at == 0` in an Active state match (which would bypass the settlement deadline entirely)? In the current code, activated_at is set at line 209 when transitioning to Active, so it should always be > 0 for Active matches. But the Timing agent should verify this invariant holds.
+
+## Raw Notes
+
+### Concrete Arithmetic Verification
+
+```
+Wager: 10,000 (MIN)
+  pot = 20,000
+  treasury = floor(20,000 * 700 / 10,000) = 1,400
+  ops = floor(20,000 * 300 / 10,000) = 600
+  winner = 20,000 - 1,400 - 600 = 18,000
+  SUM = 20,000 OK
+
+Wager: 10,001
+  pot = 20,002
+  treasury = floor(20,002 * 700 / 10,000) = floor(14,001,400 / 10,000) = 1,400
+  ops = floor(20,002 * 300 / 10,000) = floor(6,000,600 / 10,000) = 600
+  winner = 20,002 - 1,400 - 600 = 18,002
+  SUM = 20,002 OK (2 lamports rounding dust to winner)
+
+Wager: 50,000,000 (0.05 SOL)
+  pot = 100,000,000
+  treasury = 7,000,000
+  ops = 3,000,000
+  winner = 90,000,000
+  SUM = 100,000,000 OK
+
+Wager: 100,000,000,000 (100 SOL / MAX)
+  pot = 200,000,000,000
+  treasury = 14,000,000,000
+  ops = 6,000,000,000
+  winner = 180,000,000,000
+  SUM = 200,000,000,000 OK
+
+Intermediate overflow check at MAX:
+  200,000,000,000 * 700 = 140,000,000,000,000 (1.4e14)
+  u64::MAX = 18,446,744,073,709,551,615 (1.8e19)
+  1.4e14 < 1.8e19 -- fits in u64 AFTER division
+  BUT 1.4e14 overflows u64 relative to BPS_DENOMINATOR only if...
+  Actually: 1.4e14 fits in u64. The u128 widening prevents overflow in the
+  intermediate step (total_pot_128 * TREASURY_BPS) which could be up to
+  200e9 * 700 = 1.4e14 -- still fits u64 but u128 provides headroom.
+  The real danger would be if MAX_WAGER were increased:
+  At wager = u64::MAX / 2 = 9.2e18:
+    pot = 1.8e19 (max u64)
+    treasury intermediate = 1.8e19 * 700 = 1.29e22 (overflows u64!)
+    u128 handles this safely
+  So u128 widening is essential for safety at high wagers.
+```
+
+### Constants Cross-Reference
+
+| Constant | Value | Line | Used In | Economic Purpose |
+|----------|-------|------|---------|-----------------|
+| TREASURY_BPS | 700 | 15 | settle_match (line 258) | 7% treasury fee |
+| OPS_BPS | 300 | 16 | settle_match (line 263) | 3% ops fee |
+| BPS_DENOMINATOR | 10,000 | 17 | settle_match (lines 260, 265) | Basis point divisor |
+| MIN_WAGER_LAMPORTS | 10,000 | 29 | create_match (line 120) | Ensures fees >= 1 lamport |
+| MAX_WAGER_LAMPORTS | 100,000,000,000 | 32 | create_match (line 123) | Bounds u128->u64 cast safety |
+| TIMEOUT_SECONDS | 86,400 | 20 | cancel_match (line 330) | 24h player cancel window |
+| PERMISSIONLESS_RECLAIM_TIMEOUT | 172,800 | 23 | permissionless_reclaim (line 405) | 48h permissionless reclaim |
+| SETTLEMENT_TIMEOUT_SECONDS | 3,600 | 26 | settle_match (line 238) | 1h settlement deadline |
+
+### Anchor Version Note
+
+Program uses Anchor 0.32.1 (per `programs/solshot-escrow/Cargo.toml`). Workspace Cargo.toml has `overflow-checks = true` in release profile, meaning native Rust arithmetic would panic on overflow even without `checked_*` methods. This provides defense-in-depth but does not replace the need for checked arithmetic (panics are DoS vectors). The combination of `overflow-checks = true` AND `checked_*` methods means:
+1. `checked_*` methods return errors (graceful failure)
+2. If any unchecked arithmetic exists, it panics rather than wrapping (crash but no value corruption)
+3. Both layers prevent silent overflow exploitation
+
+### EP Pattern Relevance Assessment
+
+| EP Pattern | Relevance | Assessment |
+|-----------|-----------|------------|
+| EP-015 (Integer Overflow) | ADDRESSED | All financial arithmetic uses checked_* methods; overflow-checks=true in release profile |
+| EP-016 (Precision Loss in Division) | LOW | BPS math truncates toward zero; minimum wager ensures non-zero results |
+| EP-019 (Rounding Direction) | ADDRESSED | Truncation on fees, remainder to winner -- protocol never over-distributes |
+| EP-020 (Unsafe Type Casting) | BOUNDED | `as u64` casts are safe given current MAX_WAGER; safe threshold documented above |
+| EP-051 (Token Account Owner) | N/A | No SPL tokens used |
+| EP-054 (Token-2022 Transfer Fee) | N/A | No Token-2022 used |
+| EP-058 (Flash Loan Price Manipulation) | N/A | No price calculations |
+| EP-059 (Vault Donation Attack) | N/A | No share-based accounting |
+| EP-060 (Missing Slippage Protection) | N/A | No swaps |
+| EP-098 (CPI Destination Injection) | LOW | Treasury/ops validated against config; but config is authority-mutable |
+| EP-099 (Business Logic Inversion) | LOW | Fee split is simple subtraction-from-remainder; hard to invert |
+| EP-105 (Fee Exclusion from Accounting) | LOW | No internal balance tracking beyond deposit flags; fees computed at settlement from pot |
+| EP-106 (Lamport Write-Demotion) | MEDIUM | Direct lamport transfers to UncheckedAccounts in settle_match could fail if recipient is executable/reserved |
+| EP-109 (LP Deposit Rounding Drain) | N/A | No LP deposits or share minting |
+| EP-116 (Vault Share Donation) | N/A | No share-based accounting |
+| EP-119 (Fee Destination Hijacking) | MEDIUM | update_config allows authority to change treasury/ops instantly, no timelock; relates to centralization risk |
+
+### Rent Economics Detail
+
+```
+MatchEscrow account space: 168 bytes
+Rent-exempt minimum (approx): Rent::get()?.minimum_balance(168)
+At current Solana rent rate: ~0.00143 SOL (1,430,400 lamports approx)
+
+PDA lifecycle rent flow:
+  CREATE: authority pays ~0.00143 SOL rent
+  DEPOSIT: no rent change (wager_lamports added on top of rent)
+  SETTLE: explicit transfers remove total_pot; rent remains; Anchor close sweeps to authority
+  CANCEL: explicit refunds remove wager(s); rent remains; Anchor close sweeps to caller
+  RECLAIM: same as cancel; Anchor close sweeps to any caller (DCA-02 incentive)
+
+Net rent cost to authority per settled match: 0 (rent paid at create, recovered at settle)
+Net rent cost to authority per cancelled match: ~0.00143 SOL (rent paid at create, swept to caller)
+```

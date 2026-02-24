@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 24 Feb 2026)
 
 Milestone: v1.2 — Launch Readiness
 Phase: 9 of 14 (Jupiter Integration)
-Plan: —
-Status: Ready to plan
-Last activity: 24 Feb 2026 — Roadmap created for v1.2 (6 phases, 39 requirements)
+Plan: 1 of 3 in current phase
+Status: In progress
+Last activity: 24 Feb 2026 — Completed 09-01-PLAN.md
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█░░░░░░░░░] ~3%
 
 
 ## Performance Metrics
@@ -51,6 +51,9 @@ Progress: [░░░░░░░░░░] 0%
 - **[v1.2] Jupiter integration is hackathon-critical — Feb 25 deadline**
 - **[v1.2] Many checklist "failures" are design decisions — update checklist text, not code**
 - **[v1.2] Security re-check only needed for CSP changes and new socket endpoints**
+- **[09-01] Use api.jup.ag/price/v3 (not deprecated lite-api.jup.ag); requires free API key from portal.jup.ag**
+- **[09-01] CSP frame-src changed from none→plugin.jup.ag; Plugin may use iframes internally**
+- **[09-01] Price service returns null gracefully when API key missing (dev-mode safe)**
 
 ### Pending Todos
 
@@ -66,6 +69,6 @@ Progress: [░░░░░░░░░░] 0%
 
 ## Session Continuity
 
-Last session: 2026-02-24
-Stopped at: v1.2 roadmap created — Phase 9 ready to plan
+Last session: 2026-02-24T11:57:55Z
+Stopped at: Completed 09-01-PLAN.md
 Resume file: None

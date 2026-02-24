@@ -43,7 +43,7 @@ Three security audits (SOS, DB, BOK) all PASS. SECURITY_SUMMARY.md at `.planning
   5. No CSP violations appear in the browser console when loading Jupiter Plugin or calling the Price API
 **Plans:** 3 plans
 Plans:
-- [ ] 09-01-PLAN.md — CSP updates, Plugin CDN, server-side Price API service
+- [x] 09-01-PLAN.md — CSP updates, Plugin CDN, server-side Price API service
 - [ ] 09-02-PLAN.md — Jupiter Mobile wallet adapter with Reown integration
 - [ ] 09-03-PLAN.md — Jupiter Plugin component and screen integrations (prestige, shop, post-match)
 
@@ -121,14 +121,14 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|---------------|--------|-----------|
-| 9. Jupiter Integration | 0/3 | Planned | - |
+| 9. Jupiter Integration | 1/3 | In progress | - |
 | 10. UI — Global, Landing & Lobby | 0/TBD | Not started | - |
 | 11. Post-Match & Stats Pipeline | 0/TBD | Not started | - |
 | 12. Onboarding & Mobile Polish | 0/TBD | Not started | - |
 | 13. Client Security | 0/TBD | Not started | - |
 | 14. Checklist Alignment & Re-Audit | 0/TBD | Not started | - |
 
-**Total:** 0/3+ plans complete
+**Total:** 1/3+ plans complete
 
 ---
 *Roadmap created: 24 Feb 2026*

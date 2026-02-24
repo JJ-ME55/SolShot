@@ -10,13 +10,13 @@ Requirements for launch readiness. Each maps to roadmap phases.
 
 ### Jupiter Integration
 
-- [ ] **JUP-01**: Jupiter Mobile wallet adapter added to wallet list in top position with highlight
-- [ ] **JUP-02**: Jupiter Price API V3 service fetches live SHOT/SOL price (lite-api.jup.ag, free tier)
-- [ ] **JUP-03**: Jupiter Terminal SDK embedded in prestige shop for SOL→SHOT swaps
-- [ ] **JUP-04**: Jupiter Terminal accessible from weapon shop ("Buy SHOT to unlock prestige weapons")
-- [ ] **JUP-05**: Jupiter Terminal accessible from post-match result screen with price context
-- [ ] **JUP-06**: Platform fee parameter set on Jupiter Terminal (% routed to SolShot treasury)
-- [ ] **JUP-07**: CSP connect-src updated for lite-api.jup.ag, terminal.jup.ag, and Meteora domains
+- [x] **JUP-01**: Jupiter Mobile wallet adapter added to wallet list in top position with highlight
+- [x] **JUP-02**: Jupiter Price API V3 service fetches live SHOT/SOL price (api.jup.ag, free tier)
+- [x] **JUP-03**: Jupiter Terminal SDK embedded in prestige shop for SOL→SHOT swaps
+- [x] **JUP-04**: Jupiter Terminal accessible from weapon shop ("Buy SHOT to unlock prestige weapons")
+- [x] **JUP-05**: Jupiter Terminal accessible from post-match result screen with price context
+- [x] **JUP-06**: Platform fee parameter set on Jupiter Terminal (% routed to SolShot treasury)
+- [x] **JUP-07**: CSP connect-src updated for plugin.jup.ag, api.jup.ag, tokens.jup.ag, cache.jup.ag
 
 ### User Interface — Global & Landing
 
@@ -114,13 +114,13 @@ Deferred to future release. Tracked but not in current roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| JUP-01 | Phase 9 | Pending |
-| JUP-02 | Phase 9 | Pending |
-| JUP-03 | Phase 9 | Pending |
-| JUP-04 | Phase 9 | Pending |
-| JUP-05 | Phase 9 | Pending |
-| JUP-06 | Phase 9 | Pending |
-| JUP-07 | Phase 9 | Pending |
+| JUP-01 | Phase 9 | Complete |
+| JUP-02 | Phase 9 | Complete |
+| JUP-03 | Phase 9 | Complete |
+| JUP-04 | Phase 9 | Complete |
+| JUP-05 | Phase 9 | Complete |
+| JUP-06 | Phase 9 | Complete |
+| JUP-07 | Phase 9 | Complete |
 | UI-01 | Phase 10 | Pending |
 | UI-02 | Phase 10 | Pending |
 | UI-03 | Phase 10 | Pending |

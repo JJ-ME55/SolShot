@@ -11,7 +11,7 @@ import { WEAPON_CATALOG, getWeapon, getWeaponCost, getAllLaunchWeapons } from '.
 import { handleAuthenticate, verifyAuthMessage, verifyWalletSignature } from '../middleware/auth.js';
 import { verifyBalance, isValidWager, settleMatch, refundWager, WAGER_TIERS, MATCH_MODES, validateMatchMode, isEscrowEnabled, createMatchEscrow, buildDepositTransaction, getEscrowState } from '../services/solana.js';
 import { cancelMatchEscrow } from '../services/escrow.js';
-import { recordMatchPlayed, prestigeBurn, getPrestigeInfo, getShotBalance, PRESTIGE_TIERS, PRESTIGE_WEAPON_IDS, loadMilestoneState, saveMilestoneState, verifyBurnTransaction } from '../services/shot-token.js';
+import { recordMatchPlayed, prestigeBurn, getPrestigeInfo, getShotBalance, PRESTIGE_TIERS, PRESTIGE_WEAPON_IDS, loadMilestoneState, saveMilestoneState, verifyBurnTransaction, getPlayerShotState, SHOT_MILESTONES } from '../services/shot-token.js';
 import { trackConnection, trackDisconnection, trackMatchCreated, trackMatchCompleted, trackMatchCancelled, trackWager, trackSettlement, trackForfeit, trackShot, trackDamage, trackGoldEarned, trackShotEmission, trackShotBurn, trackError } from '../services/monitoring.js';
 import { requireAuth, validatePayload, validateFireParams, sanitizeName, withLock, safeHandler } from '../middleware/guards.js';
 
@@ -1659,6 +1659,13 @@ const mainsocket = (io) => {
 
         // Fetch persistent player stats from DB
         client.on('getStats', async () => {
+            // Phase 11: Rate limit — 1 request per second per client
+            const now = Date.now()
+            if (client._lastStatsFetch && (now - client._lastStatsFetch) < 1000) {
+                return // Rate limited
+            }
+            client._lastStatsFetch = now
+
             const wallet = authenticatedWallets[client.id] || null
             const defaultStats = { matchesPlayed: 0, wins: 0, losses: 0, totalSolWon: 0, totalSolLost: 0, totalShotEarned: 0, shotBurned: 0, prestigeTier: 0 }
             if (!wallet || !isDbConnected()) {
@@ -2248,6 +2255,14 @@ const mainsocket = (io) => {
                         const hostWallet = wsState?.wallets?.[hostId] || authenticatedWallets[hostId] || null
                         const playerWallet = wsState?.wallets?.[playerId] || authenticatedWallets[playerId] || null
 
+                        // Phase 11: Snapshot milestones BEFORE recordMatchPlayed so we can diff after
+                        const hostMilestonesBefore = hostWallet
+                            ? new Set((getPlayerShotState(hostWallet)?.milestonesEarned || []))
+                            : new Set()
+                        const playerMilestonesBefore = playerWallet
+                            ? new Set((getPlayerShotState(playerWallet)?.milestonesEarned || []))
+                            : new Set()
+
                         if (hostWallet) {
                             shotResults[hostId] = recordMatchPlayed(hostWallet, {
                                 turnCount: ms.turnCount,
@@ -2273,6 +2288,20 @@ const mainsocket = (io) => {
                             if (shotResults[playerId].earned > 0) trackShotEmission(shotResults[playerId].earned)
                         }
 
+                        // Phase 11: Compute newly earned milestones (diff against snapshot)
+                        const getNewMilestones = (wallet, beforeSet) => {
+                            if (!wallet) return []
+                            const state = getPlayerShotState(wallet)
+                            if (!state) return []
+                            return (state.milestonesEarned || [])
+                                .filter(id => !beforeSet.has(id))
+                                .map(id => {
+                                    const milestone = SHOT_MILESTONES.find(m => m.id === id)
+                                    return milestone ? { id: milestone.id, label: milestone.label, reward: milestone.reward } : null
+                                })
+                                .filter(Boolean)
+                        }
+
                         // Delay matchEnd emit so client can animate the killing blow
                         // Transform scores to client format: { [id]: { damageDealt, kills } }
                         const formattedScores = {}
@@ -2291,7 +2320,17 @@ const mainsocket = (io) => {
                             goldBalance: goldStates[roomId] || {},
                             settlement: settlementInfo,
                             wager: ws ? ws.amount : 0,
-                            shotEarned: shotResults
+                            shotEarned: shotResults,
+                            // Phase 11: Prestige info per player (client reads by own socket ID)
+                            prestigeInfo: {
+                                [hostId]: getPrestigeInfo(hostWallet),
+                                [playerId]: getPrestigeInfo(playerWallet)
+                            },
+                            // Phase 11: Milestones earned this match per player
+                            earnedMilestones: {
+                                [hostId]: getNewMilestones(hostWallet, hostMilestonesBefore),
+                                [playerId]: getNewMilestones(playerWallet, playerMilestonesBefore)
+                            }
                         }
                         setTimeout(() => {
                             io.sockets.in(roomId).emit('matchEnd', matchEndPayload)
@@ -2305,21 +2344,60 @@ const mainsocket = (io) => {
                             const loserAddr = authenticatedWallets[loserId] || wsState?.wallets?.[loserId]
                             const wagerAmt = ws ? ws.amount : 0
                             const solWonAmt = wagerAmt > 0 ? wagerAmt * 2 * 0.9 : 0 // 90% to winner after fees
+
+                            // Phase 11: Build per-weapon $inc update for a player
+                            const buildWeaponIncs = (pid) => {
+                                const incs = {}
+                                const fired = ms.weaponShotsFired?.[pid] || {}
+                                const hits = ms.weaponHits?.[pid] || {}
+                                const dmg = ms.weaponDamage?.[pid] || {}
+                                for (const wId of Object.keys(fired)) {
+                                    incs['stats.weaponStats.' + wId + '.shotsFired'] = fired[wId] || 0
+                                    incs['stats.weaponStats.' + wId + '.hits'] = hits[wId] || 0
+                                    incs['stats.weaponStats.' + wId + '.damageDealt'] = dmg[wId] || 0
+                                }
+                                return incs
+                            }
+
                             const persistStats = async () => {
                                 try {
                                     if (winnerAddr) {
                                         const winnerShotEarned = shotResults[winnerId]?.earned || 0
+                                        const winnerWeaponIncs = buildWeaponIncs(winnerId)
                                         await User.findOneAndUpdate(
                                             { walletAddress: winnerAddr },
-                                            { $inc: { 'stats.matchesPlayed': 1, 'stats.wins': 1, 'stats.totalSolWon': solWonAmt, 'stats.totalShotEarned': winnerShotEarned }, $set: { lastActive: new Date() } },
+                                            {
+                                                $inc: {
+                                                    'stats.matchesPlayed': 1,
+                                                    'stats.wins': 1,
+                                                    'stats.totalSolWon': solWonAmt,
+                                                    'stats.totalShotEarned': winnerShotEarned,
+                                                    'stats.kills': ms.kills[winnerId] || 0,
+                                                    'stats.deaths': ms.totalDeaths[winnerId] || 0,
+                                                    ...winnerWeaponIncs
+                                                },
+                                                $set: { lastActive: new Date() }
+                                            },
                                             { upsert: true }
                                         )
                                     }
                                     if (loserAddr) {
                                         const loserShotEarned = shotResults[loserId]?.earned || 0
+                                        const loserWeaponIncs = buildWeaponIncs(loserId)
                                         await User.findOneAndUpdate(
                                             { walletAddress: loserAddr },
-                                            { $inc: { 'stats.matchesPlayed': 1, 'stats.losses': 1, 'stats.totalSolLost': wagerAmt, 'stats.totalShotEarned': loserShotEarned }, $set: { lastActive: new Date() } },
+                                            {
+                                                $inc: {
+                                                    'stats.matchesPlayed': 1,
+                                                    'stats.losses': 1,
+                                                    'stats.totalSolLost': wagerAmt,
+                                                    'stats.totalShotEarned': loserShotEarned,
+                                                    'stats.kills': ms.kills[loserId] || 0,
+                                                    'stats.deaths': ms.totalDeaths[loserId] || 0,
+                                                    ...loserWeaponIncs
+                                                },
+                                                $set: { lastActive: new Date() }
+                                            },
                                             { upsert: true }
                                         )
                                     }

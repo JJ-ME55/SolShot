@@ -19,7 +19,7 @@ SolShot's three security audits (SOS, DB, BOK) revealed 15 CRITICAL and 23 HIGH-
 - [x] **Phase 5: Client & Supply Chain Security** — TX validation before signing, self-hosted Telegram SDK, CSP headers, remove global wallet exposure *(completed 2026-02-22)*
 - [x] **Phase 6: Token Economy Hardening** — Persist deduplication Sets to MongoDB, fail-hard on emission counter reset *(completed 2026-02-23)*
 - [x] **Phase 7: Infrastructure & Monitoring** — npm security, endpoint auth, connection limits, logging, terrain entropy *(completed 2026-02-23)*
-- [ ] **Phase 8: Verification & Re-Audit** — Re-run SOS, DB, BOK on hardened codebase; generate pre-launch security documentation
+- [x] **Phase 8: Verification & Re-Audit** — Re-run SOS, DB, BOK on hardened codebase; generate pre-launch security documentation *(completed 2026-02-23)*
 
 ---
 
@@ -187,10 +187,10 @@ Plans:
 **Plans:** 4 plans
 
 Plans:
-- [ ] 08-01-PLAN.md -- SOS re-audit: fresh Fortress run on hardened lib.rs, gate check 0 CRIT/0 HIGH (VR-01)
-- [ ] 08-02-PLAN.md -- DB re-audit: fresh Bulwark run on hardened server+client, gate check 0 CRIT/0 HIGH (VR-02)
-- [ ] 08-03-PLAN.md -- BOK re-verification: fresh math verification on updated program arithmetic (VR-03)
-- [ ] 08-04-PLAN.md -- Pre-launch security summary document at .planning/SECURITY_SUMMARY.md (VR-04)
+- [x] 08-01-PLAN.md -- SOS re-audit: fresh Fortress run on hardened lib.rs, gate check 0 CRIT/0 HIGH (VR-01)
+- [x] 08-02-PLAN.md -- DB re-audit: fresh Bulwark run on hardened server+client, gate check 0 CRIT/0 HIGH (VR-02)
+- [x] 08-03-PLAN.md -- BOK re-verification: fresh math verification on updated program arithmetic (VR-03)
+- [x] 08-04-PLAN.md -- Pre-launch security summary document at .planning/SECURITY_SUMMARY.md (VR-04)
 
 ---
 
@@ -209,9 +209,9 @@ Plans:
 | 5. Client & Supply Chain Security | 2/2 | Complete | 2026-02-22 |
 | 6. Token Economy Hardening | 2/2 | Complete | 2026-02-23 |
 | 7. Infrastructure & Monitoring | 2/2 | Complete | 2026-02-23 |
-| 8. Verification & Re-Audit | 0/4 | Planned | - |
+| 8. Verification & Re-Audit | 4/4 | Complete | 2026-02-23 |
 
-**Total:** 21/25 plans complete (Phases 1-7 done; Phase 8 planned)
+**Total:** 25/25 plans complete (All phases done — v1.1 milestone COMPLETE)
 
 ---
 

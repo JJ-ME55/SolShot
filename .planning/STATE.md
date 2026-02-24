@@ -4,24 +4,24 @@
 
 See: .planning/PROJECT.md (updated 21 Feb 2026)
 **Core value:** Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** v1.1 Security Hardening — Phase 7 complete, Phase 8 next (Verification & Re-Audit)
+**Current focus:** v1.1 Security Hardening — COMPLETE (all 8 phases done)
 
 ## Current Position
 
 Milestone: v1.1 — Security Hardening
-Phase: 7 of 8 — Infrastructure & Monitoring (Complete)
-Plans: 2/2 complete
-Status: Complete — verified 10/10 must-haves
-Last activity: 23 Feb 2026 — Phase 7 verified and complete
+Phase: 8 of 8 — Verification & Re-Audit (Complete)
+Plans: 4/4 complete
+Status: Complete — all three audit gates PASS, SECURITY_SUMMARY.md written
+Last activity: 23 Feb 2026 — Phase 8 complete, milestone finished
 
-Progress: [█████████░] ~88% (Phases 1-7 complete; Phase 8 remaining)
+Progress: [██████████] 100% (All 8 phases complete)
 
 
 ## Performance Metrics
 
 **Velocity:**
 - v1.0 plans completed: 15 (across 4 phases)
-- v1.1 plans completed: 19 (15 prior + 2 Phase 6 + 2 Phase 7)
+- v1.1 plans completed: 25 (21 prior + 4 Phase 8)
 
 **By Phase (v1.1):**
 
@@ -35,7 +35,7 @@ Progress: [█████████░] ~88% (Phases 1-7 complete; Phase 8 re
 | 05-client-supply-chain-security | 2/2 | ~22min | ~11min |
 | 06-token-economy-hardening | 2/2 | ~5min | ~2.5min |
 | 07-infrastructure-monitoring | 2/2 | ~8min | ~4min |
-| 08-verification-re-audit | 0/TBD | — | — |
+| 08-verification-re-audit | 4/4 | ~30min | ~7.5min |
 
 ## Accumulated Context
 
@@ -46,7 +46,8 @@ Progress: [█████████░] ~88% (Phases 1-7 complete; Phase 8 re
 - SHOT mint authority burned (no changes possible)
 - MongoDB Atlas M0 free tier for stats persistence
 - **[v1.0] All v1.0 decisions preserved — see previous STATE.md in git history**
-- **[v1.1] Three audits complete: SOS 7C/6H/6M/4L, DB 8C/17H/15M/1L, BOK 24/24 pass 8 gaps**
+- **[v1.1] Three audits complete: SOS 3C/9H/4M/1L (re-audit), DB 12C/34H/18M/6L (re-audit), BOK 25/25 pass 0 failures**
+- **[v1.1] All CRITICAL and HIGH findings resolved or documented as Accepted Risk — SECURITY_SUMMARY.md at .planning/SECURITY_SUMMARY.md**
 - **[v1.1] H029 (unverifiable winner oracle / outcome verification) deferred to v1.2 — requires protocol-level design decisions**
 - **[v1.1] H060 (horizontal scaling) deferred — not exploitable on single instance**
 - **[v1.1] On-chain redesign is Phase 1 because ALL off-chain code depends on the new IDL**
@@ -144,9 +145,9 @@ Progress: [█████████░] ~88% (Phases 1-7 complete; Phase 8 re
 
 ## Session Continuity
 
-Last session: 2026-02-23T18:00:00Z
-Stopped at: Phase 7 complete — all 10 must-haves verified (IM-01 through IM-05)
-Resume file: None (next: Phase 8 — Verification & Re-Audit)
+Last session: 2026-02-23T22:00:00Z
+Stopped at: Phase 8 complete — all 4 plans done, SECURITY_SUMMARY.md written, milestone v1.1 finished
+Resume file: None (milestone complete)
 
 ### Roadmap Evolution
 - Phase 4.1 inserted after Phase 4: Doc-Code Alignment (URGENT) — litepaper QA revealed deposit countdown, permissionless reclaim, HP-based forfeit, and dead code gaps between docs and codebase

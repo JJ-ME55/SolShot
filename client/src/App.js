@@ -152,6 +152,7 @@ function AppInner() {
 /* Rotate-to-landscape overlay for mobile portrait */
 function PortraitWarning() {
   const [isPortrait, setIsPortrait] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
     const check = () => {
@@ -169,7 +170,19 @@ function PortraitWarning() {
     };
   }, []);
 
-  if (!isPortrait) return null;
+  // Check sessionStorage on mount — if user dismissed earlier this session, skip
+  useEffect(() => {
+    if (sessionStorage.getItem('solshot_portrait_dismissed')) {
+      setDismissed(true);
+    }
+  }, []);
+
+  if (!isPortrait || dismissed) return null;
+
+  const handleDismiss = () => {
+    sessionStorage.setItem('solshot_portrait_dismissed', 'true');
+    setDismissed(true);
+  };
 
   return (
     <div style={{
@@ -193,6 +206,21 @@ function PortraitWarning() {
         fontSize: 12, color: 'var(--kh)',
         textAlign: 'center', opacity: 0.6,
       }}>SolShot plays best in landscape mode</div>
+      <button
+        onClick={handleDismiss}
+        style={{
+          fontFamily: "'Share Tech Mono', monospace",
+          fontSize: 11,
+          color: 'rgba(255,255,255,0.4)',
+          background: 'none',
+          border: '1px solid rgba(255,255,255,0.15)',
+          borderRadius: 3,
+          padding: '4px 12px',
+          cursor: 'pointer',
+          marginTop: 8,
+          letterSpacing: 1,
+        }}
+      >Continue in Portrait</button>
       <style>{`
         @keyframes rotateHint {
           0%, 100% { transform: rotate(0deg); }

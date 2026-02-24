@@ -1,6 +1,99 @@
 import React, { useState, useEffect } from 'react';
 import { useTelegram } from '../telegram/TelegramContext';
 
+/* dApp browser detection banner — shown when wallet-injected mobile browser locks portrait */
+function DAppBrowserBanner() {
+  const [visible, setVisible] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    // Already dismissed this session
+    if (sessionStorage.getItem('solshot_dapp_banner_dismissed')) return;
+
+    // Detection: mobile viewport + wallet extension injected + NOT regular Safari
+    const isMobile = window.innerWidth < 768 || ('ontouchstart' in window);
+    const hasWalletExtension = !!(window.phantom && window.phantom.solana) || !!window.solflare;
+    const isRegularSafari = /safari/i.test(navigator.userAgent) && !/chrome/i.test(navigator.userAgent);
+
+    if (isMobile && hasWalletExtension && !isRegularSafari) {
+      setVisible(true);
+    }
+  }, []);
+
+  if (!visible) return null;
+
+  const handleDismiss = () => {
+    sessionStorage.setItem('solshot_dapp_banner_dismissed', 'true');
+    setVisible(false);
+  };
+
+  const handleCopyLink = () => {
+    try {
+      navigator.clipboard.writeText(window.location.href).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      });
+    } catch (_) {
+      // Fallback for browsers without clipboard API
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      zIndex: 9999,
+      background: 'rgba(10, 12, 8, 0.92)',
+      borderBottom: '1px solid rgba(255,255,255,0.1)',
+      padding: '8px 12px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      flexWrap: 'wrap',
+    }}>
+      <span style={{
+        fontFamily: "'Share Tech Mono', monospace",
+        fontSize: 11,
+        color: '#ccc',
+        flex: 1,
+        minWidth: 0,
+      }}>For the best experience, open solshot.gg in Chrome or Safari</span>
+      <button
+        onClick={handleCopyLink}
+        style={{
+          fontFamily: "'Share Tech Mono', monospace",
+          fontSize: 11,
+          color: 'var(--bn, #88ff44)',
+          background: 'none',
+          border: '1px solid rgba(136,255,68,0.4)',
+          borderRadius: 3,
+          padding: '3px 8px',
+          cursor: 'pointer',
+          whiteSpace: 'nowrap',
+        }}
+      >{copied ? 'Copied!' : 'Copy Link'}</button>
+      <button
+        onClick={handleDismiss}
+        style={{
+          fontFamily: "'Share Tech Mono', monospace",
+          fontSize: 11,
+          color: '#888',
+          background: 'none',
+          border: '1px solid rgba(136,136,136,0.3)',
+          borderRadius: 3,
+          padding: '3px 8px',
+          cursor: 'pointer',
+          whiteSpace: 'nowrap',
+        }}
+      >Dismiss</button>
+    </div>
+  );
+}
+
 const styles = {
   viewport: (isTelegram, tgHeight) => ({
     position: 'relative',
@@ -77,13 +170,16 @@ function Layout({ children }) {
   }, [isTelegram, webApp]);
 
   return (
-    <div style={styles.viewport(isTelegram, tgHeight)}>
-      <div style={styles.noiseOverlay} />
-      <div style={styles.scanlineOverlay} />
-      <div style={styles.content}>
-        {children}
+    <>
+      <DAppBrowserBanner />
+      <div style={styles.viewport(isTelegram, tgHeight)}>
+        <div style={styles.noiseOverlay} />
+        <div style={styles.scanlineOverlay} />
+        <div style={styles.content}>
+          {children}
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 

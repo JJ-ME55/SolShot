@@ -12,6 +12,7 @@ Complete these items for the Jupiter integration to function. Claude automated a
 |--------|----------|--------|--------|
 | [ ] | `JUP_API_KEY` | portal.jup.ag → Create account → API Keys → Create Lite tier key (free, 60 req/min) | `server/.env` |
 | [ ] | `REACT_APP_REOWN_PROJECT_ID` | dashboard.reown.com → Create account → New Project → copy Project ID | `client/.env` |
+| [ ] | `REACT_APP_JUPITER_REFERRAL_ACCOUNT` | referral.jup.ag → Connect treasury wallet → Create referral account → copy public key | `client/.env` |
 
 ## Account Setup
 
@@ -24,6 +25,13 @@ Complete these items for the Jupiter integration to function. Claude automated a
   - URL: https://dashboard.reown.com
   - Skip if: Already have account
   - Note: Reown project ID is required for Jupiter Mobile wallet adapter (QR code scan to connect Jupiter Mobile app)
+
+- [ ] **Create Jupiter Referral account**
+  - URL: https://referral.jup.ag
+  - Connect your SolShot treasury wallet
+  - Create a referral account — you will receive a public key (the referral account address)
+  - This enables platform fee collection: 0.5% of every swap routes to your treasury
+  - Note: Without this env var, swaps still work — platform fee is simply not collected
 
 ## Dashboard Configuration
 
@@ -38,6 +46,13 @@ Complete these items for the Jupiter integration to function. Claude automated a
   - App URL: https://solshot.gg (or localhost for dev)
   - Copy the Project ID and add to `client/.env` as `REACT_APP_REOWN_PROJECT_ID`
   - Note: Without this ID, Jupiter Mobile will be hidden from the wallet list (graceful degradation — no crash)
+
+- [ ] **Create Jupiter Referral token accounts for SOL and SHOT**
+  - Location: referral.jup.ag → Your referral account → Add token accounts
+  - Add SOL (native): So11111111111111111111111111111111111111112
+  - Add SHOT: 4NnYBycLLo8acgbkLz2SyCXd3KU8jgHQLEmrVypi5VLd
+  - These accounts collect fees from swaps to each token
+  - Copy the referral account public key and add to `client/.env` as `REACT_APP_JUPITER_REFERRAL_ACCOUNT`
 
 ## Verification
 

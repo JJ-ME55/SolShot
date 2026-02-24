@@ -20,7 +20,7 @@ Three security audits (SOS, DB, BOK) all PASS. SECURITY_SUMMARY.md at `.planning
 
 ## Phases
 
-- [ ] **Phase 9: Jupiter Integration** — Wallet adapter, Price API, Plugin SDK, platform fee, CSP updates
+- [x] **Phase 9: Jupiter Integration** — Wallet adapter, Price API, Plugin SDK, platform fee, CSP updates
 - [ ] **Phase 10: UI — Global, Landing & Lobby** — Price ticker, ecosystem logos, landing CTAs, lobby polish, weapon shop
 - [ ] **Phase 11: Post-Match & Stats Pipeline** — Post-match UX, stats persistence, BarracksScreen, Combat Card
 - [ ] **Phase 12: Onboarding & Mobile Polish** — First-match flow, contextual education, FAQ, haptics, sharing
@@ -44,8 +44,8 @@ Three security audits (SOS, DB, BOK) all PASS. SECURITY_SUMMARY.md at `.planning
 **Plans:** 3 plans
 Plans:
 - [x] 09-01-PLAN.md — CSP updates, Plugin CDN, server-side Price API service
-- [ ] 09-02-PLAN.md — Jupiter Mobile wallet adapter with Reown integration
-- [ ] 09-03-PLAN.md — Jupiter Plugin component and screen integrations (prestige, shop, post-match)
+- [x] 09-02-PLAN.md — Jupiter Mobile wallet adapter with Reown integration
+- [x] 09-03-PLAN.md — Jupiter Plugin component and screen integrations (prestige, shop, post-match)
 
 ---
 
@@ -121,14 +121,14 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|---------------|--------|-----------|
-| 9. Jupiter Integration | 2/3 | In progress | - |
+| 9. Jupiter Integration | 3/3 | Complete | 2026-02-24 |
 | 10. UI — Global, Landing & Lobby | 0/TBD | Not started | - |
 | 11. Post-Match & Stats Pipeline | 0/TBD | Not started | - |
 | 12. Onboarding & Mobile Polish | 0/TBD | Not started | - |
 | 13. Client Security | 0/TBD | Not started | - |
 | 14. Checklist Alignment & Re-Audit | 0/TBD | Not started | - |
 
-**Total:** 2/3+ plans complete
+**Total:** 3/3+ plans complete (Phase 9 done)
 
 ---
 *Roadmap created: 24 Feb 2026*

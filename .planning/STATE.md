@@ -4,17 +4,17 @@
 
 See: .planning/PROJECT.md (updated 24 Feb 2026)
 **Core value:** Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** v1.2 Launch Readiness — Phase 9 Jupiter Integration (hackathon deadline Feb 25)
+**Current focus:** v1.2 Launch Readiness — Phase 10 UI Polish (next phase after Jupiter complete)
 
 ## Current Position
 
 Milestone: v1.2 — Launch Readiness
-Phase: 9 of 14 (Jupiter Integration)
-Plan: 2 of 3 in current phase
-Status: In progress
-Last activity: 24 Feb 2026 — Completed 09-02-PLAN.md
+Phase: 9 of 14 (Jupiter Integration) — COMPLETE
+Plan: 3 of 3 in current phase
+Status: Phase complete
+Last activity: 24 Feb 2026 — Completed 09-03-PLAN.md
 
-Progress: [██░░░░░░░░] ~6%
+Progress: [██░░░░░░░░] ~7%
 
 
 ## Performance Metrics
@@ -58,6 +58,9 @@ Progress: [██░░░░░░░░] ~6%
 - **[09-02] React hooks must be called unconditionally — gate wallets list not hook call**
 - **[09-02] DISABLE_ESLINT_PLUGIN=true in client/.env (gitignored) — pre-existing ESLint webpack worker bug**
 - **[09-02] REACT_APP_REOWN_PROJECT_ID required for Jupiter Mobile to appear — without it adapter hidden gracefully**
+- **[09-03] JupiterSwap uses module-level singleton (jupiterInitialized) — Plugin init() called once regardless of screens visited**
+- **[09-03] referralFee = 50 bps (0.5%) — platform fee env-driven, gracefully absent without REACT_APP_JUPITER_REFERRAL_ACCOUNT**
+- **[09-03] shotPrice socket pattern: emit getShotPrice on mount, on('shotPrice') with cleanup — reusable across screens**
 
 ### Pending Todos
 
@@ -73,6 +76,6 @@ Progress: [██░░░░░░░░] ~6%
 
 ## Session Continuity
 
-Last session: 2026-02-24T12:27:56Z
-Stopped at: Completed 09-02-PLAN.md
+Last session: 2026-02-24T12:35:08Z
+Stopped at: Completed 09-03-PLAN.md (Phase 9 complete)
 Resume file: None

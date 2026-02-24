@@ -24,6 +24,37 @@ const s = {
     animation: 'sm 0.5s ease-out both',
     filter: 'drop-shadow(0 4px 20px rgba(255, 200, 0, 0.3))',
   },
+
+  /* ── Tab navigation ── */
+  tabNav: {
+    display: 'flex',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 0,
+    maxWidth: 400,
+    width: '100%',
+    borderBottom: '1px solid var(--ol)',
+  },
+  tab: (active) => ({
+    padding: '8px 20px',
+    cursor: 'pointer',
+    fontFamily: "'Share Tech Mono', monospace",
+    fontSize: 11,
+    letterSpacing: 2,
+    color: active ? 'var(--am)' : 'var(--kh)',
+    borderBottom: active ? '2px solid var(--am)' : '2px solid transparent',
+    opacity: active ? 1 : 0.5,
+    background: 'none',
+    border: 'none',
+    borderBottomStyle: 'solid',
+    borderBottomWidth: active ? 2 : 2,
+    borderBottomColor: active ? 'var(--am)' : 'transparent',
+    textTransform: 'uppercase',
+    userSelect: 'none',
+  }),
+
+  /* ── Result tab ── */
   rewardRow: {
     display: 'flex',
     gap: 12,
@@ -37,9 +68,9 @@ const s = {
     gap: 4,
     padding: '10px 18px',
     background: 'rgba(42, 51, 31, 0.3)',
-    border: `1px solid ${color}33`,
+    border: '1px solid ' + color + '33',
     borderRadius: 4,
-    animation: `sc 0.4s ease-out ${delay}s both`,
+    animation: 'sc 0.4s ease-out ' + delay + 's both',
   }),
   rewardValue: (color) => ({
     fontFamily: "'Bebas Neue', sans-serif",
@@ -81,17 +112,120 @@ const s = {
     opacity: 0.6,
     marginTop: 2,
   },
-  buttonRow: {
-    display: 'flex',
-    gap: 8,
-    marginTop: 6,
-  },
   settlementLine: {
     fontFamily: "'Share Tech Mono', monospace",
     fontSize: 12,
     color: 'var(--sg)',
     letterSpacing: 1,
     opacity: 0.6,
+  },
+
+  /* ── Progress tab ── */
+  progressSection: {
+    width: '100%',
+    maxWidth: 400,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 12,
+  },
+  sectionHeading: {
+    fontFamily: "'Share Tech Mono', monospace",
+    fontSize: 11,
+    color: 'var(--am)',
+    letterSpacing: 2,
+    marginBottom: 4,
+    textTransform: 'uppercase',
+  },
+  milestoneItem: {
+    display: 'flex',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    background: 'rgba(42, 51, 31, 0.2)',
+    border: '1px solid var(--ol)',
+    borderRadius: 4,
+    padding: '8px 12px',
+    margin: '3px 0',
+  },
+  milestoneLabel: {
+    fontFamily: "'Share Tech Mono', monospace",
+    fontSize: 12,
+    color: 'var(--bn)',
+    letterSpacing: 1,
+  },
+  milestoneReward: {
+    fontFamily: "'Share Tech Mono', monospace",
+    fontSize: 12,
+    color: '#9945FF',
+    letterSpacing: 1,
+  },
+  emptyMilestone: {
+    fontFamily: "'Share Tech Mono', monospace",
+    fontSize: 12,
+    color: 'var(--kh)',
+    letterSpacing: 1,
+    opacity: 0.5,
+    textAlign: 'center',
+    padding: '8px 0',
+  },
+  prestigeBox: {
+    background: 'rgba(42, 51, 31, 0.2)',
+    border: '1px solid var(--ol)',
+    borderRadius: 4,
+    padding: '10px 14px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 6,
+  },
+  prestigeTierName: (color) => ({
+    fontFamily: "'Bebas Neue', sans-serif",
+    fontSize: 18,
+    color: color || 'var(--bn)',
+    letterSpacing: 2,
+    lineHeight: 1,
+  }),
+  prestigeBarTrack: {
+    width: '100%',
+    height: 6,
+    background: 'var(--od)',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  prestigeBarFill: (pct) => ({
+    width: (pct > 100 ? 100 : pct) + '%',
+    height: '100%',
+    background: 'linear-gradient(90deg, var(--ru), var(--rg))',
+    borderRadius: 3,
+    transition: 'width 0.6s ease',
+  }),
+  prestigeBarLabel: {
+    fontFamily: "'Share Tech Mono', monospace",
+    fontSize: 11,
+    color: 'var(--kh)',
+    letterSpacing: 1,
+    opacity: 0.7,
+  },
+  maxTierLabel: {
+    fontFamily: "'Share Tech Mono', monospace",
+    fontSize: 12,
+    color: '#ffcc00',
+    letterSpacing: 2,
+    textAlign: 'center',
+    padding: '4px 0',
+  },
+  matchesPlayedLabel: {
+    fontFamily: "'Share Tech Mono', monospace",
+    fontSize: 11,
+    color: 'var(--kh)',
+    letterSpacing: 1,
+    opacity: 0.6,
+  },
+
+  /* ── Action tab ── */
+  buttonRow: {
+    display: 'flex',
+    gap: 8,
+    marginTop: 6,
   },
   waitingText: {
     fontFamily: "'Share Tech Mono', monospace",
@@ -105,12 +239,13 @@ const s = {
 
 
 function WinScreen({ navigate, screenData }) {
+  const [activeTab, setActiveTab] = useState('result');
   const [waitingRematch, setWaitingRematch] = useState(false);
   const [opponentLeft, setOpponentLeft] = useState(false);
   const [settlementData] = useState(screenData?.settlement || null);
   const [shotPrice, setShotPrice] = useState(null);
 
-  // Fetch current SHOT price from server (via getShotPrice socket handler from Plan 01)
+  // Fetch current SHOT price from server (via getShotPrice socket handler)
   useEffect(() => {
     const socket = window.socket;
     if (!socket) return;
@@ -137,6 +272,14 @@ function WinScreen({ navigate, screenData }) {
   const solWon = wager > 0 ? wager * 2 * 0.95 : 0; // ~5% fee
   const myShotEarned = myId && shotEarned[myId] ? shotEarned[myId].earned : 0;
   const myGold = screenData?.goldBalance && myId ? screenData.goldBalance[myId] : 0;
+
+  // Progress tab data
+  const myMilestones = (screenData?.earnedMilestones && myId)
+    ? (screenData.earnedMilestones[myId] || [])
+    : [];
+  const myPrestige = (screenData?.prestigeInfo && myId)
+    ? (screenData.prestigeInfo[myId] || null)
+    : null;
 
   /* ── socket: playAgain -> back to shop ── */
   useSocket('playAgain', () => {
@@ -167,6 +310,11 @@ function WinScreen({ navigate, screenData }) {
     navigate('menu');
   }, [navigate]);
 
+  // Prestige progress bar percentage
+  const prestigePct = myPrestige && myPrestige.nextTier && myPrestige.nextTier.burnCost > 0
+    ? (myPrestige.balance / myPrestige.nextTier.burnCost) * 100
+    : 0;
+
   return (
     <div style={s.container}>
       <img
@@ -176,72 +324,173 @@ function WinScreen({ navigate, screenData }) {
         draggable={false}
       />
 
-      {/* Reward Cards */}
-      <div style={s.rewardRow}>
-        {wager > 0 && (
-          <div style={s.rewardCard('var(--sg)', 0.1)}>
-            <div style={s.rewardValue('var(--sg)')}>+{solWon.toFixed(3)}</div>
-            <div style={s.rewardLabel}>SOL EARNED</div>
-          </div>
-        )}
-        {myShotEarned > 0 && (
-          <div style={s.rewardCard('var(--sp)', 0.2)}>
-            <div style={s.rewardValue('var(--sp)')}>+{myShotEarned}</div>
-            <div style={s.rewardLabel}>SHOT EARNED</div>
-          </div>
-        )}
-        <div style={s.rewardCard('var(--gd)', 0.3)}>
-          <div style={s.rewardValue('var(--gd)')}>{myGold}</div>
-          <div style={s.rewardLabel}>GOLD EARNED</div>
+      {/* Tab Navigation */}
+      <div style={s.tabNav}>
+        <div style={s.tab(activeTab === 'result')} onClick={() => setActiveTab('result')}>
+          RESULT
+        </div>
+        <div style={s.tab(activeTab === 'progress')} onClick={() => setActiveTab('progress')}>
+          PROGRESS
+        </div>
+        <div style={s.tab(activeTab === 'action')} onClick={() => setActiveTab('action')}>
+          ACTION
         </div>
       </div>
 
-      {/* Stats */}
-      <div style={s.statsGrid}>
-        <div style={s.statItem}>
-          <div style={s.statValue}>{myId && roundWins[myId] ? roundWins[myId] : 0}</div>
-          <div style={s.statLabel}>ROUNDS WON</div>
-        </div>
-        <div style={s.statItem}>
-          <div style={s.statValue}>{myId && scores[myId] ? scores[myId].damageDealt || 0 : 0}</div>
-          <div style={s.statLabel}>DMG DEALT</div>
-        </div>
-        <div style={s.statItem}>
-          <div style={s.statValue}>{myId && scores[myId] ? scores[myId].kills || 0 : 0}</div>
-          <div style={s.statLabel}>KILLS</div>
-        </div>
-      </div>
+      {/* ── RESULT TAB ── */}
+      {activeTab === 'result' && (
+        <>
+          {/* Reward Cards */}
+          <div style={s.rewardRow}>
+            {wager > 0 && (
+              <div style={s.rewardCard('var(--sg)', 0.1)}>
+                <div style={s.rewardValue('var(--sg)')}>+{solWon.toFixed(3)}</div>
+                <div style={s.rewardLabel}>SOL EARNED</div>
+              </div>
+            )}
+            {myShotEarned > 0 && (
+              <div style={s.rewardCard('var(--sp)', 0.2)}>
+                <div style={s.rewardValue('var(--sp)')}>+{myShotEarned}</div>
+                <div style={s.rewardLabel}>SHOT EARNED</div>
+              </div>
+            )}
+            <div style={s.rewardCard('var(--gd)', 0.3)}>
+              <div style={s.rewardValue('var(--gd)')}>{myGold}</div>
+              <div style={s.rewardLabel}>GOLD EARNED</div>
+            </div>
+          </div>
 
-      {/* Settlement TX */}
-      {settlementData?.txSignature && (
-        <div style={s.settlementLine}>
-          TX: {settlementData.txSignature.slice(0, 8)}...{settlementData.txSignature.slice(-8)}
+          {/* Stats */}
+          <div style={s.statsGrid}>
+            <div style={s.statItem}>
+              <div style={s.statValue}>{myId && roundWins[myId] ? roundWins[myId] : 0}</div>
+              <div style={s.statLabel}>ROUNDS WON</div>
+            </div>
+            <div style={s.statItem}>
+              <div style={s.statValue}>{myId && scores[myId] ? scores[myId].damageDealt || 0 : 0}</div>
+              <div style={s.statLabel}>DMG DEALT</div>
+            </div>
+            <div style={s.statItem}>
+              <div style={s.statValue}>{myId && scores[myId] ? scores[myId].kills || 0 : 0}</div>
+              <div style={s.statLabel}>KILLS</div>
+            </div>
+          </div>
+
+          {/* Settlement TX */}
+          {settlementData?.txSignature && (
+            <div style={s.settlementLine}>
+              {'TX: ' + settlementData.txSignature.slice(0, 8) + '...' + settlementData.txSignature.slice(-8)}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── PROGRESS TAB ── */}
+      {activeTab === 'progress' && (
+        <div style={s.progressSection}>
+
+          {/* SHOT Milestones Earned */}
+          <div>
+            <div style={s.sectionHeading}>MILESTONES EARNED</div>
+            {myMilestones.length > 0 ? (
+              myMilestones.map((ms, i) => (
+                <div key={ms.id || i} style={s.milestoneItem}>
+                  <span style={s.milestoneLabel}>{ms.label}</span>
+                  <span style={s.milestoneReward}>{'+' + ms.reward + ' SHOT'}</span>
+                </div>
+              ))
+            ) : (
+              <div style={s.emptyMilestone}>No new milestones this match</div>
+            )}
+          </div>
+
+          {/* Prestige Progress */}
+          {myPrestige && (
+            <div>
+              <div style={s.sectionHeading}>PRESTIGE PROGRESS</div>
+              <div style={s.prestigeBox}>
+                <div style={s.prestigeTierName(myPrestige.tier && myPrestige.tier.color)}>
+                  {myPrestige.tier ? myPrestige.tier.name.toUpperCase() : 'UNRANKED'}
+                </div>
+
+                {myPrestige.nextTier ? (
+                  <>
+                    <div style={s.prestigeBarTrack}>
+                      <div style={s.prestigeBarFill(prestigePct)} />
+                    </div>
+                    <div style={s.prestigeBarLabel}>
+                      {myPrestige.balance + ' / ' + myPrestige.nextTier.burnCost + ' SHOT to ' + myPrestige.nextTier.name}
+                    </div>
+                  </>
+                ) : (
+                  <div style={s.maxTierLabel}>MAX TIER REACHED</div>
+                )}
+
+                {myPrestige.matchesPlayed != null && (
+                  <div style={s.matchesPlayedLabel}>
+                    {'MATCHES PLAYED: ' + myPrestige.matchesPlayed}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {waitingRematch && <div style={s.waitingText}>WAITING FOR OPPONENT...</div>}
+      {/* ── ACTION TAB ── */}
+      {activeTab === 'action' && (
+        <>
+          {waitingRematch && <div style={s.waitingText}>WAITING FOR OPPONENT...</div>}
 
-      {/* Buttons */}
-      <div style={s.buttonRow}>
-        {!opponentLeft ? (
-          <>
-            <Button variant="primary" onClick={handleRematch} disabled={waitingRematch} style={{ fontSize: 14, padding: '10px 24px' }}>
-              {waitingRematch ? 'WAITING...' : 'REMATCH'}
-            </Button>
-            <Button variant="secondary" onClick={handleLobby} style={{ fontSize: 13, padding: '10px 20px' }}>
-              LOBBY
-            </Button>
-            <Button variant="secondary" onClick={handleMenu} style={{ fontSize: 13, padding: '10px 20px' }}>
-              MENU
-            </Button>
-          </>
-        ) : (
-          <Button variant="secondary" onClick={handleLobby} style={{ fontSize: 14, padding: '10px 24px' }}>
-            RETURN TO LOBBY
-          </Button>
-        )}
-      </div>
+          {/* Buttons */}
+          <div style={s.buttonRow}>
+            {!opponentLeft ? (
+              <>
+                <Button variant="primary" onClick={handleRematch} disabled={waitingRematch} style={{ fontSize: 14, padding: '10px 24px' }}>
+                  {waitingRematch ? 'WAITING...' : 'REMATCH'}
+                </Button>
+                <Button variant="secondary" onClick={handleLobby} style={{ fontSize: 13, padding: '10px 20px' }}>
+                  LOBBY
+                </Button>
+                <Button variant="secondary" onClick={handleMenu} style={{ fontSize: 13, padding: '10px 20px' }}>
+                  MENU
+                </Button>
+              </>
+            ) : (
+              <Button variant="secondary" onClick={handleLobby} style={{ fontSize: 14, padding: '10px 24px' }}>
+                RETURN TO LOBBY
+              </Button>
+            )}
+          </div>
 
+          {/* Jupiter Swap CTA with price context */}
+          <div style={{ marginTop: 8, textAlign: 'center' }}>
+            <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 11, color: 'var(--kh)', letterSpacing: 1, opacity: 0.6, marginBottom: 4 }}>
+              CONVERT WINNINGS TO SHOT
+            </div>
+            {shotPrice && shotPrice.usdPrice && (
+              <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: '#9945FF', letterSpacing: 1, opacity: 0.7, marginBottom: 6 }}>
+                {'SHOT: $' + shotPrice.usdPrice.toFixed(6) + ' USD'}
+                {shotPrice.priceChange24h != null && (
+                  <span style={{ color: shotPrice.priceChange24h >= 0 ? '#00ff88' : '#ff4444', marginLeft: 6 }}>
+                    {shotPrice.priceChange24h >= 0 ? '+' : ''}{shotPrice.priceChange24h.toFixed(1)}%
+                  </span>
+                )}
+              </div>
+            )}
+            <JupiterSwap
+              mode="modal"
+              buttonLabel="SWAP SOL -> SHOT"
+              buttonStyle={{ fontSize: 9, padding: '5px 12px' }}
+              onSuccess={() => {
+                if (window.socket) window.socket.emit('getShotInfo');
+              }}
+            />
+          </div>
+        </>
+      )}
+
+      {/* Opponent left modal — always visible, outside tab conditionals */}
       {opponentLeft && (
         <Modal
           title="OPPONENT LEFT"
@@ -250,31 +499,6 @@ function WinScreen({ navigate, screenData }) {
           onClose={handleLobby}
         />
       )}
-
-      {/* Jupiter Swap CTA with price context */}
-      <div style={{ marginTop: 8, textAlign: 'center' }}>
-        <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 11, color: 'var(--kh)', letterSpacing: 1, opacity: 0.6, marginBottom: 4 }}>
-          CONVERT WINNINGS TO SHOT
-        </div>
-        {shotPrice && shotPrice.usdPrice && (
-          <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: '#9945FF', letterSpacing: 1, opacity: 0.7, marginBottom: 6 }}>
-            {'SHOT: $' + shotPrice.usdPrice.toFixed(6) + ' USD'}
-            {shotPrice.priceChange24h != null && (
-              <span style={{ color: shotPrice.priceChange24h >= 0 ? '#00ff88' : '#ff4444', marginLeft: 6 }}>
-                {shotPrice.priceChange24h >= 0 ? '+' : ''}{shotPrice.priceChange24h.toFixed(1)}%
-              </span>
-            )}
-          </div>
-        )}
-        <JupiterSwap
-          mode="modal"
-          buttonLabel="SWAP SOL -> SHOT"
-          buttonStyle={{ fontSize: 9, padding: '5px 12px' }}
-          onSuccess={() => {
-            if (window.socket) window.socket.emit('getShotInfo');
-          }}
-        />
-      </div>
     </div>
   );
 }

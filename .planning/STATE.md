@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 24 Feb 2026)
 ## Current Position
 
 Milestone: v1.2 — Launch Readiness
-Phase: 11 of 14 (Post-Match & Stats Pipeline) — In progress
-Plan: 2 of 3 in current phase
-Status: In progress — 11-02 complete
-Last activity: 24 Feb 2026 — Completed 11-02-PLAN.md
+Phase: 11 of 14 (Post-Match & Stats Pipeline) — Phase complete
+Plan: 3 of 3 in current phase
+Status: Phase 11 complete — all 3 plans done
+Last activity: 24 Feb 2026 — Completed 11-03-PLAN.md
 
-Progress: [████░░░░░░] ~38%
+Progress: [█████░░░░░] ~42%
 
 
 ## Performance Metrics
@@ -78,6 +78,10 @@ Progress: [████░░░░░░] ~38%
 - **[11-02] earnedMilestones[myId] pattern: double-guard on screenData AND myId before array access**
 - **[11-02] localStorage 'solshot_escrow_seen': one-time escrow explainer on first wager > 0 click in LobbyScreen**
 - **[11-02] opponentLeft Modal outside tab conditionals — critical UX shown regardless of active tab**
+- **[11-03] ShareCard forwardRef pattern: exportToClipboard() on ref, offscreen position:absolute left:-9999 (NOT display:none — html2canvas cannot capture hidden elements)**
+- **[11-03] X/Twitter share flow: await clipboard copy first, then window.open tweet URL — sequence ensures card is in clipboard before tweet compose opens**
+- **[11-03] BarracksScreen three-state render: null=loading / matches===0=CTA / matches>0=stats — empty-state CTA replaces stats grid entirely for new players**
+- **[11-03] CombatCard 4-column combat record: Losses changes from statLast to stat (adds right border), K/D added as statLast 4th column**
 
 ### Pending Todos
 
@@ -93,6 +97,6 @@ Progress: [████░░░░░░] ~38%
 
 ## Session Continuity
 
-Last session: 2026-02-24T15:18:36Z
-Stopped at: Completed 11-02-PLAN.md — 2 tasks, tabbed WinScreen/LoseScreen + LobbyScreen escrow modal
+Last session: 2026-02-24T15:27:28Z
+Stopped at: Completed 11-03-PLAN.md — Phase 11 complete. ShareCard, share buttons, K/D stats, Barracks CTA
 Resume file: None

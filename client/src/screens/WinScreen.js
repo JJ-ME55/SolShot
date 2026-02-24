@@ -1,6 +1,7 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
+import JupiterSwap from '../components/JupiterSwap';
 import useSocket from '../hooks/useSocket';
 
 /* ── styles ── */
@@ -107,6 +108,24 @@ function WinScreen({ navigate, screenData }) {
   const [waitingRematch, setWaitingRematch] = useState(false);
   const [opponentLeft, setOpponentLeft] = useState(false);
   const [settlementData] = useState(screenData?.settlement || null);
+  const [shotPrice, setShotPrice] = useState(null);
+
+  // Fetch current SHOT price from server (via getShotPrice socket handler from Plan 01)
+  useEffect(() => {
+    const socket = window.socket;
+    if (!socket) return;
+
+    const handlePrice = (price) => {
+      setShotPrice(price);
+    };
+
+    socket.on('shotPrice', handlePrice);
+    socket.emit('getShotPrice');
+
+    return () => {
+      socket.off('shotPrice', handlePrice);
+    };
+  }, []);
 
   const wager = screenData?.wager || 0;
   const scores = screenData?.scores || {};
@@ -231,6 +250,31 @@ function WinScreen({ navigate, screenData }) {
           onClose={handleLobby}
         />
       )}
+
+      {/* Jupiter Swap CTA with price context */}
+      <div style={{ marginTop: 8, textAlign: 'center' }}>
+        <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 11, color: 'var(--kh)', letterSpacing: 1, opacity: 0.6, marginBottom: 4 }}>
+          CONVERT WINNINGS TO SHOT
+        </div>
+        {shotPrice && shotPrice.usdPrice && (
+          <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: '#9945FF', letterSpacing: 1, opacity: 0.7, marginBottom: 6 }}>
+            {'SHOT: $' + shotPrice.usdPrice.toFixed(6) + ' USD'}
+            {shotPrice.priceChange24h != null && (
+              <span style={{ color: shotPrice.priceChange24h >= 0 ? '#00ff88' : '#ff4444', marginLeft: 6 }}>
+                {shotPrice.priceChange24h >= 0 ? '+' : ''}{shotPrice.priceChange24h.toFixed(1)}%
+              </span>
+            )}
+          </div>
+        )}
+        <JupiterSwap
+          mode="modal"
+          buttonLabel="SWAP SOL -> SHOT"
+          buttonStyle={{ fontSize: 9, padding: '5px 12px' }}
+          onSuccess={() => {
+            if (window.socket) window.socket.emit('getShotInfo');
+          }}
+        />
+      </div>
     </div>
   );
 }

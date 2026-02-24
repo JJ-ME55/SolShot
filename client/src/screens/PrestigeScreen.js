@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import TopBar from '../components/TopBar';
 import Button from '../components/Button';
+import JupiterSwap from '../components/JupiterSwap';
 import { PRESTIGE_TIERS } from '../data/tiers';
 import { useSolShotWallet } from '../wallet/WalletContext';
 
@@ -324,6 +325,17 @@ function PrestigeScreen({ navigate }) {
               {burnResult.message}
             </div>
           )}
+
+          {/* Jupiter Swap — buy SHOT for prestige burns */}
+          <JupiterSwap
+            mode="modal"
+            buttonLabel="BUY SHOT"
+            buttonStyle={{ marginTop: 8, fontSize: 9, padding: '6px 14px' }}
+            onSuccess={() => {
+              // Refresh SHOT balance after swap
+              if (window.socket) window.socket.emit('getShotInfo');
+            }}
+          />
 
           {isMaxTier && (
             <div style={s.comingSoon}>DIAMOND ACHIEVED</div>

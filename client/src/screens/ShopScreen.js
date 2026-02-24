@@ -3,6 +3,7 @@ import TopBar from '../components/TopBar';
 import Button from '../components/Button';
 import WeaponCard from '../components/WeaponCard';
 import Modal from '../components/Modal';
+import JupiterSwap from '../components/JupiterSwap';
 import useSocket from '../hooks/useSocket';
 import WEAPONS, { getTierColor, getWeaponIconUrl, getWeaponById } from '../data/weapons';
 
@@ -503,6 +504,15 @@ function ShopScreen({ navigate, screenData }) {
                 >
                   {'BUY - ' + selectedWeapon.goldCost + 'G'}
                 </Button>
+              )}
+
+              {/* Prestige weapon — offer SHOT purchase */}
+              {selectedWeapon && selectedWeapon.tier && selectedWeapon.tier.toLowerCase().includes('prestige') && (
+                <JupiterSwap
+                  mode="modal"
+                  buttonLabel="BUY SHOT TO UNLOCK"
+                  buttonStyle={{ marginTop: 6, fontSize: 8, padding: '5px 10px' }}
+                />
               )}
             </div>
           ) : (

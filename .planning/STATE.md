@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 24 Feb 2026)
 ## Current Position
 
 Milestone: v1.2 — Launch Readiness
-Phase: 11 of 14 (Post-Match & Stats Pipeline) — Phase complete
-Plan: 3 of 3 in current phase
-Status: Phase 11 complete — all 3 plans done
-Last activity: 24 Feb 2026 — Completed 11-03-PLAN.md
+Phase: 12 of 14 (Onboarding & Mobile Polish) — In progress
+Plan: 1 of 3 in current phase
+Status: Plan 12-01 complete
+Last activity: 24 Feb 2026 — Completed 12-01-PLAN.md
 
-Progress: [██████░░░░] ~50%
+Progress: [███████░░░] ~55%
 
 
 ## Performance Metrics
@@ -82,6 +82,10 @@ Progress: [██████░░░░] ~50%
 - **[11-03] X/Twitter share flow: await clipboard copy first, then window.open tweet URL — sequence ensures card is in clipboard before tweet compose opens**
 - **[11-03] BarracksScreen three-state render: null=loading / matches===0=CTA / matches>0=stats — empty-state CTA replaces stats grid entirely for new players**
 - **[11-03] CombatCard 4-column combat record: Losses changes from statLast to stat (adds right border), K/D added as statLast 4th column**
+- **[12-01] window.haptic global — assigned at module load; Phaser scenes use window.haptic (not ES import) since no module system in Phaser scenes**
+- **[12-01] iOS Taptic workaround: hidden checkbox with 'switch' attribute — best-effort, silent no-op if DOM unavailable**
+- **[12-01] dApp browser detection: isMobile AND (phantom.solana OR solflare) AND NOT regular Safari — targets locked dApp browser UX**
+- **[12-01] sessionStorage for portrait/dApp dismissals (not localStorage) — resets each browser session intentionally**
 
 ### Pending Todos
 
@@ -97,6 +101,6 @@ Progress: [██████░░░░] ~50%
 
 ## Session Continuity
 
-Last session: 2026-02-24T15:27:28Z
-Stopped at: Completed 11-03-PLAN.md — Phase 11 complete. ShareCard, share buttons, K/D stats, Barracks CTA
+Last session: 2026-02-24T17:00:00Z
+Stopped at: Completed 12-01-PLAN.md — haptic utility, dApp browser banner, portrait dismiss
 Resume file: None

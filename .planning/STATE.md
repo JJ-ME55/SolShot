@@ -2,19 +2,19 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 21 Feb 2026)
+See: .planning/PROJECT.md (updated 24 Feb 2026)
 **Core value:** Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** v1.1 Security Hardening — COMPLETE (all 8 phases done)
+**Current focus:** v1.2 Launch Readiness — Closing checklist gaps, Jupiter integration first
 
 ## Current Position
 
-Milestone: v1.1 — Security Hardening
-Phase: 8 of 8 — Verification & Re-Audit (Complete)
-Plans: 4/4 complete
-Status: Complete — all three audit gates PASS, SECURITY_SUMMARY.md written
-Last activity: 23 Feb 2026 — Phase 8 complete, milestone finished
+Milestone: v1.2 — Launch Readiness
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 24 Feb 2026 — Milestone v1.2 started
 
-Progress: [██████████] 100% (All 8 phases complete)
+Progress: [░░░░░░░░░░] 0%
 
 
 ## Performance Metrics
@@ -50,83 +50,11 @@ Progress: [██████████] 100% (All 8 phases complete)
 - **[v1.1] All CRITICAL and HIGH findings resolved or documented as Accepted Risk — SECURITY_SUMMARY.md at .planning/SECURITY_SUMMARY.md**
 - **[v1.1] H029 (unverifiable winner oracle / outcome verification) deferred to v1.2 — requires protocol-level design decisions**
 - **[v1.1] H060 (horizontal scaling) deferred — not exploitable on single instance**
-- **[v1.1] On-chain redesign is Phase 1 because ALL off-chain code depends on the new IDL**
-- **[v1.1 Phase 1] GlobalConfig PDA singleton (seeds=[b"config"]) with authority/treasury/ops/is_paused — all instructions validate against config**
-- **[v1.1 Phase 1] MatchEscrow SPACE = 168 (added activated_at i64); settlement deadline 1hr; timeout uses activated_at**
-- **[v1.1 Phase 1] PROGRAM_ID unchanged at CqvRC6mSJe2CrBtENVfCEPkgRW3WwxLSL9C1hgXz7GtD — fresh deploy requires new ID + initializeConfig()**
-- **[v1.1 Phase 1] anchor build works on Windows; IDL at server/idl/ matches program; escrow.js passes config PDA to all instructions**
-- **[v1.1 Phase 1] Test execution deferred — McAfee LiveSafe blocks solana-test-validator genesis archive extraction (os error 5)**
-- **[v1.1 Phase 2 / 02-01] Float64Array for ring buffers — Date.now() ~1.77T overflows Int32Array max 2.1B in 2026**
-- **[v1.1 Phase 2 / 02-01] getEscrowState() PDA booleans over getParsedTransaction() — PDA is ground truth after on-chain deposit settles**
-- **[v1.1 Phase 2 / 02-01] isEscrowEnabled() guard pattern: wrap all escrow RPC in conditional — dev mode skips verification gracefully**
-- **[v1.1 Phase 2 / 02-01] Peek-then-consume queue pattern: queue[0] to validate wager, queue.shift() only after equality confirmed**
-- **[v1.1 Phase 2 / 02-02] settleMatch() returns { success: false } on escrow failure — no silent fallthrough to dev-mode (SF-02/H015)**
-- **[v1.1 Phase 2 / 02-02] cancelMatchEscrow imported directly from escrow.js in main.js — not re-exported via solana.js**
-- **[v1.1 Phase 2 / 02-02] handleSettlementFailure() pattern: immediate cancel attempt + failedSettlements Map retry (60s, max 5 attempts)**
-- **[v1.1 Phase 2 / 02-02] Capture room/ws snapshots BEFORE settlement call — removeRoom() destroys live state**
-- **[v1.1 Phase 3 / 03-01] joinQueue auth is conditional (wagerAmount > 0) — practice matches stay accessible unauthenticated**
-- **[v1.1 Phase 3 / 03-01] fire handler uses inline this.isAuthenticated (not requireAuth) — fireRejected != fireError naming convention**
-- **[v1.1 Phase 3 / 03-01] SA-06 scope is escrowDepositConfirm only — only handler with client-supplied roomId targeting own room**
-- **[v1.1 Phase 3 / 03-01] SA-05 guard ordering: validateAction then turn ownership — mirrors fire handler pattern**
-- **[v1.1 Phase 3 / 03-02] SA-03: deleted terrainPath + getTerrainPath handlers — React client never emits these, only old Phaser codebase did**
-- **[v1.1 Phase 3 / 03-02] SA-04: fire handler reads client position within tolerance for trajectory but NEVER writes back to serverPos**
-- **[v1.1 Phase 3 / 03-02] SA-04: positionUpdate distance thresholds (400px H, 200px V) are BATTLE-state-only — setup positions may jump legitimately**
-- **[v1.1 Phase 3 / 03-03] SA-02: rejoinRoom verifies Ed25519 signature before any state restore — walletAddress alone never trusted on reconnect**
-- **[v1.1 Phase 3 / 03-03] SA-02: disconnect timer NOT cleared on failed rejoin verification — legitimate player retains full 30s window**
-- **[v1.1 Phase 3 / 03-03] SA-02: signature-first guard in rejoinRoom — no pendingReconnects lookup until signature passes (avoids membership leakage)**
-- **[v1.1 Phase 3 / 03-03] SA-02: client retry-once pattern (_retried flag on attemptRejoin) — handles async wallet adapter init on cold page load**
-- **[v1.1 Phase 4 / 04-01] KM-03: keys.js is the ONLY module that reads SOLANA_KEYPAIR_PATH/JSON — escrow.js and solana.js import from keys.js**
-- **[v1.1 Phase 4 / 04-01] KM-04: bytes.fill(0) zeroes input Uint8Array after Keypair.fromSecretKey() — secret lives only inside Keypair object**
-- **[v1.1 Phase 4 / 04-01] initEscrow() always reconstructs provider/program (no short-circuit) — supports SIGHUP key reload in plan 04-02**
-- **[v1.1 Phase 4 / 04-01] isEscrowEnabled() uses isKeysReady() from keys.js — single source of truth for key availability**
-- **[v1.1 Phase 4 / 04-02] KM-05: SIGHUP on Linux, direct reload on Windows — avoids ENOSYS errors in dev**
-- **[v1.1 Phase 4 / 04-02] KM-05: ADMIN_API_KEY safe default — missing env var always returns 401 (never open)**
-- **[v1.1 Phase 4 / 04-02] KM-02: render.yaml sync:false for SOLANA_KEYPAIR_JSON, ADMIN_API_KEY, MONGODB_URI**
-- **[v1.1 Phase 4 / 04-03] KM-01: BFG Repo-Cleaner purged solshot-dev.json from all 172 commits — zero trace in git log**
-- **[v1.1 Phase 4 / 04-03] KM-01: New keypair at ~/.config/solana/solshot-server.json (pubkey: 3bpnmDhG3mv9HCfd9Jt1utAweVvhnJQUzZ74xiJ7oLYj)**
-- **[v1.1 Phase 4 / 04-03] KM-01: On-chain authority transfer deferred until devnet SOL available for program redeploy**
-- **[v1.1 Phase 4 / 04-03] Repo recloned to SolShot-clean after BFG force push — all SHAs rewritten, old clone invalid**
-- **[v1.1 Phase 4.1 / 04.1-01] DCA-01: depositTimers map + DEPOSIT_TIMEOUT_MS=120s; both joinRoom and joinQueue emit paths start timer; escrowDepositConfirm clears it**
-- **[v1.1 Phase 4.1 / 04.1-01] DCA-01: depositDeadlineMs field added to escrowDeposit event payload for client countdown rendering**
-- **[v1.1 Phase 4.1 / 04.1-01] DCA-03: reconnect_timeout uses roundWins→HP→scores decision chain; 'leave' reason always forfeits unconditionally**
-- **[v1.1 Phase 4.1 / 04.1-01] DCA-04: server/services/raydium.js deleted — config-only dead code, zero imports found**
-- **[v1.1 Phase 4.1 / 04.1-02] DCA-02: permissionless_reclaim instruction — any wallet, 48h timeout (2x TIMEOUT_SECONDS), caller gets rent**
-- **[v1.1 Phase 4.1 / 04.1-02] DCA-02: PermissionlessReclaim has NO config account — intentionally bypasses pause guard (safety net must always work)**
-- **[v1.1 Phase 4.1 / 04.1-02] DCA-02: Anchor 0.32.x IDL uses snake_case instruction names; JS SDK converts to camelCase at runtime**
-- **[v1.1 Phase 4.1 / 04.1-02] Fresh devnet deploy required after lib.rs changes — program ID will change**
-- **[v1.1 Phase 5 / 05-01] CS-01: validateEscrowTransaction() checks program ID + 8-byte Anchor discriminator before signing; COMPUTE_BUDGET_PROGRAM_ID whitelisted**
-- **[v1.1 Phase 5 / 05-01] CS-01: deposit_wager has args: [] — wager amount stored on-chain at create_match, not in instruction data; byte-level wager comparison impossible**
-- **[v1.1 Phase 5 / 05-01] CS-01: Dev mode bypass — ESCROW_PROGRAM_ID null when REACT_APP_ESCROW_PROGRAM_ID not set; validation returns {valid: true}**
-- **[v1.1 Phase 5 / 05-01] CS-01: suspiciousTx socket event emitted on validation failure — silent server monitoring, no UI alert to attacker**
-- **[v1.1 Phase 5 / 05-01] CS-04: window.solWallet useEffect deleted; all 7 consumers migrated to useSolShotWallet() or useWallet()**
-- **[v1.1 Phase 5 / 05-01] CS-04: App.js uses useWallet() adapter hook (not useSolShotWallet) — only needs publicKey + signMessage for rejoin**
-- **[v1.1 Phase 5 / 05-01] CS-04: connected added to SolShotWalletContext value — required by WalletDisplay and BarracksScreen after polling removal**
-- **[v1.1 Phase 5 / 05-02] CS-02: Telegram SDK self-hosted at /js/telegram-web-app.js — SRI rejected because Telegram updates URL in-place without versioning**
-- **[v1.1 Phase 5 / 05-02] CS-03: CSP meta tag in index.html + Helmet header on server — defense in depth; script-src 'self' only**
-- **[v1.1 Phase 5 / 05-02] CS-03: INLINE_RUNTIME_CHUNK=false in client .env — CRA emits runtime as separate .js file instead of inline script**
-- **[v1.1 Phase 5 / 05-02] CS-03: connect-src uses explicit origin allowlist — no bare ws:/wss: wildcards; Solana RPC + Render + localhost only**
-- **[v1.1 Phase 5 / 05-01] CS-01: TX validation scope is program ID + deposit_wager discriminator — wager amount not in instruction data (args: [] in IDL)**
-- **[v1.1 Phase 5 / 05-01] CS-01: COMPUTE_BUDGET_PROGRAM_ID whitelisted — server may prepend priority fee instructions**
-- **[v1.1 Phase 5 / 05-01] CS-01: suspiciousTx socket event emitted silently on TX validation failure — server-side monitoring without revealing detection**
-- **[v1.1 Phase 5 / 05-01] CS-04: window.solWallet assignment deleted — undefined at runtime; signing functions only accessible via React context**
-- **[v1.1 Phase 5 / 05-01] CS-04: App.js rejoin uses useWallet() adapter hook directly — only needs publicKey + signMessage, not full SolShot context**
-- **[v1.1 Phase 5 / 05-01] CS-04: connected added to SolShotWalletContext value — required after polling removal in WalletDisplay and BarracksScreen**
-- **[v1.1 Phase 5 / 05-01] CS-04: WalletDisplay 1s polling interval eliminated — context provides reactive updates**
-- **[v1.1 Phase 5 / 05-02] CS-02: Self-hosting Telegram SDK at same origin — SRI on telegram.org CDN rejected (updates in-place, breaks hashes unpredictably)**
-- **[v1.1 Phase 5 / 05-02] CS-03: Defense-in-depth CSP: meta tag in index.html (SPA) + Helmet header (API) — both needed; Render may not forward headers**
-- **[v1.1 Phase 5 / 05-02] CS-03: INLINE_RUNTIME_CHUNK=false in .env — gitignored file, must be set manually in each dev environment (documented in .env.example)**
-- **[v1.1 Phase 5 / 05-02] Build uses react-app-rewired (not react-scripts) — config-overrides.js required for crypto/stream/buffer webpack polyfills**
-- **[v1.1 Phase 6 / 06-01] TE-03: loadServerState() throws on readyState !== 1 AND Mongoose query errors — no try-catch, callers handle (only caller is initShotState in index.js)**
-- **[v1.1 Phase 6 / 06-01] TE-03: loadServerState() returns { totalShotEmitted, verifiedBurnTxs } — shape extended for burn tx replay persistence**
-- **[v1.1 Phase 6 / 06-01] TE-03: persistBurnTx() uses $addToSet — idempotent, prevents duplicates atomically; fire-and-forget (errors logged)**
-- **[v1.1 Phase 6 / 06-01] Fail-hard startup: both mongoose.connect .catch() AND initShotState() error call process.exit(1) — server never starts with unknown emission state when MONGODB_URI set**
-- **[v1.1 Phase 6 / 06-01] Dev mode (no MONGODB_URI) else branch unchanged — fail-hard only when MONGODB_URI is configured**
-- **[v1.1 Phase 6 / 06-02] TE-01 complete: initShotState() hydrates verifiedBurnTxs Set from loadServerState() return; verifyBurnTransaction() calls persistBurnTx() fire-and-forget after in-memory add**
-- **[v1.1 Phase 6 / 06-02] TE-02 complete: loadMilestoneState() restores claimedMatchIds via new Set(user.stats.claimedMatchIds); saveMilestoneState() writes [...state.claimedMatchIds] to stats.claimedMatchIds**
-- **[v1.1 Phase 6 / 06-02] Round-trip dedup Set pattern: Set in memory → Array in MongoDB → new Set(array) on restore — both verifiedBurnTxs and claimedMatchIds use this pattern**
-- **[v1.1 Phase 7 / 07-01] IM-01: npm ci --ignore-scripts in render.yaml buildCommand — deterministic lock-file install, lifecycle scripts suppressed**
-- **[v1.1 Phase 7 / 07-01] IM-02: requireAdminKey Express middleware in guards.js — applies to /stats and /api/admin/reload-keys; /health remains public (Render healthCheckPath)**
-- **[v1.1 Phase 7 / 07-01] IM-03: io.use() Map-based per-IP counter (MAX=100); x-forwarded-for first (Render reverse proxy); registered before mainsocket(io)**
+- **[v1.2] Do NOT modify lib.rs — preserves SOS/DB/BOK audit certifications**
+- **[v1.2] Many checklist "failures" are design decisions, not bugs — update checklist text instead of code**
+- **[v1.2] Jupiter integration is hackathon-critical — Feb 25 deadline**
+- **[v1.2] Combat Card plan exists at .claude/plans/ — integrate into stats phase**
+- **[v1.2] Security re-check only needed for CSP changes and new socket endpoints — not full re-audit**
 
 ### Pending Todos
 
@@ -141,13 +69,9 @@ Progress: [██████████] 100% (All 8 phases complete)
 - Devnet wallet at 0.97 SOL — need ~2.12 SOL for program deploy (airdrop rate-limited)
 - SOS finding H029 (outcome verification / dispute mechanism) is deferred — requires game theory analysis beyond code remediation
 - Working directory is now SolShot-clean (not SolShot) — needs directory swap
-- Pre-existing build error resolved by using `npm run build` (react-app-rewired) not `npx react-scripts build`
 
 ## Session Continuity
 
-Last session: 2026-02-23T22:00:00Z
-Stopped at: Phase 8 complete — all 4 plans done, SECURITY_SUMMARY.md written, milestone v1.1 finished
-Resume file: None (milestone complete)
-
-### Roadmap Evolution
-- Phase 4.1 inserted after Phase 4: Doc-Code Alignment (URGENT) — litepaper QA revealed deposit countdown, permissionless reclaim, HP-based forfeit, and dead code gaps between docs and codebase
+Last session: 2026-02-24
+Stopped at: Milestone v1.2 initialization — requirements and roadmap being defined
+Resume file: None (starting fresh)

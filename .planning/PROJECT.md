@@ -1,6 +1,11 @@
 # SolShot — Project Document
 
+## What This Is
+
+Browser-based 1v1 artillery combat game on Solana where players wager real SOL. Matches are settled trustlessly via on-chain escrow. The SHOT token drives a deflationary prestige economy — earn through combat, burn to unlock exclusive weapons.
+
 ## Core Value
+
 Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
 
 ## Tech Stack
@@ -10,7 +15,10 @@ Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled tru
 - **Deploy:** Vercel (client) + Render (server) + MongoDB Atlas
 - **Domain:** solshot.gg
 
-## Validated Requirements (shipped)
+## Requirements
+
+### Validated
+
 - Server-authoritative physics for all 20 weapons (15 base + 5 prestige)
 - HP system (250 HP per round)
 - Gold economy (1000G start, +15G/HP damage, +200G kill, +300G round win)
@@ -23,25 +31,91 @@ Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled tru
 - SHOT token (10M supply, 9 decimals, mint authority burned, devnet)
 - Prestige burns (SPL burn → tier unlock, on-chain verification)
 - Persistent stats (MongoDB User model, wallet-linked)
-- Combat Card (exportable stats card via html2canvas)
+- Combat Card (standalone HTML — needs React integration)
 - Win/Lose hero screens
-- PWA icons, favicon, branding assets
-- Security: helmet, rate-limit, CSPRNG, turn validation, async mutex
+- PWA icons, favicon, branding assets (54 images)
+- Security: helmet, rate-limit, CSPRNG, turn validation, async mutex, CSP, TX validation
+- Three security audits completed: SOS (contract), DB (server+client), BOK (math) — all PASS
 
-## Current Milestone: v1.0 — Mainnet Launch Readiness
+### Active
 
-**Goal:** Audit weapon visuals against original repo, complete remaining TODO items, verify litepaper compliance, conduct security review, E2E testing, and deploy to mainnet.
+- [ ] Jupiter Mobile wallet adapter (top of wallet list)
+- [ ] Jupiter Price API V3 — live SHOT/SOL price across all screens
+- [ ] Jupiter Terminal SDK — SOL→SHOT swaps in prestige shop, weapon shop, post-match
+- [ ] SHOT price ticker in global header
+- [ ] Landing screen polish (CTAs, ecosystem logos, copy)
+- [ ] Post-match improvements (SHOT milestones, prestige progress, share buttons, swap CTA)
+- [ ] Live stats pipeline (server persist → socket serve → BarracksScreen display)
+- [ ] Combat Card React component with export
+- [ ] Onboarding flows ("What is a wallet?", escrow explainer, SHOT explainer, FAQ)
+- [ ] Client security polish (source maps, CSP report-uri)
+- [ ] Mobile polish (haptic feedback, Telegram share)
+- [ ] Checklist alignment (design decision updates) + targeted re-audit
+
+### Out of Scope
+
+- **Mainnet deployment** — separate process after code milestone, requires SOL for deploy fees
+- **Meteora DAMM v2 pool** — external, requires mainnet deploy first
+- **SquadsX multisig setup** — external operational task
+- **Telegram bot activation** — human task (BotFather registration)
+- **Social media posting/community** — human tasks (X, Reddit, Discord)
+- **Demo video recording** — human task
+- **Hackathon submission form** — human task at matrix.playsolana.com
+- **Match replay system** — complex new feature, deferred to v1.3
+- **lib.rs modifications** — preserves SOS/DB/BOK audit certifications
+- **Secrets manager migration** — deferred to mainnet operational readiness
+- **Error monitoring (Sentry)** — external service setup
+- **Horizontal scaling** — H060 deferred, single server acceptable at launch
+
+## Context
+
+### Previous Milestones
+
+- **v1.0 (pre-GSD):** Core game, escrow, SHOT token, prestige burns, art assets, deployment config
+- **v1.1 Security Hardening:** 8 phases, 25 plans. Three security audits (SOS, DB, BOK) all PASS.
+
+### Master Checklist Audit (24 Feb 2026)
+
+Full audit of 280-item Master Quality & Launch Checklist revealed ~153 PASS / ~110 FAIL / ~95 PARTIAL.
+Many "failures" are design decisions (4 states, 24h timeout, PDA seeds), not bugs.
+
+### Hackathon
+
+Jupiter & Jupiter Mobile track. Deadline: February 25, 2026.
+
+## Constraints
+
+- **Security preservation:** Do NOT modify lib.rs, guards.js, or core auth handlers
+- **Hackathon deadline:** Jupiter integration is time-critical (Feb 25)
+- **Devnet only:** All blockchain features on devnet until mainnet deploy
+- **Build tooling:** react-app-rewired + config-overrides.js for polyfills
+- **Codebase location:** `C:\Users\johnk\SolShot-clean`
+
+## Current Milestone: v1.2 — Launch Readiness
+
+**Goal:** Close all code-addressable gaps from the Master Checklist, Jupiter integration first for hackathon, followed by UI polish, stats, onboarding, security, and re-audit.
 
 **Target features:**
-1. Weapon visual audit (client code vs converted-repo.txt reference)
-2. TODO completion (remaining unchecked items from master TODO)
-3. Litepaper compliance check (code vs documented specs)
-4. Security audit (SOS check + pre-launch documentation)
-5. End-to-end testing (comprehensive manual + automated)
-6. Mainnet deployment (escrow + SHOT token + production infrastructure)
+1. Jupiter integration (wallet adapter, Price API V3, Terminal SDK, platform fee)
+2. UI polish (price ticker, ecosystem logos, landing CTAs, post-match, share buttons)
+3. Stats pipeline & Combat Card (server persist, socket serve, live display, export)
+4. Onboarding flows (wallet explainer, escrow explainer, SHOT explainer, FAQ)
+5. Client security polish (source maps, CSP report-uri)
+6. Mobile polish (haptic feedback, Telegram share)
+7. Checklist alignment + targeted security re-audit
 
-## Active Requirements
-See REQUIREMENTS.md
+## Key Decisions
+
+| Decision | Rationale | Outcome |
+|----------|-----------|---------|
+| Server-authoritative physics | Prevent cheating | ✓ Good |
+| 4-state escrow (not 8) | Simpler, covers all cases | ✓ Good — update checklist |
+| 24h timeout (not 30-60min) | Generous for network issues | ✓ Good — update checklist |
+| PDA from match_id (not pubkeys) | Simpler derivation | ✓ Good — update checklist |
+| 2min deposit (not 3min) | Faster match start | ✓ Good — update checklist |
+| Self-hosted Telegram SDK | CDN updates in-place, breaks SRI | ✓ Good — update checklist |
+| Do NOT touch lib.rs in v1.2 | Preserves 3 audit certifications | — Pending |
+| Jupiter Terminal for in-game swaps | Hackathon requirement + revenue | — Pending |
 
 ---
-*Last updated: 19 Feb 2026*
+*Last updated: 24 Feb 2026 after v1.2 milestone start*

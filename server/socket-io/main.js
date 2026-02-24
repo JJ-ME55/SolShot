@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import mongoose from 'mongoose';
+import { getShotPrice, startPricePolling } from '../services/jupiter-price.js';
 import logger from '../services/logger.js';
 import Match from '../models/Match.js';
 import User from '../models/User.js';
@@ -454,6 +455,9 @@ function clearTurnTimer(roomId) {
 }
 
 const mainsocket = (io) => {
+    // JUP-02: Start Jupiter price polling on server init (30s interval, cached server-side)
+    startPricePolling(30000);
+
     return io.on("connection", (client) => {
         trackConnection()
         client.roomId = null
@@ -2604,6 +2608,13 @@ const mainsocket = (io) => {
                     resetForPlayAgain(client.roomId, room, paRoundType, io)
                 }
             }
+        })
+
+        // JUP-02: Return cached SHOT price to the requesting client
+        // Price is fetched server-side every 30s to protect the API key
+        client.on('getShotPrice', () => {
+            const price = getShotPrice();
+            client.emit('shotPrice', price);
         })
     })
 }

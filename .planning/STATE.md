@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 24 Feb 2026)
 ## Current Position
 
 Milestone: v1.2 — Launch Readiness
-Phase: 10 of 14 (UI — Global, Landing & Lobby) — COMPLETE
-Plan: 3 of 3 in current phase
-Status: Phase complete — 16/16 must-haves verified
-Last activity: 24 Feb 2026 — Phase 10 verified
+Phase: 11 of 14 (Post-Match & Stats Pipeline) — In progress
+Plan: 1 of 3 in current phase
+Status: In progress — 11-01 complete
+Last activity: 24 Feb 2026 — Completed 11-01-PLAN.md
 
-Progress: [████░░░░░░] ~33%
+Progress: [████░░░░░░] ~35%
 
 
 ## Performance Metrics
@@ -70,6 +70,10 @@ Progress: [████░░░░░░] ~33%
 - **[10-01] ShotPriceTicker ready-gate: render null until first shotPrice socket event — prevents N/A flash on initial load**
 - **[10-01] TopBar three-column flex (not absolute title): flexShrink left/right, flex:1 center — ticker + title centered without overlap**
 - **[10-01] WalletDisplay help link gated on !compact — visible only on MenuScreen, hidden in TopBar**
+- **[11-01] Mongoose Map type for weaponStats — enables dot-notation $inc without per-weapon schema migration**
+- **[11-01] Milestone snapshot diff: take Set of milestonesEarned before recordMatchPlayed, diff after — captures ALL milestones earned in match**
+- **[11-01] buildWeaponIncs helper: iterates weaponShotsFired to build $inc dot-notation keys for nested Map update**
+- **[11-01] client._lastStatsFetch: per-socket rate limit state attached to socket object — 1 req/sec for getStats**
 
 ### Pending Todos
 
@@ -85,6 +89,6 @@ Progress: [████░░░░░░] ~33%
 
 ## Session Continuity
 
-Last session: 2026-02-24T14:00:00Z
-Stopped at: Phase 10 complete — 3 plans executed, 16/16 must-haves verified
+Last session: 2026-02-24T15:05:34Z
+Stopped at: Completed 11-01-PLAN.md — 2 tasks, User schema + match tracking + enriched matchEnd
 Resume file: None

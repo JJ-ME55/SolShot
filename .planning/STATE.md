@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 24 Feb 2026)
 ## Current Position
 
 Milestone: v1.2 — Launch Readiness
-Phase: 9 of 14 (Jupiter Integration) — COMPLETE
-Plan: 3 of 3 in current phase
-Status: Phase complete
-Last activity: 24 Feb 2026 — Completed 09-03-PLAN.md
+Phase: 10 of 14 (UI Global Landing Lobby) — In progress
+Plan: 3 of ? in current phase
+Status: In progress
+Last activity: 24 Feb 2026 — Completed 10-03-PLAN.md
 
-Progress: [██░░░░░░░░] ~7%
+Progress: [███░░░░░░░] ~9%
 
 
 ## Performance Metrics
@@ -61,6 +61,9 @@ Progress: [██░░░░░░░░] ~7%
 - **[09-03] JupiterSwap uses module-level singleton (jupiterInitialized) — Plugin init() called once regardless of screens visited**
 - **[09-03] referralFee = 50 bps (0.5%) — platform fee env-driven, gracefully absent without REACT_APP_JUPITER_REFERRAL_ACCOUNT**
 - **[09-03] shotPrice socket pattern: emit getShotPrice on mount, on('shotPrice') with cleanup — reusable across screens**
+- **[10-03] formatWagerWithPayout: pot = amount*2, winner payout = pot*0.90 — mirrors escrow 90/7/3 BPS split**
+- **[10-03] PRESTIGE_WEAPON_META: module-level map (weapon ID -> tierName/burnCost/color) built from PRESTIGE_TIERS — authoritative prestige lookup**
+- **[10-03] String concatenation (not template literals) in JSX — avoids Collider.js ESLint webpack worker bug**
 
 ### Pending Todos
 
@@ -76,6 +79,6 @@ Progress: [██░░░░░░░░] ~7%
 
 ## Session Continuity
 
-Last session: 2026-02-24T12:35:08Z
-Stopped at: Completed 09-03-PLAN.md (Phase 9 complete)
+Last session: 2026-02-24T13:35:50Z
+Stopped at: Completed 10-03-PLAN.md (Phase 10 plan 3 complete)
 Resume file: None

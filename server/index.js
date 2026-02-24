@@ -76,8 +76,8 @@ app.use(helmet({
     contentSecurityPolicy: {
         directives: {
             defaultSrc: ["'self'"],
-            scriptSrc: ["'self'"],
-            styleSrc: ["'self'", "'unsafe-inline'"],
+            scriptSrc: ["'self'", "https://plugin.jup.ag"],
+            styleSrc: ["'self'", "'unsafe-inline'", "https://plugin.jup.ag"],
             imgSrc: ["'self'", "data:", "blob:"],
             connectSrc: [
                 "'self'",
@@ -89,9 +89,13 @@ app.use(helmet({
                 "wss://solshot-server.onrender.com",
                 "ws://localhost:5001",
                 "wss://localhost:5001",
+                "https://api.jup.ag",
+                "https://plugin.jup.ag",
+                "https://tokens.jup.ag",
+                "https://cache.jup.ag",
             ],
             fontSrc: ["'self'", "https://fonts.gstatic.com"],
-            frameSrc: ["'none'"],
+            frameSrc: ["https://plugin.jup.ag"],
             objectSrc: ["'none'"],
             baseUri: ["'self'"],
         },

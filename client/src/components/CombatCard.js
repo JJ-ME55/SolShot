@@ -138,7 +138,7 @@ const s = {
   /* Stats row */
   statsRow: {
     display: 'grid',
-    gridTemplateColumns: '1fr 1fr 1fr',
+    gridTemplateColumns: '1fr 1fr 1fr 1fr',
     borderBottom: '1px solid var(--od)',
   },
   stat: {
@@ -374,9 +374,12 @@ function CombatCard({ handle, rank, wallet, stats, onClose }) {
     losses = 0,
     totalSolWon = 0,
     totalShotEarned = 0,
+    kills = 0,
+    deaths = 0,
   } = stats || {};
 
   const winRate = matchesPlayed > 0 ? Math.round((wins / matchesPlayed) * 100) : null;
+  const kd = deaths > 0 ? (kills / deaths).toFixed(2) : kills > 0 ? kills.toFixed(1) : null;
   const avatarInitials = (handle || '??').replace(/[^a-zA-Z]/g, '').substring(0, 2).toUpperCase() || '??';
 
   const formatSol = (val) => val > 0 ? val.toFixed(3) : null;
@@ -477,11 +480,17 @@ function CombatCard({ handle, rank, wallet, stats, onClose }) {
             </div>
             <div style={s.statLbl}>Wins</div>
           </div>
-          <div style={s.statLast}>
+          <div style={s.stat}>
             <div style={losses > 0 ? s.statVal : s.statValDim}>
               {losses > 0 ? losses : '--'}
             </div>
             <div style={s.statLbl}>Losses</div>
+          </div>
+          <div style={s.statLast}>
+            <div style={kd != null ? s.statVal : s.statValDim}>
+              {kd != null ? kd : '--'}
+            </div>
+            <div style={s.statLbl}>K/D</div>
           </div>
         </div>
 

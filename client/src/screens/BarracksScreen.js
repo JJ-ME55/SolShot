@@ -213,6 +213,9 @@ function BarracksScreen({ navigate }) {
   const winRate = matches > 0 ? Math.round((wins / matches) * 100) : null;
   const solEarned = stats?.totalSolWon || 0;
   const shotEarned = stats?.totalShotEarned || 0;
+  const kills = stats?.kills || 0;
+  const deaths = stats?.deaths || 0;
+  const kd = deaths > 0 ? (kills / deaths).toFixed(2) : kills > 0 ? kills.toFixed(1) : null;
 
   const fmt = (val) => val > 0 ? val : '--';
   const fmtSol = (val) => val > 0 ? val.toFixed(3) : '--';
@@ -240,6 +243,15 @@ function BarracksScreen({ navigate }) {
 
           {stats === null ? (
             <div style={s.statusLine}>LOADING STATS...</div>
+          ) : matches === 0 ? (
+            <div style={{ textAlign: 'center', padding: '24px 0' }}>
+              <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 13, color: 'var(--kh)', letterSpacing: 2, opacity: 0.5, marginBottom: 12 }}>
+                PLAY YOUR FIRST MATCH TO SEE STATS HERE
+              </div>
+              <Button variant="primary" onClick={() => navigate('lobby')} style={{ fontSize: 13, padding: '10px 28px', letterSpacing: 2 }}>
+                FIND A MATCH
+              </Button>
+            </div>
           ) : (
             <>
               <div style={s.statsGrid}>
@@ -257,7 +269,7 @@ function BarracksScreen({ navigate }) {
                 </div>
                 <div style={s.statCard}>
                   <div style={winRate != null ? s.statValue : s.statValueDim}>
-                    {winRate != null ? `${winRate}%` : '--'}
+                    {winRate != null ? winRate + '%' : '--'}
                   </div>
                   <div style={s.statLabel}>WIN RATE</div>
                 </div>
@@ -271,6 +283,20 @@ function BarracksScreen({ navigate }) {
                 </div>
               </div>
 
+              {/* K/D and Total Kills row */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6, marginTop: 6 }}>
+                <div style={s.statCard}>
+                  <div style={kd != null ? s.statValue : s.statValueDim}>
+                    {kd != null ? kd : '--'}
+                  </div>
+                  <div style={s.statLabel}>K/D RATIO</div>
+                </div>
+                <div style={s.statCard}>
+                  <div style={kills > 0 ? s.statValue : s.statValueDim}>{kills > 0 ? kills : '--'}</div>
+                  <div style={s.statLabel}>TOTAL KILLS</div>
+                </div>
+              </div>
+
               {/* Win rate visual bar */}
               <div style={{ marginTop: 8 }}>
                 <div style={s.winRateSection}>
@@ -278,7 +304,7 @@ function BarracksScreen({ navigate }) {
                   <div style={s.wrTrack}>
                     <div style={s.wrFill(winRate || 0)} />
                   </div>
-                  <div style={s.wrPct}>{winRate != null ? `${winRate}%` : '--%'}</div>
+                  <div style={s.wrPct}>{winRate != null ? winRate + '%' : '--%'}</div>
                 </div>
               </div>
             </>
@@ -307,7 +333,7 @@ function BarracksScreen({ navigate }) {
           handle={displayAddr.slice(0, 6)}
           rank={currentTier.name}
           wallet={displayAddr}
-          stats={stats}
+          stats={{ ...stats, kills, deaths }}
           onClose={() => setShowCard(false)}
         />
       )}

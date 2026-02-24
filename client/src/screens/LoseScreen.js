@@ -3,6 +3,9 @@ import Button from '../components/Button';
 import Modal from '../components/Modal';
 import JupiterSwap from '../components/JupiterSwap';
 import ShareCard from '../components/ShareCard';
+import ShotExplainer from '../components/ShotExplainer';
+import PrestigeIntro from '../components/PrestigeIntro';
+import TelegramShare from '../components/TelegramShare';
 import useSocket from '../hooks/useSocket';
 
 /* ── styles ── */
@@ -233,6 +236,8 @@ function LoseScreen({ navigate, screenData }) {
   const [waitingRematch, setWaitingRematch] = useState(false);
   const [opponentLeft, setOpponentLeft] = useState(false);
   const [shotPrice, setShotPrice] = useState(null);
+  const [showShotExplainer, setShowShotExplainer] = useState(false);
+  const [matchesPlayed, setMatchesPlayed] = useState(0);
   const shareCardRef = useRef(null);
 
   // Fetch current SHOT price from server (via getShotPrice socket handler)
@@ -252,11 +257,35 @@ function LoseScreen({ navigate, screenData }) {
     };
   }, []);
 
+  // Increment matches-played counter and conditionally show ShotExplainer
+  useEffect(() => {
+    var prev = parseInt(localStorage.getItem('solshot_matches_played') || '0', 10);
+    var next = prev + 1;
+    localStorage.setItem('solshot_matches_played', String(next));
+    setMatchesPlayed(next);
+
+    // Show SHOT explainer once if player earned SHOT and hasn't seen explanation yet
+    var shotEarnedData = screenData?.shotEarned || {};
+    var socketId = window.socket?.id;
+    var earned = socketId && shotEarnedData[socketId] ? shotEarnedData[socketId].earned : 0;
+    if (earned > 0 && !localStorage.getItem('solshot_shot_explained')) {
+      setTimeout(() => setShowShotExplainer(true), 500);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleShotExplainerClose = useCallback(() => {
+    localStorage.setItem('solshot_shot_explained', 'true');
+    setShowShotExplainer(false);
+  }, []);
+
   const wager = screenData?.wager || 0;
   const scores = screenData?.scores || {};
   const roundWins = screenData?.roundWins || {};
   const myId = window.socket?.id;
   const myGold = screenData?.goldBalance && myId ? screenData.goldBalance[myId] : 0;
+
+  // Derive opponent ID from roundWins keys
+  const opponentId = myId ? Object.keys(roundWins).find(function(id) { return id !== myId; }) : null;
 
   // Progress tab data
   const myMilestones = (screenData?.earnedMilestones && myId)
@@ -265,6 +294,9 @@ function LoseScreen({ navigate, screenData }) {
   const myPrestige = (screenData?.prestigeInfo && myId)
     ? (screenData.prestigeInfo[myId] || null)
     : null;
+  // PrestigeIntro props
+  const currentTierName = myPrestige && myPrestige.tier ? myPrestige.tier.name : null;
+  const shotBalance = myPrestige ? (myPrestige.balance || 0) : 0;
 
   /* ── socket: playAgain -> back to shop ── */
   useSocket('playAgain', () => {
@@ -400,6 +432,16 @@ function LoseScreen({ navigate, screenData }) {
               </div>
             </div>
           )}
+
+          {/* Prestige intro nudge — shown when eligible and ShotExplainer not active */}
+          {!showShotExplainer && (
+            <PrestigeIntro
+              currentTier={currentTierName}
+              shotBalance={shotBalance}
+              matchesPlayed={matchesPlayed}
+              onNavigatePrestige={() => navigate('prestige')}
+            />
+          )}
         </div>
       )}
 
@@ -429,31 +471,41 @@ function LoseScreen({ navigate, screenData }) {
             )}
           </div>
 
-          {/* Share on X */}
-          <button
-            style={{
-              background: 'none',
-              border: '1px solid var(--ol)',
-              borderRadius: 4,
-              color: 'var(--kh)',
-              fontFamily: "'Share Tech Mono', monospace",
-              fontSize: 11,
-              letterSpacing: 2,
-              padding: '8px 20px',
-              cursor: 'pointer',
-              textTransform: 'uppercase',
-              opacity: 0.8,
-            }}
-            onClick={async () => {
-              if (shareCardRef.current) {
-                await shareCardRef.current.exportToClipboard();
-              }
-              var text = 'Tough loss on @SolShotGG -- Run it back? No download, skill-based artillery combat on Solana. solshot.gg';
-              window.open('https://twitter.com/intent/tweet?text=' + encodeURIComponent(text), '_blank', 'width=550,height=420');
-            }}
-          >
-            SHARE ON X
-          </button>
+          {/* Share buttons row */}
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            {/* Share on X */}
+            <button
+              style={{
+                background: 'none',
+                border: '1px solid var(--ol)',
+                borderRadius: 4,
+                color: 'var(--kh)',
+                fontFamily: "'Share Tech Mono', monospace",
+                fontSize: 11,
+                letterSpacing: 2,
+                padding: '8px 20px',
+                cursor: 'pointer',
+                textTransform: 'uppercase',
+                opacity: 0.8,
+              }}
+              onClick={async () => {
+                if (shareCardRef.current) {
+                  await shareCardRef.current.exportToClipboard();
+                }
+                var text = 'Tough loss on @SolShotGG -- Run it back? No download, skill-based artillery combat on Solana. solshot.gg';
+                window.open('https://twitter.com/intent/tweet?text=' + encodeURIComponent(text), '_blank', 'width=550,height=420');
+              }}
+            >
+              SHARE ON X
+            </button>
+
+            {/* Share on Telegram */}
+            <TelegramShare
+              isWinner={false}
+              playerScore={roundWins[myId] || 0}
+              opponentScore={opponentId ? (roundWins[opponentId] || 0) : 0}
+            />
+          </div>
 
           {/* Jupiter Swap CTA with price context */}
           <div style={{ marginTop: 8, textAlign: 'center' }}>
@@ -481,6 +533,9 @@ function LoseScreen({ navigate, screenData }) {
           </div>
         </>
       )}
+
+      {/* SHOT explainer modal — overlay, outside tabs, shown once on first SHOT earn */}
+      <ShotExplainer isOpen={showShotExplainer} onClose={handleShotExplainerClose} />
 
       {/* Opponent left modal — always visible, outside tab conditionals */}
       {opponentLeft && (

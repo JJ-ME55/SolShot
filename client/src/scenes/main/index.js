@@ -547,6 +547,8 @@ export class MainScene extends Scene {
           targetTank.scoreHandler.hp = Math.max(0, serverHp);
           if (oldHp !== targetTank.scoreHandler.hp) {
             console.log('[SolShot] HP update: ' + (isMe ? 'me' : 'opp') + ' ' + oldHp + ' → ' + targetTank.scoreHandler.hp);
+            // Haptic feedback: heavy pulse when local player takes damage (MOB-01)
+            if (isMe && serverHp < oldHp) window.haptic && window.haptic.heavy();
           }
         }
       }
@@ -561,6 +563,8 @@ export class MainScene extends Scene {
             const oldHp = targetTank.scoreHandler.hp;
             targetTank.scoreHandler.hp = Math.max(0, oldHp - absDmg);
             console.log('[SolShot] HP update (fallback): ' + (isMe ? 'me' : 'opp') + ' ' + oldHp + ' → ' + targetTank.scoreHandler.hp);
+            // Haptic feedback: heavy pulse when local player takes damage (MOB-01)
+            if (isMe) window.haptic && window.haptic.heavy();
           }
         }
       }
@@ -991,6 +995,9 @@ export class MainScene extends Scene {
           seq: this._turnSeq,
           position: { x: tank.x, y: tank.y },
         });
+
+        // Haptic feedback: medium pulse when shot is fired (MOB-01)
+        window.haptic && window.haptic.medium();
 
         // DON'T fire locally — wait for server turnResult.
         // Server trajectory is authoritative; both players see the same projectile.

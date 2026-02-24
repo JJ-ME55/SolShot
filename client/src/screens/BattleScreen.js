@@ -7,6 +7,7 @@ import BattleHUD from './battle/BattleHUD';
 import ExitMenu from './battle/ExitMenu';
 import Modal from '../components/Modal';
 import { useSolShotWallet } from '../wallet/WalletContext';
+import { haptic } from '../utils/haptic';
 
 /* -- styles -- */
 const s = {
@@ -140,6 +141,7 @@ function BattleScreen({ navigate, screenData }) {
   useSocket('matchEnd', (data) => {
     const myId = window.socket?.id;
     const isWinner = data.winner === myId;
+    haptic.heavy(); // MOB-01: haptic feedback on win or lose
     navigate(isWinner ? 'win' : 'lose', {
       ...screenData,
       ...data,

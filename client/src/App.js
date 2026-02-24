@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { socket } from './socket/index';
+import './utils/haptic';
 import { SolShotWalletProvider } from './wallet/WalletContext';
 import { TelegramProvider } from './telegram/TelegramContext';
 import useTelegramBackButton from './telegram/useTelegramBackButton';

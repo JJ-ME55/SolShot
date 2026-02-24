@@ -37,18 +37,18 @@ Requirements for launch readiness. Each maps to roadmap phases.
 
 ### User Interface — Post-Match
 
-- [ ] **UI-12**: Post-match screen shows SHOT milestones earned in match
-- [ ] **UI-13**: Post-match screen shows progress to next prestige tier
-- [ ] **UI-14**: Post-match X/Twitter share button with pre-filled text ("Just won X SOL on SolShot")
-- [ ] **UI-15**: Post-match Jupiter Terminal swap CTA with SHOT price context
-- [ ] **UI-16**: Escrow explainer shown before first wager ("Your SOL is held by a smart contract...")
+- [x] **UI-12**: Post-match screen shows SHOT milestones earned in match
+- [x] **UI-13**: Post-match screen shows progress to next prestige tier
+- [x] **UI-14**: Post-match X/Twitter share button with pre-filled text ("Just won X SOL on SolShot")
+- [x] **UI-15**: Post-match Jupiter Terminal swap CTA with SHOT price context
+- [x] **UI-16**: Escrow explainer shown before first wager ("Your SOL is held by a smart contract...")
 
 ### Stats & Combat Card
 
-- [ ] **STAT-01**: Server persists match stats (wins, losses, SOL won/lost, SHOT earned) to MongoDB on match end
-- [ ] **STAT-02**: Server serves player stats via `getStats` socket handler with rate limiting
-- [ ] **STAT-03**: BarracksScreen displays live stats instead of "--" placeholders (matches, win rate, SOL, SHOT)
-- [ ] **STAT-04**: CombatCard React component renders player stats card with html2canvas PNG export
+- [x] **STAT-01**: Server persists match stats (wins, losses, SOL won/lost, SHOT earned) to MongoDB on match end
+- [x] **STAT-02**: Server serves player stats via `getStats` socket handler with rate limiting
+- [x] **STAT-03**: BarracksScreen displays live stats instead of "--" placeholders (matches, win rate, SOL, SHOT)
+- [x] **STAT-04**: CombatCard React component renders player stats card with html2canvas PNG export
 
 ### Onboarding & Player Journey
 
@@ -132,15 +132,15 @@ Deferred to future release. Tracked but not in current roadmap.
 | UI-09 | Phase 10 | Complete |
 | UI-10 | Phase 10 | Complete |
 | UI-11 | Phase 10 | Complete |
-| UI-12 | Phase 11 | Pending |
-| UI-13 | Phase 11 | Pending |
-| UI-14 | Phase 11 | Pending |
-| UI-15 | Phase 11 | Pending |
-| UI-16 | Phase 11 | Pending |
-| STAT-01 | Phase 11 | Pending |
-| STAT-02 | Phase 11 | Pending |
-| STAT-03 | Phase 11 | Pending |
-| STAT-04 | Phase 11 | Pending |
+| UI-12 | Phase 11 | Complete |
+| UI-13 | Phase 11 | Complete |
+| UI-14 | Phase 11 | Complete |
+| UI-15 | Phase 11 | Complete |
+| UI-16 | Phase 11 | Complete |
+| STAT-01 | Phase 11 | Complete |
+| STAT-02 | Phase 11 | Complete |
+| STAT-03 | Phase 11 | Complete |
+| STAT-04 | Phase 11 | Complete |
 | ONB-01 | Phase 12 | Pending |
 | ONB-02 | Phase 12 | Pending |
 | ONB-03 | Phase 12 | Pending |

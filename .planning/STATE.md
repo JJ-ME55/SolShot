@@ -4,7 +4,7 @@
 
 See: .planning/PROJECT.md (updated 24 Feb 2026)
 **Core value:** Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** v1.2 Launch Readiness — Phase 11 Post-Match & Stats Pipeline (next after UI Global/Landing/Lobby)
+**Current focus:** v1.2 Launch Readiness — Phase 12 Onboarding & Mobile Polish (next after Post-Match & Stats Pipeline)
 
 ## Current Position
 
@@ -14,7 +14,7 @@ Plan: 3 of 3 in current phase
 Status: Phase 11 complete — all 3 plans done
 Last activity: 24 Feb 2026 — Completed 11-03-PLAN.md
 
-Progress: [█████░░░░░] ~42%
+Progress: [██████░░░░] ~50%
 
 
 ## Performance Metrics

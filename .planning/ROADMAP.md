@@ -22,7 +22,7 @@ Three security audits (SOS, DB, BOK) all PASS. SECURITY_SUMMARY.md at `.planning
 
 - [x] **Phase 9: Jupiter Integration** — Wallet adapter, Price API, Plugin SDK, platform fee, CSP updates
 - [x] **Phase 10: UI — Global, Landing & Lobby** — Price ticker, ecosystem logos, landing CTAs, lobby polish, weapon shop
-- [ ] **Phase 11: Post-Match & Stats Pipeline** — Post-match UX, stats persistence, BarracksScreen, Combat Card
+- [x] **Phase 11: Post-Match & Stats Pipeline** — Post-match UX, stats persistence, BarracksScreen, Combat Card
 - [ ] **Phase 12: Onboarding & Mobile Polish** — First-match flow, contextual education, FAQ, haptics, sharing
 - [ ] **Phase 13: Client Security** — Source maps, CSP report-uri, console.log cleanup
 - [ ] **Phase 14: Checklist Alignment & Re-Audit** — Design decision updates, targeted security check, full re-audit
@@ -79,9 +79,9 @@ Plans:
   5. A CombatCard React component renders the player's stats as a shareable card, exportable as a PNG via html2canvas
 **Plans:** 3 plans
 Plans:
-- [ ] 11-01-PLAN.md — Server stats augmentation (weapon stats, K/D, persistStats, matchEnd payload enrichment)
-- [ ] 11-02-PLAN.md — Post-match tabbed UI (WinScreen/LoseScreen tabs, milestones, prestige progress, escrow explainer)
-- [ ] 11-03-PLAN.md — Share/social, Barracks live stats, CombatCard K/D augmentation
+- [x] 11-01-PLAN.md — Server stats augmentation (weapon stats, K/D, persistStats, matchEnd payload enrichment)
+- [x] 11-02-PLAN.md — Post-match tabbed UI (WinScreen/LoseScreen tabs, milestones, prestige progress, escrow explainer)
+- [x] 11-03-PLAN.md — Share/social, Barracks live stats, CombatCard K/D augmentation
 
 ---
 
@@ -131,13 +131,13 @@ Plans:
 |-------|---------------|--------|-----------|
 | 9. Jupiter Integration | 3/3 | Complete | 2026-02-24 |
 | 10. UI — Global, Landing & Lobby | 3/3 | Complete | 2026-02-24 |
-| 11. Post-Match & Stats Pipeline | 0/3 | Not started | - |
+| 11. Post-Match & Stats Pipeline | 3/3 | Complete | 2026-02-24 |
 | 12. Onboarding & Mobile Polish | 0/TBD | Not started | - |
 | 13. Client Security | 0/TBD | Not started | - |
 | 14. Checklist Alignment & Re-Audit | 0/TBD | Not started | - |
 
-**Total:** 6/6+ plans complete (Phases 9-10 done)
+**Total:** 9/9+ plans complete (Phases 9-11 done)
 
 ---
 *Roadmap created: 24 Feb 2026*
-*Last updated: 24 Feb 2026*
+*Last updated: 24 Feb 2026 — Phase 11 complete*

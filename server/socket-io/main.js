@@ -74,6 +74,30 @@ function removeFromAllQueues(socketId) {
     }
 }
 
+// A7: Shared reset logic for playAgain — clears old wager state for rematch
+function resetForPlayAgain(roomId, room, paRoundType, io) {
+    delete room.randomArray
+    delete room.terrainPath
+    delete room.heightmap
+
+    // Reset match state, Gold, and inventories for new game
+    matchStates[roomId] = createMatchState(roomId, paRoundType)
+    delete goldStates[roomId]
+    delete weaponInventories[roomId]
+    delete shopReady[roomId]
+    // A7: Clear wager state on rematch — previous escrow was settled/cancelled.
+    // New match has no wager unless players re-queue through matchmaking.
+    delete wagerStates[roomId]
+    if (shopTimers[roomId]) {
+        clearTimeout(shopTimers[roomId])
+        delete shopTimers[roomId]
+    }
+
+    io.sockets.in(roomId).emit('playAgain', {})
+    room.player.playAgain = false
+    room.host.playAgain = false
+}
+
 // SF-03: In-memory store for failed settlements — retry via cancelMatchEscrow (DB: H020/H050)
 const failedSettlements = new Map();
 // Shape: { [roomId]: { matchId, escrowPDA, p1wallet, p2wallet, wagerSOL, failedAt, attempts, error } }
@@ -685,9 +709,13 @@ const mainsocket = (io) => {
                     })
                 } else if (ms.status === MATCH_STATES.LOBBY) {
                     // Not started yet — refund if applicable
+                    // A5: Pass all required params (matchId + both player wallets) for on-chain cancel
                     const wallet = ws.wallets[client.id]
                     if (wallet && ws.amount > 0) {
-                        await refundWager(wallet, ws.amount)
+                        const allWallets = Object.values(ws.wallets).filter(Boolean)
+                        const p1w = allWallets[0] || null
+                        const p2w = allWallets[1] || null
+                        await refundWager(wallet, ws.amount, roomId, p1w, p2w)
                     }
                 }
             }
@@ -960,6 +988,8 @@ const mainsocket = (io) => {
             if (client.roomId === roomId) return
             var room = findRoom(roomId)
             if (!room || room.active === true) return
+            // E12: Lock room immediately to prevent race during async balance check
+            room.active = true
 
             // Verify wager compatibility
             const ws = wagerStates[roomId]
@@ -969,26 +999,30 @@ const mainsocket = (io) => {
 
             if (roomWager > 0) {
                 // H006: Require auth for wagered rooms
-                if (!requireAuth(client, 'joinRoom')) return
+                if (!requireAuth(client, 'joinRoom')) { room.active = false; return }
 
                 // Room requires a wager — joiner must have a wallet
                 if (!joinerWallet) {
                     client.emit('joinRoomError', { reason: 'Wallet required for wagered matches' })
+                    room.active = false
                     return
                 }
 
-                // Verify joiner has enough balance (best-effort — skip if RPC unavailable)
+                // Verify joiner has enough balance — A3: fail-closed on RPC error
                 try {
                     const balanceCheck = await verifyBalance(joinerWallet, roomWager)
-                    // H027: Fix fail-open — reject if insufficient, regardless of balance amount
                     if (!balanceCheck.sufficient) {
                         client.emit('joinRoomError', {
                             reason: `Insufficient SOL balance. Need ${balanceCheck.required.toFixed(3)}, have ${balanceCheck.balance.toFixed(3)}`
                         })
+                        room.active = false
                         return
                     }
                 } catch (err) {
-                    console.warn('[Solana] Balance check skipped:', err.message)
+                    console.warn('[Solana] Balance check failed — rejecting join:', err.message)
+                    client.emit('joinRoomError', { reason: 'Unable to verify SOL balance. Please try again.' })
+                    room.active = false
+                    return
                 }
             }
 
@@ -1010,7 +1044,7 @@ const mainsocket = (io) => {
             }
 
             room.player = {name: sanitizeName(name), color: color, socketId: client.id, isReady: false, playAgain: false}
-            room.active = true
+            // room.active already set to true at top of handler (E12 race guard)
 
             // Persist player join to DB
             persistRoom(room);
@@ -1132,7 +1166,7 @@ const mainsocket = (io) => {
                 return
             }
 
-            // H038: Verify creator has sufficient balance for wager
+            // H038: Verify creator has sufficient balance — A3: fail-closed on RPC error
             if (wagerAmount > 0 && walletAddress) {
                 try {
                     const balanceCheck = await verifyBalance(walletAddress, wagerAmount)
@@ -1143,7 +1177,9 @@ const mainsocket = (io) => {
                         return
                     }
                 } catch (err) {
-                    console.warn('[Solana] Creator balance check skipped:', err.message)
+                    console.warn('[Solana] Creator balance check failed — rejecting create:', err.message)
+                    client.emit('createRoomError', { reason: 'Unable to verify SOL balance. Please try again.' })
+                    return
                 }
             }
 
@@ -1233,15 +1269,42 @@ const mainsocket = (io) => {
             // Remove from any existing queue before re-queuing
             removeFromAllQueues(client.id);
 
+            // E8: Balance check for wagered queue joins
+            const joinerWallet = authenticatedWallets[client.id] || null;
+            if (wagerAmount > 0 && joinerWallet) {
+                try {
+                    const balanceCheck = await verifyBalance(joinerWallet, wagerAmount)
+                    if (!balanceCheck.sufficient) {
+                        client.emit('queueError', { reason: `Insufficient SOL. Need ${balanceCheck.required.toFixed(3)}, have ${balanceCheck.balance.toFixed(3)}` })
+                        return
+                    }
+                } catch (err) {
+                    console.warn('[Queue] Balance check failed — rejecting queue join:', err.message)
+                    client.emit('queueError', { reason: 'Unable to verify SOL balance. Please try again.' })
+                    return
+                }
+            }
+
             const queueKey = getQueueKey(matchMode, matchLength);
             if (!matchmakingQueues.has(queueKey)) {
                 matchmakingQueues.set(queueKey, []);
             }
             const queue = matchmakingQueues.get(queueKey);
 
+            // E9: Cap queue size to prevent memory abuse
+            if (queue.length >= 100) {
+                client.emit('queueError', { reason: 'Queue is full. Please try again later.' })
+                return
+            }
+
             if (queue.length > 0) {
-                // SF-05: Validate wager matches before pairing (DB: H017)
+                // A6: Wallet dedup — prevent same wallet matching against itself
                 const opponent = queue[0]; // peek first, don't consume
+                if (joinerWallet && opponent.wallet && joinerWallet === opponent.wallet) {
+                    client.emit('queueError', { reason: 'Cannot match against yourself.' })
+                    return
+                }
+                // SF-05: Validate wager matches before pairing (DB: H017)
                 if (opponent.wager !== wagerAmount) {
                     // Wager mismatch — do not pair, push joiner to queue instead
                     queue.push({ name: sanitizeName(playerName), color: tankColor, socketId: client.id, wallet: authenticatedWallets[client.id] || null, wager: wagerAmount });
@@ -1646,10 +1709,13 @@ const mainsocket = (io) => {
 
 
         // === EXISTING RELAY EVENTS (kept for backward compatibility) ===
+        // D1: All relay events now require auth to prevent spoofed game state
 
         client.on('weaponPick', (data) => {
+            if (!requireAuth(client, 'weaponPick')) return
             if (!data || typeof data !== 'object') return
             const { arrayIndex } = data
+            if (!Number.isInteger(arrayIndex) || arrayIndex < 0 || arrayIndex > 30) return
             client.to(client.roomId).emit('opponentWeaponPick', {arrayIndex})
         })
 
@@ -1895,7 +1961,8 @@ const mainsocket = (io) => {
                 Number.isFinite(data.position.x) && Number.isFinite(data.position.y)) {
                 const dx = Math.abs(data.position.x - serverPos.x)
                 const dy = Math.abs(data.position.y - serverPos.y)
-                if (dx <= 400 && dy <= 200) {
+                // D3: Tighten position tolerance — 100px horizontal, 50px vertical
+                if (dx <= 100 && dy <= 50) {
                     startX = data.position.x
                     startY = data.position.y
                     // SA-04: Do NOT write startX/startY back to serverPos — server position is authoritative (DB: H034, H035)
@@ -2346,24 +2413,30 @@ const mainsocket = (io) => {
 
 
         client.on('weaponChange', (data) => {
+            if (!requireAuth(client, 'weaponChange')) return
             if (!data || typeof data !== 'object') return
             const { index } = data
+            if (!Number.isInteger(index) || index < 0 || index > 30) return
             client.to(client.roomId).emit('opponentWeaponChange', {index})
         })
 
 
 
         client.on('angleChange', (data) => {
+            if (!requireAuth(client, 'angleChange')) return
             if (!data || typeof data !== 'object') return
             const { rotation } = data
+            if (typeof rotation !== 'number' || !Number.isFinite(rotation)) return
             client.to(client.roomId).emit('opponentAngleChange', {rotation: rotation})
         })
 
 
 
         client.on('powerChange', (data) => {
+            if (!requireAuth(client, 'powerChange')) return
             if (!data || typeof data !== 'object') return
             const { power } = data
+            if (typeof power !== 'number' || !Number.isFinite(power) || power < 0 || power > 100) return
             client.to(client.roomId).emit('opponentPowerChange', {power: power})
         })
 
@@ -2475,11 +2548,18 @@ const mainsocket = (io) => {
 
 
 
-        // LEGACY: turn relay (still works)
+        // LEGACY: turn relay — D1: auth + D5: schema validation
         client.on('giveTurn', (data) => {
+            if (!requireAuth(client, 'giveTurn')) return
             if (!data || typeof data !== 'object') return
-            const { terrainData, pos1, pos2, rotation1, rotation2 } = data
-            client.to(client.roomId).emit('recieveTurn', {terrainData, pos1, pos2, rotation1, rotation2})
+            const { pos1, pos2, rotation1, rotation2 } = data
+            // D5: Validate schema — only forward known numeric fields, drop terrainData (server-authoritative terrain)
+            if (pos1 && typeof pos1 === 'object' && Number.isFinite(pos1.x) && Number.isFinite(pos1.y) &&
+                pos2 && typeof pos2 === 'object' && Number.isFinite(pos2.x) && Number.isFinite(pos2.y) &&
+                (rotation1 === undefined || typeof rotation1 === 'number') &&
+                (rotation2 === undefined || typeof rotation2 === 'number')) {
+                client.to(client.roomId).emit('recieveTurn', {pos1, pos2, rotation1, rotation2})
+            }
         })
 
 
@@ -2514,48 +2594,14 @@ const mainsocket = (io) => {
             if (client.isHost === true) {
                 room.host.playAgain = true
                 if (room.player && room.player.playAgain === true) {
-                    delete room.randomArray
-                    delete room.terrainPath
-                    delete room.heightmap
-
-                    // Reset match state, Gold, and inventories for new game
-                    matchStates[client.roomId] = createMatchState(client.roomId, paRoundType)
-                    delete goldStates[client.roomId]
-                    delete weaponInventories[client.roomId]
-                    delete shopReady[client.roomId]
-                    // H037: Don't delete wagerStates — cleaned up by removeRoom or next createRoom
-                    if (shopTimers[client.roomId]) {
-                        clearTimeout(shopTimers[client.roomId])
-                        delete shopTimers[client.roomId]
-                    }
-
-                    io.sockets.in(client.roomId).emit('playAgain', {})
-                    room.player.playAgain = false
-                    room.host.playAgain = false
+                    resetForPlayAgain(client.roomId, room, paRoundType, io)
                 }
             }
             else {
                 if (!room.player) return
                 room.player.playAgain = true
                 if (room.host.playAgain === true) {
-                    delete room.randomArray
-                    delete room.terrainPath
-                    delete room.heightmap
-
-                    // Reset match state, Gold, and inventories for new game
-                    matchStates[client.roomId] = createMatchState(client.roomId, paRoundType)
-                    delete goldStates[client.roomId]
-                    delete weaponInventories[client.roomId]
-                    delete shopReady[client.roomId]
-                    // H037: Don't delete wagerStates — cleaned up by removeRoom or next createRoom
-                    if (shopTimers[client.roomId]) {
-                        clearTimeout(shopTimers[client.roomId])
-                        delete shopTimers[client.roomId]
-                    }
-
-                    io.sockets.in(client.roomId).emit('playAgain', {})
-                    room.player.playAgain = false
-                    room.host.playAgain = false
+                    resetForPlayAgain(client.roomId, room, paRoundType, io)
                 }
             }
         })

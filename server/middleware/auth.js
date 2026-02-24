@@ -101,20 +101,7 @@ export function generateToken(walletAddress) {
     );
 }
 
-/**
- * Verify JWT token
- *
- * @param {string} token
- * @returns {{valid: boolean, wallet?: string, reason?: string}}
- */
-export function verifyToken(token) {
-    try {
-        const decoded = jwt.verify(token, JWT_SECRET);
-        return { valid: true, wallet: decoded.wallet };
-    } catch (err) {
-        return { valid: false, reason: err.message };
-    }
-}
+// E1: verifyToken removed — was dead code (never imported anywhere)
 
 /**
  * Socket.IO authentication handler

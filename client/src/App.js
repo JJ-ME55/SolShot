@@ -16,8 +16,13 @@ import ArmoryScreen from './screens/ArmoryScreen';
 import PrestigeScreen from './screens/PrestigeScreen';
 import BarracksScreen from './screens/BarracksScreen';
 
-// Keep socket on window for Phaser + WalletContext access
-window.socket = socket;
+// A8: Socket bridge for Phaser scenes — non-enumerable to reduce XSS discovery surface
+Object.defineProperty(window, 'socket', {
+  value: socket,
+  writable: false,
+  enumerable: false,
+  configurable: false,
+});
 
 function AppInner() {
   const [screen, setScreen] = useState('loading');

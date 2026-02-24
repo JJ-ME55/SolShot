@@ -66,6 +66,8 @@ pub mod solshot_escrow {
 
     /// Update config fields. All parameters are optional (pass None to keep current value).
     /// Requires current authority as signer (has_one enforced in account struct).
+    /// Re-validates distinctness after all updates (SOS: H003 — prevents settlement DoS).
+    /// Zero-address guard on authority (SOS: B1 — prevents accidental governance burn).
     /// NOTE: v1.2 — separate multisig for update_config vs pause_program
     pub fn update_config(
         ctx: Context<UpdateConfig>,
@@ -76,14 +78,31 @@ pub mod solshot_escrow {
         let config = &mut ctx.accounts.config;
 
         if let Some(a) = new_authority {
+            // B1-mini: prevent accidental governance burn to zero address
+            require!(a != Pubkey::default(), EscrowError::InvalidConfig);
             config.authority = a;
         }
         if let Some(t) = new_treasury {
+            require!(t != Pubkey::default(), EscrowError::InvalidConfig);
             config.treasury = t;
         }
         if let Some(o) = new_ops {
+            require!(o != Pubkey::default(), EscrowError::InvalidConfig);
             config.ops = o;
         }
+
+        // H003: Re-validate distinctness after all updates — prevents settlement DoS
+        // where treasury == ops creates unsatisfiable SettleMatch constraints
+        require!(config.authority != config.treasury, EscrowError::InvalidConfig);
+        require!(config.authority != config.ops, EscrowError::InvalidConfig);
+        require!(config.treasury != config.ops, EscrowError::DuplicateFeeAccount);
+
+        // B1-mini: emit event for on-chain audit trail of config changes
+        emit!(ConfigUpdated {
+            authority: config.authority,
+            treasury: config.treasury,
+            ops: config.ops,
+        });
 
         Ok(())
     }
@@ -504,7 +523,7 @@ pub struct UnpauseProgram<'info> {
     pub authority: Signer<'info>,
 }
 
-/// CreateMatch — create new match escrow (OC-04, OC-06, OC-08, OC-12)
+/// CreateMatch — create new match escrow (OC-04, OC-06, OC-08, OC-12, S004)
 #[derive(Accounts)]
 #[instruction(match_id: String)]
 pub struct CreateMatch<'info> {
@@ -520,10 +539,11 @@ pub struct CreateMatch<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
 
-    /// Config PDA — provides pause guard (OC-04)
+    /// Config PDA — provides pause guard + authority gate (OC-04, S004)
     #[account(
         seeds = [GlobalConfig::SEED],
         bump = config.bump,
+        has_one = authority @ EscrowError::Unauthorized,
         constraint = !config.is_paused @ EscrowError::ProgramPaused,
     )]
     pub config: Account<'info, GlobalConfig>,
@@ -803,6 +823,14 @@ pub struct MatchCancelled {
     pub match_id: String,
     pub refunded_one: bool,
     pub refunded_two: bool,
+}
+
+/// B1-mini: Audit trail for config changes
+#[event]
+pub struct ConfigUpdated {
+    pub authority: Pubkey,
+    pub treasury: Pubkey,
+    pub ops: Pubkey,
 }
 
 // ─────────────────────────────────────────────

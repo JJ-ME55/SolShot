@@ -23,6 +23,9 @@ const PORT = process.env.PORT || 5001
 const app = express();
 const server = http.createServer(app)
 
+// A9: Trust proxy — Render is a reverse proxy; required for accurate req.ip in rate limiting
+app.set('trust proxy', 1)
+
 // H008: Restrict CORS to known origins instead of wildcard
 const CORS_ORIGINS = process.env.CORS_ORIGINS
     ? process.env.CORS_ORIGINS.split(',').map(s => s.trim())
@@ -32,7 +35,9 @@ const io = new socket.Server(server, {
     cors: {
         origin: CORS_ORIGINS,
         methods: ["GET", "POST"]
-    }
+    },
+    // E10: Cap inbound socket messages at 64KB to prevent memory abuse
+    maxHttpBufferSize: 64 * 1024,
 })
 
 // IM-03: Per-IP connection limiting (DB: H024)

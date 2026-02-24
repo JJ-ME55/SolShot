@@ -50,7 +50,10 @@ function validateTelegramInitData(initData) {
       .update(dataCheckString)
       .digest('hex');
 
-    const valid = computedHash === hash;
+    // D7: Use timing-safe comparison to prevent timing side-channel attacks
+    const computedBuf = Buffer.from(computedHash, 'hex');
+    const hashBuf = Buffer.from(hash, 'hex');
+    const valid = computedBuf.length === hashBuf.length && crypto.timingSafeEqual(computedBuf, hashBuf);
 
     // Extract user data
     let user = null;

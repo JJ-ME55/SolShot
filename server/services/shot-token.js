@@ -461,10 +461,12 @@ export async function verifyBurnTransaction(txSignature, walletAddress, expected
         return { valid: true };
     }
 
-    // Replay protection — each tx can only unlock one prestige
+    // A4: Replay protection with TOCTOU guard — claim slot before async verification
     if (verifiedBurnTxs.has(txSignature)) {
         return { valid: false, reason: 'Transaction already used for prestige' };
     }
+    // Immediately mark as claimed to prevent concurrent verification of same TX
+    verifiedBurnTxs.add(txSignature);
 
     try {
         // Fetch the confirmed transaction
@@ -474,10 +476,12 @@ export async function verifyBurnTransaction(txSignature, walletAddress, expected
         });
 
         if (!tx) {
+            verifiedBurnTxs.delete(txSignature);
             return { valid: false, reason: 'Transaction not found or not confirmed' };
         }
 
         if (tx.meta?.err) {
+            verifiedBurnTxs.delete(txSignature);
             return { valid: false, reason: 'Transaction failed on-chain' };
         }
 
@@ -502,12 +506,14 @@ export async function verifyBurnTransaction(txSignature, walletAddress, expected
 
                     // Verify signer matches the player's wallet
                     if (ixAuthority !== walletAddress) {
+                        verifiedBurnTxs.delete(txSignature);
                         return { valid: false, reason: 'Burn was not signed by your wallet' };
                     }
 
                     // Verify amount (expectedAmount is in whole tokens, on-chain is raw with 9 decimals)
                     const expectedRaw = BigInt(expectedAmount) * BigInt(1_000_000_000);
                     if (BigInt(ixAmount) < expectedRaw) {
+                        verifiedBurnTxs.delete(txSignature);
                         return { valid: false, reason: `Burned ${ixAmount} raw but need ${expectedRaw} for prestige` };
                     }
 
@@ -542,16 +548,18 @@ export async function verifyBurnTransaction(txSignature, walletAddress, expected
         }
 
         if (!burnFound) {
+            // A4: Release claim — TX was not a valid burn
+            verifiedBurnTxs.delete(txSignature);
             return { valid: false, reason: 'No valid SHOT burn found in transaction' };
         }
 
-        // Mark tx as used (replay protection)
-        verifiedBurnTxs.add(txSignature);
-        // TE-01: Persist to MongoDB so replay protection survives restart
+        // TX already claimed in set above — persist to MongoDB so replay protection survives restart
         persistBurnTx(txSignature);
 
         return { valid: true };
     } catch (err) {
+        // A4: Release claim on error so user can retry
+        verifiedBurnTxs.delete(txSignature);
         console.error('[SHOT] Burn verification error:', err.message);
         return { valid: false, reason: 'Failed to verify burn transaction' };
     }

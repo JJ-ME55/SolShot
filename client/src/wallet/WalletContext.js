@@ -19,12 +19,19 @@ import { PhantomWalletAdapter, SolflareWalletAdapter } from '@solana/wallet-adap
 import { clusterApiUrl, LAMPORTS_PER_SOL, Transaction, PublicKey } from '@solana/web3.js';
 import { createBurnInstruction, getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from '@solana/spl-token';
 
+// Jupiter Mobile adapter via Reown/WalletConnect (JUP-01)
+import { useWrappedReownAdapter } from '@jup-ag/jup-mobile-adapter';
+
 // Import wallet adapter styles
 import '@solana/wallet-adapter-react-ui/styles.css';
 
 // Solana network (devnet for development, mainnet-beta for production)
 const NETWORK = process.env.REACT_APP_SOLANA_NETWORK || 'devnet';
 const RPC_URL = process.env.REACT_APP_SOLANA_RPC || clusterApiUrl(NETWORK);
+
+// Reown (WalletConnect) project ID — required for Jupiter Mobile adapter
+// Register at https://dashboard.reown.com to get a project ID
+const REOWN_PROJECT_ID = process.env.REACT_APP_REOWN_PROJECT_ID || '';
 
 // SHOT token mint address (set in .env after deploying to devnet)
 const SHOT_TOKEN_MINT = process.env.REACT_APP_SHOT_TOKEN_MINT
@@ -112,6 +119,39 @@ function SolShotWalletInner({ children }) {
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [shotBalance, setShotBalance] = useState(0);
     const [prestigeInfo, setPrestigeInfo] = useState({ tier: 0, tierName: 'Unranked' });
+
+    // JUP-01: Inject CSS to visually highlight the first wallet (Jupiter Mobile) in the modal
+    // Uses the wallet-adapter-react-ui modal's list structure
+    useEffect(() => {
+        const style = document.createElement('style');
+        style.setAttribute('data-solshot-jup-highlight', 'true');
+        style.textContent = `
+            .wallet-adapter-modal-list li:first-child {
+                border: 1px solid rgba(153, 69, 255, 0.4) !important;
+                background: rgba(153, 69, 255, 0.08) !important;
+                border-radius: 6px !important;
+                position: relative;
+            }
+            .wallet-adapter-modal-list li:first-child::after {
+                content: 'RECOMMENDED';
+                position: absolute;
+                top: -8px;
+                right: 8px;
+                font-size: 9px;
+                font-family: 'Share Tech Mono', monospace;
+                letter-spacing: 2px;
+                color: rgba(153, 69, 255, 0.8);
+                background: #1a1a2e;
+                padding: 1px 6px;
+                border-radius: 2px;
+            }
+        `;
+        document.head.appendChild(style);
+        return () => {
+            const existing = document.querySelector('[data-solshot-jup-highlight]');
+            if (existing) document.head.removeChild(existing);
+        };
+    }, []);
 
     const walletAddress = useMemo(() => {
         return publicKey ? publicKey.toBase58() : null;
@@ -365,10 +405,39 @@ function SolShotWalletInner({ children }) {
  * Main wallet provider — wrap your app with this
  */
 export function SolShotWalletProvider({ children }) {
-    const wallets = useMemo(() => [
-        new PhantomWalletAdapter(),
-        new SolflareWalletAdapter(),
-    ], []);
+    // JUP-01: Jupiter Mobile adapter via Reown/WalletConnect
+    // Hook must always be called (React rules of hooks — no conditional calls)
+    // When REOWN_PROJECT_ID is empty, the adapters are still created but connection will fail gracefully
+    const { jupiterAdapter } = useWrappedReownAdapter({
+        appKitOptions: {
+            metadata: {
+                name: 'SolShot',
+                description: 'Artillery wagering on Solana',
+                url: 'https://solshot.gg',
+                icons: ['/logo192.png'],
+            },
+            projectId: REOWN_PROJECT_ID,
+            features: { analytics: false, email: false, socials: false },
+            enableWallets: false,
+        },
+    });
+
+    const wallets = useMemo(() => {
+        if (!REOWN_PROJECT_ID) {
+            // No project ID — hide Jupiter Mobile, log warning
+            console.warn('[SolShot] REACT_APP_REOWN_PROJECT_ID not set — Jupiter Mobile adapter disabled');
+            return [
+                new PhantomWalletAdapter(),
+                new SolflareWalletAdapter(),
+            ];
+        }
+        // Jupiter Mobile at position 0 (top of list, highlighted as RECOMMENDED)
+        return [
+            jupiterAdapter,
+            new PhantomWalletAdapter(),
+            new SolflareWalletAdapter(),
+        ].filter(Boolean);
+    }, [jupiterAdapter]);
 
     return (
         <ConnectionProvider endpoint={RPC_URL}>

@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 24 Feb 2026)
 
 Milestone: v1.2 — Launch Readiness
 Phase: 10 of 14 (UI Global Landing Lobby) — In progress
-Plan: 02 complete (10-02-PLAN.md done, 10-03 also done)
+Plan: 01 complete (10-01-PLAN.md done)
 Status: In progress
-Last activity: 24 Feb 2026 — Completed 10-02-PLAN.md
+Last activity: 24 Feb 2026 — Completed 10-01-PLAN.md
 
 Progress: [███░░░░░░░] ~9%
 
@@ -67,6 +67,9 @@ Progress: [███░░░░░░░] ~9%
 - **[10-02] PARTNERS module-level constant array for ecosystem badges — CSS text badges only, no external images, no CSP changes**
 - **[10-02] LEARN MORE href="#" placeholder — update to litepaper URL when published**
 - **[10-02] partnerBadge(color) function style factory — dynamic inline style object keyed on brand color hex**
+- **[10-01] ShotPriceTicker ready-gate: render null until first shotPrice socket event — prevents N/A flash on initial load**
+- **[10-01] TopBar three-column flex (not absolute title): flexShrink left/right, flex:1 center — ticker + title centered without overlap**
+- **[10-01] WalletDisplay help link gated on !compact — visible only on MenuScreen, hidden in TopBar**
 
 ### Pending Todos
 
@@ -82,6 +85,6 @@ Progress: [███░░░░░░░] ~9%
 
 ## Session Continuity
 
-Last session: 2026-02-24T13:42:02Z
-Stopped at: Completed 10-02-PLAN.md (MenuScreen landing page overhaul)
+Last session: 2026-02-24T13:52:00Z
+Stopped at: Completed 10-01-PLAN.md (ShotPriceTicker + TopBar flex layout + WalletDisplay help link)
 Resume file: None

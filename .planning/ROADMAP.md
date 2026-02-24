@@ -77,7 +77,11 @@ Plans:
   3. Match stats (wins, losses, SOL won/lost, SHOT earned) are persisted to MongoDB on every match end — verified by checking the database after a match
   4. The BarracksScreen displays live stats (matches played, win rate, SOL net, SHOT earned) instead of "--" placeholders, served via a rate-limited `getStats` socket handler
   5. A CombatCard React component renders the player's stats as a shareable card, exportable as a PNG via html2canvas
-**Plans:** TBD
+**Plans:** 3 plans
+Plans:
+- [ ] 11-01-PLAN.md — Server stats augmentation (weapon stats, K/D, persistStats, matchEnd payload enrichment)
+- [ ] 11-02-PLAN.md — Post-match tabbed UI (WinScreen/LoseScreen tabs, milestones, prestige progress, escrow explainer)
+- [ ] 11-03-PLAN.md — Share/social, Barracks live stats, CombatCard K/D augmentation
 
 ---
 
@@ -127,7 +131,7 @@ Plans:
 |-------|---------------|--------|-----------|
 | 9. Jupiter Integration | 3/3 | Complete | 2026-02-24 |
 | 10. UI — Global, Landing & Lobby | 3/3 | Complete | 2026-02-24 |
-| 11. Post-Match & Stats Pipeline | 0/TBD | Not started | - |
+| 11. Post-Match & Stats Pipeline | 0/3 | Not started | - |
 | 12. Onboarding & Mobile Polish | 0/TBD | Not started | - |
 | 13. Client Security | 0/TBD | Not started | - |
 | 14. Checklist Alignment & Re-Audit | 0/TBD | Not started | - |

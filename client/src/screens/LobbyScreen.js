@@ -288,6 +288,7 @@ function LobbyScreen({ navigate }) {
   const [waiting, setWaiting] = useState(false); // waiting for opponent (custom_challenge / createRoom)
   const [queueState, setQueueState] = useState(null); // null | 'searching' | 'matched'
   const [error, setError] = useState(null);
+  const [showEscrow, setShowEscrow] = useState(false);
 
   // CS-04: Use context hook instead of window.solWallet
   const { signAndSendEscrowDeposit, walletAddress } = useSolShotWallet();
@@ -587,7 +588,12 @@ function LobbyScreen({ navigate }) {
                   <div
                     key={tier}
                     style={s.wagerBtn(wager === tier)}
-                    onClick={() => setWager(tier)}
+                    onClick={() => {
+                      setWager(tier);
+                      if (tier > 0 && !localStorage.getItem('solshot_escrow_seen')) {
+                        setShowEscrow(true);
+                      }
+                    }}
                   >
                     {tier === 0 ? 'FREE' : tier + ' SOL'}
                   </div>
@@ -746,6 +752,26 @@ function LobbyScreen({ navigate }) {
             },
           ]}
           onClose={() => setError(null)}
+        />
+      )}
+
+      {/* ═══ ESCROW EXPLAINER MODAL (one-time, first wager > 0) ═══ */}
+      {showEscrow && (
+        <Modal
+          title="HOW WAGERING WORKS"
+          message="Your SOL is held by a smart contract (escrow) during the match. The winner receives 90% of the pot. Neither player nor SolShot can access funds during the match. If your opponent disconnects, you get a full refund."
+          buttons={[{
+            label: 'GOT IT',
+            variant: 'primary',
+            onClick: () => {
+              localStorage.setItem('solshot_escrow_seen', 'true');
+              setShowEscrow(false);
+            }
+          }]}
+          onClose={() => {
+            localStorage.setItem('solshot_escrow_seen', 'true');
+            setShowEscrow(false);
+          }}
         />
       )}
     </>

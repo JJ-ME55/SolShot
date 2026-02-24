@@ -38,7 +38,29 @@ function WalletDisplay({ compact = false }) {
   if (!connected) {
     return (
       <div style={styles.container}>
-        <WalletMultiButton />
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <WalletMultiButton />
+          {!compact && (
+            <a
+              href="https://solana.com/learn/blockchain-basics"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                fontFamily: "'Share Tech Mono', monospace",
+                fontSize: 10,
+                color: 'var(--kh)',
+                opacity: 0.6,
+                letterSpacing: 1,
+                textDecoration: 'none',
+                display: 'block',
+                textAlign: 'center',
+                marginTop: 4,
+              }}
+            >
+              {'WHAT IS A WALLET?'}
+            </a>
+          )}
+        </div>
       </div>
     );
   }

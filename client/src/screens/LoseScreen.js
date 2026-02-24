@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
 import JupiterSwap from '../components/JupiterSwap';
+import ShareCard from '../components/ShareCard';
 import useSocket from '../hooks/useSocket';
 
 /* ── styles ── */
@@ -232,6 +233,7 @@ function LoseScreen({ navigate, screenData }) {
   const [waitingRematch, setWaitingRematch] = useState(false);
   const [opponentLeft, setOpponentLeft] = useState(false);
   const [shotPrice, setShotPrice] = useState(null);
+  const shareCardRef = useRef(null);
 
   // Fetch current SHOT price from server (via getShotPrice socket handler)
   useEffect(() => {
@@ -427,6 +429,32 @@ function LoseScreen({ navigate, screenData }) {
             )}
           </div>
 
+          {/* Share on X */}
+          <button
+            style={{
+              background: 'none',
+              border: '1px solid var(--ol)',
+              borderRadius: 4,
+              color: 'var(--kh)',
+              fontFamily: "'Share Tech Mono', monospace",
+              fontSize: 11,
+              letterSpacing: 2,
+              padding: '8px 20px',
+              cursor: 'pointer',
+              textTransform: 'uppercase',
+              opacity: 0.8,
+            }}
+            onClick={async () => {
+              if (shareCardRef.current) {
+                await shareCardRef.current.exportToClipboard();
+              }
+              var text = 'Tough loss on @SolShotGG -- Run it back? No download, skill-based artillery combat on Solana. solshot.gg';
+              window.open('https://twitter.com/intent/tweet?text=' + encodeURIComponent(text), '_blank', 'width=550,height=420');
+            }}
+          >
+            SHARE ON X
+          </button>
+
           {/* Jupiter Swap CTA with price context */}
           <div style={{ marginTop: 8, textAlign: 'center' }}>
             <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 11, color: 'var(--kh)', letterSpacing: 1, opacity: 0.6, marginBottom: 4 }}>
@@ -463,6 +491,9 @@ function LoseScreen({ navigate, screenData }) {
           onClose={handleLobby}
         />
       )}
+
+      {/* Offscreen ShareCard — rendered for html2canvas capture, invisible to user */}
+      <ShareCard ref={shareCardRef} isWin={false} solAmount={wager} shotEarned={0} />
     </div>
   );
 }

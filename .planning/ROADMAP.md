@@ -20,7 +20,7 @@ Three security audits (SOS, DB, BOK) all PASS. SECURITY_SUMMARY.md at `.planning
 
 ## Phases
 
-- [ ] **Phase 9: Jupiter Integration** — Wallet adapter, Price API, Terminal SDK, platform fee, CSP updates
+- [ ] **Phase 9: Jupiter Integration** — Wallet adapter, Price API, Plugin SDK, platform fee, CSP updates
 - [ ] **Phase 10: UI — Global, Landing & Lobby** — Price ticker, ecosystem logos, landing CTAs, lobby polish, weapon shop
 - [ ] **Phase 11: Post-Match & Stats Pipeline** — Post-match UX, stats persistence, BarracksScreen, Combat Card
 - [ ] **Phase 12: Onboarding & Mobile Polish** — First-match flow, contextual education, FAQ, haptics, sharing
@@ -32,16 +32,20 @@ Three security audits (SOS, DB, BOK) all PASS. SECURITY_SUMMARY.md at `.planning
 ## Phase Details
 
 ### Phase 9: Jupiter Integration
-**Goal:** Players can connect via Jupiter Mobile wallet, see live SHOT price, and swap SOL-to-SHOT directly inside the game via Jupiter Terminal — with platform fees routing to the SolShot treasury.
+**Goal:** Players can connect via Jupiter Mobile wallet, see live SHOT price, and swap SOL-to-SHOT directly inside the game via Jupiter Plugin — with platform fees routing to the SolShot treasury.
 **Depends on:** Nothing (first v1.2 phase; hackathon deadline Feb 25)
 **Requirements:** JUP-01, JUP-02, JUP-03, JUP-04, JUP-05, JUP-06, JUP-07
 **Success Criteria** (what must be TRUE):
   1. Jupiter Mobile appears at the top of the wallet adapter list with a visual highlight, and connecting through it works end-to-end
-  2. A service fetches SHOT/SOL price from lite-api.jup.ag and returns a formatted price string (handles errors and pre-launch gracefully)
-  3. Jupiter Terminal widget opens in the prestige shop, weapon shop, and post-match screen — a SOL-to-SHOT swap completes successfully on devnet
-  4. Every Terminal swap routes a platform fee percentage to the SolShot treasury wallet
-  5. No CSP violations appear in the browser console when loading Jupiter Terminal or calling the Price API
-**Plans:** TBD
+  2. A service fetches SHOT/SOL price from api.jup.ag and returns a formatted price string (handles errors and pre-launch gracefully)
+  3. Jupiter Plugin widget opens in the prestige shop, weapon shop, and post-match screen — a SOL-to-SHOT swap completes successfully on devnet
+  4. Every Plugin swap routes a platform fee percentage to the SolShot treasury wallet
+  5. No CSP violations appear in the browser console when loading Jupiter Plugin or calling the Price API
+**Plans:** 3 plans
+Plans:
+- [ ] 09-01-PLAN.md — CSP updates, Plugin CDN, server-side Price API service
+- [ ] 09-02-PLAN.md — Jupiter Mobile wallet adapter with Reown integration
+- [ ] 09-03-PLAN.md — Jupiter Plugin component and screen integrations (prestige, shop, post-match)
 
 ---
 
@@ -117,14 +121,14 @@ Three security audits (SOS, DB, BOK) all PASS. SECURITY_SUMMARY.md at `.planning
 
 | Phase | Plans Complete | Status | Completed |
 |-------|---------------|--------|-----------|
-| 9. Jupiter Integration | 0/TBD | Not started | - |
+| 9. Jupiter Integration | 0/3 | Planned | - |
 | 10. UI — Global, Landing & Lobby | 0/TBD | Not started | - |
 | 11. Post-Match & Stats Pipeline | 0/TBD | Not started | - |
 | 12. Onboarding & Mobile Polish | 0/TBD | Not started | - |
 | 13. Client Security | 0/TBD | Not started | - |
 | 14. Checklist Alignment & Re-Audit | 0/TBD | Not started | - |
 
-**Total:** 0/TBD plans complete
+**Total:** 0/3+ plans complete
 
 ---
 *Roadmap created: 24 Feb 2026*

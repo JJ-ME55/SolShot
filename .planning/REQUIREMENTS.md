@@ -145,12 +145,12 @@ Deferred to future release. Tracked but not in current roadmap.
 | ONB-02 | Phase 12 | Pending |
 | ONB-03 | Phase 12 | Pending |
 | ONB-04 | Phase 12 | Pending |
+| MOB-01 | Phase 12 | Pending |
+| MOB-02 | Phase 12 | Pending |
+| MOB-03 | Phase 12 | Pending |
 | SEC-01 | Phase 13 | Pending |
 | SEC-02 | Phase 13 | Pending |
 | SEC-03 | Phase 13 | Pending |
-| MOB-01 | Phase 13 | Pending |
-| MOB-02 | Phase 13 | Pending |
-| MOB-03 | Phase 13 | Pending |
 | CHK-01 | Phase 14 | Pending |
 | CHK-02 | Phase 14 | Pending |
 | CHK-03 | Phase 14 | Pending |
@@ -158,8 +158,8 @@ Deferred to future release. Tracked but not in current roadmap.
 **Coverage:**
 - v1.2 requirements: 39 total
 - Mapped to phases: 39
-- Unmapped: 0 ✓
+- Unmapped: 0
 
 ---
 *Requirements defined: 24 Feb 2026*
-*Last updated: 24 Feb 2026 after initial definition*
+*Last updated: 24 Feb 2026 — roadmap traceability complete*

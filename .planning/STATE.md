@@ -4,15 +4,15 @@
 
 See: .planning/PROJECT.md (updated 24 Feb 2026)
 **Core value:** Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** v1.2 Launch Readiness — Closing checklist gaps, Jupiter integration first
+**Current focus:** v1.2 Launch Readiness — Phase 9 Jupiter Integration (hackathon deadline Feb 25)
 
 ## Current Position
 
 Milestone: v1.2 — Launch Readiness
-Phase: Not started (defining requirements)
+Phase: 9 of 14 (Jupiter Integration)
 Plan: —
-Status: Defining requirements
-Last activity: 24 Feb 2026 — Milestone v1.2 started
+Status: Ready to plan
+Last activity: 24 Feb 2026 — Roadmap created for v1.2 (6 phases, 39 requirements)
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -21,7 +21,7 @@ Progress: [░░░░░░░░░░] 0%
 
 **Velocity:**
 - v1.0 plans completed: 15 (across 4 phases)
-- v1.1 plans completed: 25 (21 prior + 4 Phase 8)
+- v1.1 plans completed: 25 (across 9 phases including 4.1)
 
 **By Phase (v1.1):**
 
@@ -45,33 +45,27 @@ Progress: [░░░░░░░░░░] 0%
 - 90/7/3 BPS split hardcoded in escrow program
 - SHOT mint authority burned (no changes possible)
 - MongoDB Atlas M0 free tier for stats persistence
-- **[v1.0] All v1.0 decisions preserved — see previous STATE.md in git history**
-- **[v1.1] Three audits complete: SOS 3C/9H/4M/1L (re-audit), DB 12C/34H/18M/6L (re-audit), BOK 25/25 pass 0 failures**
-- **[v1.1] All CRITICAL and HIGH findings resolved or documented as Accepted Risk — SECURITY_SUMMARY.md at .planning/SECURITY_SUMMARY.md**
-- **[v1.1] H029 (unverifiable winner oracle / outcome verification) deferred to v1.2 — requires protocol-level design decisions**
-- **[v1.1] H060 (horizontal scaling) deferred — not exploitable on single instance**
-- **[v1.2] Do NOT modify lib.rs — preserves SOS/DB/BOK audit certifications**
-- **[v1.2] Many checklist "failures" are design decisions, not bugs — update checklist text instead of code**
+- **[v1.1] Three audits complete: SOS, DB, BOK — all PASS**
+- **[v1.1] H029 (outcome verification) deferred — requires protocol-level design**
+- **[v1.2] Do NOT modify lib.rs — preserves audit certifications**
 - **[v1.2] Jupiter integration is hackathon-critical — Feb 25 deadline**
-- **[v1.2] Combat Card plan exists at .claude/plans/ — integrate into stats phase**
-- **[v1.2] Security re-check only needed for CSP changes and new socket endpoints — not full re-audit**
+- **[v1.2] Many checklist "failures" are design decisions — update checklist text, not code**
+- **[v1.2] Security re-check only needed for CSP changes and new socket endpoints**
 
 ### Pending Todos
 
-- Run 25-test suite when McAfee exclusion is configured (`anchor test --provider.cluster localnet`)
+- Run 25-test suite when McAfee exclusion is configured
 - Fresh devnet deploy with new program ID + initializeConfig() call
 - On-chain authority transfer to new keypair (needs devnet SOL)
-- Rename SolShot-clean → SolShot (swap directories)
-- Update server/.env with SOLANA_KEYPAIR_PATH=~/.config/solana/solshot-server.json
+- Rename SolShot-clean to SolShot (swap directories)
 
 ### Blockers/Concerns
-- McAfee LiveSafe blocks solana-test-validator on Windows — need folder exclusion or temp disable to run tests
-- Devnet wallet at 0.97 SOL — need ~2.12 SOL for program deploy (airdrop rate-limited)
-- SOS finding H029 (outcome verification / dispute mechanism) is deferred — requires game theory analysis beyond code remediation
-- Working directory is now SolShot-clean (not SolShot) — needs directory swap
+- McAfee blocks solana-test-validator on Windows
+- Devnet wallet at 0.97 SOL — need ~2.12 SOL for program deploy
+- Working directory is SolShot-clean (not SolShot) — needs directory swap
 
 ## Session Continuity
 
 Last session: 2026-02-24
-Stopped at: Milestone v1.2 initialization — requirements and roadmap being defined
-Resume file: None (starting fresh)
+Stopped at: v1.2 roadmap created — Phase 9 ready to plan
+Resume file: None

@@ -31,4 +31,12 @@ All work 21-23 Feb 2026. Three security audits (SOS, DB, BOK) — all CRITICAL/H
 
 Started 24 Feb 2026. Closing checklist gaps — Jupiter integration, UI polish, stats, onboarding, re-audit.
 
-### Last Phase Number: 8 (continues from v1.1)
+### Phases
+- Phase 9: Jupiter Integration
+- Phase 10: UI — Global, Landing & Lobby
+- Phase 11: Post-Match & Stats Pipeline
+- Phase 12: Onboarding & Mobile Polish
+- Phase 13: Client Security
+- Phase 14: Checklist Alignment & Re-Audit
+
+### Last Phase Number: 14

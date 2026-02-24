@@ -1,288 +1,131 @@
-# Roadmap: SolShot v1.1 — Security Hardening
+# Roadmap: SolShot v1.2 — Launch Readiness
+
+## Milestones
+
+- v1.0 MVP (pre-GSD) — Phases 1-4 (shipped)
+- v1.1 Security Hardening — Phases 1-8 (shipped 2026-02-23)
+- **v1.2 Launch Readiness** — Phases 9-14 (in progress)
 
 ## Overview
 
-SolShot's three security audits (SOS, DB, BOK) revealed 15 CRITICAL and 23 HIGH-severity findings across the on-chain program, off-chain server, and client. This roadmap addresses all findings in dependency order: the on-chain program is redesigned first (all off-chain code depends on it), then the server financial path, game integrity, key management, client security, token economy, and infrastructure. A final verification phase re-runs all three audits to confirm remediation.
+SolShot v1.2 closes all code-addressable gaps from the 280-item Master Quality & Launch Checklist. Jupiter integration ships first (hackathon deadline Feb 25), followed by UI polish across all screens, stats persistence and Combat Card, onboarding and mobile polish, client security hardening, and a final checklist re-audit to confirm launch readiness. 39 requirements across 6 phases.
 
-**Audit Reports:**
-- SOS (on-chain): `.audit/FINAL_REPORT.md` — 7C/6H/6M/4L
-- DB (off-chain): `.bulwark/FINAL_REPORT.md` — 8C/17H/15M/1L
-- BOK (math): `.bok/reports/2026-02-21-report.md` — 24/24 pass, 8 gaps
+<details>
+<summary>v1.1 Security Hardening (Phases 1-8) — SHIPPED 2026-02-23</summary>
+
+See `.planning/phases/` for completed v1.1 phase details. 25/25 plans complete.
+Three security audits (SOS, DB, BOK) all PASS. SECURITY_SUMMARY.md at `.planning/SECURITY_SUMMARY.md`.
+
+</details>
 
 ## Phases
 
-- [x] **Phase 1: On-Chain Program Redesign** — Rewrite escrow program with config PDA, multisig authority, account constraints, pause mechanism, checked arithmetic, and all SOS CRITICAL/HIGH fixes *(completed 2026-02-21; test execution deferred — McAfee blocks local validator)*
-- [x] **Phase 2: Server Financial Security** — Verify deposits on-chain, propagate settlement failures, fix rate limiter, add recovery mechanisms *(completed 2026-02-22)*
-- [x] **Phase 3: Server Auth & Game Integrity** — Auth guards on all handlers, rejoin re-verification, remove terrain/position manipulation vectors *(completed 2026-02-22)*
-- [x] **Phase 4: Secrets & Key Management** — Rotate keypair, purge git history, centralize key loading with zeroization, add SIGHUP rotation mechanism *(completed 2026-02-22)*
-- [x] **Phase 4.1: Doc-Code Alignment** — Deposit countdown timer, permissionless reclaim instruction, HP-based disconnect settlement, dead code cleanup *(completed 2026-02-22)*
-- [x] **Phase 5: Client & Supply Chain Security** — TX validation before signing, self-hosted Telegram SDK, CSP headers, remove global wallet exposure *(completed 2026-02-22)*
-- [x] **Phase 6: Token Economy Hardening** — Persist deduplication Sets to MongoDB, fail-hard on emission counter reset *(completed 2026-02-23)*
-- [x] **Phase 7: Infrastructure & Monitoring** — npm security, endpoint auth, connection limits, logging, terrain entropy *(completed 2026-02-23)*
-- [x] **Phase 8: Verification & Re-Audit** — Re-run SOS, DB, BOK on hardened codebase; generate pre-launch security documentation *(completed 2026-02-23)*
+- [ ] **Phase 9: Jupiter Integration** — Wallet adapter, Price API, Terminal SDK, platform fee, CSP updates
+- [ ] **Phase 10: UI — Global, Landing & Lobby** — Price ticker, ecosystem logos, landing CTAs, lobby polish, weapon shop
+- [ ] **Phase 11: Post-Match & Stats Pipeline** — Post-match UX, stats persistence, BarracksScreen, Combat Card
+- [ ] **Phase 12: Onboarding & Mobile Polish** — First-match flow, contextual education, FAQ, haptics, sharing
+- [ ] **Phase 13: Client Security** — Source maps, CSP report-uri, console.log cleanup
+- [ ] **Phase 14: Checklist Alignment & Re-Audit** — Design decision updates, targeted security check, full re-audit
 
 ---
 
 ## Phase Details
 
-### Phase 1: On-Chain Program Redesign
-**Goal:** The escrow program has a global config PDA with multisig-controlled authority; winner/treasury/ops accounts are on-chain validated; an emergency pause mechanism exists; checked arithmetic eliminates all overflow paths; all SOS CRITICAL and HIGH findings are resolved in the program source.
-**Depends on:** Nothing (first phase — all other phases depend on new program IDL)
-**Requirements:** OC-01, OC-02, OC-03, OC-04, OC-05, OC-06, OC-07, OC-08, OC-09, OC-10, OC-11, OC-12, OC-13, OC-14
-**Findings addressed:** SOS: S001, H008, H001, H026, H029-partial, H007, H003, H009, S004, S005, H002, H022, H028, H017, S003, H027, H024 | BOK: GAP-001 through GAP-008 | DB: H048, H053
+### Phase 9: Jupiter Integration
+**Goal:** Players can connect via Jupiter Mobile wallet, see live SHOT price, and swap SOL-to-SHOT directly inside the game via Jupiter Terminal — with platform fees routing to the SolShot treasury.
+**Depends on:** Nothing (first v1.2 phase; hackathon deadline Feb 25)
+**Requirements:** JUP-01, JUP-02, JUP-03, JUP-04, JUP-05, JUP-06, JUP-07
 **Success Criteria** (what must be TRUE):
-  1. A `ProgramConfig` PDA exists with `authority`, `treasury`, `ops`, and `is_paused` fields — all settlement/cancel operations validate against this config
-  2. The `winner` account in `SettleMatch` has an Anchor constraint binding it to one of the two registered players — passing an arbitrary address causes the instruction to fail
-  3. `treasury` and `ops` accounts in `SettleMatch` are validated against the config PDA — no UncheckedAccount without address constraint remains
-  4. `cancel_match` by authority is restricted to `AwaitingDeposits` state only — calling cancel on an Active match fails
-  5. All BPS arithmetic uses u128 intermediates with checked operations — `cargo test` passes all 39 BOK tests plus new tests for added constraints
-  6. `cargo build-sbf` succeeds and program deploys to devnet localnet
-**Plans:** 3 plans
-Plans:
-- [x] 01-01-PLAN.md -- Rewrite lib.rs with all OC-01 through OC-12 security fixes (756 LOC, GlobalConfig PDA, constraints, checked arithmetic, pause, wager bounds)
-- [x] 01-02-PLAN.md -- Build program, generate IDL, update server escrow.js for config PDA integration (OC-14)
-- [x] 01-03-PLAN.md -- 25-test suite covering all constraints and negative cases (execution deferred — McAfee blocks validator)
+  1. Jupiter Mobile appears at the top of the wallet adapter list with a visual highlight, and connecting through it works end-to-end
+  2. A service fetches SHOT/SOL price from lite-api.jup.ag and returns a formatted price string (handles errors and pre-launch gracefully)
+  3. Jupiter Terminal widget opens in the prestige shop, weapon shop, and post-match screen — a SOL-to-SHOT swap completes successfully on devnet
+  4. Every Terminal swap routes a platform fee percentage to the SolShot treasury wallet
+  5. No CSP violations appear in the browser console when loading Jupiter Terminal or calling the Price API
+**Plans:** TBD
 
 ---
 
-### Phase 2: Server Financial Security
-**Goal:** The escrow deposit flow verifies on-chain before accepting; settlement failures propagate to callers and trigger recovery; the rate limiter actually functions; queue wager mismatches are rejected
-**Depends on:** Phase 1 (new IDL must be integrated before deposit verification can validate PDA state)
-**Requirements:** SF-01, SF-02, SF-03, SF-04, SF-05
-**Findings addressed:** DB: H013, H049, H051, H015, H020/H050, H021/H054, H017
+### Phase 10: UI — Global, Landing & Lobby
+**Goal:** Every screen communicates what SolShot is, what SHOT is worth, and how to start playing — the landing page converts visitors, the lobby makes wager stakes clear, and the weapon shop drives prestige engagement.
+**Depends on:** Phase 9 (JUP-02 price service needed for UI-01/UI-02; JUP-04 Terminal needed for UI-11)
+**Requirements:** UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, UI-08, UI-09, UI-10, UI-11
 **Success Criteria** (what must be TRUE):
-  1. Sending a fake `escrowDepositConfirm({ txSignature: "fake" })` is rejected with an error — the server verifies the TX on-chain before accepting
-  2. When `settleMatchEscrow()` fails, `settleMatch()` returns `{ success: false }` — no silent fallback to success
-  3. On settlement failure, the server calls `cancelMatchEscrow()` as a recovery mechanism
-  4. The rate limiter correctly blocks the 31st event per second from a single socket
-  5. A joiner whose wager doesn't match the queue's required wager is rejected before pairing
-**Plans:** 2 plans
-Plans:
-- [x] 02-01-PLAN.md -- Fix Float64Array rate limiter (SF-04), queue wager validation (SF-05), on-chain deposit verification (SF-01)
-- [x] 02-02-PLAN.md -- Settlement failure propagation (SF-02) and recovery via cancelMatchEscrow (SF-03)
+  1. A SHOT price ticker is visible in the header on every screen, showing live price from Phase 9's price service — and displays "N/A" gracefully before the token has any swaps
+  2. The landing screen shows ecosystem partner logos (Solana, Jupiter, Meteora, Claude), three distinct CTAs (Play Free / Connect Wallet / Learn More), skill-based tagline, wager range, "no download" messaging, and highlights Jupiter Mobile as the recommended wallet
+  3. The wallet connect screen includes a "What is a wallet?" help link for crypto-naive players
+  4. Lobby wager tiers display pot size and winner payout (e.g., "0.2 SOL pot — winner takes 0.18 SOL"), and Practice mode is framed as an onramp ("Practice free. Earn SHOT. Wager when ready.")
+  5. Weapon shop prestige weapons show burn cost and tier requirement, with a Jupiter Terminal integration for buying SHOT
+**Plans:** TBD
 
 ---
 
-### Phase 3: Server Auth & Game Integrity
-**Goal:** Every socket handler that modifies game state or touches financial operations requires authentication; reconnection requires cryptographic proof; no client-submitted data can override server-authoritative terrain, positions, or turn state
-**Depends on:** Phase 2 (rate limiter must work before auth changes, to prevent bypass flooding)
-**Requirements:** SA-01, SA-02, SA-03, SA-04, SA-05, SA-06
-**Findings addressed:** DB: H008, H006, H033, H034, H035, H036, H009
+### Phase 11: Post-Match & Stats Pipeline
+**Goal:** After a match, players see what they earned, how close they are to the next prestige tier, can share results socially, can swap tokens — and the Barracks screen shows real lifetime stats backed by MongoDB persistence.
+**Depends on:** Phase 9 (JUP-05 Terminal for UI-15), Phase 10 (UI foundation)
+**Requirements:** UI-12, UI-13, UI-14, UI-15, UI-16, STAT-01, STAT-02, STAT-03, STAT-04
 **Success Criteria** (what must be TRUE):
-  1. Connecting a socket without wallet authentication and calling `escrowDepositConfirm` returns an error — not silently accepted
-  2. Calling `rejoinRoom` with only a wallet address (no signature) is rejected — Ed25519 re-verification required
-  3. The `terrainPath` handler either does not exist or rejects calls during BATTLE state
-  4. Firing with a position > 50px from server position uses server position — client position is not written back to server state
-  5. Calling `stepLeft` during the opponent's turn is rejected — turn ownership check enforced
-  6. Sending an event with a roomId the socket is not in is rejected
-**Plans:** 3 plans
-Plans:
-- [x] 03-01-PLAN.md -- Auth guards on 14 handlers (SA-01) + turn ownership on step handlers (SA-05) + cross-room isolation (SA-06)
-- [x] 03-02-PLAN.md -- Delete terrainPath handler (SA-03) + fix fire position writeback + positionUpdate distance validation (SA-04)
-- [x] 03-03-PLAN.md -- Ed25519 rejoin re-verification on server + client (SA-02)
+  1. The post-match screen shows SHOT milestones earned in the match, progress toward the next prestige tier, and an escrow explainer before a player's first wager
+  2. An X/Twitter share button generates a pre-filled tweet with match results, and a Jupiter Terminal swap CTA shows current SHOT price context
+  3. Match stats (wins, losses, SOL won/lost, SHOT earned) are persisted to MongoDB on every match end — verified by checking the database after a match
+  4. The BarracksScreen displays live stats (matches played, win rate, SOL net, SHOT earned) instead of "--" placeholders, served via a rate-limited `getStats` socket handler
+  5. A CombatCard React component renders the player's stats as a shareable card, exportable as a PNG via html2canvas
+**Plans:** TBD
 
 ---
 
-### Phase 4: Secrets & Key Management
-**Goal:** The compromised devnet keypair is rotated; the old key is purged from git history; production secrets are stored in Render secrets (not env vars); keys are isolated per service; a rotation mechanism exists for zero-downtime credential updates
-**Depends on:** Phase 1 (new program with config PDA must be deployed before authority rotation)
-**Requirements:** KM-01, KM-02, KM-03, KM-04, KM-05
-**Findings addressed:** DB: H001, H002, H004, H005, H045
+### Phase 12: Onboarding & Mobile Polish
+**Goal:** A new player can go from landing to first practice match in under 60 seconds, learns about SHOT and prestige naturally through play, can find help anytime — and mobile players get tactile feedback and can share to Telegram.
+**Depends on:** Phase 10 (landing page), Phase 11 (post-match screens)
+**Requirements:** ONB-01, ONB-02, ONB-03, ONB-04, MOB-01, MOB-02, MOB-03
 **Success Criteria** (what must be TRUE):
-  1. `git log --all -p -- '**/solshot-dev.json'` returns empty — the keypair is purged from all git history
-  2. `render.yaml` does not contain `SOLANA_KEYPAIR_JSON` as a plaintext env var — it references a Render secret
-  3. `escrow.js` and `solana.js` load different keypairs (or the same key via a single shared module — not independently)
-  4. After server startup, the secret key bytes are zeroed out in the original Uint8Array
-  5. The server supports SIGHUP-triggered credential reload without restart
-**Plans:** 3 plans
-Plans:
-- [x] 04-01-PLAN.md -- Centralized key module (keys.js) with zeroization; refactor escrow.js + solana.js to use it (KM-03, KM-04)
-- [x] 04-02-PLAN.md -- SIGHUP credential reload + admin endpoint in index.js; render.yaml secrets; .gitignore hardening (KM-02, KM-05)
-- [x] 04-03-PLAN.md -- Git history purge via BFG; generate new keypair; reclone (KM-01) [manual checkpoint]
+  1. A new player can reach their first practice match in under 60 seconds from the landing page (timed manually)
+  2. When a player first earns SHOT, a tooltip or modal explains what it is and what it can be used for — prestige is introduced contextually (not front-loaded at landing)
+  3. An FAQ page is accessible from every screen via a single tap/click
+  4. Mobile devices receive haptic feedback on key moments (shot fired, damage received, win/lose) and handle landscape mode gracefully (support it or show a rotation prompt)
+  5. A Telegram share button appears on the post-match screen with pre-filled text
+**Plans:** TBD
 
 ---
 
-### Phase 4.1: Doc-Code Alignment (INSERTED)
-**Goal:** Code matches all 39 litepaper/doc decisions — deposit countdown timer implemented, permissionless reclaim instruction added to escrow program, disconnect handler uses HP-based settlement for connection drops, dead code removed
-**Depends on:** Phase 4 (keys must be rotated before program changes), Phase 1 (Anchor program must be updated for new instruction)
-**Requirements:** DCA-01, DCA-02, DCA-03, DCA-04
-**Findings addressed:** Litepaper QA — escrow flow, crypto explainer, token economics alignment
+### Phase 13: Client Security
+**Goal:** The production build exposes no debugging information — no source maps, no console.log output, and CSP violations are reported to a monitoring endpoint.
+**Depends on:** Phases 9-12 (all feature work complete, so CSP covers everything)
+**Requirements:** SEC-01, SEC-02, SEC-03
 **Success Criteria** (what must be TRUE):
-  1. After both players join a wagered match, a 2-3 minute deposit countdown starts — if only one player deposits before expiry, full refund occurs and PDA closes
-  2. A `permissionless_reclaim` instruction exists in lib.rs that allows anyone to trigger refund after 2x the normal timeout — separate from `cancel_match`
-  3. When a player disconnects (not intentional quit), the server checks HP and round scores — the player ahead wins the wager; genuinely even → refund both
-  4. `server/services/raydium.js` is deleted (dead code, never imported)
-**Plans:** 2/2
-
-Plans:
-- [x] 04.1-01: Deposit countdown timer + HP-based disconnect settlement + dead code removal
-- [x] 04.1-02: Permissionless reclaim instruction + IDL rebuild + escrow.js wrapper
+  1. Production build has GENERATE_SOURCEMAP=false and no .map files are served
+  2. CSP header includes a report-uri directive pointing to a violation reporting endpoint
+  3. No console.log statements execute in production code paths (verified by searching source and checking browser console)
+**Plans:** TBD
 
 ---
 
-### Phase 5: Client & Supply Chain Security
-**Goal:** The client validates transaction instructions before signing; the Telegram SDK is self-hosted (no external CDN dependency); CSP prevents arbitrary script injection; wallet signing functions are not exposed as globals
-**Depends on:** Phase 1 (new program IDL needed for TX instruction validation)
-**Requirements:** CS-01, CS-02, CS-03, CS-04
-**Findings addressed:** DB: H019, H031, H032
+### Phase 14: Checklist Alignment & Re-Audit
+**Goal:** The Master Quality & Launch Checklist reflects all design decisions made during development, a targeted security re-check confirms CSP changes and new endpoints are safe, and a full re-audit scores the checklist with all CRITICAL items passing.
+**Depends on:** Phases 9-13 (everything must be complete for final audit)
+**Requirements:** CHK-01, CHK-02, CHK-03
 **Success Criteria** (what must be TRUE):
-  1. `signAndSendEscrowDeposit()` parses the deserialized transaction and verifies the program ID matches the escrow program — a transaction targeting a different program is rejected
-  2. The Telegram SDK is self-hosted at `/js/telegram-web-app.js` (same origin) — no external CDN dependency *(deviation: SRI hash replaced by self-hosting because Telegram updates the SDK URL in-place without versioning)*
-  3. Helmet CSP is enabled with a `script-src` that blocks inline scripts and unknown CDN origins
-  4. `window.solWallet` is undefined — Phaser accesses wallet functions through a controlled interface (React context or message bus)
-**Plans:** 2/2
-
-Plans:
-- [x] 05-01: TX instruction validation in signAndSendEscrowDeposit (CS-01) + window.solWallet removal (CS-04)
-- [x] 05-02: Self-host Telegram SDK (CS-02) + CSP meta tag and Helmet (CS-03)
-
----
-
-### Phase 6: Token Economy Hardening
-**Goal:** All in-memory deduplication Sets are persisted to MongoDB; server restart cannot be exploited for replay attacks; emission counter reset cannot bypass the supply cap
-**Depends on:** Phase 3 (auth guards must be in place before replay prevention matters)
-**Requirements:** TE-01, TE-02, TE-03
-**Findings addressed:** DB: H025, H029, H028
-**Success Criteria** (what must be TRUE):
-  1. After server restart, replaying a previously verified burn TX signature returns "already verified" — the Set is restored from MongoDB
-  2. After server restart, replaying a previously claimed match ID returns "already claimed" — the Set is restored from MongoDB
-  3. If MongoDB is unreachable at startup, the server exits with code 1 — it never starts with a zeroed emission counter
-**Plans:** 2 plans
-
-Plans:
-- [x] 06-01-PLAN.md -- Schema fields (verifiedBurnTxs, claimedMatchIds) + fail-hard startup (TE-03)
-- [x] 06-02-PLAN.md -- Set persistence in shot-token.js: load/save verifiedBurnTxs (TE-01) + claimedMatchIds (TE-02)
-
----
-
-### Phase 7: Infrastructure & Monitoring
-**Goal:** Build pipeline uses `npm ci --ignore-scripts`; sensitive endpoints are authenticated; connection floods are throttled; logs redact sensitive data; terrain seeds are unpredictable
-**Depends on:** Nothing (can run in parallel with Phases 5-6)
-**Requirements:** IM-01, IM-02, IM-03, IM-04, IM-05
-**Findings addressed:** DB: H041, H043, H024, H040, H038
-**Success Criteria** (what must be TRUE):
-  1. `render.yaml` build command includes `--ignore-scripts`
-  2. Calling `/stats` without authentication returns 401
-  3. More than 100 connections from a single IP are rejected
-  4. No wallet addresses or balances appear in cleartext in stdout logs
-  5. Terrain seeds are 128+ bits of CSPRNG entropy
-**Plans:** 2/2
-
-Plans:
-- [x] 07-01: Secure build command (IM-01) + /stats auth guard (IM-02) + per-IP connection limiting (IM-03)
-- [x] 07-02: Structured logging with pino redaction (IM-04) + 128-bit terrain seed entropy (IM-05)
-
----
-
-### Phase 8: Verification & Re-Audit
-**Goal:** All three audits re-run on the hardened codebase confirm that CRITICAL and HIGH findings are resolved; pre-launch security documentation is complete
-**Depends on:** Phases 1-7 (all remediation complete)
-**Requirements:** VR-01, VR-02, VR-03, VR-04
-**Findings addressed:** All (verification)
-**Success Criteria** (what must be TRUE):
-  1. SOS re-audit shows 0 CRITICAL and 0 HIGH findings (all either RESOLVED or documented as ACCEPTED RISK with justification)
-  2. DB re-audit shows 0 CRITICAL and 0 HIGH findings
-  3. BOK re-verification shows all 8 gaps either fixed or documented as accepted risk
-  4. A pre-launch security document exists at `.planning/SECURITY_SUMMARY.md` suitable for public disclosure
-**Plans:** 4 plans
-
-Plans:
-- [x] 08-01-PLAN.md -- SOS re-audit: fresh Fortress run on hardened lib.rs, gate check 0 CRIT/0 HIGH (VR-01)
-- [x] 08-02-PLAN.md -- DB re-audit: fresh Bulwark run on hardened server+client, gate check 0 CRIT/0 HIGH (VR-02)
-- [x] 08-03-PLAN.md -- BOK re-verification: fresh math verification on updated program arithmetic (VR-03)
-- [x] 08-04-PLAN.md -- Pre-launch security summary document at .planning/SECURITY_SUMMARY.md (VR-04)
+  1. The checklist is updated to reflect design decisions (4 states not 8, 24h timeout not 30-60min, PDA from match_id not pubkeys, 2min deposit not 3min, self-hosted Telegram SDK) — items previously marked FAIL for these reasons now show PASS or DESIGN DECISION
+  2. A targeted security re-check covers all CSP changes from Phases 9-13 and any new socket endpoints — no new vulnerabilities introduced
+  3. A full checklist re-audit is run with scoring — all items tagged CRITICAL pass, and the overall score is documented
+**Plans:** TBD
 
 ---
 
 ## Progress
 
-**Execution Order:** 1 → 2 → 3 → 4 → **4.1** → 5 → 6 → 7 → 8
-(Phases 5-7 can partially overlap after Phase 1 is done; Phase 7 is independent)
+**Execution Order:** 9 -> 10 -> 11 -> 12 -> 13 -> 14
 
 | Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 1. On-Chain Program Redesign | 3/3 | Complete (tests deferred) | 2026-02-21 |
-| 2. Server Financial Security | 2/2 | Complete | 2026-02-22 |
-| 3. Server Auth & Game Integrity | 3/3 | Complete | 2026-02-22 |
-| 4. Secrets & Key Management | 3/3 | Complete | 2026-02-22 |
-| 4.1 Doc-Code Alignment | 2/2 | Complete | 2026-02-22 |
-| 5. Client & Supply Chain Security | 2/2 | Complete | 2026-02-22 |
-| 6. Token Economy Hardening | 2/2 | Complete | 2026-02-23 |
-| 7. Infrastructure & Monitoring | 2/2 | Complete | 2026-02-23 |
-| 8. Verification & Re-Audit | 4/4 | Complete | 2026-02-23 |
+|-------|---------------|--------|-----------|
+| 9. Jupiter Integration | 0/TBD | Not started | - |
+| 10. UI — Global, Landing & Lobby | 0/TBD | Not started | - |
+| 11. Post-Match & Stats Pipeline | 0/TBD | Not started | - |
+| 12. Onboarding & Mobile Polish | 0/TBD | Not started | - |
+| 13. Client Security | 0/TBD | Not started | - |
+| 14. Checklist Alignment & Re-Audit | 0/TBD | Not started | - |
 
-**Total:** 25/25 plans complete (All phases done — v1.1 milestone COMPLETE)
+**Total:** 0/TBD plans complete
 
 ---
-
-## Findings Coverage Matrix
-
-### SOS Findings (On-Chain)
-
-| Finding | Severity | Phase | Requirement | Status |
-|---------|----------|-------|-------------|--------|
-| S001 | CRITICAL | 1 | OC-02, OC-03 | Resolved |
-| H008 | CRITICAL | 1 | OC-02 | Resolved |
-| H001 | CRITICAL | 1 | OC-03 | Resolved |
-| H026 | CRITICAL | 1 | OC-01 | Resolved |
-| H029 | CRITICAL | — | Out of scope (v1.2) | Deferred |
-| H007 | CRITICAL | 1 | OC-01 | Resolved |
-| H003 | CRITICAL | 1 | OC-03 | Resolved |
-| H009 | HIGH | 1 | OC-05 | Resolved |
-| S004 | HIGH | 1 | OC-05 | Resolved |
-| S005 | HIGH | 1 | OC-06 | Resolved |
-| H002 | HIGH | 1 | OC-02 | Resolved |
-| H022 | HIGH | 1 | OC-07 | Resolved |
-| H028 | HIGH | 1 | OC-04 | Resolved |
-| S003 | MEDIUM | 1 | OC-11 | Resolved |
-| H015 | MEDIUM | 1 | — | Resolved (via H022) |
-| H027 | MEDIUM | 1 | OC-13 | Deferred to mainnet |
-| H014 | MEDIUM | — | Accepted risk | N/A |
-| H024 | MEDIUM | 1 | OC-07 | Resolved |
-| H017 | MEDIUM | 1 | OC-08 | Resolved |
-| H018 | LOW | — | Nice-to-have | Optional |
-| H016 | LOW | — | Nice-to-have | Optional |
-| H031 | LOW | — | Nice-to-have | Optional |
-| H032 | LOW | — | Nice-to-have | Optional |
-
-### DB Findings (Off-Chain) — CRITICAL + HIGH only
-
-| Finding | Severity | Phase | Requirement | Status |
-|---------|----------|-------|-------------|--------|
-| H001 | CRITICAL | 4 | KM-01 | Resolved |
-| H006 | CRITICAL | 3 | SA-02 | Resolved |
-| H013 | CRITICAL | 2 | SF-01 | Resolved |
-| H019 | CRITICAL | 5 | CS-01 | Resolved |
-| H031 | CRITICAL | 5 | CS-02, CS-03 | Resolved |
-| H047 | CRITICAL | 4 | KM-01 (downstream) | Resolved |
-| H049 | CRITICAL | 2 | SF-01, SF-02 | Resolved |
-| H053 | CRITICAL | 1 | OC-01 | Resolved |
-| H002 | HIGH | 4 | KM-02 | Resolved |
-| H004 | HIGH | 4 | KM-03 | Resolved |
-| H005 | HIGH | 4 | KM-04 | Resolved |
-| H008 | HIGH | 3 | SA-01 | Resolved |
-| H015 | HIGH | 2 | SF-02 | Resolved |
-| H017 | HIGH | 2 | SF-05 | Resolved |
-| H020/H050 | HIGH | 2 | SF-03 | Resolved |
-| H021/H054 | HIGH | 2 | SF-04 | Resolved |
-| H025 | HIGH | 6 | TE-01 | Resolved |
-| H028 | HIGH | 6 | TE-03 | Resolved |
-| H029 | HIGH | 6 | TE-02 | Resolved |
-| H033 | HIGH | 3 | SA-03 | Resolved |
-| H035 | HIGH | 3 | SA-04 | Resolved |
-| H036 | HIGH | 3 | SA-05 | Resolved |
-| H045 | HIGH | 4 | KM-05 | Resolved |
-| H048 | HIGH | 1 | OC-03 | Resolved |
-
-### BOK Coverage Gaps
-
-| Gap | Severity | Phase | Requirement | Status |
-|-----|----------|-------|-------------|--------|
-| GAP-001 | MEDIUM | 1 | OC-08 | Resolved |
-| GAP-002 | LOW | 1 | OC-09 | Resolved |
-| GAP-003 | HIGH | 1 | OC-03 | Resolved |
-| GAP-004 | LOW | 1 | OC-10 | Resolved |
-| GAP-005 | LOW | 1 | OC-10 | Resolved |
-| GAP-006 | LOW | 1 | OC-09 (comment) | Resolved |
-| GAP-007 | LOW | 1 | OC-09 | Resolved |
-| GAP-008 | LOW | 1 | OC-12 | Resolved |
+*Roadmap created: 24 Feb 2026*
+*Last updated: 24 Feb 2026*

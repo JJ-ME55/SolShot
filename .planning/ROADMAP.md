@@ -21,7 +21,7 @@ Three security audits (SOS, DB, BOK) all PASS. SECURITY_SUMMARY.md at `.planning
 ## Phases
 
 - [x] **Phase 9: Jupiter Integration** — Wallet adapter, Price API, Plugin SDK, platform fee, CSP updates
-- [ ] **Phase 10: UI — Global, Landing & Lobby** — Price ticker, ecosystem logos, landing CTAs, lobby polish, weapon shop
+- [x] **Phase 10: UI — Global, Landing & Lobby** — Price ticker, ecosystem logos, landing CTAs, lobby polish, weapon shop
 - [ ] **Phase 11: Post-Match & Stats Pipeline** — Post-match UX, stats persistence, BarracksScreen, Combat Card
 - [ ] **Phase 12: Onboarding & Mobile Polish** — First-match flow, contextual education, FAQ, haptics, sharing
 - [ ] **Phase 13: Client Security** — Source maps, CSP report-uri, console.log cleanup
@@ -61,9 +61,9 @@ Plans:
   5. Weapon shop prestige weapons show burn cost and tier requirement, with a Jupiter Terminal integration for buying SHOT
 **Plans:** 3 plans
 Plans:
-- [ ] 10-01-PLAN.md — ShotPriceTicker component, TopBar flex refactor, WalletDisplay help link
-- [ ] 10-02-PLAN.md — MenuScreen landing overhaul (ecosystem partners, CTAs, copy, Jupiter Mobile callout)
-- [ ] 10-03-PLAN.md — Lobby wager payout display, practice onramp, ShopScreen prestige weapon metadata
+- [x] 10-01-PLAN.md — ShotPriceTicker component, TopBar flex refactor, WalletDisplay help link
+- [x] 10-02-PLAN.md — MenuScreen landing overhaul (ecosystem partners, CTAs, copy, Jupiter Mobile callout)
+- [x] 10-03-PLAN.md — Lobby wager payout display, practice onramp, ShopScreen prestige weapon metadata
 
 ---
 
@@ -126,13 +126,13 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|---------------|--------|-----------|
 | 9. Jupiter Integration | 3/3 | Complete | 2026-02-24 |
-| 10. UI — Global, Landing & Lobby | 0/3 | Not started | - |
+| 10. UI — Global, Landing & Lobby | 3/3 | Complete | 2026-02-24 |
 | 11. Post-Match & Stats Pipeline | 0/TBD | Not started | - |
 | 12. Onboarding & Mobile Polish | 0/TBD | Not started | - |
 | 13. Client Security | 0/TBD | Not started | - |
 | 14. Checklist Alignment & Re-Audit | 0/TBD | Not started | - |
 
-**Total:** 3/6+ plans complete (Phase 9 done, Phase 10 planned)
+**Total:** 6/6+ plans complete (Phases 9-10 done)
 
 ---
 *Roadmap created: 24 Feb 2026*

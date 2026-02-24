@@ -20,20 +20,20 @@ Requirements for launch readiness. Each maps to roadmap phases.
 
 ### User Interface — Global & Landing
 
-- [ ] **UI-01**: SHOT price ticker visible in header/top bar across all screens (subtle: "SHOT $0.0042 | +12%")
-- [ ] **UI-02**: Price ticker handles pre-launch gracefully (shows "N/A" or "Coming Soon" before first swap)
-- [ ] **UI-03**: Ecosystem logos row on landing screen (Solana, Jupiter, Meteora, Claude)
-- [ ] **UI-04**: Landing screen three CTAs: Play Free (primary) | Connect Wallet | Learn More
-- [ ] **UI-05**: Landing screen copy: skill-not-luck tagline, wager range visible, "no download" message
-- [ ] **UI-06**: Jupiter Mobile highlighted as wallet option on landing ("New to crypto? Start here.")
-- [ ] **UI-07**: "What is a wallet?" link visible on wallet connect screen for crypto-naive players
+- [x] **UI-01**: SHOT price ticker visible in header/top bar across all screens (subtle: "SHOT $0.0042 | +12%")
+- [x] **UI-02**: Price ticker handles pre-launch gracefully (shows "N/A" or "Coming Soon" before first swap)
+- [x] **UI-03**: Ecosystem logos row on landing screen (Solana, Jupiter, Meteora, Claude)
+- [x] **UI-04**: Landing screen three CTAs: Play Free (primary) | Connect Wallet | Learn More
+- [x] **UI-05**: Landing screen copy: skill-not-luck tagline, wager range visible, "no download" message
+- [x] **UI-06**: Jupiter Mobile highlighted as wallet option on landing ("New to crypto? Start here.")
+- [x] **UI-07**: "What is a wallet?" link visible on wallet connect screen for crypto-naive players
 
 ### User Interface — Lobby & Weapon Shop
 
-- [ ] **UI-08**: Wager tiers show pot size in lobby (e.g., "0.2 SOL pot — winner takes 0.18 SOL")
-- [ ] **UI-09**: Practice mode framed as onramp ("Practice free. Earn SHOT. Wager when ready.")
-- [ ] **UI-10**: Weapon shop prestige weapons show burn cost and tier requirement
-- [ ] **UI-11**: Weapon shop Jupiter Terminal integration ("Buy SHOT to unlock prestige weapons")
+- [x] **UI-08**: Wager tiers show pot size in lobby (e.g., "0.2 SOL pot — winner takes 0.18 SOL")
+- [x] **UI-09**: Practice mode framed as onramp ("Practice free. Earn SHOT. Wager when ready.")
+- [x] **UI-10**: Weapon shop prestige weapons show burn cost and tier requirement
+- [x] **UI-11**: Weapon shop Jupiter Terminal integration ("Buy SHOT to unlock prestige weapons")
 
 ### User Interface — Post-Match
 
@@ -121,17 +121,17 @@ Deferred to future release. Tracked but not in current roadmap.
 | JUP-05 | Phase 9 | Complete |
 | JUP-06 | Phase 9 | Complete |
 | JUP-07 | Phase 9 | Complete |
-| UI-01 | Phase 10 | Pending |
-| UI-02 | Phase 10 | Pending |
-| UI-03 | Phase 10 | Pending |
-| UI-04 | Phase 10 | Pending |
-| UI-05 | Phase 10 | Pending |
-| UI-06 | Phase 10 | Pending |
-| UI-07 | Phase 10 | Pending |
-| UI-08 | Phase 10 | Pending |
-| UI-09 | Phase 10 | Pending |
-| UI-10 | Phase 10 | Pending |
-| UI-11 | Phase 10 | Pending |
+| UI-01 | Phase 10 | Complete |
+| UI-02 | Phase 10 | Complete |
+| UI-03 | Phase 10 | Complete |
+| UI-04 | Phase 10 | Complete |
+| UI-05 | Phase 10 | Complete |
+| UI-06 | Phase 10 | Complete |
+| UI-07 | Phase 10 | Complete |
+| UI-08 | Phase 10 | Complete |
+| UI-09 | Phase 10 | Complete |
+| UI-10 | Phase 10 | Complete |
+| UI-11 | Phase 10 | Complete |
 | UI-12 | Phase 11 | Pending |
 | UI-13 | Phase 11 | Pending |
 | UI-14 | Phase 11 | Pending |

@@ -6,6 +6,22 @@ import Modal from '../components/Modal';
 import JupiterSwap from '../components/JupiterSwap';
 import useSocket from '../hooks/useSocket';
 import WEAPONS, { getTierColor, getWeaponIconUrl, getWeaponById } from '../data/weapons';
+import { PRESTIGE_TIERS } from '../data/tiers';
+
+/* ── prestige weapon metadata (weapon ID → tier info) ── */
+const PRESTIGE_WEAPON_META = {};
+PRESTIGE_TIERS.forEach((tier) => {
+  if (tier.weapons && tier.cost > 0) {
+    tier.weapons.forEach((wId) => {
+      PRESTIGE_WEAPON_META[wId] = {
+        tierName: tier.name,
+        burnCost: tier.cost,
+        color: tier.color,
+        reward: tier.reward,
+      };
+    });
+  }
+});
 
 /* ── styles ── */
 const s = {
@@ -506,14 +522,38 @@ function ShopScreen({ navigate, screenData }) {
                 </Button>
               )}
 
-              {/* Prestige weapon — offer SHOT purchase */}
-              {selectedWeapon && selectedWeapon.tier && selectedWeapon.tier.toLowerCase().includes('prestige') && (
-                <JupiterSwap
-                  mode="modal"
-                  buttonLabel="BUY SHOT TO UNLOCK"
-                  buttonStyle={{ marginTop: 6, fontSize: 8, padding: '5px 10px' }}
-                />
-              )}
+              {/* Prestige weapon — tier name, burn cost, and SHOT purchase */}
+              {selectedWeapon && (() => {
+                const prestigeMeta = PRESTIGE_WEAPON_META[selectedWeapon.id];
+                if (!prestigeMeta) return null;
+                return (
+                  <div style={{ marginTop: 8, textAlign: 'center' }}>
+                    <div style={{
+                      fontFamily: "'Black Ops One', cursive",
+                      fontSize: 12,
+                      color: prestigeMeta.color,
+                      letterSpacing: 2,
+                      marginBottom: 4,
+                    }}>
+                      {prestigeMeta.tierName.toUpperCase() + ' PRESTIGE'}
+                    </div>
+                    <div style={{
+                      fontFamily: "'Share Tech Mono', monospace",
+                      fontSize: 11,
+                      color: 'var(--sp)',
+                      letterSpacing: 1,
+                      marginBottom: 6,
+                    }}>
+                      {'REQUIRES ' + prestigeMeta.burnCost.toLocaleString() + ' SHOT BURN'}
+                    </div>
+                    <JupiterSwap
+                      mode="modal"
+                      buttonLabel={'BUY SHOT TO UNLOCK ' + prestigeMeta.tierName.toUpperCase()}
+                      buttonStyle={{ fontSize: 8, padding: '5px 10px' }}
+                    />
+                  </div>
+                );
+              })()}
             </div>
           ) : (
             <div style={s.detailBox}>

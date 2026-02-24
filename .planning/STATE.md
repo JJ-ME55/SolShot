@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 24 Feb 2026)
 
 Milestone: v1.2 — Launch Readiness
 Phase: 12 of 14 (Onboarding & Mobile Polish) — In progress
-Plan: 1 of 3 in current phase
-Status: Plan 12-01 complete
-Last activity: 24 Feb 2026 — Completed 12-01-PLAN.md
+Plan: 3 of 3 in current phase
+Status: Plan 12-03 complete (phase 12 DONE)
+Last activity: 24 Feb 2026 — Completed 12-03-PLAN.md
 
-Progress: [███████░░░] ~55%
+Progress: [████████░░] ~65%
 
 
 ## Performance Metrics
@@ -86,6 +86,11 @@ Progress: [███████░░░] ~55%
 - **[12-01] iOS Taptic workaround: hidden checkbox with 'switch' attribute — best-effort, silent no-op if DOM unavailable**
 - **[12-01] dApp browser detection: isMobile AND (phantom.solana OR solflare) AND NOT regular Safari — targets locked dApp browser UX**
 - **[12-01] sessionStorage for portrait/dApp dismissals (not localStorage) — resets each browser session intentionally**
+- **[12-03] ShotExplainer is fixed overlay (outside tabs), PrestigeIntro is inline card (inside Progress tab) — separation intentional**
+- **[12-03] 500ms delay on ShotExplainer show — lets tab render settle before modal appears**
+- **[12-03] opponentId derived from roundWins keys (not scores) — roundWins always has both player IDs in finished match**
+- **[12-03] localStorage 'solshot_matches_played' counter incremented on WinScreen/LoseScreen mount — tracks total matches for PrestigeIntro gate**
+- **[12-03] localStorage 'solshot_shot_explained' one-time gate — ShotExplainer shown at most once per browser**
 
 ### Pending Todos
 
@@ -101,6 +106,6 @@ Progress: [███████░░░] ~55%
 
 ## Session Continuity
 
-Last session: 2026-02-24T17:00:00Z
-Stopped at: Completed 12-01-PLAN.md — haptic utility, dApp browser banner, portrait dismiss
+Last session: 2026-02-24T18:00:00Z
+Stopped at: Completed 12-03-PLAN.md — ShotExplainer, PrestigeIntro, TelegramShare (Phase 12 complete)
 Resume file: None

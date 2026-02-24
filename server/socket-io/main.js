@@ -2047,6 +2047,18 @@ const mainsocket = (io) => {
                     // Track kill: if opponent HP dropped to 0 from this shot
                     if (hpBefore > 0 && ms.hp[playerId] <= 0 && playerId !== this.id) {
                         ms.kills[this.id] = (ms.kills[this.id] || 0) + 1
+                        // Phase 11: Track death for the player who died
+                        ms.totalDeaths[playerId] = (ms.totalDeaths[playerId] || 0) + 1
+                    }
+                    // Phase 11: Track weapon hits and damage dealt to opponent
+                    if (dmg > 0 && playerId !== this.id) {
+                        const whId = String(weaponId || '')
+                        if (whId) {
+                            if (!ms.weaponHits[this.id]) ms.weaponHits[this.id] = {}
+                            ms.weaponHits[this.id][whId] = (ms.weaponHits[this.id][whId] || 0) + 1
+                            if (!ms.weaponDamage[this.id]) ms.weaponDamage[this.id] = {}
+                            ms.weaponDamage[this.id][whId] = (ms.weaponDamage[this.id][whId] || 0) + dmg
+                        }
                     }
                 }
 
@@ -2074,6 +2086,11 @@ const mainsocket = (io) => {
                 if (!ms.weaponsUsed) ms.weaponsUsed = {}
                 if (!ms.weaponsUsed[this.id]) ms.weaponsUsed[this.id] = new Set()
                 ms.weaponsUsed[this.id].add(weaponId)
+
+                // Phase 11: Track shots fired per weapon
+                if (!ms.weaponShotsFired[this.id]) ms.weaponShotsFired[this.id] = {}
+                const wfId = String(weaponId || '')
+                if (wfId) ms.weaponShotsFired[this.id][wfId] = (ms.weaponShotsFired[this.id][wfId] || 0) + 1
 
                 // Advance turn
                 ms.turnCount++

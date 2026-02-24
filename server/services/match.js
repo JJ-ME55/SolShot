@@ -101,7 +101,12 @@ export function createMatchState(roomId, roundType = '1') {
         turnsPerRound: 20,   // 10 per player per round
         terrain: null,
         tankPositions: null,
-        stateChangedAt: Date.now()
+        stateChangedAt: Date.now(),
+        // Phase 11: Per-weapon stats tracking
+        weaponShotsFired: {}, // { [playerId]: { [weaponId]: count } }
+        weaponHits: {},       // { [playerId]: { [weaponId]: count } }
+        weaponDamage: {},     // { [playerId]: { [weaponId]: totalDmg } }
+        totalDeaths: {},      // { [playerId]: deathCount }
     };
 }
 

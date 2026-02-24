@@ -20,6 +20,18 @@ const userSchema = new mongoose.Schema({
         totalShotEarned: { type: Number, default: 0 },
         shotBurned: { type: Number, default: 0 },
         prestigeTier: { type: Number, default: 0 },
+        // Phase 11: K/D and per-weapon stats
+        kills: { type: Number, default: 0 },
+        deaths: { type: Number, default: 0 },
+        weaponStats: {
+            type: Map,
+            of: new mongoose.Schema({
+                shotsFired: { type: Number, default: 0 },
+                hits: { type: Number, default: 0 },
+                damageDealt: { type: Number, default: 0 }
+            }, { _id: false }),
+            default: {}
+        },
         // Litepaper v2.1 milestone state — persisted across server restarts
         totalMatchesPlayed: { type: Number, default: 0 },
         wageredMatchesPlayed: { type: Number, default: 0 },

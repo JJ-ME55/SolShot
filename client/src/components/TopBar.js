@@ -1,16 +1,38 @@
 import React from 'react';
 import WalletDisplay from './WalletDisplay';
+import ShotPriceTicker from './ShotPriceTicker';
 
 const styles = {
   bar: {
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'space-between',
     height: 48,
     padding: '0 14px',
     borderBottom: '1px solid var(--od)',
     background: 'rgba(10, 12, 8, 0.7)',
     flexShrink: 0,
+  },
+  wrapper: {
+    display: 'flex',
+    alignItems: 'center',
+    width: '100%',
+  },
+  left: {
+    flexShrink: 0,
+    minWidth: 80,
+  },
+  center: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 2,
+  },
+  right: {
+    flexShrink: 0,
+    minWidth: 80,
+    display: 'flex',
+    justifyContent: 'flex-end',
   },
   backBtn: {
     display: 'flex',
@@ -34,16 +56,6 @@ const styles = {
     color: 'var(--bn)',
     letterSpacing: 2,
     textTransform: 'uppercase',
-    position: 'absolute',
-    left: '50%',
-    transform: 'translateX(-50%)',
-  },
-  wrapper: {
-    position: 'relative',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    width: '100%',
   },
 };
 
@@ -52,7 +64,7 @@ function TopBar({ title, onBack, showWallet = true }) {
     <div style={styles.bar}>
       <div style={styles.wrapper}>
         {/* Left: Back button */}
-        <div>
+        <div style={styles.left}>
           {onBack && (
             <button
               style={styles.backBtn}
@@ -65,11 +77,14 @@ function TopBar({ title, onBack, showWallet = true }) {
           )}
         </div>
 
-        {/* Center: Title */}
-        {title && <div style={styles.title}>{title}</div>}
+        {/* Center: Title + SHOT price ticker */}
+        <div style={styles.center}>
+          {title && <div style={styles.title}>{title}</div>}
+          <ShotPriceTicker />
+        </div>
 
         {/* Right: Wallet */}
-        <div>
+        <div style={styles.right}>
           {showWallet && <WalletDisplay compact />}
         </div>
       </div>

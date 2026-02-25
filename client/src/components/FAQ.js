@@ -1,0 +1,186 @@
+import React, { useState, useEffect } from 'react';
+
+/* ── FAQ content ── */
+const FAQ_SECTIONS = [
+  {
+    id: 'how-to-play',
+    question: 'How do I play?',
+    answer: 'SolShot is a turn-based artillery game. Adjust your angle and power, then fire! Take turns with your opponent until one tank is destroyed. Each match, you pick 10 weapons from a random selection.',
+  },
+  {
+    id: 'weapons',
+    question: 'How do weapons work?',
+    answer: 'You get 20 weapons to choose from at the start of each match \u2014 pick your best 10. Each weapon has different damage, blast radius, and special effects. Unlock 5 prestige weapons by burning SHOT tokens.',
+  },
+  {
+    id: 'shot-token',
+    question: 'What is SHOT?',
+    answer: 'SHOT is the SolShot game token. You earn it from playing matches. Burn SHOT to unlock prestige tiers (Bronze through Diamond), each granting access to more powerful exclusive weapons.',
+  },
+  {
+    id: 'prestige',
+    question: 'What are prestige tiers?',
+    answer: 'There are 5 prestige tiers: Bronze, Silver, Gold, Platinum, and Diamond. Each tier unlocks exclusive weapons and cosmetics. Advance by burning SHOT tokens on the Prestige screen.',
+  },
+  {
+    id: 'wagering',
+    question: 'How does wagering work?',
+    answer: 'In Duel and High Roller modes, you wager SOL against your opponent. Wagers are held in a trustless on-chain escrow. Winners receive 90% of the pot, with 7% to treasury and 3% to operations.',
+  },
+  {
+    id: 'wallets',
+    question: 'Which wallets work?',
+    answer: 'Any Solana wallet that supports Wallet Adapter \u2014 Phantom, Solflare, Backpack, and more. Connect your wallet to play wagered matches and earn SHOT.',
+  },
+  {
+    id: 'mobile',
+    question: 'Best experience on mobile?',
+    answer: 'Use Chrome or Safari in landscape mode for the best experience. Wallet dApp browsers are locked to portrait \u2014 open solshot.gg directly in your mobile browser instead.',
+  },
+];
+
+/* ── styles ── */
+const s = {
+  backdrop: {
+    position: 'fixed',
+    inset: 0,
+    zIndex: 9500,
+    background: 'rgba(0,0,0,0.85)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  content: {
+    position: 'relative',
+    width: '100%',
+    maxWidth: 600,
+    maxHeight: '80vh',
+    overflowY: 'auto',
+    background: 'var(--od)',
+    border: '1px solid var(--ol)',
+    borderRadius: 6,
+    margin: '0 16px',
+    padding: '24px 20px 20px',
+  },
+
+  closeBtn: {
+    position: 'absolute',
+    top: 12,
+    right: 14,
+    background: 'none',
+    border: 'none',
+    color: 'var(--kh)',
+    fontSize: 22,
+    cursor: 'pointer',
+    lineHeight: 1,
+    padding: '2px 6px',
+  },
+
+  title: {
+    fontFamily: "'Black Ops One', cursive",
+    fontSize: 20,
+    color: 'var(--rg)',
+    letterSpacing: 3,
+    marginBottom: 18,
+    marginTop: 0,
+  },
+
+  section: {
+    borderBottom: '1px solid var(--ol)',
+    marginBottom: 0,
+  },
+
+  questionBtn: (open) => ({
+    width: '100%',
+    background: 'none',
+    border: 'none',
+    textAlign: 'left',
+    padding: '12px 0',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    fontFamily: "'Black Ops One', cursive",
+    fontSize: 14,
+    letterSpacing: 1,
+    color: open ? 'var(--rg)' : 'var(--am)',
+  }),
+
+  chevron: (open) => ({
+    fontSize: 12,
+    color: open ? 'var(--rg)' : 'var(--kh)',
+    transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+    transition: 'transform 0.2s ease',
+    flexShrink: 0,
+  }),
+
+  answer: {
+    fontFamily: "'Share Tech Mono', monospace",
+    fontSize: 13,
+    color: 'var(--kh)',
+    lineHeight: 1.6,
+    paddingBottom: 14,
+    paddingRight: 8,
+  },
+};
+
+function FAQSection({ item, isOpen, onToggle }) {
+  return (
+    <div style={s.section}>
+      <button style={s.questionBtn(isOpen)} onClick={onToggle} aria-expanded={isOpen}>
+        <span>{item.question}</span>
+        <span style={s.chevron(isOpen)}>&#9660;</span>
+      </button>
+      {isOpen && (
+        <div style={s.answer}>{item.answer}</div>
+      )}
+    </div>
+  );
+}
+
+export default function FAQ({ isOpen, onClose }) {
+  const [openSection, setOpenSection] = useState(null);
+
+  /* Close on Escape key */
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  /* Reset open section when modal closes */
+  useEffect(() => {
+    if (!isOpen) setOpenSection(null);
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const handleBackdropClick = () => onClose();
+  const handleContentClick = (e) => e.stopPropagation();
+
+  const handleToggle = (id) => {
+    setOpenSection((prev) => (prev === id ? null : id));
+  };
+
+  return (
+    <div style={s.backdrop} onClick={handleBackdropClick} role="dialog" aria-modal="true" aria-label="FAQ">
+      <div style={s.content} onClick={handleContentClick}>
+        <button style={s.closeBtn} onClick={onClose} aria-label="Close FAQ">&#10005;</button>
+        <div style={s.title}>FREQUENTLY ASKED</div>
+        {FAQ_SECTIONS.map((item) => (
+          <FAQSection
+            key={item.id}
+            item={item}
+            isOpen={openSection === item.id}
+            onToggle={() => handleToggle(item.id)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}

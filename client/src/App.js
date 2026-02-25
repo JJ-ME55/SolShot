@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { socket } from './socket/index';
 import './utils/haptic';
+import FAQ from './components/FAQ';
 import { SolShotWalletProvider } from './wallet/WalletContext';
 import { TelegramProvider } from './telegram/TelegramContext';
 import useTelegramBackButton from './telegram/useTelegramBackButton';
@@ -28,6 +29,7 @@ Object.defineProperty(window, 'socket', {
 function AppInner() {
   const [screen, setScreen] = useState('loading');
   const [screenData, setScreenData] = useState({});
+  const [faqOpen, setFaqOpen] = useState(false);
 
   // CS-04: Use wallet adapter hook directly for rejoin logic (avoids window.solWallet)
   const { publicKey, signMessage } = useWallet();
@@ -145,6 +147,30 @@ function AppInner() {
     <Layout>
       {renderScreen()}
       <PortraitWarning />
+      <button
+        onClick={() => setFaqOpen(true)}
+        aria-label="Open FAQ"
+        style={{
+          position: 'fixed',
+          bottom: 12,
+          right: 12,
+          zIndex: 9000,
+          width: 40,
+          height: 40,
+          borderRadius: '50%',
+          background: 'rgba(10, 12, 8, 0.85)',
+          border: '1px solid var(--ol)',
+          color: '#fff',
+          fontFamily: "'Black Ops One', cursive",
+          fontSize: 18,
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          lineHeight: 1,
+        }}
+      >?</button>
+      <FAQ isOpen={faqOpen} onClose={() => setFaqOpen(false)} />
     </Layout>
   );
 }

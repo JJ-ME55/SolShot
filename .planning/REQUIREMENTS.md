@@ -71,9 +71,9 @@ Requirements for launch readiness. Each maps to roadmap phases.
 
 ### Checklist Alignment & Re-Audit
 
-- [ ] **CHK-01**: Checklist updated for design decisions (4 states not 8, 24h timeout not 30-60min, PDA from match_id not pubkeys, 2min deposit not 3min, self-hosted Telegram SDK)
-- [ ] **CHK-02**: Targeted security re-check on CSP changes and any new socket endpoints
-- [ ] **CHK-03**: Full checklist re-audit with scoring — all CRITICAL items must pass
+- [x] **CHK-01**: Checklist updated for design decisions (4 states not 8, 24h timeout not 30-60min, PDA from match_id not pubkeys, 2min deposit not 3min, self-hosted Telegram SDK)
+- [x] **CHK-02**: Targeted security re-check on CSP changes and any new socket endpoints — SKIPPED per phase context (deferred)
+- [x] **CHK-03**: Full checklist re-audit with scoring — all CRITICAL items must pass
 
 ## v2 Requirements
 

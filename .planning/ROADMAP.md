@@ -25,7 +25,7 @@ Three security audits (SOS, DB, BOK) all PASS. SECURITY_SUMMARY.md at `.planning
 - [x] **Phase 11: Post-Match & Stats Pipeline** — Post-match UX, stats persistence, BarracksScreen, Combat Card
 - [x] **Phase 12: Onboarding & Mobile Polish** — First-match flow, contextual education, FAQ, haptics, sharing
 - [x] **Phase 13: Client Security** — Source maps, CSP report-uri, console.log cleanup
-- [ ] **Phase 14: Checklist Alignment & Re-Audit** — Design decision updates, targeted security check, full re-audit
+- [x] **Phase 14: Checklist Alignment & Re-Audit** — Design decision updates, targeted security check, full re-audit
 
 ---
 
@@ -127,8 +127,8 @@ Plans:
   3. A full checklist re-audit is run with scoring — all items tagged CRITICAL pass, and the overall score is documented
 **Plans:** 2 plans
 Plans:
-- [ ] 14-01-PLAN.md — Design decision annotations (CHK-01) and audit of Workstreams A-D
-- [ ] 14-02-PLAN.md — Audit of Workstreams E-H and scored summary table
+- [x] 14-01-PLAN.md — Design decision annotations (CHK-01) and audit of Workstreams A-D
+- [x] 14-02-PLAN.md — Audit of Workstreams E-H and scored summary table
 
 ---
 
@@ -143,10 +143,10 @@ Plans:
 | 11. Post-Match & Stats Pipeline | 3/3 | Complete | 2026-02-24 |
 | 12. Onboarding & Mobile Polish | 3/3 | Complete | 2026-02-25 |
 | 13. Client Security | 1/1 | Complete | 2026-02-25 |
-| 14. Checklist Alignment & Re-Audit | 0/2 | Not started | - |
+| 14. Checklist Alignment & Re-Audit | 2/2 | Complete | 2026-02-25 |
 
-**Total:** 13/15 plans complete (Phases 9-13 done)
+**Total:** 15/15 plans complete (All phases done)
 
 ---
 *Roadmap created: 24 Feb 2026*
-*Last updated: 25 Feb 2026 — Phase 14 planned*
+*Last updated: 25 Feb 2026 — Phase 14 complete, v1.2 milestone done*

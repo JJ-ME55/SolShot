@@ -27,16 +27,30 @@ All work 21-23 Feb 2026. Three security audits (SOS, DB, BOK) — all CRITICAL/H
 
 ### Last Phase Number: 8
 
-## v1.2 — Launch Readiness (ACTIVE)
+## v1.2 — Launch Readiness (SHIPPED 2026-02-25)
 
-Started 24 Feb 2026. Closing checklist gaps — Jupiter integration, UI polish, stats, onboarding, re-audit.
+**Delivered:** Full code-level launch readiness — Jupiter ecosystem integration, polished UI across all screens, stats pipeline with social sharing, mobile haptics, and a 221-item checklist re-audit.
 
-### Phases
-- Phase 9: Jupiter Integration
-- Phase 10: UI — Global, Landing & Lobby
-- Phase 11: Post-Match & Stats Pipeline
-- Phase 12: Onboarding & Mobile Polish
-- Phase 13: Client Security
-- Phase 14: Checklist Alignment & Re-Audit
+**Phases completed:** 9-14 (15 plans total)
+
+**Key accomplishments:**
+- Jupiter ecosystem integration (Mobile wallet, Price API V3, Terminal SDK with 0.5% platform fee)
+- Landing page overhaul with ecosystem partners, SHOT price ticker, wager display
+- Post-match stats pipeline (MongoDB persistence, milestones, prestige progress, X/Twitter sharing)
+- Mobile experience (haptic feedback, dApp browser detection, Telegram share, FAQ)
+- Client security hardening (source maps disabled, CSP report-uri, console.log cleanup)
+- Full 221-item checklist re-audit with 5 design decision annotations and scored summary
+
+**Stats:**
+- 85 files changed, ~37K insertions, ~35K deletions
+- 31 source files modified (client + server)
+- 62 commits across 6 phases
+- 2 days (24 Feb → 25 Feb 2026)
+
+**Git range:** `ffc846b` → `04eda30`
+
+**Launch checklist:** 91/195 scored items pass (47%) — gap is QA sessions (54 items) and deployment (14 items), not missing code.
+
+**What's next:** Deployment, QA sessions, mainnet readiness
 
 ### Last Phase Number: 14

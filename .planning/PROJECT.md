@@ -36,21 +36,25 @@ Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled tru
 - PWA icons, favicon, branding assets (54 images)
 - Security: helmet, rate-limit, CSPRNG, turn validation, async mutex, CSP, TX validation
 - Three security audits completed: SOS (contract), DB (server+client), BOK (math) — all PASS
+- Jupiter Mobile wallet adapter (top of wallet list with Reown) — v1.2
+- Jupiter Price API V3 — live SHOT/SOL price across all screens — v1.2
+- Jupiter Terminal SDK — SOL→SHOT swaps with 0.5% platform fee — v1.2
+- SHOT price ticker in global header — v1.2
+- Landing screen (ecosystem partners, CTAs, skill-not-luck tagline) — v1.2
+- Post-match UX (milestones, prestige progress, escrow explainer, X/Twitter share, Jupiter swap) — v1.2
+- Stats pipeline (MongoDB persist → socket serve → BarracksScreen + CombatCard) — v1.2
+- Onboarding flows (wallet help, SHOT explainer, prestige intro, FAQ) — v1.2
+- Client security (source maps disabled, CSP report-uri, console.log cleanup) — v1.2
+- Mobile polish (haptic feedback, Telegram share, dApp browser detection) — v1.2
+- 221-item checklist re-audit with scored summary (91/195, 47%) — v1.2
 
 ### Active
 
-- [ ] Jupiter Mobile wallet adapter (top of wallet list)
-- [ ] Jupiter Price API V3 — live SHOT/SOL price across all screens
-- [ ] Jupiter Terminal SDK — SOL→SHOT swaps in prestige shop, weapon shop, post-match
-- [ ] SHOT price ticker in global header
-- [ ] Landing screen polish (CTAs, ecosystem logos, copy)
-- [ ] Post-match improvements (SHOT milestones, prestige progress, share buttons, swap CTA)
-- [ ] Live stats pipeline (server persist → socket serve → BarracksScreen display)
-- [ ] Combat Card React component with export
-- [ ] Onboarding flows ("What is a wallet?", escrow explainer, SHOT explainer, FAQ)
-- [ ] Client security polish (source maps, CSP report-uri)
-- [ ] Mobile polish (haptic feedback, Telegram share)
-- [ ] Checklist alignment (design decision updates) + targeted re-audit
+- [ ] Production deployment (Render server + Vercel client)
+- [ ] QA sessions (A4-A8 gameplay testing, ~54 checklist items)
+- [ ] Mainnet escrow program deploy + authority transfer
+- [ ] Telegram bot creation (BotFather)
+- [ ] Missing sound effects (7 weapons)
 
 ### Out of Scope
 
@@ -73,6 +77,7 @@ Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled tru
 
 - **v1.0 (pre-GSD):** Core game, escrow, SHOT token, prestige burns, art assets, deployment config
 - **v1.1 Security Hardening:** 8 phases, 25 plans. Three security audits (SOS, DB, BOK) all PASS.
+- **v1.2 Launch Readiness:** 6 phases, 15 plans. Jupiter integration, UI polish, stats pipeline, onboarding, security, checklist re-audit.
 
 ### Master Checklist Audit (24 Feb 2026)
 
@@ -91,18 +96,11 @@ Jupiter & Jupiter Mobile track. Deadline: February 25, 2026.
 - **Build tooling:** react-app-rewired + config-overrides.js for polyfills
 - **Codebase location:** `C:\Users\johnk\SolShot-clean`
 
-## Current Milestone: v1.2 — Launch Readiness
+## Current State
 
-**Goal:** Close all code-addressable gaps from the Master Checklist, Jupiter integration first for hackathon, followed by UI polish, stats, onboarding, security, and re-audit.
+v1.2 shipped. All code-level launch readiness work is complete. Next steps are operational: production deployment, QA sessions, mainnet program deploy.
 
-**Target features:**
-1. Jupiter integration (wallet adapter, Price API V3, Terminal SDK, platform fee)
-2. UI polish (price ticker, ecosystem logos, landing CTAs, post-match, share buttons)
-3. Stats pipeline & Combat Card (server persist, socket serve, live display, export)
-4. Onboarding flows (wallet explainer, escrow explainer, SHOT explainer, FAQ)
-5. Client security polish (source maps, CSP report-uri)
-6. Mobile polish (haptic feedback, Telegram share)
-7. Checklist alignment + targeted security re-audit
+**Launch checklist:** 91/195 (47%) — code is ready, gaps are deployment + QA + test infra.
 
 ## Key Decisions
 
@@ -114,8 +112,10 @@ Jupiter & Jupiter Mobile track. Deadline: February 25, 2026.
 | PDA from match_id (not pubkeys) | Simpler derivation | ✓ Good — update checklist |
 | 2min deposit (not 3min) | Faster match start | ✓ Good — update checklist |
 | Self-hosted Telegram SDK | CDN updates in-place, breaks SRI | ✓ Good — update checklist |
-| Do NOT touch lib.rs in v1.2 | Preserves 3 audit certifications | — Pending |
-| Jupiter Terminal for in-game swaps | Hackathon requirement + revenue | — Pending |
+| Do NOT touch lib.rs in v1.2 | Preserves 3 audit certifications | ✓ Good — held |
+| Jupiter Terminal for in-game swaps | Hackathon requirement + revenue | ✓ Good — 0.5% fee |
+| Practice mode as default tab | Onboarding-first approach | ✓ Good |
+| CHK-02 security re-check skipped | Major changes upcoming | — Deferred |
 
 ---
-*Last updated: 24 Feb 2026 after v1.2 milestone start*
+*Last updated: 25 Feb 2026 after v1.2 milestone complete*

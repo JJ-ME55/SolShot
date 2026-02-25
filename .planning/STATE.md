@@ -4,17 +4,17 @@
 
 See: .planning/PROJECT.md (updated 24 Feb 2026)
 **Core value:** Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** v1.2 Launch Readiness — Phase 14 Checklist Alignment & Re-Audit (next after Client Security)
+**Current focus:** v1.2 Launch Readiness — Phase 14 Checklist Alignment & Re-Audit (Plan 01 complete)
 
 ## Current Position
 
 Milestone: v1.2 — Launch Readiness
-Phase: 13 of 14 (Client Security) — Complete (1/1 plans done, verified 5/5 must-haves)
-Plan: 1 of 1 in current phase
-Status: Phase 13 complete — verified by gsd-verifier
-Last activity: 25 Feb 2026 — Phase 13 executed and verified
+Phase: 14 of 14 (Checklist Alignment & Re-Audit) — In Progress (1/2 plans done)
+Plan: 1 of 2 in current phase
+Status: Phase 14 Plan 01 complete — CHK-01 done (5 design decisions annotated), A-H audit scored
+Last activity: 25 Feb 2026 — Phase 14 Plan 01 executed
 
-Progress: [█████████░] ~85%
+Progress: [██████████] ~90%
 
 
 ## Performance Metrics
@@ -97,6 +97,10 @@ Progress: [█████████░] ~85%
 - **[13-01] GENERATE_SOURCEMAP=false in .env.production — CRA reads at build time, disables all JS/CSS source maps**
 - **[13-01] express.json({ type: 'application/csp-report' }) mandatory on /api/csp-report — browsers send non-standard Content-Type**
 - **[13-01] CSP report handler uses console.error (server-side monitoring) — SEC-03 targets browser console only**
+- **[14-01] LAUNCH_CHECKLIST.md actual item count is 221 (not 149/163 from Feb 16 estimates) — 26 N/A, 91 PASS, 104 FAIL**
+- **[14-01] A workstream 54 FAIL items = untriggered QA sessions, not code bugs — code verified working by Phases 1-13**
+- **[14-01] B workstream 36/38 = 95% — Solana infra in excellent shape, only B4.9+B4.10 (live devnet integration tests) remain**
+- **[14-01] Launch gate gap: need 84 more PASS items (currently 91/195 = 47%); bulk are A4-A8 QA + D1/D2 deployment**
 
 ### Pending Todos
 
@@ -112,6 +116,6 @@ Progress: [█████████░] ~85%
 
 ## Session Continuity
 
-Last session: 2026-02-25T08:00:00Z
-Stopped at: Phase 13 complete — 5/5 must-haves verified. Next: Phase 14 Checklist Alignment & Re-Audit
+Last session: 2026-02-25T10:58:36Z
+Stopped at: Phase 14 Plan 01 complete — CHK-01 done, A-H audit scored. Next: Phase 14 Plan 02 (summary table + final scoring)
 Resume file: None

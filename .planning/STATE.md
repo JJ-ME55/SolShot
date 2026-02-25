@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 24 Feb 2026)
 ## Current Position
 
 Milestone: v1.2 — Launch Readiness
-Phase: 12 of 14 (Onboarding & Mobile Polish) — Complete (all 3 plans done)
-Plan: 3 of 3 in current phase
-Status: Plan 12-02 backfilled complete; all Phase 12 plans now have SUMMARYs
-Last activity: 25 Feb 2026 — Completed 12-02-PLAN.md (backfill)
+Phase: 13 of 14 (Client Security) — In progress (1 of 2 plans done)
+Plan: 1 of 2 in current phase
+Status: In progress
+Last activity: 25 Feb 2026 — Completed 13-01-PLAN.md (source maps off, CSP report-uri, console.log strip)
 
-Progress: [████████░░] ~65%
+Progress: [████████░░] ~70%
 
 
 ## Performance Metrics
@@ -94,6 +94,9 @@ Progress: [████████░░] ~65%
 - **[12-02] LobbyScreen default mode is 'practice' — new players land on Practice tab, not Quick Match**
 - **[12-02] FAQ.js global overlay z-9500, "?" button z-9000 fixed bottom-right — accessible from every screen**
 - **[12-02] FAQ accordion: single openSection state (null = all closed), Escape key + backdrop click close**
+- **[13-01] GENERATE_SOURCEMAP=false in .env.production — CRA reads at build time, disables all JS/CSS source maps**
+- **[13-01] express.json({ type: 'application/csp-report' }) mandatory on /api/csp-report — browsers send non-standard Content-Type**
+- **[13-01] CSP report handler uses console.error (server-side monitoring) — SEC-03 targets browser console only**
 
 ### Pending Todos
 
@@ -109,6 +112,6 @@ Progress: [████████░░] ~65%
 
 ## Session Continuity
 
-Last session: 2026-02-25T00:00:00Z
-Stopped at: Phase 12 complete — verified 8/8 must-haves, metadata updated. Next: Phase 13 Client Security
+Last session: 2026-02-25T07:50:06Z
+Stopped at: Completed 13-01-PLAN.md — source maps off, CSP report-uri, 20 console.log removed
 Resume file: None

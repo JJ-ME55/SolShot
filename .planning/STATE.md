@@ -9,10 +9,10 @@ See: .planning/PROJECT.md (updated 24 Feb 2026)
 ## Current Position
 
 Milestone: v1.2 — Launch Readiness
-Phase: 12 of 14 (Onboarding & Mobile Polish) — In progress
+Phase: 12 of 14 (Onboarding & Mobile Polish) — Complete (all 3 plans done)
 Plan: 3 of 3 in current phase
-Status: Plan 12-03 complete (phase 12 DONE)
-Last activity: 24 Feb 2026 — Completed 12-03-PLAN.md
+Status: Plan 12-02 backfilled complete; all Phase 12 plans now have SUMMARYs
+Last activity: 25 Feb 2026 — Completed 12-02-PLAN.md (backfill)
 
 Progress: [████████░░] ~65%
 
@@ -91,6 +91,9 @@ Progress: [████████░░] ~65%
 - **[12-03] opponentId derived from roundWins keys (not scores) — roundWins always has both player IDs in finished match**
 - **[12-03] localStorage 'solshot_matches_played' counter incremented on WinScreen/LoseScreen mount — tracks total matches for PrestigeIntro gate**
 - **[12-03] localStorage 'solshot_shot_explained' one-time gate — ShotExplainer shown at most once per browser**
+- **[12-02] LobbyScreen default mode is 'practice' — new players land on Practice tab, not Quick Match**
+- **[12-02] FAQ.js global overlay z-9500, "?" button z-9000 fixed bottom-right — accessible from every screen**
+- **[12-02] FAQ accordion: single openSection state (null = all closed), Escape key + backdrop click close**
 
 ### Pending Todos
 
@@ -106,6 +109,6 @@ Progress: [████████░░] ~65%
 
 ## Session Continuity
 
-Last session: 2026-02-24T18:00:00Z
-Stopped at: Completed 12-03-PLAN.md — ShotExplainer, PrestigeIntro, TelegramShare (Phase 12 complete)
+Last session: 2026-02-25T00:00:00Z
+Stopped at: Completed 12-02-PLAN.md (backfill) — practice default, FAQ component+button
 Resume file: None

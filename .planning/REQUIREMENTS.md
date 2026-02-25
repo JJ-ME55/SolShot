@@ -59,9 +59,9 @@ Requirements for launch readiness. Each maps to roadmap phases.
 
 ### Client Security
 
-- [ ] **SEC-01**: Source maps disabled in production build (GENERATE_SOURCEMAP=false)
-- [ ] **SEC-02**: CSP report-uri configured for violation reporting
-- [ ] **SEC-03**: Debug console.log statements removed from production code paths
+- [x] **SEC-01**: Source maps disabled in production build (GENERATE_SOURCEMAP=false)
+- [x] **SEC-02**: CSP report-uri configured for violation reporting
+- [x] **SEC-03**: Debug console.log statements removed from production code paths
 
 ### Mobile Polish
 
@@ -148,9 +148,9 @@ Deferred to future release. Tracked but not in current roadmap.
 | MOB-01 | Phase 12 | Complete |
 | MOB-02 | Phase 12 | Complete |
 | MOB-03 | Phase 12 | Complete |
-| SEC-01 | Phase 13 | Pending |
-| SEC-02 | Phase 13 | Pending |
-| SEC-03 | Phase 13 | Pending |
+| SEC-01 | Phase 13 | Complete |
+| SEC-02 | Phase 13 | Complete |
+| SEC-03 | Phase 13 | Complete |
 | CHK-01 | Phase 14 | Pending |
 | CHK-02 | Phase 14 | Pending |
 | CHK-03 | Phase 14 | Pending |
@@ -162,4 +162,4 @@ Deferred to future release. Tracked but not in current roadmap.
 
 ---
 *Requirements defined: 24 Feb 2026*
-*Last updated: 25 Feb 2026 — Phase 12 complete*
+*Last updated: 25 Feb 2026 — Phase 13 complete*

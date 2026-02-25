@@ -24,7 +24,7 @@ Three security audits (SOS, DB, BOK) all PASS. SECURITY_SUMMARY.md at `.planning
 - [x] **Phase 10: UI — Global, Landing & Lobby** — Price ticker, ecosystem logos, landing CTAs, lobby polish, weapon shop
 - [x] **Phase 11: Post-Match & Stats Pipeline** — Post-match UX, stats persistence, BarracksScreen, Combat Card
 - [x] **Phase 12: Onboarding & Mobile Polish** — First-match flow, contextual education, FAQ, haptics, sharing
-- [ ] **Phase 13: Client Security** — Source maps, CSP report-uri, console.log cleanup
+- [x] **Phase 13: Client Security** — Source maps, CSP report-uri, console.log cleanup
 - [ ] **Phase 14: Checklist Alignment & Re-Audit** — Design decision updates, targeted security check, full re-audit
 
 ---
@@ -113,7 +113,7 @@ Plans:
   3. No console.log statements execute in production code paths (verified by searching source and checking browser console)
 **Plans:** 1 plan
 Plans:
-- [ ] 13-01-PLAN.md — Source map disable, CSP report-uri endpoint, console.log cleanup
+- [x] 13-01-PLAN.md — Source map disable, CSP report-uri endpoint, console.log cleanup
 
 ---
 
@@ -139,11 +139,11 @@ Plans:
 | 10. UI — Global, Landing & Lobby | 3/3 | Complete | 2026-02-24 |
 | 11. Post-Match & Stats Pipeline | 3/3 | Complete | 2026-02-24 |
 | 12. Onboarding & Mobile Polish | 3/3 | Complete | 2026-02-25 |
-| 13. Client Security | 0/1 | Planned | - |
+| 13. Client Security | 1/1 | Complete | 2026-02-25 |
 | 14. Checklist Alignment & Re-Audit | 0/TBD | Not started | - |
 
-**Total:** 12/12+ plans complete (Phases 9-12 done)
+**Total:** 13/13+ plans complete (Phases 9-13 done)
 
 ---
 *Roadmap created: 24 Feb 2026*
-*Last updated: 25 Feb 2026 — Phase 12 complete*
+*Last updated: 25 Feb 2026 — Phase 13 complete*

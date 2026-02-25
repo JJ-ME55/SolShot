@@ -4,17 +4,17 @@
 
 See: .planning/PROJECT.md (updated 24 Feb 2026)
 **Core value:** Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** v1.2 Launch Readiness — Phase 14 Checklist Alignment & Re-Audit (Plan 01 complete)
+**Current focus:** v1.2 Launch Readiness — Phase 14 COMPLETE. Next: QA sessions (A4-A8) + Deployment (D1/D2)
 
 ## Current Position
 
 Milestone: v1.2 — Launch Readiness
-Phase: 14 of 14 (Checklist Alignment & Re-Audit) — In Progress (1/2 plans done)
-Plan: 1 of 2 in current phase
-Status: Phase 14 Plan 01 complete — CHK-01 done (5 design decisions annotated), A-H audit scored
-Last activity: 25 Feb 2026 — Phase 14 Plan 01 executed
+Phase: 14 of 14 (Checklist Alignment & Re-Audit) — COMPLETE (2/2 plans done)
+Plan: 2 of 2 in current phase
+Status: ALL 14 PHASES COMPLETE — LAUNCH_CHECKLIST.md fully audited. Overall: 91/195 (47%), Launch Gate FAIL
+Last activity: 25 Feb 2026 — Phase 14 Plan 02 executed
 
-Progress: [██████████] ~90%
+Progress: [██████████] 100%
 
 
 ## Performance Metrics
@@ -101,6 +101,8 @@ Progress: [██████████] ~90%
 - **[14-01] A workstream 54 FAIL items = untriggered QA sessions, not code bugs — code verified working by Phases 1-13**
 - **[14-01] B workstream 36/38 = 95% — Solana infra in excellent shape, only B4.9+B4.10 (live devnet integration tests) remain**
 - **[14-01] Launch gate gap: need 84 more PASS items (currently 91/195 = 47%); bulk are A4-A8 QA + D1/D2 deployment**
+- **[14-02] CHK-02 (security re-check) deferred until after upcoming major changes — documented in LAUNCH_CHECKLIST.md header**
+- **[14-02] LAUNCH_CHECKLIST.md finalized — HTML tally scaffolding removed, summary table is permanent record**
 
 ### Pending Todos
 
@@ -116,6 +118,6 @@ Progress: [██████████] ~90%
 
 ## Session Continuity
 
-Last session: 2026-02-25T10:58:36Z
-Stopped at: Phase 14 Plan 01 complete — CHK-01 done, A-H audit scored. Next: Phase 14 Plan 02 (summary table + final scoring)
+Last session: 2026-02-25T11:03:45Z
+Stopped at: Phase 14 Plan 02 complete — ALL 14 PHASES DONE. LAUNCH_CHECKLIST.md fully audited and finalized.
 Resume file: None

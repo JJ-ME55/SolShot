@@ -1,10 +1,9 @@
 # SolShot Launch Checklist
 ## From Current State to Full Production Launch
 
-**Status as of 25 Feb 2026 (re-audited):**
-All Solana/SHOT/Settlement logic is LIVE on devnet. Escrow program deployed and security-audited
-(Phase 8 SOS/DB/BOK — all PASS). 13 implementation phases complete. Domain purchased.
-Production deployment (Render/Vercel) is the next critical path item.
+**Audit Status: 25 Feb 2026**
+Full re-audit completed. Design decisions annotated. Per-workstream scoring below.
+CHK-02 (security re-check): Skipped — deferred until after upcoming major changes.
 
 **Original status note (16 Feb 2026):**
 React UI migration complete. Server-authoritative physics working. All 10 screens built.
@@ -179,8 +178,6 @@ Track bugs in BUGS.md rather than stopping to fix each one.
 - [ ] A8.5 -- Note which weapon sounds are missing (tracer, split, magicwall, zapper, etc.)
          These are silently skipped -- not a blocker
 
-<!-- Workstream A: PASS=19, FAIL=54, N/A=0 -->
-
 ---
 
 ## WORKSTREAM B: SOLANA INFRASTRUCTURE
@@ -320,8 +317,6 @@ Track bugs in BUGS.md rather than stopping to fix each one.
 - N/A — B5.5 -- Verify: SHOT tradeable on Raydium
 - N/A — B5.6 -- Add pool address to client for price display (optional)
 
-<!-- Workstream B: PASS=36, FAIL=2, N/A=6 -->
-
 ---
 
 ## WORKSTREAM C: TELEGRAM MINI APP
@@ -390,8 +385,6 @@ Track bugs in BUGS.md rather than stopping to fix each one.
          NOTE: Post-MVP item per C4 recommendation. Mark FAIL (not yet done).
 - [ ] C4.5 -- Test: Full wager flow inside Telegram
          NOTE: Post-MVP item. Mark FAIL (not yet done).
-
-<!-- Workstream C: PASS=3, FAIL=9, N/A=10 -->
 
 ---
 
@@ -492,8 +485,6 @@ Track bugs in BUGS.md rather than stopping to fix each one.
          Evidence: server/.env.example comment: "JWT_SECRET (64+ random chars)". auth.js warns
          if not set in production and uses random fallback in dev only.
 
-<!-- Workstream D: PASS=15, FAIL=14, N/A=0 -->
-
 ---
 
 ## WORKSTREAM E: ASSETS & POLISH
@@ -552,8 +543,6 @@ Track bugs in BUGS.md rather than stopping to fix each one.
          Evidence: Phase 10 LobbyScreen + Phase 12 FAQ/onboarding added loading states.
 - [x] E3.7 -- Add error toasts for failed operations
          Evidence: Phase 10-12 added feedback modals and error states across screens.
-
-<!-- Workstream E: PASS=9, FAIL=7, N/A=0 -->
 
 ---
 
@@ -614,8 +603,6 @@ Track bugs in BUGS.md rather than stopping to fix each one.
 - [ ] F3.4 -- Set up MongoDB Atlas alerts (connection limits, slow queries)
          Evidence: Atlas alerts not confirmed configured. FAIL.
 
-<!-- Workstream F: PASS=8, FAIL=8, N/A=0 -->
-
 ---
 
 ## WORKSTREAM G: SOLANA DAPP STORE
@@ -640,8 +627,6 @@ Track bugs in BUGS.md rather than stopping to fix each one.
 - N/A — G2.3 -- Write app description (short + long)
 - N/A — G2.4 -- Submit to Solana dApp Store
 - N/A — G2.5 -- Address any review feedback
-
-<!-- Workstream G: PASS=0, FAIL=0, N/A=10 -->
 
 ---
 
@@ -677,8 +662,6 @@ Track bugs in BUGS.md rather than stopping to fix each one.
          Evidence: No .github/workflows/ found. FAIL.
 - [ ] H2.2 -- Add build check (webpack compiles without errors)
 - [ ] H2.3 -- Add auto-deploy on merge to main
-
-<!-- Workstream H: PASS=1, FAIL=10, N/A=0 -->
 
 ---
 

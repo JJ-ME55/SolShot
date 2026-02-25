@@ -280,7 +280,7 @@ const s = {
 function LobbyScreen({ navigate }) {
   /* ── state ── */
   const [rooms, setRooms] = useState([]);
-  const [matchMode, setMatchMode] = useState('quick_match');
+  const [matchMode, setMatchMode] = useState('practice');
   const [matchLength, setMatchLength] = useState(1); // rounds: 1, 3, 5
   const [wager, setWager] = useState(0.1);
   const [customWager, setCustomWager] = useState(0.1); // for custom_challenge mode

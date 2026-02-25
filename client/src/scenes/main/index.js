@@ -555,10 +555,27 @@ export class MainScene extends Scene {
       }
     }
 
-    // 3. Snap tanks to terrain surface at their CURRENT X position.
-    // Don't use server positions for X — server doesn't simulate blast knockback.
-    // After knockback, tanks may have moved horizontally. Just ensure Y matches terrain.
-    if (this._serverHeightmap) {
+    // 3. Sync tank positions to server-authoritative values.
+    // Server tracks all positions — use them to prevent client desync.
+    const isHost = (socket.id === this.sceneData.hostId);
+    if (data.tankPositions) {
+      const myServerPos = isHost ? data.tankPositions.host : data.tankPositions.player;
+      const theirServerPos = isHost ? data.tankPositions.player : data.tankPositions.host;
+
+      if (myServerPos && this.tank1) {
+        const myY = this._serverHeightmap
+          ? (this._serverHeightmap[Math.min(1199, Math.max(0, Math.floor(myServerPos.x)))] || myServerPos.y) - 15
+          : myServerPos.y;
+        this.tank1.setPosition(myServerPos.x, myY);
+      }
+      if (theirServerPos && this.tank2) {
+        const theirY = this._serverHeightmap
+          ? (this._serverHeightmap[Math.min(1199, Math.max(0, Math.floor(theirServerPos.x)))] || theirServerPos.y) - 15
+          : theirServerPos.y;
+        this.tank2.setPosition(theirServerPos.x, theirY);
+      }
+    } else if (this._serverHeightmap) {
+      // Fallback: no server positions, just snap Y to terrain
       if (this.tank1) {
         const t1x = Math.min(1199, Math.max(0, Math.floor(this.tank1.x)));
         if (this._serverHeightmap[t1x] !== undefined) {
@@ -573,11 +590,11 @@ export class MainScene extends Scene {
       }
     }
 
-    // Report updated tank positions back to server so next shot uses correct positions
-    if (window.socket) {
+    // Report updated tank position back to server
+    if (window.socket && this.tank1) {
       window.socket.emit('positionUpdate', {
-        x: this.tank1 ? this.tank1.x : 0,
-        y: this.tank1 ? this.tank1.y : 0,
+        x: this.tank1.x,
+        y: this.tank1.y,
       });
     }
 

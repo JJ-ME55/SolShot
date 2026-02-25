@@ -180,6 +180,16 @@ function findRoom(roomId) {
     return rooms.get(roomId) || null;
 }
 
+// Auth helper: require wallet auth only for wagered matches.
+// Practice mode (wager=0) allows unauthenticated players.
+function requireAuthIfWagered(client, eventName) {
+    const room = findRoom(client.roomId);
+    if (room && room.wager > 0) {
+        return requireAuth(client, eventName);
+    }
+    return true; // no room or no wager — allow
+}
+
 // Helper: get open rooms for lobby display
 // O1+O8: Iterate Map, serialize only lobby-safe fields
 function getOpenRooms() {
@@ -957,7 +967,7 @@ const mainsocket = (io) => {
 
 
         client.on('deleteRoom', async () => {
-            if (!requireAuth(client, 'deleteRoom')) return
+            if (!requireAuthIfWagered(client, 'deleteRoom')) return
             if (client.roomId !== null) {
                 // H003: Only host can delete the room
                 if (!client.isHost) {
@@ -1464,7 +1474,7 @@ const mainsocket = (io) => {
 
 
         client.on('ready', () => {
-            if (!requireAuth(client, 'ready')) return
+            if (!requireAuthIfWagered(client, 'ready')) return
             var room = findRoom(client.roomId)
             if (!room) return
 
@@ -1554,7 +1564,7 @@ const mainsocket = (io) => {
 
         // Client buys a weapon during shop phase
         client.on('buyWeapon', (data) => {
-            if (!requireAuth(client, 'buyWeapon')) return
+            if (!requireAuthIfWagered(client, 'buyWeapon')) return
             // H015: Null payload guard
             if (!data || typeof data !== 'object') return
             const { weaponId } = data
@@ -1618,7 +1628,7 @@ const mainsocket = (io) => {
 
         // Client done shopping
         client.on('shopDone', () => {
-            if (!requireAuth(client, 'shopDone')) return
+            if (!requireAuthIfWagered(client, 'shopDone')) return
             const room = findRoom(client.roomId)
             if (!room) return
 
@@ -1723,7 +1733,7 @@ const mainsocket = (io) => {
         // D1: All relay events now require auth to prevent spoofed game state
 
         client.on('weaponPick', (data) => {
-            if (!requireAuth(client, 'weaponPick')) return
+            if (!requireAuthIfWagered(client, 'weaponPick')) return
             if (!data || typeof data !== 'object') return
             const { arrayIndex } = data
             if (!Number.isInteger(arrayIndex) || arrayIndex < 0 || arrayIndex > 30) return
@@ -1741,7 +1751,7 @@ const mainsocket = (io) => {
 
 
         client.on('createWeaponArray', (data) => {
-            if (!requireAuth(client, 'createWeaponArray')) return
+            if (!requireAuthIfWagered(client, 'createWeaponArray')) return
             // H015: Null payload guard
             if (!data || typeof data !== 'object') return
             const { count, max } = data
@@ -1898,8 +1908,9 @@ const mainsocket = (io) => {
             }
             const { angle, power, weaponId } = data
 
-            // SA-01: Auth guard (inline — fire uses fireRejected, not fireError)
-            if (!this.isAuthenticated) {
+            // SA-01: Auth guard — only for wagered matches (practice allows unauthenticated)
+            const fireRoom = findRoom(this.roomId);
+            if (fireRoom && fireRoom.wager > 0 && !this.isAuthenticated) {
                 this.emit('fireRejected', { reason: 'Authentication required' })
                 return
             }
@@ -2442,7 +2453,7 @@ const mainsocket = (io) => {
         // Both host and non-host emit requestTerrain. First request generates;
         // subsequent requests re-send cached terrain (fixes round 2 race condition).
         client.on('requestTerrain', () => {
-            if (!requireAuth(client, 'requestTerrain')) return
+            if (!requireAuthIfWagered(client, 'requestTerrain')) return
             const room = findRoom(client.roomId)
             if (!room) return
 
@@ -2512,7 +2523,7 @@ const mainsocket = (io) => {
 
 
         client.on('weaponChange', (data) => {
-            if (!requireAuth(client, 'weaponChange')) return
+            if (!requireAuthIfWagered(client, 'weaponChange')) return
             if (!data || typeof data !== 'object') return
             const { index } = data
             if (!Number.isInteger(index) || index < 0 || index > 30) return
@@ -2522,7 +2533,7 @@ const mainsocket = (io) => {
 
 
         client.on('angleChange', (data) => {
-            if (!requireAuth(client, 'angleChange')) return
+            if (!requireAuthIfWagered(client, 'angleChange')) return
             if (!data || typeof data !== 'object') return
             const { rotation } = data
             if (typeof rotation !== 'number' || !Number.isFinite(rotation)) return
@@ -2532,7 +2543,7 @@ const mainsocket = (io) => {
 
 
         client.on('powerChange', (data) => {
-            if (!requireAuth(client, 'powerChange')) return
+            if (!requireAuthIfWagered(client, 'powerChange')) return
             if (!data || typeof data !== 'object') return
             const { power } = data
             if (typeof power !== 'number' || !Number.isFinite(power) || power < 0 || power > 100) return
@@ -2541,7 +2552,7 @@ const mainsocket = (io) => {
 
         // After blast knockback, client reports its new tank position
         client.on('positionUpdate', (data) => {
-            if (!requireAuth(client, 'positionUpdate')) return
+            if (!requireAuthIfWagered(client, 'positionUpdate')) return
             if (!data || typeof data !== 'object') return
             const { x, y } = data
             if (!Number.isFinite(x) || !Number.isFinite(y)) return
@@ -2578,7 +2589,7 @@ const mainsocket = (io) => {
 
 
         client.on('stepLeft', () => {
-            if (!requireAuth(client, 'stepLeft')) return
+            if (!requireAuthIfWagered(client, 'stepLeft')) return
             if (!client.roomId) return
             const ms = matchStates[client.roomId]
             if (ms && !validateAction(ms.status, 'stepLeft')) return
@@ -2613,7 +2624,7 @@ const mainsocket = (io) => {
 
 
         client.on('stepRight', () => {
-            if (!requireAuth(client, 'stepRight')) return
+            if (!requireAuthIfWagered(client, 'stepRight')) return
             if (!client.roomId) return
             const ms = matchStates[client.roomId]
             if (ms && !validateAction(ms.status, 'stepRight')) return
@@ -2649,7 +2660,7 @@ const mainsocket = (io) => {
 
         // LEGACY: turn relay — D1: auth + D5: schema validation
         client.on('giveTurn', (data) => {
-            if (!requireAuth(client, 'giveTurn')) return
+            if (!requireAuthIfWagered(client, 'giveTurn')) return
             if (!data || typeof data !== 'object') return
             const { pos1, pos2, rotation1, rotation2 } = data
             // D5: Validate schema — only forward known numeric fields, drop terrainData (server-authoritative terrain)
@@ -2665,7 +2676,7 @@ const mainsocket = (io) => {
 
 
         client.on('requestTurn', () => {
-            if (!requireAuth(client, 'requestTurn')) return
+            if (!requireAuthIfWagered(client, 'requestTurn')) return
             if (!client.roomId) return
             const ms = matchStates[client.roomId]
             if (ms && !validateAction(ms.status, 'requestTurn')) return
@@ -2675,7 +2686,7 @@ const mainsocket = (io) => {
 
 
         client.on('playAgainRequest', () => {
-            if (!requireAuth(client, 'playAgainRequest')) return
+            if (!requireAuthIfWagered(client, 'playAgainRequest')) return
             var room = findRoom(client.roomId)
             if (!room) return
 

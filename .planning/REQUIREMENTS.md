@@ -52,10 +52,10 @@ Requirements for launch readiness. Each maps to roadmap phases.
 
 ### Onboarding & Player Journey
 
-- [ ] **ONB-01**: Player can reach first practice match in under 60 seconds from landing
-- [ ] **ONB-02**: SHOT explained when first earned (tooltip/modal: what it is, what it's for)
-- [ ] **ONB-03**: Prestige system introduced contextually (not front-loaded)
-- [ ] **ONB-04**: FAQ page accessible from all screens (one tap to help)
+- [x] **ONB-01**: Player can reach first practice match in under 60 seconds from landing
+- [x] **ONB-02**: SHOT explained when first earned (tooltip/modal: what it is, what it's for)
+- [x] **ONB-03**: Prestige system introduced contextually (not front-loaded)
+- [x] **ONB-04**: FAQ page accessible from all screens (one tap to help)
 
 ### Client Security
 
@@ -65,9 +65,9 @@ Requirements for launch readiness. Each maps to roadmap phases.
 
 ### Mobile Polish
 
-- [ ] **MOB-01**: Haptic feedback on mobile for key moments (shot fired, damage received, win/lose)
-- [ ] **MOB-02**: Telegram share button on post-match screen with pre-filled text
-- [ ] **MOB-03**: Landscape mode handled gracefully (support or rotation prompt)
+- [x] **MOB-01**: Haptic feedback on mobile for key moments (shot fired, damage received, win/lose)
+- [x] **MOB-02**: Telegram share button on post-match screen with pre-filled text
+- [x] **MOB-03**: Landscape mode handled gracefully (support or rotation prompt)
 
 ### Checklist Alignment & Re-Audit
 
@@ -141,13 +141,13 @@ Deferred to future release. Tracked but not in current roadmap.
 | STAT-02 | Phase 11 | Complete |
 | STAT-03 | Phase 11 | Complete |
 | STAT-04 | Phase 11 | Complete |
-| ONB-01 | Phase 12 | Pending |
-| ONB-02 | Phase 12 | Pending |
-| ONB-03 | Phase 12 | Pending |
-| ONB-04 | Phase 12 | Pending |
-| MOB-01 | Phase 12 | Pending |
-| MOB-02 | Phase 12 | Pending |
-| MOB-03 | Phase 12 | Pending |
+| ONB-01 | Phase 12 | Complete |
+| ONB-02 | Phase 12 | Complete |
+| ONB-03 | Phase 12 | Complete |
+| ONB-04 | Phase 12 | Complete |
+| MOB-01 | Phase 12 | Complete |
+| MOB-02 | Phase 12 | Complete |
+| MOB-03 | Phase 12 | Complete |
 | SEC-01 | Phase 13 | Pending |
 | SEC-02 | Phase 13 | Pending |
 | SEC-03 | Phase 13 | Pending |
@@ -162,4 +162,4 @@ Deferred to future release. Tracked but not in current roadmap.
 
 ---
 *Requirements defined: 24 Feb 2026*
-*Last updated: 24 Feb 2026 — roadmap traceability complete*
+*Last updated: 25 Feb 2026 — Phase 12 complete*

@@ -23,7 +23,7 @@ Three security audits (SOS, DB, BOK) all PASS. SECURITY_SUMMARY.md at `.planning
 - [x] **Phase 9: Jupiter Integration** — Wallet adapter, Price API, Plugin SDK, platform fee, CSP updates
 - [x] **Phase 10: UI — Global, Landing & Lobby** — Price ticker, ecosystem logos, landing CTAs, lobby polish, weapon shop
 - [x] **Phase 11: Post-Match & Stats Pipeline** — Post-match UX, stats persistence, BarracksScreen, Combat Card
-- [ ] **Phase 12: Onboarding & Mobile Polish** — First-match flow, contextual education, FAQ, haptics, sharing
+- [x] **Phase 12: Onboarding & Mobile Polish** — First-match flow, contextual education, FAQ, haptics, sharing
 - [ ] **Phase 13: Client Security** — Source maps, CSP report-uri, console.log cleanup
 - [ ] **Phase 14: Checklist Alignment & Re-Audit** — Design decision updates, targeted security check, full re-audit
 
@@ -95,7 +95,11 @@ Plans:
   3. An FAQ page is accessible from every screen via a single tap/click
   4. Mobile devices receive haptic feedback on key moments (shot fired, damage received, win/lose) and handle landscape mode gracefully (support it or show a rotation prompt)
   5. A Telegram share button appears on the post-match screen with pre-filled text
-**Plans:** TBD
+**Plans:** 3 plans
+Plans:
+- [x] 12-01-PLAN.md — Haptic feedback utility, dApp browser detection banner, portrait warning dismiss
+- [x] 12-02-PLAN.md — Practice mode default, FAQ component and global help button
+- [x] 12-03-PLAN.md — SHOT explainer modal, prestige intro nudge, Telegram share button
 
 ---
 
@@ -132,12 +136,12 @@ Plans:
 | 9. Jupiter Integration | 3/3 | Complete | 2026-02-24 |
 | 10. UI — Global, Landing & Lobby | 3/3 | Complete | 2026-02-24 |
 | 11. Post-Match & Stats Pipeline | 3/3 | Complete | 2026-02-24 |
-| 12. Onboarding & Mobile Polish | 0/TBD | Not started | - |
+| 12. Onboarding & Mobile Polish | 3/3 | Complete | 2026-02-25 |
 | 13. Client Security | 0/TBD | Not started | - |
 | 14. Checklist Alignment & Re-Audit | 0/TBD | Not started | - |
 
-**Total:** 9/9+ plans complete (Phases 9-11 done)
+**Total:** 12/12+ plans complete (Phases 9-12 done)
 
 ---
 *Roadmap created: 24 Feb 2026*
-*Last updated: 24 Feb 2026 — Phase 11 complete*
+*Last updated: 25 Feb 2026 — Phase 12 complete*

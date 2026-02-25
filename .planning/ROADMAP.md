@@ -111,7 +111,9 @@ Plans:
   1. Production build has GENERATE_SOURCEMAP=false and no .map files are served
   2. CSP header includes a report-uri directive pointing to a violation reporting endpoint
   3. No console.log statements execute in production code paths (verified by searching source and checking browser console)
-**Plans:** TBD
+**Plans:** 1 plan
+Plans:
+- [ ] 13-01-PLAN.md — Source map disable, CSP report-uri endpoint, console.log cleanup
 
 ---
 
@@ -137,7 +139,7 @@ Plans:
 | 10. UI — Global, Landing & Lobby | 3/3 | Complete | 2026-02-24 |
 | 11. Post-Match & Stats Pipeline | 3/3 | Complete | 2026-02-24 |
 | 12. Onboarding & Mobile Polish | 3/3 | Complete | 2026-02-25 |
-| 13. Client Security | 0/TBD | Not started | - |
+| 13. Client Security | 0/1 | Planned | - |
 | 14. Checklist Alignment & Re-Audit | 0/TBD | Not started | - |
 
 **Total:** 12/12+ plans complete (Phases 9-12 done)

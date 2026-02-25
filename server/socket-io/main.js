@@ -1367,15 +1367,15 @@ const mainsocket = (io) => {
                 broadcastRooms(io);
 
                 // Escrow creation for wagered queue matches
-                const joinerWallet = authenticatedWallets[client.id] || null;
-                if (wagerAmount > 0 && isEscrowEnabled() && opponent.wallet && joinerWallet) {
+                const matchJoinerWallet = authenticatedWallets[client.id] || null;
+                if (wagerAmount > 0 && isEscrowEnabled() && opponent.wallet && matchJoinerWallet) {
                     try {
-                        const escrowResult = await createMatchEscrow(roomId, wagerAmount, opponent.wallet, joinerWallet);
+                        const escrowResult = await createMatchEscrow(roomId, wagerAmount, opponent.wallet, matchJoinerWallet);
                         if (escrowResult.success) {
                             roomData.escrowPDA = escrowResult.escrowPDA;
                             const [hostDeposit, joinerDeposit] = await Promise.all([
                                 buildDepositTransaction(roomId, opponent.wallet),
-                                buildDepositTransaction(roomId, joinerWallet),
+                                buildDepositTransaction(roomId, matchJoinerWallet),
                             ]);
                             // DCA-01: Compute deposit deadline before emitting so both players get same value
                             const depositDeadline = Date.now() + DEPOSIT_TIMEOUT_MS

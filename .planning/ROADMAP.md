@@ -118,14 +118,17 @@ Plans:
 ---
 
 ### Phase 14: Checklist Alignment & Re-Audit
-**Goal:** The Master Quality & Launch Checklist reflects all design decisions made during development, a targeted security re-check confirms CSP changes and new endpoints are safe, and a full re-audit scores the checklist with all CRITICAL items passing.
+**Goal:** The Master Quality & Launch Checklist reflects all design decisions made during development, and a full re-audit scores the checklist with all CRITICAL items passing. CHK-02 (security re-check) is skipped — deferred until after upcoming major changes.
 **Depends on:** Phases 9-13 (everything must be complete for final audit)
-**Requirements:** CHK-01, CHK-02, CHK-03
+**Requirements:** CHK-01, CHK-02 (skipped), CHK-03
 **Success Criteria** (what must be TRUE):
   1. The checklist is updated to reflect design decisions (4 states not 8, 24h timeout not 30-60min, PDA from match_id not pubkeys, 2min deposit not 3min, self-hosted Telegram SDK) — items previously marked FAIL for these reasons now show PASS or DESIGN DECISION
   2. A targeted security re-check covers all CSP changes from Phases 9-13 and any new socket endpoints — no new vulnerabilities introduced
   3. A full checklist re-audit is run with scoring — all items tagged CRITICAL pass, and the overall score is documented
-**Plans:** TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 14-01-PLAN.md — Design decision annotations (CHK-01) and audit of Workstreams A-D
+- [ ] 14-02-PLAN.md — Audit of Workstreams E-H and scored summary table
 
 ---
 
@@ -140,10 +143,10 @@ Plans:
 | 11. Post-Match & Stats Pipeline | 3/3 | Complete | 2026-02-24 |
 | 12. Onboarding & Mobile Polish | 3/3 | Complete | 2026-02-25 |
 | 13. Client Security | 1/1 | Complete | 2026-02-25 |
-| 14. Checklist Alignment & Re-Audit | 0/TBD | Not started | - |
+| 14. Checklist Alignment & Re-Audit | 0/2 | Not started | - |
 
-**Total:** 13/13+ plans complete (Phases 9-13 done)
+**Total:** 13/15 plans complete (Phases 9-13 done)
 
 ---
 *Roadmap created: 24 Feb 2026*
-*Last updated: 25 Feb 2026 — Phase 13 complete*
+*Last updated: 25 Feb 2026 — Phase 14 planned*

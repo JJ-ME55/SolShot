@@ -129,9 +129,7 @@ function BattleScreen({ navigate, screenData }) {
     if (!data?.transaction) return;
     if (signAndSendEscrowDeposit) {
       const sig = await signAndSendEscrowDeposit(data.transaction, data.roomId || screenData?.roomId);
-      if (sig) {
-        console.log('[Battle] Escrow deposit signed:', sig);
-      } else {
+      if (!sig) {
         setError('Failed to deposit wager to escrow. Match may not proceed.');
       }
     }

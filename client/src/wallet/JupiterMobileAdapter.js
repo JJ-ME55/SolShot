@@ -26,7 +26,6 @@ export class JupiterMobileAdapter extends BaseWalletAdapter {
     }
 
     async connect() {
-        console.log('[JupiterMobileAdapter] Jupiter Mobile not available — opening download page');
         window.open('https://jup.ag/mobile', '_blank');
         this.emit('connect', this.publicKey);
     }

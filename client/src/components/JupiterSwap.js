@@ -105,7 +105,6 @@ function JupiterSwap({
         name: 'SolShot',
       },
       onSuccess: ({ txid }) => {
-        console.log('[JupiterSwap] Swap success:', txid);
         if (onSuccess) onSuccess(txid);
       },
       onSwapError: ({ error: swapError }) => {
@@ -122,7 +121,6 @@ function JupiterSwap({
 
     try {
       if (!jupiterInitialized) {
-        console.log('[JupiterSwap] Initializing Jupiter Plugin singleton');
         window.Jupiter.init(config);
         jupiterInitialized = true;
         jupiterReady = true;

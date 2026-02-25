@@ -301,12 +301,7 @@ export class MainScene extends Scene {
         const weaponDone = isMyShot
           ? (this.tank1.turret && this.tank1.turret.activeWeapon === null)
           : true;
-        if (!weaponDone && !this._weaponWaitLogged) {
-          console.log('[SolShot] checkSwitchTurn: waiting for weapon animation to finish (activeWeapon=' + (this.tank1.turret ? this.tank1.turret.activeWeapon : 'no turret') + ')');
-          this._weaponWaitLogged = true;
-        }
         if (weaponDone) {
-          console.log('[SolShot] checkSwitchTurn: applying turnResult NOW');
           this._weaponWaitLogged = false;
           this.applyTurnResult(this.pendingTurnResult);
           this.pendingTurnResult = null;
@@ -485,9 +480,6 @@ export class MainScene extends Scene {
 
     // ── STEP 3: Handle turnResult — full server response ──
     this._socketHandlers.turnResult = (data) => {
-      // turnResult received from server
-      console.log('[SolShot] turnResult received: damage=' + JSON.stringify(data.damage) + ' hp=' + JSON.stringify(data.hp) + ' nextTurn=' + (data.nextTurn ? data.nextTurn.slice(0,8) : null));
-
       // Store nonce for next fire
       this._turnSeq = data.seq;
 
@@ -524,17 +516,12 @@ export class MainScene extends Scene {
     if (!socket) return;
 
     const { terrainUpdate, damage, nextTurn, goldBalance } = data;
-    console.log('[SolShot] applyTurnResult: impact=' + JSON.stringify(data.impact) + ' damage=' + JSON.stringify(damage) + ' nextTurn=' + (nextTurn ? nextTurn.slice(0,8) : null));
 
     // 1. Sync terrain to server state (authoritative heightmap)
     // This handles ALL terrain deformation — both for firing and non-firing player.
     if (terrainUpdate && terrainUpdate.length > 0) {
-      console.log('[SolShot] applyTurnResult: terrainUpdate len=' + terrainUpdate.length +
-        ' sample[600]=' + terrainUpdate[600] + ' damage=' + JSON.stringify(damage));
       this._serverHeightmap = terrainUpdate;
       this.terrain.applyHeightmap(terrainUpdate);
-    } else {
-      console.log('[SolShot] applyTurnResult: NO terrainUpdate! data keys=' + Object.keys(data).join(','));
     }
 
     // 2. Update HP from server — use authoritative HP values
@@ -546,7 +533,6 @@ export class MainScene extends Scene {
           const oldHp = targetTank.scoreHandler.hp;
           targetTank.scoreHandler.hp = Math.max(0, serverHp);
           if (oldHp !== targetTank.scoreHandler.hp) {
-            console.log('[SolShot] HP update: ' + (isMe ? 'me' : 'opp') + ' ' + oldHp + ' → ' + targetTank.scoreHandler.hp);
             // Haptic feedback: heavy pulse when local player takes damage (MOB-01)
             if (isMe && serverHp < oldHp) window.haptic && window.haptic.heavy();
           }
@@ -562,7 +548,6 @@ export class MainScene extends Scene {
           if (targetTank && targetTank.scoreHandler) {
             const oldHp = targetTank.scoreHandler.hp;
             targetTank.scoreHandler.hp = Math.max(0, oldHp - absDmg);
-            console.log('[SolShot] HP update (fallback): ' + (isMe ? 'me' : 'opp') + ' ' + oldHp + ' → ' + targetTank.scoreHandler.hp);
             // Haptic feedback: heavy pulse when local player takes damage (MOB-01)
             if (isMe) window.haptic && window.haptic.heavy();
           }

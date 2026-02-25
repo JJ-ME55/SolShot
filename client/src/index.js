@@ -15,8 +15,7 @@ if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
   window.addEventListener('load', () => {
     navigator.serviceWorker
       .register('/service-worker.js')
-      .then((reg) => {
-        console.log('[SolShot] Service worker registered:', reg.scope);
+      .then((_reg) => {
       })
       .catch((err) => {
         console.warn('[SolShot] Service worker registration failed:', err);

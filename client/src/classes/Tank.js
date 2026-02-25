@@ -199,7 +199,6 @@ export class Tank extends GameObjects.Sprite {
                 break;
             }
         }
-        console.log('[SolShot] Tank' + this.id + '.randomPos: x=' + initX + ' y=' + initY + ' terrainH=' + this.scene.terrain.height)
         this.setPosition(initX, initY)
         this.prevPos.x = initX
         this.prevPos.y = initY

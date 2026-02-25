@@ -268,11 +268,9 @@ function SolShotWalletInner({ children }) {
 
             // Send via wallet adapter (prompts user to sign)
             const signature = await sendTransaction(tx, connection);
-            console.log('[SolShot] Escrow deposit TX sent:', signature);
 
             // Confirm
             await connection.confirmTransaction(signature, 'confirmed');
-            console.log('[SolShot] Escrow deposit confirmed:', signature);
 
             // Notify server
             const socket = window.socket;
@@ -322,11 +320,9 @@ function SolShotWalletInner({ children }) {
 
             // Send via wallet adapter (prompts user to sign)
             const signature = await sendTransaction(tx, connection);
-            console.log('[SolShot] SHOT burn TX sent:', signature);
 
             // Confirm
             await connection.confirmTransaction(signature, 'confirmed');
-            console.log('[SolShot] SHOT burn confirmed:', signature);
 
             return signature;
         } catch (err) {
@@ -342,7 +338,6 @@ function SolShotWalletInner({ children }) {
             if (!socket) return false;
             const handler = (result) => {
                 if (result.success) {
-                    console.log('[SolShot] Auth confirmed by server');
                     setIsAuthenticated(true);
                 } else {
                     console.warn('[SolShot] Auth rejected:', result.reason);
@@ -368,7 +363,6 @@ function SolShotWalletInner({ children }) {
         // Poll for socket availability (may not exist on first render)
         const tryAuth = () => {
             if (window.socket && window.socket.connected) {
-                console.log('[SolShot] Auto-authenticating wallet...');
                 authenticate();
                 return true;
             }

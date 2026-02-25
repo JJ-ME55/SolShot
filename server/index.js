@@ -98,6 +98,7 @@ app.use(helmet({
             frameSrc: ["https://plugin.jup.ag"],
             objectSrc: ["'none'"],
             baseUri: ["'self'"],
+            reportUri: ['/api/csp-report'],
         },
     },
     crossOriginEmbedderPolicy: false,
@@ -140,6 +141,17 @@ app.post('/api/admin/reload-keys', requireAdminKey, (req, res) => {
     const ok = initKeys();
     if (ok) initEscrow();
     res.json({ ok, message: ok ? 'Keys reloaded directly' : 'Key reload failed' });
+});
+
+// SEC-02: CSP violation reporting endpoint
+app.post('/api/csp-report', express.json({ type: 'application/csp-report' }), (req, res) => {
+    const report = req.body['csp-report'] || req.body;
+    console.error('[CSP Violation]', JSON.stringify({
+        directive: report['violated-directive'],
+        blocked: report['blocked-uri'],
+        document: report['document-uri'],
+    }));
+    res.status(204).end();
 });
 
 // Connect to MongoDB then start server

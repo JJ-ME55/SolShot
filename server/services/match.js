@@ -7,6 +7,15 @@ import crypto from 'crypto';
  *
  * Enforces that no action can happen outside its valid state.
  * E.g., can't fire during weapon_shop, can't buy during battle.
+ *
+ * Phase 15: Rewritten for N-player (2-4) support.
+ * - createMatchState accepts maxPlayers param (default 2)
+ * - players[] is intentionally empty at creation; populated at requestTerrain time (Plan 15-02)
+ * - getNextTurn cycles through alive[] map, random first turn
+ * - isRoundOver uses alive map with HP fallback for backward compat
+ * - getRoundPlacement (replaces getRoundWinner) returns ranked array with placement scoring
+ * - isMatchOver uses cumulative placementPoints with damageDealtTotal tiebreaker, no early exit
+ * - resetForNextRound resets all N players to 250 HP and alive=true
  */
 
 export const MATCH_STATES = {
@@ -78,11 +87,19 @@ export function validateAction(currentState, action) {
 /**
  * Initialize match state for a new game
  *
+ * Phase 15: Added maxPlayers param (default 2) for N-player support.
+ * players[] is intentionally empty at creation time — it is populated
+ * at requestTerrain time in Plan 15-02 Edit 4, after all players have joined.
+ * Per-player maps (scores, kills, roundWins, hp, placementPoints,
+ * damageDealtTotal) start as {} here and are fully populated with all N
+ * socket IDs in the requestTerrain block.
+ *
  * @param {string} roomId
  * @param {string} roundType - '1', 'BO3', or 'BO5'
+ * @param {number} maxPlayers - 2, 3, or 4 (default 2)
  * @returns {object} initial match state
  */
-export function createMatchState(roomId, roundType = '1') {
+export function createMatchState(roomId, roundType = '1', maxPlayers = 2) {
     const maxRounds = roundType === 'BO5' ? 5 : roundType === 'BO3' ? 3 : 1;
 
     return {
@@ -93,12 +110,11 @@ export function createMatchState(roomId, roundType = '1') {
         currentRound: 0,
         scores: {},          // { [playerId]: totalDamageDealt }
         kills: {},           // { [playerId]: totalKills }
-        roundWins: {},       // { [playerId]: roundsWon }
+        roundWins: {},       // { [playerId]: roundsWon } — backward compat, also updated by getRoundPlacement
         hp: {},              // { [playerId]: currentHP } — 250 per player per round
         currentTurn: null,   // playerId whose turn it is
         turnCount: 0,
         turnSequence: 0,     // Fix 4: Nonce — increments each fire, prevents replay
-        turnsPerRound: 20,   // 10 per player per round
         terrain: null,
         tankPositions: null,
         stateChangedAt: Date.now(),
@@ -107,11 +123,23 @@ export function createMatchState(roomId, roundType = '1') {
         weaponHits: {},       // { [playerId]: { [weaponId]: count } }
         weaponDamage: {},     // { [playerId]: { [weaponId]: totalDmg } }
         totalDeaths: {},      // { [playerId]: deathCount }
+        // Phase 15: N-player fields
+        maxPlayers,
+        players: [],         // [socketId, ...] — populated at requestTerrain time (Plan 15-02)
+        alive: {},           // { [socketId]: boolean } — populated when players[] is set
+        currentPlayerIndex: 0,
+        turnsPerRound: maxPlayers * 10,  // 10 turns per player per round (was hardcoded 20)
+        placementPoints: {},  // { [socketId]: cumulativePlacementPoints }
+        damageDealtTotal: {}, // { [socketId]: cumulativeDamageDealt } — tiebreaker
+        eliminationOrder: [], // [socketId, ...] — order of elimination (first eliminated = index 0)
     };
 }
 
 /**
- * Reset turn state for a new round (H023)
+ * Reset turn state and player vitals for a new round (H023)
+ *
+ * Phase 15: Also resets alive map and currentPlayerIndex for all N players.
+ * Uses players[] when populated, falls back to hp keys for safety.
  *
  * @param {object} matchState
  */
@@ -119,99 +147,185 @@ export function resetForNextRound(matchState) {
     matchState.turnCount = 0;
     matchState.turnSequence = 0;
     matchState.currentTurn = null;
-    // Reset HP for all players
-    for (const playerId of Object.keys(matchState.hp)) {
+    matchState.currentPlayerIndex = 0;
+    matchState.eliminationOrder = [];
+    // Reset HP and alive for ALL players (use players[] if available, fallback to hp keys)
+    for (const playerId of (matchState.players.length > 0 ? matchState.players : Object.keys(matchState.hp))) {
         matchState.hp[playerId] = 250;
+        if (matchState.alive) matchState.alive[playerId] = true;
     }
 }
 
 /**
+ * Placement points awarded per finish position
+ * Index 0 = 1st place, index 1 = 2nd, index 2 = 3rd, index 3 = 4th
+ */
+export const PLACEMENT_POINTS = [3, 2, 1, 0];
+
+/**
  * Determine whose turn it is next
  *
+ * Phase 15: Rewritten for N-player support.
+ * - Accepts only matchState (no hostId/playerId params)
+ * - First turn of a round: random selection among alive players
+ * - Subsequent turns: cycle through players[] in order, skipping eliminated
+ * - Mutates matchState.currentPlayerIndex and matchState.currentTurn
+ * - Returns the socketId of the player whose turn it now is
+ *
+ * Call sites that do `ms.currentTurn = getNextTurn(ms)` continue to work —
+ * the assignment is redundant (function mutates state) but harmless.
+ *
  * @param {object} matchState
- * @param {string} hostId
- * @param {string} playerId
- * @returns {string} next player's ID
+ * @returns {string|null} next player's socketId, or null if no alive players
  */
-export function getNextTurn(matchState, hostId, playerId) {
-    if (!matchState.currentTurn) {
-        // First turn — random
-        return crypto.randomInt(2) === 0 ? hostId : playerId;
+export function getNextTurn(matchState) {
+    const { players, alive } = matchState;
+    if (!players || players.length === 0) return null;
+
+    // First turn of a round — random start among alive players
+    if (matchState.currentTurn === null) {
+        const alivePlayers = players.filter(id => alive[id]);
+        if (alivePlayers.length === 0) return null;
+        const startIdx = crypto.randomInt(alivePlayers.length);
+        matchState.currentPlayerIndex = players.indexOf(alivePlayers[startIdx]);
+        matchState.currentTurn = players[matchState.currentPlayerIndex];
+        return matchState.currentTurn;
     }
-    // Alternate turns
-    return matchState.currentTurn === hostId ? playerId : hostId;
+
+    // Advance from current position, skip eliminated players
+    let idx = matchState.currentPlayerIndex;
+    for (let i = 0; i < players.length; i++) {
+        idx = (idx + 1) % players.length;
+        if (alive[players[idx]]) {
+            matchState.currentPlayerIndex = idx;
+            matchState.currentTurn = players[idx];
+            return matchState.currentTurn;
+        }
+    }
+    return null; // all dead — should not happen in valid game flow
 }
 
 /**
  * Check if the round is over
  *
+ * Phase 15: Uses alive map when populated (N-player mode).
+ * Falls back to legacy HP check for backward compat before Phase 16
+ * updates the fire handler to set alive[id] = false on kill.
+ *
+ * Round ends when:
+ * - All turns exhausted (turnCount >= turnsPerRound), OR
+ * - Only 1 (or 0) players remain alive
+ *
  * @param {object} matchState
  * @returns {boolean}
  */
 export function isRoundOver(matchState) {
-    // Round ends when turns run out OR any tank reaches 0 HP
     if (matchState.turnCount >= matchState.turnsPerRound) return true;
-    if (matchState.hp) {
-        for (const hp of Object.values(matchState.hp)) {
-            if (hp <= 0) return true;
-        }
+    // N-player: use alive map when populated
+    if (matchState.alive && Object.keys(matchState.alive).length > 0) {
+        return Object.values(matchState.alive).filter(Boolean).length <= 1;
+    }
+    // 2-player fallback: legacy HP check (before Phase 16 populates alive map)
+    for (const hp of Object.values(matchState.hp || {})) {
+        if (hp <= 0) return true;
     }
     return false;
 }
 
 /**
- * Check if the match is over (all rounds played)
+ * Determine the placement ranking for a round and award placement points
+ *
+ * Phase 15: Replaces getRoundWinner. Returns full ranked array instead of
+ * a single winner ID, supporting N-player placement scoring.
+ *
+ * Ranking logic:
+ * - Survivors (alive=true): ranked by HP descending, then damage dealt descending
+ * - Eliminated: reverse eliminationOrder (last eliminated = highest among dead)
+ *
+ * Side effects:
+ * - Accumulates placementPoints per player (PLACEMENT_POINTS[rank])
+ * - Accumulates damageDealtTotal per player (for tiebreaker in isMatchOver)
+ * - Updates roundWins[1st] for backward compat (disconnect chain in main.js)
  *
  * @param {object} matchState
- * @param {string} hostId
- * @param {string} playerId
- * @returns {{isOver: boolean, winner?: string}}
+ * @returns {string[]} ranked array of socketIds [1st, 2nd, 3rd, 4th]
  */
-export function isMatchOver(matchState, hostId, playerId) {
-    const hostWins = matchState.roundWins[hostId] || 0;
-    const playerWins = matchState.roundWins[playerId] || 0;
-    const winsNeeded = Math.ceil(matchState.maxRounds / 2);
+export function getRoundPlacement(matchState) {
+    const players = matchState.players || [];
+    const alive = matchState.alive || {};
+    const hp = matchState.hp || {};
+    const scores = matchState.scores || {};
 
-    if (hostWins >= winsNeeded) {
-        return { isOver: true, winner: hostId };
-    }
-    if (playerWins >= winsNeeded) {
-        return { isOver: true, winner: playerId };
-    }
-    if (matchState.currentRound >= matchState.maxRounds) {
-        // All rounds played — highest score wins
-        const hostScore = matchState.scores[hostId] || 0;
-        const playerScore = matchState.scores[playerId] || 0;
-        if (hostScore !== playerScore) {
-            return { isOver: true, winner: hostScore > playerScore ? hostId : playerId };
-        }
-        // Draw — could handle differently, for now host wins tiebreak
-        return { isOver: true, winner: hostId };
+    // Survivors ranked by HP desc, then damage dealt desc
+    const survivors = players.filter(id => alive[id]);
+    survivors.sort((a, b) => {
+        const hpDiff = (hp[b] || 0) - (hp[a] || 0);
+        if (hpDiff !== 0) return hpDiff;
+        return (scores[b] || 0) - (scores[a] || 0);
+    });
+
+    // Eliminated: reverse eliminationOrder (first killed = last place)
+    const eliminated = [...(matchState.eliminationOrder || [])].reverse();
+
+    const ranked = [...survivors, ...eliminated];
+
+    // Award placement points and accumulate damage totals
+    if (!matchState.placementPoints) matchState.placementPoints = {};
+    if (!matchState.damageDealtTotal) matchState.damageDealtTotal = {};
+
+    ranked.forEach((pid, i) => {
+        const pts = PLACEMENT_POINTS[i] ?? 0;
+        matchState.placementPoints[pid] = (matchState.placementPoints[pid] || 0) + pts;
+        matchState.damageDealtTotal[pid] = (matchState.damageDealtTotal[pid] || 0) + (scores[pid] || 0);
+    });
+
+    // Backward compat: update roundWins for 1st place (preserves disconnect logic in main.js)
+    if (ranked[0]) {
+        if (!matchState.roundWins) matchState.roundWins = {};
+        matchState.roundWins[ranked[0]] = (matchState.roundWins[ranked[0]] || 0) + 1;
     }
 
-    return { isOver: false };
+    return ranked; // [1st, 2nd, 3rd, 4th]
 }
 
 /**
- * Determine the winner of a single round
+ * Check if the match is over (all rounds played) and determine the winner
+ *
+ * Phase 15: Rewritten for N-player placement-point model.
+ * - Accepts only matchState (no hostId/playerId params)
+ * - No early exit — all rounds are always played (key design decision)
+ * - Winner = highest cumulative placementPoints after maxRounds
+ * - Tiebreaker = total damage dealt across all rounds (damageDealtTotal)
  *
  * @param {object} matchState
- * @param {string} hostId
- * @param {string} playerId
- * @returns {string} winner's ID
+ * @returns {{isOver: boolean, winner?: string}}
  */
-export function getRoundWinner(matchState, hostId, playerId) {
-    // HP death: if one player's HP is 0 (or below), the other wins
-    const hostHp = matchState.hp[hostId] ?? 250;
-    const playerHp = matchState.hp[playerId] ?? 250;
-    if (hostHp <= 0 && playerHp > 0) return playerId;
-    if (playerHp <= 0 && hostHp > 0) return hostId;
+export function isMatchOver(matchState) {
+    if (matchState.currentRound < matchState.maxRounds) {
+        return { isOver: false };
+    }
 
-    // Fallback: higher score (cumulative damage dealt) wins
-    const hostScore = matchState.scores[hostId] || 0;
-    const playerScore = matchState.scores[playerId] || 0;
+    const players = matchState.players || [];
+    const pts = matchState.placementPoints || {};
 
-    if (hostScore > playerScore) return hostId;
-    if (playerScore > hostScore) return playerId;
-    return hostId; // tiebreak
+    if (players.length === 0) return { isOver: false };
+
+    // Find max points
+    let maxPts = -1;
+    for (const pid of players) {
+        const p = pts[pid] || 0;
+        if (p > maxPts) maxPts = p;
+    }
+
+    const tied = players.filter(pid => (pts[pid] || 0) === maxPts);
+
+    if (tied.length === 1) {
+        return { isOver: true, winner: tied[0] };
+    }
+
+    // Tiebreaker: total damage dealt across all rounds
+    const dmg = matchState.damageDealtTotal || {};
+    tied.sort((a, b) => (dmg[b] || 0) - (dmg[a] || 0));
+
+    return { isOver: true, winner: tied[0] };
 }

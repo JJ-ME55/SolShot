@@ -971,9 +971,13 @@ const mainsocket = (io) => {
                 goldBalance: goldStates[roomId] || {},
                 weapons: weaponInventories[roomId] ? weaponInventories[roomId][client.id] : [0],
                 terrain: room.heightmap ? { seed: room.terrainSeed, heightmap: room.heightmap } : null,
+                // N-player positions array (canonical)
+                positions: room.players.map(p => ({ socketId: p.socketId, pos: p.pos })),
+                // Backward-compat shim for 2-player client
                 tankPositions: {
-                    host: room.host ? room.host.pos : null,
-                    player: room.player ? room.player.pos : null,
+                    host: room.players[0]?.pos || null,
+                    player: room.players[1]?.pos || null,
+                    hostId: room.players[0]?.socketId || null,
                 },
                 wager: wagerStates[roomId] ? wagerStates[roomId].amount : 0,
                 wind: room.wind || 0,
@@ -2066,15 +2070,13 @@ const mainsocket = (io) => {
             // Update server terrain state
             room.heightmap = result.newTerrain
 
-            // Update tank Y positions to match deformed terrain
+            // Update tank Y positions to match deformed terrain (N-player)
             // Without this, next shot starts from old position which may be inside terrain
-            if (room.host && room.host.pos) {
-                const hx = Math.min(1199, Math.max(0, Math.floor(room.host.pos.x)))
-                room.host.pos.y = result.newTerrain[hx] - 15  // -15 for tank height offset
-            }
-            if (room.player && room.player.pos) {
-                const px = Math.min(1199, Math.max(0, Math.floor(room.player.pos.x)))
-                room.player.pos.y = result.newTerrain[px] - 15
+            for (const p of room.players) {
+                if (p.pos) {
+                    const px = Math.min(1199, Math.max(0, Math.floor(p.pos.x)))
+                    p.pos.y = result.newTerrain[px] - 15  // -15 for tank height offset
+                }
             }
 
             // Update match state + Gold
@@ -2173,10 +2175,13 @@ const mainsocket = (io) => {
                 seq: ms ? ms.turnSequence : 0,  // Fix 4: client must echo this in next fire
                 goldEarned,
                 goldBalance: goldStates[this.roomId] || {},
+                // N-player positions array (canonical)
+                positions: room.players.map(p => ({ socketId: p.socketId, pos: p.pos })),
+                // Backward-compat shim for 2-player client
                 tankPositions: {
-                    host: room.host ? { x: room.host.pos.x, y: room.host.pos.y } : null,
-                    player: room.player ? { x: room.player.pos.x, y: room.player.pos.y } : null,
-                    hostId: room.host ? room.host.socketId : null,
+                    host: room.players[0]?.pos ? { x: room.players[0].pos.x, y: room.players[0].pos.y } : null,
+                    player: room.players[1]?.pos ? { x: room.players[1].pos.x, y: room.players[1].pos.y } : null,
+                    hostId: room.players[0]?.socketId || null,
                 },
                 scatterPoints: result.scatterPoints || null,
                 subTrajectories: result.subTrajectories || null,
@@ -2505,21 +2510,22 @@ const mainsocket = (io) => {
             const seed32 = parseInt(fullSeed.slice(0, 8), 16) >>> 0;
 
             const { path, heightmap } = generateTerrain(1200, 800, seed32)
-            const tankPositions = generateTankPositions(heightmap)
             const wind = generateWind()
 
             // Store server-side
             room.heightmap = heightmap
             room.terrainSeed = fullSeed
             room.wind = wind
-            // Assign tank positions to each player slot (generateTankPositions still returns {host,player} until Plan 16-02)
-            if (room.players[0]) room.players[0].pos = tankPositions.host
-            if (room.players[1]) room.players[1].pos = tankPositions.player
+            // N-player: generate positions for all players and assign to room.players[i].pos
+            const positions = generateTankPositions(heightmap, room.players.length, 1200)
+            room.players.forEach((p, i) => {
+                p.pos = positions[i]
+            })
 
             // Initialize match state for battle
             if (ms) {
                 ms.terrain = heightmap
-                ms.tankPositions = tankPositions
+                ms.tankPositions = positions
                 // Only transition if not already in battle (shop phase already transitions)
                 if (ms.status !== MATCH_STATES.BATTLE) {
                     transitionState(ms, MATCH_STATES.BATTLE)
@@ -2557,7 +2563,14 @@ const mainsocket = (io) => {
             const terrainPayload = {
                 path,
                 heightmap,
-                tankPositions,
+                // N-player positions array (canonical)
+                positions: room.players.map(p => ({ socketId: p.socketId, pos: p.pos })),
+                // Backward-compat shim for 2-player client
+                tankPositions: {
+                    host: room.players[0]?.pos || null,
+                    player: room.players[1]?.pos || null,
+                    hostId: room.players[0]?.socketId || null,
+                },
                 seed: fullSeed,
                 wind,
                 firstTurn: ms ? ms.currentTurn : null,

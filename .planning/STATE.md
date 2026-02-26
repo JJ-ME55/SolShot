@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 26 Feb 2026)
 
 Milestone: v1.3 — 4-Player Multiplayer
 Phase: 15 of 19 (Server Core Services)
-Plan: 0 of 2 in Phase 15
-Status: Ready to plan
-Last activity: 26 Feb 2026 — Roadmap created, Phase 15 ready to plan
+Plan: 1 of 2 in Phase 15
+Status: In progress
+Last activity: 26 Feb 2026 — Completed 15-01-PLAN.md (match.js N-player rewrite)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█░░░░░░░░░] ~2% (1/56 v1.3 plans)
 
 ## Performance Metrics
 
@@ -45,6 +45,11 @@ Progress: [░░░░░░░░░░] 0%
 - 4-player: color CHOICE with duplicate prevention (red/blue/green/yellow)
 - 4-player: wager modes with 3-4 players are practice-only until escrow upgrade
 - Tank colours: red #E63946, blue #4A90D9, green #52B788, yellow #FFD166
+- 15-01: players[] intentionally empty at createMatchState; populated at requestTerrain (Plan 15-02)
+- 15-01: isMatchOver has no early exit — all rounds always played; winner by cumulative placementPoints
+- 15-01: getRoundWinner removed; getRoundPlacement returns ranked[] with PLACEMENT_POINTS[3,2,1,0]
+- 15-01: roundWins[1st] side-effect kept in getRoundPlacement for backward compat with disconnect chain
+- 15-01: isRoundOver uses alive map with HP fallback until Phase 16 updates fire handler
 
 ### Pending Todos
 - Run 25-test suite when McAfee exclusion is configured
@@ -58,11 +63,12 @@ Progress: [░░░░░░░░░░] 0%
 - McAfee blocks solana-test-validator on Windows
 - Devnet wallet at 0.97 SOL — need ~2.12 SOL for program deploy
 - main.js is ~1800+ lines — search by function name, not line number
-- Phase 15 critical: fix isRoundOver (ends round on first kill) before any N-player testing
+- Phase 15 critical RESOLVED: isRoundOver now uses alive map (was ending on first kill) — done in 15-01
 - Phase 16 critical: fix room.active flag (blocks players 3+ from joining) simultaneously with schema migration
+- Plan 15-02: main.js must update imports (getRoundPlacement not getRoundWinner), drop hostId/playerId params from getNextTurn and isMatchOver call sites
 
 ## Session Continuity
 
-Last session: 2026-02-26
-Stopped at: Roadmap created for v1.3, ready to plan Phase 15
+Last session: 2026-02-26 12:17 UTC
+Stopped at: Completed 15-01-PLAN.md — match.js N-player rewrite committed (2dbdd37)
 Resume file: None

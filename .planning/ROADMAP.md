@@ -61,7 +61,7 @@ Jupiter ecosystem integration, polished UI, stats pipeline, mobile, security, ch
 - [x] **Phase 15: Server Core Services** — match.js, gold.js, and placement scoring rewritten for N players
 - [x] **Phase 16: Room Schema and Battle Engine** — players[] room model, N-player fire handler, terrain spawn
 - [x] **Phase 17: Server Systems** — 5 surgical N-player fixes: wager guard, reconnect broadcast, playerIndex, shopReady remap, debug log
-- [ ] **Phase 18: Client Phaser and GameBridge** — tanks[] array, elimination handler, bridge state shape
+- [x] **Phase 18: Client Phaser and GameBridge** — tanks[] array, elimination handler, bridge state shape
 - [ ] **Phase 19: React HUD and Lobby UI** — N HP bars, player count selector, N-slot waiting room
 
 ---
@@ -158,8 +158,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 18-01-PLAN.md — N-player core migration: MainScene tanks[] array, Tank.js/Turret.js 2-player cleanup, ShopScreen players[] pass, GameBridge state shape
-- [ ] 18-02-PLAN.md — Elimination visuals and spectator mode: playerEliminated handler, wreckage + kill text, spectator camera, name labels, YOUR TURN flash
+- [x] 18-01-PLAN.md — N-player core migration: MainScene tanks[] array, Tank.js/Turret.js 2-player cleanup, ShopScreen players[] pass, GameBridge state shape
+- [x] 18-02-PLAN.md — Elimination visuals and spectator mode: playerEliminated handler, wreckage + kill text, spectator camera, name labels, YOUR TURN flash
 
 ---
 
@@ -199,7 +199,7 @@ Plans:
 | 15. Server Core Services | v1.3 | 2/2 | Complete | 26 Feb 2026 |
 | 16. Room Schema and Battle Engine | v1.3 | 3/3 | Complete | 26 Feb 2026 |
 | 17. Server Systems | v1.3 | 1/1 | Complete | 26 Feb 2026 |
-| 18. Client Phaser and GameBridge | v1.3 | 0/2 | Not started | - |
+| 18. Client Phaser and GameBridge | v1.3 | 2/2 | Complete | 26 Feb 2026 |
 | 19. React HUD and Lobby UI | v1.3 | 0/2 | Not started | - |
 
 ---

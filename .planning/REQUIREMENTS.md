@@ -9,12 +9,12 @@
 
 - [x] **CORE-01**: Room data model uses `players[]` array (2-4 slots) instead of `host`/`player`
 - [x] **CORE-02**: `maxPlayers` field on room (2, 3, or 4) set at creation time
-- [ ] **CORE-03**: `getNextTurn()` rotates through alive players in order, skipping eliminated
-- [ ] **CORE-04**: `isRoundOver()` returns true when 1 or fewer players alive
-- [ ] **CORE-05**: `isMatchOver()` uses placement scoring for N-player BO3/BO5 (4th=0, 3rd=1, 2nd=2, 1st=3pts)
-- [ ] **CORE-06**: `createMatchState()` initializes HP, scores, kills, roundWins for N players
-- [ ] **CORE-07**: `currentPlayerIndex` tracks turn position in players[] array
-- [ ] **CORE-08**: 2-player mode (`maxPlayers: 2`) works identically to current 1v1 (backward compat)
+- [x] **CORE-03**: `getNextTurn()` rotates through alive players in order, skipping eliminated
+- [x] **CORE-04**: `isRoundOver()` returns true when 1 or fewer players alive
+- [x] **CORE-05**: `isMatchOver()` uses placement scoring for N-player BO3/BO5 (4th=0, 3rd=1, 2nd=2, 1st=3pts)
+- [x] **CORE-06**: `createMatchState()` initializes HP, scores, kills, roundWins for N players
+- [x] **CORE-07**: `currentPlayerIndex` tracks turn position in players[] array
+- [x] **CORE-08**: 2-player mode (`maxPlayers: 2`) works identically to current 1v1 (backward compat)
 
 ### Server Battle (BATTLE)
 
@@ -44,13 +44,13 @@
 
 ### Client Phaser (PHASER)
 
-- [ ] **PHASER-01**: Dynamic `tanks[]` array replaces `tank1`/`tank2`
-- [ ] **PHASER-02**: `myPlayerIndex` identifies local player's position in the array
-- [ ] **PHASER-03**: Turn detection uses `myPlayerIndex === currentPlayerIndex`
-- [ ] **PHASER-04**: Eliminated tank plays destruction animation and becomes inactive
-- [ ] **PHASER-05**: Position sync from `turnResult.players[]` updates all N tanks
-- [ ] **PHASER-06**: Player continues to spectate after elimination (camera stays, controls disabled)
-- [ ] **PHASER-07**: Tank colors assigned from player's chosen color
+- [x] **PHASER-01**: Dynamic `tanks[]` array replaces `tank1`/`tank2`
+- [x] **PHASER-02**: `myPlayerIndex` identifies local player's position in the array
+- [x] **PHASER-03**: Turn detection uses `myPlayerIndex === currentPlayerIndex`
+- [x] **PHASER-04**: Eliminated tank plays destruction animation and becomes inactive
+- [x] **PHASER-05**: Position sync from `turnResult.players[]` updates all N tanks
+- [x] **PHASER-06**: Player continues to spectate after elimination (camera stays, controls disabled)
+- [x] **PHASER-07**: Tank colors assigned from player's chosen color
 
 ### Client HUD (HUD)
 
@@ -71,19 +71,19 @@
 
 ### GameBridge (BRIDGE)
 
-- [ ] **BRIDGE-01**: GameBridge `players[]` array replaces `tank1`/`tank2` state
-- [ ] **BRIDGE-02**: Bridge relays `currentPlayerIndex` and `myPlayerIndex`
-- [ ] **BRIDGE-03**: Bridge relays elimination state per player
-- [ ] **BRIDGE-04**: Bridge relays player colors and names
+- [x] **BRIDGE-01**: GameBridge `players[]` array replaces `tank1`/`tank2` state
+- [x] **BRIDGE-02**: Bridge relays `currentPlayerIndex` and `myPlayerIndex`
+- [x] **BRIDGE-03**: Bridge relays elimination state per player
+- [x] **BRIDGE-04**: Bridge relays player colors and names
 
 ### Round Scoring (SCORE)
 
-- [ ] **SCORE-01**: BO1 with N players: last man standing wins
-- [ ] **SCORE-02**: BO3/BO5 with N players: placement scoring per round (4th=0, 3rd=1, 2nd=2, 1st=3)
-- [ ] **SCORE-03**: Match winner is player with most cumulative points after all rounds
-- [ ] **SCORE-04**: Tiebreaker: total HP damage dealt across all rounds
-- [ ] **SCORE-05**: Round reset restores all players to 250 HP and alive status
-- [ ] **SCORE-06**: Between-round scoreboard shows cumulative placement points
+- [x] **SCORE-01**: BO1 with N players: last man standing wins
+- [x] **SCORE-02**: BO3/BO5 with N players: placement scoring per round (4th=0, 3rd=1, 2nd=2, 1st=3)
+- [x] **SCORE-03**: Match winner is player with most cumulative points after all rounds
+- [x] **SCORE-04**: Tiebreaker: total HP damage dealt across all rounds
+- [x] **SCORE-05**: Round reset restores all players to 250 HP and alive status
+- [x] **SCORE-06**: Between-round scoreboard shows cumulative placement points
 
 ## v2 Requirements (Deferred)
 
@@ -143,13 +143,13 @@
 | SYS-08 | Phase 17 | Complete |
 | SYS-09 | Phase 17 | Complete |
 | SYS-10 | Phase 17 | Complete |
-| PHASER-01 | Phase 18 | Pending |
-| PHASER-02 | Phase 18 | Pending |
-| PHASER-03 | Phase 18 | Pending |
-| PHASER-04 | Phase 18 | Pending |
-| PHASER-05 | Phase 18 | Pending |
-| PHASER-06 | Phase 18 | Pending |
-| PHASER-07 | Phase 18 | Pending |
+| PHASER-01 | Phase 18 | Complete |
+| PHASER-02 | Phase 18 | Complete |
+| PHASER-03 | Phase 18 | Complete |
+| PHASER-04 | Phase 18 | Complete |
+| PHASER-05 | Phase 18 | Complete |
+| PHASER-06 | Phase 18 | Complete |
+| PHASER-07 | Phase 18 | Complete |
 | HUD-01 | Phase 19 | Pending |
 | HUD-02 | Phase 19 | Pending |
 | HUD-03 | Phase 19 | Pending |
@@ -161,10 +161,10 @@
 | LOBBY-04 | Phase 19 | Pending |
 | LOBBY-05 | Phase 19 | Pending |
 | LOBBY-06 | Phase 19 | Pending |
-| BRIDGE-01 | Phase 18 | Pending |
-| BRIDGE-02 | Phase 18 | Pending |
-| BRIDGE-03 | Phase 18 | Pending |
-| BRIDGE-04 | Phase 18 | Pending |
+| BRIDGE-01 | Phase 18 | Complete |
+| BRIDGE-02 | Phase 18 | Complete |
+| BRIDGE-03 | Phase 18 | Complete |
+| BRIDGE-04 | Phase 18 | Complete |
 | SCORE-01 | Phase 15 | Complete |
 | SCORE-02 | Phase 15 | Complete |
 | SCORE-03 | Phase 15 | Complete |

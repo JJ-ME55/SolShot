@@ -81,11 +81,11 @@ Jupiter ecosystem integration, polished UI, stats pipeline, mobile, security, ch
 4. `isMatchOver()` correctly identifies the leader using placement point totals (4th=0, 3rd=1, 2nd=2, 1st=3 per round) and resolves ties by total damage dealt.
 5. `resetForNextRound()` restores all N players to 250 HP and alive status — including players who were never hit in the prior round.
 
-**Plans:** TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 15-01: Rewrite match.js — getNextTurn, isRoundOver, isMatchOver, getRoundWinner, createMatchState for N players
-- [ ] 15-02: Rewrite gold.js initGold signature and add placement scoring constants to match state
+- [ ] 15-01-PLAN.md — Rewrite match.js: createMatchState, getNextTurn, isRoundOver, getRoundPlacement, isMatchOver, resetForNextRound for N players
+- [ ] 15-02-PLAN.md — Rewrite gold.js initGold + awardPlacementGold, update all main.js call sites for new signatures
 
 ---
 

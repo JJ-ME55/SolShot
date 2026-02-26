@@ -59,7 +59,7 @@ Jupiter ecosystem integration, polished UI, stats pipeline, mobile, security, ch
 **Milestone Goal:** Refactor SolShot from 1v1 to 2-4 player last-man-standing while preserving all existing 2-player functionality. Practice mode ships first; N-player escrow is deferred.
 
 - [x] **Phase 15: Server Core Services** — match.js, gold.js, and placement scoring rewritten for N players
-- [ ] **Phase 16: Room Schema and Battle Engine** — players[] room model, N-player fire handler, terrain spawn
+- [x] **Phase 16: Room Schema and Battle Engine** — players[] room model, N-player fire handler, terrain spawn
 - [ ] **Phase 17: Server Systems** — shop, disconnect/reconnect, wager guard, playAgain for N players
 - [ ] **Phase 18: Client Phaser and GameBridge** — tanks[] array, elimination handler, bridge state shape
 - [ ] **Phase 19: React HUD and Lobby UI** — N HP bars, player count selector, N-slot waiting room
@@ -110,9 +110,9 @@ Plans:
 **Plans:** 3 plans
 
 Plans:
-- [ ] 16-01-PLAN.md — Room schema migration: players[] array, maxPlayers, getPlayerSlot helper, join guard, getOpenRooms, ready/shop/gold init, persistRoom, playAgainRequest
-- [ ] 16-02-PLAN.md — N-player terrain and tank spawn: generateTankPositions(heightmap, N), requestTerrain compat block replacement, terrainGenerated payload, rejoinSuccess positions
-- [ ] 16-03-PLAN.md — Fire handler and elimination: N-player tanks[], elimination loop, playerEliminated event, homing fix, timeout N-player, movement handlers, disconnect/reconnect, matchEnd survivorOrder
+- [x] 16-01-PLAN.md — Room schema migration: players[] array, maxPlayers, getPlayerSlot helper, join guard, getOpenRooms, ready/shop/gold init, persistRoom, playAgainRequest
+- [x] 16-02-PLAN.md — N-player terrain and tank spawn: generateTankPositions(heightmap, N), requestTerrain compat block replacement, terrainGenerated payload, rejoinSuccess positions
+- [x] 16-03-PLAN.md — Fire handler and elimination: N-player tanks[], elimination loop, playerEliminated event, homing fix, timeout N-player, movement handlers, disconnect/reconnect, matchEnd survivorOrder
 
 ---
 
@@ -196,7 +196,7 @@ Plans:
 | 1-8. Security Hardening | v1.1 | 25/25 | Complete | 23 Feb 2026 |
 | 9-14. Launch Readiness | v1.2 | 15/15 | Complete | 25 Feb 2026 |
 | 15. Server Core Services | v1.3 | 2/2 | Complete | 26 Feb 2026 |
-| 16. Room Schema and Battle Engine | v1.3 | 0/3 | Not started | - |
+| 16. Room Schema and Battle Engine | v1.3 | 3/3 | Complete | 26 Feb 2026 |
 | 17. Server Systems | v1.3 | 0/2 | Not started | - |
 | 18. Client Phaser and GameBridge | v1.3 | 0/2 | Not started | - |
 | 19. React HUD and Lobby UI | v1.3 | 0/2 | Not started | - |

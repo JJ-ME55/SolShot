@@ -7,8 +7,8 @@
 
 ### Server Core (CORE)
 
-- [ ] **CORE-01**: Room data model uses `players[]` array (2-4 slots) instead of `host`/`player`
-- [ ] **CORE-02**: `maxPlayers` field on room (2, 3, or 4) set at creation time
+- [x] **CORE-01**: Room data model uses `players[]` array (2-4 slots) instead of `host`/`player`
+- [x] **CORE-02**: `maxPlayers` field on room (2, 3, or 4) set at creation time
 - [ ] **CORE-03**: `getNextTurn()` rotates through alive players in order, skipping eliminated
 - [ ] **CORE-04**: `isRoundOver()` returns true when 1 or fewer players alive
 - [ ] **CORE-05**: `isMatchOver()` uses placement scoring for N-player BO3/BO5 (4th=0, 3rd=1, 2nd=2, 1st=3pts)
@@ -18,22 +18,22 @@
 
 ### Server Battle (BATTLE)
 
-- [ ] **BATTLE-01**: Fire handler applies damage to all N players from weapon physics
-- [ ] **BATTLE-02**: `playerEliminated` event emitted when a player's HP reaches 0
-- [ ] **BATTLE-03**: Eliminated players are skipped in turn rotation
-- [ ] **BATTLE-04**: Simultaneous eliminations handled correctly (splash damage kills 2+ in one shot)
-- [ ] **BATTLE-05**: Homing weapons target nearest living enemy (not just "the other tank")
-- [ ] **BATTLE-06**: `turnResult` payload includes all N players' positions and `currentPlayerIndex`
-- [ ] **BATTLE-07**: Turn timeout (60s) eliminates the timed-out player in N-player (not end match)
-- [ ] **BATTLE-08**: 3 consecutive timeouts eliminates player (not ends match) for N-player
-- [ ] **BATTLE-09**: `matchEnd` includes `survivorOrder[]` (placement: 1st through Nth)
-- [ ] **BATTLE-10**: N-player tank position generation distributes tanks across terrain zones
+- [x] **BATTLE-01**: Fire handler applies damage to all N players from weapon physics
+- [x] **BATTLE-02**: `playerEliminated` event emitted when a player's HP reaches 0
+- [x] **BATTLE-03**: Eliminated players are skipped in turn rotation
+- [x] **BATTLE-04**: Simultaneous eliminations handled correctly (splash damage kills 2+ in one shot)
+- [x] **BATTLE-05**: Homing weapons target nearest living enemy (not just "the other tank")
+- [x] **BATTLE-06**: `turnResult` payload includes all N players' positions and `currentPlayerIndex`
+- [x] **BATTLE-07**: Turn timeout (60s) eliminates the timed-out player in N-player (not end match)
+- [x] **BATTLE-08**: 3 consecutive timeouts eliminates player (not ends match) for N-player
+- [x] **BATTLE-09**: `matchEnd` includes `survivorOrder[]` (placement: 1st through Nth)
+- [x] **BATTLE-10**: N-player tank position generation distributes tanks across terrain zones
 
 ### Server Systems (SYS)
 
-- [ ] **SYS-01**: Gold system initializes for N players (1000G each)
-- [ ] **SYS-02**: Gold earnings from damage scale correctly with N targets
-- [ ] **SYS-03**: Weapon inventories initialized for N players
+- [x] **SYS-01**: Gold system initializes for N players (1000G each)
+- [x] **SYS-02**: Gold earnings from damage scale correctly with N targets
+- [x] **SYS-03**: Weapon inventories initialized for N players
 - [ ] **SYS-04**: Shop phase waits for all N players to finish shopping
 - [ ] **SYS-05**: Disconnect/reconnect works for N players (wallet-keyed, playerIndex preserved)
 - [ ] **SYS-06**: Disconnected player forfeit timeout triggers elimination (not match end)
@@ -115,27 +115,27 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CORE-01 | Phase 16 | Pending |
-| CORE-02 | Phase 16 | Pending |
+| CORE-01 | Phase 16 | Complete |
+| CORE-02 | Phase 16 | Complete |
 | CORE-03 | Phase 15 | Complete |
 | CORE-04 | Phase 15 | Complete |
 | CORE-05 | Phase 15 | Complete |
 | CORE-06 | Phase 15 | Complete |
 | CORE-07 | Phase 15 | Complete |
 | CORE-08 | Phase 15 | Complete |
-| BATTLE-01 | Phase 16 | Pending |
-| BATTLE-02 | Phase 16 | Pending |
-| BATTLE-03 | Phase 16 | Pending |
-| BATTLE-04 | Phase 16 | Pending |
-| BATTLE-05 | Phase 16 | Pending |
-| BATTLE-06 | Phase 16 | Pending |
-| BATTLE-07 | Phase 16 | Pending |
-| BATTLE-08 | Phase 16 | Pending |
-| BATTLE-09 | Phase 16 | Pending |
-| BATTLE-10 | Phase 16 | Pending |
-| SYS-01 | Phase 16 | Pending |
-| SYS-02 | Phase 16 | Pending |
-| SYS-03 | Phase 16 | Pending |
+| BATTLE-01 | Phase 16 | Complete |
+| BATTLE-02 | Phase 16 | Complete |
+| BATTLE-03 | Phase 16 | Complete |
+| BATTLE-04 | Phase 16 | Complete |
+| BATTLE-05 | Phase 16 | Complete |
+| BATTLE-06 | Phase 16 | Complete |
+| BATTLE-07 | Phase 16 | Complete |
+| BATTLE-08 | Phase 16 | Complete |
+| BATTLE-09 | Phase 16 | Complete |
+| BATTLE-10 | Phase 16 | Complete |
+| SYS-01 | Phase 16 | Complete |
+| SYS-02 | Phase 16 | Complete |
+| SYS-03 | Phase 16 | Complete |
 | SYS-04 | Phase 17 | Pending |
 | SYS-05 | Phase 17 | Pending |
 | SYS-06 | Phase 17 | Pending |

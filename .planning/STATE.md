@@ -4,17 +4,17 @@
 
 See: .planning/PROJECT.md (updated 26 Feb 2026)
 **Core value:** Browser-based multiplayer artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** v1.3 — 4-Player Multiplayer, Phase 17: Client N-Player UI
+**Current focus:** v1.3 — 4-Player Multiplayer, Phase 17: Server Systems
 
 ## Current Position
 
 Milestone: v1.3 — 4-Player Multiplayer
 Phase: 16 of 19 (Room Schema and Battle Engine) — COMPLETE
-Plan: 3 of 3 in Phase 16
-Status: Phase complete
-Last activity: 26 Feb 2026 — Completed 16-03-PLAN.md (N-player battle engine)
+Plan: 0 of 2 in Phase 17
+Status: Ready to plan Phase 17
+Last activity: 26 Feb 2026 — Phase 16 complete (3/3 plans, verified)
 
-Progress: [█████░░░░░] ~27% (6/11 v1.3 plans)
+Progress: [█████░░░░░] ~45% (5/11 v1.3 plans)
 
 ## Performance Metrics
 

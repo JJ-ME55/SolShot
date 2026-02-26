@@ -1617,9 +1617,8 @@ const mainsocket = (io) => {
                     // ── Between-round shop: preserve gold + inventories ──
                     // Gold carries over — do NOT call initGold()
                     // Inventories carry over — do NOT reinitialize
-                    const hostId = playerIds[0]
-                    const pid = playerIds[1]
-                    console.log(`[BO3] Between-round shop: Round ${ms.currentRound} ended. Gold: host=${getBalance(goldStates[client.roomId], hostId)}, player=${getBalance(goldStates[client.roomId], pid)}`)
+                    const goldSummary = playerIds.map((pid, i) => `p${i + 1}=${getBalance(goldStates[client.roomId], pid)}`).join(', ')
+                    console.log(`[BO3] Between-round shop: Round ${ms.currentRound} ended. Gold: ${goldSummary}`)
                 } else {
                     // ── First shop (from lobby): initialize everything ──
                     goldStates[client.roomId] = initGold(playerIds)

@@ -47,6 +47,16 @@ export class MainScene extends Scene {
 
     // Socket handler refs for cleanup (Fix 4)
     this._socketHandlers = {};
+
+    // Spectator mode state (populated by Plan 18-02)
+    this._isSpectating = false;
+    this._spectatorPlacement = null;
+    this._spectatorAimGfx = null;
+
+    // Name label state (populated by Plan 18-02)
+    this._nameLabels = null;
+    this._youMarker = null;
+    this._hasHadFirstTurn = false;
   }
 
   init = (data) => {
@@ -65,6 +75,12 @@ export class MainScene extends Scene {
     this.currentPlayerIndex = 0;
     this._eliminated = {};
     this._lastPositions = [];
+    this._isSpectating = false;
+    this._spectatorPlacement = null;
+    this._spectatorAimGfx = null;
+    this._nameLabels = null;
+    this._youMarker = null;
+    this._hasHadFirstTurn = false;
   };
 
   preload = () => {
@@ -190,6 +206,14 @@ export class MainScene extends Scene {
 
     this.checkSwitchTurn();
     this._pushStateToBridge();
+    this._updateNameLabels();
+
+    // Spectator aim trajectory — dotted line from active turret when spectating
+    if (this._isSpectating && this.currentPlayerIndex >= 0) {
+      this._drawSpectatorAimLine();
+    } else {
+      this._clearSpectatorAimLine();
+    }
 
     this.input.mousePointer.prev = { x: this.input.mousePointer.x, y: this.input.mousePointer.y };
     this.input.activePointer.prev = { x: this.input.activePointer.x, y: this.input.activePointer.y };
@@ -363,6 +387,10 @@ export class MainScene extends Scene {
       t.active = isMyTankAndMyTurn;
       if (i === this.currentPlayerIndex) t.movesRemaining = 4;
     });
+    // Flash "YOUR TURN!" when it becomes the local player's turn
+    if (this.currentPlayerIndex === this.myPlayerIndex && !this._isSpectating) {
+      this._flashYourTurn();
+    }
   };
 
   // ── Turn pointer ──
@@ -403,7 +431,7 @@ export class MainScene extends Scene {
 
       if (this.textures.exists('turn-pointer')) this.textures.remove('turn-pointer');
       this.textures.addCanvas('turn-pointer', canvas);
-      this.turnPointer = this.add.image(tank.x, tank.y - 45, 'turn-pointer');
+      this.turnPointer = this.add.image(tank.x, tank.y - 58, 'turn-pointer');
       this.turnPointer.setDepth(10);
 
       this.tweens.add({
@@ -423,6 +451,270 @@ export class MainScene extends Scene {
       this.turnPointer.setVisible(false);
       this.turnPointer = null;
     }
+  };
+
+  // ── Elimination: wreckage, kill text, spectator mode ──
+
+  _playEliminationEffect = (tankIndex, eliminatedId, killedById, reason) => {
+    const tank = this.tanks[tankIndex];
+    if (!tank) return;
+
+    const ex = tank.x;
+    const ey = tank.y;
+
+    // 1. Brief particle burst explosion (reuse Big Shot blast for dramatic effect)
+    this.playExplosionEffect(ex, ey, 1);
+    try { this.sound.play('expmedium'); } catch (_) {}
+
+    // 2. Draw charred wreckage hull at tank's last position
+    const wreckage = this.add.graphics();
+    wreckage.fillStyle(0x3a2a1a, 0.85); // charred brown body
+    wreckage.fillRect(ex - 18, ey - 8, 36, 12);
+    wreckage.fillStyle(0x1a0a00, 0.6); // dark turret stub
+    wreckage.fillRect(ex - 10, ey - 14, 20, 6);
+    // Scorch marks for battle-damage detail
+    wreckage.fillStyle(0x000000, 0.3);
+    wreckage.fillCircle(ex - 5, ey - 2, 3);
+    wreckage.fillCircle(ex + 8, ey - 4, 2);
+    wreckage.setDepth(-1); // above terrain, below blast layer
+
+    // 3. Hide actual tank sprite and disable physics
+    tank.setVisible(false);
+    if (tank.body) tank.body.enable = false;
+    if (tank.turret) tank.turret.setVisible(false);
+
+    // 4. Fade name label for eliminated tank
+    if (this._nameLabels && this._nameLabels[tankIndex]) {
+      this._nameLabels[tankIndex].setAlpha(0.3);
+      this._nameLabels[tankIndex].setStyle({ color: '#666666' });
+    }
+
+    // 5. Kill text overlay — fades after ~2.5s
+    const eliminatedName = tank.name || 'Player';
+    let killerName = 'timeout';
+    if (killedById) {
+      const positions = this._lastPositions || [];
+      const killerIdx = positions.findIndex(p => p.socketId === killedById);
+      killerName = (killerIdx >= 0 && this.tanks[killerIdx]) ? (this.tanks[killerIdx].name || 'Player') : 'unknown';
+    }
+    const msg = reason === 'timeout'
+      ? `${eliminatedName} timed out`
+      : killedById
+        ? `${eliminatedName} eliminated by ${killerName}`
+        : `${eliminatedName} was eliminated`;
+
+    const killText = this.add.text(
+      this.renderer.width / 2, this.renderer.height * 0.25,
+      msg,
+      {
+        fontFamily: "'Share Tech Mono', monospace",
+        fontSize: '18px',
+        color: '#ff4444',
+        stroke: '#000000',
+        strokeThickness: 3,
+        align: 'center',
+      }
+    );
+    killText.setOrigin(0.5, 0.5);
+    killText.setDepth(20);
+    killText.setScrollFactor(0);
+
+    this.tweens.add({
+      targets: killText,
+      alpha: 0,
+      y: killText.y - 20,
+      duration: 1800,
+      delay: 800,
+      ease: 'Quad.easeIn',
+      onComplete: () => { try { killText.destroy(); } catch (_) {} }
+    });
+  };
+
+  _enterSpectatorMode = (placement) => {
+    this._isSpectating = true;
+    this._spectatorPlacement = placement;
+
+    // Disable controls for local player
+    if (this.myPlayerIndex >= 0 && this.tanks[this.myPlayerIndex]) {
+      this.tanks[this.myPlayerIndex].active = false;
+    }
+
+    // Zoom out camera to show full battlefield
+    const centerX = this.renderer.width / 2;
+    const centerY = this.renderer.height / 2;
+    this.cameras.main.pan(centerX, centerY, 600, 'Cubic.easeOut');
+    this.cameras.main.zoomTo(0.85, 800, 'Cubic.easeOut');
+
+    // Notify bridge — React shows placement banner + Leave Match button in Phase 19
+    if (this._bridge) {
+      this._bridge.notifyEliminated({ placement });
+    }
+
+    // Show placement text in Phaser (semi-transparent, persistent)
+    const ordinal = placement === 1 ? '1st' : placement === 2 ? '2nd' : placement === 3 ? '3rd' : placement + 'th';
+    const placementText = this.add.text(
+      this.renderer.width / 2,
+      this.renderer.height * 0.15,
+      `YOU PLACED ${ordinal}`,
+      {
+        fontFamily: "'Black Ops One', cursive",
+        fontSize: '24px',
+        color: '#ffffff',
+        stroke: '#000000',
+        strokeThickness: 4,
+        align: 'center',
+      }
+    );
+    placementText.setOrigin(0.5, 0.5);
+    placementText.setDepth(25);
+    placementText.setAlpha(0.7);
+    placementText.setScrollFactor(0);
+  };
+
+  _drawSpectatorAimLine = () => {
+    // Clear previous frame's line
+    if (this._spectatorAimGfx) {
+      try { this._spectatorAimGfx.destroy(); } catch (_) {}
+    }
+
+    const activeTank = this.tanks[this.currentPlayerIndex];
+    if (!activeTank || !activeTank.turret || this._eliminated[this.currentPlayerIndex]) return;
+
+    const turret = activeTank.turret;
+    const startX = turret.x;
+    const startY = turret.y;
+    const angle = turret.rotation; // absolute rotation in radians
+
+    this._spectatorAimGfx = this.add.graphics();
+    this._spectatorAimGfx.setDepth(6);
+
+    const lineLen = 120;
+    const dotSpacing = 8;
+    const dotRadius = 1.5;
+
+    this._spectatorAimGfx.fillStyle(0xffffff, 0.4);
+    for (let d = 20; d < lineLen; d += dotSpacing) {
+      const dx = startX + d * Math.sin(angle);
+      const dy = startY - d * Math.cos(angle);
+      this._spectatorAimGfx.fillCircle(dx, dy, dotRadius);
+    }
+  };
+
+  _clearSpectatorAimLine = () => {
+    if (this._spectatorAimGfx) {
+      try { this._spectatorAimGfx.destroy(); } catch (_) {}
+      this._spectatorAimGfx = null;
+    }
+  };
+
+  // ── Name labels and YOU marker ──
+
+  _createNameLabels = () => {
+    // Destroy existing labels before recreating
+    if (this._nameLabels) {
+      this._nameLabels.forEach(l => { try { l.destroy(); } catch (_) {} });
+    }
+    if (this._youMarker) {
+      try { this._youMarker.destroy(); } catch (_) {}
+    }
+
+    this._nameLabels = this.tanks.map((t, i) => {
+      const label = this.add.text(t.x, t.y - 32, t.name || '', {
+        fontFamily: "'Share Tech Mono', monospace",
+        fontSize: '11px',
+        color: t.color || '#ffffff',
+        stroke: '#000000',
+        strokeThickness: 2,
+      });
+      label.setOrigin(0.5, 1);
+      label.setDepth(15);
+      return label;
+    });
+
+    // "YOU" marker above local player's tank — Solana green accent
+    if (this.myPlayerIndex >= 0 && this.tanks[this.myPlayerIndex]) {
+      const myTank = this.tanks[this.myPlayerIndex];
+      this._youMarker = this.add.text(myTank.x, myTank.y - 44, 'YOU', {
+        fontFamily: "'Black Ops One', cursive",
+        fontSize: '10px',
+        color: '#14f195',
+        stroke: '#000000',
+        strokeThickness: 2,
+        align: 'center',
+      });
+      this._youMarker.setOrigin(0.5, 1);
+      this._youMarker.setDepth(15);
+    }
+  };
+
+  _updateNameLabels = () => {
+    if (!this._nameLabels) return;
+    this.tanks.forEach((t, i) => {
+      const label = this._nameLabels[i];
+      if (!label) return;
+      if (this._eliminated[i]) {
+        // Keep label at last position, faded (alpha set in _playEliminationEffect)
+        return;
+      }
+      label.setPosition(t.x, t.y - 32);
+    });
+    // Update YOU marker position
+    if (this._youMarker && this.myPlayerIndex >= 0) {
+      const myTank = this.tanks[this.myPlayerIndex];
+      if (myTank && !this._eliminated[this.myPlayerIndex]) {
+        this._youMarker.setPosition(myTank.x, myTank.y - 44);
+      }
+    }
+  };
+
+  // ── YOUR TURN flash overlay ──
+
+  _flashYourTurn = () => {
+    if (this._isSpectating) return;
+    // Skip the very first turn (terrain placement turn) — only flash on subsequent turns
+    if (!this._hasHadFirstTurn) {
+      this._hasHadFirstTurn = true;
+      return;
+    }
+
+    const flash = this.add.text(
+      this.renderer.width / 2,
+      this.renderer.height * 0.35,
+      'YOUR TURN!',
+      {
+        fontFamily: "'Black Ops One', cursive",
+        fontSize: '28px',
+        color: '#14f195',
+        stroke: '#000000',
+        strokeThickness: 4,
+        align: 'center',
+      }
+    );
+    flash.setOrigin(0.5, 0.5);
+    flash.setDepth(25);
+    flash.setScrollFactor(0);
+    flash.setScale(0.5);
+    flash.setAlpha(0);
+
+    // Scale up + fade in, then fade out
+    this.tweens.add({
+      targets: flash,
+      scale: 1,
+      alpha: 1,
+      duration: 200,
+      ease: 'Back.easeOut',
+      onComplete: () => {
+        this.tweens.add({
+          targets: flash,
+          alpha: 0,
+          y: flash.y - 15,
+          duration: 800,
+          delay: 600,
+          ease: 'Quad.easeIn',
+          onComplete: () => { try { flash.destroy(); } catch (_) {} }
+        });
+      }
+    });
   };
 
   // ── Type 3: Online multiplayer — SERVER IS GOD ──
@@ -511,6 +803,7 @@ export class MainScene extends Scene {
 
       this._activateCurrentTank();
       this.showTurnPointer();
+      this._createNameLabels();
       this._pushStateToBridge();
       if (this._bridge) {
         this._bridge._readyFired = true;
@@ -556,6 +849,33 @@ export class MainScene extends Scene {
 
     socket.on('turnResult', this._socketHandlers.turnResult);
     socket.on('fireRejected', this._socketHandlers.fireRejected);
+
+    // ── STEP 4: Handle playerEliminated — tank wreckage, kill text, spectator mode ──
+    this._socketHandlers.playerEliminated = ({ eliminatedId, killedById, survivingPlayers, reason }) => {
+      const positions = this._lastPositions || [];
+      const idx = positions.findIndex(p => p.socketId === eliminatedId);
+      if (idx !== -1 && !this._eliminated[idx]) {
+        this._eliminated[idx] = true;
+        this._playEliminationEffect(idx, eliminatedId, killedById, reason);
+        // Update bridge with elimination state
+        if (this._bridge) {
+          const survivorCount = survivingPlayers ? survivingPlayers.length :
+            this.tanks.filter((_, i) => !this._eliminated[i]).length;
+          const placement = this.tanks.length - survivorCount;
+          this._bridge.setPlayerEliminated(idx, placement);
+        }
+      }
+      // If I was eliminated — enter spectator mode
+      // Use encapsulated _lastPositions lookup (not window.socket?.id)
+      const mySocketId = this._lastPositions?.[this.myPlayerIndex]?.socketId;
+      if (mySocketId && eliminatedId === mySocketId) {
+        const survivorCount = survivingPlayers ? survivingPlayers.length :
+          this.tanks.filter((_, i) => !this._eliminated[i]).length;
+        const placement = survivorCount + 1; // I placed one worse than survivors count
+        this._enterSpectatorMode(placement);
+      }
+    };
+    socket.on('playerEliminated', this._socketHandlers.playerEliminated);
   };
 
   // ── Apply authoritative turn result from server ──
@@ -1034,6 +1354,9 @@ export class MainScene extends Scene {
       if (this.tanks[1]) this.tanks[1].active = true;
       this.activeTank = 2;
     }
+
+    // Create name labels after tanks are positioned
+    this._createNameLabels();
   };
 
   // ── React bridge command handlers ──
@@ -1224,6 +1547,19 @@ export class MainScene extends Scene {
       });
     }
     this._socketHandlers = {};
+
+    // Clean up spectator graphics
+    this._clearSpectatorAimLine();
+
+    // Clean up name labels and YOU marker
+    if (this._nameLabels) {
+      this._nameLabels.forEach(l => { try { l.destroy(); } catch (_) {} });
+      this._nameLabels = null;
+    }
+    if (this._youMarker) {
+      try { this._youMarker.destroy(); } catch (_) {}
+      this._youMarker = null;
+    }
 
     try {
       this.sound.stopAll();

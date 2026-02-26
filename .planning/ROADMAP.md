@@ -60,7 +60,7 @@ Jupiter ecosystem integration, polished UI, stats pipeline, mobile, security, ch
 
 - [x] **Phase 15: Server Core Services** — match.js, gold.js, and placement scoring rewritten for N players
 - [x] **Phase 16: Room Schema and Battle Engine** — players[] room model, N-player fire handler, terrain spawn
-- [ ] **Phase 17: Server Systems** — shop, disconnect/reconnect, wager guard, playAgain for N players
+- [ ] **Phase 17: Server Systems** — 5 surgical N-player fixes: wager guard, reconnect broadcast, playerIndex, shopReady remap, debug log
 - [ ] **Phase 18: Client Phaser and GameBridge** — tanks[] array, elimination handler, bridge state shape
 - [ ] **Phase 19: React HUD and Lobby UI** — N HP bars, player count selector, N-slot waiting room
 
@@ -124,6 +124,8 @@ Plans:
 
 **Requirements:** SYS-04, SYS-05, SYS-06, SYS-07, SYS-08, SYS-09, SYS-10
 
+**Note:** Phase 16 already migrated the major systems (shop init, shopDone, endShopPhase, playAgainRequest, reconnect remap, getOpenRooms, movement handlers) to N-player. Phase 17 closes the 5 remaining surgical gaps identified by research.
+
 **Success Criteria** (what must be TRUE):
 1. In a 4-player match, the shop phase waits until all 4 players click "Done" before ending — a single player finishing early does not advance the phase.
 2. A Player 3 who disconnects and reconnects within 30 seconds rejoins with their correct gold, weapons, HP, and turn position preserved — no state is orphaned under the old socket ID.
@@ -131,11 +133,10 @@ Plans:
 4. Attempting to create a wager room with `maxPlayers: 3` or `maxPlayers: 4` returns a clear server-side error; the match falls back to practice mode.
 5. A rematch request in a 4-player match only starts if all surviving players agree; a single refusal returns all players to lobby.
 
-**Plans:** TBD
+**Plans:** 1 plan
 
 Plans:
-- [ ] 17-01: N-player shop system — initGold loop, weaponInventories loop, shopReady all-player check, endShopPhase N-inventory emit
-- [ ] 17-02: N-player reconnect, disconnect, turn timer, playAgain, wager guard — migrateSocketId helper, pendingReconnects playerIndex, stepLeft/stepRight/positionUpdate
+- [ ] 17-01-PLAN.md — 5 surgical N-player fixes: wager guard (SYS-08), reconnectExpired broadcast, pendingReconnects playerIndex, shopReady reconnect remap, between-round debug log
 
 ---
 
@@ -174,7 +175,7 @@ Plans:
 1. The battle HUD displays N HP bars in a horizontal strip — each bar is color-coded with the player's chosen color, shows their name, and the active player's bar is visually highlighted.
 2. When a player is eliminated, their HP bar immediately shows a greyed or crossed-out state that persists for the rest of the match.
 3. Room creation offers a "Number of players" selector (2, 3, or 4); the room list shows "currentPlayers/maxPlayers" for each open room.
-4. The waiting room displays all N player slots: filled slots show the player's name and color, empty slots show "Waiting…", and the host cannot start until all slots are filled and all players are ready.
+4. The waiting room displays all N player slots: filled slots show the player's name and color, empty slots show "Waiting...", and the host cannot start until all slots are filled and all players are ready.
 5. The color picker prevents two players from selecting the same color — selecting a color already taken by another player is disabled or triggers automatic reassignment.
 6. Quick Match matchmaking only proposes rooms matching the selected player count.
 
@@ -197,7 +198,7 @@ Plans:
 | 9-14. Launch Readiness | v1.2 | 15/15 | Complete | 25 Feb 2026 |
 | 15. Server Core Services | v1.3 | 2/2 | Complete | 26 Feb 2026 |
 | 16. Room Schema and Battle Engine | v1.3 | 3/3 | Complete | 26 Feb 2026 |
-| 17. Server Systems | v1.3 | 0/2 | Not started | - |
+| 17. Server Systems | v1.3 | 0/1 | Not started | - |
 | 18. Client Phaser and GameBridge | v1.3 | 0/2 | Not started | - |
 | 19. React HUD and Lobby UI | v1.3 | 0/2 | Not started | - |
 

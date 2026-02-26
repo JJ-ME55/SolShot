@@ -48,13 +48,13 @@ const s = {
   },
   catalogTitle: {
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 16,
+    fontSize: 18,
     color: 'var(--am)',
     letterSpacing: 2,
   },
   goldChip: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 14,
+    fontSize: 16,
     color: 'var(--gd)',
     letterSpacing: 1,
     display: 'flex',
@@ -117,19 +117,19 @@ const s = {
   },
   detailName: {
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 18,
+    fontSize: 22,
     color: 'var(--bn)',
     letterSpacing: 2,
   },
   detailTier: (tierColor) => ({
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 13,
+    fontSize: 15,
     color: tierColor,
     letterSpacing: 2,
   }),
   detailDesc: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 13,
+    fontSize: 14,
     color: 'var(--kh)',
     letterSpacing: 1,
     lineHeight: 1.6,
@@ -148,17 +148,17 @@ const s = {
   },
   detailStatLabel: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 13,
+    fontSize: 14,
     color: 'var(--kh)',
     letterSpacing: 1,
-    width: 70,
+    width: 75,
     opacity: 0.7,
   },
   detailStatBar: {
     flex: 1,
-    height: 5,
-    borderRadius: 3,
-    background: 'rgba(184, 168, 138, 0.1)',
+    height: 10,
+    borderRadius: 5,
+    background: 'rgba(184, 168, 138, 0.15)',
     overflow: 'hidden',
   },
   detailStatFill: (pct, color) => ({
@@ -170,7 +170,7 @@ const s = {
   }),
   detailPrice: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 15,
+    fontSize: 17,
     color: 'var(--gd)',
     letterSpacing: 1,
     marginTop: 4,
@@ -195,20 +195,20 @@ const s = {
   },
   loadoutChip: (tierColor) => ({
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 12,
+    fontSize: 13,
     color: tierColor,
     letterSpacing: 1,
-    padding: '3px 8px',
+    padding: '4px 10px',
     borderRadius: 3,
     border: `1px solid ${tierColor}33`,
     background: `rgba(${hexToRgb(tierColor)}, 0.06)`,
   }),
   loadoutLabel: {
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 13,
+    fontSize: 15,
     color: 'var(--kh)',
     letterSpacing: 2,
-    marginBottom: 3,
+    marginBottom: 4,
   },
 
   /* Bottom bar */
@@ -341,11 +341,20 @@ function ShopScreen({ navigate, screenData }) {
 
   /* ── socket: shop ends -> navigate to battle ── */
   useSocket('shopEnd', (data) => {
-    // Map from server format {host, player} to MainScene format {player1, player2, hostId}
-    // player1 = host, player2 = joiner. MainScene handles perspective swap internally.
+    // Build N-player players[] array from server data.
+    // screenData.players comes from startPick (has socketId, name, color for all N players).
+    const allPlayers = screenData?.players || [];
+    const playersArray = allPlayers.map(p => ({
+      socketId: p.socketId,
+      name: p.name,
+      color: p.color,
+      weapons: data.weaponsByPlayer?.[p.socketId] || data.hostWeapons || [],
+    }));
+
     navigate('battle', {
       gameType: 3,
       hostId: hostInfo.socketId,
+      // Backward-compat (BattleHUD still reads player1/player2 until Phase 19)
       player1: {
         name: hostInfo.name,
         color: hostInfo.color,
@@ -356,6 +365,9 @@ function ShopScreen({ navigate, screenData }) {
         color: playerInfo.color,
         weapons: data.playerWeapons,
       },
+      // N-player canonical
+      players: playersArray,
+      playerCount: playersArray.length || 2,
       wager: wager,
       goldBalance: data.goldBalance,
       round: currentRound,
@@ -516,7 +528,7 @@ function ShopScreen({ navigate, screenData }) {
                   variant="gold"
                   onClick={() => buyWeapon(selectedWeapon.id)}
                   disabled={isReady || gold < selectedWeapon.goldCost}
-                  style={{ fontSize: 10, padding: '6px 16px', marginTop: 4 }}
+                  style={{ fontSize: 13, padding: '8px 18px', marginTop: 4 }}
                 >
                   {'BUY - ' + selectedWeapon.goldCost + 'G'}
                 </Button>
@@ -588,7 +600,7 @@ function ShopScreen({ navigate, screenData }) {
               variant={isReady ? 'disabled' : 'primary'}
               onClick={handleReady}
               disabled={isReady}
-              style={{ fontSize: 12, padding: '10px 24px', width: '100%' }}
+              style={{ fontSize: 15, padding: '12px 24px', width: '100%' }}
             >
               {isReady ? 'STANDING BY...' : 'READY'}
             </Button>

@@ -5,14 +5,23 @@
  * React reads via consume() in a rAF loop, only re-renders when dirty.
  *
  * Commands flow React → Phaser via method calls + scene reference.
+ *
+ * N-PLAYER (Phase 18-01): Added players[] canonical state shape alongside
+ * backward-compat tank1/tank2 shims for BattleHUD (updated in Phase 19).
  */
 
 class GameBridge {
   constructor() {
     this.state = {
+      // N-player canonical
+      players: [],  // Array<{ x, y, hp, angle, power, name, color, score, alive }>
+      myPlayerIndex: -1,
+      currentPlayerIndex: 0,
+      // Backward-compat shims (BattleHUD reads these until Phase 19)
       tank1: { x: 0, y: 0, hp: 250, angle: 45, power: 60, name: '', color: '#FF0000', score: 0 },
       tank2: { x: 0, y: 0, hp: 250, angle: 45, power: 60, name: '', color: '#0066FF', score: 0 },
       activeTank: 0,
+      // Shared state
       wind: 0,
       gold: 0,
       round: 1,
@@ -25,6 +34,9 @@ class GameBridge {
       isFiring: false,
       wager: 0,
       potDisplay: 0,
+      // Elimination state (populated by Plan 18-02, but shape defined here)
+      isEliminated: false,       // local player was eliminated
+      eliminatedPlacement: null, // e.g. 3 for "You placed 3rd"
     };
 
     this.dirty = false;
@@ -37,6 +49,7 @@ class GameBridge {
     this._onMatchEnd = null;
     this._onOpponentLeft = null;
     this._onMatchSettled = null;
+    this._onEliminated = null;
   }
 
   /**
@@ -101,6 +114,21 @@ class GameBridge {
     }
   }
 
+  // ── N-player: mark a player as eliminated ──
+  setPlayerEliminated(index, placement) {
+    const players = [...this.state.players];
+    if (players[index]) {
+      players[index] = { ...players[index], alive: false };
+    }
+    const isMe = (index === this.state.myPlayerIndex);
+    Object.assign(this.state, {
+      players,
+      isEliminated: isMe ? true : this.state.isEliminated,
+      eliminatedPlacement: isMe ? placement : this.state.eliminatedPlacement,
+    });
+    this.dirty = true;
+  }
+
   // ── Callback setters (Phaser notifies React of game events) ──
 
   set onReady(fn) { this._onReady = fn; }
@@ -109,6 +137,7 @@ class GameBridge {
   set onMatchEnd(fn) { this._onMatchEnd = fn; }
   set onOpponentLeft(fn) { this._onOpponentLeft = fn; }
   set onMatchSettled(fn) { this._onMatchSettled = fn; }
+  set onEliminated(fn) { this._onEliminated = fn; }
 
   // ── Phaser calls these to notify React ──
 
@@ -136,11 +165,18 @@ class GameBridge {
     if (this._onMatchSettled) this._onMatchSettled(data);
   }
 
+  notifyEliminated(data) {
+    if (this._onEliminated) this._onEliminated(data);
+  }
+
   /**
    * Reset bridge state for new game.
    */
   reset() {
     this.state = {
+      players: [],
+      myPlayerIndex: -1,
+      currentPlayerIndex: 0,
       tank1: { x: 0, y: 0, hp: 250, angle: 45, power: 60, name: '', color: '#FF0000', score: 0 },
       tank2: { x: 0, y: 0, hp: 250, angle: 45, power: 60, name: '', color: '#0066FF', score: 0 },
       activeTank: 0,
@@ -156,6 +192,8 @@ class GameBridge {
       isFiring: false,
       wager: 0,
       potDisplay: 0,
+      isEliminated: false,
+      eliminatedPlacement: null,
     };
     this.dirty = true;
     this.scene = null;

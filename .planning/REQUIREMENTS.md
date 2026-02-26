@@ -117,12 +117,12 @@
 |-------------|-------|--------|
 | CORE-01 | Phase 16 | Pending |
 | CORE-02 | Phase 16 | Pending |
-| CORE-03 | Phase 15 | Pending |
-| CORE-04 | Phase 15 | Pending |
-| CORE-05 | Phase 15 | Pending |
-| CORE-06 | Phase 15 | Pending |
-| CORE-07 | Phase 15 | Pending |
-| CORE-08 | Phase 15 | Pending |
+| CORE-03 | Phase 15 | Complete |
+| CORE-04 | Phase 15 | Complete |
+| CORE-05 | Phase 15 | Complete |
+| CORE-06 | Phase 15 | Complete |
+| CORE-07 | Phase 15 | Complete |
+| CORE-08 | Phase 15 | Complete |
 | BATTLE-01 | Phase 16 | Pending |
 | BATTLE-02 | Phase 16 | Pending |
 | BATTLE-03 | Phase 16 | Pending |
@@ -165,12 +165,12 @@
 | BRIDGE-02 | Phase 18 | Pending |
 | BRIDGE-03 | Phase 18 | Pending |
 | BRIDGE-04 | Phase 18 | Pending |
-| SCORE-01 | Phase 15 | Pending |
-| SCORE-02 | Phase 15 | Pending |
-| SCORE-03 | Phase 15 | Pending |
-| SCORE-04 | Phase 15 | Pending |
-| SCORE-05 | Phase 15 | Pending |
-| SCORE-06 | Phase 15 | Pending |
+| SCORE-01 | Phase 15 | Complete |
+| SCORE-02 | Phase 15 | Complete |
+| SCORE-03 | Phase 15 | Complete |
+| SCORE-04 | Phase 15 | Complete |
+| SCORE-05 | Phase 15 | Complete |
+| SCORE-06 | Phase 15 | Complete |
 
 **Coverage:**
 - v1.3 requirements: 56 total (note: initial count of 49 was before SCORE-01..06 were added)

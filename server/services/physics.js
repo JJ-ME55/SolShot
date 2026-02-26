@@ -1075,13 +1075,14 @@ function processBouncerShot(weapon, trajectory, terrain, tanks, shooterId) {
  * Server approximation: normal trajectory with extra gravity toward target.
  */
 function processHomingShot(weapon, trajectory, terrain, tanks, shooterId) {
-    // Find target tank (nearest enemy)
+    // Find target tank (nearest enemy by Euclidean distance)
+    const startPoint = trajectory[0];
     let target = null;
+    let minDist = Infinity;
     for (const tank of tanks) {
-        if (tank.id !== shooterId) {
-            target = tank;
-            break;
-        }
+        if (tank.id === shooterId) continue;
+        const d = Math.hypot(tank.x - startPoint.x, tank.y - startPoint.y);
+        if (d < minDist) { minDist = d; target = tank; }
     }
 
     if (!target) {
@@ -1091,7 +1092,7 @@ function processHomingShot(weapon, trajectory, terrain, tanks, shooterId) {
 
     // Recalculate trajectory with rotation-based homing
     // Matches original client: tracks within 200px, smoothly rotates toward target
-    const startPoint = trajectory[0];
+    // startPoint already declared above for nearest-enemy distance calculation
     const homingTraj = [{ x: startPoint.x, y: startPoint.y, vx: startPoint.vx, vy: startPoint.vy }];
 
     let x = startPoint.x;

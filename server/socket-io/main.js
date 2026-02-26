@@ -2002,8 +2002,8 @@ const mainsocket = (io) => {
             }
 
             // H012/H036: Use SERVER-stored positions, NOT client-supplied
-            const isHost = room.host && room.host.socketId === this.id
-            const serverPos = isHost ? room.host.pos : (room.player ? room.player.pos : null)
+            const shooterSlot = getPlayerSlot(room, this.id)
+            const serverPos = shooterSlot ? shooterSlot.pos : null
             if (!serverPos) {
                 this.emit('fireRejected', { reason: 'No position data' })
                 return
@@ -2026,26 +2026,10 @@ const mainsocket = (io) => {
                 }
             }
 
-            // Build tank positions for physics
-            const tanks = []
-            if (room.host && room.host.pos) {
-                tanks.push({
-                    id: room.host.socketId,
-                    x: room.host.pos.x,
-                    y: room.host.pos.y,
-                    width: 40,
-                    height: 30
-                })
-            }
-            if (room.player && room.player.pos) {
-                tanks.push({
-                    id: room.player.socketId,
-                    x: room.player.pos.x,
-                    y: room.player.pos.y,
-                    width: 40,
-                    height: 30
-                })
-            }
+            // Build tank positions for physics — N-player, living players only
+            const tanks = room.players
+                .filter(p => p.pos && ms && ms.alive[p.socketId])
+                .map(p => ({ id: p.socketId, x: p.pos.x, y: p.pos.y, width: 40, height: 30 }))
 
             // Get terrain heightmap (from room or default)
             const terrain = room.heightmap || new Array(1200).fill(400)
@@ -2143,10 +2127,30 @@ const mainsocket = (io) => {
                 const wfId = String(weaponId || '')
                 if (wfId) ms.weaponShotsFired[this.id][wfId] = (ms.weaponShotsFired[this.id][wfId] || 0) + 1
 
+                // N-player elimination detection — after HP update
+                const newlyEliminated = []
+                for (const pid of ms.players) {
+                    if (!result.damage || !result.damage[pid]) continue
+                    if (ms.hp[pid] <= 0 && ms.alive[pid]) {
+                        ms.alive[pid] = false
+                        ms.eliminationOrder.push(pid)
+                        newlyEliminated.push(pid)
+                    }
+                }
+
+                // Emit playerEliminated for each new kill + award kill bonus
+                for (const pid of newlyEliminated) {
+                    const goldState = goldStates[this.roomId]
+                    if (goldState) awardKillBonus(goldState, this.id)
+                    io.sockets.in(this.roomId).emit('playerEliminated', {
+                        eliminatedId: pid,
+                        killedById: this.id,
+                        survivingPlayers: ms.players.filter(id => ms.alive[id]),
+                    })
+                }
+
                 // Advance turn
                 ms.turnCount++
-                const hostId = room.host.socketId
-                const playerId = room.player ? room.player.socketId : null
                 ms.currentTurn = ms.players.length > 1 ? getNextTurn(ms) : null
 
                 // LP-07: Reset move count for the new current turn player
@@ -2161,7 +2165,7 @@ const mainsocket = (io) => {
             }
             if (goldEarned > 0) trackGoldEarned(goldEarned)
 
-            // Broadcast turn result to BOTH players (includes goldEarned + balances)
+            // Broadcast turn result to ALL players (includes goldEarned + balances)
             io.sockets.in(this.roomId).emit('turnResult', {
                 playerId: this.id,
                 weaponId,
@@ -2175,6 +2179,13 @@ const mainsocket = (io) => {
                 seq: ms ? ms.turnSequence : 0,  // Fix 4: client must echo this in next fire
                 goldEarned,
                 goldBalance: goldStates[this.roomId] || {},
+                // N-player state
+                players: ms ? ms.players.map(id => {
+                    const slot = room.players.find(p => p.socketId === id)
+                    return { socketId: id, pos: slot ? slot.pos : null, hp: ms.hp[id] ?? 0, alive: ms.alive[id] ?? false }
+                }) : [],
+                alive: ms ? ms.alive : {},
+                currentPlayerIndex: ms ? ms.currentPlayerIndex : 0,
                 // N-player positions array (canonical)
                 positions: room.players.map(p => ({ socketId: p.socketId, pos: p.pos })),
                 // Backward-compat shim for 2-player client
@@ -2222,6 +2233,10 @@ const mainsocket = (io) => {
                     const transitioned = transitionState(ms, MATCH_STATES.SETTLING)
                     if (!transitioned) return
 
+                    // N-player: derive hostId/playerId from players[] for backward compat
+                    const hostId = room.players[0]?.socketId || null
+                    const playerId = room.players[1]?.socketId || null
+
                     // H020: Use lock to prevent concurrent settlement
                     await withLock(`settle:${this.roomId}`, async () => {
                         // Re-check state inside lock
@@ -2237,7 +2252,7 @@ const mainsocket = (io) => {
                             if (winnerWallet && loserWallet) {
                                 // SF-03: Capture room/ws snapshots before settlement
                                 const roomSnap = findRoom(roomId)
-                                const roomSnapData = roomSnap ? { host: roomSnap.host, player: roomSnap.player, escrowPDA: roomSnap.escrowPDA } : null
+                                const roomSnapData = roomSnap ? { players: roomSnap.players, escrowPDA: roomSnap.escrowPDA } : null
                                 const wsSnapData = ws ? { amount: ws.amount, wallets: { ...ws.wallets } } : null
                                 try {
                                     const sResult = await settleMatch(winnerWallet, loserWallet, ws.amount, roomId)
@@ -2351,16 +2366,15 @@ const mainsocket = (io) => {
                         // Delay matchEnd emit so client can animate the killing blow
                         // Transform scores to client format: { [id]: { damageDealt, kills } }
                         const formattedScores = {}
-                        for (const pid of [hostId, playerId]) {
-                            if (pid) {
-                                formattedScores[pid] = {
-                                    damageDealt: ms.scores[pid] || 0,
-                                    kills: ms.kills[pid] || 0
-                                }
+                        for (const pid of ms.players) {
+                            formattedScores[pid] = {
+                                damageDealt: ms.scores[pid] || 0,
+                                kills: ms.kills[pid] || 0
                             }
                         }
                         const matchEndPayload = {
                             winner: matchResult.winner,
+                            survivorOrder: ranked,  // N-player ranked placement array [1st, 2nd, ...]
                             scores: formattedScores,
                             roundWins: ms.roundWins,
                             goldBalance: goldStates[roomId] || {},

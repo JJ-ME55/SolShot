@@ -1,10 +1,14 @@
 /**
- * MainScene — Stripped for React HUD migration.
+ * MainScene — N-player rewrite (Phase 18-01).
  *
  * KEPT: Terrain, tanks, physics, projectiles, turn switching, canvas rendering.
  * REMOVED: HUD class, all Phaser text overlays, exit menu, game-over text,
  *          winner particles, play-again text, back button, auto-adjust.
  * ADDED: GameBridge writes (state updates + event notifications).
+ *
+ * N-PLAYER: tanks[] array replaces tank1/tank2. myPlayerIndex tracks local player.
+ * currentPlayerIndex tracks whose turn it is. All 2-player logic preserved via
+ * tanks[0]/tanks[1] for practice mode (type 4).
  *
  * React HUD reads from GameBridge via rAF polling (useGameState hook).
  * Socket events for matchEnd/roundEnd/opponentLeft are handled in React (BattleScreen).
@@ -18,13 +22,18 @@ import { BlastCache } from '../../classes/BlastCache';
 export class MainScene extends Scene {
   constructor() {
     super('main-scene');
-    this.tank1 = null;
-    this.tank2 = null;
+    // N-player: tanks[] indexed to room.players[] order
+    this.tanks = [];
+    this.myPlayerIndex = -1;       // which tanks[i] is the local player; -1 until terrainGenerated
+    this.currentPlayerIndex = 0;   // whose turn it is, 0-based index
+    this._eliminated = {};          // { [index]: boolean } for tracking eliminated players
+    this._lastPositions = [];       // cache positions[] from last terrainGenerated/turnResult
+    // Practice mode turn tracking (type4 only)
+    this.activeTank = 0;
     this.terrain = null;
     this.HUD = null; // Kept as null — physics classes guard against this
     this.x = 0;
     this.y = 0;
-    this.activeTank = 0;
     this.background = null;
     this.blastLayer = null;
     this.pointsLayer = null;
@@ -50,6 +59,12 @@ export class MainScene extends Scene {
     this.wind = 0;
     this._bridge = window.gameBridge || null;
     this._created = false;
+    // Reset N-player state on each scene init
+    this.tanks = [];
+    this.myPlayerIndex = -1;
+    this.currentPlayerIndex = 0;
+    this._eliminated = {};
+    this._lastPositions = [];
   };
 
   preload = () => {
@@ -121,8 +136,10 @@ export class MainScene extends Scene {
     this.createPointsLayer();
     this.createTerrain();
     this.createBoundWalls();
-    this.createTank1();
-    this.createTank2();
+
+    // N-player: create tanks[] from players array (or fall back to 2 for type4/backward compat)
+    const playerCount = this.sceneData.players?.length || 2;
+    this.createTanks(playerCount);
 
     // ── Type handler ──
     if (this.sceneData.gameType === 3) {
@@ -145,7 +162,8 @@ export class MainScene extends Scene {
 
     // ── Notify React that Phaser is ready ──
     this.events.once('terrain-finished', () => {
-      if (this.activeTank === 2) {
+      // Save terrain for non-host clients (fallback path)
+      if (this.myPlayerIndex > 0) {
         this.terrain.save();
       }
       this._pushStateToBridge();
@@ -168,7 +186,7 @@ export class MainScene extends Scene {
   };
 
   update = (_time, _delta) => {
-    if (!this._created || !this.terrain || !this.tank1 || !this.tank2) return;
+    if (!this._created || !this.terrain || this.tanks.length === 0) return;
 
     this.checkSwitchTurn();
     this._pushStateToBridge();
@@ -247,14 +265,15 @@ export class MainScene extends Scene {
     this.terrain = new Terrain(this);
   };
 
-  createTank1 = () => {
-    this.tank1 = new Tank(this, 1);
-    this.tank1.setDepth(-2);
-  };
-
-  createTank2 = () => {
-    this.tank2 = new Tank(this, 2);
-    this.tank2.setDepth(-2);
+  // ── N-player tank creation (replaces createTank1/createTank2) ──
+  createTanks = (N) => {
+    this.tanks.forEach(t => { try { t.destroy(); } catch (_) {} });
+    this.tanks = [];
+    for (let i = 0; i < N; i++) {
+      const t = new Tank(this, i + 1); // id=1..N for texture keys tank1..tankN
+      t.setDepth(-2);
+      this.tanks.push(t);
+    }
   };
 
   // ── Turn switching ──
@@ -267,19 +286,21 @@ export class MainScene extends Scene {
     if (this.terrain.blastArray.length !== 0) return;
     if (this.gameOver === true) return;
 
-    // Safety: if a tank is unsettled for too long (>3s), force settle it
+    // Safety: if any alive tank is unsettled for too long (>3s), force settle all
     // This prevents the game from getting permanently stuck
-    if (this.tank1.settled === false || this.tank2.settled === false) {
+    const unsettled = this.tanks.filter((t, i) => !this._eliminated[i] && !t.settled);
+    if (unsettled.length > 0) {
       if (!this._settleWaitStart) {
         this._settleWaitStart = Date.now();
       } else if (Date.now() - this._settleWaitStart > 3000) {
-        console.warn('[SolShot] Force-settling tanks after 3s timeout. t1=' + this.tank1.settled + ' t2=' + this.tank2.settled);
-        this.tank1.settled = true;
-        this.tank2.settled = true;
-        this.tank1.body.stop();
-        this.tank2.body.stop();
-        this.tank1.body.setGravity(0);
-        this.tank2.body.setGravity(0);
+        console.warn('[SolShot] Force-settling tanks after 3s timeout. unsettled=' + unsettled.length);
+        this.tanks.forEach(t => {
+          t.settled = true;
+          if (t.body) {
+            t.body.stop();
+            t.body.setGravity(0);
+          }
+        });
         this._settleWaitStart = null;
       }
       return;
@@ -296,10 +317,10 @@ export class MainScene extends Scene {
           this._turnResultCooldown--;
           return;
         }
-        const isMyShot = (this.pendingTurnResult.playerId === window.socket?.id);
         // Own shot: also wait for weapon animation to finish
-        const weaponDone = isMyShot
-          ? (this.tank1.turret && this.tank1.turret.activeWeapon === null)
+        const myTank = this.myPlayerIndex >= 0 ? this.tanks[this.myPlayerIndex] : null;
+        const weaponDone = myTank
+          ? (myTank.turret && myTank.turret.activeWeapon === null)
           : true;
         if (weaponDone) {
           this._weaponWaitLogged = false;
@@ -311,32 +332,53 @@ export class MainScene extends Scene {
     }
 
     // Non-multiplayer (type4 practice mode) — legacy local turn switching
-    if (this.tank1.weapons.length === 0 && this.tank2.weapons.length === 0) {
-      if (this.tank1.turret.activeWeapon === null && this.tank2.turret.activeWeapon === null) {
+    const t0 = this.tanks[0];
+    const t1 = this.tanks[1];
+    if (!t0 || !t1) return;
+
+    if (t0.weapons.length === 0 && t1.weapons.length === 0) {
+      if (t0.turret.activeWeapon === null && t1.turret.activeWeapon === null) {
         this.gameOver = true;
-        this.tank1.active = false;
-        this.tank2.active = false;
+        t0.active = false;
+        t1.active = false;
         this.activeTank = 0;
       }
-    } else if (this.activeTank === 1 && this.tank1.active === false && this.tank1.turret.activeWeapon === null) {
+    } else if (this.activeTank === 1 && t0.active === false && t0.turret.activeWeapon === null) {
       this.terrain.frameCount = -1;
       this.activeTank = 2;
-      this.tank2.active = true;
+      t1.active = true;
       this.showTurnPointer();
-    } else if (this.activeTank === 2 && this.tank2.active === false && this.tank2.turret.activeWeapon === null) {
+    } else if (this.activeTank === 2 && t1.active === false && t1.turret.activeWeapon === null) {
       this.terrain.frameCount = -1;
       this.activeTank = 1;
-      this.tank1.active = true;
+      t0.active = true;
       this.showTurnPointer();
     }
+  };
+
+  // ── Activate the current player's tank and deactivate all others ──
+  _activateCurrentTank = () => {
+    this.tanks.forEach((t, i) => {
+      const isMyTankAndMyTurn = (i === this.myPlayerIndex && i === this.currentPlayerIndex);
+      t.active = isMyTankAndMyTurn;
+      if (i === this.currentPlayerIndex) t.movesRemaining = 4;
+    });
   };
 
   // ── Turn pointer ──
 
   showTurnPointer = () => {
     var tank = null;
-    if (this.activeTank === 1) tank = this.tank1;
-    if (this.activeTank === 2) tank = this.tank2;
+    if (this.sceneData.gameType === 3) {
+      // Multiplayer: show pointer over the current player's tank
+      if (this.currentPlayerIndex >= 0 && this.currentPlayerIndex < this.tanks.length) {
+        tank = this.tanks[this.currentPlayerIndex];
+      }
+    } else {
+      // Practice mode: use activeTank (1-based) to index into tanks[]
+      if (this.activeTank === 1) tank = this.tanks[0];
+      else if (this.activeTank === 2) tank = this.tanks[1];
+    }
 
     if (tank !== null) {
       this.hideTurnPointer();
@@ -395,23 +437,22 @@ export class MainScene extends Scene {
       return;
     }
 
-    const player1 = this.sceneData.player1;
-    const player2 = this.sceneData.player2;
-    const hostId = this.sceneData.hostId;
-    const isHost = socket.id === hostId;
+    // Build players array — N-player canonical from ShopScreen, with backward-compat fallback
+    const allPlayers = this.sceneData.players || (() => {
+      // Backward compat: build 2-element array from player1/player2 fields
+      const p1 = this.sceneData.player1;
+      const p2 = this.sceneData.player2;
+      if (p1 && p2) return [p1, p2];
+      return [];
+    })();
 
-    // Perspective mapping: tank1 = MY tank, tank2 = OPPONENT's tank.
-    // player1 = host data, player2 = joiner data (from shopEnd).
-    // Host:   tank1 gets player1 (host) data,   tank2 gets player2 (joiner) data
-    // Joiner: tank1 gets player2 (joiner) data, tank2 gets player1 (host) data
-    const myData = isHost ? player1 : player2;
-    const theirData = isHost ? player2 : player1;
-
-    this.tank1.weapons = myData.weapons;
-    this.tank2.weapons = theirData.weapons;
-
-    this.tank1.create(int2rgba(myData.color), myData.name);
-    this.tank2.create(int2rgba(theirData.color), theirData.name);
+    // Initialize each tank with player data (ordered to match room.players[])
+    allPlayers.forEach((player, i) => {
+      if (this.tanks[i]) {
+        this.tanks[i].weapons = player.weapons || [];
+        this.tanks[i].create(int2rgba(player.color), player.name);
+      }
+    });
 
     // Server nonce for fire validation (prevents replay attacks)
     this._turnSeq = 0;
@@ -424,7 +465,7 @@ export class MainScene extends Scene {
 
     // ── STEP 1: Server-generated terrain ──
     // Both clients listen for terrainGenerated. Host triggers requestTerrain.
-    this._socketHandlers.terrainGenerated = ({ path, heightmap, tankPositions, seed, wind, firstTurn, seq }) => {
+    this._socketHandlers.terrainGenerated = ({ path, heightmap, positions, tankPositions, seed, wind, firstTurn, seq }) => {
       // Store server heightmap for later terrain sync
       this._serverHeightmap = heightmap;
       this._turnSeq = seq || 0;
@@ -434,36 +475,41 @@ export class MainScene extends Scene {
       // Draw terrain from server path (same format as client path: [{x,y},...])
       this.terrain.setPath(path);
 
-      // Position tanks from server data
-      // tank1 = MY tank, tank2 = OPPONENT's tank (perspective mapping)
-      const myPos = isHost ? tankPositions.host : tankPositions.player;
-      const theirPos = isHost ? tankPositions.player : tankPositions.host;
-
-      this.tank1.setPosition(myPos.x, myPos.y);
-      this.tank2.setPosition(theirPos.x, theirPos.y);
-
-      // Set slopes
-      let rotation = this.terrain.getSlope(myPos.x, myPos.y);
-      if (rotation !== undefined) this.tank1.setRotation(rotation);
-      rotation = this.terrain.getSlope(theirPos.x, theirPos.y);
-      if (rotation !== undefined) this.tank2.setRotation(rotation);
-
-      // Enable physics bodies (were disabled in Tank.create() waiting for terrain)
-      this.tank1.enablePhysics();
-      this.tank2.enablePhysics();
-
-      // Set turn from server — firstTurn is a socket.id
-      const isMyTurn = (firstTurn === socket.id);
-      if (isMyTurn) {
-        this.tank1.active = true;
-        this.tank2.active = false;
-        this.activeTank = 1;
-      } else {
-        this.tank1.active = false;
-        this.tank2.active = false; // opponent acts via server, not local tank2
-        this.activeTank = 2;
+      // Resolve positions[] — canonical N-player format, with backward-compat shim
+      let resolvedPositions = positions;
+      if (!resolvedPositions || !Array.isArray(resolvedPositions)) {
+        // Backward compat: build positions[] from tankPositions {host, player}
+        if (tankPositions) {
+          const hostId = this.sceneData.hostId;
+          const isHost = socket.id === hostId;
+          resolvedPositions = [
+            { socketId: hostId, x: tankPositions.host?.x, y: tankPositions.host?.y },
+            { socketId: null, x: tankPositions.player?.x, y: tankPositions.player?.y },
+          ];
+        } else {
+          resolvedPositions = [];
+        }
       }
 
+      // Determine which tank is the local player
+      this.myPlayerIndex = resolvedPositions.findIndex(p => p.socketId === socket.id);
+      this._lastPositions = resolvedPositions;
+
+      // Position all tanks
+      resolvedPositions.forEach((pos, i) => {
+        const tank = this.tanks[i];
+        if (!tank) return;
+        tank.setPosition(pos.x, pos.y);
+        const rotation = this.terrain.getSlope(pos.x, pos.y);
+        if (rotation !== undefined) tank.setRotation(rotation);
+        tank.enablePhysics();
+      });
+
+      // Determine first turn from server — firstTurn is a socket.id
+      const firstTurnIdx = resolvedPositions.findIndex(p => p.socketId === firstTurn);
+      this.currentPlayerIndex = firstTurnIdx >= 0 ? firstTurnIdx : 0;
+
+      this._activateCurrentTank();
       this.showTurnPointer();
       this._pushStateToBridge();
       if (this._bridge) {
@@ -501,8 +547,10 @@ export class MainScene extends Scene {
 
     this._socketHandlers.fireRejected = ({ reason }) => {
       console.warn('[SolShot] Fire rejected:', reason);
-      // Re-enable controls so player can try again
-      this.tank1.active = true;
+      // Re-enable controls for local player — guard against myPlayerIndex < 0
+      if (this.myPlayerIndex >= 0 && this.tanks[this.myPlayerIndex]) {
+        this.tanks[this.myPlayerIndex].active = true;
+      }
       this._pushStateToBridge();
     };
 
@@ -515,7 +563,7 @@ export class MainScene extends Scene {
     const socket = window.socket;
     if (!socket) return;
 
-    const { terrainUpdate, damage, nextTurn, goldBalance } = data;
+    const { terrainUpdate, nextTurn, goldBalance } = data;
 
     // 1. Sync terrain to server state (authoritative heightmap)
     // This handles ALL terrain deformation — both for firing and non-firing player.
@@ -525,76 +573,92 @@ export class MainScene extends Scene {
     }
 
     // 2. Update HP from server — use authoritative HP values
-    if (data.hp) {
+    // N-player: iterate data.players[] for per-player HP
+    if (data.players && Array.isArray(data.players)) {
+      data.players.forEach((playerData, i) => {
+        const tank = this.tanks[i];
+        if (tank && tank.scoreHandler && playerData.hp !== undefined) {
+          const oldHp = tank.scoreHandler.hp;
+          tank.scoreHandler.hp = Math.max(0, playerData.hp);
+          // Haptic feedback: heavy pulse when local player takes damage (MOB-01)
+          if (i === this.myPlayerIndex && playerData.hp < oldHp) {
+            window.haptic && window.haptic.heavy();
+          }
+        }
+      });
+    } else if (data.hp) {
+      // Backward compat: hp keyed by socketId
       for (const [targetId, serverHp] of Object.entries(data.hp)) {
-        const isMe = (targetId === socket.id);
-        const targetTank = isMe ? this.tank1 : this.tank2;
-        if (targetTank && targetTank.scoreHandler) {
-          const oldHp = targetTank.scoreHandler.hp;
-          targetTank.scoreHandler.hp = Math.max(0, serverHp);
-          if (oldHp !== targetTank.scoreHandler.hp) {
-            // Haptic feedback: heavy pulse when local player takes damage (MOB-01)
-            if (isMe && serverHp < oldHp) window.haptic && window.haptic.heavy();
+        const posIdx = this._lastPositions.findIndex(p => p.socketId === targetId);
+        const tank = posIdx >= 0 ? this.tanks[posIdx] : null;
+        if (tank && tank.scoreHandler) {
+          const oldHp = tank.scoreHandler.hp;
+          tank.scoreHandler.hp = Math.max(0, serverHp);
+          if (posIdx === this.myPlayerIndex && serverHp < oldHp) {
+            window.haptic && window.haptic.heavy();
           }
         }
       }
-    } else if (damage) {
+    } else if (data.damage) {
       // Fallback: calculate from damage if server doesn't send HP
-      for (const [targetId, dmg] of Object.entries(damage)) {
-        const absDmg = Math.abs(dmg);
-        if (absDmg > 0) {
-          const isMe = (targetId === socket.id);
-          const targetTank = isMe ? this.tank1 : this.tank2;
-          if (targetTank && targetTank.scoreHandler) {
-            const oldHp = targetTank.scoreHandler.hp;
-            targetTank.scoreHandler.hp = Math.max(0, oldHp - absDmg);
-            // Haptic feedback: heavy pulse when local player takes damage (MOB-01)
-            if (isMe) window.haptic && window.haptic.heavy();
+      for (const [targetId, dmg] of Object.entries(data.damage)) {
+        const posIdx = this._lastPositions.findIndex(p => p.socketId === targetId);
+        const tank = posIdx >= 0 ? this.tanks[posIdx] : null;
+        if (tank && tank.scoreHandler) {
+          const absDmg = Math.abs(dmg);
+          if (absDmg > 0) {
+            const oldHp = tank.scoreHandler.hp;
+            tank.scoreHandler.hp = Math.max(0, oldHp - absDmg);
+            if (posIdx === this.myPlayerIndex) {
+              window.haptic && window.haptic.heavy();
+            }
           }
         }
       }
     }
 
     // 3. Sync tank positions to server-authoritative values.
-    // Server tracks all positions — use them to prevent client desync.
-    const isHost = (socket.id === this.sceneData.hostId);
-    if (data.tankPositions) {
-      const myServerPos = isHost ? data.tankPositions.host : data.tankPositions.player;
-      const theirServerPos = isHost ? data.tankPositions.player : data.tankPositions.host;
-
-      if (myServerPos && this.tank1) {
-        const myY = this._serverHeightmap
-          ? (this._serverHeightmap[Math.min(1199, Math.max(0, Math.floor(myServerPos.x)))] || myServerPos.y) - 15
-          : myServerPos.y;
-        this.tank1.setPosition(myServerPos.x, myY);
-      }
-      if (theirServerPos && this.tank2) {
-        const theirY = this._serverHeightmap
-          ? (this._serverHeightmap[Math.min(1199, Math.max(0, Math.floor(theirServerPos.x)))] || theirServerPos.y) - 15
-          : theirServerPos.y;
-        this.tank2.setPosition(theirServerPos.x, theirY);
-      }
-    } else if (this._serverHeightmap) {
-      // Fallback: no server positions, just snap Y to terrain
-      if (this.tank1) {
-        const t1x = Math.min(1199, Math.max(0, Math.floor(this.tank1.x)));
-        if (this._serverHeightmap[t1x] !== undefined) {
-          this.tank1.setPosition(this.tank1.x, this._serverHeightmap[t1x] - 15);
-        }
-      }
-      if (this.tank2) {
-        const t2x = Math.min(1199, Math.max(0, Math.floor(this.tank2.x)));
-        if (this._serverHeightmap[t2x] !== undefined) {
-          this.tank2.setPosition(this.tank2.x, this._serverHeightmap[t2x] - 15);
-        }
+    // N-player: iterate positions[] array
+    let resolvedPositions = data.positions;
+    if (!resolvedPositions || !Array.isArray(resolvedPositions)) {
+      // Backward compat: rebuild from tankPositions {host, player}
+      if (data.tankPositions && this.sceneData.hostId) {
+        const hostId = this.sceneData.hostId;
+        resolvedPositions = this._lastPositions.map((lp, i) => {
+          if (lp.socketId === hostId) return { socketId: lp.socketId, x: data.tankPositions.host?.x, y: data.tankPositions.host?.y };
+          return { socketId: lp.socketId, x: data.tankPositions.player?.x, y: data.tankPositions.player?.y };
+        });
       }
     }
 
-    // Report updated tank position back to server
-    if (window.socket && this.tank1) {
-      window.socket.emit('positionUpdate', {
-        x: this.tank1.x,
-        y: this.tank1.y,
+    if (resolvedPositions && Array.isArray(resolvedPositions)) {
+      resolvedPositions.forEach((pos, i) => {
+        const tank = this.tanks[i];
+        if (!tank || pos.x === undefined) return;
+        const snappedY = this._serverHeightmap
+          ? (this._serverHeightmap[Math.min(1199, Math.max(0, Math.floor(pos.x)))] || pos.y) - 15
+          : pos.y;
+        tank.setPosition(pos.x, snappedY);
+      });
+      this._lastPositions = resolvedPositions;
+    } else if (this._serverHeightmap) {
+      // Fallback: no server positions, just snap Y to terrain for all tanks
+      this.tanks.forEach(tank => {
+        if (tank) {
+          const tx = Math.min(1199, Math.max(0, Math.floor(tank.x)));
+          if (this._serverHeightmap[tx] !== undefined) {
+            tank.setPosition(tank.x, this._serverHeightmap[tx] - 15);
+          }
+        }
+      });
+    }
+
+    // Report updated local player position back to server
+    if (this.myPlayerIndex >= 0 && this.tanks[this.myPlayerIndex]) {
+      const myTank = this.tanks[this.myPlayerIndex];
+      window.socket && window.socket.emit('positionUpdate', {
+        x: myTank.x,
+        y: myTank.y,
       });
     }
 
@@ -607,17 +671,16 @@ export class MainScene extends Scene {
     }
 
     // 5. Set next turn from server
-    const isMyTurn = (nextTurn === socket.id);
-    if (isMyTurn) {
-      this.tank1.active = true;
-      this.activeTank = 1;
-      this.tank1.movesRemaining = 4; // Reset moves for new turn
-    } else {
-      this.tank1.active = false;
-      this.activeTank = 2;
-      this.tank2.movesRemaining = 4; // Reset opponent moves for their turn
+    // nextTurn is a socketId — find its index in lastPositions
+    let nextPlayerIdx = this._lastPositions.findIndex(p => p.socketId === nextTurn);
+    if (nextPlayerIdx < 0 && data.currentPlayerIndex !== undefined) {
+      nextPlayerIdx = data.currentPlayerIndex;
+    }
+    if (nextPlayerIdx >= 0) {
+      this.currentPlayerIndex = nextPlayerIdx;
     }
 
+    this._activateCurrentTank();
     this.showTurnPointer();
     this._pushStateToBridge();
   };
@@ -904,7 +967,7 @@ export class MainScene extends Scene {
 
     // Use the real Blast system — same expanding rings as the firing player
     // blowTank=true: apply knockback physics locally for visual feedback
-    const hitRadius = this.tank1 ? this.tank1.hitRadius : 6;
+    const hitRadius = this.tanks[0]?.hitRadius || 6;
     const blastRadius = Math.max(info.radius - hitRadius, 1);
     // Play visual-only explosion for opponent's shot
     const data = {
@@ -927,7 +990,7 @@ export class MainScene extends Scene {
       thickness: 18,
       blowPower: 50,
     };
-    const hitRadius = this.tank1 ? this.tank1.hitRadius : 6;
+    const hitRadius = this.tanks[0]?.hitRadius || 6;
     const blastRadius = Math.max(info.radius - hitRadius, 1);
 
     scatterPoints.forEach((pt, i) => {
@@ -951,17 +1014,24 @@ export class MainScene extends Scene {
     const player1 = this.sceneData.player1;
     const player2 = this.sceneData.player2;
 
-    this.tank1.weapons = player1.weapons;
-    this.tank2.weapons = player2.weapons;
+    // In practice mode, always 2 players: tanks[0] and tanks[1]
+    if (this.tanks[0] && player1) {
+      this.tanks[0].weapons = player1.weapons;
+      this.tanks[0].create(int2rgba(player1.color), player1.name);
+    }
+    if (this.tanks[1] && player2) {
+      this.tanks[1].weapons = player2.weapons;
+      this.tanks[1].create(int2rgba(player2.color), player2.name);
+    }
 
-    this.tank1.create(int2rgba(player1.color), player1.name);
-    this.tank2.create(int2rgba(player2.color), player2.name);
+    // In practice mode, local player is always tanks[0]
+    this.myPlayerIndex = 0;
 
     if (Math.random() > 0.5) {
-      this.tank1.active = true;
+      if (this.tanks[0]) this.tanks[0].active = true;
       this.activeTank = 1;
     } else {
-      this.tank2.active = true;
+      if (this.tanks[1]) this.tanks[1].active = true;
       this.activeTank = 2;
     }
   };
@@ -972,10 +1042,13 @@ export class MainScene extends Scene {
   // keyboard handlers. They must emit the same socket events the originals did.
 
   handleFireFromReact = () => {
-    const tank = this.activeTank === 1 ? this.tank1 : this.tank2;
-    if (!tank || !tank.active) return;
+    // Determine the active tank: in multiplayer use myPlayerIndex, in practice use activeTank
+    const myTank = this.myPlayerIndex >= 0
+      ? this.tanks[this.myPlayerIndex]
+      : this.tanks[this.activeTank - 1];
+    if (!myTank || !myTank.active) return;
 
-    const weaponObj = tank.weapons[tank.selectedWeapon];
+    const weaponObj = myTank.weapons[myTank.selectedWeapon];
     if (!weaponObj) return;
 
     if (this.sceneData.gameType === 3) {
@@ -988,14 +1061,14 @@ export class MainScene extends Scene {
         // turret.rotation (the absolute rotation of the turret sprite).
         // Server then does: rotation = angle - PI/2  (same as client's
         // Weapon.defaultShoot: rotation = turret.rotation - PI/2).
-        const angle = tank.turret ? tank.turret.rotation : 0;
+        const angle = myTank.turret ? myTank.turret.rotation : 0;
 
         socket.emit('fire', {
           angle: angle,
-          power: tank.power,
+          power: myTank.power,
           weaponId: weaponObj.id,
           seq: this._turnSeq,
-          position: { x: tank.x, y: tank.y },
+          position: { x: myTank.x, y: myTank.y },
         });
 
         // Haptic feedback: medium pulse when shot is fired (MOB-01)
@@ -1005,19 +1078,21 @@ export class MainScene extends Scene {
         // Server trajectory is authoritative; both players see the same projectile.
 
         // Disable controls until turnResult arrives
-        tank.active = false;
+        myTank.active = false;
         this._pushStateToBridge();
       }
     } else {
       // Non-multiplayer (type4 practice) — fire locally only
-      tank.shoot();
+      myTank.shoot();
     }
   };
 
   handlePowerFromReact = (v) => {
-    const tank = this.activeTank === 1 ? this.tank1 : this.tank2;
-    if (!tank || !tank.active) return;
-    tank.setPower(v);
+    const myTank = this.myPlayerIndex >= 0
+      ? this.tanks[this.myPlayerIndex]
+      : this.tanks[this.activeTank - 1];
+    if (!myTank || !myTank.active) return;
+    myTank.setPower(v);
     if (this.sceneData.gameType === 3) {
       const socket = window.socket;
       if (socket) socket.emit('powerChange', { power: v });
@@ -1025,23 +1100,29 @@ export class MainScene extends Scene {
   };
 
   handleAngleFromReact = (v) => {
-    const tank = this.activeTank === 1 ? this.tank1 : this.tank2;
-    if (!tank || !tank.turret || !tank.active) return;
+    const myTank = this.myPlayerIndex >= 0
+      ? this.tanks[this.myPlayerIndex]
+      : this.tanks[this.activeTank - 1];
+    if (!myTank || !myTank.turret || !myTank.active) return;
     const radians = Phaser.Math.DegToRad(v) - Math.PI / 2;
-    tank.turret.setRelativeRotation(radians - tank.rotation);
+    myTank.turret.setRelativeRotation(radians - myTank.rotation);
     // Angle emit is handled by Turret.emitRotation() on a 500ms timer
   };
 
   handleWeaponSelectFromReact = (idx) => {
-    const tank = this.activeTank === 1 ? this.tank1 : this.tank2;
-    if (!tank || !tank.active) return;
-    tank.selectedWeapon = idx;
+    const myTank = this.myPlayerIndex >= 0
+      ? this.tanks[this.myPlayerIndex]
+      : this.tanks[this.activeTank - 1];
+    if (!myTank || !myTank.active) return;
+    myTank.selectedWeapon = idx;
   };
 
   handleMoveLeftFromReact = () => {
-    const tank = this.activeTank === 1 ? this.tank1 : this.tank2;
-    if (!tank || !tank.active || tank.movesRemaining <= 0) return;
-    tank.stepLeft();
+    const myTank = this.myPlayerIndex >= 0
+      ? this.tanks[this.myPlayerIndex]
+      : this.tanks[this.activeTank - 1];
+    if (!myTank || !myTank.active || myTank.movesRemaining <= 0) return;
+    myTank.stepLeft();
     if (this.sceneData.gameType === 3) {
       const socket = window.socket;
       if (socket) socket.emit('stepLeft', {});
@@ -1049,9 +1130,11 @@ export class MainScene extends Scene {
   };
 
   handleMoveRightFromReact = () => {
-    const tank = this.activeTank === 1 ? this.tank1 : this.tank2;
-    if (!tank || !tank.active || tank.movesRemaining <= 0) return;
-    tank.stepRight();
+    const myTank = this.myPlayerIndex >= 0
+      ? this.tanks[this.myPlayerIndex]
+      : this.tanks[this.activeTank - 1];
+    if (!myTank || !myTank.active || myTank.movesRemaining <= 0) return;
+    myTank.stepRight();
     if (this.sceneData.gameType === 3) {
       const socket = window.socket;
       if (socket) socket.emit('stepRight', {});
@@ -1065,37 +1148,60 @@ export class MainScene extends Scene {
   };
 
   // ── Bridge state push ──
-  // In the server-authoritative model:
-  //   tank1 = MY tank (always), tank2 = OPPONENT's tank
-  //   isPlayerTurn = tank1.active (my tank is active)
+  // N-player: push players[] array from tanks[]. Also push backward-compat
+  // tank1/tank2 shims so BattleHUD (Phase 19) doesn't break until it's updated.
 
   _pushStateToBridge = () => {
     if (!this._bridge) return;
 
-    // tank1 is always "me", tank2 is always "opponent" (perspective mapped in terrainGenerated)
-    const myTank = this.tank1;
+    const myTank = this.myPlayerIndex >= 0
+      ? this.tanks[this.myPlayerIndex]
+      : (this.activeTank > 0 ? this.tanks[this.activeTank - 1] : this.tanks[0]);
+
     const isMyTurn = myTank && myTank.active;
 
+    // Build N-player players[] array
+    const players = this.tanks.map((t, i) => ({
+      x: t.x,
+      y: t.y,
+      hp: t.scoreHandler ? t.scoreHandler.hp : 250,
+      angle: t.turret ? Phaser.Math.RadToDeg(t.turret.relativeRotation + t.rotation + Math.PI / 2) : 45,
+      power: t.power || 60,
+      name: t.name || '',
+      color: t.color || '#FF0000',
+      score: t.score || 0,
+      alive: !this._eliminated[i],
+    }));
+
+    // Backward-compat shims — BattleHUD still reads tank1/tank2 until Phase 19
+    const t0 = this.tanks[0];
+    const t1 = this.tanks[1];
+
     this._bridge.updateState({
-      tank1: this.tank1 ? {
-        x: this.tank1.x,
-        y: this.tank1.y,
-        hp: this.tank1.scoreHandler ? this.tank1.scoreHandler.hp : 250,
-        angle: this.tank1.turret ? Phaser.Math.RadToDeg(this.tank1.turret.relativeRotation + this.tank1.rotation + Math.PI / 2) : 45,
-        power: this.tank1.power || 60,
-        name: this.tank1.name || '',
-        color: this.tank1.color || '#FF0000',
-        score: this.tank1.score || 0,
+      // N-player canonical
+      players,
+      myPlayerIndex: this.myPlayerIndex,
+      currentPlayerIndex: this.currentPlayerIndex,
+      // Backward-compat shims
+      tank1: t0 ? {
+        x: t0.x,
+        y: t0.y,
+        hp: t0.scoreHandler ? t0.scoreHandler.hp : 250,
+        angle: t0.turret ? Phaser.Math.RadToDeg(t0.turret.relativeRotation + t0.rotation + Math.PI / 2) : 45,
+        power: t0.power || 60,
+        name: t0.name || '',
+        color: t0.color || '#FF0000',
+        score: t0.score || 0,
       } : this._bridge.state.tank1,
-      tank2: this.tank2 ? {
-        x: this.tank2.x,
-        y: this.tank2.y,
-        hp: this.tank2.scoreHandler ? this.tank2.scoreHandler.hp : 250,
-        angle: this.tank2.turret ? Phaser.Math.RadToDeg(this.tank2.turret.relativeRotation + this.tank2.rotation + Math.PI / 2) : 45,
-        power: this.tank2.power || 60,
-        name: this.tank2.name || '',
-        color: this.tank2.color || '#0066FF',
-        score: this.tank2.score || 0,
+      tank2: t1 ? {
+        x: t1.x,
+        y: t1.y,
+        hp: t1.scoreHandler ? t1.scoreHandler.hp : 250,
+        angle: t1.turret ? Phaser.Math.RadToDeg(t1.turret.relativeRotation + t1.rotation + Math.PI / 2) : 45,
+        power: t1.power || 60,
+        name: t1.name || '',
+        color: t1.color || '#0066FF',
+        score: t1.score || 0,
       } : this._bridge.state.tank2,
       activeTank: this.activeTank,
       isPlayerTurn: isMyTurn,

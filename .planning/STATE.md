@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 26 Feb 2026)
 ## Current Position
 
 Milestone: v1.3 — 4-Player Multiplayer
-Phase: 17 of 19 (Server Systems) — COMPLETE
-Plan: 0 of 2 in Phase 18
-Status: Ready to plan Phase 18
-Last activity: 26 Feb 2026 — Phase 17 complete (1/1 plan, verified)
+Phase: 18 of 19 (Client Phaser and GameBridge) — In progress
+Plan: 1 of 2 in Phase 18 — COMPLETE
+Status: In progress
+Last activity: 26 Feb 2026 — Completed 18-01-PLAN.md (N-player Phaser migration)
 
-Progress: [██████░░░░] ~55% (6/10 v1.3 plans)
+Progress: [███████░░░] ~60% (7/10 v1.3 plans)
 
 ## Performance Metrics
 
@@ -79,6 +79,14 @@ Progress: [██████░░░░] ~55% (6/10 v1.3 plans)
 - 17-01: pendingReconnects keeps isHost for backward compat AND adds playerIndex for N-player correctness
 - 17-01: shopReady remap inserted after consecutiveTimeouts remap and before ms.players[] remap in rejoinRoom
 - 17-01: wager guard (wagerAmount > 0 && maxPlayers > 2) will need removal in Phase 19 when escrow supports N-player
+- 18-01: tanks[] indexed to room.players[] order — myPlayerIndex tracks local player (not host/joiner perspective)
+- 18-01: terrainGenerated reads positions[] canonical with tankPositions shim fallback
+- 18-01: createTanks(N) uses sceneData.players?.length || 2 (resilient fallback for type4/old clients)
+- 18-01: fireRejected guards myPlayerIndex >= 0 before tanks[myPlayerIndex] access
+- 18-01: backward-compat tank1/tank2 shims in GameBridge and _pushStateToBridge until Phase 19
+- 18-01: opponentPowerChange/StepLeft/StepRight/AngleChange listeners removed — sync via turnResult.positions[]
+- 18-01: handleType4 sets myPlayerIndex=0 (local player always tanks[0] in practice)
+- 18-01: _eliminated{} object defined in constructor but NOT populated (Plan 18-02 adds playerEliminated handler)
 
 ### Pending Todos
 - Run 25-test suite when McAfee exclusion is configured
@@ -100,11 +108,13 @@ Progress: [██████░░░░] ~55% (6/10 v1.3 plans)
 - Server supports full 4-player match: terrain → spawn → fire → elimination → round-end → match-end
 - Phase 17 COMPLETE (1 plan): wager guard, reconnectExpired broadcast, playerIndex, shopReady remap, debug log — all 5 surgical N-player fixes done
 - Server is fully N-player correct — all SYS requirements (SYS-01 through SYS-10) complete
-- Client still reads 2-player shims — Phase 18 updates client Phaser + GameBridge to read players[] array
+- Client Phaser MainScene migrated to N-player tanks[] (Phase 18-01 complete)
+- Client still has backward-compat tank1/tank2 shims in GameBridge — Phase 19 removes these
+- Plan 18-02 still needed: elimination handling, spectator mode, name labels in Phaser
 - Escrow settlement still 2-player (hostId/playerId) — N-player escrow deferred to v2
 
 ## Session Continuity
 
-Last session: 2026-02-26T15:00:00Z
-Stopped at: Phase 17 complete — ready to plan Phase 18
+Last session: 2026-02-26T19:44:57Z
+Stopped at: Completed 18-01-PLAN.md — N-player Phaser migration complete
 Resume file: None

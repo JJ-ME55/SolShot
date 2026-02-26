@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 26 Feb 2026)
 
 Milestone: v1.3 — 4-Player Multiplayer
 Phase: 16 of 19 (Room Schema and Battle Engine)
-Plan: 0 of 3 in Phase 16
-Status: Ready to plan
-Last activity: 26 Feb 2026 — Phase 15 complete (2/2 plans, verified)
+Plan: 1 of 3 in Phase 16
+Status: In progress
+Last activity: 26 Feb 2026 — Completed 16-01-PLAN.md (room schema migration)
 
-Progress: [██░░░░░░░░] ~4% (2/11 v1.3 plans)
+Progress: [███░░░░░░░] ~9% (3/11 v1.3 plans)
 
 ## Performance Metrics
 
@@ -28,6 +28,12 @@ Progress: [██░░░░░░░░] ~4% (2/11 v1.3 plans)
 ## Accumulated Context
 
 ### Key Decisions (carried forward)
+- 16-01: room.players[] ordered array — players[0] is always host (room creator), players[n-1] is last joiner
+- 16-01: maxPlayers defaults to 2 if client omits player.maxPlayers (UI not yet updated)
+- 16-01: joinRoom race guard uses push-before-async (pop on failure) not room.active=true
+- 16-01: startPick emits both legacy host/player shim AND new players[] canonical field
+- 16-01: persistRoom writes players[0]/players[1] as DB host/player — Match model unchanged
+- 16-01: getPlayerSlot(room, socketId) helper available to all future handlers
 - Server-authoritative everything (physics, economy, match state)
 - Devnet deploy done (escrow + SHOT token) — mainnet is final step
 - 90/7/3 BPS split hardcoded in escrow program
@@ -70,11 +76,12 @@ Progress: [██░░░░░░░░] ~4% (2/11 v1.3 plans)
 - main.js is ~1800+ lines — search by function name, not line number
 - Phase 15 critical RESOLVED: isRoundOver now uses alive map (was ending on first kill) — done in 15-01
 - Phase 15 COMPLETE: match.js N-player rewrite (15-01) + gold.js/main.js wiring (15-02) both done
-- Phase 16 critical: fix room.active flag (blocks players 3+ from joining) simultaneously with schema migration
-- Phase 16: requestTerrain compat block (ms.players population) will be replaced with proper players[] from room schema
+- Phase 16 Plan 01 COMPLETE: room schema migrated to players[] — room.active flag fixed (now only true when all slots filled)
+- Phase 16 Plan 01 COMPLETE: requestTerrain compat block updated to read room.players[]
+- Phase 16 remaining: fire handler, movement handlers (stepLeft/stepRight/positionUpdate), reconnect/disconnect handlers, startTurnTimer forfeit path still read room.host/room.player — deferred to 16-02/16-03
 
 ## Session Continuity
 
-Last session: 2026-02-26
-Stopped at: Phase 15 complete and verified — ready for Phase 16 planning
+Last session: 2026-02-26T13:28:17Z
+Stopped at: Completed 16-01-PLAN.md — room schema migration to players[] array
 Resume file: None

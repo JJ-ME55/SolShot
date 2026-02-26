@@ -20,6 +20,11 @@ function isDbConnected() {
     return mongoose.connection.readyState === 1; // 1 = connected
 }
 
+// Helper: find a player slot in room.players[] by socketId
+function getPlayerSlot(room, socketId) {
+    return (room.players || []).find(p => p.socketId === socketId) || null;
+}
+
 // O1: In-memory cache for active rooms — Map<roomId, room> for O(1) lookups
 // DB is source of truth, cache is synced on mutations
 const rooms = new Map()
@@ -95,8 +100,7 @@ function resetForPlayAgain(roomId, room, paRoundType, io) {
     }
 
     io.sockets.in(roomId).emit('playAgain', {})
-    room.player.playAgain = false
-    room.host.playAgain = false
+    room.players.forEach(p => { p.playAgain = false; })
 }
 
 // SF-03: In-memory store for failed settlements — retry via cancelMatchEscrow (DB: H020/H050)
@@ -130,8 +134,11 @@ setInterval(async () => {
 
 // SF-03: Attempt cancel recovery and store for retry if needed
 async function handleSettlementFailure(roomId, room, ws, error) {
-    const p1wallet = ws?.wallets?.[room?.host?.socketId] || null;
-    const p2wallet = ws?.wallets?.[room?.player?.socketId] || null;
+    // room snapshot may use players[] (new schema) or legacy host/player fields
+    const p1socketId = room?.players?.[0]?.socketId || room?.host?.socketId || null;
+    const p2socketId = room?.players?.[1]?.socketId || room?.player?.socketId || null;
+    const p1wallet = ws?.wallets?.[p1socketId] || null;
+    const p2wallet = ws?.wallets?.[p2socketId] || null;
     const escrowPDA = room?.escrowPDA || null;
 
     if (p1wallet && p2wallet) {
@@ -195,13 +202,15 @@ function requireAuthIfWagered(client, eventName) {
 function getOpenRooms() {
     const result = [];
     for (const room of rooms.values()) {
-        if (!room.active) {
+        if (room.players && room.players.length < room.maxPlayers) {
             result.push({
                 roomId: room.roomId,
-                host: room.host ? {
-                    name: room.host.name,
-                    color: room.host.color,
+                host: room.players[0] ? {
+                    name: room.players[0].name,
+                    color: room.players[0].color,
                 } : null,
+                maxPlayers: room.maxPlayers,
+                currentPlayers: room.players.length,
                 wager: room.wager || 0,
                 matchMode: room.matchMode || null,
                 totalRounds: room.totalRounds || 1,
@@ -220,22 +229,25 @@ async function persistRoom(room) {
             active: room.active,
             randomArray: room.randomArray,
         };
-        if (room.host) {
+        // DB backward compat — write players[0] as host, players[1] as player
+        const hostSlot = room.players ? room.players[0] : null;
+        const playerSlot = room.players ? room.players[1] : null;
+        if (hostSlot) {
             update.host = {
-                username: room.host.name,
-                socketId: room.host.socketId,
-                color: room.host.color,
-                isReady: room.host.isReady,
-                playAgain: room.host.playAgain,
+                username: hostSlot.name,
+                socketId: hostSlot.socketId,
+                color: hostSlot.color,
+                isReady: hostSlot.isReady,
+                playAgain: hostSlot.playAgain,
             };
         }
-        if (room.player) {
+        if (playerSlot) {
             update.player = {
-                username: room.player.name,
-                socketId: room.player.socketId,
-                color: room.player.color,
-                isReady: room.player.isReady,
-                playAgain: room.player.playAgain,
+                username: playerSlot.name,
+                socketId: playerSlot.socketId,
+                color: playerSlot.color,
+                isReady: playerSlot.isReady,
+                playAgain: playerSlot.playAgain,
             };
         }
         await Match.findByIdAndUpdate(room._matchId, update);
@@ -294,24 +306,27 @@ function endShopPhase(io, roomId) {
     transitionState(ms, MATCH_STATES.BATTLE)
 
     // Build weapon lists for each player from inventories
-    const hostId = room.host ? room.host.socketId : null
-    const playerId = room.player ? room.player.socketId : null
     const inventory = weaponInventories[roomId] || {}
+    const playerIds = room.players.map(p => p.socketId)
 
-    // Convert weapon IDs to weapon objects for client
-    const hostWeapons = (inventory[hostId] || [0]).map(id => {
-        const w = getWeapon(id)
-        return w ? { id: w.id, name: w.name, type: 'single' } : { id: 0, name: 'Single Shot', type: 'single' }
-    })
-    const playerWeapons = (inventory[playerId] || [0]).map(id => {
-        const w = getWeapon(id)
-        return w ? { id: w.id, name: w.name, type: 'single' } : { id: 0, name: 'Single Shot', type: 'single' }
-    })
+    // Convert weapon IDs to weapon objects for each player
+    const weaponsByPlayer = {}
+    for (const pid of playerIds) {
+        weaponsByPlayer[pid] = (inventory[pid] || [0]).map(id => {
+            const w = getWeapon(id)
+            return w ? { id: w.id, name: w.name, type: 'single' } : { id: 0, name: 'Single Shot', type: 'single' }
+        })
+    }
+
+    // Backward-compat aliases for 2-player client
+    const hostWeapons = weaponsByPlayer[playerIds[0]] || []
+    const playerWeapons = weaponsByPlayer[playerIds[1]] || []
 
     // Emit shopEnd with final inventories and Gold
     io.sockets.in(roomId).emit('shopEnd', {
         hostWeapons,
         playerWeapons,
+        weaponsByPlayer,
         goldBalance: goldStates[roomId] || {}
     })
 
@@ -333,8 +348,8 @@ function startTurnTimer(io, roomId) {
         const currentTurnId = ms.currentTurn
         if (!currentTurnId) return
 
-        const hostId = room.host ? room.host.socketId : null
-        const playerId = room.player ? room.player.socketId : null
+        const hostId = room.players ? room.players[0]?.socketId : null
+        const playerId = room.players ? room.players[1]?.socketId : null
 
         // LP-08: Track consecutive timeouts per player
         if (!ms.consecutiveTimeouts) ms.consecutiveTimeouts = {}
@@ -370,7 +385,7 @@ function startTurnTimer(io, roomId) {
                 const loserWallet = wsState.wallets ? wsState.wallets[currentTurnId] : null
                 if (winnerWallet && loserWallet) {
                     // SF-03: Capture room/ws before settlement — removeRoom() destroys them
-                    const roomSnapshot = room ? { host: room.host, player: room.player, escrowPDA: room.escrowPDA } : null
+                    const roomSnapshot = room ? { players: room.players, escrowPDA: room.escrowPDA } : null
                     const wsSnapshot = wsState ? { amount: wsState.amount, wallets: { ...wsState.wallets } } : null
                     try {
                         const result = await settleMatch(winnerWallet, loserWallet, wsState.amount, roomId)
@@ -1001,9 +1016,10 @@ const mainsocket = (io) => {
 
             if (client.roomId === roomId) return
             var room = findRoom(roomId)
-            if (!room || room.active === true) return
-            // E12: Lock room immediately to prevent race during async balance check
-            room.active = true
+            if (!room || room.players.length >= room.maxPlayers) return
+            // E12: Push placeholder immediately to prevent race during async balance check (Node.js atomic)
+            const joinerSlot = { name: sanitizeName(name), color, socketId: client.id, isReady: false, playAgain: false, pos: null, isHost: false }
+            room.players.push(joinerSlot)
 
             // Verify wager compatibility
             const ws = wagerStates[roomId]
@@ -1013,12 +1029,12 @@ const mainsocket = (io) => {
 
             if (roomWager > 0) {
                 // H006: Require auth for wagered rooms
-                if (!requireAuth(client, 'joinRoom')) { room.active = false; return }
+                if (!requireAuth(client, 'joinRoom')) { room.players.pop(); return }
 
                 // Room requires a wager — joiner must have a wallet
                 if (!joinerWallet) {
                     client.emit('joinRoomError', { reason: 'Wallet required for wagered matches' })
-                    room.active = false
+                    room.players.pop()
                     return
                 }
 
@@ -1029,13 +1045,13 @@ const mainsocket = (io) => {
                         client.emit('joinRoomError', {
                             reason: `Insufficient SOL balance. Need ${balanceCheck.required.toFixed(3)}, have ${balanceCheck.balance.toFixed(3)}`
                         })
-                        room.active = false
+                        room.players.pop()
                         return
                     }
                 } catch (err) {
                     console.warn('[Solana] Balance check failed — rejecting join:', err.message)
                     client.emit('joinRoomError', { reason: 'Unable to verify SOL balance. Please try again.' })
-                    room.active = false
+                    room.players.pop()
                     return
                 }
             }
@@ -1048,17 +1064,20 @@ const mainsocket = (io) => {
             client.join(roomId)
             client.roomId = roomId
             client.isHost = false
-            // H017: Sanitize player name
+            // H017: Sanitize player name — update joinerSlot with sanitized name
             client.name = sanitizeName(name)
             client.color = color
+            joinerSlot.name = client.name
+
+            // Set room active when all slots filled
+            if (room.players.length === room.maxPlayers) room.active = true
 
             // Store joiner's wallet in wager state
             if (ws) {
                 ws.wallets[client.id] = joinerWallet
             }
 
-            room.player = {name: sanitizeName(name), color: color, socketId: client.id, isReady: false, playAgain: false}
-            // room.active already set to true at top of handler (E12 race guard)
+            // joinerSlot already pushed to room.players[] above
 
             // Persist player join to DB
             persistRoom(room);
@@ -1067,7 +1086,7 @@ const mainsocket = (io) => {
 
             // Create on-chain escrow for wagered matches
             if (roomWager > 0 && isEscrowEnabled()) {
-                const hostWallet = ws?.wallets[room.host.socketId]
+                const hostWallet = ws?.wallets[room.players[0]?.socketId]
                 if (hostWallet && joinerWallet) {
                     try {
                         const escrowResult = await createMatchEscrow(roomId, roomWager, hostWallet, joinerWallet)
@@ -1082,7 +1101,7 @@ const mainsocket = (io) => {
                             ])
 
                             // Send deposit instructions to each player
-                            const hostSocket = io.sockets.sockets.get(room.host.socketId)
+                            const hostSocket = io.sockets.sockets.get(room.players[0]?.socketId)
                             // DCA-01: Compute deposit deadline before emitting so both players get same value
                             const depositDeadline = Date.now() + DEPOSIT_TIMEOUT_MS
                             if (hostSocket && hostDeposit.success) {
@@ -1109,13 +1128,12 @@ const mainsocket = (io) => {
                                 const wsCheck = wagerStates[roomId]
                                 const roomCheck = findRoom(roomId)
                                 if (!roomCheck || !wsCheck) return
-                                // If both already deposited, nothing to do
-                                const hostDep = wsCheck.deposits && wsCheck.deposits[roomCheck.host?.socketId]
-                                const playerDep = wsCheck.deposits && wsCheck.deposits[roomCheck.player?.socketId]
-                                if (hostDep && playerDep) return
+                                // If all players already deposited, nothing to do
+                                const allDeposited = roomCheck.players.every(p => wsCheck.deposits && wsCheck.deposits[p.socketId])
+                                if (allDeposited) return
                                 // Cancel escrow and refund
-                                const p1wallet = wsCheck.wallets[roomCheck.host?.socketId]
-                                const p2wallet = wsCheck.wallets[roomCheck.player?.socketId]
+                                const p1wallet = wsCheck.wallets[roomCheck.players[0]?.socketId]
+                                const p2wallet = wsCheck.wallets[roomCheck.players[1]?.socketId]
                                 if (p1wallet && p2wallet && isEscrowEnabled()) {
                                     try {
                                         await cancelMatchEscrow(roomId, p1wallet, p2wallet)
@@ -1137,7 +1155,12 @@ const mainsocket = (io) => {
                 }
             }
 
-            io.sockets.in(client.roomId).emit('startPick', {host: room.host, player: room.player, wager: roomWager})
+            io.sockets.in(client.roomId).emit('startPick', {
+                host: room.players[0],      // backward compat
+                player: room.players[1],    // backward compat (undefined for 3-4 player)
+                players: room.players,      // canonical N-player
+                wager: roomWager
+            })
         })
 
 
@@ -1215,9 +1238,17 @@ const mainsocket = (io) => {
             client.roomId = roomId
             client.isHost = true
             // H017: Sanitize player name
-            var host = {name: sanitizeName(player.name), color: player.color, socketId: client.id, isReady: false, playAgain: false}
+            // Validate maxPlayers: default 2, support 2/3/4
+            const maxPlayers = Number.isInteger(player.maxPlayers) && [2, 3, 4].includes(player.maxPlayers)
+                ? player.maxPlayers : 2;
+            const creatorSlot = { name: sanitizeName(player.name), color: player.color, socketId: client.id, isReady: false, playAgain: false, pos: null, isHost: true }
 
-            const roomData = {roomId: roomId, host: host, active: false}
+            const roomData = {
+                roomId: roomId,
+                players: [creatorSlot],
+                maxPlayers: maxPlayers,
+                active: false
+            }
 
             wagerStates[roomId] = {
                 amount: wagerAmount,
@@ -1226,7 +1257,7 @@ const mainsocket = (io) => {
             roomData.wager = wagerAmount
             roomData.matchMode = matchMode
             const roundType = rounds === 5 ? 'BO5' : rounds === 3 ? 'BO3' : '1'
-            matchStates[roomId] = createMatchState(roomId, roundType);
+            matchStates[roomId] = createMatchState(roomId, roundType, maxPlayers);
             roomData.totalRounds = rounds
 
             // Persist to DB (only if connected — otherwise pure in-memory)
@@ -1332,15 +1363,17 @@ const mainsocket = (io) => {
                 // Auto-create room — mirrors createRoom + joinRoom exactly
                 const roomId = crypto.randomBytes(4).toString('hex');
                 const roundType = matchLength === 5 ? 'BO5' : matchLength === 3 ? 'BO3' : '1';
+                // Queue-matched rooms are always 2-player
+                const queueMaxPlayers = 2;
 
-                const hostEntry = { name: opponent.name, color: opponent.color, socketId: opponent.socketId, isReady: false, playAgain: false };
-                const playerEntry = { name: sanitizeName(playerName), color: tankColor, socketId: client.id, isReady: false, playAgain: false };
+                const hostEntry = { name: opponent.name, color: opponent.color, socketId: opponent.socketId, isReady: false, playAgain: false, pos: null, isHost: true };
+                const playerEntry = { name: sanitizeName(playerName), color: tankColor, socketId: client.id, isReady: false, playAgain: false, pos: null, isHost: false };
 
                 const roomData = {
                     roomId,
-                    host: hostEntry,
-                    player: playerEntry,
-                    active: true,
+                    players: [hostEntry, playerEntry],
+                    maxPlayers: queueMaxPlayers,
+                    active: true,  // both slots filled immediately
                     wager: wagerAmount,
                     matchMode,
                     totalRounds: matchLength,
@@ -1354,7 +1387,7 @@ const mainsocket = (io) => {
                     },
                 };
 
-                matchStates[roomId] = createMatchState(roomId, roundType);
+                matchStates[roomId] = createMatchState(roomId, roundType, queueMaxPlayers);
                 rooms.set(roomId, roomData);
 
                 // Join both sockets to the Socket.IO room
@@ -1401,13 +1434,12 @@ const mainsocket = (io) => {
                                 const wsCheck = wagerStates[roomId]
                                 const roomCheck = findRoom(roomId)
                                 if (!roomCheck || !wsCheck) return
-                                // If both already deposited, nothing to do
-                                const hostDep = wsCheck.deposits && wsCheck.deposits[roomCheck.host?.socketId]
-                                const playerDep = wsCheck.deposits && wsCheck.deposits[roomCheck.player?.socketId]
-                                if (hostDep && playerDep) return
+                                // If all players already deposited, nothing to do
+                                const allDeposited = roomCheck.players.every(p => wsCheck.deposits && wsCheck.deposits[p.socketId])
+                                if (allDeposited) return
                                 // Cancel escrow and refund
-                                const p1wallet = wsCheck.wallets[roomCheck.host?.socketId]
-                                const p2wallet = wsCheck.wallets[roomCheck.player?.socketId]
+                                const p1wallet = wsCheck.wallets[roomCheck.players[0]?.socketId]
+                                const p2wallet = wsCheck.wallets[roomCheck.players[1]?.socketId]
                                 if (p1wallet && p2wallet && isEscrowEnabled()) {
                                     try {
                                         await cancelMatchEscrow(roomId, p1wallet, p2wallet)
@@ -1444,7 +1476,12 @@ const mainsocket = (io) => {
                 client.emit('queueMatched', matchData);
 
                 // Emit startPick — same final event as manual joinRoom flow
-                io.sockets.in(roomId).emit('startPick', { host: hostEntry, player: playerEntry, wager: wagerAmount });
+                io.sockets.in(roomId).emit('startPick', {
+                    host: hostEntry,           // backward compat
+                    player: playerEntry,       // backward compat
+                    players: roomData.players, // canonical N-player
+                    wager: wagerAmount
+                });
 
                 console.log(`[Queue] Matched: ${opponent.name} vs ${sanitizeName(playerName)} in ${matchMode} (${roundType}) @ ${wagerAmount} SOL — room ${roomId}`);
             } else {
@@ -1485,18 +1522,13 @@ const mainsocket = (io) => {
                 return
             }
 
-            // Track readiness
-            if (client.isHost === true) {
-                room.host.isReady = true
-            } else {
-                if (!room.player) return
-                room.player.isReady = true
-            }
+            // Track readiness — find slot by socket ID
+            const playerSlot = getPlayerSlot(room, client.id)
+            if (playerSlot) playerSlot.isReady = true
 
-            // Both players ready — start shop phase
-            if (room.host.isReady && room.player && room.player.isReady) {
-                const hostId = room.host.socketId
-                const playerId = room.player.socketId
+            // All players ready — start shop phase
+            if (room.players.length === room.maxPlayers && room.players.every(p => p.isReady)) {
+                const playerIds = room.players.map(p => p.socketId)
                 const ms = matchStates[client.roomId]
                 const isBetweenRounds = ms && ms.status === MATCH_STATES.ROUND_END
 
@@ -1504,23 +1536,21 @@ const mainsocket = (io) => {
                     // ── Between-round shop: preserve gold + inventories ──
                     // Gold carries over — do NOT call initGold()
                     // Inventories carry over — do NOT reinitialize
-                    console.log(`[BO3] Between-round shop: Round ${ms.currentRound} ended. Gold: host=${getBalance(goldStates[client.roomId], hostId)}, player=${getBalance(goldStates[client.roomId], playerId)}`)
+                    const hostId = playerIds[0]
+                    const pid = playerIds[1]
+                    console.log(`[BO3] Between-round shop: Round ${ms.currentRound} ended. Gold: host=${getBalance(goldStates[client.roomId], hostId)}, player=${getBalance(goldStates[client.roomId], pid)}`)
                 } else {
                     // ── First shop (from lobby): initialize everything ──
-                    goldStates[client.roomId] = initGold([hostId, playerId])
-                    const hostPrestige = getPrestigeInfo(authenticatedWallets[hostId] || '')
-                    const playerPrestige = getPrestigeInfo(authenticatedWallets[playerId] || '')
-                    weaponInventories[client.roomId] = {
-                        [hostId]: [0, ...(hostPrestige.unlockedWeapons || [])],
-                        [playerId]: [0, ...(playerPrestige.unlockedWeapons || [])]
+                    goldStates[client.roomId] = initGold(playerIds)
+                    weaponInventories[client.roomId] = {}
+                    for (const pid of playerIds) {
+                        const prestige = getPrestigeInfo(authenticatedWallets[pid] || '')
+                        weaponInventories[client.roomId][pid] = [0, ...(prestige.unlockedWeapons || [])]
                     }
                 }
 
-                // Reset shop readiness for both paths
-                shopReady[client.roomId] = {
-                    [hostId]: false,
-                    [playerId]: false
-                }
+                // Reset shop readiness for all players
+                shopReady[client.roomId] = Object.fromEntries(playerIds.map(id => [id, false]))
 
                 // Transition match state to weapon_shop
                 if (ms) {
@@ -1530,16 +1560,16 @@ const mainsocket = (io) => {
                 // Emit shopPhase with weapon catalog, Gold balance, and inventories
                 const weapons = getAllLaunchWeapons()
                 const inv = weaponInventories[client.roomId] || {}
+                const goldBalancePayload = {}
+                const inventoryPayload = {}
+                for (const pid of playerIds) {
+                    goldBalancePayload[pid] = getBalance(goldStates[client.roomId], pid)
+                    inventoryPayload[pid] = inv[pid] || [0]
+                }
                 io.sockets.in(client.roomId).emit('shopPhase', {
                     weapons,
-                    goldBalance: {
-                        [hostId]: getBalance(goldStates[client.roomId], hostId),
-                        [playerId]: getBalance(goldStates[client.roomId], playerId)
-                    },
-                    inventory: {
-                        [hostId]: inv[hostId] || [0],
-                        [playerId]: inv[playerId] || [0]
-                    },
+                    goldBalance: goldBalancePayload,
+                    inventory: inventoryPayload,
                     timer: SHOP_DURATION,
                     totalRounds: ms ? ms.maxRounds : 1,
                     round: ms ? ms.currentRound + 1 : 1
@@ -1553,8 +1583,7 @@ const mainsocket = (io) => {
 
                 // Also emit startGame for backward compatibility
                 io.sockets.in(client.roomId).emit('startGame', {})
-                room.player.isReady = false
-                room.host.isReady = false
+                room.players.forEach(p => { p.isReady = false; })
             }
         })
 
@@ -1638,13 +1667,16 @@ const mainsocket = (io) => {
             const ready = shopReady[client.roomId]
             if (!ready) return
 
+            // Guard: only players in this room can mark themselves as done
+            if (!getPlayerSlot(room, client.id)) return
+
             ready[client.id] = true
 
-            // Check if both players are done
-            const hostId = room.host ? room.host.socketId : null
-            const playerId = room.player ? room.player.socketId : null
+            // Check if all players are done shopping
+            const allShopReady = room.players.length === room.maxPlayers &&
+                room.players.every(p => ready[p.socketId])
 
-            if (hostId && playerId && ready[hostId] && ready[playerId]) {
+            if (allShopReady) {
                 endShopPhase(io, client.roomId)
             }
         })
@@ -1839,8 +1871,8 @@ const mainsocket = (io) => {
                         return
                     }
 
-                    // Determine which player this is
-                    const isHost = room.host?.socketId === client.id
+                    // Determine which player this is (players[0] = host)
+                    const isHost = room.players[0]?.socketId === client.id
                     const depositConfirmed = isHost
                         ? escrowState.playerOneDeposited
                         : escrowState.playerTwoDeposited
@@ -1869,12 +1901,11 @@ const mainsocket = (io) => {
             if (!ws.deposits) ws.deposits = {}
             ws.deposits[client.id] = txSignature
 
-            const hostDeposited = ws.deposits[room.host?.socketId]
-            const playerDeposited = ws.deposits[room.player?.socketId]
+            const allDeposited = room.players.every(p => ws.deposits && ws.deposits[p.socketId])
 
             console.log(`[Escrow] Deposit confirmed: ${client.id} for room ${rid} (TX: ${txSignature})`)
 
-            if (hostDeposited && playerDeposited) {
+            if (allDeposited) {
                 // Both players deposited — escrow is now active
                 // DCA-01: Clear deposit countdown — both players deposited in time
                 if (depositTimers[rid]) {
@@ -2481,8 +2512,9 @@ const mainsocket = (io) => {
             room.heightmap = heightmap
             room.terrainSeed = fullSeed
             room.wind = wind
-            if (room.host) room.host.pos = tankPositions.host
-            if (room.player) room.player.pos = tankPositions.player
+            // Assign tank positions to each player slot (generateTankPositions still returns {host,player} until Plan 16-02)
+            if (room.players[0]) room.players[0].pos = tankPositions.host
+            if (room.players[1]) room.players[1].pos = tankPositions.player
 
             // Initialize match state for battle
             if (ms) {
@@ -2494,9 +2526,8 @@ const mainsocket = (io) => {
                 }
                 // Populate players[] and alive{} if not already set (pre-Phase 16 compat)
                 if (ms.players.length === 0) {
-                    const pIds = [];
-                    if (room.host) pIds.push(room.host.socketId);
-                    if (room.player) pIds.push(room.player.socketId);
+                    // Phase 16: populate ms.players[] from room.players[] (replaces pre-16 compat block)
+                    const pIds = room.players.map(p => p.socketId);
                     ms.players = pIds;
                     ms.alive = {};
                     ms.turnsPerRound = pIds.length * 10;
@@ -2719,18 +2750,11 @@ const mainsocket = (io) => {
             const paRounds = room.totalRounds || 1
             const paRoundType = paRounds === 5 ? 'BO5' : paRounds === 3 ? 'BO3' : '1'
 
-            if (client.isHost === true) {
-                room.host.playAgain = true
-                if (room.player && room.player.playAgain === true) {
-                    resetForPlayAgain(client.roomId, room, paRoundType, io)
-                }
-            }
-            else {
-                if (!room.player) return
-                room.player.playAgain = true
-                if (room.host.playAgain === true) {
-                    resetForPlayAgain(client.roomId, room, paRoundType, io)
-                }
+            const paSlot = getPlayerSlot(room, client.id)
+            if (paSlot) paSlot.playAgain = true
+
+            if (room.players.every(p => p.playAgain)) {
+                resetForPlayAgain(client.roomId, room, paRoundType, io)
             }
         })
 

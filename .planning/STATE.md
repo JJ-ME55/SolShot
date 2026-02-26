@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 26 Feb 2026)
 
 Milestone: v1.3 — 4-Player Multiplayer
 Phase: 16 of 19 (Room Schema and Battle Engine)
-Plan: 1 of 3 in Phase 16
+Plan: 2 of 3 in Phase 16
 Status: In progress
-Last activity: 26 Feb 2026 — Completed 16-01-PLAN.md (room schema migration)
+Last activity: 26 Feb 2026 — Completed 16-02-PLAN.md (N-player terrain spawn)
 
-Progress: [███░░░░░░░] ~9% (3/11 v1.3 plans)
+Progress: [████░░░░░░] ~18% (4/11 v1.3 plans)
 
 ## Performance Metrics
 
@@ -61,6 +61,10 @@ Progress: [███░░░░░░░] ~9% (3/11 v1.3 plans)
 - 15-02: ms.players[] populated at requestTerrain from room.host/room.player (pre-Phase 16 compat block)
 - 15-02: ms.players.length > 1 replaces old playerId ? guard for post-fire getNextTurn
 - 15-02: roundEnd emit now includes placementPoints field (SCORE-06 server-side)
+- 16-02: generateTankPositions(heightmap, N, width) → Array<{x,y}> — N=2 preserves original zones, N>2 uses equal [10%-90%] zones
+- 16-02: ms.tankPositions stores positions[] array (not {host,player} object)
+- 16-02: dual-payload pattern: all terrain emits send positions[] canonical + tankPositions shim
+- 16-02: turnResult also updated with dual payload (bonus fix for consistency)
 
 ### Pending Todos
 - Run 25-test suite when McAfee exclusion is configured
@@ -77,11 +81,11 @@ Progress: [███░░░░░░░] ~9% (3/11 v1.3 plans)
 - Phase 15 critical RESOLVED: isRoundOver now uses alive map (was ending on first kill) — done in 15-01
 - Phase 15 COMPLETE: match.js N-player rewrite (15-01) + gold.js/main.js wiring (15-02) both done
 - Phase 16 Plan 01 COMPLETE: room schema migrated to players[] — room.active flag fixed (now only true when all slots filled)
-- Phase 16 Plan 01 COMPLETE: requestTerrain compat block updated to read room.players[]
-- Phase 16 remaining: fire handler, movement handlers (stepLeft/stepRight/positionUpdate), reconnect/disconnect handlers, startTurnTimer forfeit path still read room.host/room.player — deferred to 16-02/16-03
+- Phase 16 Plan 02 COMPLETE: N-player generateTankPositions + requestTerrain/terrainGenerated/turnResult/rejoinSuccess payloads updated
+- Phase 16 remaining (16-03): fire handler isHost/serverPos/tanks-array, movement handlers (stepLeft/stepRight/positionUpdate), reconnect/disconnect handlers, startTurnTimer forfeit path still read room.host/room.player
 
 ## Session Continuity
 
-Last session: 2026-02-26T13:28:17Z
-Stopped at: Completed 16-01-PLAN.md — room schema migration to players[] array
+Last session: 2026-02-26T13:33:25Z
+Stopped at: Completed 16-02-PLAN.md — N-player terrain spawn and payload updates
 Resume file: None

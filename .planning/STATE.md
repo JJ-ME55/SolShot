@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 26 Feb 2026)
 
 Milestone: v1.3 — 4-Player Multiplayer
 Phase: 15 of 19 (Server Core Services)
-Plan: 1 of 2 in Phase 15
-Status: In progress
-Last activity: 26 Feb 2026 — Completed 15-01-PLAN.md (match.js N-player rewrite)
+Plan: 2 of 2 in Phase 15
+Status: Phase complete
+Last activity: 26 Feb 2026 — Completed 15-02-PLAN.md (gold.js N-player + main.js call sites)
 
-Progress: [█░░░░░░░░░] ~2% (1/56 v1.3 plans)
+Progress: [██░░░░░░░░] ~4% (2/56 v1.3 plans)
 
 ## Performance Metrics
 
@@ -50,6 +50,11 @@ Progress: [█░░░░░░░░░] ~2% (1/56 v1.3 plans)
 - 15-01: getRoundWinner removed; getRoundPlacement returns ranked[] with PLACEMENT_POINTS[3,2,1,0]
 - 15-01: roundWins[1st] side-effect kept in getRoundPlacement for backward compat with disconnect chain
 - 15-01: isRoundOver uses alive map with HP fallback until Phase 16 updates fire handler
+- 15-02: initGold(playerIds[]) — backward compat: initGold([A,B]) produces {A:1000, B:1000}
+- 15-02: PLACEMENT_GOLD [300,150,75,0] replaces flat ROUND_WIN_BONUS for N-player round-end
+- 15-02: ms.players[] populated at requestTerrain from room.host/room.player (pre-Phase 16 compat block)
+- 15-02: ms.players.length > 1 replaces old playerId ? guard for post-fire getNextTurn
+- 15-02: roundEnd emit now includes placementPoints field (SCORE-06 server-side)
 
 ### Pending Todos
 - Run 25-test suite when McAfee exclusion is configured
@@ -64,11 +69,12 @@ Progress: [█░░░░░░░░░] ~2% (1/56 v1.3 plans)
 - Devnet wallet at 0.97 SOL — need ~2.12 SOL for program deploy
 - main.js is ~1800+ lines — search by function name, not line number
 - Phase 15 critical RESOLVED: isRoundOver now uses alive map (was ending on first kill) — done in 15-01
+- Phase 15 COMPLETE: match.js N-player rewrite (15-01) + gold.js/main.js wiring (15-02) both done
 - Phase 16 critical: fix room.active flag (blocks players 3+ from joining) simultaneously with schema migration
-- Plan 15-02: main.js must update imports (getRoundPlacement not getRoundWinner), drop hostId/playerId params from getNextTurn and isMatchOver call sites
+- Phase 16: requestTerrain compat block (ms.players population) will be replaced with proper players[] from room schema
 
 ## Session Continuity
 
-Last session: 2026-02-26 12:17 UTC
-Stopped at: Completed 15-01-PLAN.md — match.js N-player rewrite committed (2dbdd37)
+Last session: 2026-02-26 12:23 UTC
+Stopped at: Completed 15-02-PLAN.md — gold.js N-player + main.js call sites (b1d4bdc, ac36fce)
 Resume file: None

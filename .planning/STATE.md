@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 26 Feb 2026)
 ## Current Position
 
 Milestone: v1.3 — 4-Player Multiplayer
-Phase: 16 of 19 (Room Schema and Battle Engine) — COMPLETE
-Plan: 0 of 2 in Phase 17
-Status: Ready to plan Phase 17
-Last activity: 26 Feb 2026 — Phase 16 complete (3/3 plans, verified)
+Phase: 17 of 19 (Server Systems) — In progress
+Plan: 1 of 2 in Phase 17
+Status: In progress
+Last activity: 26 Feb 2026 — Completed 17-01-PLAN.md (N-player server gap fixes)
 
-Progress: [█████░░░░░] ~45% (5/11 v1.3 plans)
+Progress: [██████░░░░] ~55% (6/11 v1.3 plans)
 
 ## Performance Metrics
 
@@ -74,6 +74,11 @@ Progress: [█████░░░░░] ~45% (5/11 v1.3 plans)
 - 16-03: rejoinRoom unified remap via room.players.find(oldSocketId) — all per-player maps remapped
 - 16-03: zero room.host/room.player (singular) references in main.js — migration complete
 - 16-03: homing weapon uses Math.hypot nearest-enemy targeting
+- 17-01: wager guard placed after matchMode validation — maxPlayers declaration moved up to avoid duplicate const
+- 17-01: reconnectExpired uses currentRoom (re-read inside setTimeout) not opponentId captured at disconnect time
+- 17-01: pendingReconnects keeps isHost for backward compat AND adds playerIndex for N-player correctness
+- 17-01: shopReady remap inserted after consecutiveTimeouts remap and before ms.players[] remap in rejoinRoom
+- 17-01: wager guard (wagerAmount > 0 && maxPlayers > 2) will need removal in Phase 19 when escrow supports N-player
 
 ### Pending Todos
 - Run 25-test suite when McAfee exclusion is configured
@@ -98,6 +103,6 @@ Progress: [█████░░░░░] ~45% (5/11 v1.3 plans)
 
 ## Session Continuity
 
-Last session: 2026-02-26T13:42:38Z
-Stopped at: Completed 16-03-PLAN.md — N-player battle engine (Phase 16 complete)
+Last session: 2026-02-26T14:47:33Z
+Stopped at: Completed 17-01-PLAN.md — N-player server gap fixes (5 surgical fixes to main.js)
 Resume file: None

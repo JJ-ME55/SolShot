@@ -4,17 +4,17 @@
 
 See: .planning/PROJECT.md (updated 26 Feb 2026)
 **Core value:** Browser-based multiplayer artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** v1.3 — 4-Player Multiplayer, Phase 17: Server Systems
+**Current focus:** v1.3 — 4-Player Multiplayer, Phase 18: Client Phaser and GameBridge
 
 ## Current Position
 
 Milestone: v1.3 — 4-Player Multiplayer
-Phase: 17 of 19 (Server Systems) — In progress
-Plan: 1 of 2 in Phase 17
-Status: In progress
-Last activity: 26 Feb 2026 — Completed 17-01-PLAN.md (N-player server gap fixes)
+Phase: 17 of 19 (Server Systems) — COMPLETE
+Plan: 0 of 2 in Phase 18
+Status: Ready to plan Phase 18
+Last activity: 26 Feb 2026 — Phase 17 complete (1/1 plan, verified)
 
-Progress: [██████░░░░] ~55% (6/11 v1.3 plans)
+Progress: [██████░░░░] ~55% (6/10 v1.3 plans)
 
 ## Performance Metrics
 
@@ -23,7 +23,7 @@ Progress: [██████░░░░] ~55% (6/11 v1.3 plans)
 - v1.1 plans completed: 25 (across 9 phases including 4.1)
 - v1.2 plans completed: 15 (across 6 phases)
 
-**Total across all milestones:** 55 plans, 22 phases
+**Total across all milestones:** 56 plans, 23 phases
 
 ## Accumulated Context
 
@@ -98,11 +98,13 @@ Progress: [██████░░░░] ~55% (6/11 v1.3 plans)
 - Phase 16 Plan 02 COMPLETE: N-player generateTankPositions + requestTerrain/terrainGenerated/turnResult/rejoinSuccess payloads updated
 - Phase 16 COMPLETE (all 3 plans): room schema → terrain spawn → battle engine migration done
 - Server supports full 4-player match: terrain → spawn → fire → elimination → round-end → match-end
-- Client still reads 2-player shims — Phase 17 updates client to read players[] array
-- Escrow settlement still 2-player (hostId/playerId) — N-player escrow deferred to Phase 19
+- Phase 17 COMPLETE (1 plan): wager guard, reconnectExpired broadcast, playerIndex, shopReady remap, debug log — all 5 surgical N-player fixes done
+- Server is fully N-player correct — all SYS requirements (SYS-01 through SYS-10) complete
+- Client still reads 2-player shims — Phase 18 updates client Phaser + GameBridge to read players[] array
+- Escrow settlement still 2-player (hostId/playerId) — N-player escrow deferred to v2
 
 ## Session Continuity
 
-Last session: 2026-02-26T14:47:33Z
-Stopped at: Completed 17-01-PLAN.md — N-player server gap fixes (5 surgical fixes to main.js)
+Last session: 2026-02-26T15:00:00Z
+Stopped at: Phase 17 complete — ready to plan Phase 18
 Resume file: None

@@ -34,13 +34,13 @@
 - [x] **SYS-01**: Gold system initializes for N players (1000G each)
 - [x] **SYS-02**: Gold earnings from damage scale correctly with N targets
 - [x] **SYS-03**: Weapon inventories initialized for N players
-- [ ] **SYS-04**: Shop phase waits for all N players to finish shopping
-- [ ] **SYS-05**: Disconnect/reconnect works for N players (wallet-keyed, playerIndex preserved)
-- [ ] **SYS-06**: Disconnected player forfeit timeout triggers elimination (not match end)
-- [ ] **SYS-07**: All match modes (Practice/Quick Match/Duel/High Roller) accept 2-4 players
-- [ ] **SYS-08**: Wager modes with 3-4 players enforce practice-only until escrow upgrade
-- [ ] **SYS-09**: `getOpenRooms()` broadcasts player count (e.g. "2/4") and maxPlayers
-- [ ] **SYS-10**: `playAgainRequest` requires all surviving players to agree
+- [x] **SYS-04**: Shop phase waits for all N players to finish shopping
+- [x] **SYS-05**: Disconnect/reconnect works for N players (wallet-keyed, playerIndex preserved)
+- [x] **SYS-06**: Disconnected player forfeit timeout triggers elimination (not match end)
+- [x] **SYS-07**: All match modes (Practice/Quick Match/Duel/High Roller) accept 2-4 players
+- [x] **SYS-08**: Wager modes with 3-4 players enforce practice-only until escrow upgrade
+- [x] **SYS-09**: `getOpenRooms()` broadcasts player count (e.g. "2/4") and maxPlayers
+- [x] **SYS-10**: `playAgainRequest` requires all surviving players to agree
 
 ### Client Phaser (PHASER)
 
@@ -136,13 +136,13 @@
 | SYS-01 | Phase 16 | Complete |
 | SYS-02 | Phase 16 | Complete |
 | SYS-03 | Phase 16 | Complete |
-| SYS-04 | Phase 17 | Pending |
-| SYS-05 | Phase 17 | Pending |
-| SYS-06 | Phase 17 | Pending |
-| SYS-07 | Phase 17 | Pending |
-| SYS-08 | Phase 17 | Pending |
-| SYS-09 | Phase 17 | Pending |
-| SYS-10 | Phase 17 | Pending |
+| SYS-04 | Phase 17 | Complete |
+| SYS-05 | Phase 17 | Complete |
+| SYS-06 | Phase 17 | Complete |
+| SYS-07 | Phase 17 | Complete |
+| SYS-08 | Phase 17 | Complete |
+| SYS-09 | Phase 17 | Complete |
+| SYS-10 | Phase 17 | Complete |
 | PHASER-01 | Phase 18 | Pending |
 | PHASER-02 | Phase 18 | Pending |
 | PHASER-03 | Phase 18 | Pending |

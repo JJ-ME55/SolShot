@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 26 Feb 2026)
 ## Current Position
 
 Milestone: v1.3 — 4-Player Multiplayer
-Phase: 18 of 19 (Client Phaser and GameBridge) — In progress
-Plan: 1 of 2 in Phase 18 — COMPLETE
-Status: In progress
-Last activity: 26 Feb 2026 — Completed 18-01-PLAN.md (N-player Phaser migration)
+Phase: 18 of 19 (Client Phaser and GameBridge) — COMPLETE
+Plan: 2 of 2 in Phase 18 — COMPLETE
+Status: Phase complete — ready for Phase 19
+Last activity: 26 Feb 2026 — Completed 18-02-PLAN.md (elimination visuals, spectator mode, name labels)
 
-Progress: [███████░░░] ~60% (7/10 v1.3 plans)
+Progress: [████████░░] ~80% (8/10 v1.3 plans)
 
 ## Performance Metrics
 
@@ -87,6 +87,13 @@ Progress: [███████░░░] ~60% (7/10 v1.3 plans)
 - 18-01: opponentPowerChange/StepLeft/StepRight/AngleChange listeners removed — sync via turnResult.positions[]
 - 18-01: handleType4 sets myPlayerIndex=0 (local player always tanks[0] in practice)
 - 18-01: _eliminated{} object defined in constructor but NOT populated (Plan 18-02 adds playerEliminated handler)
+- 18-02: playerEliminated handler uses _lastPositions[myPlayerIndex].socketId (not window.socket?.id)
+- 18-02: wreckage graphics setDepth(-1) — above terrain, below blast layer, non-interactive
+- 18-02: spectator camera zooms to 0.85 via zoomTo() + pans to center — passive spectate, no follow-cam
+- 18-02: Leave Match button deferred to Phase 19 — notifyEliminated({placement}) provides React hook
+- 18-02: _flashYourTurn skips first turn (hasHadFirstTurn guard) to avoid spurious flash on game start
+- 18-02: showTurnPointer y offset bumped from -45 to -58 to clear name labels and YOU marker
+- 18-02: spectator aim line recreated each frame (destroy + recreate) to track live turret rotation
 
 ### Pending Todos
 - Run 25-test suite when McAfee exclusion is configured
@@ -108,13 +115,13 @@ Progress: [███████░░░] ~60% (7/10 v1.3 plans)
 - Server supports full 4-player match: terrain → spawn → fire → elimination → round-end → match-end
 - Phase 17 COMPLETE (1 plan): wager guard, reconnectExpired broadcast, playerIndex, shopReady remap, debug log — all 5 surgical N-player fixes done
 - Server is fully N-player correct — all SYS requirements (SYS-01 through SYS-10) complete
-- Client Phaser MainScene migrated to N-player tanks[] (Phase 18-01 complete)
-- Client still has backward-compat tank1/tank2 shims in GameBridge — Phase 19 removes these
-- Plan 18-02 still needed: elimination handling, spectator mode, name labels in Phaser
+- Phase 18 COMPLETE (2 plans): N-player Phaser migration + elimination visuals/spectator/name labels done
+- Client has backward-compat tank1/tank2 shims in GameBridge — Phase 19 removes these
+- Phase 19 needed: React BattleHUD N-player components (Leave Match button, placement overlay, N-player HP bars)
 - Escrow settlement still 2-player (hostId/playerId) — N-player escrow deferred to v2
 
 ## Session Continuity
 
-Last session: 2026-02-26T19:44:57Z
-Stopped at: Completed 18-01-PLAN.md — N-player Phaser migration complete
+Last session: 2026-02-26T19:52:37Z
+Stopped at: Completed 18-02-PLAN.md — Elimination visuals, spectator mode, name labels complete
 Resume file: None

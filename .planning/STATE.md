@@ -2,19 +2,19 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 25 Feb 2026)
-**Core value:** Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** v1.2 complete. Planning next milestone.
+See: .planning/PROJECT.md (updated 26 Feb 2026)
+**Core value:** Browser-based multiplayer artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
+**Current focus:** v1.3 — 4-Player Multiplayer
 
 ## Current Position
 
-Milestone: v1.2 — Launch Readiness (SHIPPED 2026-02-25)
-Phase: All 14 phases complete
-Plan: Not started
-Status: Milestone archived. Ready for next milestone.
-Last activity: 25 Feb 2026 — v1.2 milestone complete
+Milestone: v1.3 — 4-Player Multiplayer
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 26 Feb 2026 — Milestone v1.3 started
 
-Progress: [██████████] 100%
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
@@ -38,13 +38,14 @@ Progress: [██████████] 100%
 - Jupiter Mobile via Reown, Price API V3, Terminal SDK with 0.5% platform fee
 - Practice mode as default landing tab
 - Self-hosted Telegram SDK (supply chain security)
-- Launch checklist at 47% — gap is QA + deployment, not code
+- 4-player: practice mode first, escrow N-player changes deferred
+- 4-player: players[] array replaces host/player binary structure
+- Tank colours: red #E63946, blue #4A90D9, green #52B788, yellow #FFD166
 
 ### Pending Todos
 - Run 25-test suite when McAfee exclusion is configured
 - Fresh devnet deploy with new program ID + initializeConfig() call
 - On-chain authority transfer to new keypair (needs devnet SOL)
-- Rename SolShot-clean to SolShot (swap directories)
 - Production deployment (Render + Vercel)
 - QA sessions (A4-A8 gameplay testing)
 - Telegram bot creation (BotFather)
@@ -52,10 +53,10 @@ Progress: [██████████] 100%
 ### Blockers/Concerns
 - McAfee blocks solana-test-validator on Windows
 - Devnet wallet at 0.97 SOL — need ~2.12 SOL for program deploy
-- Working directory is SolShot-clean (not SolShot) — needs directory swap
+- main.js is ~1800+ lines — careful with edits, search by function name
 
 ## Session Continuity
 
-Last session: 2026-02-25T11:10:00Z
-Stopped at: v1.2 milestone archived. Ready for /gsd:new-milestone.
+Last session: 2026-02-26
+Stopped at: Defining v1.3 requirements
 Resume file: None

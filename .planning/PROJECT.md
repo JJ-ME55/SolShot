@@ -2,11 +2,25 @@
 
 ## What This Is
 
-Browser-based 1v1 artillery combat game on Solana where players wager real SOL. Matches are settled trustlessly via on-chain escrow. The SHOT token drives a deflationary prestige economy — earn through combat, burn to unlock exclusive weapons.
+Browser-based multiplayer artillery combat game (2-4 players) on Solana where players wager real SOL. Matches are settled trustlessly via on-chain escrow. The SHOT token drives a deflationary prestige economy — earn through combat, burn to unlock exclusive weapons.
 
 ## Core Value
 
-Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
+Browser-based multiplayer artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
+
+## Current Milestone: v1.3 — 4-Player Multiplayer
+
+**Goal:** Refactor SolShot from 1v1 to 2-4 player last-man-standing while preserving all existing 2-player functionality.
+
+**Target features:**
+- Server room refactor: `host`/`player` → `players[]` array (2-4 slots)
+- N-player turn rotation with elimination (skip dead players)
+- N-player HP tracking, elimination events, last-man-standing win condition
+- Client Phaser: dynamic tank array, `myPlayerIndex` turn detection
+- React HUD: N HP bars with colour-coding, elimination state, turn indicator
+- Lobby: player count selector (2/3/4), N-player waiting room
+- All existing systems (gold, weapons, shop, wind, terrain) working for N players
+- Practice mode first — escrow N-player changes deferred
 
 ## Tech Stack
 - **Client:** React 18 + Phaser 3 (CRA with react-app-rewired), @solana/wallet-adapter
@@ -50,11 +64,14 @@ Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled tru
 
 ### Active
 
-- [ ] Production deployment (Render server + Vercel client)
-- [ ] QA sessions (A4-A8 gameplay testing, ~54 checklist items)
-- [ ] Mainnet escrow program deploy + authority transfer
-- [ ] Telegram bot creation (BotFather)
-- [ ] Missing sound effects (7 weapons)
+- [ ] 4-player multiplayer: server room object refactor (players[] array)
+- [ ] 4-player multiplayer: N-player match.js (turn rotation, elimination, isRoundOver)
+- [ ] 4-player multiplayer: main.js socket handlers for N players
+- [ ] 4-player multiplayer: client Phaser N-tank system
+- [ ] 4-player multiplayer: React HUD N HP bars + elimination state
+- [ ] 4-player multiplayer: lobby UI (player count selector, N-player waiting room)
+- [ ] 4-player multiplayer: gold/shop/weapon systems for N players
+- [ ] 4-player multiplayer: disconnect/reconnect for N players
 
 ### Out of Scope
 
@@ -65,7 +82,9 @@ Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled tru
 - **Social media posting/community** — human tasks (X, Reddit, Discord)
 - **Demo video recording** — human task
 - **Hackathon submission form** — human task at matrix.playsolana.com
-- **Match replay system** — complex new feature, deferred to v1.3
+- **Match replay system** — complex new feature, deferred to v1.4+
+- **N-player escrow** — requires lib.rs changes, separate milestone after game logic works
+- **Seeker/dApp Store** — distribution channel, deferred to after 4-player works
 - **lib.rs modifications** — preserves SOS/DB/BOK audit certifications
 - **Secrets manager migration** — deferred to mainnet operational readiness
 - **Error monitoring (Sentry)** — external service setup
@@ -78,6 +97,7 @@ Browser-based 1v1 artillery combat on Solana with real SOL wagering, settled tru
 - **v1.0 (pre-GSD):** Core game, escrow, SHOT token, prestige burns, art assets, deployment config
 - **v1.1 Security Hardening:** 8 phases, 25 plans. Three security audits (SOS, DB, BOK) all PASS.
 - **v1.2 Launch Readiness:** 6 phases, 15 plans. Jupiter integration, UI polish, stats pipeline, onboarding, security, checklist re-audit.
+- **v1.3 4-Player Multiplayer:** In progress. Refactor from 1v1 to 2-4 player last-man-standing.
 
 ### Master Checklist Audit (24 Feb 2026)
 
@@ -91,16 +111,17 @@ Jupiter & Jupiter Mobile track. Deadline: February 25, 2026.
 ## Constraints
 
 - **Security preservation:** Do NOT modify lib.rs, guards.js, or core auth handlers
-- **Hackathon deadline:** Jupiter integration is time-critical (Feb 25)
+- **Backward compatibility:** 2-player (`maxPlayers: 2`) must work identically to current 1v1
+- **Practice mode first:** Game logic before escrow changes
+- **Server-authoritative:** All HP, positions, turn state live on server
+- **Tank colours:** red #E63946, blue #4A90D9, green #52B788, yellow #FFD166
 - **Devnet only:** All blockchain features on devnet until mainnet deploy
 - **Build tooling:** react-app-rewired + config-overrides.js for polyfills
-- **Codebase location:** `C:\Users\johnk\SolShot-clean`
+- **Codebase location:** `C:\Users\johnk\SolShot`
 
 ## Current State
 
-v1.2 shipped. All code-level launch readiness work is complete. Next steps are operational: production deployment, QA sessions, mainnet program deploy.
-
-**Launch checklist:** 91/195 (47%) — code is ready, gaps are deployment + QA + test infra.
+v1.3 started. Refactoring from 1v1 to 2-4 player last-man-standing. Practice mode first, escrow changes deferred. Brief at `SOLSHOT_SEEKER_AND_4PLAYER_BRIEF.md` Part 2.
 
 ## Key Decisions
 
@@ -116,6 +137,8 @@ v1.2 shipped. All code-level launch readiness work is complete. Next steps are o
 | Jupiter Terminal for in-game swaps | Hackathon requirement + revenue | ✓ Good — 0.5% fee |
 | Practice mode as default tab | Onboarding-first approach | ✓ Good |
 | CHK-02 security re-check skipped | Major changes upcoming | — Deferred |
+| 4-player practice first, escrow later | Escrow needs lib.rs changes (audit risk) | — Pending |
+| players[] array (not host/player) | Scales to N, single code path | — Pending |
 
 ---
-*Last updated: 25 Feb 2026 after v1.2 milestone complete*
+*Last updated: 26 Feb 2026 after v1.3 milestone started*

@@ -5,8 +5,8 @@ import logger from '../services/logger.js';
 import Match from '../models/Match.js';
 import User from '../models/User.js';
 import { processShot, generateTerrain, generateTankPositions, generateWind, WEAPON_DATA } from '../services/physics.js';
-import { createMatchState, validateAction, transitionState, getNextTurn, isRoundOver, isMatchOver, getRoundWinner, resetForNextRound, MATCH_STATES } from '../services/match.js';
-import { initGold, getBalance, earnGold, spendGold, awardKillBonus, awardRoundWinBonus } from '../services/gold.js';
+import { createMatchState, validateAction, transitionState, getNextTurn, isRoundOver, isMatchOver, getRoundPlacement, PLACEMENT_POINTS, resetForNextRound, MATCH_STATES } from '../services/match.js';
+import { initGold, getBalance, earnGold, spendGold, awardKillBonus, awardRoundWinBonus, awardPlacementGold } from '../services/gold.js';
 import { WEAPON_CATALOG, getWeapon, getWeaponCost, getAllLaunchWeapons } from '../models/Weapon.js';
 import { handleAuthenticate, verifyAuthMessage, verifyWalletSignature } from '../middleware/auth.js';
 import { verifyBalance, isValidWager, settleMatch, refundWager, WAGER_TIERS, MATCH_MODES, validateMatchMode, isEscrowEnabled, createMatchEscrow, buildDepositTransaction, getEscrowState } from '../services/solana.js';
@@ -440,7 +440,7 @@ function startTurnTimer(io, roomId) {
 
         // Normal timeout — advance turn
         ms.turnCount++
-        ms.currentTurn = getNextTurn(ms, hostId, playerId)
+        ms.currentTurn = getNextTurn(ms)
 
         // LP-07: Reset move count for the new turn player
         if (ms.moveCounts) ms.moveCounts[ms.currentTurn] = 0
@@ -1507,7 +1507,7 @@ const mainsocket = (io) => {
                     console.log(`[BO3] Between-round shop: Round ${ms.currentRound} ended. Gold: host=${getBalance(goldStates[client.roomId], hostId)}, player=${getBalance(goldStates[client.roomId], playerId)}`)
                 } else {
                     // ── First shop (from lobby): initialize everything ──
-                    goldStates[client.roomId] = initGold(hostId, playerId)
+                    goldStates[client.roomId] = initGold([hostId, playerId])
                     const hostPrestige = getPrestigeInfo(authenticatedWallets[hostId] || '')
                     const playerPrestige = getPrestigeInfo(authenticatedWallets[playerId] || '')
                     weaponInventories[client.roomId] = {
@@ -2114,7 +2114,7 @@ const mainsocket = (io) => {
                 ms.turnCount++
                 const hostId = room.host.socketId
                 const playerId = room.player ? room.player.socketId : null
-                ms.currentTurn = playerId ? getNextTurn(ms, hostId, playerId) : null
+                ms.currentTurn = ms.players.length > 1 ? getNextTurn(ms) : null
 
                 // LP-07: Reset move count for the new current turn player
                 if (ms.moveCounts && ms.currentTurn) {
@@ -2162,19 +2162,18 @@ const mainsocket = (io) => {
             // Check if round is over
             if (ms && isRoundOver(ms)) {
                 clearTurnTimer(this.roomId)
-                const hostId = room.host.socketId
-                const playerId = room.player ? room.player.socketId : null
-                const roundWinner = getRoundWinner(ms, hostId, playerId)
+                const ranked = getRoundPlacement(ms)
+                const roundWinner = ranked[0]
 
-                ms.roundWins[roundWinner] = (ms.roundWins[roundWinner] || 0) + 1
+                // roundWins and placementPoints already updated inside getRoundPlacement
                 ms.currentRound++
 
-                const matchResult = isMatchOver(ms, hostId, playerId)
+                const matchResult = isMatchOver(ms)
 
-                // Award round win Gold bonus
+                // Award placement Gold (300/150/75/0 by rank)
                 const gold = goldStates[this.roomId]
                 if (gold) {
-                    awardRoundWinBonus(gold, roundWinner)
+                    awardPlacementGold(gold, ranked)
                 }
 
                 // Delay round/match end emit so client can animate the killing blow
@@ -2437,6 +2436,7 @@ const mainsocket = (io) => {
                         winner: roundWinner,
                         scores: ms.scores,
                         roundWins: ms.roundWins,
+                        placementPoints: ms.placementPoints,
                         round: ms.currentRound,
                         totalRounds: ms.maxRounds,
                         goldBalance: goldStates[roomId] || {}
@@ -2492,13 +2492,31 @@ const mainsocket = (io) => {
                 if (ms.status !== MATCH_STATES.BATTLE) {
                     transitionState(ms, MATCH_STATES.BATTLE)
                 }
-                ms.currentTurn = getNextTurn(ms,
-                    room.host ? room.host.socketId : null,
-                    room.player ? room.player.socketId : null
-                )
-                // Initialize HP for both players
-                if (room.host) ms.hp[room.host.socketId] = 250
-                if (room.player) ms.hp[room.player.socketId] = 250
+                // Populate players[] and alive{} if not already set (pre-Phase 16 compat)
+                if (ms.players.length === 0) {
+                    const pIds = [];
+                    if (room.host) pIds.push(room.host.socketId);
+                    if (room.player) pIds.push(room.player.socketId);
+                    ms.players = pIds;
+                    ms.alive = {};
+                    ms.turnsPerRound = pIds.length * 10;
+                    // Initialize ALL per-player maps for every socket ID (CORE-06)
+                    for (const id of pIds) {
+                        ms.alive[id] = true;
+                        ms.hp[id] = 250;
+                        ms.scores[id] = ms.scores[id] || 0;
+                        ms.kills[id] = ms.kills[id] || 0;
+                        ms.roundWins[id] = ms.roundWins[id] || 0;
+                        ms.placementPoints[id] = ms.placementPoints[id] || 0;
+                        ms.damageDealtTotal[id] = ms.damageDealtTotal[id] || 0;
+                    }
+                } else {
+                    // Initialize HP for all players (players[] already populated)
+                    for (const id of ms.players) {
+                        ms.hp[id] = 250;
+                    }
+                }
+                ms.currentTurn = getNextTurn(ms)
 
                 // Start turn timer for the first turn
                 startTurnTimer(io, client.roomId)

@@ -155,11 +155,11 @@ Plans:
 4. Turn detection correctly enables controls only for the local player when `myPlayerIndex === currentPlayerIndex` and disables them for all other indices.
 5. GameBridge `players[]` array updates after every `turnResult`, with each player's position, HP, alive status, name, and color — React HUD reads this array without additional socket access.
 
-**Plans:** TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 18-01: Phaser MainScene refactor — tanks[] array, createTanks(N), terrainGenerated N-tank positioning, applyTurnResult players[] loop, checkSwitchTurn any-tank settled check, playerEliminated handler
-- [ ] 18-02: GameBridge state shape — players[] replaces tank1/tank2, myPlayerIndex/currentPlayerIndex, setPlayerEliminated(index), reset() update
+- [ ] 18-01-PLAN.md — N-player core migration: MainScene tanks[] array, Tank.js/Turret.js 2-player cleanup, ShopScreen players[] pass, GameBridge state shape
+- [ ] 18-02-PLAN.md — Elimination visuals and spectator mode: playerEliminated handler, wreckage + kill text, spectator camera, name labels, YOUR TURN flash
 
 ---
 

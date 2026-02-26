@@ -44,7 +44,7 @@ export class Tank extends GameObjects.Sprite {
         this.needEmitPowerChange = false
         this.aimPower = 0
         this.previousPowerTimer = null
-        
+
         this.keyA = this.scene.input.keyboard.addKey('A');
         this.keyD = this.scene.input.keyboard.addKey('D');
         this.keyW = this.scene.input.keyboard.addKey('W');
@@ -58,7 +58,7 @@ export class Tank extends GameObjects.Sprite {
 
     create = (tankColor, name) => {
         var ctx = this.canvas.getContext('2d')
-    
+
         ctx.fillStyle = tankColor
         this.color = tankColor
         this.name = name
@@ -80,7 +80,7 @@ export class Tank extends GameObjects.Sprite {
             // Body is re-enabled in randomPos() or enablePhysics().
             this.body.enable = false
         }
-    
+
         ctx.beginPath();
         ctx.moveTo(this.canvas.width/6, this.canvas.height/2)
         ctx.lineTo(0, this.canvas.height/4)
@@ -107,38 +107,14 @@ export class Tank extends GameObjects.Sprite {
         // Legacy opponentShoot handler REMOVED — server-authoritative fire path
         // uses turnResult to animate opponent shots via MainScene.animateTrajectory()
 
-        socket.on('opponentPowerChange', ({power}) => {
-            if (this.active && this === this.scene.tank2) {
-                this.aimPower = power
-
-                if (this.previousPowerTimer !== null) {
-                    this.previousPowerTimer.destroy()
-                }
-
-                this.previousPowerTimer = this.scene.time.addEvent({delay: 20, callback: () => {this.lerpPower()}, callbackScope: this, loop: true})
-            }
-        })
-        
-        socket.on('opponentStepLeft', () => {
-            // In multiplayer, only move the opponent's tank (tank2), not our own
-            if (this.gameType === 3 && this !== this.scene.tank2) return
-            if (this.gameType !== 3 && this.active === false) return
-            // Force-animate opponent movement — don't check movesRemaining
-            // (server already validated the move; we just need to show it)
-            this.leftSteps = 80
-            this.moving = true
-        })
-
-        socket.on('opponentStepRight', () => {
-            if (this.gameType === 3 && this !== this.scene.tank2) return
-            if (this.gameType !== 3 && this.active === false) return
-            // Force-animate opponent movement — don't check movesRemaining
-            this.rightSteps = 80
-            this.moving = true
-        })
+        // opponentPowerChange, opponentStepLeft, opponentStepRight REMOVED —
+        // N-player: opponent positions are synced authoritatively from turnResult.positions[].
+        // No client-side animation of other players' actions.
 
         this.scene.input.keyboard.on('keydown-A', () => {
-            if (this.gameType === 3 && this === this.scene.tank2) return 
+            // In multiplayer, only the local player's tank responds to keyboard movement.
+            if (this.scene.myPlayerIndex < 0) return
+            if (this.gameType === 3 && this !== this.scene.tanks[this.scene.myPlayerIndex]) return
             if (this.active && !this.moving && this.movesRemaining > 0) {
                 this.scene.sound.play('click', {volume: 0.3})
                 this.stepLeft()
@@ -147,7 +123,9 @@ export class Tank extends GameObjects.Sprite {
         })
 
         this.scene.input.keyboard.on('keydown-D', () => {
-            if (this.gameType === 3 && this === this.scene.tank2) return 
+            // In multiplayer, only the local player's tank responds to keyboard movement.
+            if (this.scene.myPlayerIndex < 0) return
+            if (this.gameType === 3 && this !== this.scene.tanks[this.scene.myPlayerIndex]) return
             if (this.active && !this.moving && this.movesRemaining > 0) {
                 this.scene.sound.play('click', {volume: 0.3})
                 this.stepRight()
@@ -156,7 +134,7 @@ export class Tank extends GameObjects.Sprite {
         })
 
         this.texture.update()
-        
+
 
         this.scene.time.addEvent({delay: 500, callback: this.emitPower, callbackScope: this, loop: true})
 
@@ -167,7 +145,8 @@ export class Tank extends GameObjects.Sprite {
 
 
     emitPower = () => {
-        if (this.gameType === 3 && this === this.scene.tank1 && this.active) {
+        if (this.scene.myPlayerIndex < 0) return
+        if (this.gameType === 3 && this === this.scene.tanks[this.scene.myPlayerIndex] && this.active) {
             if (this.needEmitPowerChange === true) {
                 window.socket.emit('powerChange', {power: this.power})
                 this.needEmitPowerChange = false
@@ -188,7 +167,7 @@ export class Tank extends GameObjects.Sprite {
             this.previousPowerTimer = null
         }
     }
-    
+
 
     randomPos = () => {
         var initX = Math.ceil(Math.random() * this.terrain.width / 1.0)
@@ -234,18 +213,22 @@ export class Tank extends GameObjects.Sprite {
         this.top.x = this.body.x + this.height/2 * Math.sin(this.rotation)
         this.top.y = this.body.y - this.height/2 * Math.cos(this.rotation)
 
-        // movement
-        if (this.keyW?.isDown) {
-            if (this.active) {
-                if ((this.gameType === 3 && this === this.scene.tank1) || this.gameType !== 3){
-                    this.setPower(this.power + 1);
+        // movement — W/S keys only respond for the local player's tank
+        if (this.scene.myPlayerIndex < 0) {
+            // not yet initialized — skip power controls
+        } else {
+            if (this.keyW?.isDown) {
+                if (this.active) {
+                    if ((this.gameType === 3 && this === this.scene.tanks[this.scene.myPlayerIndex]) || this.gameType !== 3){
+                        this.setPower(this.power + 1);
+                    }
                 }
             }
-        }
-        if (this.keyS?.isDown) {
-            if (this.active) {
-                if ((this.gameType === 3 && this === this.scene.tank1) || this.gameType !== 3){
-                    this.setPower(this.power - 1);
+            if (this.keyS?.isDown) {
+                if (this.active) {
+                    if ((this.gameType === 3 && this === this.scene.tanks[this.scene.myPlayerIndex]) || this.gameType !== 3){
+                        this.setPower(this.power - 1);
+                    }
                 }
             }
         }
@@ -257,7 +240,7 @@ export class Tank extends GameObjects.Sprite {
         if (this.rightSteps > 0) {
             this.rightSteps--
             this.moveRight()
-        } 
+        }
         if (this.leftSteps === 0 && this.rightSteps === 0) {
             this.moving = false
         }
@@ -290,7 +273,7 @@ export class Tank extends GameObjects.Sprite {
 
             var [newX, newY, prevX, prevY] = this.scene.terrain.retractPoint(this.body.x, this.body.y, this.body.velocity, this.body.acceleration, this.body.gravity)
             var pos = {x: prevX, y: prevY}
-            
+
             if (newX === prevX && newY === prevY) {
                 if (this.terrain.getPixel(this.body.x, this.body.y).alpha === 0) {
                     this.body.y = this.body.y + 1
@@ -319,7 +302,7 @@ export class Tank extends GameObjects.Sprite {
                 this.setRotation(rotation)
             }
             this.settled = true
-            
+
             this.body.stop()
             this.body.setGravity(0)
             this.body.preUpdate(true, 0)
@@ -354,9 +337,9 @@ export class Tank extends GameObjects.Sprite {
 
 
     moveLeft = () => {
-        // In multiplayer, opponent tank (tank2) has active=false during our turn
-        // but still needs to animate when we receive opponentStepLeft events
-        if (!this.active && !(this.gameType === 3 && this === this.scene.tank2)) return
+        // Only animate if this tank is active.
+        // Remote tanks never have leftSteps > 0 (opponentStepLeft listener removed).
+        if (!this.active) return
         if (this.isInsideTerrain()) return
         this.scene.hideTurnPointer()
 
@@ -384,9 +367,9 @@ export class Tank extends GameObjects.Sprite {
 
 
     moveRight = () => {
-        // In multiplayer, opponent tank (tank2) has active=false during our turn
-        // but still needs to animate when we receive opponentStepRight events
-        if (!this.active && !(this.gameType === 3 && this === this.scene.tank2)) return
+        // Only animate if this tank is active.
+        // Remote tanks never have rightSteps > 0 (opponentStepRight listener removed).
+        if (!this.active) return
         if (this.isInsideTerrain()) return
         this.scene.hideTurnPointer()
 
@@ -491,19 +474,33 @@ export class Tank extends GameObjects.Sprite {
         if (Phaser.Geom.Polygon.ContainsPoint(polygon, {x: x, y: y})) {
             pointInside = true
         }
- 
+
         return pointInside
     }
 
 
 
     autoAdjust = () => {
-        var oppTank = (this === this.scene.tank1) ? this.scene.tank2 : this.scene.tank1
+        // Find the nearest alive enemy tank from the N-player tanks array
+        const tanks = this.scene.tanks || []
+        let oppTank = null
+        let minDist = Infinity
+        tanks.forEach((t, i) => {
+            if (t === this) return
+            if (this.scene._eliminated && this.scene._eliminated[i]) return
+            const d = Math.abs(this.body.x - t.body.x)
+            if (d < minDist) {
+                minDist = d
+                oppTank = t
+            }
+        })
+        if (!oppTank) return
+
         var diffX = this.body.x - oppTank.body.x
         var diffY = -(this.body.y - oppTank.body.y)
 
         var angle = Math.atan(diffY/diffX)
-        
+
         if (diffX < 0) {
             var minAngle = angle
             var maxAngle = Math.PI/2

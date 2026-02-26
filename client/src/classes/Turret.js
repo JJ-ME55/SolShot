@@ -34,7 +34,7 @@ export class Turret extends GameObjects.Sprite {
 
         this.keyQ = this.scene.input.keyboard.addKey('Q');
         this.keyE = this.scene.input.keyboard.addKey('E');
-        
+
         this.create()
     }
 
@@ -46,17 +46,8 @@ export class Turret extends GameObjects.Sprite {
 
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height/2)
 
-        socket.on('opponentAngleChange', ({rotation}) => {
-            if (this.tank.active && this.tank === this.scene.tank2) {
-                this.aimRotation = rotation
-
-                if (this.previousAngleTimer !== null) {
-                    this.previousAngleTimer.destroy()
-                }
-
-                this.previousAngleTimer = this.scene.time.addEvent({delay: 20, callback: () => {this.lerpRelativeRotation()}, callbackScope: this, loop: true})
-            }
-        })
+        // opponentAngleChange listener REMOVED — N-player: opponents' turret rotation
+        // is not animated on other clients. Positions sync authoritatively via turnResult.
 
         this.scene.time.addEvent({delay: 500, callback: this.emitRotation, callbackScope: this, loop: true})
 
@@ -74,7 +65,8 @@ export class Turret extends GameObjects.Sprite {
 
 
     emitRotation = () => {
-        if (this.gameType === 3 && this.tank === this.scene.tank1 && this.tank.active) {
+        if (this.scene.myPlayerIndex < 0) return
+        if (this.gameType === 3 && this.tank === this.scene.tanks[this.scene.myPlayerIndex] && this.tank.active) {
             if (this.needEmitAngleChange) {
                 window.socket.emit('angleChange', {rotation: this.relativeRotation})
                 this.needEmitAngleChange = false
@@ -110,7 +102,16 @@ export class Turret extends GameObjects.Sprite {
 
         if (this.keyQ?.isDown) {
             if (this.tank.active) {
-                if ((this.gameType === 3 && this.tank === this.scene.tank1) || this.gameType !== 3){
+                // Only rotate turret for local player's tank (N-player guard)
+                if (this.scene.myPlayerIndex >= 0 && this.tank === this.scene.tanks[this.scene.myPlayerIndex]) {
+                    this.relativeRotation -= this.rotationDelta
+                    this.setRotation(this.relativeRotation + this.tank.rotation)
+                    const alpha = this.rotation
+                    if (this.scene.HUD && this.scene.HUD.crossAir) {
+                        this.scene.HUD.crossAir.setPosition(this.x + crossAirRadius * Math.sin(alpha), this.y - crossAirRadius * Math.cos(alpha))
+                        this.scene.HUD.crossAir.visibleTime = 40
+                    }
+                } else if (this.gameType !== 3) {
                     this.relativeRotation -= this.rotationDelta
                     this.setRotation(this.relativeRotation + this.tank.rotation)
                     const alpha = this.rotation
@@ -123,7 +124,16 @@ export class Turret extends GameObjects.Sprite {
         }
         if (this.keyE?.isDown) {
             if (this.tank.active) {
-                if ((this.gameType === 3 && this.tank === this.scene.tank1) || this.gameType !== 3){
+                // Only rotate turret for local player's tank (N-player guard)
+                if (this.scene.myPlayerIndex >= 0 && this.tank === this.scene.tanks[this.scene.myPlayerIndex]) {
+                    this.relativeRotation += this.rotationDelta
+                    this.setRotation(this.relativeRotation + this.tank.rotation)
+                    const alpha = this.rotation
+                    if (this.scene.HUD && this.scene.HUD.crossAir) {
+                        this.scene.HUD.crossAir.setPosition(this.x + crossAirRadius * Math.sin(alpha), this.y - crossAirRadius * Math.cos(alpha))
+                        this.scene.HUD.crossAir.visibleTime = 40
+                    }
+                } else if (this.gameType !== 3) {
                     this.relativeRotation += this.rotationDelta
                     this.setRotation(this.relativeRotation + this.tank.rotation)
                     const alpha = this.rotation
@@ -141,7 +151,7 @@ export class Turret extends GameObjects.Sprite {
 
 
     shoot = (selectedWeapon) => {
-        this.activeWeapon = new Weapon(this.scene, this.tank, selectedWeapon) 
+        this.activeWeapon = new Weapon(this.scene, this.tank, selectedWeapon)
     }
 
 

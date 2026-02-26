@@ -115,68 +115,76 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CORE-01 | — | Pending |
-| CORE-02 | — | Pending |
-| CORE-03 | — | Pending |
-| CORE-04 | — | Pending |
-| CORE-05 | — | Pending |
-| CORE-06 | — | Pending |
-| CORE-07 | — | Pending |
-| CORE-08 | — | Pending |
-| BATTLE-01 | — | Pending |
-| BATTLE-02 | — | Pending |
-| BATTLE-03 | — | Pending |
-| BATTLE-04 | — | Pending |
-| BATTLE-05 | — | Pending |
-| BATTLE-06 | — | Pending |
-| BATTLE-07 | — | Pending |
-| BATTLE-08 | — | Pending |
-| BATTLE-09 | — | Pending |
-| BATTLE-10 | — | Pending |
-| SYS-01 | — | Pending |
-| SYS-02 | — | Pending |
-| SYS-03 | — | Pending |
-| SYS-04 | — | Pending |
-| SYS-05 | — | Pending |
-| SYS-06 | — | Pending |
-| SYS-07 | — | Pending |
-| SYS-08 | — | Pending |
-| SYS-09 | — | Pending |
-| SYS-10 | — | Pending |
-| PHASER-01 | — | Pending |
-| PHASER-02 | — | Pending |
-| PHASER-03 | — | Pending |
-| PHASER-04 | — | Pending |
-| PHASER-05 | — | Pending |
-| PHASER-06 | — | Pending |
-| PHASER-07 | — | Pending |
-| HUD-01 | — | Pending |
-| HUD-02 | — | Pending |
-| HUD-03 | — | Pending |
-| HUD-04 | — | Pending |
-| HUD-05 | — | Pending |
-| LOBBY-01 | — | Pending |
-| LOBBY-02 | — | Pending |
-| LOBBY-03 | — | Pending |
-| LOBBY-04 | — | Pending |
-| LOBBY-05 | — | Pending |
-| LOBBY-06 | — | Pending |
-| BRIDGE-01 | — | Pending |
-| BRIDGE-02 | — | Pending |
-| BRIDGE-03 | — | Pending |
-| BRIDGE-04 | — | Pending |
-| SCORE-01 | — | Pending |
-| SCORE-02 | — | Pending |
-| SCORE-03 | — | Pending |
-| SCORE-04 | — | Pending |
-| SCORE-05 | — | Pending |
-| SCORE-06 | — | Pending |
+| CORE-01 | Phase 16 | Pending |
+| CORE-02 | Phase 16 | Pending |
+| CORE-03 | Phase 15 | Pending |
+| CORE-04 | Phase 15 | Pending |
+| CORE-05 | Phase 15 | Pending |
+| CORE-06 | Phase 15 | Pending |
+| CORE-07 | Phase 15 | Pending |
+| CORE-08 | Phase 15 | Pending |
+| BATTLE-01 | Phase 16 | Pending |
+| BATTLE-02 | Phase 16 | Pending |
+| BATTLE-03 | Phase 16 | Pending |
+| BATTLE-04 | Phase 16 | Pending |
+| BATTLE-05 | Phase 16 | Pending |
+| BATTLE-06 | Phase 16 | Pending |
+| BATTLE-07 | Phase 16 | Pending |
+| BATTLE-08 | Phase 16 | Pending |
+| BATTLE-09 | Phase 16 | Pending |
+| BATTLE-10 | Phase 16 | Pending |
+| SYS-01 | Phase 16 | Pending |
+| SYS-02 | Phase 16 | Pending |
+| SYS-03 | Phase 16 | Pending |
+| SYS-04 | Phase 17 | Pending |
+| SYS-05 | Phase 17 | Pending |
+| SYS-06 | Phase 17 | Pending |
+| SYS-07 | Phase 17 | Pending |
+| SYS-08 | Phase 17 | Pending |
+| SYS-09 | Phase 17 | Pending |
+| SYS-10 | Phase 17 | Pending |
+| PHASER-01 | Phase 18 | Pending |
+| PHASER-02 | Phase 18 | Pending |
+| PHASER-03 | Phase 18 | Pending |
+| PHASER-04 | Phase 18 | Pending |
+| PHASER-05 | Phase 18 | Pending |
+| PHASER-06 | Phase 18 | Pending |
+| PHASER-07 | Phase 18 | Pending |
+| HUD-01 | Phase 19 | Pending |
+| HUD-02 | Phase 19 | Pending |
+| HUD-03 | Phase 19 | Pending |
+| HUD-04 | Phase 19 | Pending |
+| HUD-05 | Phase 19 | Pending |
+| LOBBY-01 | Phase 19 | Pending |
+| LOBBY-02 | Phase 19 | Pending |
+| LOBBY-03 | Phase 19 | Pending |
+| LOBBY-04 | Phase 19 | Pending |
+| LOBBY-05 | Phase 19 | Pending |
+| LOBBY-06 | Phase 19 | Pending |
+| BRIDGE-01 | Phase 18 | Pending |
+| BRIDGE-02 | Phase 18 | Pending |
+| BRIDGE-03 | Phase 18 | Pending |
+| BRIDGE-04 | Phase 18 | Pending |
+| SCORE-01 | Phase 15 | Pending |
+| SCORE-02 | Phase 15 | Pending |
+| SCORE-03 | Phase 15 | Pending |
+| SCORE-04 | Phase 15 | Pending |
+| SCORE-05 | Phase 15 | Pending |
+| SCORE-06 | Phase 15 | Pending |
 
 **Coverage:**
-- v1.3 requirements: 49 total
-- Mapped to phases: 0
-- Unmapped: 49
+- v1.3 requirements: 56 total (note: initial count of 49 was before SCORE-01..06 were added)
+- Mapped to phases: 56
+- Unmapped: 0
+
+| Phase | Requirements |
+|-------|-------------|
+| Phase 15 | CORE-03, CORE-04, CORE-05, CORE-06, CORE-07, CORE-08, SCORE-01, SCORE-02, SCORE-03, SCORE-04, SCORE-05, SCORE-06 (12) |
+| Phase 16 | CORE-01, CORE-02, BATTLE-01..10, SYS-01, SYS-02, SYS-03 (15) |
+| Phase 17 | SYS-04..10 (7) |
+| Phase 18 | PHASER-01..07, BRIDGE-01..04 (11) |
+| Phase 19 | HUD-01..05, LOBBY-01..06 (11) |
 
 ---
 *Requirements defined: 26 Feb 2026*
-*Last updated: 26 Feb 2026 after initial definition*
+*Last updated: 26 Feb 2026 — traceability filled in after roadmap creation*

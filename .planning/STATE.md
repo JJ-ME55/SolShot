@@ -4,15 +4,15 @@
 
 See: .planning/PROJECT.md (updated 26 Feb 2026)
 **Core value:** Browser-based multiplayer artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** v1.3 — 4-Player Multiplayer
+**Current focus:** v1.3 — 4-Player Multiplayer, Phase 15: Server Core Services
 
 ## Current Position
 
 Milestone: v1.3 — 4-Player Multiplayer
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 26 Feb 2026 — Milestone v1.3 started
+Phase: 15 of 19 (Server Core Services)
+Plan: 0 of 2 in Phase 15
+Status: Ready to plan
+Last activity: 26 Feb 2026 — Roadmap created, Phase 15 ready to plan
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -40,6 +40,10 @@ Progress: [░░░░░░░░░░] 0%
 - Self-hosted Telegram SDK (supply chain security)
 - 4-player: practice mode first, escrow N-player changes deferred
 - 4-player: players[] array replaces host/player binary structure
+- 4-player: BO1/BO3/BO5 all supported with placement scoring (4th=0, 3rd=1, 2nd=2, 1st=3)
+- 4-player: all slots must fill before start (no AI bots, no empty slots)
+- 4-player: color CHOICE with duplicate prevention (red/blue/green/yellow)
+- 4-player: wager modes with 3-4 players are practice-only until escrow upgrade
 - Tank colours: red #E63946, blue #4A90D9, green #52B788, yellow #FFD166
 
 ### Pending Todos
@@ -53,10 +57,12 @@ Progress: [░░░░░░░░░░] 0%
 ### Blockers/Concerns
 - McAfee blocks solana-test-validator on Windows
 - Devnet wallet at 0.97 SOL — need ~2.12 SOL for program deploy
-- main.js is ~1800+ lines — careful with edits, search by function name
+- main.js is ~1800+ lines — search by function name, not line number
+- Phase 15 critical: fix isRoundOver (ends round on first kill) before any N-player testing
+- Phase 16 critical: fix room.active flag (blocks players 3+ from joining) simultaneously with schema migration
 
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Defining v1.3 requirements
+Stopped at: Roadmap created for v1.3, ready to plan Phase 15
 Resume file: None

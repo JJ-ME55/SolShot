@@ -107,12 +107,12 @@ Plans:
 5. The `turnResult` payload contains `players[]` with all N positions and alive states, plus `currentPlayerIndex`, compatible with both 2-player and 4-player clients.
 6. A turn timeout in a 4-player match eliminates the timed-out player (not the entire match) after 3 consecutive no-fires; the match continues with remaining players.
 
-**Plans:** TBD
+**Plans:** 3 plans
 
 Plans:
-- [ ] 16-01: Room schema migration — players[] array, maxPlayers, compatibility shim, join guard fix, getOpenRooms update
-- [ ] 16-02: N-player terrain and tank spawn — generateTankPositions(heightmap, N), eager HP init, terrainGenerated payload
-- [ ] 16-03: Fire handler and elimination — N-player tank loop, playerEliminated event, simultaneous-kill handling, matchEnd survivorOrder, gold awards
+- [ ] 16-01-PLAN.md — Room schema migration: players[] array, maxPlayers, getPlayerSlot helper, join guard, getOpenRooms, ready/shop/gold init, persistRoom, playAgainRequest
+- [ ] 16-02-PLAN.md — N-player terrain and tank spawn: generateTankPositions(heightmap, N), requestTerrain compat block replacement, terrainGenerated payload, rejoinSuccess positions
+- [ ] 16-03-PLAN.md — Fire handler and elimination: N-player tanks[], elimination loop, playerEliminated event, homing fix, timeout N-player, movement handlers, disconnect/reconnect, matchEnd survivorOrder
 
 ---
 

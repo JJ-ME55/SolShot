@@ -438,22 +438,43 @@ function seededRandom(seed) {
 }
 
 /**
- * Generate starting tank positions on the terrain
- * Mirrors client: host on left third, player on right third
+ * Generate starting tank positions on the terrain for N players.
+ *
+ * For N=2: preserves original left/right distribution for backward compatibility.
+ *   - Player 0 spawns in left zone  (20%-35% of width)
+ *   - Player 1 spawns in right zone (65%-80% of width)
+ *
+ * For N>2: divides the usable terrain [10%, 90%] into N equal zones and places
+ *   one tank per zone, randomly within the inner 60% of each zone.
  *
  * @param {number[]} heightmap
- * @param {number} width
- * @returns {{host: {x: number, y: number}, player: {x: number, y: number}}}
+ * @param {number} N - Number of players (default 2)
+ * @param {number} width - Terrain width in pixels (default TERRAIN_WIDTH)
+ * @returns {Array<{x: number, y: number}>} Array of N positions
  */
-export function generateTankPositions(heightmap, width = TERRAIN_WIDTH) {
-    // Host spawns in left third, player in right third
-    const hostX = Math.floor(width * 0.2 + (crypto.randomInt(1000) / 1000) * width * 0.15);
-    const playerX = Math.floor(width * 0.65 + (crypto.randomInt(1000) / 1000) * width * 0.15);
-
-    return {
-        host: { x: hostX, y: heightmap[hostX] - 15 },    // -15 for tank height offset
-        player: { x: playerX, y: heightmap[playerX] - 15 }
-    };
+export function generateTankPositions(heightmap, N = 2, width = TERRAIN_WIDTH) {
+    if (N === 2) {
+        // Preserve original 2-player behavior exactly for backward compat
+        const hostX = Math.floor(width * 0.2 + (crypto.randomInt(1000) / 1000) * width * 0.15);
+        const playerX = Math.floor(width * 0.65 + (crypto.randomInt(1000) / 1000) * width * 0.15);
+        return [
+            { x: hostX, y: heightmap[hostX] - 15 },
+            { x: playerX, y: heightmap[playerX] - 15 },
+        ];
+    }
+    // N > 2: divide [10%, 90%] into N equal zones
+    const usableStart = Math.floor(width * 0.1);
+    const usableWidth = Math.floor(width * 0.8);
+    const zoneWidth = Math.floor(usableWidth / N);
+    const positions = [];
+    for (let i = 0; i < N; i++) {
+        const zoneStart = usableStart + i * zoneWidth;
+        const innerStart = Math.floor(zoneStart + zoneWidth * 0.2);
+        const innerWidth = Math.floor(zoneWidth * 0.6);
+        const x = Math.min(width - 1, innerStart + Math.floor(crypto.randomInt(Math.max(1, innerWidth))));
+        positions.push({ x, y: heightmap[x] - 15 });
+    }
+    return positions;
 }
 
 // ============================================================

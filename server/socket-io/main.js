@@ -844,6 +844,7 @@ const mainsocket = (io) => {
                 pendingReconnects[walletAddress] = {
                     roomId,
                     isHost: client.isHost,
+                    playerIndex: room.players ? room.players.findIndex(p => p.socketId === client.id) : -1,
                     oldSocketId: client.id,
                     name: client.name,
                     color: client.color,
@@ -871,8 +872,10 @@ const mainsocket = (io) => {
                     const currentRoom = findRoom(roomId)
                     if (!currentRoom || !currentMs) return
 
-                    if (opponentId) {
-                        io.to(opponentId).emit('reconnectExpired', {})
+                    if (currentRoom && currentRoom.players) {
+                        currentRoom.players
+                            .filter(p => p.socketId !== client.id)
+                            .forEach(p => io.to(p.socketId).emit('reconnectExpired', {}))
                     }
 
                     // Perform forfeit settlement (reuse cleanupRoom logic)
@@ -998,6 +1001,12 @@ const mainsocket = (io) => {
                 if (ms.placementPoints && ms.placementPoints[oldSocketId] !== undefined) { ms.placementPoints[client.id] = ms.placementPoints[oldSocketId]; delete ms.placementPoints[oldSocketId] }
                 if (ms.damageDealtTotal && ms.damageDealtTotal[oldSocketId] !== undefined) { ms.damageDealtTotal[client.id] = ms.damageDealtTotal[oldSocketId]; delete ms.damageDealtTotal[oldSocketId] }
                 if (ms.consecutiveTimeouts && ms.consecutiveTimeouts[oldSocketId] !== undefined) { ms.consecutiveTimeouts[client.id] = ms.consecutiveTimeouts[oldSocketId]; delete ms.consecutiveTimeouts[oldSocketId] }
+                // Remap shopReady state on reconnect
+                const sr = shopReady[roomId]
+                if (sr && sr[oldSocketId] !== undefined) {
+                    sr[client.id] = sr[oldSocketId]
+                    delete sr[oldSocketId]
+                }
                 // Remap ms.players[] array entry
                 const msIdx = ms.players ? ms.players.indexOf(oldSocketId) : -1
                 if (msIdx !== -1) ms.players[msIdx] = client.id
@@ -1298,14 +1307,21 @@ const mainsocket = (io) => {
                 }
             }
 
+            // Validate maxPlayers: default 2, support 2/3/4
+            const maxPlayers = Number.isInteger(player.maxPlayers) && [2, 3, 4].includes(player.maxPlayers)
+                ? player.maxPlayers : 2;
+
+            // SYS-08: Block wager modes for 3-4 player rooms (escrow only supports 2-player)
+            if (wagerAmount > 0 && maxPlayers > 2) {
+                client.emit('createRoomError', { reason: 'Wager modes require 2 players. Use Practice mode for 3-4 player matches.' })
+                return
+            }
+
             const roomId = crypto.randomBytes(4).toString('hex')
             client.join(roomId)
             client.roomId = roomId
             client.isHost = true
             // H017: Sanitize player name
-            // Validate maxPlayers: default 2, support 2/3/4
-            const maxPlayers = Number.isInteger(player.maxPlayers) && [2, 3, 4].includes(player.maxPlayers)
-                ? player.maxPlayers : 2;
             const creatorSlot = { name: sanitizeName(player.name), color: player.color, socketId: client.id, isReady: false, playAgain: false, pos: null, isHost: true }
 
             const roomData = {

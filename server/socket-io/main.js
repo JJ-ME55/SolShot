@@ -358,6 +358,75 @@ function startTurnTimer(io, roomId) {
         // LP-08: 3-forfeit rule — end match if timed-out player hit 3 consecutive timeouts
         if (ms.consecutiveTimeouts[currentTurnId] >= 3) {
             clearTurnTimer(roomId)
+
+            // N-player: count alive players BEFORE elimination
+            const aliveCount = ms.alive ? Object.values(ms.alive).filter(Boolean).length : 2
+
+            if (aliveCount > 2) {
+                // N-player: eliminate timed-out player, keep match going
+                ms.alive[currentTurnId] = false
+                if (!ms.eliminationOrder) ms.eliminationOrder = []
+                ms.eliminationOrder.push(currentTurnId)
+                ms.consecutiveTimeouts[currentTurnId] = 0  // reset after elimination
+                io.sockets.in(roomId).emit('playerEliminated', {
+                    eliminatedId: currentTurnId,
+                    killedById: null,
+                    reason: 'timeout',
+                    survivingPlayers: ms.players.filter(id => ms.alive[id]),
+                })
+
+                // Check if round is now over after this elimination
+                if (isRoundOver(ms)) {
+                    const ranked = getRoundPlacement(ms)
+                    ms.currentRound++
+                    const matchResult = isMatchOver(ms)
+                    const gold = goldStates[roomId]
+                    if (gold) awardPlacementGold(gold, ranked)
+
+                    if (matchResult.isOver) {
+                        transitionState(ms, MATCH_STATES.SETTLING)
+                        transitionState(ms, MATCH_STATES.COMPLETE)
+                        io.sockets.in(roomId).emit('matchEnd', {
+                            winner: matchResult.winner,
+                            survivorOrder: ranked,
+                            forfeitReason: 'timeout elimination',
+                            scores: ms.scores || {},
+                            hp: ms.hp || {},
+                            goldBalance: goldStates[roomId] || {},
+                        })
+                        await removeRoom(roomId)
+                        broadcastRooms(io)
+                        io.socketsLeave(roomId)
+                    } else {
+                        transitionState(ms, MATCH_STATES.ROUND_END)
+                        resetForNextRound(ms)
+                        io.sockets.in(roomId).emit('roundEnd', {
+                            winner: ranked[0],
+                            scores: ms.scores,
+                            roundWins: ms.roundWins,
+                            placementPoints: ms.placementPoints,
+                            round: ms.currentRound,
+                            totalRounds: ms.maxRounds,
+                            goldBalance: goldStates[roomId] || {},
+                        })
+                    }
+                } else {
+                    // Round continues — advance to next player's turn
+                    ms.currentTurn = getNextTurn(ms)
+                    if (ms.moveCounts) ms.moveCounts[ms.currentTurn] = 0
+                    io.sockets.in(roomId).emit('turnTimeout', {
+                        timedOutPlayer: currentTurnId,
+                        nextTurn: ms.currentTurn,
+                        turnCount: ms.turnCount,
+                        consecutiveTimeouts: ms.consecutiveTimeouts[currentTurnId] || 0,
+                        eliminated: true,
+                    })
+                    startTurnTimer(io, roomId)
+                }
+                return
+            }
+
+            // <=2 alive: original forfeit-ends-match path
             const opponentId = currentTurnId === hostId ? playerId : hostId
 
             console.log(`[Forfeit] Player ${currentTurnId} timed out 3 consecutive turns — opponent ${opponentId} wins`)
@@ -635,15 +704,15 @@ const mainsocket = (io) => {
 
                         transitionState(currentMs, MATCH_STATES.SETTLING)
 
-                        const opponentId = client.isHost
-                            ? (room.player ? room.player.socketId : null)
-                            : (room.host ? room.host.socketId : null)
+                        const opponentId = room.players
+                            ? (room.players.find(p => p.socketId !== client.id)?.socketId || null)
+                            : null
                         const disconnectorWallet = ws.wallets[client.id]
                         const opponentWallet = opponentId ? ws.wallets[opponentId] : null
 
                         if (opponentWallet && disconnectorWallet) {
                             // SF-03: Capture room/ws snapshots before settlement
-                            const roomSnap = room ? { host: room.host, player: room.player, escrowPDA: room.escrowPDA } : null
+                            const roomSnap = room ? { players: room.players, escrowPDA: room.escrowPDA } : null
                             const wsSnap = ws ? { amount: ws.amount, wallets: { ...ws.wallets } } : null
 
                             // DCA-03: HP-based disconnect settlement
@@ -684,8 +753,8 @@ const mainsocket = (io) => {
                             }
 
                             if (shouldRefund) {
-                                const p1w = ws.wallets[room.host?.socketId]
-                                const p2w = ws.wallets[room.player?.socketId]
+                                const p1w = ws.wallets[room.players?.[0]?.socketId]
+                                const p2w = ws.wallets[room.players?.[1]?.socketId]
                                 if (p1w && p2w && isEscrowEnabled()) {
                                     try {
                                         await cancelMatchEscrow(roomId, p1w, p2w)
@@ -780,15 +849,17 @@ const mainsocket = (io) => {
                     color: client.color,
                 }
 
-                // Notify opponent of disconnect with countdown
-                const opponentId = client.isHost
-                    ? (room.player ? room.player.socketId : null)
-                    : (room.host ? room.host.socketId : null)
-                if (opponentId) {
-                    io.to(opponentId).emit('opponentDisconnected', {
-                        reconnectWindowMs: RECONNECT_WINDOW_MS,
+                // Notify all other players of disconnect with countdown
+                const opponentId = room.players
+                    ? (room.players.find(p => p.socketId !== client.id)?.socketId || null)
+                    : null
+                room.players
+                    ? room.players.filter(p => p.socketId !== client.id).forEach(p => {
+                        io.to(p.socketId).emit('opponentDisconnected', {
+                            reconnectWindowMs: RECONNECT_WINDOW_MS,
+                        })
                     })
-                }
+                    : (opponentId && io.to(opponentId).emit('opponentDisconnected', { reconnectWindowMs: RECONNECT_WINDOW_MS }))
 
                 // Deferred cleanup — runs after 30s if no reconnect
                 disconnectTimers[walletAddress] = setTimeout(async () => {
@@ -893,7 +964,11 @@ const mainsocket = (io) => {
             authenticatedWallets[client.id] = walletAddress
 
             // Update room references from old socketId to new
-            if (isHost && room.host) {
+            // N-player: find and remap the reconnecting player's slot in room.players[]
+            const rejoinSlot = room.players ? room.players.find(p => p.socketId === oldSocketId) : null
+            if (rejoinSlot) {
+                rejoinSlot.socketId = client.id
+
                 // Migrate wager wallet entry
                 const ws = wagerStates[roomId]
                 if (ws && ws.wallets[oldSocketId]) {
@@ -912,46 +987,32 @@ const mainsocket = (io) => {
                     wi[client.id] = wi[oldSocketId]
                     delete wi[oldSocketId]
                 }
-                // Migrate match state references
+                // Migrate match state references (per-player maps)
                 if (ms.scores[oldSocketId] !== undefined) { ms.scores[client.id] = ms.scores[oldSocketId]; delete ms.scores[oldSocketId] }
                 if (ms.kills[oldSocketId] !== undefined) { ms.kills[client.id] = ms.kills[oldSocketId]; delete ms.kills[oldSocketId] }
                 if (ms.roundWins[oldSocketId] !== undefined) { ms.roundWins[client.id] = ms.roundWins[oldSocketId]; delete ms.roundWins[oldSocketId] }
                 if (ms.hp[oldSocketId] !== undefined) { ms.hp[client.id] = ms.hp[oldSocketId]; delete ms.hp[oldSocketId] }
                 if (ms.currentTurn === oldSocketId) ms.currentTurn = client.id
-
-                room.host.socketId = client.id
-            } else if (room.player) {
-                const ws = wagerStates[roomId]
-                if (ws && ws.wallets[oldSocketId]) {
-                    ws.wallets[client.id] = ws.wallets[oldSocketId]
-                    delete ws.wallets[oldSocketId]
-                }
-                const gs = goldStates[roomId]
-                if (gs && gs[oldSocketId] !== undefined) {
-                    gs[client.id] = gs[oldSocketId]
-                    delete gs[oldSocketId]
-                }
-                const wi = weaponInventories[roomId]
-                if (wi && wi[oldSocketId]) {
-                    wi[client.id] = wi[oldSocketId]
-                    delete wi[oldSocketId]
-                }
-                if (ms.scores[oldSocketId] !== undefined) { ms.scores[client.id] = ms.scores[oldSocketId]; delete ms.scores[oldSocketId] }
-                if (ms.kills[oldSocketId] !== undefined) { ms.kills[client.id] = ms.kills[oldSocketId]; delete ms.kills[oldSocketId] }
-                if (ms.roundWins[oldSocketId] !== undefined) { ms.roundWins[client.id] = ms.roundWins[oldSocketId]; delete ms.roundWins[oldSocketId] }
-                if (ms.hp[oldSocketId] !== undefined) { ms.hp[client.id] = ms.hp[oldSocketId]; delete ms.hp[oldSocketId] }
-                if (ms.currentTurn === oldSocketId) ms.currentTurn = client.id
-
-                room.player.socketId = client.id
+                // Migrate N-player maps
+                if (ms.alive && ms.alive[oldSocketId] !== undefined) { ms.alive[client.id] = ms.alive[oldSocketId]; delete ms.alive[oldSocketId] }
+                if (ms.placementPoints && ms.placementPoints[oldSocketId] !== undefined) { ms.placementPoints[client.id] = ms.placementPoints[oldSocketId]; delete ms.placementPoints[oldSocketId] }
+                if (ms.damageDealtTotal && ms.damageDealtTotal[oldSocketId] !== undefined) { ms.damageDealtTotal[client.id] = ms.damageDealtTotal[oldSocketId]; delete ms.damageDealtTotal[oldSocketId] }
+                if (ms.consecutiveTimeouts && ms.consecutiveTimeouts[oldSocketId] !== undefined) { ms.consecutiveTimeouts[client.id] = ms.consecutiveTimeouts[oldSocketId]; delete ms.consecutiveTimeouts[oldSocketId] }
+                // Remap ms.players[] array entry
+                const msIdx = ms.players ? ms.players.indexOf(oldSocketId) : -1
+                if (msIdx !== -1) ms.players[msIdx] = client.id
             }
 
-            // Notify opponent that player reconnected
-            const opponentId = isHost
-                ? (room.player ? room.player.socketId : null)
-                : (room.host ? room.host.socketId : null)
-            if (opponentId) {
-                io.to(opponentId).emit('opponentReconnected', {})
+            // Notify all other players that this player reconnected
+            if (room.players) {
+                room.players.filter(p => p.socketId !== client.id).forEach(p => {
+                    io.to(p.socketId).emit('opponentReconnected', {})
+                })
             }
+            // For backward compat: keep opponentId for any downstream code
+            const opponentId = room.players
+                ? (room.players.find(p => p.socketId !== client.id)?.socketId || null)
+                : null
 
             // Send full state snapshot to the reconnected player
             client.emit('rejoinSuccess', {
@@ -2639,9 +2700,10 @@ const mainsocket = (io) => {
             if (!room) return
             // SA-04: Distance validation during battle — reject teleportation (DB: H034, H035)
             const ms = matchStates[client.roomId]
+            const playerSlot = getPlayerSlot(room, client.id)
+            if (!playerSlot) return
             if (ms && ms.status === MATCH_STATES.BATTLE) {
-                const isHost = room.host && room.host.socketId === client.id
-                const currentPos = isHost ? room.host.pos : (room.player ? room.player.pos : null)
+                const currentPos = playerSlot.pos
                 if (currentPos) {
                     const dx = Math.abs(clampedX - currentPos.x)
                     const dy = Math.abs(clampedY - currentPos.y)
@@ -2651,12 +2713,9 @@ const mainsocket = (io) => {
                     }
                 }
             }
-            if (room.host && room.host.socketId === client.id) {
-                room.host.pos.x = clampedX
-                room.host.pos.y = clampedY
-            } else if (room.player && room.player.socketId === client.id) {
-                room.player.pos.x = clampedX
-                room.player.pos.y = clampedY
+            if (playerSlot.pos) {
+                playerSlot.pos.x = clampedX
+                playerSlot.pos.y = clampedY
             }
         })
 
@@ -2683,13 +2742,12 @@ const mainsocket = (io) => {
             // Track movement server-side so fire handler uses correct position
             const room = findRoom(client.roomId)
             if (room) {
-                const isHost = room.host && room.host.socketId === client.id
-                const pos = isHost ? room.host.pos : (room.player ? room.player.pos : null)
-                if (pos && room.heightmap) {
-                    const newX = Math.max(0, Math.floor(pos.x - 80))
+                const stepLeftSlot = getPlayerSlot(room, client.id)
+                if (stepLeftSlot && stepLeftSlot.pos && room.heightmap) {
+                    const newX = Math.max(0, Math.floor(stepLeftSlot.pos.x - 80))
                     if (room.heightmap[newX] !== undefined) {
-                        pos.x = newX
-                        pos.y = room.heightmap[newX] - 15
+                        stepLeftSlot.pos.x = newX
+                        stepLeftSlot.pos.y = room.heightmap[newX] - 15
                     }
                 }
             }
@@ -2718,13 +2776,12 @@ const mainsocket = (io) => {
             // Track movement server-side so fire handler uses correct position
             const room = findRoom(client.roomId)
             if (room) {
-                const isHost = room.host && room.host.socketId === client.id
-                const pos = isHost ? room.host.pos : (room.player ? room.player.pos : null)
-                if (pos && room.heightmap) {
-                    const newX = Math.min(1199, Math.floor(pos.x + 80))
+                const stepRightSlot = getPlayerSlot(room, client.id)
+                if (stepRightSlot && stepRightSlot.pos && room.heightmap) {
+                    const newX = Math.min(1199, Math.floor(stepRightSlot.pos.x + 80))
                     if (room.heightmap[newX] !== undefined) {
-                        pos.x = newX
-                        pos.y = room.heightmap[newX] - 15
+                        stepRightSlot.pos.x = newX
+                        stepRightSlot.pos.y = room.heightmap[newX] - 15
                     }
                 }
             }

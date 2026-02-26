@@ -4,17 +4,17 @@
 
 See: .planning/PROJECT.md (updated 26 Feb 2026)
 **Core value:** Browser-based multiplayer artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** v1.3 — 4-Player Multiplayer, Phase 16: Room Schema and Battle Engine
+**Current focus:** v1.3 — 4-Player Multiplayer, Phase 17: Client N-Player UI
 
 ## Current Position
 
 Milestone: v1.3 — 4-Player Multiplayer
-Phase: 16 of 19 (Room Schema and Battle Engine)
-Plan: 2 of 3 in Phase 16
-Status: In progress
-Last activity: 26 Feb 2026 — Completed 16-02-PLAN.md (N-player terrain spawn)
+Phase: 16 of 19 (Room Schema and Battle Engine) — COMPLETE
+Plan: 3 of 3 in Phase 16
+Status: Phase complete
+Last activity: 26 Feb 2026 — Completed 16-03-PLAN.md (N-player battle engine)
 
-Progress: [████░░░░░░] ~18% (4/11 v1.3 plans)
+Progress: [█████░░░░░] ~27% (6/11 v1.3 plans)
 
 ## Performance Metrics
 
@@ -65,6 +65,15 @@ Progress: [████░░░░░░] ~18% (4/11 v1.3 plans)
 - 16-02: ms.tankPositions stores positions[] array (not {host,player} object)
 - 16-02: dual-payload pattern: all terrain emits send positions[] canonical + tankPositions shim
 - 16-02: turnResult also updated with dual payload (bonus fix for consistency)
+- 16-03: tanks[] in fire handler built from room.players[] filtered by ms.alive (N-player, living only)
+- 16-03: elimination loop iterates ms.players[] for deterministic simultaneous-kill order
+- 16-03: playerEliminated event emitted in fire handler AND timeout path
+- 16-03: turnResult includes players[], alive, currentPlayerIndex alongside backward-compat shims
+- 16-03: matchEnd includes survivorOrder[] from getRoundPlacement ranked array
+- 16-03: timeout >2 alive = player elimination + round-end path; <=2 alive = forfeit-ends-match
+- 16-03: rejoinRoom unified remap via room.players.find(oldSocketId) — all per-player maps remapped
+- 16-03: zero room.host/room.player (singular) references in main.js — migration complete
+- 16-03: homing weapon uses Math.hypot nearest-enemy targeting
 
 ### Pending Todos
 - Run 25-test suite when McAfee exclusion is configured
@@ -82,10 +91,13 @@ Progress: [████░░░░░░] ~18% (4/11 v1.3 plans)
 - Phase 15 COMPLETE: match.js N-player rewrite (15-01) + gold.js/main.js wiring (15-02) both done
 - Phase 16 Plan 01 COMPLETE: room schema migrated to players[] — room.active flag fixed (now only true when all slots filled)
 - Phase 16 Plan 02 COMPLETE: N-player generateTankPositions + requestTerrain/terrainGenerated/turnResult/rejoinSuccess payloads updated
-- Phase 16 remaining (16-03): fire handler isHost/serverPos/tanks-array, movement handlers (stepLeft/stepRight/positionUpdate), reconnect/disconnect handlers, startTurnTimer forfeit path still read room.host/room.player
+- Phase 16 COMPLETE (all 3 plans): room schema → terrain spawn → battle engine migration done
+- Server supports full 4-player match: terrain → spawn → fire → elimination → round-end → match-end
+- Client still reads 2-player shims — Phase 17 updates client to read players[] array
+- Escrow settlement still 2-player (hostId/playerId) — N-player escrow deferred to Phase 19
 
 ## Session Continuity
 
-Last session: 2026-02-26T13:33:25Z
-Stopped at: Completed 16-02-PLAN.md — N-player terrain spawn and payload updates
+Last session: 2026-02-26T13:42:38Z
+Stopped at: Completed 16-03-PLAN.md — N-player battle engine (Phase 16 complete)
 Resume file: None

@@ -54,3 +54,31 @@ All work 21-23 Feb 2026. Three security audits (SOS, DB, BOK) — all CRITICAL/H
 **What's next:** Deployment, QA sessions, mainnet readiness
 
 ### Last Phase Number: 14
+
+## v1.3 — 4-Player Multiplayer (SHIPPED 2026-02-27)
+
+**Delivered:** Full 2-4 player last-man-standing multiplayer with N-player server engine, Phaser tanks[] array, React HUD with HP strip and elimination overlay, and lobby UI with player count selector and waiting room.
+
+**Phases completed:** 15-19 (10 plans total)
+
+**Key accomplishments:**
+- Server match state machine rewritten for N-player: placement scoring, alive-map turn rotation, no-early-exit match determination
+- Room schema migrated from binary host/player to players[] array with maxPlayers field — zero legacy references remain
+- N-player battle engine: fire handler with elimination loop, homing nearest-enemy, simultaneous kills, timeout elimination
+- Client Phaser migrated to tanks[] array with spectator mode, wreckage effects, name labels, YOUR TURN flash
+- React HUD with N HP bars (PlayerHPBar component), elimination overlay with Leave Match, FINAL STANDINGS leaderboard
+- Lobby UI with player count selector (2/3/4), N-slot waiting room, color de-dup, room list badges
+
+**Stats:**
+- 15 files changed, 2,067 insertions(+), 682 deletions(-)
+- 17 feat commits across 5 phases
+- 5 phases, 10 plans
+- 2 days (26 Feb → 27 Feb 2026)
+
+**Git range:** `2dbdd37` → `d7fb5d7`
+
+**Audit:** 56/56 requirements satisfied, 8 tech debt items (no critical blockers). See milestones/v1.3-MILESTONE-AUDIT.md.
+
+**What's next:** N-player QA testing, tech debt fixes (SHOT milestones for players 3/4, playAgain maxPlayers), then deployment/mainnet readiness
+
+### Last Phase Number: 19

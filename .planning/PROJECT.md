@@ -8,20 +8,6 @@ Browser-based multiplayer artillery combat game (2-4 players) on Solana where pl
 
 Browser-based multiplayer artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
 
-## Current Milestone: v1.3 — 4-Player Multiplayer
-
-**Goal:** Refactor SolShot from 1v1 to 2-4 player last-man-standing while preserving all existing 2-player functionality.
-
-**Target features:**
-- Server room refactor: `host`/`player` → `players[]` array (2-4 slots)
-- N-player turn rotation with elimination (skip dead players)
-- N-player HP tracking, elimination events, last-man-standing win condition
-- Client Phaser: dynamic tank array, `myPlayerIndex` turn detection
-- React HUD: N HP bars with colour-coding, elimination state, turn indicator
-- Lobby: player count selector (2/3/4), N-player waiting room
-- All existing systems (gold, weapons, shop, wind, terrain) working for N players
-- Practice mode first — escrow N-player changes deferred
-
 ## Tech Stack
 - **Client:** React 18 + Phaser 3 (CRA with react-app-rewired), @solana/wallet-adapter
 - **Server:** Express + Socket.IO (ES modules), Mongoose/MongoDB
@@ -61,17 +47,20 @@ Browser-based multiplayer artillery combat on Solana with real SOL wagering, set
 - Client security (source maps disabled, CSP report-uri, console.log cleanup) — v1.2
 - Mobile polish (haptic feedback, Telegram share, dApp browser detection) — v1.2
 - 221-item checklist re-audit with scored summary (91/195, 47%) — v1.2
+- N-player server room: players[] array (2-4 slots), maxPlayers field, getPlayerSlot helper — v1.3
+- N-player match engine: turn rotation, elimination-skip, placement scoring (4th=0..1st=3) — v1.3
+- N-player battle: fire handler damages all N, playerEliminated events, homing nearest-enemy — v1.3
+- N-player terrain: generateTankPositions(heightmap, N) with zone distribution — v1.3
+- N-player gold: initGold(playerIds[]), awardPlacementGold with tiered 300/150/75/0G — v1.3
+- N-player systems: shop waits for all N done, reconnect preserves playerIndex, wager guard — v1.3
+- Client Phaser: tanks[] array, myPlayerIndex turn detection, elimination wreckage, spectator mode — v1.3
+- React HUD: N HP bars (PlayerHPBar), turn arrow, elimination overlay, Leave Match, FINAL STANDINGS — v1.3
+- Lobby UI: player count selector (2/3/4), N-slot waiting room, color de-dup, room badges — v1.3
+- 2-player backward compatibility preserved across all N-player changes — v1.3
 
 ### Active
 
-- [ ] 4-player multiplayer: server room object refactor (players[] array)
-- [ ] 4-player multiplayer: N-player match.js (turn rotation, elimination, isRoundOver)
-- [ ] 4-player multiplayer: main.js socket handlers for N players
-- [ ] 4-player multiplayer: client Phaser N-tank system
-- [ ] 4-player multiplayer: React HUD N HP bars + elimination state
-- [ ] 4-player multiplayer: lobby UI (player count selector, N-player waiting room)
-- [ ] 4-player multiplayer: gold/shop/weapon systems for N players
-- [ ] 4-player multiplayer: disconnect/reconnect for N players
+(No active requirements — next milestone not yet defined)
 
 ### Out of Scope
 
@@ -81,7 +70,6 @@ Browser-based multiplayer artillery combat on Solana with real SOL wagering, set
 - **Telegram bot activation** — human task (BotFather registration)
 - **Social media posting/community** — human tasks (X, Reddit, Discord)
 - **Demo video recording** — human task
-- **Hackathon submission form** — human task at matrix.playsolana.com
 - **Match replay system** — complex new feature, deferred to v1.4+
 - **N-player escrow** — requires lib.rs changes, separate milestone after game logic works
 - **Seeker/dApp Store** — distribution channel, deferred to after 4-player works
@@ -97,22 +85,25 @@ Browser-based multiplayer artillery combat on Solana with real SOL wagering, set
 - **v1.0 (pre-GSD):** Core game, escrow, SHOT token, prestige burns, art assets, deployment config
 - **v1.1 Security Hardening:** 8 phases, 25 plans. Three security audits (SOS, DB, BOK) all PASS.
 - **v1.2 Launch Readiness:** 6 phases, 15 plans. Jupiter integration, UI polish, stats pipeline, onboarding, security, checklist re-audit.
-- **v1.3 4-Player Multiplayer:** In progress. Refactor from 1v1 to 2-4 player last-man-standing.
+- **v1.3 4-Player Multiplayer:** 5 phases, 10 plans. Full N-player refactor (server + client), 56/56 requirements met.
 
 ### Master Checklist Audit (24 Feb 2026)
 
 Full audit of 280-item Master Quality & Launch Checklist revealed ~153 PASS / ~110 FAIL / ~95 PARTIAL.
 Many "failures" are design decisions (4 states, 24h timeout, PDA seeds), not bugs.
 
-### Hackathon
+### Known Tech Debt (from v1.3 audit)
 
-Jupiter & Jupiter Mobile track. Deadline: February 25, 2026.
+- SHOT milestone recording only covers players[0] and players[1] — players 3/4 miss rewards
+- playAgain resetForPlayAgain doesn't pass maxPlayers to createMatchState
+- bridge.onEliminated callback dead wire (no functional impact)
+- tank1/tank2 shims in GameBridge state (no active readers)
+- Color de-dup is client-only (cosmetic race condition)
 
 ## Constraints
 
 - **Security preservation:** Do NOT modify lib.rs, guards.js, or core auth handlers
 - **Backward compatibility:** 2-player (`maxPlayers: 2`) must work identically to current 1v1
-- **Practice mode first:** Game logic before escrow changes
 - **Server-authoritative:** All HP, positions, turn state live on server
 - **Tank colours:** red #E63946, blue #4A90D9, green #52B788, yellow #FFD166
 - **Devnet only:** All blockchain features on devnet until mainnet deploy
@@ -121,24 +112,29 @@ Jupiter & Jupiter Mobile track. Deadline: February 25, 2026.
 
 ## Current State
 
-v1.3 started. Refactoring from 1v1 to 2-4 player last-man-standing. Practice mode first, escrow changes deferred. Brief at `SOLSHOT_SEEKER_AND_4PLAYER_BRIEF.md` Part 2.
+v1.3 shipped. Full 2-4 player multiplayer working in practice mode. 15 source files changed, 2067 insertions, 682 deletions across 5 phases and 10 plans. N-player escrow deferred (requires lib.rs changes). 8 tech debt items tracked, none critical.
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
 | Server-authoritative physics | Prevent cheating | ✓ Good |
-| 4-state escrow (not 8) | Simpler, covers all cases | ✓ Good — update checklist |
-| 24h timeout (not 30-60min) | Generous for network issues | ✓ Good — update checklist |
-| PDA from match_id (not pubkeys) | Simpler derivation | ✓ Good — update checklist |
-| 2min deposit (not 3min) | Faster match start | ✓ Good — update checklist |
-| Self-hosted Telegram SDK | CDN updates in-place, breaks SRI | ✓ Good — update checklist |
-| Do NOT touch lib.rs in v1.2 | Preserves 3 audit certifications | ✓ Good — held |
+| 4-state escrow (not 8) | Simpler, covers all cases | ✓ Good |
+| 24h timeout (not 30-60min) | Generous for network issues | ✓ Good |
+| PDA from match_id (not pubkeys) | Simpler derivation | ✓ Good |
+| 2min deposit (not 3min) | Faster match start | ✓ Good |
+| Self-hosted Telegram SDK | CDN updates in-place, breaks SRI | ✓ Good |
+| Do NOT touch lib.rs | Preserves 3 audit certifications | ✓ Good — held across v1.1-v1.3 |
 | Jupiter Terminal for in-game swaps | Hackathon requirement + revenue | ✓ Good — 0.5% fee |
 | Practice mode as default tab | Onboarding-first approach | ✓ Good |
-| CHK-02 security re-check skipped | Major changes upcoming | — Deferred |
-| 4-player practice first, escrow later | Escrow needs lib.rs changes (audit risk) | — Pending |
-| players[] array (not host/player) | Scales to N, single code path | — Pending |
+| 4-player practice first, escrow later | Escrow needs lib.rs changes (audit risk) | ✓ Good — shipped v1.3 cleanly |
+| players[] array (not host/player) | Scales to N, single code path | ✓ Good — zero legacy refs remain |
+| Placement scoring (4th=0..1st=3) | Fair N-player scoring for BO3/BO5 | ✓ Good |
+| No early exit in isMatchOver | All rounds always played for fairness | ✓ Good |
+| Wager guard for 3-4 players | Practice-only until escrow supports N | ✓ Good — clear error message |
+| Dual-payload pattern (positions[] + tankPositions) | Backward compat during migration | ✓ Good — clean transition |
+| Quick Match hardcoded to 2-player | 3-4p uses Custom Challenge | ✓ Good — simplifies matchmaking |
+| Timeout >2 alive = elimination, <=2 = forfeit | Different behavior appropriate for each | ✓ Good |
 
 ---
-*Last updated: 26 Feb 2026 after v1.3 milestone started*
+*Last updated: 27 Feb 2026 after v1.3 milestone*

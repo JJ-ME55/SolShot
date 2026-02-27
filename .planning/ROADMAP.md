@@ -52,157 +52,33 @@ Jupiter ecosystem integration, polished UI, stats pipeline, mobile, security, ch
 
 </details>
 
----
+<details>
+<summary>✅ v1.3 4-Player Multiplayer (Phases 15-19) - SHIPPED 27 Feb 2026</summary>
 
-## 🚧 v1.3 4-Player Multiplayer (Phases 15-19)
+Refactor from 1v1 to 2-4 player last-man-standing. Practice mode first; N-player escrow deferred.
 
-**Milestone Goal:** Refactor SolShot from 1v1 to 2-4 player last-man-standing while preserving all existing 2-player functionality. Practice mode ships first; N-player escrow is deferred.
+- Phase 15: Server Core Services (2 plans)
+- Phase 16: Room Schema and Battle Engine (3 plans)
+- Phase 17: Server Systems (1 plan)
+- Phase 18: Client Phaser and GameBridge (2 plans)
+- Phase 19: React HUD and Lobby UI (2 plans)
 
-- [x] **Phase 15: Server Core Services** — match.js, gold.js, and placement scoring rewritten for N players
-- [x] **Phase 16: Room Schema and Battle Engine** — players[] room model, N-player fire handler, terrain spawn
-- [x] **Phase 17: Server Systems** — 5 surgical N-player fixes: wager guard, reconnect broadcast, playerIndex, shopReady remap, debug log
-- [x] **Phase 18: Client Phaser and GameBridge** — tanks[] array, elimination handler, bridge state shape
-- [x] **Phase 19: React HUD and Lobby UI** — N HP bars, player count selector, N-slot waiting room
+See: milestones/v1.3-ROADMAP.md for full details.
 
----
-
-### Phase 15: Server Core Services
-
-**Goal:** The server's isolated match state functions correctly model N-player turn rotation, elimination-aware round detection, and placement-based scoring so that all downstream handlers build on a correct foundation.
-
-**Depends on:** Nothing (all functions are isolated services with no external dependencies)
-
-**Requirements:** CORE-01, CORE-02, CORE-03, CORE-04, CORE-05, CORE-06, CORE-07, CORE-08, SCORE-01, SCORE-02, SCORE-03, SCORE-04, SCORE-05, SCORE-06
-
-**Success Criteria** (what must be TRUE):
-1. A 4-player match state initializes with HP, scores, kills, and roundWins for all 4 socket IDs, `currentPlayerIndex: 0`, and `turnsPerRound: 40` (N * 10).
-2. `getNextTurn()` cycles through all alive players in order — eliminated players are permanently skipped, and 2-player mode produces identical output to the original toggle.
-3. `isRoundOver()` returns false when 2 of 4 players remain alive, and returns true only when 1 or fewer players are alive (or turns are exhausted).
-4. `isMatchOver()` correctly identifies the leader using placement point totals (4th=0, 3rd=1, 2nd=2, 1st=3 per round) and resolves ties by total damage dealt.
-5. `resetForNextRound()` restores all N players to 250 HP and alive status — including players who were never hit in the prior round.
-
-**Plans:** 2 plans
-
-Plans:
-- [x] 15-01-PLAN.md — Rewrite match.js: createMatchState, getNextTurn, isRoundOver, getRoundPlacement, isMatchOver, resetForNextRound for N players
-- [x] 15-02-PLAN.md — Rewrite gold.js initGold + awardPlacementGold, update all main.js call sites for new signatures
-
----
-
-### Phase 16: Room Schema and Battle Engine
-
-**Goal:** The server room uses a `players[]` array instead of `host`/`player`, the join guard allows up to `maxPlayers` connections, and the fire handler correctly applies damage to all N players, emits `playerEliminated`, and produces an N-player `turnResult` payload.
-
-**Depends on:** Phase 15 (new match.js function signatures drive every call site)
-
-**Requirements:** CORE-01, CORE-02, BATTLE-01, BATTLE-02, BATTLE-03, BATTLE-04, BATTLE-05, BATTLE-06, BATTLE-07, BATTLE-08, BATTLE-09, BATTLE-10, SYS-01, SYS-02, SYS-03
-
-**Note:** CORE-01 and CORE-02 (players[] array and maxPlayers field) are foundational to both Phase 15 logic and Phase 16 schema — they are implemented here as the schema migration, with Phase 15 establishing the functions that operate on that schema.
-
-**Success Criteria** (what must be TRUE):
-1. A room created with `maxPlayers: 4` accepts four separate socket connections before locking, shows "2/4" in `getOpenRooms()` when half-filled, and blocks a fifth join attempt.
-2. When Player 2 of 4 is eliminated mid-round, the fire handler emits `playerEliminated` before `turnResult`, Player 2's turn is never given again, and the remaining three players continue taking turns.
-3. A Crazy Ivan or Hail Storm shot that kills two players simultaneously credits both eliminations and correctly transitions to the last-man-standing round-end state.
-4. Homing weapons (Heatseeker) track to the nearest living enemy in a 4-player match — not always to the original second player.
-5. The `turnResult` payload contains `players[]` with all N positions and alive states, plus `currentPlayerIndex`, compatible with both 2-player and 4-player clients.
-6. A turn timeout in a 4-player match eliminates the timed-out player (not the entire match) after 3 consecutive no-fires; the match continues with remaining players.
-
-**Plans:** 3 plans
-
-Plans:
-- [x] 16-01-PLAN.md — Room schema migration: players[] array, maxPlayers, getPlayerSlot helper, join guard, getOpenRooms, ready/shop/gold init, persistRoom, playAgainRequest
-- [x] 16-02-PLAN.md — N-player terrain and tank spawn: generateTankPositions(heightmap, N), requestTerrain compat block replacement, terrainGenerated payload, rejoinSuccess positions
-- [x] 16-03-PLAN.md — Fire handler and elimination: N-player tanks[], elimination loop, playerEliminated event, homing fix, timeout N-player, movement handlers, disconnect/reconnect, matchEnd survivorOrder
-
----
-
-### Phase 17: Server Systems
-
-**Goal:** Every server system that touches player-specific state — shop, disconnect, reconnect, turn timer forfeit, playAgain, and wager validation — correctly handles 2 to 4 players.
-
-**Depends on:** Phase 16 (requires stable players[] room shape and N-player socket event contract)
-
-**Requirements:** SYS-04, SYS-05, SYS-06, SYS-07, SYS-08, SYS-09, SYS-10
-
-**Note:** Phase 16 already migrated the major systems (shop init, shopDone, endShopPhase, playAgainRequest, reconnect remap, getOpenRooms, movement handlers) to N-player. Phase 17 closes the 5 remaining surgical gaps identified by research.
-
-**Success Criteria** (what must be TRUE):
-1. In a 4-player match, the shop phase waits until all 4 players click "Done" before ending — a single player finishing early does not advance the phase.
-2. A Player 3 who disconnects and reconnects within 30 seconds rejoins with their correct gold, weapons, HP, and turn position preserved — no state is orphaned under the old socket ID.
-3. A 3-player match where one player disconnects permanently eliminates that player on reconnect window expiry and the remaining 2 players finish the match normally.
-4. Attempting to create a wager room with `maxPlayers: 3` or `maxPlayers: 4` returns a clear server-side error; the match falls back to practice mode.
-5. A rematch request in a 4-player match only starts if all surviving players agree; a single refusal returns all players to lobby.
-
-**Plans:** 1 plan
-
-Plans:
-- [x] 17-01-PLAN.md — 5 surgical N-player fixes: wager guard (SYS-08), reconnectExpired broadcast, pendingReconnects playerIndex, shopReady reconnect remap, between-round debug log
-
----
-
-### Phase 18: Client Phaser and GameBridge
-
-**Goal:** The Phaser scene renders N colored tanks, handles elimination animations, syncs all tank positions from `turnResult.players[]`, and the GameBridge state shape exposes `players[]`, `myPlayerIndex`, and `currentPlayerIndex` to React.
-
-**Depends on:** Phase 17 (server must emit verified N-player payloads before client is updated to consume them)
-
-**Requirements:** PHASER-01, PHASER-02, PHASER-03, PHASER-04, PHASER-05, PHASER-06, PHASER-07, BRIDGE-01, BRIDGE-02, BRIDGE-03, BRIDGE-04
-
-**Success Criteria** (what must be TRUE):
-1. Opening a 4-player practice match renders 4 distinctly colored tanks (red, blue, green, yellow) positioned across the terrain without overlap.
-2. When a player is eliminated, their tank plays a destruction animation and becomes permanently inactive — other tanks continue moving and firing normally.
-3. After elimination, the local player's view remains active (camera stays, controls disabled) and they can watch the remaining combat as a spectator.
-4. Turn detection correctly enables controls only for the local player when `myPlayerIndex === currentPlayerIndex` and disables them for all other indices.
-5. GameBridge `players[]` array updates after every `turnResult`, with each player's position, HP, alive status, name, and color — React HUD reads this array without additional socket access.
-
-**Plans:** 2 plans
-
-Plans:
-- [x] 18-01-PLAN.md — N-player core migration: MainScene tanks[] array, Tank.js/Turret.js 2-player cleanup, ShopScreen players[] pass, GameBridge state shape
-- [x] 18-02-PLAN.md — Elimination visuals and spectator mode: playerEliminated handler, wreckage + kill text, spectator camera, name labels, YOUR TURN flash
-
----
-
-### Phase 19: React HUD and Lobby UI
-
-**Goal:** Players can create rooms with 2/3/4 player slots, see all joined players with ready status in the waiting room, choose a color without duplicates, and during battle see N color-coded HP bars with live turn indicator and eliminated state.
-
-**Depends on:** Phase 18 (HUD reads from GameBridge; lobby UI stability requires Phase 17 server socket events)
-
-**Requirements:** HUD-01, HUD-02, HUD-03, HUD-04, HUD-05, LOBBY-01, LOBBY-02, LOBBY-03, LOBBY-04, LOBBY-05, LOBBY-06
-
-**Success Criteria** (what must be TRUE):
-1. The battle HUD displays N HP bars in a horizontal strip — each bar is color-coded with the player's chosen color, shows their name, and the active player's bar is visually highlighted.
-2. When a player is eliminated, their HP bar immediately shows a greyed or crossed-out state that persists for the rest of the match.
-3. Room creation offers a "Number of players" selector (2, 3, or 4); the room list shows "currentPlayers/maxPlayers" for each open room.
-4. The waiting room displays all N player slots: filled slots show the player's name and color, empty slots show "Waiting...", and the host cannot start until all slots are filled and all players are ready.
-5. The color picker prevents two players from selecting the same color — selecting a color already taken by another player is disabled or triggers automatic reassignment.
-6. Quick Match matchmaking only proposes rooms matching the selected player count.
-
-**Plans:** 2 plans
-
-Plans:
-- [x] 19-01-PLAN.md — BattleHUD N-player HP strip, PlayerHPBar component, elimination overlay + Leave Match, GameBridge placement fix, Win/Lose placement leaderboards
-- [x] 19-02-PLAN.md — Server startPick guard + roomUpdate event, player count selector, N-slot waiting room, color de-dup, room list player count badges
+</details>
 
 ---
 
 ## Progress
-
-**Execution Order:** 15 → 16 → 17 → 18 → 19
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 1-4. Pre-GSD Work | v1.0 | — | Complete | 18 Feb 2026 |
 | 1-8. Security Hardening | v1.1 | 25/25 | Complete | 23 Feb 2026 |
 | 9-14. Launch Readiness | v1.2 | 15/15 | Complete | 25 Feb 2026 |
-| 15. Server Core Services | v1.3 | 2/2 | Complete | 26 Feb 2026 |
-| 16. Room Schema and Battle Engine | v1.3 | 3/3 | Complete | 26 Feb 2026 |
-| 17. Server Systems | v1.3 | 1/1 | Complete | 26 Feb 2026 |
-| 18. Client Phaser and GameBridge | v1.3 | 2/2 | Complete | 26 Feb 2026 |
-| 19. React HUD and Lobby UI | v1.3 | 2/2 | Complete | 27 Feb 2026 |
+| 15-19. 4-Player Multiplayer | v1.3 | 10/10 | Complete | 27 Feb 2026 |
 
 ---
 
 *Roadmap created: 26 Feb 2026*
-*v1.3 phases start at 15 (continues from v1.2 phase 14)*
+*v1.3 archived: 27 Feb 2026*

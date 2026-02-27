@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 26 Feb 2026)
 
 Milestone: v1.3 — 4-Player Multiplayer
 Phase: 19 of 19 (React HUD and Lobby UI) — In progress
-Plan: 1 of 2 in Phase 19 — COMPLETE
-Status: In progress — Phase 19 Plan 01 done
-Last activity: 27 Feb 2026 — Completed 19-01-PLAN.md (N-player HP strip, PlayerHPBar, BattleHUD refactor, Leave Match, Win/Lose leaderboards)
+Plan: 2 of N in Phase 19 — COMPLETE
+Status: In progress
+Last activity: 27 Feb 2026 — Completed 19-02-PLAN.md (N-player waiting room, startPick guard, player count selector, room list badges)
 
-Progress: [█████████░] ~90% (9/10 v1.3 plans)
+Progress: [█████████░] ~90% (10/11 v1.3 plans)
 
 ## Performance Metrics
 
@@ -98,6 +98,10 @@ Progress: [█████████░] ~90% (9/10 v1.3 plans)
 - 19-01: players[myPlayerIndex]?.angle used directly for AngleControl/PowerControl (no isPlayerTurn ternary)
 - 19-01: survivorOrder.length > 2 guard — 2-player win/lose screens unchanged (no leaderboard)
 - 19-01: leftMatchRef is useRef not useState — avoids re-render on mutation, correct for race guard pattern
+- 19-02: startPick guarded at joinRoom end — fires only when room.players.length === room.maxPlayers
+- 19-02: cleanupRoom2 pattern — waiting room disconnect removes player + emits roomUpdate; skips removeRoom when room.active=false and players.length > 1
+- 19-02: host promotion on waiting room disconnect — players[0].isHost = true if no current host after removal
+- 19-02: claimedColors compared by phaserHex (integer) not hex string — matches TANK_COLORS.phaserHex field
 
 ### Pending Todos
 - Run 25-test suite when McAfee exclusion is configured
@@ -122,11 +126,11 @@ Progress: [█████████░] ~90% (9/10 v1.3 plans)
 - Phase 18 COMPLETE (2 plans): N-player Phaser migration + elimination visuals/spectator/name labels done
 - Client has backward-compat tank1/tank2 shims in GameBridge.state/reset() — low-priority cleanup (no active readers)
 - Phase 19 Plan 01 COMPLETE: N-player HP strip, PlayerHPBar, elimination overlay, Leave Match, Win/Lose leaderboards
-- Phase 19 Plan 02 needed: Lobby UI (match mode tabs, player count selector, room management)
+- Phase 19 Plan 02 COMPLETE: startPick guard, roomUpdate event, player count selector, N-slot waiting room, color de-dup, room list badges
 - Escrow settlement still 2-player (hostId/playerId) — N-player escrow deferred to v2
 
 ## Session Continuity
 
-Last session: 2026-02-27T17:39:12Z
-Stopped at: Completed 19-01-PLAN.md — N-player HP strip, PlayerHPBar, BattleHUD refactor, Leave Match, Win/Lose leaderboards
+Last session: 2026-02-27T00:30:00Z
+Stopped at: Completed 19-02-PLAN.md — startPick guard, roomUpdate event, N-player waiting room, player count selector, color de-dup, room list badges
 Resume file: None

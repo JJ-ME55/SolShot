@@ -10,9 +10,10 @@
     {
       "name": "cancel_match",
       "docs": [
-        "Cancel match — refund both players (OC-04, OC-05, OC-07, OC-09, OC-10).",
+        "Cancel match — refund deposited players via remaining_accounts (OC-04, OC-05, OC-07, OC-09, OC-10, ESC-08).",
         "Authority can only cancel AwaitingDeposits state.",
-        "Players can cancel AwaitingDeposits, or any state after 24h timeout from activation."
+        "Players can cancel AwaitingDeposits, or any state after timeout from activation.",
+        "Caller must pass deposited player accounts in player-index order via remaining_accounts."
       ],
       "discriminator": [
         142,
@@ -54,14 +55,6 @@
           "signer": true
         },
         {
-          "name": "player_one",
-          "writable": true
-        },
-        {
-          "name": "player_two",
-          "writable": true
-        },
-        {
           "name": "config",
           "docs": [
             "Config PDA — provides authority pubkey + pause guard (OC-04, OC-05)"
@@ -92,9 +85,10 @@
     {
       "name": "create_match",
       "docs": [
-        "Create a new match escrow (OC-04, OC-06, OC-08, OC-12).",
+        "Create a new match escrow (OC-04, OC-06, OC-08, OC-12, ESC-03).",
         "Called by the server authority when a room is created with a wager.",
-        "Seeds: [\"match\", match_id.as_bytes()]"
+        "Seeds: [\"match\", match_id.as_bytes()]",
+        "Accepts 2-4 players via Vec<Pubkey>. Validates distinctness and authority exclusion."
       ],
       "discriminator": [
         107,
@@ -132,12 +126,15 @@
         {
           "name": "authority",
           "writable": true,
-          "signer": true
+          "signer": true,
+          "relations": [
+            "config"
+          ]
         },
         {
           "name": "config",
           "docs": [
-            "Config PDA — provides pause guard (OC-04)"
+            "Config PDA — provides pause guard + authority gate (OC-04, S004)"
           ],
           "pda": {
             "seeds": [
@@ -170,20 +167,19 @@
           "type": "u64"
         },
         {
-          "name": "player_one",
-          "type": "pubkey"
-        },
-        {
-          "name": "player_two",
-          "type": "pubkey"
+          "name": "players",
+          "type": {
+            "vec": "pubkey"
+          }
         }
       ]
     },
     {
       "name": "deposit_wager",
       "docs": [
-        "Deposit wager into escrow (OC-04, OC-07, OC-09).",
-        "Each player calls this once. Match transitions to Active when both deposit."
+        "Deposit wager into escrow (OC-04, OC-07, OC-09, ESC-04, ESC-05).",
+        "Each player calls this once. Bitmap tracks per-player deposits.",
+        "Match transitions to Active when all players have deposited."
       ],
       "discriminator": [
         234,
@@ -363,9 +359,10 @@
     {
       "name": "permissionless_reclaim",
       "docs": [
-        "DCA-02: Permissionless reclaim — anyone can trigger refund after 48 hours",
+        "DCA-02: Permissionless reclaim — anyone can trigger refund after 2x timeout (ESC-09).",
         "Separate from cancel_match (which requires authority or player).",
-        "The caller receives PDA rent lamports as economic incentive."
+        "The caller receives PDA rent lamports as economic incentive.",
+        "Caller must pass deposited player accounts in player-index order via remaining_accounts."
       ],
       "discriminator": [
         106,
@@ -407,14 +404,6 @@
           "signer": true
         },
         {
-          "name": "player_one",
-          "writable": true
-        },
-        {
-          "name": "player_two",
-          "writable": true
-        },
-        {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
         }
@@ -424,8 +413,9 @@
     {
       "name": "settle_match",
       "docs": [
-        "Settle match — distribute pot to winner, treasury, ops (OC-02, OC-03, OC-04, OC-07, OC-09, OC-10, OC-11).",
+        "Settle match — distribute pot to winner, treasury, ops (OC-02, OC-03, OC-04, OC-07, OC-09, OC-10, OC-11, ESC-06, ESC-07).",
         "Only callable by the server authority.",
+        "Pot = wager_lamports * num_deposited (N-player, not hardcoded * 2).",
         "Winner, treasury, and ops are validated via Anchor constraints in the account struct."
       ],
       "discriminator": [
@@ -474,7 +464,7 @@
         {
           "name": "winner",
           "docs": [
-            "Winner: must be one of the registered players (OC-02 — resolves H008, H002, S001)"
+            "Winner: must be one of the N registered players (OC-02, ESC-07 — resolves H008, H002, S001)"
           ],
           "writable": true
         },
@@ -524,6 +514,80 @@
           "type": "pubkey"
         }
       ]
+    },
+    {
+      "name": "start_with_depositors",
+      "docs": [
+        "Start match with only the players who have deposited (ESC-11).",
+        "Authority calls this when deposit timeout fires and some (but not all) players deposited.",
+        "Reduces max_players to num_deposited (min 2), compacts players array, activates the match.",
+        "Non-depositors are effectively kicked — their slots become invalid."
+      ],
+      "discriminator": [
+        111,
+        103,
+        17,
+        116,
+        142,
+        163,
+        63,
+        72
+      ],
+      "accounts": [
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  116,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "escrow.match_id",
+                "account": "MatchEscrow"
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "escrow",
+            "config"
+          ]
+        },
+        {
+          "name": "config",
+          "docs": [
+            "Config PDA — provides authority validation + pause guard"
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
     },
     {
       "name": "unpause_program",
@@ -576,6 +640,8 @@
       "docs": [
         "Update config fields. All parameters are optional (pass None to keep current value).",
         "Requires current authority as signer (has_one enforced in account struct).",
+        "Re-validates distinctness after all updates (SOS: H003 — prevents settlement DoS).",
+        "Zero-address guard on authority (SOS: B1 — prevents accidental governance burn).",
         "NOTE: v1.2 — separate multisig for update_config vs pause_program"
       ],
       "discriminator": [
@@ -667,6 +733,19 @@
     }
   ],
   "events": [
+    {
+      "name": "ConfigUpdated",
+      "discriminator": [
+        40,
+        241,
+        230,
+        122,
+        11,
+        19,
+        198,
+        194
+      ]
+    },
     {
       "name": "MatchActive",
       "discriminator": [
@@ -767,7 +846,7 @@
     {
       "code": 6006,
       "name": "InvalidWinner",
-      "msg": "Winner must be player one or player two"
+      "msg": "Winner must be a registered player"
     },
     {
       "code": 6007,
@@ -833,9 +912,47 @@
       "code": 6019,
       "name": "TooEarlyToReclaim",
       "msg": "Cannot reclaim before 2x timeout has elapsed"
+    },
+    {
+      "code": 6020,
+      "name": "TooFewPlayers",
+      "msg": "Match requires at least 2 players"
+    },
+    {
+      "code": 6021,
+      "name": "TooManyPlayers",
+      "msg": "Match supports at most 4 players"
+    },
+    {
+      "code": 6022,
+      "name": "MatchAlreadyStarted",
+      "msg": "Match has already started"
     }
   ],
   "types": [
+    {
+      "name": "ConfigUpdated",
+      "docs": [
+        "B1-mini: Audit trail for config changes"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "treasury",
+            "type": "pubkey"
+          },
+          {
+            "name": "ops",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
     {
       "name": "GlobalConfig",
       "docs": [
@@ -910,12 +1027,14 @@
             "type": "string"
           },
           {
-            "name": "refunded_one",
-            "type": "bool"
+            "name": "players",
+            "type": {
+              "vec": "pubkey"
+            }
           },
           {
-            "name": "refunded_two",
-            "type": "bool"
+            "name": "deposits_mask",
+            "type": "u8"
           }
         ]
       }
@@ -930,12 +1049,14 @@
             "type": "string"
           },
           {
-            "name": "player_one",
-            "type": "pubkey"
+            "name": "players",
+            "type": {
+              "vec": "pubkey"
+            }
           },
           {
-            "name": "player_two",
-            "type": "pubkey"
+            "name": "max_players",
+            "type": "u8"
           },
           {
             "name": "wager_lamports",
@@ -947,7 +1068,7 @@
     {
       "name": "MatchEscrow",
       "docs": [
-        "Per-match escrow account (OC-07 adds activated_at field)"
+        "Per-match escrow account — supports 2-4 players (v1.4 N-player upgrade)"
       ],
       "type": {
         "kind": "struct",
@@ -967,18 +1088,23 @@
             "type": "pubkey"
           },
           {
-            "name": "player_one",
+            "name": "players",
             "docs": [
-              "Player 1 wallet"
+              "Player wallets — fixed [Pubkey; 4], zero-padded for < 4 players"
             ],
-            "type": "pubkey"
+            "type": {
+              "array": [
+                "pubkey",
+                4
+              ]
+            }
           },
           {
-            "name": "player_two",
+            "name": "max_players",
             "docs": [
-              "Player 2 wallet"
+              "Number of active players (2-4). Slots players[max_players..4] are Pubkey::default()"
             ],
-            "type": "pubkey"
+            "type": "u8"
           },
           {
             "name": "wager_lamports",
@@ -988,18 +1114,11 @@
             "type": "u64"
           },
           {
-            "name": "player_one_deposited",
+            "name": "deposits_mask",
             "docs": [
-              "Whether player 1 has deposited"
+              "Bitmap: bit N set = player N has deposited"
             ],
-            "type": "bool"
-          },
-          {
-            "name": "player_two_deposited",
-            "docs": [
-              "Whether player 2 has deposited"
-            ],
-            "type": "bool"
+            "type": "u8"
           },
           {
             "name": "state",
@@ -1022,8 +1141,8 @@
           {
             "name": "activated_at",
             "docs": [
-              "Unix timestamp when match became Active (OC-07 settlement + timeout reference)",
-              "Set to 0 at creation; updated when both players deposit."
+              "Unix timestamp when match became Active (settlement + timeout reference)",
+              "Set to 0 at creation; updated when all players deposit."
             ],
             "type": "i64"
           },

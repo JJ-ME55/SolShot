@@ -118,37 +118,57 @@ fn fee_inv_7_escrow_drain_completeness_stub() {
 
 #[test]
 fn fee_inv_8_cancel_refund_conservation_stub() {
-    // STUB: This test validates the refund arithmetic.
+    // STUB: This test validates the refund arithmetic for N-player cancel/reclaim.
     // Full LiteSVM integration tests both cancel_match and permissionless_reclaim.
     //
-    // Test plan for each (wager, p1_deposited, p2_deposited):
+    // Test plan for each (wager, deposits_mask, max_players):
     //   1. Deploy program, initialize config
-    //   2. create_match with wager
-    //   3. Deposit per p1/p2 flags
+    //   2. create_match with wager and max_players registered
+    //   3. Deposit per deposits_mask bits
     //   4. Record all player balances
-    //   5. Call cancel_match (or permissionless_reclaim)
+    //   5. Call cancel_match (or permissionless_reclaim) with deposited player accounts
+    //      as remaining_accounts in player-index order
     //   6. Assert: each deposited player received exactly wager_lamports
     //   7. Assert: non-deposited players received nothing
+    //   8. Assert: total_refund == num_deposited * wager_lamports
 
-    let test_cases: Vec<(u64, bool, bool)> = vec![
-        (MIN_WAGER_LAMPORTS, true, true),   // both deposited
-        (MIN_WAGER_LAMPORTS, true, false),  // only p1
-        (MAX_WAGER_LAMPORTS, true, true),   // max wager, both
-        (50_000, false, true),              // only p2
+    // (wager, deposits_mask, max_players)
+    let test_cases: Vec<(u64, u8, usize)> = vec![
+        (MIN_WAGER_LAMPORTS, 0b11, 2),   // 2p, both deposited
+        (MIN_WAGER_LAMPORTS, 0b01, 2),   // 2p, only p0
+        (MAX_WAGER_LAMPORTS, 0b11, 2),   // 2p max, both
+        (50_000, 0b1111, 4),             // 4p, all deposited
+        (50_000, 0b0101, 4),             // 4p, p0 and p2 deposited
+        (50_000, 0b1110, 4),             // 4p, p1/p2/p3 deposited
+        (50_000, 0b11, 3),               // 3p, p0 and p1 deposited
     ];
 
-    for (wager, p1, p2) in &test_cases {
-        let total_deposited = (*p1 as u64 + *p2 as u64) * wager;
-        let p1_refund = if *p1 { *wager } else { 0 };
-        let p2_refund = if *p2 { *wager } else { 0 };
+    for (wager, deposits_mask, max_players) in &test_cases {
+        let num_deposited = deposits_mask.count_ones() as u64;
+        let total_deposited = num_deposited * wager;
+
+        // Compute per-player refunds via bitmap
+        let mut refund_sum = 0u64;
+        for i in 0..*max_players {
+            let bit_set = (deposits_mask >> i) & 1 == 1;
+            if bit_set {
+                refund_sum += wager;
+            }
+        }
 
         assert_eq!(
-            p1_refund + p2_refund, total_deposited,
-            "FEE-INV-8: refund sum != deposit sum at wager={}, p1={}, p2={}",
-            wager, p1, p2
+            refund_sum, total_deposited,
+            "FEE-INV-8: refund sum != deposit sum at wager={}, mask={:#010b}, max_players={}",
+            wager, deposits_mask, max_players
+        );
+
+        // Verify count_ones() matches bit iteration
+        assert_eq!(
+            refund_sum / wager, num_deposited,
+            "FEE-INV-8: bit count mismatch at mask={:#010b}", deposits_mask
         );
     }
-    eprintln!("FEE-INV-8: Arithmetic precondition verified for {} test cases.", test_cases.len());
+    eprintln!("FEE-INV-8: Arithmetic precondition verified for {} N-player test cases.", test_cases.len());
     eprintln!("FEE-INV-8: Full LiteSVM integration requires: litesvm dep + anchor build");
 }
 

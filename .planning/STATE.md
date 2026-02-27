@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 26 Feb 2026)
 ## Current Position
 
 Milestone: v1.3 — 4-Player Multiplayer
-Phase: 18 of 19 (Client Phaser and GameBridge) — COMPLETE
-Plan: 2 of 2 in Phase 18 — COMPLETE
-Status: Phase complete — ready for Phase 19
-Last activity: 26 Feb 2026 — Completed 18-02-PLAN.md (elimination visuals, spectator mode, name labels)
+Phase: 19 of 19 (React HUD and Lobby UI) — In progress
+Plan: 1 of 2 in Phase 19 — COMPLETE
+Status: In progress — Phase 19 Plan 01 done
+Last activity: 27 Feb 2026 — Completed 19-01-PLAN.md (N-player HP strip, PlayerHPBar, BattleHUD refactor, Leave Match, Win/Lose leaderboards)
 
-Progress: [████████░░] ~80% (8/10 v1.3 plans)
+Progress: [█████████░] ~90% (9/10 v1.3 plans)
 
 ## Performance Metrics
 
@@ -94,6 +94,10 @@ Progress: [████████░░] ~80% (8/10 v1.3 plans)
 - 18-02: _flashYourTurn skips first turn (hasHadFirstTurn guard) to avoid spurious flash on game start
 - 18-02: showTurnPointer y offset bumped from -45 to -58 to clear name labels and YOU marker
 - 18-02: spectator aim line recreated each frame (destroy + recreate) to track live turret rotation
+- 19-01: PlayerHPBar is standalone, does not import ScoreBoard — independent component for clean N-player migration
+- 19-01: players[myPlayerIndex]?.angle used directly for AngleControl/PowerControl (no isPlayerTurn ternary)
+- 19-01: survivorOrder.length > 2 guard — 2-player win/lose screens unchanged (no leaderboard)
+- 19-01: leftMatchRef is useRef not useState — avoids re-render on mutation, correct for race guard pattern
 
 ### Pending Todos
 - Run 25-test suite when McAfee exclusion is configured
@@ -116,12 +120,13 @@ Progress: [████████░░] ~80% (8/10 v1.3 plans)
 - Phase 17 COMPLETE (1 plan): wager guard, reconnectExpired broadcast, playerIndex, shopReady remap, debug log — all 5 surgical N-player fixes done
 - Server is fully N-player correct — all SYS requirements (SYS-01 through SYS-10) complete
 - Phase 18 COMPLETE (2 plans): N-player Phaser migration + elimination visuals/spectator/name labels done
-- Client has backward-compat tank1/tank2 shims in GameBridge — Phase 19 removes these
-- Phase 19 needed: React BattleHUD N-player components (Leave Match button, placement overlay, N-player HP bars)
+- Client has backward-compat tank1/tank2 shims in GameBridge.state/reset() — low-priority cleanup (no active readers)
+- Phase 19 Plan 01 COMPLETE: N-player HP strip, PlayerHPBar, elimination overlay, Leave Match, Win/Lose leaderboards
+- Phase 19 Plan 02 needed: Lobby UI (match mode tabs, player count selector, room management)
 - Escrow settlement still 2-player (hostId/playerId) — N-player escrow deferred to v2
 
 ## Session Continuity
 
-Last session: 2026-02-26T19:52:37Z
-Stopped at: Completed 18-02-PLAN.md — Elimination visuals, spectator mode, name labels complete
+Last session: 2026-02-27T17:39:12Z
+Stopped at: Completed 19-01-PLAN.md — N-player HP strip, PlayerHPBar, BattleHUD refactor, Leave Match, Win/Lose leaderboards
 Resume file: None

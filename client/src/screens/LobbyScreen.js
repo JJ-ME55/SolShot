@@ -289,6 +289,9 @@ function LobbyScreen({ navigate }) {
   const [queueState, setQueueState] = useState(null); // null | 'searching' | 'matched'
   const [error, setError] = useState(null);
   const [showEscrow, setShowEscrow] = useState(false);
+  const [numPlayers, setNumPlayers] = useState(2);
+  const [waitingRoomPlayers, setWaitingRoomPlayers] = useState([]);
+  const [waitingRoomMax, setWaitingRoomMax] = useState(2);
 
   // CS-04: Use context hook instead of window.solWallet
   const { signAndSendEscrowDeposit, walletAddress } = useSolShotWallet();
@@ -345,6 +348,14 @@ function LobbyScreen({ navigate }) {
     }
   });
 
+  /* ── socket: waiting room state (N-player partial fill) ── */
+  useSocket('roomUpdate', (data) => {
+    if (data && data.players) {
+      setWaitingRoomPlayers(data.players);
+      setWaitingRoomMax(data.maxPlayers || 2);
+    }
+  });
+
   /* ── socket: escrow deposit (sign wager before match starts) ── */
   useSocket('escrowDeposit', async (data) => {
     if (!data?.transaction) return;
@@ -360,6 +371,7 @@ function LobbyScreen({ navigate }) {
   useSocket('startPick', (data) => {
     setWaiting(false);
     setQueueState(null);
+    setWaitingRoomPlayers([]);
     navigate('shop', data);
   });
 
@@ -377,7 +389,8 @@ function LobbyScreen({ navigate }) {
   /* ── socket: opponent left while waiting ── */
   useSocket('opponentLeft', () => {
     setWaiting(false);
-    setError('Opponent has left the lobby');
+    setWaitingRoomPlayers([]);
+    setError('A player has left the lobby');
     if (window.socket) {
       window.socket.emit('getRooms');
     }
@@ -429,11 +442,13 @@ function LobbyScreen({ navigate }) {
         wager: wagerToSend,
         matchLength,
         matchMode,
+        maxPlayers: numPlayers,
       },
     });
 
+    setWaitingRoomMax(numPlayers);
     setWaiting(true);
-  }, [getPlayerName, selectedColor, wager, customWager, isCustomMode, matchLength, matchMode, walletAddress]);
+  }, [getPlayerName, selectedColor, wager, customWager, isCustomMode, matchLength, matchMode, walletAddress, numPlayers]);
 
   const joinRoom = useCallback((roomId) => {
     if (!window.socket) return;
@@ -454,6 +469,7 @@ function LobbyScreen({ navigate }) {
     if (!window.socket) return;
     window.socket.emit('deleteRoom');
     setWaiting(false);
+    setWaitingRoomPlayers([]);
     // Refresh rooms after cancel
     setTimeout(() => {
       if (window.socket) window.socket.emit('getRooms');
@@ -486,6 +502,11 @@ function LobbyScreen({ navigate }) {
     const found = TANK_COLORS.find((c) => c.phaserHex === phaserColor);
     return found ? found.hex : '#FFFFFF';
   };
+
+  // Colors claimed by other players in the waiting room (excluding self)
+  const claimedColors = waitingRoomPlayers
+    .filter(p => p.socketId !== (window.socket && window.socket.id))
+    .map(p => p.color);
 
   const formatWagerWithPayout = (amount) => {
     if (amount === 0) return 'FREE';
@@ -550,6 +571,22 @@ function LobbyScreen({ navigate }) {
             </div>
           </div>
 
+          {/* Player Count */}
+          <div>
+            <div style={s.sectionLabel}>PLAYERS</div>
+            <div style={s.matchRow}>
+              {[2, 3, 4].map((n) => (
+                <div
+                  key={n}
+                  style={s.matchBtn(numPlayers === n)}
+                  onClick={() => setNumPlayers(n)}
+                >
+                  {n + 'P'}
+                </div>
+              ))}
+            </div>
+          </div>
+
           {/* Wager */}
           {isCustomMode ? (
             <div>
@@ -606,14 +643,21 @@ function LobbyScreen({ navigate }) {
           <div>
             <div style={s.sectionLabel}>TANK COLOR</div>
             <div style={s.colorRow}>
-              {TANK_COLORS.map((c, i) => (
-                <div
-                  key={c.id}
-                  style={s.colorSwatch(c.hex, selectedColor === i)}
-                  onClick={() => setSelectedColor(i)}
-                  title={c.name}
-                />
-              ))}
+              {TANK_COLORS.map((c, i) => {
+                const isClaimed = claimedColors.includes(c.phaserHex);
+                return (
+                  <div
+                    key={c.id}
+                    style={{
+                      ...s.colorSwatch(c.hex, selectedColor === i),
+                      opacity: isClaimed ? 0.25 : 1,
+                      cursor: isClaimed ? 'not-allowed' : 'pointer',
+                    }}
+                    onClick={() => !isClaimed && setSelectedColor(i)}
+                    title={isClaimed ? c.name + ' (taken)' : c.name}
+                  />
+                );
+              })}
             </div>
           </div>
 
@@ -674,6 +718,18 @@ function LobbyScreen({ navigate }) {
                       <span style={s.hostName}>
                         {room.host?.name || 'UNKNOWN'}
                       </span>
+                      <span style={{
+                        fontFamily: "'Share Tech Mono', monospace",
+                        fontSize: 11,
+                        letterSpacing: 1,
+                        padding: '2px 6px',
+                        borderRadius: 2,
+                        color: 'var(--kh)',
+                        border: '1px solid rgba(184, 168, 138, 0.15)',
+                        flexShrink: 0,
+                      }}>
+                        {(room.currentPlayers || 1) + '/' + (room.maxPlayers || 2)}
+                      </span>
                     </div>
 
                     {rMode && (
@@ -708,10 +764,76 @@ function LobbyScreen({ navigate }) {
       {/* ═══ WAITING OVERLAY (manual room / custom_challenge) ═══ */}
       {waiting && (
         <div style={s.waitingOverlay}>
-          <div style={s.waitingText}>WAITING FOR OPPONENT</div>
+          <div style={s.waitingText}>
+            {waitingRoomPlayers.length + '/' + waitingRoomMax + ' PLAYERS'}
+          </div>
           <div style={s.waitingSubtext}>
             {modeConfig.label + ' / BO' + matchLength + (effectiveWager > 0 ? ' / ' + effectiveWager + ' SOL' : '')}
           </div>
+
+          {/* Player slots */}
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6,
+            width: 260,
+            marginTop: 8,
+          }}>
+            {Array.from({ length: waitingRoomMax }).map((_, i) => {
+              const p = waitingRoomPlayers[i];
+              return (
+                <div key={i} style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '8px 12px',
+                  background: p ? 'rgba(42, 51, 31, 0.4)' : 'rgba(42, 51, 31, 0.15)',
+                  border: p ? '1px solid var(--ol)' : '1px dashed rgba(184, 168, 138, 0.2)',
+                  borderRadius: 3,
+                }}>
+                  {p ? (
+                    <>
+                      <div style={{
+                        width: 12,
+                        height: 12,
+                        borderRadius: 2,
+                        background: getColorHex(p.color),
+                        flexShrink: 0,
+                      }} />
+                      <span style={{
+                        fontFamily: "'Share Tech Mono', monospace",
+                        fontSize: 13,
+                        color: 'var(--bn)',
+                        letterSpacing: 1,
+                        flex: 1,
+                      }}>
+                        {(p.isHost ? '[HOST] ' : '') + (p.name || 'UNKNOWN')}
+                      </span>
+                      {p.socketId === (window.socket && window.socket.id) && (
+                        <span style={{
+                          fontFamily: "'Share Tech Mono', monospace",
+                          fontSize: 10,
+                          color: 'var(--sg)',
+                          letterSpacing: 1,
+                        }}>YOU</span>
+                      )}
+                    </>
+                  ) : (
+                    <span style={{
+                      fontFamily: "'Share Tech Mono', monospace",
+                      fontSize: 12,
+                      color: 'var(--kh)',
+                      letterSpacing: 2,
+                      opacity: 0.35,
+                    }}>
+                      -- WAITING --
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
           <Button
             variant="secondary"
             onClick={cancelRoom}

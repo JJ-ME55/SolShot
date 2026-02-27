@@ -92,6 +92,7 @@ const s = {
 function BattleScreen({ navigate, screenData }) {
   const canvasRef = useRef(null);
   const bridgeRef = useRef(null);
+  const leftMatchRef = useRef(false);
   const [phaserReady, setPhaserReady] = useState(false);
   const [showExit, setShowExit] = useState(false);
   const [error, setError] = useState(null);
@@ -135,8 +136,19 @@ function BattleScreen({ navigate, screenData }) {
     }
   });
 
+  /* -- Leave Match: navigate to lobby immediately (eliminated player) -- */
+  const handleLeaveMatch = useCallback(() => {
+    leftMatchRef.current = true;
+    if (window.socket) {
+      window.socket.emit('leaveRoom');
+    }
+    destroyBattle();
+    navigate('lobby');
+  }, [navigate]);
+
   /* -- Socket: matchEnd -> navigate to win/lose -- */
   useSocket('matchEnd', (data) => {
+    if (leftMatchRef.current) return; // Already navigating via Leave Match
     const myId = window.socket?.id;
     const isWinner = data.winner === myId;
     haptic.heavy(); // MOB-01: haptic feedback on win or lose
@@ -288,6 +300,7 @@ function BattleScreen({ navigate, screenData }) {
           bridge={bridge}
           gameState={gameState}
           wager={wager}
+          onLeaveMatch={handleLeaveMatch}
         />
       )}
 

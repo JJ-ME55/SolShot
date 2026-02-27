@@ -287,6 +287,13 @@ function LoseScreen({ navigate, screenData }) {
   // Derive opponent ID from roundWins keys
   const opponentId = myId ? Object.keys(roundWins).find(function(id) { return id !== myId; }) : null;
 
+  // N-player placement leaderboard
+  const survivorOrder = screenData?.survivorOrder || [];
+  const allPlayers = screenData?.players || [];
+  const playerMap = {};
+  allPlayers.forEach(p => { if (p && p.socketId) playerMap[p.socketId] = p; });
+  const ordinal = (n) => n === 1 ? '1st' : n === 2 ? '2nd' : n === 3 ? '3rd' : n + 'th';
+
   // Progress tab data
   const myMilestones = (screenData?.earnedMilestones && myId)
     ? (screenData.earnedMilestones[myId] || [])
@@ -380,6 +387,62 @@ function LoseScreen({ navigate, screenData }) {
               <div style={s.statLabel}>GOLD EARNED</div>
             </div>
           </div>
+
+          {/* N-player Final Standings (3+ players only) */}
+          {survivorOrder.length > 2 && (
+            <div style={{ width: '100%', maxWidth: 400, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{
+                fontFamily: "'Share Tech Mono', monospace",
+                fontSize: 12,
+                color: 'var(--am)',
+                letterSpacing: 2,
+                marginBottom: 2,
+              }}>
+                FINAL STANDINGS
+              </div>
+              {survivorOrder.map((id, rank) => {
+                const p = playerMap[id];
+                const isMe = id === myId;
+                return (
+                  <div key={id} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '6px 10px',
+                    background: isMe ? 'rgba(204, 34, 0, 0.08)' : 'rgba(42, 51, 31, 0.2)',
+                    border: isMe ? '1px solid rgba(204, 34, 0, 0.2)' : '1px solid var(--ol)',
+                    borderRadius: 3,
+                  }}>
+                    <span style={{
+                      fontFamily: "'Bebas Neue', sans-serif",
+                      fontSize: 20,
+                      color: rank === 0 ? 'var(--gd)' : 'var(--kh)',
+                      width: 30,
+                      textAlign: 'center',
+                    }}>
+                      {ordinal(rank + 1)}
+                    </span>
+                    <div style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: 2,
+                      background: p?.color || '#FFF',
+                      flexShrink: 0,
+                    }} />
+                    <span style={{
+                      fontFamily: "'Share Tech Mono', monospace",
+                      fontSize: 13,
+                      color: isMe ? 'var(--rd)' : 'var(--bn)',
+                      letterSpacing: 1,
+                      flex: 1,
+                    }}>
+                      {isMe ? 'YOU' : (p?.name || 'UNKNOWN')}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </>
       )}
 

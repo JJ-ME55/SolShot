@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 27 Feb 2026)
 
 Milestone: v1.4 — N-Player Escrow
 Phase: 20 of 23 (Anchor Program)
-Plan: 01 of 3 in phase 20 (Data Model Struct Rewrite)
+Plan: 02 of 3 in phase 20 (N-Player Instruction Rewrite)
 Status: In progress
-Last activity: 27 Feb 2026 — Completed 20-01-PLAN.md (N-player struct + test sync)
+Last activity: 27 Feb 2026 — Completed 20-02-PLAN.md (create_match/deposit_wager/settle_match N-player rewrite)
 
-Progress: [█░░░░░░░░░] 10% (1/10 plans)
+Progress: [██░░░░░░░░] 20% (2/10 plans)
 
 ## Performance Metrics
 
@@ -44,6 +44,9 @@ Progress: [█░░░░░░░░░] 10% (1/10 plans)
 - MatchEscrow SPACE=232: players:[Pubkey;4]+max_players+deposits_mask replaces two Pubkeys+two bools
 - TS-INV-5 v1.4: settle/cancel windows overlap — mutual exclusion is STATE-enforced (not time-enforced)
 - Compile stubs (todo!) in instruction bodies allow incremental rewrite across plans 20-01/02/03
+- pot = wager * deposits_mask.count_ones() — NOT wager * num_deposited (uses actual depositors, not registered count)
+- dust absorption: winner = pot - treasury - ops; max dust is always 2 lamports regardless of player count (2 division ops)
+- (0..max_players).any(|i| escrow.players[i] == winner.key()) is the canonical winner constraint pattern
 
 ### Pending Todos
 - Run 25-test suite when McAfee exclusion is configured
@@ -57,10 +60,11 @@ Progress: [█░░░░░░░░░] 10% (1/10 plans)
 - Devnet wallet at 0.97 SOL — need ~2.12 SOL to redeploy program
 - main.js is ~2870 lines — search by function name, not line number
 - IDL must sync atomically across 3 locations after program rebuild
-- lib.rs instruction bodies are todo!() stubs (plans 20-02/20-03 must complete before anchor build)
+- lib.rs: create_match/deposit_wager/settle_match complete; cancel_match/permissionless_reclaim still todo!() stubs (plan 20-03)
+- JS server (escrow.js, main.js) still uses old player_one/player_two API — needs update after 20-03 before anchor build
 
 ## Session Continuity
 
-Last session: 2026-02-27T22:28:53Z
-Stopped at: Completed 20-01-PLAN.md — N-player struct rewrite + test sync
+Last session: 2026-02-27T22:38:09Z
+Stopped at: Completed 20-02-PLAN.md — N-player instruction rewrite + proptest expansion
 Resume file: None

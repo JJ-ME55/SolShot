@@ -2,8 +2,6 @@
 // See: .planning/phases/01-on-chain-program-redesign/01-RESEARCH.md Pitfall 6
 
 use anchor_lang::prelude::*;
-// TODO(20-02): re-enable when deposit_wager CPI is rewritten
-#[allow(unused_imports)]
 use anchor_lang::system_program;
 
 declare_id!("CqvRC6mSJe2CrBtENVfCEPkgRW3WwxLSL9C1hgXz7GtD");
@@ -125,36 +123,137 @@ pub mod solshot_escrow {
 
     // ─── MATCH LIFECYCLE ──────────────────────
 
-    /// Create a new match escrow (OC-04, OC-06, OC-08, OC-12).
+    /// Create a new match escrow (OC-04, OC-06, OC-08, OC-12, ESC-03).
     /// Called by the server authority when a room is created with a wager.
     /// Seeds: ["match", match_id.as_bytes()]
-    ///
-    /// TODO(20-02): Rewrite for N-player — replace player_one/player_two params with
-    /// players: Vec<Pubkey> and max_players: u8, update all field assignments.
+    /// Accepts 2-4 players via Vec<Pubkey>. Validates distinctness and authority exclusion.
     pub fn create_match(
-        _ctx: Context<CreateMatch>,
-        _match_id: String,
-        _wager_lamports: u64,
-        _player_one: Pubkey,
-        _player_two: Pubkey,
+        ctx: Context<CreateMatch>,
+        match_id: String,
+        wager_lamports: u64,
+        players: Vec<Pubkey>,
     ) -> Result<()> {
-        // STUB: Instruction body replaced in plan 20-02.
-        // Struct layout updated in plan 20-01 — compile stubs allow tests to run.
-        todo!("create_match rewritten in plan 20-02")
+        require!(match_id.len() <= 32, EscrowError::MatchIdTooLong);
+        require!(wager_lamports >= MIN_WAGER_LAMPORTS, EscrowError::WagerTooSmall);
+        require!(wager_lamports <= MAX_WAGER_LAMPORTS, EscrowError::WagerTooLarge);
+
+        // ESC-14: validate player count
+        require!(players.len() >= 2, EscrowError::TooFewPlayers);
+        require!(players.len() <= 4, EscrowError::TooManyPlayers);
+
+        // ESC-03: authority (server keypair) cannot be a player
+        for p in &players {
+            require!(*p != ctx.accounts.authority.key(), EscrowError::AuthorityAsPlayer);
+        }
+
+        // ESC-03: all players must be distinct
+        for i in 0..players.len() {
+            for j in (i + 1)..players.len() {
+                require!(players[i] != players[j], EscrowError::SamePlayer);
+            }
+        }
+
+        // Store in fixed-size array, zero-pad remaining slots
+        let mut arr = [Pubkey::default(); 4];
+        for (i, p) in players.iter().enumerate() {
+            arr[i] = *p;
+        }
+
+        let escrow = &mut ctx.accounts.escrow;
+        escrow.match_id = match_id;
+        escrow.authority = ctx.accounts.authority.key();
+        escrow.players = arr;
+        escrow.max_players = players.len() as u8;
+        escrow.wager_lamports = wager_lamports;
+        escrow.deposits_mask = 0;
+        escrow.state = MatchState::AwaitingDeposits;
+        escrow.created_at = Clock::get()?.unix_timestamp;
+        escrow.activated_at = 0;
+        escrow.bump = ctx.bumps.escrow;
+
+        emit!(MatchCreated {
+            match_id: escrow.match_id.clone(),
+            players,
+            max_players: escrow.max_players,
+            wager_lamports,
+        });
+
+        Ok(())
     }
 
-    /// Deposit wager into escrow (OC-04, OC-07, OC-09).
-    /// Each player calls this once. Match transitions to Active when all players deposit.
-    ///
-    /// TODO(20-02): Rewrite for N-player — replace player_one/player_two checks with
-    /// players array lookup, replace bool flags with deposits_mask bitmap.
-    pub fn deposit_wager(_ctx: Context<DepositWager>) -> Result<()> {
-        // STUB: Instruction body replaced in plan 20-02.
-        todo!("deposit_wager rewritten in plan 20-02")
+    /// Deposit wager into escrow (OC-04, OC-07, OC-09, ESC-04, ESC-05).
+    /// Each player calls this once. Bitmap tracks per-player deposits.
+    /// Match transitions to Active when all players have deposited.
+    pub fn deposit_wager(ctx: Context<DepositWager>) -> Result<()> {
+        let depositor = ctx.accounts.player.key();
+
+        // Read-only values before mutable borrow (Rust borrow checker safety — Pitfall 3)
+        let wager = ctx.accounts.escrow.wager_lamports;
+        let match_id = ctx.accounts.escrow.match_id.clone();
+        let max_players = ctx.accounts.escrow.max_players as usize;
+
+        require!(
+            ctx.accounts.escrow.state == MatchState::AwaitingDeposits,
+            EscrowError::InvalidState
+        );
+
+        // ESC-04: find player index in players[0..max_players]
+        let player_index = ctx.accounts.escrow.players[..max_players]
+            .iter()
+            .position(|p| *p == depositor)
+            .ok_or(EscrowError::NotAPlayer)?;
+
+        // Check not already deposited via bitmap
+        require!(
+            (ctx.accounts.escrow.deposits_mask >> player_index) & 1 == 0,
+            EscrowError::AlreadyDeposited
+        );
+
+        // Transfer SOL from player to escrow PDA (no mutable borrow held here)
+        system_program::transfer(
+            CpiContext::new(
+                ctx.accounts.system_program.to_account_info(),
+                system_program::Transfer {
+                    from: ctx.accounts.player.to_account_info(),
+                    to: ctx.accounts.escrow.to_account_info(),
+                },
+            ),
+            wager,
+        )?;
+
+        // Now take mutable borrow to update state
+        let escrow = &mut ctx.accounts.escrow;
+        escrow.deposits_mask |= 1u8 << player_index;
+
+        emit!(WagerDeposited {
+            match_id: match_id.clone(),
+            player: depositor,
+            amount: wager,
+        });
+
+        // ESC-05: all deposited → match is active
+        let full_mask = (1u8 << escrow.max_players) - 1;
+        if escrow.deposits_mask == full_mask {
+            escrow.state = MatchState::Active;
+            escrow.activated_at = Clock::get()?.unix_timestamp;
+
+            let num_deposited = escrow.deposits_mask.count_ones() as u64;
+            let total_pot = wager
+                .checked_mul(num_deposited)
+                .ok_or(EscrowError::ArithmeticOverflow)?;
+
+            emit!(MatchActive {
+                match_id,
+                total_pot,
+            });
+        }
+
+        Ok(())
     }
 
-    /// Settle match — distribute pot to winner, treasury, ops (OC-02, OC-03, OC-04, OC-07, OC-09, OC-10, OC-11).
+    /// Settle match — distribute pot to winner, treasury, ops (OC-02, OC-03, OC-04, OC-07, OC-09, OC-10, OC-11, ESC-06, ESC-07).
     /// Only callable by the server authority.
+    /// Pot = wager_lamports * num_deposited (N-player, not hardcoded * 2).
     /// Winner, treasury, and ops are validated via Anchor constraints in the account struct.
     pub fn settle_match(ctx: Context<SettleMatch>, winner: Pubkey) -> Result<()> {
         require!(
@@ -179,10 +278,13 @@ pub mod solshot_escrow {
         let match_id = ctx.accounts.escrow.match_id.clone();
         let treasury_key = ctx.accounts.treasury.key();
         let ops_key = ctx.accounts.ops.key();
+        let deposits_mask = ctx.accounts.escrow.deposits_mask;
 
+        // ESC-06: N-player pot — wager * num_deposited (not wager * 2)
         // OC-09: u128 widening for BPS math — eliminates overflow at max wager (BOK GAP-002)
+        let num_deposited = deposits_mask.count_ones() as u128;
         let total_pot_128 = (wager_lamports as u128)
-            .checked_mul(2)
+            .checked_mul(num_deposited)
             .ok_or(EscrowError::ArithmeticOverflow)?;
 
         let treasury_amount = (total_pot_128
@@ -391,11 +493,12 @@ pub struct SettleMatch<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
 
-    /// Winner: must be one of the registered players (OC-02 — resolves H008, H002, S001)
-    /// CHECK: Constrained to players array — TODO(20-03): replace with array membership check
+    /// Winner: must be one of the N registered players (OC-02, ESC-07 — resolves H008, H002, S001)
+    /// CHECK: Constrained to one of escrow.players[0..max_players]
     #[account(
         mut,
-        constraint = escrow.players.contains(&winner.key())
+        constraint = (0..escrow.max_players as usize)
+            .any(|i| escrow.players[i] == winner.key())
             @ EscrowError::InvalidWinner
     )]
     pub winner: UncheckedAccount<'info>,

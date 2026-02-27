@@ -818,6 +818,31 @@ const mainsocket = (io) => {
                 }
             }
 
+            const cleanupRoom2 = findRoom(roomId)
+            if (cleanupRoom2 && !cleanupRoom2.active && cleanupRoom2.players && cleanupRoom2.players.length > 1) {
+                // Room is in waiting state with other players -- just remove this player
+                cleanupRoom2.players = cleanupRoom2.players.filter(p => p.socketId !== client.id)
+                client.leave(roomId)
+                client.roomId = null
+                client.isHost = false
+                // Promote next player to host if needed
+                if (cleanupRoom2.players.length > 0 && !cleanupRoom2.players.some(p => p.isHost)) {
+                    cleanupRoom2.players[0].isHost = true
+                }
+                io.sockets.in(roomId).emit('roomUpdate', {
+                    players: cleanupRoom2.players.map(p => ({
+                        socketId: p.socketId,
+                        name: p.name,
+                        color: p.color,
+                        isReady: p.isReady || false,
+                        isHost: p.isHost || false,
+                    })),
+                    maxPlayers: cleanupRoom2.maxPlayers,
+                    currentPlayers: cleanupRoom2.players.length,
+                })
+                broadcastRooms(io)
+                return
+            }
             client.leave(roomId)
             await removeRoom(roomId)
             io.sockets.in(roomId).emit('opponentLeft', {})
@@ -1229,12 +1254,28 @@ const mainsocket = (io) => {
                 }
             }
 
-            io.sockets.in(client.roomId).emit('startPick', {
-                host: room.players[0],      // backward compat
-                player: room.players[1],    // backward compat (undefined for 3-4 player)
-                players: room.players,      // canonical N-player
-                wager: roomWager
-            })
+            if (room.players.length === room.maxPlayers) {
+                // Room is full -- start the match
+                io.sockets.in(client.roomId).emit('startPick', {
+                    host: room.players[0],      // backward compat
+                    player: room.players[1],    // backward compat (undefined for 3-4 player)
+                    players: room.players,      // canonical N-player
+                    wager: roomWager
+                })
+            } else {
+                // Room partially filled -- broadcast waiting room state
+                io.sockets.in(client.roomId).emit('roomUpdate', {
+                    players: room.players.map(p => ({
+                        socketId: p.socketId,
+                        name: p.name,
+                        color: p.color,
+                        isReady: p.isReady || false,
+                        isHost: p.isHost || false,
+                    })),
+                    maxPlayers: room.maxPlayers,
+                    currentPlayers: room.players.length,
+                })
+            }
         })
 
 
@@ -1367,6 +1408,19 @@ const mainsocket = (io) => {
             trackMatchCreated()
             if (wagerAmount > 0) trackWager(wagerAmount * 2)  // Both players wager
             broadcastRooms(io)
+
+            // Notify creator of their waiting room state
+            client.emit('roomUpdate', {
+                players: roomData.players.map(p => ({
+                    socketId: p.socketId,
+                    name: p.name,
+                    color: p.color,
+                    isReady: p.isReady || false,
+                    isHost: p.isHost || false,
+                })),
+                maxPlayers: roomData.maxPlayers,
+                currentPlayers: roomData.players.length,
+            })
         })
 
 

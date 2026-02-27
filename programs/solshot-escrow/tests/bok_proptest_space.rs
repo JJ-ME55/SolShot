@@ -88,11 +88,14 @@ struct OfflineMatchEscrow {
 /// Compute settlement fee split using the same u128-widened math as
 /// the on-chain `settle_match` instruction.
 ///
+/// `num_deposited` is 2-4 for N-player matches. Callers that previously
+/// used the 2-player hardcoded `* 2` now pass `num_deposited = 2`.
+///
 /// Returns `(winner_amount, treasury_amount, ops_amount)`.
 /// Panics on overflow (should never happen within valid wager bounds).
-fn compute_settlement(wager_lamports: u64) -> (u64, u64, u64) {
+fn compute_settlement(wager_lamports: u64, num_deposited: u64) -> (u64, u64, u64) {
     let total_pot_128: u128 = (wager_lamports as u128)
-        .checked_mul(2)
+        .checked_mul(num_deposited as u128)
         .expect("total_pot overflow in u128");
 
     let treasury_amount = (total_pot_128
@@ -283,7 +286,7 @@ proptest! {
     ///   ops      = (10000 * 2 * 300) / 10000 =  600 >= 1
     #[test]
     fn sb_inv_3_min_wager_fee_guarantee(wager in arb_wager()) {
-        let (_winner, treasury, ops) = compute_settlement(wager);
+        let (_winner, treasury, ops) = compute_settlement(wager, 2);
         prop_assert!(
             treasury >= 1,
             "Treasury fee is zero at wager = {} (treasury = {})",
@@ -302,7 +305,7 @@ proptest! {
 /// SB-INV-3 boundary: exact values at MIN_WAGER_LAMPORTS.
 #[test]
 fn sb_inv_3_boundary_min_wager_exact() {
-    let (winner, treasury, ops) = compute_settlement(MIN_WAGER_LAMPORTS);
+    let (winner, treasury, ops) = compute_settlement(MIN_WAGER_LAMPORTS, 2);
     let total_pot = MIN_WAGER_LAMPORTS * 2; // 20,000
 
     // treasury = 20000 * 700 / 10000 = 1400
@@ -313,6 +316,27 @@ fn sb_inv_3_boundary_min_wager_exact() {
     assert_eq!(winner, 18000, "MIN_WAGER winner mismatch");
     // conservation
     assert_eq!(winner + treasury + ops, total_pot, "MIN_WAGER conservation violation");
+}
+
+/// SB-INV-3 boundary 4-player: exact values at MIN_WAGER_LAMPORTS for 4 deposited players.
+///
+/// MIN_WAGER * 4 = 40,000 lamports:
+///   treasury = 40000 * 700 / 10000 = 2800
+///   ops      = 40000 * 300 / 10000 = 1200
+///   winner   = 40000 - 2800 - 1200 = 36000
+#[test]
+fn sb_inv_3_boundary_min_wager_exact_4p() {
+    let (winner, treasury, ops) = compute_settlement(MIN_WAGER_LAMPORTS, 4);
+    let total_pot = MIN_WAGER_LAMPORTS * 4; // 40,000
+
+    // treasury = 40000 * 700 / 10000 = 2800
+    assert_eq!(treasury, 2800, "4p MIN_WAGER treasury mismatch");
+    // ops = 40000 * 300 / 10000 = 1200
+    assert_eq!(ops, 1200, "4p MIN_WAGER ops mismatch");
+    // winner = 40000 - 2800 - 1200 = 36000
+    assert_eq!(winner, 36000, "4p MIN_WAGER winner mismatch");
+    // conservation
+    assert_eq!(winner + treasury + ops, total_pot, "4p MIN_WAGER conservation violation");
 }
 
 /// SB-INV-3 negative edge: wager = 16 lamports yields ops = 0.
@@ -445,7 +469,7 @@ proptest! {
     #[test]
     fn sb_inv_5a_settlement_conservation(wager in arb_wager()) {
         let total_pot = wager * 2;
-        let (winner, treasury, ops) = compute_settlement(wager);
+        let (winner, treasury, ops) = compute_settlement(wager, 2);
         prop_assert_eq!(
             winner + treasury + ops,
             total_pot,
@@ -464,7 +488,7 @@ proptest! {
     #[test]
     fn sb_inv_5b_fees_within_pot(wager in arb_wager()) {
         let total_pot = wager * 2;
-        let (_winner, treasury, ops) = compute_settlement(wager);
+        let (_winner, treasury, ops) = compute_settlement(wager, 2);
         prop_assert!(
             treasury + ops <= total_pot,
             "Fees exceed pot at wager = {}: {} + {} > {}",
@@ -481,7 +505,7 @@ proptest! {
 fn sb_inv_5_boundary_conservation_min_max() {
     for wager in [MIN_WAGER_LAMPORTS, MAX_WAGER_LAMPORTS] {
         let total_pot = wager * 2;
-        let (winner, treasury, ops) = compute_settlement(wager);
+        let (winner, treasury, ops) = compute_settlement(wager, 2);
         assert_eq!(
             winner + treasury + ops,
             total_pot,
@@ -547,7 +571,7 @@ proptest! {
     #[test]
     fn sb_inv_6d_winner_gets_majority(wager in arb_wager()) {
         let total_pot = wager * 2;
-        let (winner, _treasury, _ops) = compute_settlement(wager);
+        let (winner, _treasury, _ops) = compute_settlement(wager, 2);
 
         // Winner must get > 80% of pot (actual: ~90%)
         let eighty_pct = total_pot * 80 / 100;

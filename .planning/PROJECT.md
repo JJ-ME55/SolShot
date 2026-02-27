@@ -60,7 +60,19 @@ Browser-based multiplayer artillery combat on Solana with real SOL wagering, set
 
 ### Active
 
-(No active requirements — next milestone not yet defined)
+#### Current Milestone: v1.4 — N-Player Escrow
+
+**Goal:** Upgrade the Anchor escrow program and full stack to support 2-4 player wagered matches with winner-takes-all settlement.
+
+**Target features:**
+- Anchor program rewrite: N-player deposits, winner-takes-all settlement (90/7/3 BPS), 5-10 min timeout
+- Partial deposit handling: depositors choose "start with depositors" (min 2) or "cancel and refund all"
+- Equal wagers enforced (all players match room creator's wager)
+- Server escrow.js + solana.js integration for N-player
+- Client deposit flow for N-player
+- Unlock Quick Match / Duel / High Roller for 3-4 players (remove wager guard)
+- Fix: SHOT milestone recording for players 3/4
+- Fix: playAgain maxPlayers preservation
 
 ### Out of Scope
 
@@ -71,9 +83,7 @@ Browser-based multiplayer artillery combat on Solana with real SOL wagering, set
 - **Social media posting/community** — human tasks (X, Reddit, Discord)
 - **Demo video recording** — human task
 - **Match replay system** — complex new feature, deferred to v1.4+
-- **N-player escrow** — requires lib.rs changes, separate milestone after game logic works
-- **Seeker/dApp Store** — distribution channel, deferred to after 4-player works
-- **lib.rs modifications** — preserves SOS/DB/BOK audit certifications
+- **Seeker/dApp Store** — distribution channel, deferred to after escrow upgrade
 - **Secrets manager migration** — deferred to mainnet operational readiness
 - **Error monitoring (Sentry)** — external service setup
 - **Horizontal scaling** — H060 deferred, single server acceptable at launch
@@ -102,7 +112,7 @@ Many "failures" are design decisions (4 states, 24h timeout, PDA seeds), not bug
 
 ## Constraints
 
-- **Security preservation:** Do NOT modify lib.rs, guards.js, or core auth handlers
+- **Security preservation:** Do NOT modify guards.js or core auth handlers (lib.rs modifications now in scope for v1.4)
 - **Backward compatibility:** 2-player (`maxPlayers: 2`) must work identically to current 1v1
 - **Server-authoritative:** All HP, positions, turn state live on server
 - **Tank colours:** red #E63946, blue #4A90D9, green #52B788, yellow #FFD166
@@ -112,7 +122,7 @@ Many "failures" are design decisions (4 states, 24h timeout, PDA seeds), not bug
 
 ## Current State
 
-v1.3 shipped. Full 2-4 player multiplayer working in practice mode. 15 source files changed, 2067 insertions, 682 deletions across 5 phases and 10 plans. N-player escrow deferred (requires lib.rs changes). 8 tech debt items tracked, none critical.
+v1.3 shipped. Full 2-4 player multiplayer working in practice mode. Starting v1.4: N-player escrow upgrade across full stack (Anchor program, server, client). Accepting re-audit risk for lib.rs modifications.
 
 ## Key Decisions
 
@@ -124,17 +134,22 @@ v1.3 shipped. Full 2-4 player multiplayer working in practice mode. 15 source fi
 | PDA from match_id (not pubkeys) | Simpler derivation | ✓ Good |
 | 2min deposit (not 3min) | Faster match start | ✓ Good |
 | Self-hosted Telegram SDK | CDN updates in-place, breaks SRI | ✓ Good |
-| Do NOT touch lib.rs | Preserves 3 audit certifications | ✓ Good — held across v1.1-v1.3 |
+| Do NOT touch lib.rs | Preserves 3 audit certifications | ⚠️ Revisit — relaxed for v1.4, re-audit planned |
 | Jupiter Terminal for in-game swaps | Hackathon requirement + revenue | ✓ Good — 0.5% fee |
 | Practice mode as default tab | Onboarding-first approach | ✓ Good |
 | 4-player practice first, escrow later | Escrow needs lib.rs changes (audit risk) | ✓ Good — shipped v1.3 cleanly |
 | players[] array (not host/player) | Scales to N, single code path | ✓ Good — zero legacy refs remain |
 | Placement scoring (4th=0..1st=3) | Fair N-player scoring for BO3/BO5 | ✓ Good |
 | No early exit in isMatchOver | All rounds always played for fairness | ✓ Good |
-| Wager guard for 3-4 players | Practice-only until escrow supports N | ✓ Good — clear error message |
+| Wager guard for 3-4 players | Practice-only until escrow supports N | ✓ Good — will be removed in v1.4 |
+| Accept re-audit risk for lib.rs | N-player escrow needed for real gameplay | — Pending |
+| Winner-takes-all N-player | Same model as 2-player, simpler than placement split | — Pending |
+| Equal wagers only | Simpler PDA, fairer gameplay | — Pending |
+| 5-10 min deposit timeout (not 24h) | More players = higher chance of no-show | — Pending |
+| Partial deposit: start or cancel choice | Depositors decide, not auto-cancel | — Pending |
 | Dual-payload pattern (positions[] + tankPositions) | Backward compat during migration | ✓ Good — clean transition |
 | Quick Match hardcoded to 2-player | 3-4p uses Custom Challenge | ✓ Good — simplifies matchmaking |
 | Timeout >2 alive = elimination, <=2 = forfeit | Different behavior appropriate for each | ✓ Good |
 
 ---
-*Last updated: 27 Feb 2026 after v1.3 milestone*
+*Last updated: 27 Feb 2026 after v1.4 milestone started*

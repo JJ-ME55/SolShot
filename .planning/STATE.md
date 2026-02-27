@@ -4,17 +4,15 @@
 
 See: .planning/PROJECT.md (updated 27 Feb 2026)
 **Core value:** Browser-based multiplayer artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** Planning next milestone
+**Current focus:** v1.4 — N-Player Escrow
 
 ## Current Position
 
-Milestone: v1.3 — 4-Player Multiplayer — SHIPPED
-Phase: 19 of 19 — all v1.3 phases complete
-Plan: N/A — milestone archived
-Status: Ready for next milestone
-Last activity: 27 Feb 2026 — v1.3 milestone archived
-
-Progress: [██████████] 100% (10/10 v1.3 plans)
+Milestone: v1.4 — N-Player Escrow
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 27 Feb 2026 — Milestone v1.4 started
 
 ## Performance Metrics
 

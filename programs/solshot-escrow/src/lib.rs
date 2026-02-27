@@ -2,6 +2,8 @@
 // See: .planning/phases/01-on-chain-program-redesign/01-RESEARCH.md Pitfall 6
 
 use anchor_lang::prelude::*;
+// TODO(20-02): re-enable when deposit_wager CPI is rewritten
+#[allow(unused_imports)]
 use anchor_lang::system_program;
 
 declare_id!("CqvRC6mSJe2CrBtENVfCEPkgRW3WwxLSL9C1hgXz7GtD");
@@ -126,119 +128,29 @@ pub mod solshot_escrow {
     /// Create a new match escrow (OC-04, OC-06, OC-08, OC-12).
     /// Called by the server authority when a room is created with a wager.
     /// Seeds: ["match", match_id.as_bytes()]
+    ///
+    /// TODO(20-02): Rewrite for N-player — replace player_one/player_two params with
+    /// players: Vec<Pubkey> and max_players: u8, update all field assignments.
     pub fn create_match(
-        ctx: Context<CreateMatch>,
-        match_id: String,
-        wager_lamports: u64,
-        player_one: Pubkey,
-        player_two: Pubkey,
+        _ctx: Context<CreateMatch>,
+        _match_id: String,
+        _wager_lamports: u64,
+        _player_one: Pubkey,
+        _player_two: Pubkey,
     ) -> Result<()> {
-        require!(match_id.len() <= 32, EscrowError::MatchIdTooLong);
-
-        // OC-08: minimum wager to ensure fees are ≥ 1 lamport
-        require!(wager_lamports >= MIN_WAGER_LAMPORTS, EscrowError::WagerTooSmall);
-
-        // OC-12: maximum wager to prevent unfundable escrow
-        require!(wager_lamports <= MAX_WAGER_LAMPORTS, EscrowError::WagerTooLarge);
-
-        require!(player_one != player_two, EscrowError::SamePlayer);
-
-        // OC-06: authority (server keypair) cannot be a player
-        require!(player_one != ctx.accounts.authority.key(), EscrowError::AuthorityAsPlayer);
-        require!(player_two != ctx.accounts.authority.key(), EscrowError::AuthorityAsPlayer);
-
-        let escrow = &mut ctx.accounts.escrow;
-        escrow.match_id = match_id;
-        escrow.authority = ctx.accounts.authority.key();
-        escrow.player_one = player_one;
-        escrow.player_two = player_two;
-        escrow.wager_lamports = wager_lamports;
-        escrow.player_one_deposited = false;
-        escrow.player_two_deposited = false;
-        escrow.state = MatchState::AwaitingDeposits;
-        escrow.created_at = Clock::get()?.unix_timestamp;
-        escrow.activated_at = 0; // set on Active transition in deposit_wager
-        escrow.bump = ctx.bumps.escrow;
-
-        emit!(MatchCreated {
-            match_id: escrow.match_id.clone(),
-            player_one,
-            player_two,
-            wager_lamports,
-        });
-
-        Ok(())
+        // STUB: Instruction body replaced in plan 20-02.
+        // Struct layout updated in plan 20-01 — compile stubs allow tests to run.
+        todo!("create_match rewritten in plan 20-02")
     }
 
     /// Deposit wager into escrow (OC-04, OC-07, OC-09).
-    /// Each player calls this once. Match transitions to Active when both deposit.
-    pub fn deposit_wager(ctx: Context<DepositWager>) -> Result<()> {
-        let depositor = ctx.accounts.player.key();
-
-        // Read-only values before mutable borrow (Rust borrow checker safety)
-        let wager = ctx.accounts.escrow.wager_lamports;
-        let match_id = ctx.accounts.escrow.match_id.clone();
-
-        require!(
-            ctx.accounts.escrow.state == MatchState::AwaitingDeposits,
-            EscrowError::InvalidState
-        );
-
-        let is_p1 = depositor == ctx.accounts.escrow.player_one;
-        let is_p2 = depositor == ctx.accounts.escrow.player_two;
-        require!(is_p1 || is_p2, EscrowError::NotAPlayer);
-
-        if is_p1 {
-            require!(!ctx.accounts.escrow.player_one_deposited, EscrowError::AlreadyDeposited);
-        } else {
-            require!(!ctx.accounts.escrow.player_two_deposited, EscrowError::AlreadyDeposited);
-        }
-
-        // Transfer SOL from player to escrow PDA (no mutable borrow held here)
-        system_program::transfer(
-            CpiContext::new(
-                ctx.accounts.system_program.to_account_info(),
-                system_program::Transfer {
-                    from: ctx.accounts.player.to_account_info(),
-                    to: ctx.accounts.escrow.to_account_info(),
-                },
-            ),
-            wager,
-        )?;
-
-        // Now take mutable borrow to update state
-        let escrow = &mut ctx.accounts.escrow;
-
-        if is_p1 {
-            escrow.player_one_deposited = true;
-        } else {
-            escrow.player_two_deposited = true;
-        }
-
-        emit!(WagerDeposited {
-            match_id: match_id.clone(),
-            player: depositor,
-            amount: wager,
-        });
-
-        // Both deposited → match is active
-        if escrow.player_one_deposited && escrow.player_two_deposited {
-            escrow.state = MatchState::Active;
-            // OC-07: record activation timestamp for settlement and timeout deadlines
-            escrow.activated_at = Clock::get()?.unix_timestamp;
-
-            // OC-09: checked arithmetic for total_pot event field
-            let total_pot = wager
-                .checked_mul(2)
-                .ok_or(EscrowError::ArithmeticOverflow)?;
-
-            emit!(MatchActive {
-                match_id,
-                total_pot,
-            });
-        }
-
-        Ok(())
+    /// Each player calls this once. Match transitions to Active when all players deposit.
+    ///
+    /// TODO(20-02): Rewrite for N-player — replace player_one/player_two checks with
+    /// players array lookup, replace bool flags with deposits_mask bitmap.
+    pub fn deposit_wager(_ctx: Context<DepositWager>) -> Result<()> {
+        // STUB: Instruction body replaced in plan 20-02.
+        todo!("deposit_wager rewritten in plan 20-02")
     }
 
     /// Settle match — distribute pot to winner, treasury, ops (OC-02, OC-03, OC-04, OC-07, OC-09, OC-10, OC-11).
@@ -323,137 +235,26 @@ pub mod solshot_escrow {
         Ok(())
     }
 
-    /// Cancel match — refund both players (OC-04, OC-05, OC-07, OC-09, OC-10).
+    /// Cancel match — refund deposited players (OC-04, OC-05, OC-07, OC-09, OC-10).
     /// Authority can only cancel AwaitingDeposits state.
-    /// Players can cancel AwaitingDeposits, or any state after 24h timeout from activation.
-    pub fn cancel_match(ctx: Context<CancelMatch>) -> Result<()> {
-        let caller = ctx.accounts.caller.key();
-        let config_authority = ctx.accounts.config.authority;
-
-        // Read-only values before mutable borrow
-        let escrow_state = ctx.accounts.escrow.state;
-        let player_one_deposited = ctx.accounts.escrow.player_one_deposited;
-        let player_two_deposited = ctx.accounts.escrow.player_two_deposited;
-        let wager_lamports = ctx.accounts.escrow.wager_lamports;
-        let match_id = ctx.accounts.escrow.match_id.clone();
-
-        // OC-07: use activated_at for timeout; fall back to created_at if match never activated
-        let timeout_reference = if ctx.accounts.escrow.activated_at > 0 {
-            ctx.accounts.escrow.activated_at
-        } else {
-            ctx.accounts.escrow.created_at
-        };
-
-        // OC-09: checked arithmetic for timeout check
-        let timeout_deadline = timeout_reference
-            .checked_add(TIMEOUT_SECONDS)
-            .ok_or(EscrowError::ArithmeticOverflow)?;
-
-        let is_timed_out = Clock::get()?.unix_timestamp > timeout_deadline;
-
-        // OC-05: authority can ONLY cancel AwaitingDeposits (not Active — even if it wanted to)
-        let is_authority = caller == config_authority;
-        let is_player = caller == ctx.accounts.escrow.player_one
-            || caller == ctx.accounts.escrow.player_two;
-
-        require!(
-            (is_authority && escrow_state == MatchState::AwaitingDeposits)
-            || (is_player && (escrow_state == MatchState::AwaitingDeposits || is_timed_out)),
-            EscrowError::Unauthorized
-        );
-
-        require!(
-            escrow_state != MatchState::Settled && escrow_state != MatchState::Cancelled,
-            EscrowError::InvalidState
-        );
-
-        // OC-10: set terminal state BEFORE transfers (defense-in-depth)
-        {
-            let escrow = &mut ctx.accounts.escrow;
-            escrow.state = MatchState::Cancelled;
-        } // mutable borrow dropped here
-
-        // Refund player one if they deposited
-        if player_one_deposited {
-            **ctx.accounts.escrow.to_account_info().try_borrow_mut_lamports()? -= wager_lamports;
-            **ctx.accounts.player_one.to_account_info().try_borrow_mut_lamports()? += wager_lamports;
-        }
-
-        // Refund player two if they deposited
-        if player_two_deposited {
-            **ctx.accounts.escrow.to_account_info().try_borrow_mut_lamports()? -= wager_lamports;
-            **ctx.accounts.player_two.to_account_info().try_borrow_mut_lamports()? += wager_lamports;
-        }
-
-        emit!(MatchCancelled {
-            match_id,
-            refunded_one: player_one_deposited,
-            refunded_two: player_two_deposited,
-        });
-
-        Ok(())
+    /// Players can cancel AwaitingDeposits, or any state after timeout from activation.
+    ///
+    /// TODO(20-03): Rewrite for N-player — replace player_one/player_two fields with
+    /// players array iteration, replace bool flags with deposits_mask bitmap iteration.
+    pub fn cancel_match(_ctx: Context<CancelMatch>) -> Result<()> {
+        // STUB: Instruction body replaced in plan 20-03.
+        todo!("cancel_match rewritten in plan 20-03")
     }
 
-    /// DCA-02: Permissionless reclaim — anyone can trigger refund after 48 hours
+    /// DCA-02: Permissionless reclaim — anyone can trigger refund after 2x timeout.
     /// Separate from cancel_match (which requires authority or player).
     /// The caller receives PDA rent lamports as economic incentive.
-    pub fn permissionless_reclaim(ctx: Context<PermissionlessReclaim>) -> Result<()> {
-        // Read all values before any mutable borrow (Rust borrow checker)
-        let player_one_deposited = ctx.accounts.escrow.player_one_deposited;
-        let player_two_deposited = ctx.accounts.escrow.player_two_deposited;
-        let wager_lamports = ctx.accounts.escrow.wager_lamports;
-        let match_id = ctx.accounts.escrow.match_id.clone();
-        let escrow_state = ctx.accounts.escrow.state;
-
-        // Cannot reclaim already-terminal escrows
-        require!(
-            escrow_state != MatchState::Settled
-                && escrow_state != MatchState::Cancelled,
-            EscrowError::InvalidState
-        );
-
-        // Use activated_at if match was activated; otherwise created_at
-        let timeout_reference = if ctx.accounts.escrow.activated_at > 0 {
-            ctx.accounts.escrow.activated_at
-        } else {
-            ctx.accounts.escrow.created_at
-        };
-
-        // Checked arithmetic for 2x timeout
-        let reclaim_deadline = timeout_reference
-            .checked_add(PERMISSIONLESS_RECLAIM_TIMEOUT)
-            .ok_or(EscrowError::ArithmeticOverflow)?;
-
-        require!(
-            Clock::get()?.unix_timestamp > reclaim_deadline,
-            EscrowError::TooEarlyToReclaim
-        );
-
-        // Set terminal state BEFORE transfers (defense-in-depth)
-        {
-            let escrow = &mut ctx.accounts.escrow;
-            escrow.state = MatchState::Cancelled;
-        } // mutable borrow dropped
-
-        // Refund player one if they deposited
-        if player_one_deposited {
-            **ctx.accounts.escrow.to_account_info().try_borrow_mut_lamports()? -= wager_lamports;
-            **ctx.accounts.player_one.to_account_info().try_borrow_mut_lamports()? += wager_lamports;
-        }
-
-        // Refund player two if they deposited
-        if player_two_deposited {
-            **ctx.accounts.escrow.to_account_info().try_borrow_mut_lamports()? -= wager_lamports;
-            **ctx.accounts.player_two.to_account_info().try_borrow_mut_lamports()? += wager_lamports;
-        }
-
-        emit!(MatchCancelled {
-            match_id,
-            refunded_one: player_one_deposited,
-            refunded_two: player_two_deposited,
-        });
-
-        Ok(())
+    ///
+    /// TODO(20-03): Rewrite for N-player — replace player_one/player_two fields with
+    /// players array iteration, replace bool flags with deposits_mask bitmap iteration.
+    pub fn permissionless_reclaim(_ctx: Context<PermissionlessReclaim>) -> Result<()> {
+        // STUB: Instruction body replaced in plan 20-03.
+        todo!("permissionless_reclaim rewritten in plan 20-03")
     }
 }
 
@@ -591,11 +392,10 @@ pub struct SettleMatch<'info> {
     pub authority: Signer<'info>,
 
     /// Winner: must be one of the registered players (OC-02 — resolves H008, H002, S001)
-    /// CHECK: Constrained to escrow.player_one or escrow.player_two
+    /// CHECK: Constrained to players array — TODO(20-03): replace with array membership check
     #[account(
         mut,
-        constraint = winner.key() == escrow.player_one
-            || winner.key() == escrow.player_two
+        constraint = escrow.players.contains(&winner.key())
             @ EscrowError::InvalidWinner
     )]
     pub winner: UncheckedAccount<'info>,
@@ -629,7 +429,10 @@ pub struct SettleMatch<'info> {
     pub system_program: Program<'info, System>,
 }
 
-/// CancelMatch — refund players (OC-04, OC-05, OC-07, OC-09, OC-10)
+/// CancelMatch — refund deposited players (OC-04, OC-05, OC-07, OC-09, OC-10)
+///
+/// TODO(20-03): Replace fixed player_one/player_two accounts with remaining_accounts
+/// iteration over all players in the escrow.players array.
 #[derive(Accounts)]
 pub struct CancelMatch<'info> {
     #[account(
@@ -643,18 +446,12 @@ pub struct CancelMatch<'info> {
     #[account(mut)]
     pub caller: Signer<'info>,
 
-    /// CHECK: Must match escrow.player_one
-    #[account(
-        mut,
-        constraint = player_one.key() == escrow.player_one @ EscrowError::InvalidPlayer,
-    )]
+    /// CHECK: Stub — will be replaced with remaining_accounts iteration in plan 20-03
+    #[account(mut)]
     pub player_one: UncheckedAccount<'info>,
 
-    /// CHECK: Must match escrow.player_two
-    #[account(
-        mut,
-        constraint = player_two.key() == escrow.player_two @ EscrowError::InvalidPlayer,
-    )]
+    /// CHECK: Stub — will be replaced with remaining_accounts iteration in plan 20-03
+    #[account(mut)]
     pub player_two: UncheckedAccount<'info>,
 
     /// Config PDA — provides authority pubkey + pause guard (OC-04, OC-05)
@@ -670,6 +467,9 @@ pub struct CancelMatch<'info> {
 
 /// PermissionlessReclaim — anyone can reclaim after 2x timeout (DCA-02)
 /// No authority or player check. Caller receives PDA rent as incentive.
+///
+/// TODO(20-03): Replace fixed player_one/player_two accounts with remaining_accounts
+/// iteration over all players in the escrow.players array.
 #[derive(Accounts)]
 pub struct PermissionlessReclaim<'info> {
     #[account(
@@ -683,18 +483,12 @@ pub struct PermissionlessReclaim<'info> {
     #[account(mut)]
     pub caller: Signer<'info>,
 
-    /// CHECK: Must match escrow.player_one for refund routing
-    #[account(
-        mut,
-        constraint = player_one.key() == escrow.player_one @ EscrowError::InvalidPlayer,
-    )]
+    /// CHECK: Stub — will be replaced with remaining_accounts iteration in plan 20-03
+    #[account(mut)]
     pub player_one: UncheckedAccount<'info>,
 
-    /// CHECK: Must match escrow.player_two for refund routing
-    #[account(
-        mut,
-        constraint = player_two.key() == escrow.player_two @ EscrowError::InvalidPlayer,
-    )]
+    /// CHECK: Stub — will be replaced with remaining_accounts iteration in plan 20-03
+    #[account(mut)]
     pub player_two: UncheckedAccount<'info>,
 
     pub system_program: Program<'info, System>,

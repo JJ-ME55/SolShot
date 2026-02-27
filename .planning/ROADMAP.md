@@ -179,11 +179,11 @@ Plans:
 5. The color picker prevents two players from selecting the same color — selecting a color already taken by another player is disabled or triggers automatic reassignment.
 6. Quick Match matchmaking only proposes rooms matching the selected player count.
 
-**Plans:** TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 19-01: N HP bar HUD — PlayerCard component, dynamic players.map() rendering, horizontal strip layout, turn highlight, eliminated styling
-- [ ] 19-02: Lobby UI — player count selector, room list currentPlayers/maxPlayers, N-slot waiting room, color picker with duplicate prevention, Quick Match player-count filter
+- [ ] 19-01-PLAN.md — BattleHUD N-player HP strip, PlayerHPBar component, elimination overlay + Leave Match, GameBridge placement fix, Win/Lose placement leaderboards
+- [ ] 19-02-PLAN.md — Server startPick guard + roomUpdate event, player count selector, N-slot waiting room, color de-dup, room list player count badges
 
 ---
 

@@ -337,26 +337,202 @@ pub mod solshot_escrow {
         Ok(())
     }
 
-    /// Cancel match — refund deposited players (OC-04, OC-05, OC-07, OC-09, OC-10).
+    /// Cancel match — refund deposited players via remaining_accounts (OC-04, OC-05, OC-07, OC-09, OC-10, ESC-08).
     /// Authority can only cancel AwaitingDeposits state.
     /// Players can cancel AwaitingDeposits, or any state after timeout from activation.
-    ///
-    /// TODO(20-03): Rewrite for N-player — replace player_one/player_two fields with
-    /// players array iteration, replace bool flags with deposits_mask bitmap iteration.
-    pub fn cancel_match(_ctx: Context<CancelMatch>) -> Result<()> {
-        // STUB: Instruction body replaced in plan 20-03.
-        todo!("cancel_match rewritten in plan 20-03")
+    /// Caller must pass deposited player accounts in player-index order via remaining_accounts.
+    pub fn cancel_match(ctx: Context<CancelMatch>) -> Result<()> {
+        let caller = ctx.accounts.caller.key();
+        let config_authority = ctx.accounts.config.authority;
+
+        // Read-only values before mutable borrow (Rust borrow checker safety — Pitfall 3)
+        let escrow_state = ctx.accounts.escrow.state;
+        let deposits_mask = ctx.accounts.escrow.deposits_mask;
+        let max_players = ctx.accounts.escrow.max_players as usize;
+        let players = ctx.accounts.escrow.players;
+        let wager_lamports = ctx.accounts.escrow.wager_lamports;
+        let match_id = ctx.accounts.escrow.match_id.clone();
+
+        // Timeout reference — use activated_at if > 0, else created_at
+        let timeout_reference = if ctx.accounts.escrow.activated_at > 0 {
+            ctx.accounts.escrow.activated_at
+        } else {
+            ctx.accounts.escrow.created_at
+        };
+
+        let timeout_deadline = timeout_reference
+            .checked_add(TIMEOUT_SECONDS)
+            .ok_or(EscrowError::ArithmeticOverflow)?;
+
+        let is_timed_out = Clock::get()?.unix_timestamp > timeout_deadline;
+
+        // OC-05: authority can ONLY cancel AwaitingDeposits
+        let is_authority = caller == config_authority;
+        // Check if caller is any of the N players
+        let is_player = players[..max_players].iter().any(|p| *p == caller);
+
+        require!(
+            (is_authority && escrow_state == MatchState::AwaitingDeposits)
+            || (is_player && (escrow_state == MatchState::AwaitingDeposits || is_timed_out)),
+            EscrowError::Unauthorized
+        );
+
+        require!(
+            escrow_state != MatchState::Settled && escrow_state != MatchState::Cancelled,
+            EscrowError::InvalidState
+        );
+
+        // OC-10: set terminal state BEFORE transfers (defense-in-depth)
+        {
+            let escrow = &mut ctx.accounts.escrow;
+            escrow.state = MatchState::Cancelled;
+        } // mutable borrow dropped here
+
+        // ESC-08: Refund deposited players via remaining_accounts
+        // Caller must pass deposited player accounts in player-index order
+        for (i, account) in ctx.remaining_accounts.iter().enumerate() {
+            // Bounds check: index must be within max_players
+            require!(i < max_players, EscrowError::InvalidPlayer);
+
+            // Verify this slot was deposited
+            let bit_set = (deposits_mask >> i) & 1 == 1;
+            require!(bit_set, EscrowError::InvalidPlayer);
+
+            // Verify pubkey matches registered player at this index
+            require!(
+                *account.key == players[i],
+                EscrowError::InvalidPlayer
+            );
+
+            // Transfer wager lamports from escrow PDA to player
+            **ctx.accounts.escrow.to_account_info().try_borrow_mut_lamports()? -= wager_lamports;
+            **account.try_borrow_mut_lamports()? += wager_lamports;
+        }
+
+        emit!(MatchCancelled {
+            match_id,
+            players: players[..max_players].to_vec(),
+            deposits_mask,
+        });
+
+        Ok(())
     }
 
-    /// DCA-02: Permissionless reclaim — anyone can trigger refund after 2x timeout.
+    /// DCA-02: Permissionless reclaim — anyone can trigger refund after 2x timeout (ESC-09).
     /// Separate from cancel_match (which requires authority or player).
     /// The caller receives PDA rent lamports as economic incentive.
-    ///
-    /// TODO(20-03): Rewrite for N-player — replace player_one/player_two fields with
-    /// players array iteration, replace bool flags with deposits_mask bitmap iteration.
-    pub fn permissionless_reclaim(_ctx: Context<PermissionlessReclaim>) -> Result<()> {
-        // STUB: Instruction body replaced in plan 20-03.
-        todo!("permissionless_reclaim rewritten in plan 20-03")
+    /// Caller must pass deposited player accounts in player-index order via remaining_accounts.
+    pub fn permissionless_reclaim(ctx: Context<PermissionlessReclaim>) -> Result<()> {
+        // Read all values before any mutable borrow (Rust borrow checker safety — Pitfall 3)
+        let deposits_mask = ctx.accounts.escrow.deposits_mask;
+        let max_players = ctx.accounts.escrow.max_players as usize;
+        let players = ctx.accounts.escrow.players;
+        let wager_lamports = ctx.accounts.escrow.wager_lamports;
+        let match_id = ctx.accounts.escrow.match_id.clone();
+        let escrow_state = ctx.accounts.escrow.state;
+
+        // Cannot reclaim already-terminal escrows
+        require!(
+            escrow_state != MatchState::Settled
+                && escrow_state != MatchState::Cancelled,
+            EscrowError::InvalidState
+        );
+
+        // Use activated_at if match was activated; otherwise created_at
+        let timeout_reference = if ctx.accounts.escrow.activated_at > 0 {
+            ctx.accounts.escrow.activated_at
+        } else {
+            ctx.accounts.escrow.created_at
+        };
+
+        // Checked arithmetic for 2x timeout
+        let reclaim_deadline = timeout_reference
+            .checked_add(PERMISSIONLESS_RECLAIM_TIMEOUT)
+            .ok_or(EscrowError::ArithmeticOverflow)?;
+
+        require!(
+            Clock::get()?.unix_timestamp > reclaim_deadline,
+            EscrowError::TooEarlyToReclaim
+        );
+
+        // Set terminal state BEFORE transfers (defense-in-depth)
+        {
+            let escrow = &mut ctx.accounts.escrow;
+            escrow.state = MatchState::Cancelled;
+        } // mutable borrow dropped
+
+        // ESC-09: Refund deposited players via remaining_accounts
+        for (i, account) in ctx.remaining_accounts.iter().enumerate() {
+            require!(i < max_players, EscrowError::InvalidPlayer);
+
+            let bit_set = (deposits_mask >> i) & 1 == 1;
+            require!(bit_set, EscrowError::InvalidPlayer);
+
+            require!(
+                *account.key == players[i],
+                EscrowError::InvalidPlayer
+            );
+
+            **ctx.accounts.escrow.to_account_info().try_borrow_mut_lamports()? -= wager_lamports;
+            **account.try_borrow_mut_lamports()? += wager_lamports;
+        }
+
+        emit!(MatchCancelled {
+            match_id,
+            players: players[..max_players].to_vec(),
+            deposits_mask,
+        });
+
+        Ok(())
+    }
+
+    /// Start match with only the players who have deposited (ESC-11).
+    /// Authority calls this when deposit timeout fires and some (but not all) players deposited.
+    /// Reduces max_players to num_deposited (min 2), compacts players array, activates the match.
+    /// Non-depositors are effectively kicked — their slots become invalid.
+    pub fn start_with_depositors(ctx: Context<StartWithDepositors>) -> Result<()> {
+        require!(
+            ctx.accounts.escrow.state == MatchState::AwaitingDeposits,
+            EscrowError::MatchAlreadyStarted
+        );
+
+        let num_deposited = ctx.accounts.escrow.deposits_mask.count_ones();
+        require!(num_deposited >= 2, EscrowError::TooFewPlayers);
+
+        let wager = ctx.accounts.escrow.wager_lamports;
+        let match_id = ctx.accounts.escrow.match_id.clone();
+
+        let escrow = &mut ctx.accounts.escrow;
+
+        // Compact: move deposited players to front of array
+        let deposits_mask = escrow.deposits_mask;
+        let max = escrow.max_players as usize;
+        let mut compacted = [Pubkey::default(); 4];
+        let mut new_mask: u8 = 0;
+        let mut j = 0usize;
+        for i in 0..max {
+            if (deposits_mask >> i) & 1 == 1 {
+                compacted[j] = escrow.players[i];
+                new_mask |= 1u8 << j;
+                j += 1;
+            }
+        }
+        escrow.players = compacted;
+        escrow.deposits_mask = new_mask;
+        escrow.max_players = j as u8;
+        escrow.state = MatchState::Active;
+        escrow.activated_at = Clock::get()?.unix_timestamp;
+
+        let total_pot = wager
+            .checked_mul(num_deposited as u64)
+            .ok_or(EscrowError::ArithmeticOverflow)?;
+
+        emit!(MatchActive {
+            match_id,
+            total_pot,
+        });
+
+        Ok(())
     }
 }
 
@@ -532,10 +708,7 @@ pub struct SettleMatch<'info> {
     pub system_program: Program<'info, System>,
 }
 
-/// CancelMatch — refund deposited players (OC-04, OC-05, OC-07, OC-09, OC-10)
-///
-/// TODO(20-03): Replace fixed player_one/player_two accounts with remaining_accounts
-/// iteration over all players in the escrow.players array.
+/// CancelMatch — refund deposited players via remaining_accounts (OC-04, OC-05, OC-07, OC-09, OC-10, ESC-08)
 #[derive(Accounts)]
 pub struct CancelMatch<'info> {
     #[account(
@@ -549,14 +722,6 @@ pub struct CancelMatch<'info> {
     #[account(mut)]
     pub caller: Signer<'info>,
 
-    /// CHECK: Stub — will be replaced with remaining_accounts iteration in plan 20-03
-    #[account(mut)]
-    pub player_one: UncheckedAccount<'info>,
-
-    /// CHECK: Stub — will be replaced with remaining_accounts iteration in plan 20-03
-    #[account(mut)]
-    pub player_two: UncheckedAccount<'info>,
-
     /// Config PDA — provides authority pubkey + pause guard (OC-04, OC-05)
     #[account(
         seeds = [GlobalConfig::SEED],
@@ -566,13 +731,11 @@ pub struct CancelMatch<'info> {
     pub config: Account<'info, GlobalConfig>,
 
     pub system_program: Program<'info, System>,
+    // NOTE: No named player accounts — deposited players arrive via ctx.remaining_accounts
 }
 
-/// PermissionlessReclaim — anyone can reclaim after 2x timeout (DCA-02)
+/// PermissionlessReclaim — anyone can reclaim after 2x timeout (DCA-02, ESC-09)
 /// No authority or player check. Caller receives PDA rent as incentive.
-///
-/// TODO(20-03): Replace fixed player_one/player_two accounts with remaining_accounts
-/// iteration over all players in the escrow.players array.
 #[derive(Accounts)]
 pub struct PermissionlessReclaim<'info> {
     #[account(
@@ -586,15 +749,31 @@ pub struct PermissionlessReclaim<'info> {
     #[account(mut)]
     pub caller: Signer<'info>,
 
-    /// CHECK: Stub — will be replaced with remaining_accounts iteration in plan 20-03
-    #[account(mut)]
-    pub player_one: UncheckedAccount<'info>,
-
-    /// CHECK: Stub — will be replaced with remaining_accounts iteration in plan 20-03
-    #[account(mut)]
-    pub player_two: UncheckedAccount<'info>,
-
     pub system_program: Program<'info, System>,
+    // NOTE: No named player accounts — deposited players arrive via ctx.remaining_accounts
+}
+
+/// StartWithDepositors — authority activates match with partial deposits (ESC-11)
+#[derive(Accounts)]
+pub struct StartWithDepositors<'info> {
+    #[account(
+        mut,
+        seeds = [b"match", escrow.match_id.as_bytes()],
+        bump = escrow.bump,
+        has_one = authority,
+    )]
+    pub escrow: Account<'info, MatchEscrow>,
+
+    pub authority: Signer<'info>,
+
+    /// Config PDA — provides authority validation + pause guard
+    #[account(
+        seeds = [GlobalConfig::SEED],
+        bump = config.bump,
+        has_one = authority @ EscrowError::Unauthorized,
+        constraint = !config.is_paused @ EscrowError::ProgramPaused,
+    )]
+    pub config: Account<'info, GlobalConfig>,
 }
 
 // ─────────────────────────────────────────────

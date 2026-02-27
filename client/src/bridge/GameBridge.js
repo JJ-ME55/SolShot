@@ -118,7 +118,7 @@ class GameBridge {
   setPlayerEliminated(index, placement) {
     const players = [...this.state.players];
     if (players[index]) {
-      players[index] = { ...players[index], alive: false };
+      players[index] = { ...players[index], alive: false, placement };
     }
     const isMe = (index === this.state.myPlayerIndex);
     Object.assign(this.state, {

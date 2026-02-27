@@ -1,5 +1,5 @@
 import React from 'react';
-import ScoreBoard from './ScoreBoard';
+import PlayerHPBar from './PlayerHPBar';
 import WindDisplay from './WindDisplay';
 import GoldDisplay from './GoldDisplay';
 import PotDisplay from './PotDisplay';
@@ -30,6 +30,7 @@ const s = {
     display: 'flex',
     gap: 8,
     alignItems: 'center',
+    flexShrink: 0,
   },
   bottomRow: {
     marginTop: 'auto',
@@ -98,10 +99,13 @@ const moveBtn = (disabled) => ({
   userSelect: 'none',
 });
 
-function BattleHUD({ bridge, gameState, wager }) {
+function BattleHUD({ bridge, gameState, wager, onLeaveMatch }) {
   const {
-    tank1 = {},
-    tank2 = {},
+    players = [],
+    myPlayerIndex = -1,
+    currentPlayerIndex = 0,
+    isEliminated = false,
+    eliminatedPlacement = null,
     isPlayerTurn = false,
     isFiring = false,
     weapons = [],
@@ -120,16 +124,25 @@ function BattleHUD({ bridge, gameState, wager }) {
     <div style={s.overlay}>
       {/* ═══ TOP ROW ═══ */}
       <div style={s.topRow}>
-        <ScoreBoard tank={tank1} side="left" />
+        {/* N-player HP bar strip */}
+        <div style={{ display: 'flex', gap: 4, flex: 1 }}>
+          {players.length > 0 ? players.map((p, i) => (
+            <PlayerHPBar
+              key={p.socketId || i}
+              player={p}
+              isActive={i === currentPlayerIndex}
+              isMe={i === myPlayerIndex}
+            />
+          )) : null}
+        </div>
 
+        {/* Center stats */}
         <div style={s.topCenter}>
           <WindDisplay wind={wind} />
           <GoldDisplay gold={gold} />
           {wager > 0 && <PotDisplay pot={potDisplay} />}
           <RoundCounter round={round} total={totalRounds} />
         </div>
-
-        <ScoreBoard tank={tank2} side="right" />
       </div>
 
       {/* ═══ TURN INDICATOR ═══ */}
@@ -138,7 +151,11 @@ function BattleHUD({ bridge, gameState, wager }) {
           ...s.turnLabel,
           ...(isPlayerTurn ? s.turnLabelActive : s.turnLabelWaiting),
         }}>
-          {isPlayerTurn ? 'YOUR TURN' : "OPPONENT'S TURN"}
+          {isPlayerTurn ? 'YOUR TURN' : (
+            players.length > 2
+              ? (players[currentPlayerIndex]?.name || 'OPPONENT') + "'S TURN"
+              : "OPPONENT'S TURN"
+          )}
         </div>
       </div>
 
@@ -147,12 +164,12 @@ function BattleHUD({ bridge, gameState, wager }) {
         {/* Left: Angle + Power */}
         <div style={s.controlsLeft}>
           <AngleControl
-            angle={isPlayerTurn ? (tank1.angle || 45) : (tank2.angle || 45)}
+            angle={players[myPlayerIndex]?.angle || 45}
             onChange={(v) => bridge.setAngle(v)}
             disabled={disabled}
           />
           <PowerControl
-            power={isPlayerTurn ? (tank1.power || 60) : (tank2.power || 60)}
+            power={players[myPlayerIndex]?.power || 60}
             onChange={(v) => bridge.setPower(v)}
             disabled={disabled}
           />
@@ -193,6 +210,62 @@ function BattleHUD({ bridge, gameState, wager }) {
           <MoveCounter moves={moveSteps} />
         </div>
       </div>
+
+      {/* ═══ ELIMINATION OVERLAY ═══ */}
+      {isEliminated && (
+        <div style={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          background: 'rgba(10, 12, 8, 0.85)',
+          border: '1px solid var(--ol)',
+          borderRadius: 6,
+          padding: '20px 30px',
+          textAlign: 'center',
+          pointerEvents: 'auto',
+          zIndex: 20,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10,
+          alignItems: 'center',
+        }}>
+          <div style={{
+            fontFamily: "'Black Ops One', cursive",
+            fontSize: 22,
+            color: 'var(--kh)',
+            letterSpacing: 3,
+          }}>
+            YOU PLACED {eliminatedPlacement === 1 ? '1ST' : eliminatedPlacement === 2 ? '2ND' : eliminatedPlacement === 3 ? '3RD' : eliminatedPlacement + 'TH'}
+          </div>
+          <div style={{
+            fontFamily: "'Share Tech Mono', monospace",
+            fontSize: 13,
+            color: 'var(--kh)',
+            letterSpacing: 2,
+            opacity: 0.6,
+          }}>
+            SPECTATING...
+          </div>
+          <button
+            style={{
+              fontFamily: "'Black Ops One', cursive",
+              fontSize: 14,
+              letterSpacing: 2,
+              padding: '8px 20px',
+              borderRadius: 3,
+              border: '1px solid var(--ol)',
+              background: 'rgba(184, 168, 138, 0.15)',
+              color: 'var(--bn)',
+              cursor: 'pointer',
+              pointerEvents: 'auto',
+            }}
+            onClick={onLeaveMatch}
+          >
+            LEAVE MATCH
+          </button>
+        </div>
+      )}
     </div>
   );
 }

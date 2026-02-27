@@ -16,8 +16,8 @@ const TREASURY_BPS: u64 = 700;
 const OPS_BPS: u64 = 300;
 const BPS_DENOMINATOR: u64 = 10000;
 
-/// 24-hour timeout for auto-refund after match activation (in seconds)
-const TIMEOUT_SECONDS: i64 = 86400;
+/// 10-minute timeout for deposit window (ESC-10 — higher no-show risk with more players)
+const TIMEOUT_SECONDS: i64 = 600;
 
 /// 48-hour permissionless reclaim timeout (2x normal timeout) — DCA-02
 const PERMISSIONLESS_RECLAIM_TIMEOUT: i64 = TIMEOUT_SECONDS * 2; // 172800 seconds
@@ -727,29 +727,27 @@ impl GlobalConfig {
     pub const SEED: &'static [u8] = b"config";
 }
 
-/// Per-match escrow account (OC-07 adds activated_at field)
+/// Per-match escrow account — supports 2-4 players (v1.4 N-player upgrade)
 #[account]
 pub struct MatchEscrow {
     /// Unique match identifier (max 32 chars, e.g. room ID)
     pub match_id: String,
     /// Server authority that created/settles this match
     pub authority: Pubkey,
-    /// Player 1 wallet
-    pub player_one: Pubkey,
-    /// Player 2 wallet
-    pub player_two: Pubkey,
+    /// Player wallets — fixed [Pubkey; 4], zero-padded for < 4 players
+    pub players: [Pubkey; 4],
+    /// Number of active players (2-4). Slots players[max_players..4] are Pubkey::default()
+    pub max_players: u8,
     /// Wager per player in lamports
     pub wager_lamports: u64,
-    /// Whether player 1 has deposited
-    pub player_one_deposited: bool,
-    /// Whether player 2 has deposited
-    pub player_two_deposited: bool,
+    /// Bitmap: bit N set = player N has deposited
+    pub deposits_mask: u8,
     /// Current match state
     pub state: MatchState,
     /// Unix timestamp of creation (fallback timeout reference)
     pub created_at: i64,
-    /// Unix timestamp when match became Active (OC-07 settlement + timeout reference)
-    /// Set to 0 at creation; updated when both players deposit.
+    /// Unix timestamp when match became Active (settlement + timeout reference)
+    /// Set to 0 at creation; updated when all players deposit.
     pub activated_at: i64,
     /// PDA bump seed
     pub bump: u8,
@@ -757,20 +755,19 @@ pub struct MatchEscrow {
 
 impl MatchEscrow {
     /// Account space calculation:
-    /// 8  (discriminator)
-    /// + 4+32 (String match_id, max 32 chars)
-    /// + 32   (authority Pubkey)
-    /// + 32   (player_one Pubkey)
-    /// + 32   (player_two Pubkey)
-    /// + 8    (wager_lamports u64)
-    /// + 1    (player_one_deposited bool)
-    /// + 1    (player_two_deposited bool)
-    /// + 1    (state enum, 4 variants = 1 byte)
-    /// + 8    (created_at i64)
-    /// + 8    (activated_at i64)  <-- OC-07
-    /// + 1    (bump u8)
-    /// = 168
-    pub const SPACE: usize = 8 + (4 + 32) + 32 + 32 + 32 + 8 + 1 + 1 + 1 + 8 + 8 + 1;
+    /// 8       (discriminator)
+    /// + 4+32  (String match_id, max 32 chars)
+    /// + 32    (authority Pubkey)
+    /// + 128   (players [Pubkey; 4] — 4 * 32)
+    /// + 1     (max_players u8)
+    /// + 8     (wager_lamports u64)
+    /// + 1     (deposits_mask u8)
+    /// + 1     (state enum, 4 variants = 1 byte)
+    /// + 8     (created_at i64)
+    /// + 8     (activated_at i64)
+    /// + 1     (bump u8)
+    /// = 232
+    pub const SPACE: usize = 8 + (4 + 32) + 32 + (4 * 32) + 1 + 8 + 1 + 1 + 8 + 8 + 1;
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
@@ -788,8 +785,8 @@ pub enum MatchState {
 #[event]
 pub struct MatchCreated {
     pub match_id: String,
-    pub player_one: Pubkey,
-    pub player_two: Pubkey,
+    pub players: Vec<Pubkey>,
+    pub max_players: u8,
     pub wager_lamports: u64,
 }
 
@@ -821,8 +818,8 @@ pub struct MatchSettled {
 #[event]
 pub struct MatchCancelled {
     pub match_id: String,
-    pub refunded_one: bool,
-    pub refunded_two: bool,
+    pub players: Vec<Pubkey>,
+    pub deposits_mask: u8,
 }
 
 /// B1-mini: Audit trail for config changes
@@ -851,7 +848,7 @@ pub enum EscrowError {
     NotAPlayer,
     #[msg("Player has already deposited")]
     AlreadyDeposited,
-    #[msg("Winner must be player one or player two")]
+    #[msg("Winner must be a registered player")]
     InvalidWinner,
     #[msg("Not authorized for this operation")]
     Unauthorized,
@@ -880,4 +877,10 @@ pub enum EscrowError {
     SettlementExpired,
     #[msg("Cannot reclaim before 2x timeout has elapsed")]
     TooEarlyToReclaim,
+    #[msg("Match requires at least 2 players")]
+    TooFewPlayers,
+    #[msg("Match supports at most 4 players")]
+    TooManyPlayers,
+    #[msg("Match has already started")]
+    MatchAlreadyStarted,
 }

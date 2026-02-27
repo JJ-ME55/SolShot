@@ -1,241 +1,189 @@
-# Research Summary
+# Research Summary: SolShot v1.4 — N-Player Escrow
 
-**Project:** SolShot — v1.3 — 4-Player Multiplayer Refactor (1v1 to 2-4 Last-Man-Standing)
-**Domain:** Browser-based server-authoritative artillery game, N-player multiplayer
-**Researched:** 2026-02-26
-**Confidence:** HIGH
+**Project:** SolShot — extending 2-player on-chain escrow to support 2-4 players
+**Domain:** N-player extension of binary (1v1) game engine + Anchor escrow program upgrade (2-player PDA to 2-4 player PDA)
+**Researched:** 2026-02-27
+**Confidence:** HIGH (all findings from direct codebase reading; MEDIUM for partial-deposit UX design and test infrastructure)
 
 ---
 
 ## Executive Summary
 
-The 4-player refactor is fundamentally an architectural migration, not a feature addition. No new libraries are needed — the existing React/Phaser/Socket.IO/Node.js stack is fully capable of N-player. The entire scope of work is replacing binary (1v1) hardpoints throughout the server and client with N-player data structures. The good news: roughly 80% of the server's in-memory state (`goldStates`, `weaponInventories`, `matchStates` sub-fields) is already keyed by socket ID and is N-player-compatible today. The bad news: the room object (`host`/`player`), the turn system (`getNextTurn`), the round-over check (`isRoundOver`), and every socket event payload that names `host` and `player` explicitly must all change.
+The v1.4 milestone has two tightly coupled but separable concerns: upgrading the game engine from a hardwired 2-player binary model to a generalized N-player model, and simultaneously upgrading the Anchor escrow program from a 2-player PDA to one that handles 2-4 players. Research confirms both upgrades are achievable without new libraries, new blockchains, or architectural pivots — but neither is cosmetic. The game server (`server/socket-io/main.js`, ~2800 lines) has the 2-player assumption baked into roughly 60+ locations, and the Anchor program (`programs/solshot-escrow/src/lib.rs`) is architecturally binary in its account struct, four instruction handlers, and every downstream consumer. Both must be fully migrated in coordinated phases.
 
-The recommended approach is a phased migration that establishes the data contract first. Start with the isolated `match.js` service functions (zero external dependencies), then migrate the server room data model and establish a compatibility shim, then work outward through socket handlers, then update the client only after the server emits correct N-player payloads. This top-down server-first order prevents a situation where the client is updated to expect an N-player payload that the server is not yet sending. Practice mode (no wager) should be the first and only wager context until the Anchor escrow program is separately upgraded for N-player; adding N-player wager support on the binary escrow program would silently corrupt state.
+The recommended approach is sequential and dependency-ordered: the Anchor program rewrite comes first because its compiled IDL gates all server-side and client-side escrow changes. The game engine server migration runs in parallel, using a compatibility shim (`room.players[]` with `room.host`/`room.player` as alias getters) to preserve the 2-player regression guarantee while incrementally replacing binary assumptions. The client Phaser scene and React HUD changes come last, after server N-player logic is validated in Practice mode. The critical wager guard (`SYS-08`, a single `if` block in `main.js`) is the integration gate: it blocks wagered matches for `maxPlayers > 2` and must remain in place until both the Anchor program supports N players and Practice mode N-player is stable end-to-end.
 
-The biggest risk is partial migration — `main.js` has approximately 60 locations that reference `room.host` or `room.player` by name. A compatibility shim (assigning `room.host = room.players[0]` and `room.player = room.players[1]` after every mutation) reduces this risk by keeping the 2-player code path working while handlers are migrated one at a time. The 2-player regression guarantee must hold throughout the refactor. The second-biggest risk is the `isRoundOver` function ending rounds on the first kill in a 4-player match — this is a silent correctness failure with no error thrown. Fix this before any multi-player testing.
+The most operationally dangerous risk is the silent IDL desync: every `lib.rs` change requires an `anchor build`, an IDL copy to `server/idl/`, and a field-name audit in `escrow.js`. Failure to do this produces silent data corruption with no error thrown — `getEscrowState()` returns `undefined` for every field from the old struct without raising an exception. The second most dangerous risk is the `remaining_accounts` security gap in `cancel_match`: without explicit positional key validation (`account.key() == escrow.players[i]`), a malicious caller can pass arbitrary writable accounts to redirect refund lamports. This validation is not provided by Anchor's constraint system and must be written manually inside the instruction body.
 
 ---
 
 ## Key Findings
 
-### Stack Additions Needed
+### Recommended Stack
 
-No new dependencies are required. The existing stack handles everything:
+No new technologies are required for this milestone. The existing stack — Anchor 0.32.1, Solana devnet, Node.js/Express/Socket.IO server, React client — is sufficient for all changes. Anchor 0.32.1 provides fixed-size arrays (`[Pubkey; 4]`), `remaining_accounts` for variable-length account lists, account space calculation, and bitmap/bool-array deposit tracking. There is no reason to upgrade Anchor for this milestone.
 
-**Version housekeeping only:**
-- Socket.IO: server `^4.4.1` and client `^4.5.1` are misaligned; update both to `^4.8.3` at milestone start — low risk, clean housekeeping
-- Phaser 3: current `^3.55.2`, latest stable is `3.90.0` — **do not upgrade during this milestone**, the N-player refactor does not require any APIs added after 3.55.2, and compounding a major architecture change with a Phaser upgrade multiplies regression risk
+**Core technologies and their roles:**
+- **Anchor 0.32.1** — on-chain program framework; `[Pubkey; 4]` fixed arrays and `remaining_accounts` pattern are the two key features used; `BN` must continue to be imported from `bn.js` directly (not from `@coral-xyz/anchor`) per existing MEMORY.md gotcha
+- **Solana legacy transactions** — sufficient for 4-player settle/cancel; estimated 420-700 bytes total against 1,232-byte limit; versioned transactions (v0) and Address Lookup Tables are not needed and must not be introduced for this milestone
+- **Socket.IO room model** — server-side deposit tracking (`ws.deposits[socketId]`) and `room.players[]` array are already N-player generic; the deposit confirmation loop (`room.players.every(...)`) needs no logic changes, only call-site updates removing the binary host/player check
 
-**Explicitly do not add:**
-- Redux/Zustand — GameBridge dirty-flag pattern already solves React-Phaser state sync
-- Colyseus or any game server framework — would require rewriting 2750+ validated lines of `main.js`
-- Any N-player lobby management library — Socket.IO rooms + `players[]` array is sufficient
+**Account space decision required:** Three research documents calculated the new `MatchEscrow` account size with slight differences:
+- STACK.md: 232 bytes — uses `deposits_mask: u8` (1-byte bitmap)
+- FEATURES.md: 235 bytes — uses `deposited: [bool; 4]` (4 bytes)
+- ARCHITECTURE.md: 236 bytes — uses `deposited: [bool; 4]` (4 bytes) + `num_deposited: u8` counter (1 byte)
 
-See `STACK.md` for full version currency analysis and "What NOT to Add" rationale.
+The difference is the deposit-tracking field design. The bitmap approach (STACK.md) is more compact and the "all deposited" check reduces to a single comparison (`deposits_mask == (1u8 << player_count) - 1`). The bool-array approach (FEATURES.md / ARCHITECTURE.md) is more readable and maps one-to-one to Anchor's constraint expressions. Either is correct. Choose one before Phase 1 and propagate consistently. The space proptest (`bok_proptest_space.rs`) will catch any miscalculation immediately.
+
+### Expected Features
+
+**Must have — blocks wagered N-player:**
+- Anchor program N-player PDA — replace `player_one`/`player_two` Pubkeys with `players: [Pubkey; 4]` + `player_count: u8`, deposit tracking updated accordingly
+- `cancel_match` extended to N accounts via `remaining_accounts` (with mandatory positional key validation before any lamport transfer)
+- `permissionless_reclaim` same `remaining_accounts` migration — must be done simultaneously or the 48-hour safety net only refunds 2 players
+- `settle_match` winner constraint updated to `players[..count].iter().any(...)` and pot math changed from `wager * 2` to `wager * num_deposited`
+- Server: `createMatchEscrow`, `cancelMatchEscrow`, `settleMatchEscrow`, `refundWager` signatures updated for N players
+- Server: Remove SYS-08 wager guard (`main.js` line ~1356) only after all above is verified in Practice mode
+- Server: N-player deposit emit (`Promise.all` for N `buildDepositTransaction` calls)
+- Server: `escrowDepositStatus` broadcast after each confirmed deposit — eliminates dead-air period where lobby appears frozen
+- Client: Per-player deposit status UI — checkmarks per player + countdown from `depositDeadlineMs`
+
+**Game engine pre-requisites (must exist before SYS-08 removal):**
+- `room.players[]` array model (not binary host/player schema) with compatibility shim
+- `getNextTurn` taking `playerList[]` not fixed `hostId`/`playerId`
+- `isRoundOver` distinguishing "player eliminated" from "round over" with `eliminatedPlayers` set
+- `room.active` flag correctly guarding on `players.length >= maxPlayers`
+- `turnsPerRound = N * 10` scaled to player count
+- 3-4 player Practice match works end-to-end
+
+**Should have — material UX, medium complexity:**
+- Partial deposit decision flow: `escrowPartialDeposit` event + host modal ("start with depositors" or "cancel all")
+- `start_with_depositors` Anchor instruction — compacts `max_players` to depositor count, transitions to Active
+- Total pot display in BattleHUD (`escrowActive` payload already includes `totalPot: wager * N`)
+- Deposit countdown visible to all N players
+
+**Defer to follow-on:**
+- Placement-based pot split (60/25/15 for 3-4 players) — requires new Anchor instructions and complex settlement UI
+- N-player matchmaking queue — queue currently pairs 2 players; extending to fill N-player rooms requires lobby matchmaking rewrite
+- BO3/BO5 placement scoring across rounds for N players
+
+**Anti-features to resist:**
+- Sequential deposit flow — all N players receive deposit TX simultaneously via `Promise.all`; sequential adds per-player latency
+- On-chain voting for partial deposit start — server authority cancel is simpler and maintains the same existing trust model
+- Separate per-player deposit receipt PDAs — unnecessary for max 4 players, adds 3-4 extra PDAs per match
+
+### Architecture Approach
+
+The upgrade touches four layers in strict dependency order: (1) Anchor program + IDL, (2) server escrow service (`escrow.js`, `solana.js`), (3) socket handler (`main.js`), (4) client (minimal changes for deposit UI). The game engine migration is a separate parallel track that must complete before the wager guard is removed. The architecture research identified two key patterns to codify as standards for this codebase: the **fixed-size array pattern** (`[Pubkey; 4]` with `player_count: u8` bounding the valid slice) for on-chain player storage, and the **`remaining_accounts` pattern** for variable-length account lists in cancel and reclaim instructions.
+
+**Major components and their changes:**
+
+1. **`programs/solshot-escrow/src/lib.rs`** — full rewrite of `MatchEscrow` struct and all 4 match lifecycle instructions; new `start_with_depositors` instruction; new program ID after deploy; must be built and deployed first
+2. **`server/idl/solshot_escrow.json`** — derivative of Anchor build; must be copied immediately after every `anchor build`; stale IDL produces silent data corruption (no exception thrown)
+3. **`server/services/escrow.js`** — `createMatchEscrow` takes player array; `cancelMatchEscrow` takes array + builds `remainingAccounts`; `getEscrowState` returns `deposited[]` array not named bools; new `startWithDepositors` function
+4. **`server/services/solana.js`** — `settleMatch` removes `loserAddress` param, gains `numPlayers`; `calculateSettlement` gains `numPlayers` (changes `wager * 2` to `wager * numPlayers`); `refundWager` takes `playerAddresses[]` array
+5. **`server/socket-io/main.js`** — 14 specific change sites identified; includes SYS-08 removal (unlock gate), N-player deposit emit loop, deposit confirmation index lookup, `escrowActive` totalPot fix, settlement `numPlayers` param, SHOT milestone loop for all N players, `matchEndPayload.prestigeInfo` for all N players
+6. **`client/src/screens/LobbyScreen.js`** — remove wager-mode-blocked UI for 3-4 players; add deposit status rows; partial deposit host modal
+
+**Unchanged components (explicitly verified):**
+- `WalletContext.js:signAndSendEscrowDeposit` — server serializes TX, client signs; account structure change is transparent to the signing function
+- `BattleScreen.js` / `LobbyScreen.js` socket event handler shapes — same event names, same handler pattern
+- `GlobalConfig` PDA and all config management instructions
+- Settlement math BPS structure (90/7/3) — only the `total_pot` calculation changes
+- PDA seeds `["match", match_id.as_bytes()]` — unchanged; program is upgraded in-place on devnet
+
+### Critical Pitfalls
+
+Research identified 22 game-engine pitfalls and 14 escrow-specific pitfalls. These 7 produce incorrect behavior with no error thrown:
+
+1. **`getNextTurn` binary toggle skips Player 3+ silently** (CRITICAL) — `match.js` lines 136-143 toggle between exactly two IDs; Player 3 never gets a turn. Replace with `getNextTurn(ms, playerList[])` where `playerList` contains non-eliminated active socket IDs. All 3 call sites in `main.js` (lines 443, 2117, 2495) must change simultaneously.
+
+2. **`room.active = true` fires on 2nd player join — blocks Player 3 and 4** (CRITICAL) — `main.js` lines 1004-1006; join guard exits silently when `room.active === true` regardless of `maxPlayers`. Change to `players.length >= maxPlayers` for both the guard and the setter.
+
+3. **`isRoundOver` ends the round on any player reaching 0 HP** (CRITICAL) — `match.js` lines 151-160; in 4-player, first kill ends the entire round. Introduce `eliminatedPlayers` set; round ends only when `<= 1` non-eliminated player remains.
+
+4. **`MatchEscrow::SPACE` miscalculation crashes `create_match` at runtime** (CRITICAL) — constant is set manually; wrong value produces `AccountDidNotSerialize` at runtime, not compile time. Run `bok_proptest_space.rs` immediately after any struct field change.
+
+5. **Stale IDL produces silent data corruption** (HIGH) — `getEscrowState()` deserializes bytes using field offsets from the IDL; stale IDL returns `undefined` for all fields with no exception. Treat "anchor build + copy IDL + verify field names" as one atomic operation.
+
+6. **`remaining_accounts` missing positional key validation allows fund redirection** (CRITICAL, security) — every account in `remaining_accounts` must be validated `account.key() == escrow.players[i]` before any lamport transfer; Anchor's constraint system does not validate these accounts. Without this check, a caller can drain the escrow by passing arbitrary writable accounts.
+
+7. **`escrowDepositConfirm` checks `playerOneDeposited`/`playerTwoDeposited` fields that no longer exist** (HIGH) — after IDL update, these return `undefined`; the `!depositConfirmed` guard fires for every player; all deposits are rejected; match cannot start. Update `getEscrowState()` return shape first, then grep all usages in `main.js`.
 
 ---
 
-### Feature Table Stakes vs. Differentiators
+## Implications for Roadmap
 
-**Must ship (table stakes — absence breaks the product):**
-- Round-robin turn order with eliminated-player skipping — the game halts without this
-- Last-man-standing win condition (`alive count <= 1`) — the core N-player format
-- N HP bars in HUD with color coding (red/blue/green/yellow) and turn indicator
-- Eliminated player visual state (tank destroyed, HP bar greyed out)
-- Player count selector at room creation (2, 3, or 4)
-- Lobby showing N player slots with names and ready status
-- Game starts only when all slots filled AND all players ready
-- Spectator state after elimination (client watches remaining combat passively)
-- Disconnected player in 3-4 player match: eliminate-on-timeout, match continues
+Research establishes a clear dependency chain: Anchor program before server escrow service before socket handler before client. The game engine migration is a separate dependency chain that must complete before the wager guard is removed. These two tracks can run in parallel by different developers but converge at the SYS-08 unlock gate.
 
-**Should have (differentiators — add real value, not universally expected):**
-- Post-round placement summary screen (1st/2nd/3rd/4th with gold earned) — replaces binary win/lose screen
-- Seeker device badge in waiting room — low-lift identity signal for target hardware
+### Phase 1: Anchor Program Rewrite
 
-**Defer to follow-on milestone:**
-- BO3/BO5 for 3-4 player matches — ship BO1 FFA only at launch; multi-round N-player needs separate design work
-- Placement-based scoring (Worms WMD 4/3/2/1 pts per round) — requires scoring model that rewards 2nd/3rd place meaningfully
-- Gold economy scale factor (`1/(N-1)` per-hit multiplier) — defer; BO1 FFA has no between-round shop, so imbalance is only relevant when BO3/BO5 N-player ships
-- N-player escrow / Anchor program changes — binary PDA, do not touch until dedicated escrow milestone
-- Placement-based pot split (60/25/15 for 4-player) — very high Anchor complexity, not needed at launch
-- Team modes (2v2) — entirely separate feature set, not an extension of FFA
-- AI bot fill for incomplete lobbies — requires physics-capable AI, separate multi-week milestone
+**Rationale:** Everything downstream depends on the compiled IDL. No server or client change can be tested against real escrow until the program is rewritten, built, and deployed to devnet with a new program ID.
+**Delivers:** New `MatchEscrow` struct (232-236 bytes depending on deposit tracking choice), all 4 lifecycle instructions updated for N players, new `start_with_depositors` instruction, new `NotEnoughDepositors` error code, new program ID, new IDL
+**Addresses:** Escrow pitfalls E1 (SPACE calc), E2 (winner constraint moved to instruction body), E3 (remaining_accounts with positional validation), E4 (player count cap enforced in create_match), E5 (borrow checker — clone before mutable), E12 (permissionless_reclaim simultaneous migration), E13 (all-pairs SamePlayer check)
+**Research flag:** No research needed — ARCHITECTURE.md provides instruction-by-instruction pseudocode with exact Rust patterns; `remaining_accounts` pattern is the only non-standard element and is documented in official Anchor docs.
 
-See `FEATURES.md` for genre research (Worms WMD, ShellShock Live) and anti-feature analysis.
+### Phase 2: Server Escrow Service
 
----
+**Rationale:** `escrow.js` and `solana.js` are the direct IDL consumers and must be updated before `main.js` can call them. Depends on Phase 1 (new IDL).
+**Delivers:** Updated function signatures for `createMatchEscrow`, `cancelMatchEscrow`, `settleMatchEscrow`, `refundWager`; new `startWithDepositors`; updated `getEscrowState` return shape (`deposited[]` array, `maxPlayers`, `numDeposited`); `calculateSettlement` with `numPlayers` parameter
+**Addresses:** Escrow pitfalls E6 (IDL sync — rebuild before this phase starts), E7 (escrowState field names), E8 (JS cancel signature), E9 (isWritable: true on remainingAccounts), E12 (permissionlessReclaim array signature)
+**Research flag:** No research needed — standard JS Anchor client patterns.
 
-### Architecture: Key Integration Points and Build Order
+### Phase 3: Socket Handler (main.js)
 
-The migration has approximately 10 seams that must change. The build order is strictly dependency-driven: isolated services first, shared data model second, socket handlers third, client last.
+**Rationale:** Depends on Phase 2 function signatures. The 14 specific change sites are largely mechanical. This phase includes SYS-08 wager guard removal — the unlock gate for wagered N-player — which must be the last change in this phase, after all other sites are verified.
+**Delivers:** N-player deposit emit (`Promise.all`), `escrowDepositStatus` broadcast per confirmation, `escrowActive` totalPot (`wager * N`), deposit confirmation using `deposited[playerIndex]`, settlement with `numPlayers`, forfeit/failure paths, SHOT milestone loop for all N players, `matchEndPayload.prestigeInfo` for all N players, SYS-08 removal
+**Addresses:** Escrow pitfalls E7 (deposit confirm field names), E10 (program ID in 3 locations after redeploy), E11 (escrow creation deferred until room-full)
+**Research flag:** No research needed. Architecture document provides specific line numbers and exact code patterns for all 14 change sites.
 
-**Key components and their required changes:**
+### Phase 4: Game Engine Migration (parallel track)
 
-| Component | Status | Core Change |
-|-----------|--------|-------------|
-| `server/services/match.js` | Rewrite 4 functions | `getNextTurn` → circular queue; `isRoundOver` → alive count; binary signatures → `players[]` param |
-| `server/services/gold.js` | Signature only | `initGold(hostId, playerId)` → `initGold(playerIds[])` |
-| `server/services/physics.js` | Extend | `generateTankPositions(heightmap, playerCount)` — N-zone spawn distribution |
-| `server/socket-io/main.js` | ~30 change sites | Room schema, ~15 handlers, reconnect, turn timer, disconnect flow |
-| `client/src/bridge/GameBridge.js` | State shape | `tank1/tank2/activeTank` → `players[]/myPlayerIndex/currentPlayerIndex` |
-| `client/src/scenes/main/index.js` | Major refactor | `this.tank1/tank2` → `this.tanks[]`; elimination handler; terrain handler |
-| React HUD components | Moderate | N HP bars via `players.map()`, `PlayerCard` component, lobby slot display |
-| `programs/solshot-escrow/` | Unchanged (deferred) | Binary escrow untouched until N-player wager milestone |
+**Rationale:** Can start in parallel with Phase 1 but must complete before Phase 3's SYS-08 removal. This is the larger engineering effort — 60+ locations in `main.js` plus `match.js`, `physics.js`, client Phaser scene, and React HUD.
+**Delivers:** `room.players[]` schema with compatibility shim (`room.host`/`room.player` as aliases), updated turn system (`getNextTurn` with `playerList[]`), `isRoundOver` with `eliminatedPlayers` set, `room.active` fixed for N players, `turnsPerRound = N * 10`, gold economy scaling (`1/(N-1)` divisor), reconnect migration for N players (`migrateSocketId` helper), shop system all-ready check (`room.players.every(...)`), N-player spawn zones in physics.js, 3-4 player Practice match working end-to-end
+**Addresses:** Game engine pitfalls 1 (getNextTurn), 2 (room schema), 3 (isRoundOver), 4 (room.active), 5 (simultaneous kills), 6 (reconnect), 7 (turnsPerRound), 10 (shop readiness), 11 (gold inflation), 13 (terrain spacing), 15 (isMatchOver), 16 (HP initialization), 19-20 (positionUpdate/stepLeft named slots)
+**Research flag:** This is the highest-complexity phase. Write bot-client integration tests for 3-player turn order, elimination, and round-end logic before shipping. Testing without 3 human clients is the primary operational risk (Pitfall 18). The bot-client test infrastructure must be built before Phase 4 coding begins.
 
-**Critical interface changes (socket event payloads):**
+### Phase 5: Client N-Player UI
 
-| Event | Change Required |
-|-------|----------------|
-| `createRoom` | Add `maxPlayers: 2\|3\|4` |
-| `terrainGenerated` | `tankPositions: {host, player}` → `tankPositions: [{socketId, x, y}, ...]` |
-| `turnResult` | `tankPositions: {host, player, hostId}` → `players: [{socketId, x, y, alive}]` + `currentPlayerIndex` |
-| `matchEnd` | Add `survivorOrder: socketId[]` |
-| `playerEliminated` | NEW: `{ playerIndex, socketId }` |
+**Rationale:** Comes after the server N-player game engine is stable (Phase 4 Practice mode validated). Client changes are additive and do not break 2-player.
+**Delivers:** `this.tanks[]` array replacing `this.tank1`/`this.tank2`, `tankPositions` payload keyed by socketId (not named host/player fields), N ScoreBoards in BattleHUD via `tanks.map()`, deposit status rows with checkmarks and countdown in LobbyScreen, partial deposit host modal, total pot display in BattleHUD, wager-blocked UI removed for 3-4 player rooms
+**Addresses:** Game engine pitfalls 8 (Phaser scene hardcoded tanks), 9 (tankPositions named fields), 14 (BattleHUD two ScoreBoards)
+**Research flag:** The `tankPositions` payload normalization (Pitfall 9) should be done for the 2-player case first and verified before N-player — this reduces scope of potential regression.
 
-**Recommended build order (9 phases, server-to-client):**
-1. `match.js` + `gold.js` service rewrites (isolated, no external deps)
-2. Server room data model: `players[]` replaces `host`/`player`, with compatibility shim
-3. Lobby flow: `ready`, `shopPhase`, `shopDone` — all-player checks
-4. `requestTerrain` + N-zone `generateTankPositions`
-5. `fire` handler — elimination loop, N-player `turnResult` payload
-6. Remaining server handlers (reconnect, step, turn timer, disconnect, playAgain)
-7. Client — Phaser `MainScene`: `tanks[]` array, elimination handler
-8. Client — `GameBridge`: `players[]` state shape
-9. Client — React HUD: N HP bars, lobby UI, player count selector
+### Phase Ordering Rationale
 
-See `ARCHITECTURE.md` for line-number-traced code locations and specific rewrite targets.
+- Phases 1-3 (Anchor program → escrow service → socket handler) form the escrow dependency chain and cannot be reordered
+- Phase 4 (game engine) can run in parallel with Phases 1-3 but is the gate to SYS-08 removal in Phase 3
+- Phase 5 (client UI) is always last — depends on server N-player being stable in Practice mode
+- The compatibility shim in Phase 4 is the linchpin: without it, migrating 60+ `room.host`/`room.player` references simultaneously is a high-risk big-bang change that breaks 2-player while N-player is not yet working
 
----
+### Research Flags
 
-### Top Pitfalls to Watch
+**Needs design before coding:**
+- **Phase 3 (partial deposit UX):** The "start with depositors" host modal has multiple edge cases (host disconnects during the 60-second choice window, depositors have mixed intent, host ignores deadline). The FEATURES.md decision tree covers the main paths but the server state machine needs to be fully spec'd in a phase plan doc before implementation of this specific sub-feature.
+- **Phase 4 (bot-client test infrastructure):** A bot socket that auto-fires when it receives `turnResult` with its socket ID must be built before Phase 4 coding starts. Without 3 human clients available for testing, N-player turn order bugs are invisible.
 
-All pitfalls below are traced to specific lines in the codebase (see `PITFALLS.md` for full detail).
-
-**Critical — will break correctness silently:**
-
-1. **`isRoundOver` ends round on first kill** (`match.js` line 151-160) — the current code returns `true` when ANY player HP hits 0, not when only one player survives. In a 4-player match, the round ends after the first kill. Fix: change to `alive count <= 1`. This is the first function to touch before any N-player testing.
-
-2. **`room.active = true` locks out players 3 and 4** (`main.js` lines 1004-1006) — the join guard blocks any join when `room.active === true`, which is set the moment the second player joins regardless of `maxPlayers`. Fix: `if (room.players.length >= room.maxPlayers) room.active = true`. Must ship with the room schema migration or the lobby is non-functional for N-player.
-
-3. **`getNextTurn` skips players 3+ entirely** (`match.js` line 136-143) — binary toggle, no concept of a player list. Player 3 is silently never given a turn. Fix: circular queue with `players[]` param and skip-dead logic.
-
-4. **`room.host`/`room.player` binary schema at ~60 locations** (`main.js`, all handlers) — partial migration produces a broken state where 2-player tests fail and N-player does not yet work. Fix: shim `room.host = room.players[0]` and `room.player = room.players[1]` immediately after the schema change; migrate handlers one at a time against the shim.
-
-5. **Simultaneous splash-damage kills in N-player** (`main.js` fire handler, HP update loop) — Crazy Ivan or Hail Storm can kill 2+ players in a single `result.damage` object. Fix: run a full `updateEliminated(ms)` pass after the entire HP loop, before calling `isRoundOver`. Node.js is single-threaded so there is no true race, but the stale `alive` check must be resolved post-loop.
-
-**High — wrong results, may be subtle:**
-
-6. **`shopDone` never fires with 3+ players** — `shopReady` check is `ready[hostId] && ready[playerId]`, ignoring players 3-4. Fix: `room.players.every(p => ready[p.socketId])`.
-
-7. **Reconnecting player 3/4 loses all state** — `rejoinRoom` is a binary if/else for host vs player. Fix: `migrateSocketId(oldId, newId, roomId)` helper that covers all `room.players[i]` slots via array lookup.
-
-8. **`turnsPerRound` hardcoded to 20** — in a 4-player game this is 5 turns each; in a 3-player game it is not evenly divisible. Fix: `turnsPerRound = N * 10` at match state creation.
-
-9. **Gold economy inflation with more targets** — `+15G per HP` against 3 opponents yields 3x the gold rate of 1v1, trivializing weapon costs. This only matters for BO3/BO5 N-player (shop between rounds); safe to defer for BO1-only launch.
-
-10. **N-player wager on binary escrow corrupts state** — the Anchor program has hardcoded `player_one_deposited` and `player_two_deposited` booleans. Fix: server guard rejects `maxPlayers > 2` + `wager > 0` with a clear error message until the escrow milestone.
+**Standard patterns (no research needed):**
+- Phase 1: Fixed-array pattern, `remaining_accounts`, bitmap/bool-array deposit tracking — all in official Anchor docs
+- Phase 2: JS Anchor client `remainingAccounts()` chain method — standard
+- Phase 3: Socket.IO emit patterns — no new patterns
+- Phase 5: React dynamic rendering via `players.map()` — standard
 
 ---
 
 ## Open Design Decisions
 
-These must be resolved before implementation begins. They are not covered by research.
+These were not resolved by research and require a product or engineering decision before the relevant phase begins:
 
-**1. BO1 only or BO3/BO5 for N-player at launch?**
-Research recommendation: ship BO1 FFA only for 3-4 players. BO3/BO5 multi-round with N players requires placement-based scoring design and weapon-inventory carry-forward logic that is meaningfully different from 1v1 BO3. Deferring keeps the launch scope clean. CONFIRM this with stakeholders before writing any round-tracking code.
-
-**2. Does a 3-player/4-player match allow 2 human players to start with empty slots?**
-Research recommendation: require all slots filled before the match starts. No AI bots, no empty slots. Forcing full lobbies simplifies all "who wins if someone is never present" edge cases. If this is too restrictive for early access, add a "start early" host button as a config flag — but build the "require full" path first.
-
-**3. What colors are assigned to players 3 and 4?**
-The brief specifies red/blue/green/yellow. Confirm the color-to-slot assignment (slot 0=red, slot 1=blue, slot 2=green, slot 3=yellow) and ensure the server enforces these assignments at room join time. Colors must be locked to slot index, not chosen freely, to avoid two players with the same color.
-
-**4. What happens to the existing `matchMode` (Quick Match, Duel, High Roller) for N-player?**
-These modes have server-enforced wager and format constraints. High Roller is explicitly a wager mode. For v1.3, the safest approach is: Quick Match and Duel modes remain 2-player only; a new "FFA" or "Battle Royale" mode is added for 3-4 players with `wager: 0` enforced server-side. Confirm whether 3-4 player wager is in scope at all for this milestone.
-
-**5. How does `playAgain` / rematch work for N-player?**
-Currently both players must request `playAgain` to reset. For N-player, if one of 4 players declines a rematch, do the remaining 3 proceed? Or does all-players-agree remain the rule? Recommend: all-players-agree for simplicity; unagreed rematches return to lobby. This affects `playAgainRequest` handler design.
-
----
-
-## Recommended Phase Structure
-
-Based on the dependency graph in FEATURES.md and the build order from ARCHITECTURE.md:
-
-### Phase 1: Server Core — Match State Services
-**Rationale:** `match.js` has zero external dependencies and exports the functions that everything else in `main.js` calls. Rewriting these first establishes correct N-player logic in isolation before it is wired into the 2750-line handler file. Failures here are immediately detectable with unit tests.
-**Delivers:** N-player turn rotation, elimination-aware round-over detection, N-player match-over check, correct `turnsPerRound`, N-player gold initialization
-**Addresses:** Pitfalls 1, 3, 7 (getNextTurn, isRoundOver, turnsPerRound)
-**Note:** Needs deeper planning — `isMatchOver` signature change has multiple callers; BO1-only decision must be locked before touching `isMatchOver`.
-
-### Phase 2: Server Room Data Model + Lobby Foundation
-**Rationale:** The room schema is the structural root cause of every binary hardpoint. Once `room.players[]` exists with a compatibility shim, individual handlers can be migrated without breaking the 2-player path. The `room.active` join guard must ship in this phase or no 3-4 player rooms can be created.
-**Delivers:** `players[]` room shape, `maxPlayers` field, compatibility shim, fixed join guard, N-player `getOpenRooms`, `createRoom` with `maxPlayers` param
-**Addresses:** Pitfalls 2, 4 (binary schema permeation, active flag)
-**Note:** Standard patterns — mechanical migration with the shim strategy. No research needed.
-
-### Phase 3: Lobby Flow + Shop System
-**Rationale:** Depends on Phase 2 room shape. The `ready`, `shopPhase`, `shopDone`, and `endShopPhase` handlers all use binary checks that must become `room.players.every(...)`. This phase also wires up the client lobby UI (player count selector, N-slot waiting room).
-**Delivers:** N-player ready gate, N-player shop initialization and completion, lobby UI with 2/3/4 slot display
-**Addresses:** Pitfall 10 (shopDone never fires)
-**Note:** Standard patterns.
-
-### Phase 4: Physics — N-Player Terrain and Tank Spawn
-**Rationale:** Depends on Phase 2 (need `room.players.length` to calculate spawn count). `generateTankPositions` is a self-contained function in `physics.js`. This phase also initializes `ms.hp` for all N players eagerly (not lazily on first hit), fixing the round-reset gap.
-**Delivers:** N equally-spaced spawn zones across 1200px terrain, minimum separation enforcement, eager HP initialization
-**Addresses:** Pitfall 13, 16 (terrain spacing, lazy HP initialization)
-**Note:** Standard patterns. Zone math is straightforward.
-
-### Phase 5: Server Battle Logic — Fire Handler and Elimination
-**Rationale:** This is the most complex phase. Depends on Phase 1 (new `getNextTurn`, `isRoundOver` signatures), Phase 2 (players array), and Phase 4 (N tank positions). The fire handler must emit `playerEliminated` before `turnResult`, update the N-player `turnResult` payload, and run the full elimination loop before calling `isRoundOver`.
-**Delivers:** N-player `turnResult` payload, `playerEliminated` event, simultaneous-kill handling, N-player gold awards, updated `matchEnd` with `survivorOrder`
-**Addresses:** Pitfalls 3, 5 (isRoundOver, simultaneous-kill race)
-**Note:** Needs careful testing — write socket integration tests with 3 mock clients specifically for: turn order with N=3; turn order after elimination; simultaneous splash kills.
-
-### Phase 6: Remaining Server Handlers
-**Rationale:** Cleanup phase. All remaining binary handlers in `main.js` that were not covered in Phases 2-5. Reconnect is in this phase because it requires `players[]` from Phase 2 and the `migrateSocketId` helper.
-**Delivers:** N-player reconnect (playerIndex-keyed), N-player disconnect/eliminate-on-timeout, N-player `stepLeft`/`stepRight`/`positionUpdate`, turn timer N-player forfeit, N-player `playAgainRequest`, wager guard for N-player + wager
-**Addresses:** Pitfalls 6, 12, 19, 20 (reconnect, wager, step handlers, positionUpdate)
-**Note:** Reconnect migration needs care — `pendingReconnects` shape change from `isHost` to `playerIndex` is a breaking change for any in-flight reconnects during deploy.
-
-### Phase 7: Client — Phaser Scene
-**Rationale:** Client work begins only after the server emits correct N-player payloads. Attempting to build the client scene before the server payloads are stable means constant re-work as the protocol changes. The Phaser scene is the client's most complex component.
-**Delivers:** `this.tanks[]` array, `createTanks(count)`, `terrainGenerated` N-tank positioning, `applyTurnResult` iterating players array, `playerEliminated` handler with tank destruction animation, `checkSwitchTurn` using `.some()` over all tanks
-**Addresses:** Pitfall 8 (hardcoded tank1/tank2), Pitfall 9 (tankPositions named fields)
-**Note:** Needs deeper planning — the `checkSwitchTurn` practice mode path uses local turn-switching that must be rethought for N-player. Practice mode with N players needs a clear local turn-rotation design before coding.
-
-### Phase 8: Client — GameBridge
-**Rationale:** GameBridge is the state contract between Phaser and React. Change it after the Phaser scene is updated (Phase 7) so the Phaser writes and React reads are updated together.
-**Delivers:** `players[]` state shape in bridge, `myPlayerIndex`/`currentPlayerIndex`, `setPlayerEliminated(playerIndex)` method, updated `reset()`
-**Note:** Standard patterns — mechanical state shape migration.
-
-### Phase 9: Client — React HUD and Lobby UI
-**Rationale:** React HUD reads from GameBridge. Finalize after GameBridge shape is locked. Lobby UI changes can technically be done earlier but are most stable once the full server socket event set is in place.
-**Delivers:** `PlayerCard` component replacing binary `ScoreBoard`, N HP bars, eliminated state display, turn highlight, player count selector, N-slot lobby waiting room
-**Addresses:** Pitfall 14 (hardcoded 2-scoreboard HUD)
-**Note:** Standard patterns — flex layout, `.map()` rendering.
-
-### Phase Ordering Rationale
-
-- Phases 1-6 are server-only — they do not require client changes and can be tested with socket.io-client scripts against the dev server
-- The compatibility shim in Phase 2 is the linchpin — without it, migrating the 60+ `room.host`/`room.player` references in one commit is a high-risk big-bang change
-- Phases 7-9 are client-only and begin only when the server emits verified N-player payloads
-- Escrow and wager changes are explicitly excluded from all phases — the wager guard in Phase 6 ensures no accidental N-player wager corruption
-
-### Research Flags
-
-Phases that need deeper planning/design work before coding:
-- **Phase 1:** `isMatchOver` signature change has multiple callers in `main.js`; the BO1-only decision must be locked before touching this function or the callers will be rewritten incorrectly
-- **Phase 5:** Requires integration test setup with 3-4 mock socket clients before coding; the simultaneous-kill edge case and turn-rotation correctness are impossible to verify by inspection alone
-- **Phase 7:** Practice mode N-player local turn-switching (`checkSwitchTurn` for `gameType === 4`) has no documented design; this needs a decision before the Phaser scene refactor begins
-
-Phases with well-documented patterns (skip additional research):
-- **Phase 2:** Schema migration with shim — mechanical, well-understood pattern
-- **Phase 3:** Binary-to-N-player `every()` checks — trivial once the schema is in place
-- **Phase 4:** Zone-based spawn math — fully specified in ARCHITECTURE.md
-- **Phase 8:** State shape migration in GameBridge — mechanical
-- **Phase 9:** `players.map()` HUD rendering — standard React patterns
+| Decision | Options | Recommendation | When Needed |
+|----------|---------|----------------|-------------|
+| Deposit tracking: bitmap vs bool array | `deposits_mask: u8` (1 byte, elegant "all deposited" check) vs `deposited: [bool; 4]` (4 bytes, more readable) | Bitmap — saves 3 bytes, single-comparison all-deposited check; STACK.md recommendation | Before Phase 1 coding |
+| `start_with_depositors`: ship or defer | Include in Phase 1-3 (medium complexity) vs defer to v1.5 | Defer — partial deposit case is rare; a server-side cancel with clear error messaging ("not all players deposited") is sufficient for launch | Phase 1 planning |
+| Deposit timeout duration | Keep 2 minutes (current) vs extend to 5 minutes | Extend to 5 minutes for N-player rooms — each additional player adds wallet interaction latency; 2 minutes is tight for 4 mobile wallets | Phase 3 implementation |
+| Gold economy scaling | `gold_per_damage / (N-1)` vs increase weapon costs proportionally | Divide gold rate by `(N-1)` — simpler, preserves existing weapon cost table unchanged; only relevant for BO3/BO5 with shop between rounds | Phase 4 implementation |
+| BO3/BO5 winner determination for N>2 | Last alive wins the round (current, no change) vs placement scoring | Last alive wins — no implementation change needed; placement scoring deferred to v1.5 | Phase 4 (no change needed) |
+| SYS-08 removal timing | Remove at Phase 3 completion vs hold for explicit QA sign-off | Require explicit QA: 3-player Practice match end-to-end validated + escrow service unit tests passing + devnet deploy verified | Phase 3 end |
 
 ---
 
@@ -243,47 +191,62 @@ Phases with well-documented patterns (skip additional research):
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | Existing stack verified against current codebase. No new libraries confirmed. Socket.IO 4.8.3 upgrade is low-risk. |
-| Features | MEDIUM | Table stakes verified against Worms WMD and ShellShock Live. BO3/BO5 N-player is under-documented in the genre — recommendation to defer is inference from first principles, not verified genre precedent. |
-| Architecture | HIGH | All claims traced to specific line numbers in the actual codebase. Build order derived from real dependency graph, not assumption. |
-| Pitfalls | HIGH | All 22 pitfalls traced to specific file locations. No generic advice — every finding is codebase-specific. |
+| Anchor program changes | HIGH | All findings from direct reading of `lib.rs` (884 lines); account space math verified against official Anchor docs; `remaining_accounts` pattern from official docs; borrow checker pattern is existing codebase precedent |
+| Server escrow service changes | HIGH | All findings from direct reading of `escrow.js` (543 lines) and `solana.js` (284 lines); specific function signatures and all call sites identified |
+| Socket handler (main.js) | HIGH | 14 specific change sites identified with line numbers from direct reading of `main.js` (~2800 lines); patterns are mechanical signature and field-name updates |
+| Game engine pitfalls | HIGH | All 22 game pitfalls traced to specific lines in `match.js`, `physics.js`, `main.js`; every finding directly observed in code, not inferred |
+| Partial deposit UX design | MEDIUM | Decision tree in FEATURES.md is logically complete; `start_with_depositors` authorization model (server-only vs depositor-triggered) is unresolved; server state machine edge cases need a spec before coding |
+| Deposit timeout value (5 min) | MEDIUM | Derived from industry norms and first principles; no authoritative reference for "4-player mobile wallet deposit timeout" specifically |
+| Transaction size estimates | MEDIUM | Calculated from known constants (32 bytes/account, 1,232-byte limit); not measured on devnet; well within limit at 4 players (~700 bytes worst case for cancel) |
+| Test infrastructure for N-player | LOW | Bot-client approach is recommended but not yet designed; LiteSVM support for `remaining_accounts` is unverified on Windows (Pitfall E14) |
 
-**Overall confidence: HIGH**
+**Overall confidence: HIGH** for implementation correctness (all escrow and game engine changes from direct codebase reading). MEDIUM for product design decisions (partial deposit flow, timeout values). LOW for test infrastructure.
 
 ### Gaps to Address
 
-- **`checkSwitchTurn` practice mode design for N-player:** The current function handles local turn-switching for `gameType === 4` (practice). With N players in practice mode, who controls player 2, 3, 4? All controlled by the same browser? Auto-advance after fire? This is undefined and must be decided before Phase 7.
-- **Color assignment enforcement:** The brief mentions red/blue/green/yellow. The server does not currently enforce color uniqueness per slot. Decide whether colors are assigned by slot (deterministic) or chosen by player (with duplicate prevention) before Phase 2.
-- **`matchMode` eligibility for N-player:** Which of the existing match modes (Quick Match / Duel / High Roller) are available for 3-4 player rooms? High Roller is wager-only and must be blocked. Quick Match is unclear. A clean decision prevents the server-side validation in Phase 6 from being rewritten.
-- **Testing infrastructure:** No socket.io integration tests exist for the game server. Phase 5 is the hardest phase to verify manually. Decide before implementation starts whether to write integration tests (recommended) or rely entirely on manual multi-browser testing.
+- **Space proptest:** Update `bok_proptest_space.rs` immediately after the deposit tracking field design is chosen (bitmap vs bool array) — this is the early-warning system for SPACE miscalculation and must pass before any devnet deploy
+- **LiteSVM + remaining_accounts compatibility:** Verify whether `bok_litesvm.rs` can test the new `cancel_match` before writing N-player cancel tests; if not, set up `solana-program-test` (banks-client) as a fallback — McAfee blocks `solana-test-validator` on this machine (Pitfall E14)
+- **Program ID update checklist:** After N-player redeploy, 3 locations must be updated atomically: `declare_id!()` in `lib.rs`, `PROGRAM_ID` in `escrow.js`, `REACT_APP_ESCROW_PROGRAM_ID` in client `.env`; the OC-14 checklist from prior research covers this; confirm it is embedded in the Phase 1 plan file
+- **`matchEndPayload.prestigeInfo` N-player shape:** Currently covers only `hostId`/`playerId`; must be generalized to all N players in Phase 3; identify all client consumers of this payload before the server change
+- **SYS-08 removal gate criteria:** Define explicit acceptance criteria for when the wager guard can be removed — recommended: 3-player Practice match end-to-end passing + escrow devnet deploy verified + Phase 2 service tests passing
 
 ---
 
 ## Sources
 
-### Primary (HIGH confidence — direct codebase reading)
-- `server/socket-io/main.js` (~2750 lines) — all handler locations and binary patterns
-- `server/services/match.js` — all 4 binary functions, exact line numbers
-- `server/services/gold.js` — `initGold` binary signature
-- `server/services/physics.js` — `generateTankPositions` current spawn zones
-- `client/src/scenes/main/index.js` — tank hardpoints, `checkSwitchTurn`, `applyTurnResult`
-- `client/src/screens/battle/BattleHUD.js` — binary ScoreBoard layout
-- `client/src/bridge/GameBridge.js` — `tank1`/`tank2` state shape
-- `SOLSHOT_SEEKER_AND_4PLAYER_BRIEF.md` — project brief and target architecture
+### Primary — HIGH confidence (direct codebase reading)
 
-### Secondary (MEDIUM confidence — external genre research)
-- [Worms Armageddon Wiki](https://worms.fandom.com/wiki/Worms_Armageddon) — turn order, round-robin mechanics
-- [ShellShock Live Wikipedia](https://en.wikipedia.org/wiki/ShellShock_Live) — FFA deathmatch, elimination, spectating
-- [ShellShock Live game modes archive](https://shellshock-live-archive.fandom.com/wiki/Game_Modes) — mode variants
-- [Worms WMD FFA discussion (Steam)](https://steamcommunity.com/app/327030/discussions/0/1488866813778981941/) — kingmaking dynamics
-- [Last Man Standing genre definition (Wikipedia)](https://en.wikipedia.org/wiki/Last_man_standing_(video_games)) — spectate pattern
+- `programs/solshot-escrow/src/lib.rs` (884 lines) — full program audit, instruction signatures, escrow struct, BPS math
+- `server/services/escrow.js` (543 lines) — function signatures, IDL field names, call patterns, `remainingAccounts` pattern
+- `server/services/solana.js` (284 lines) — settlement math, refund signatures, `calculateSettlement`
+- `server/socket-io/main.js` (~2800 lines) — all 14 change sites, SYS-08 guard location (line ~1356), deposit confirmation handler (line ~1975), SHOT milestone loop, settlement call sites
+- `server/services/match.js` (218 lines) — `getNextTurn`, `isRoundOver`, `isMatchOver`, `resetForNextRound`, `turnsPerRound`
+- `server/services/gold.js` (115 lines) — gold economy structure and per-HP earn rate
+- `server/services/physics.js` (lines 440-460) — tank spawn zone calculation
+- `client/src/scenes/main/index.js` (lines 1-650) — Phaser scene tank references, `checkSwitchTurn`, `applyTurnResult`
+- `client/src/screens/battle/BattleHUD.js` — hardcoded two ScoreBoards
+- `client/src/wallet/WalletContext.js` (450 lines) — `signAndSendEscrowDeposit`, CS-01 discriminator constant
+- `programs/solshot-escrow/tests/bok_proptest_space.rs` — space verification harness
+- `server/idl/solshot_escrow.json` — current IDL field names and layout
 
-### Tertiary (informational)
-- [Phaser 3.90.0 stable release](https://phaser.io/download/stable) — version currency
-- [Phaser 4 Beta 7](https://phaser.io/news/2025/03/phaser-v4-beta-7-released) — not viable for production
-- [Socket.IO 4.8.3 changelog](https://socket.io/docs/v4/changelog/4.8.3) — no breaking changes from 4.4.x
-- [Poker tournament payout structure](https://beastsofpoker.com/poker-tournament-payout-structure/) — N-player pot split ratios reference
+### Secondary — HIGH confidence (official documentation)
+
+- Anchor Space Reference Table ([anchor-lang.com/docs/references/space](https://www.anchor-lang.com/docs/references/space)) — Pubkey=32B, bool=1B, Vec prefix=4B, discriminator=8B, u8=1B, i64=8B, u64=8B
+- Anchor 0.32.1 Release Notes ([anchor-lang.com/docs/updates/release-notes/0-32-1](https://www.anchor-lang.com/docs/updates/release-notes/0-32-1)) — no breaking changes for this milestone
+- Solana Transaction Size Limits ([solana.com/docs/core/transactions](https://solana.com/docs/core/transactions)) — 1,232 bytes, 64 accounts max
+- Direct Lamport Transfer from PDA ([solana.com/developers/guides/games/store-sol-in-pda](https://solana.com/developers/guides/games/store-sol-in-pda)) — lamport transfer pattern for cancel/refund
+- Anchor Account Constraints / remaining_accounts ([solana.com/docs/programs/anchor](https://solana.com/docs/programs/anchor)) — usage and manual validation requirement
+- Anchor Account Constraints realloc ([anchor-lang.com/docs/references/account-constraints](https://www.anchor-lang.com/docs/references/account-constraints)) — not needed for devnet where accounts are throwaway
+
+### Secondary — MEDIUM confidence (derived or community sources)
+
+- Helius Solana security guide — `remaining_accounts` positional key validation, writable account demotion via reserved accounts list
+- OSEC lamport transfer article (2025) — writable demotion patterns and `IllegalLamportChange` error conditions
+- Simple-Escrow-Bet GitHub ([github.com/eltontay/Simple-Escrow-Bet](https://github.com/eltontay/Simple-Escrow-Bet)) — N-player (up to 20) escrow reference implementation
+- GamerWager.com — 1v1 wager deposit patterns (extrapolated for N-player parallel emit model)
+- SIMD-0296 (transaction size increase to 4,096 bytes) — draft proposal only; not live on mainnet; do not depend on it
 
 ---
-*Research completed: 2026-02-26*
+
+*Research completed: 2026-02-27*
 *Ready for roadmap: yes*

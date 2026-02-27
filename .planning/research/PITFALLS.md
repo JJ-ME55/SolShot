@@ -1,7 +1,7 @@
 # Domain Pitfalls: N-Player Multiplayer Refactor
 
 **Domain:** Refactoring binary (1v1) game to N-player (2-4) support
-**Researched:** 2026-02-26
+**Researched:** 2026-02-26 (game mechanics) / 2026-02-27 (escrow upgrade)
 **Scope:** SolShot-specific — based on reading the actual codebase, not generic advice
 
 ---
@@ -17,7 +17,9 @@ Every pitfall below is traced to a specific line or pattern in the codebase. The
 
 ---
 
-## Critical Pitfalls
+## Part A: Game Mechanics Pitfalls
+
+---
 
 ### Pitfall 1: Binary-Wired `getNextTurn` Cannot Handle Elimination
 
@@ -188,7 +190,7 @@ The current code handles multi-target damage correctly in a single pass — `res
 
 ---
 
-## High Pitfalls
+## Part A: High Pitfalls
 
 ### Pitfall 6: Reconnection Remapping Is 100% Binary — Will Miss N-Player Slots
 
@@ -406,7 +408,7 @@ The Anchor escrow program (`programs/solshot-escrow/src/lib.rs`) has `player_one
 
 ---
 
-## Moderate Pitfalls
+## Part A: Moderate Pitfalls
 
 ### Pitfall 13: The 1200px Terrain Gives Inadequate Spacing for 4 Tanks
 
@@ -572,7 +574,7 @@ When adding N-player support, it will be tempting to create a `Player` class or 
 
 ---
 
-## Minor Pitfalls
+## Part A: Minor Pitfalls
 
 ### Pitfall 19: `positionUpdate` Validation Uses Named Slots
 
@@ -633,6 +635,577 @@ The settlement failure recovery stores `{ p1wallet, p2wallet }`. If extended to 
 
 ---
 
+---
+
+## Part B: N-Player Escrow Upgrade Pitfalls
+
+These pitfalls are specific to modifying `programs/solshot-escrow/src/lib.rs` from 2-player to N-player and propagating that change through `server/services/escrow.js`, `server/socket-io/main.js`, and `client/src/wallet/WalletContext.js`.
+
+**Current program state (from reading `lib.rs` and `server/idl/solshot_escrow.json`):**
+- `MatchEscrow` struct: `player_one: Pubkey`, `player_two: Pubkey`, `player_one_deposited: bool`, `player_two_deposited: bool`
+- `SPACE = 168` bytes
+- `create_match` takes `player_one` and `player_two` as args (binary)
+- `settle_match` takes `winner: Pubkey` and validates against `player_one || player_two`
+- `cancel_match` and `permissionless_reclaim` have fixed `player_one` and `player_two` accounts
+- PDA seeds: `["match", match_id.as_bytes()]` — same seeds work for N players, no change needed
+
+---
+
+### Pitfall E1: SPACE Miscalculation When Switching to Vec-Based Player Storage
+
+**Severity:** CRITICAL
+**Location:** `programs/solshot-escrow/src/lib.rs` — `impl MatchEscrow { pub const SPACE: usize = ... }`
+
+**What goes wrong:** Replacing fixed `player_one`/`player_two` Pubkeys and boolean flags with `Vec<Pubkey>` and `Vec<bool>` changes the account size from 168 bytes to a variable amount that must be declared as a fixed upper bound at `init` time.
+
+**The current 168-byte calculation:**
+```
+8  (discriminator)
+36 (String match_id: 4 + 32)
+32 (authority Pubkey)
+32 (player_one Pubkey)
+32 (player_two Pubkey)
+8  (wager_lamports u64)
+1  (player_one_deposited bool)
+1  (player_two_deposited bool)
+1  (state enum)
+8  (created_at i64)
+8  (activated_at i64)
+1  (bump u8)
+= 168
+```
+
+**The N-player calculation for `Vec<Pubkey>` (max 4 players):**
+```
+8  (discriminator)
+36 (String match_id: 4 + 32)
+32 (authority Pubkey)
+4  (Vec<Pubkey> length prefix)
+128 (4 * 32 for Pubkeys — max 4 players)
+8  (wager_lamports u64)
+4  (Vec<bool> length prefix)
+4  (4 * 1 for deposited flags — max 4 players)
+1  (state enum)
+8  (created_at i64)
+8  (activated_at i64)
+1  (bump u8)
+= 242 bytes
+```
+
+If SPACE is declared as 168 but the actual data serializes to 242 bytes, Anchor raises `AccountDidNotSerialize` at the first `create_match` call. There is no compile-time check — this fails at runtime on devnet.
+
+**Why it happens:** Developers make the Rust field changes correctly but forget to update the `const SPACE` computation. The old value (168) remains in `impl MatchEscrow` without errors until first use.
+
+**Prevention:**
+- Recalculate SPACE field-by-field and include a breakdown comment (same style as existing code).
+- The Anchor `#[InitSpace]` derive macro with `#[max_len(4)]` attribute handles Vec sizing automatically — use it rather than manual calculation to eliminate this class of error.
+- After the first `anchor build`, run `cargo test` with the space proptest in `programs/solshot-escrow/tests/bok_proptest_space.rs` — update it to cover the new struct layout.
+- The existing `bok_proptest_space.rs` tests will fail immediately if SPACE is wrong, providing early detection before devnet deploy.
+
+**Warning signs:** `anchor build` succeeds but the first `create_match` call returns `AccountDidNotSerialize` or `AccountSizeError`.
+
+**Phase:** Rust program redesign — first thing to verify before any other changes.
+
+---
+
+### Pitfall E2: `settle_match` Winner Constraint Must Be Rewritten for N-Player
+
+**Severity:** CRITICAL
+**Location:** `programs/solshot-escrow/src/lib.rs` — `SettleMatch` struct, winner constraint (line 595-599)
+
+**Current constraint:**
+```rust
+#[account(
+    mut,
+    constraint = winner.key() == escrow.player_one
+        || winner.key() == escrow.player_two
+        @ EscrowError::InvalidWinner
+)]
+pub winner: UncheckedAccount<'info>,
+```
+
+**What goes wrong:** This constraint is hardcoded to check only `player_one` or `player_two`. With N players stored in `escrow.players: Vec<Pubkey>`, this constraint cannot be expressed as a static Anchor `constraint =` attribute because Vec iteration is not supported in Anchor constraint syntax.
+
+The constraint must move into the instruction body:
+```rust
+pub fn settle_match(ctx: Context<SettleMatch>, winner: Pubkey) -> Result<()> {
+    require!(
+        ctx.accounts.escrow.players.contains(&winner),
+        EscrowError::InvalidWinner
+    );
+    // ...
+}
+```
+
+**Why this matters:** Moving validation from constraint attributes into the instruction body is safe here because the check happens before any state mutation. However, this is a pattern change that deviates from the established "everything is a constraint" discipline in the current code. Document clearly why this specific check must be in-body.
+
+**Consequences if not addressed:** The winner validation is silently removed if the old constraint is left with the old field names (`player_one`, `player_two`) that no longer exist — the code won't compile, but the error message may not be obvious.
+
+**Prevention:**
+- Add `require!(ctx.accounts.escrow.players.contains(&winner), EscrowError::InvalidWinner)` at the top of `settle_match`, before any mutable borrow or state mutation.
+- Update the `/// CHECK:` comment on the `winner` account to reflect the in-body validation.
+- Add a new `InvalidWinner` test case that passes a non-player pubkey as winner and verifies the instruction fails.
+
+**Warning signs:** Rust compile error `no field player_one on type MatchEscrow` when reusing old constraint syntax.
+
+**Phase:** Rust program redesign — same commit as the struct field migration.
+
+---
+
+### Pitfall E3: `cancel_match` and `permissionless_reclaim` Have Fixed Player Accounts — Cannot Refund N Players
+
+**Severity:** CRITICAL
+**Location:** `programs/solshot-escrow/src/lib.rs` — `CancelMatch` and `PermissionlessReclaim` structs
+
+**Current pattern (fixed accounts):**
+```rust
+pub struct CancelMatch<'info> {
+    pub escrow: Account<'info, MatchEscrow>,
+    pub caller: Signer<'info>,
+    pub player_one: UncheckedAccount<'info>,   // Fixed
+    pub player_two: UncheckedAccount<'info>,   // Fixed
+    pub config: Account<'info, GlobalConfig>,
+    pub system_program: Program<'info, System>,
+}
+```
+
+**What goes wrong:** With N players, the Rust `#[derive(Accounts)]` struct cannot have a variable-length list of player accounts. Fixed accounts work for exactly 2. For N players, the cancel instruction must receive player accounts via `ctx.remaining_accounts`.
+
+**The `remaining_accounts` pattern:**
+```rust
+pub fn cancel_match(ctx: Context<CancelMatch>) -> Result<()> {
+    // Validate remaining_accounts length matches players vec
+    require!(
+        ctx.remaining_accounts.len() == ctx.accounts.escrow.players.len(),
+        EscrowError::PlayerCountMismatch
+    );
+    // Validate each account matches the stored pubkey in order
+    for (i, account) in ctx.remaining_accounts.iter().enumerate() {
+        require!(
+            account.key() == ctx.accounts.escrow.players[i],
+            EscrowError::InvalidPlayer
+        );
+        // Only refund if this player deposited
+        if ctx.accounts.escrow.deposited[i] {
+            **ctx.accounts.escrow.to_account_info().try_borrow_mut_lamports()? -= wager_lamports;
+            **account.try_borrow_mut_lamports()? -= 0; // writable check
+            **account.try_borrow_mut_lamports()? += wager_lamports;
+        }
+    }
+    // ...
+}
+```
+
+**Critical security requirement:** Every account in `ctx.remaining_accounts` must be validated against the stored `escrow.players` list before any lamport transfer. `remaining_accounts` does not go through Anchor's constraint system — validation is entirely manual. A malicious caller could pass an arbitrary account as a "player" to redirect refund lamports.
+
+**The ordering attack:** If the server passes accounts in the wrong order (e.g., player[0] as the 2nd remaining account), the wrong player gets refunded. The on-chain validation must be positional — `remaining_accounts[i].key() == escrow.players[i]`.
+
+**Why this matters for existing code:** `cancelMatchEscrow()` in `server/services/escrow.js` currently passes `playerOne` and `playerTwo` as named accounts. For N players, it must pass all N player wallets as `remainingAccounts`. The JS API changes from positional arguments to an array.
+
+**Prevention:**
+- In `lib.rs`: validate `remaining_accounts.len() == escrow.players.len()` before iterating.
+- In `lib.rs`: validate each account's key matches `escrow.players[i]` positionally.
+- In `lib.rs`: verify each remaining account is writable before attempting lamport transfer (Solana silently demotes unwritable accounts to read-only — see Pitfall E9).
+- In `escrow.js`: change `cancelMatchEscrow(matchId, playerOneAddress, playerTwoAddress)` to `cancelMatchEscrow(matchId, playerAddresses: string[])`.
+- Add a new error code `PlayerCountMismatch` for the `remaining_accounts.len() != players.len()` case.
+
+**Warning signs (in Rust):** Compile error if you try to add a 3rd named `player_three` to `CancelMatch` — Anchor processes named accounts differently from remaining accounts.
+
+**Warning signs (at runtime):** Refund goes to wrong wallet when player order in remaining accounts differs from escrow.players order.
+
+**Phase:** Rust program redesign — the most structurally disruptive change.
+
+---
+
+### Pitfall E4: Transaction Size Limit When Settling or Cancelling With 4 Players
+
+**Severity:** HIGH
+**Location:** `server/services/escrow.js` — `settleMatchEscrow()` and `cancelMatchEscrow()`
+
+**The constraint:** Solana legacy transactions are limited to 1,232 bytes. Each account address is 32 bytes. A settle or cancel transaction with 4 players includes:
+
+```
+Fixed accounts in settle_match:
+- escrow PDA:   32 bytes
+- authority:    32 bytes
+- winner:       32 bytes
+- treasury:     32 bytes
+- ops:          32 bytes
+- config PDA:   32 bytes
+- system_prog:  32 bytes
+= 224 bytes in account list
+
+4-player cancel adds 4 remaining accounts = 4 * 32 = 128 bytes more
+
+Plus transaction overhead (blockhash, signatures, fee payer, program ID, instruction data)
+~= 450-600 bytes total for settle, ~= 550-700 bytes for cancel
+```
+
+**At 4 players this is within the 1,232-byte limit for legacy transactions.** However, if additional instructions are bundled (e.g., compute budget), it approaches the limit. The risk is **not** that 4-player escrow exceeds the limit today — it is that:
+
+1. Future additions (e.g., adding a 5th player, adding compute budget IX) could push it over.
+2. The server builds transactions using `program.methods.cancelMatch().accounts({...}).remainingAccounts([...]).rpc()` — Anchor may include additional overhead.
+
+**What goes wrong if the limit is exceeded:** The transaction is rejected by the Solana runtime with `Transaction too large` before any instruction executes. The server logs a failed cancel, funds remain locked in the PDA, and the match cannot be resolved.
+
+**Prevention for the current 4-player design:**
+- Legacy transactions are sufficient for 4 players. Do not use Address Lookup Tables (ALTs) yet — they require v0 versioned transactions, which add client complexity.
+- Cap player count at 4 in both server room creation and the Rust program — enforced via `require!(players.len() <= 4, EscrowError::TooManyPlayers)`.
+- If compute budget instructions are ever needed (CU optimization), verify total TX size does not exceed 1,232 bytes with `solana-transaction-inspector` or equivalent before shipping.
+
+**Warning signs:** Server logs `Transaction too large` or `0x172b` (transaction too large error code) during cancel or settle on devnet.
+
+**Phase:** Rust program redesign — add the player count cap at `create_match`.
+
+---
+
+### Pitfall E5: Arithmetic Overflow in N-Player Settlement — u128 Widening Still Required
+
+**Severity:** HIGH
+**Location:** `programs/solshot-escrow/src/lib.rs` — `settle_match` arithmetic
+
+**Current 2-player settlement (correct):**
+```rust
+let total_pot_128 = (wager_lamports as u128)
+    .checked_mul(2)  // 2 players
+    .ok_or(EscrowError::ArithmeticOverflow)?;
+```
+
+**What goes wrong in N-player:** The `checked_mul(2)` becomes `checked_mul(player_count as u128)`. This is still correct — `100 SOL * 4 players = 400 SOL` is well within u64 range (max ~18.4 billion SOL). But the pattern must be maintained correctly.
+
+**The real risk is in per-player distribution:**
+
+For a partial-deposit cancel scenario (some players deposited, some did not), each deposited player gets `wager_lamports` back — not a share of the pot. The current binary code handles this with two simple if-checks. In N-player, an iteration over `escrow.deposited` must maintain the read-before-mutable-borrow discipline or Rust will reject the code.
+
+**The borrow checker pattern for N-player refunds:**
+```rust
+// WRONG — will not compile:
+for (i, &deposited) in escrow.deposited.iter().enumerate() {
+    if deposited {
+        **ctx.accounts.escrow.to_account_info().try_borrow_mut_lamports()? -= wager;
+        // Cannot borrow ctx.accounts.escrow while loop holds reference via escrow.deposited
+    }
+}
+
+// CORRECT — read deposited flags into local vec first:
+let deposited_flags: Vec<bool> = ctx.accounts.escrow.deposited.clone();
+// ... then set terminal state (mutable borrow scope) ...
+// ... then iterate deposited_flags and transfer ...
+```
+
+**Why this is specifically the N-player version of the existing borrow checker pitfall:** The 2-player version was solved by reading `player_one_deposited` and `player_two_deposited` into locals before the mutable borrow. With a Vec, cloning the entire vec before any mutation is the equivalent discipline. Skipping the clone causes a compile error that may take 10-30 minutes to diagnose.
+
+**Prevention:**
+- Read all Vec data into local variables (or clone the Vec) at the top of the instruction, before any `&mut ctx.accounts.escrow` borrow.
+- Maintain the pattern comment: `// Read-only values before mutable borrow (Rust borrow checker safety)`.
+- The existing `bok_proptest_fee.rs` proptest verifies fee math at all wager levels — update it to test N-player total pot calculations.
+
+**Warning signs:** Rust compile error `cannot borrow ctx.accounts.escrow as mutable because it is also borrowed as immutable` inside the N-player refund loop.
+
+**Phase:** Rust program redesign — must be verified by the existing BOK proptests before deploy.
+
+---
+
+### Pitfall E6: IDL Must Be Rebuilt and Copied After Every Struct Change
+
+**Severity:** HIGH
+**Location:** `server/idl/solshot_escrow.json` vs `target/idl/solshot_escrow.json`
+
+**What goes wrong:** Every change to `lib.rs` — adding fields to `MatchEscrow`, adding error codes, changing instruction args — changes the generated IDL. The server uses `server/idl/solshot_escrow.json` to parse account data. If the IDL is stale:
+
+1. `program.account.matchEscrow.fetch(escrowPDA)` returns garbled data (field offsets shift).
+2. `settleMatchEscrow()` passes wrong argument types to the Anchor client.
+3. `getEscrowState()` in `escrow.js` returns `playerOne`/`playerTwo` fields that no longer exist in the new struct, returning `undefined` silently.
+
+**The failure mode is silent.** Anchor's TS client deserializes the raw bytes using field offsets from the IDL. If the IDL says `playerOne` starts at byte 44 but the new struct stores `players` Vec at byte 44, the client reads garbage data with no error thrown.
+
+**Current sync points that must ALL be updated atomically:**
+```
+target/idl/solshot_escrow.json  (auto-generated by anchor build)
+server/idl/solshot_escrow.json  (manual copy — consumed by escrow.js)
+server/services/escrow.js       (field names: playerOne/playerTwo → players array)
+client/src/wallet/WalletContext.js (discriminator constant for CS-01 validation)
+```
+
+**The CS-01 discriminator is specifically affected:** `WalletContext.js` has a hardcoded `DEPOSIT_WAGER_DISCRIMINATOR` constant derived from `sha256("global:deposit_wager")[0..8]`. The `deposit_wager` instruction name is unchanged, so the discriminator is unchanged. But if any instruction is renamed, this constant breaks silently — the client will reject all deposit transactions as "unknown instruction."
+
+**Prevention:**
+- Add an explicit deploy checklist item: `anchor build → copy target/idl/ → update server/idl/ → rebuild server → verify getEscrowState() field names match new struct`.
+- The deploy sequence from `01-RESEARCH.md` applies here too: (1) anchor build, (2) anchor deploy, (3) update `declare_id!()`, (4) rebuild, (5) copy IDL, (6) update field references in escrow.js.
+- After IDL copy, run `node -e "const idl = require('./server/idl/solshot_escrow.json'); console.log(idl.types.find(t=>t.name==='MatchEscrow').type.fields.map(f=>f.name))"` to visually verify field names match expectations.
+
+**Warning signs:** `escrow.playerOne is undefined` or `escrow.players is undefined` in server logs after deploy.
+
+**Phase:** Every phase that modifies `lib.rs` — this is a recurring hazard, not a one-time pitfall.
+
+---
+
+### Pitfall E7: `escrowDepositConfirm` Handler Checks `playerOneDeposited`/`playerTwoDeposited` — Binary Fields That No Longer Exist
+
+**Severity:** HIGH
+**Location:** `server/socket-io/main.js` lines 2009-2012
+
+**Current code:**
+```js
+const isHost = room.players[0]?.socketId === client.id
+const depositConfirmed = isHost
+    ? escrowState.playerOneDeposited
+    : escrowState.playerTwoDeposited
+```
+
+**What goes wrong:** After the N-player escrow upgrade, `getEscrowState()` in `escrow.js` returns an object based on the new IDL. The `playerOneDeposited` and `playerTwoDeposited` fields no longer exist — replaced by a `deposited: boolean[]` array. This code returns `undefined` for `depositConfirmed`, and the `!depositConfirmed` guard at line 2014 fires, emitting `escrowError` to every player. No deposit is ever accepted. Match cannot start.
+
+**The `getEscrowState()` return object must change** from:
+```js
+{
+    playerOne: escrow.playerOne.toBase58(),
+    playerTwo: escrow.playerTwo.toBase58(),
+    playerOneDeposited: escrow.playerOneDeposited,
+    playerTwoDeposited: escrow.playerTwoDeposited,
+    // ...
+}
+```
+to:
+```js
+{
+    players: escrow.players.map(pk => pk.toBase58()),
+    deposited: escrow.deposited,  // boolean[]
+    // ...
+}
+```
+
+**All callers of `getEscrowState()` in `main.js` must be updated** to use array access instead of named fields.
+
+**Prevention:**
+- When modifying `escrow.js`'s `getEscrowState()`, grep `main.js` for all usages of `playerOneDeposited`, `playerTwoDeposited`, `playerOne`, `playerTwo` on escrow state objects.
+- Replace with array-indexed access: `escrowState.deposited[playerIndex]` where `playerIndex` is the position of the current player in `room.players`.
+- The `escrowActive` event at line 2050 also broadcasts `totalPot: ws.amount * 2` — this must become `totalPot: ws.amount * room.players.length`.
+
+**Warning signs:** Server logs `Deposit not confirmed on-chain` for every player immediately after they sign the deposit transaction.
+
+**Phase:** Server integration phase — immediately after the Rust program and IDL are updated.
+
+---
+
+### Pitfall E8: `buildDepositTransaction` Still Works Without Change, But `cancelMatchEscrow` and `settleMatchEscrow` Signatures Must Change
+
+**Severity:** HIGH
+**Location:** `server/services/escrow.js` — `cancelMatchEscrow()` and `settleMatchEscrow()`
+
+**`deposit_wager` instruction:** Takes only `escrow`, `player`, `config`, `system_program`. Player count is irrelevant — each player independently signs their own deposit. `buildDepositTransaction()` needs no change. (HIGH confidence — verified by reading `lib.rs`.)
+
+**`settle_match`:** Currently validates `winner` against `escrow.player_one || escrow.player_two`. After N-player, validation moves to instruction body (see Pitfall E2). The JS side only passes the winner pubkey — no change to `settleMatchEscrow()` JS signature needed. But the Anchor accounts object must not include `playerOne`/`playerTwo` (they no longer exist).
+
+**`cancel_match`:** Currently passes `playerOne` and `playerTwo` as named accounts. After N-player, these become `remainingAccounts`. The JS call changes from:
+```js
+program.methods.cancelMatch()
+    .accounts({ escrow, caller, playerOne, playerTwo, config, systemProgram })
+    .rpc()
+```
+to:
+```js
+program.methods.cancelMatch()
+    .accounts({ escrow, caller, config, systemProgram })
+    .remainingAccounts(
+        playerAddresses.map(addr => ({
+            pubkey: new PublicKey(addr),
+            isSigner: false,
+            isWritable: true,
+        }))
+    )
+    .rpc()
+```
+
+**The function signature of `cancelMatchEscrow` must change** — it currently takes `(matchId, playerOneAddress, playerTwoAddress)` as separate strings and must change to `(matchId, playerAddresses: string[])`.
+
+**Every caller of `cancelMatchEscrow` in `main.js` must be updated.** Search `main.js` for `cancelMatchEscrow` — there are at least 3 call sites (deposit timeout handler, escrowDepositConfirm handler, permissionless reclaim path).
+
+**Prevention:**
+- Change the function signature first, then update all call sites. TypeScript's type system would catch this automatically — since the server uses plain JS, a grep is required.
+- `grep -n "cancelMatchEscrow" server/socket-io/main.js` before making any changes — count all call sites, verify all are updated.
+
+**Warning signs:** Server error `too many arguments` or `unexpected argument` from Anchor client when cancel is called.
+
+**Phase:** Server integration phase.
+
+---
+
+### Pitfall E9: Writable Account Demotion — `remaining_accounts` Players Must Be Marked Writable
+
+**Severity:** HIGH
+**Location:** `server/services/escrow.js` — `cancelMatchEscrow()` remaining accounts construction
+
+**What goes wrong:** Solana transactions mark each account as writable or read-only in the transaction message. When using `remaining_accounts` in Anchor, the writable flag must be set by the caller (the server building the transaction). If a player's account is marked `isWritable: false` (or defaults to false), the on-chain lamport transfer fails with `IllegalLamportChange`.
+
+The critical subtlety: Solana's runtime can silently demote an account to read-only if it appears on the reserved accounts list, even if you marked it writable. For user wallets receiving refunds, this is not an issue — user wallets are not reserved accounts. But this pattern is worth documenting because a future change (e.g., refunding to a program-owned account) could trigger it.
+
+**The `.remainingAccounts()` call must explicitly set `isWritable: true`** for all player refund accounts:
+```js
+.remainingAccounts(
+    playerAddresses.map(addr => ({
+        pubkey: new PublicKey(addr),
+        isSigner: false,
+        isWritable: true,  // REQUIRED — must be writable to receive lamports
+    }))
+)
+```
+
+**Prevention:**
+- Always set `isWritable: true` for accounts that receive lamports.
+- Add a Rust-side writability check: `require!(account.is_writable, EscrowError::AccountNotWritable)` before the lamport transfer (defensive, since Solana runtime also enforces this, but the error message will be clearer).
+
+**Warning signs:** On-chain error `IllegalLamportChange` during cancel_match even though player addresses are correct.
+
+**Phase:** Server integration phase — when implementing `remainingAccounts` for cancel.
+
+---
+
+### Pitfall E10: Program ID Must Be Updated in Three Places After N-Player Redeploy
+
+**Severity:** HIGH
+**Location:** Three synchronized locations
+
+The N-player escrow program changes `MatchEscrow::SPACE`. This means a new program deploy is required (cannot upgrade in-place when account layout changes). The new program gets a new program ID. The ID must be updated in:
+
+1. `programs/solshot-escrow/src/lib.rs` — `declare_id!("NEW_ID")`
+2. `server/services/escrow.js` line 39 — `const PROGRAM_ID = new PublicKey('NEW_ID')`
+3. Client `.env` — `REACT_APP_ESCROW_PROGRAM_ID=NEW_ID`
+
+If any of the three are stale, different parts of the system talk to different programs. The failure modes are:
+
+- Stale server: Server derives PDA using old program ID. PDA derivation is deterministic — wrong program ID produces wrong PDA address. All on-chain calls fail with `AccountNotFound` because the PDA doesn't exist at the new program.
+- Stale client `.env`: Client's CS-01 validation in `WalletContext.js` checks `ix.programId.equals(ESCROW_PROGRAM_ID)`. With old program ID, every deposit transaction is rejected as "unexpected program."
+- Stale `declare_id!()`: Anchor refuses to load the program at all with `Program ID mismatch`.
+
+**Prevention:**
+- Maintain the 3-file deploy checklist from `01-RESEARCH.md` (OC-14 pattern) — this is the same problem, recurring.
+- After redeploy: `anchor build && anchor deploy` outputs the new program ID — capture it immediately, update all three locations before any testing.
+- Verify with: `anchor idl fetch CqvRC6mSJe2CrBtENVfCEPkgRW3WwxLSL9C1hgXz7GtD` returning the old IDL (expected) vs the new ID returning the new IDL.
+
+**Warning signs:** Server logs `[Escrow] Program ID: CqvRC6mSJe2CrBtENVfCEPkgRW3WwxLSL9C1hgXz7GtD` after redeploy — if the old ID appears, the server was not updated.
+
+**Phase:** Deploy phase — this is a process pitfall, not a code pitfall.
+
+---
+
+### Pitfall E11: `deposit_wager` "All Deposited" Logic Moves From Rust to Server
+
+**Severity:** MODERATE
+**Location:** `programs/solshot-escrow/src/lib.rs` lines 224-239 + `server/socket-io/main.js`
+
+**Current Rust pattern:**
+```rust
+// Both deposited → match is active
+if escrow.player_one_deposited && escrow.player_two_deposited {
+    escrow.state = MatchState::Active;
+    escrow.activated_at = Clock::get()?.unix_timestamp;
+    emit!(MatchActive { ... });
+}
+```
+
+**In N-player:** The "all deposited" check becomes:
+```rust
+if escrow.deposited.iter().all(|&d| d) {
+    escrow.state = MatchState::Active;
+    // ...
+}
+```
+
+This is a straightforward change in Rust. The issue is on the server side: `main.js` also tracks deposit state in `wagerStates[rid].deposits` and independently checks "all deposited" to emit `escrowActive` to clients. Both the Rust program and the server must agree on what "all deposited" means.
+
+**If the server checks deposits before all players have joined the room** (i.e., room is still filling up), the `escrowActive` event fires too early. This can only happen if N-player wager rooms allow players to deposit before the room is full — which the current design prevents by only creating the escrow after the room is full.
+
+**Prevention:**
+- Maintain the invariant: escrow is created only after all `maxPlayers` players have joined. Do not create the escrow early.
+- Confirm that `wagerStates[rid].deposits` uses `room.players.every(p => ws.deposits[p.socketId])` — not the binary `hostDeposited && playerDeposited` check (see Pitfall 12 in Part A).
+
+**Warning signs:** `escrowActive` event emitted with only 2 of 4 players having deposited.
+
+**Phase:** Server integration phase.
+
+---
+
+### Pitfall E12: `permissionless_reclaim` Must Also Accept N Player Accounts
+
+**Severity:** MODERATE
+**Location:** `programs/solshot-escrow/src/lib.rs` — `PermissionlessReclaim` struct
+
+**Current pattern:** Fixed `player_one` and `player_two` accounts, same as `cancel_match`. For N-player, same `remaining_accounts` pattern applies.
+
+**The DCA-02 safety guarantee** (48-hour permissionless reclaim) must work for all N players' funds, not just 2. If the Rust program is upgraded for cancel but not for permissionless_reclaim, partial funds can be stranded.
+
+**The server's `permissionlessReclaimEscrow()` in `escrow.js`** currently takes `(matchId, playerOneAddress, playerTwoAddress)` — same signature problem as `cancelMatchEscrow`.
+
+**Prevention:**
+- Apply the same `remaining_accounts` migration to `PermissionlessReclaim` as to `CancelMatch` — they have identical structure.
+- Update `permissionlessReclaimEscrow()` in `escrow.js` to accept `playerAddresses: string[]`.
+- The event `MatchCancelled { refunded_one: bool, refunded_two: bool }` must become `{ refunded: Vec<bool> }` — or a count `refunded_count: u8`.
+
+**Warning signs:** After N-player escrow upgrade, `permissionlessReclaimEscrow()` still passes only 2 addresses — 3rd and 4th player funds are not reclaimed.
+
+**Phase:** Rust program redesign — must be done simultaneously with `cancel_match` migration.
+
+---
+
+### Pitfall E13: `SamePlayer` Validation Must Extend to All N Players
+
+**Severity:** MODERATE
+**Location:** `programs/solshot-escrow/src/lib.rs` — `create_match` instruction body
+
+**Current check:**
+```rust
+require!(player_one != player_two, EscrowError::SamePlayer);
+```
+
+**In N-player:** The check must verify no two players are the same wallet. With 4 players, there are 6 unique pairs to check:
+```rust
+// Naive O(n^2) — acceptable for max 4 players:
+for i in 0..players.len() {
+    for j in (i+1)..players.len() {
+        require!(players[i] != players[j], EscrowError::SamePlayer);
+    }
+}
+// Also: no player equals the authority
+for player in &players {
+    require!(*player != ctx.accounts.authority.key(), EscrowError::AuthorityAsPlayer);
+}
+```
+
+**Why this matters:** A malicious player submitting the same wallet twice would receive a double refund on cancel. With the current binary check, this is caught. In N-player, if the check is replaced with only `players[0] != players[1]`, wallets 2 and 3 could be identical.
+
+**Prevention:**
+- Implement the O(n^2) all-pairs check. At max 4 players, this is 6 comparisons — not a compute budget concern.
+- Add a test case for 4 players where players[1] == players[3] and verify `SamePlayer` is returned.
+
+**Phase:** Rust program redesign.
+
+---
+
+### Pitfall E14: Windows McAfee Blocks `solana-test-validator` — Testing Escrow Changes Is Blocked
+
+**Severity:** MODERATE
+**Type:** Environment constraint
+
+**Current state (from MEMORY.md):** `solana-test-validator` is blocked by McAfee on Windows. The existing workaround is `litesvm` for in-process tests (`programs/solshot-escrow/tests/bok_litesvm.rs`). However, `litesvm` does not support all Anchor features and may not handle the `remaining_accounts` pattern used for N-player cancel and permissionless reclaim.
+
+**What goes wrong:** Developers write N-player cancel tests using `bok_litesvm.rs`, discover that `remaining_accounts` are not properly handled by LiteSVM, and either skip testing or ship without cancel validation.
+
+**Alternative testing approaches:**
+1. **`banks-client` (via `solana-program-test`)** — runs a local validator in-process, supports remaining_accounts. Works on Windows without requiring a separate binary.
+2. **`anchor test --skip-local-validator`** against a devnet fork — requires network access, slower.
+3. **devnet directly** — slowest, costs SOL, but highest fidelity.
+
+**Prevention:**
+- Before writing N-player cancel tests, verify whether `bok_litesvm.rs` can handle `remaining_accounts` by testing against a simple existing example.
+- If LiteSVM fails, switch to `solana-program-test` for the cancel/reclaim tests specifically. Add it as a dev-dependency in `programs/solshot-escrow/Cargo.toml`.
+- Document the testing approach in the plan file before coding starts.
+
+**Warning signs:** LiteSVM cancel test passes with 2 players but fails to compile or panics when 3+ remaining_accounts are passed.
+
+**Phase:** Test infrastructure phase — verify before writing cancel tests.
+
+---
+
 ## Phase-Specific Warnings
 
 | Phase Topic | Likely Pitfall | Mitigation |
@@ -646,13 +1219,26 @@ The settlement failure recovery stores `{ p1wallet, p2wallet }`. If extended to 
 | Gold economy | 4-player game trivializes weapon costs | Scale gold-per-damage by `1/(N-1)` |
 | Testing | 3-player bugs invisible in 2-player tests | Add bot client that auto-fires; write explicit 3-player socket tests |
 | Reconnect | P3/P4 reconnect loses all state | `migrateSocketId()` helper covers all `room.players[i]` slots |
-| Wager mode | N-player wager corrupts escrow state | Hard block: `maxPlayers > 2` + `wager > 0` = server error |
+| Wager mode (game server) | N-player wager corrupts escrow state | Hard block: `maxPlayers > 2` + `wager > 0` = server error |
+| Rust struct SPACE | `MatchEscrow` size wrong after Vec fields | Field-by-field recalculation + BOK space proptest must pass |
+| Rust `settle_match` | Winner constraint silently removed | Move constraint to instruction body with `players.contains()` |
+| Rust `cancel_match` | Fixed accounts can't refund N players | `remaining_accounts` pattern + positional key validation |
+| TX size | 4-player settle/cancel too large | Stay within 4-player limit; cap at 4 in Rust program |
+| N-player arithmetic | Borrow checker fails in deposit loop | Clone Vec before mutable borrow; maintain read-before-mutate discipline |
+| IDL sync | Stale IDL causes silent data corruption | Rebuild IDL + copy after every `lib.rs` change |
+| Server deposit check | `playerOneDeposited` no longer exists | Update `getEscrowState()` return shape; grep all usages |
+| JS cancel signature | `cancelMatchEscrow(id, p1, p2)` breaks | Change to array parameter; grep all call sites |
+| Writable accounts | `remaining_accounts` not marked writable | `isWritable: true` on all refund accounts |
+| Program ID | New deploy = new ID in 3 locations | OC-14 checklist: declare_id, escrow.js, .env |
+| `permissionless_reclaim` | Only refunds 2 players after upgrade | Apply same `remaining_accounts` migration as `cancel_match` |
+| Same-wallet validation | N-player `SamePlayer` check is partial | O(n^2) all-pairs check in `create_match` |
+| Windows testing | McAfee blocks `solana-test-validator` | Use `solana-program-test` (banks-client) for N-player cancel tests |
 
 ---
 
 ## Sources
 
-All findings derived from direct code reading:
+**Part A (game mechanics) — all findings from direct code reading:**
 - `server/socket-io/main.js` (full file, ~2600 lines)
 - `server/services/match.js` (full file, 218 lines)
 - `server/services/gold.js` (full file, 115 lines)
@@ -664,4 +1250,18 @@ All findings derived from direct code reading:
 - `client/src/bridge/GameBridge.js` (lines 1-100)
 - `client/src/bridge/PhaserBootstrap.js` (full file)
 
-Confidence: HIGH — all pitfalls are traced to specific line numbers in the actual codebase, not inferred from general knowledge.
+**Part B (escrow upgrade) — sources:**
+- `programs/solshot-escrow/src/lib.rs` (full file, 884 lines) — HIGH confidence
+- `server/services/escrow.js` (full file, 544 lines) — HIGH confidence
+- `server/services/solana.js` (full file, 284 lines) — HIGH confidence
+- `server/socket-io/main.js` lines 1973-2056 (escrow deposit confirmation handler) — HIGH confidence
+- `client/src/wallet/WalletContext.js` (full file, 450 lines) — HIGH confidence
+- `server/idl/solshot_escrow.json` (full IDL) — HIGH confidence
+- `.planning/phases/01-on-chain-program-redesign/01-RESEARCH.md` — HIGH confidence (prior research)
+- Anchor space documentation — MEDIUM confidence (anchor-lang.com/docs/references/space, verified Vec<Pubkey> = 4 + (32 * n))
+- Solana transaction size analysis — MEDIUM confidence (1,232-byte limit confirmed across multiple sources; ~35 accounts for legacy TX)
+- Helius Solana security guide — MEDIUM confidence (remaining_accounts validation patterns, writable demotion)
+- OSEC lamport transfer article (2025) — MEDIUM confidence (writable demotion via reserved accounts)
+- Anchor remaining_accounts documentation — MEDIUM confidence (accounts not validated by Anchor, manual validation required)
+
+Confidence: HIGH for all escrow pitfalls traced to specific code; MEDIUM for transaction size estimates (calculated from known constants, not measured on devnet).

@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 27 Feb 2026)
 ## Current Position
 
 Milestone: v1.4 — N-Player Escrow
-Phase: 20 of 23 (Anchor Program)
-Plan: 02 of 3 in phase 20 (N-Player Instruction Rewrite)
-Status: In progress
-Last activity: 27 Feb 2026 — Completed 20-02-PLAN.md (create_match/deposit_wager/settle_match N-player rewrite)
+Phase: 20 of 23 (Anchor Program) — COMPLETE
+Plan: 03 of 3 in phase 20 (N-Player Cancel/Reclaim + start_with_depositors)
+Status: Phase complete — ready for Phase 21
+Last activity: 27 Feb 2026 — Completed 20-03-PLAN.md (cancel/reclaim N-player + anchor build + IDL sync)
 
-Progress: [██░░░░░░░░] 20% (2/10 plans)
+Progress: [███░░░░░░░] 30% (3/10 plans)
 
 ## Performance Metrics
 
@@ -47,6 +47,9 @@ Progress: [██░░░░░░░░] 20% (2/10 plans)
 - pot = wager * deposits_mask.count_ones() — NOT wager * num_deposited (uses actual depositors, not registered count)
 - dust absorption: winner = pot - treasury - ops; max dust is always 2 lamports regardless of player count (2 division ops)
 - (0..max_players).any(|i| escrow.players[i] == winner.key()) is the canonical winner constraint pattern
+- cancel_match and permissionless_reclaim use ctx.remaining_accounts — no named player accounts in structs
+- start_with_depositors compacts players[] array before reducing max_players — ensures contiguous depositor slots after partial-start
+- Phase 20 COMPLETE: anchor build succeeds, all 69 cargo tests pass, IDL synced to server/idl/
 
 ### Pending Todos
 - Run 25-test suite when McAfee exclusion is configured
@@ -57,14 +60,14 @@ Progress: [██░░░░░░░░] 20% (2/10 plans)
 
 ### Blockers/Concerns
 - McAfee blocks solana-test-validator on Windows — tests need exclusion
-- Devnet wallet at 0.97 SOL — need ~2.12 SOL to redeploy program
+- Devnet wallet at 0.97 SOL — need ~2.12 SOL to redeploy program with v1.4 instructions
 - main.js is ~2870 lines — search by function name, not line number
-- IDL must sync atomically across 3 locations after program rebuild
-- lib.rs: create_match/deposit_wager/settle_match complete; cancel_match/permissionless_reclaim still todo!() stubs (plan 20-03)
-- JS server (escrow.js, main.js) still uses old player_one/player_two API — needs update after 20-03 before anchor build
+- server/services/escrow.js still uses old player_one/player_two API — must be updated in Phase 21
+- server/socket-io/main.js cancel/refund flows must be updated to pass remaining_accounts arrays
+- start_with_depositors call path needs new implementation in server (partial-deposit timeout handling)
 
 ## Session Continuity
 
-Last session: 2026-02-27T22:38:09Z
-Stopped at: Completed 20-02-PLAN.md — N-player instruction rewrite + proptest expansion
+Last session: 2026-02-27T22:45:02Z
+Stopped at: Completed 20-03-PLAN.md — N-player cancel/reclaim + start_with_depositors + anchor build + IDL sync
 Resume file: None

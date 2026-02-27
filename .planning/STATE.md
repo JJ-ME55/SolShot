@@ -4,15 +4,17 @@
 
 See: .planning/PROJECT.md (updated 27 Feb 2026)
 **Core value:** Browser-based multiplayer artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** v1.4 — N-Player Escrow
+**Current focus:** v1.4 — Phase 20: Anchor Program
 
 ## Current Position
 
 Milestone: v1.4 — N-Player Escrow
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 27 Feb 2026 — Milestone v1.4 started
+Phase: 20 of 23 (Anchor Program)
+Plan: — (not yet planned)
+Status: Ready to plan
+Last activity: 27 Feb 2026 — v1.4 roadmap created (phases 20-23)
+
+Progress: [░░░░░░░░░░] 0% (0/10 plans)
 
 ## Performance Metrics
 
@@ -31,35 +33,29 @@ Last activity: 27 Feb 2026 — Milestone v1.4 started
 - Devnet deploy done (escrow + SHOT token) — mainnet is final step
 - 90/7/3 BPS split hardcoded in escrow program
 - SHOT mint authority burned (no changes possible)
-- MongoDB Atlas M0 free tier for stats persistence
 - Three audits complete: SOS, DB, BOK — all PASS
-- Do NOT modify lib.rs — preserves audit certifications
-- Jupiter Mobile via Reown, Price API V3, Terminal SDK with 0.5% platform fee
-- Practice mode as default landing tab
-- Self-hosted Telegram SDK (supply chain security)
-- players[] array replaces host/player binary structure
-- BO1/BO3/BO5 with placement scoring (4th=0, 3rd=1, 2nd=2, 1st=3)
-- Wager modes with 3-4 players are practice-only until escrow upgrade
-- Tank colours: red #E63946, blue #4A90D9, green #52B788, yellow #FFD166
+- Re-audit risk accepted for lib.rs modifications (v1.4 requires it)
+- Winner-takes-all N-player settlement (not placement split)
+- Equal wagers only (simpler PDA, fairer gameplay)
+- 5-10 min deposit timeout (more players = higher no-show risk)
+- Partial deposit: host chooses start-with-depositors or cancel-all
+- Wager guard for 3-4 players removed in v1.4
 
 ### Pending Todos
 - Run 25-test suite when McAfee exclusion is configured
 - Fresh devnet deploy with new program ID + initializeConfig() call
 - On-chain authority transfer to new keypair (needs devnet SOL)
 - Production deployment (Render + Vercel)
-- QA sessions (A4-A8 gameplay testing)
 - Telegram bot creation (BotFather)
-- Fix SHOT milestone recording for players 3/4 (tech debt from v1.3)
-- Fix playAgain maxPlayers preservation (tech debt from v1.3)
 
 ### Blockers/Concerns
-- McAfee blocks solana-test-validator on Windows
-- Devnet wallet at 0.97 SOL — need ~2.12 SOL for program deploy
+- McAfee blocks solana-test-validator on Windows — tests need exclusion
+- Devnet wallet at 0.97 SOL — need ~2.12 SOL to redeploy program
 - main.js is ~2870 lines — search by function name, not line number
-- Escrow settlement still 2-player (hostId/playerId) — N-player escrow deferred
+- IDL must sync atomically across 3 locations after program rebuild
 
 ## Session Continuity
 
 Last session: 2026-02-27
-Stopped at: v1.3 milestone archived
+Stopped at: v1.4 roadmap created, phases 20-23 defined
 Resume file: None

@@ -95,54 +95,54 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ESC-01 | — | Pending |
-| ESC-02 | — | Pending |
-| ESC-03 | — | Pending |
-| ESC-04 | — | Pending |
-| ESC-05 | — | Pending |
-| ESC-06 | — | Pending |
-| ESC-07 | — | Pending |
-| ESC-08 | — | Pending |
-| ESC-09 | — | Pending |
-| ESC-10 | — | Pending |
-| ESC-11 | — | Pending |
-| ESC-12 | — | Pending |
-| ESC-13 | — | Pending |
-| ESC-14 | — | Pending |
-| SRV-01 | — | Pending |
-| SRV-02 | — | Pending |
-| SRV-03 | — | Pending |
-| SRV-04 | — | Pending |
-| SRV-05 | — | Pending |
-| SRV-06 | — | Pending |
-| SRV-07 | — | Pending |
-| SRV-08 | — | Pending |
-| SRV-09 | — | Pending |
-| SRV-10 | — | Pending |
-| SRV-11 | — | Pending |
-| SRV-12 | — | Pending |
-| SRV-13 | — | Pending |
-| SRV-14 | — | Pending |
-| SRV-15 | — | Pending |
-| SRV-16 | — | Pending |
-| SRV-17 | — | Pending |
-| SRV-18 | — | Pending |
-| CLT-01 | — | Pending |
-| CLT-02 | — | Pending |
-| CLT-03 | — | Pending |
-| CLT-04 | — | Pending |
-| CLT-05 | — | Pending |
-| CLT-06 | — | Pending |
-| CLT-07 | — | Pending |
-| CLT-08 | — | Pending |
-| DEBT-01 | — | Pending |
-| DEBT-02 | — | Pending |
+| ESC-01 | Phase 20 | Pending |
+| ESC-02 | Phase 20 | Pending |
+| ESC-03 | Phase 20 | Pending |
+| ESC-04 | Phase 20 | Pending |
+| ESC-05 | Phase 20 | Pending |
+| ESC-06 | Phase 20 | Pending |
+| ESC-07 | Phase 20 | Pending |
+| ESC-08 | Phase 20 | Pending |
+| ESC-09 | Phase 20 | Pending |
+| ESC-10 | Phase 20 | Pending |
+| ESC-11 | Phase 20 | Pending |
+| ESC-12 | Phase 20 | Pending |
+| ESC-13 | Phase 20 | Pending |
+| ESC-14 | Phase 20 | Pending |
+| SRV-01 | Phase 21 | Pending |
+| SRV-02 | Phase 21 | Pending |
+| SRV-03 | Phase 21 | Pending |
+| SRV-04 | Phase 21 | Pending |
+| SRV-05 | Phase 21 | Pending |
+| SRV-06 | Phase 21 | Pending |
+| SRV-07 | Phase 21 | Pending |
+| SRV-08 | Phase 21 | Pending |
+| SRV-09 | Phase 22 | Pending |
+| SRV-10 | Phase 22 | Pending |
+| SRV-11 | Phase 22 | Pending |
+| SRV-12 | Phase 22 | Pending |
+| SRV-13 | Phase 22 | Pending |
+| SRV-14 | Phase 22 | Pending |
+| SRV-15 | Phase 22 | Pending |
+| SRV-16 | Phase 22 | Pending |
+| SRV-17 | Phase 21 | Pending |
+| SRV-18 | Phase 22 | Pending |
+| CLT-01 | Phase 23 | Pending |
+| CLT-02 | Phase 23 | Pending |
+| CLT-03 | Phase 23 | Pending |
+| CLT-04 | Phase 23 | Pending |
+| CLT-05 | Phase 23 | Pending |
+| CLT-06 | Phase 23 | Pending |
+| CLT-07 | Phase 23 | Pending |
+| CLT-08 | Phase 23 | Pending |
+| DEBT-01 | Phase 22 | Pending |
+| DEBT-02 | Phase 22 | Pending |
 
 **Coverage:**
-- v1.4 requirements: 40 total
-- Mapped to phases: 0
-- Unmapped: 40
+- v1.4 requirements: 42 total
+- Mapped to phases: 42
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-27*
-*Last updated: 2026-02-27 after initial definition*
+*Last updated: 2026-02-27 — traceability filled after roadmap creation*

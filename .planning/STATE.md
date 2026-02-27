@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 27 Feb 2026)
 
 Milestone: v1.4 — N-Player Escrow
 Phase: 20 of 23 (Anchor Program)
-Plan: — (not yet planned)
-Status: Ready to plan
-Last activity: 27 Feb 2026 — v1.4 roadmap created (phases 20-23)
+Plan: 01 of 3 in phase 20 (Data Model Struct Rewrite)
+Status: In progress
+Last activity: 27 Feb 2026 — Completed 20-01-PLAN.md (N-player struct + test sync)
 
-Progress: [░░░░░░░░░░] 0% (0/10 plans)
+Progress: [█░░░░░░░░░] 10% (1/10 plans)
 
 ## Performance Metrics
 
@@ -40,6 +40,10 @@ Progress: [░░░░░░░░░░] 0% (0/10 plans)
 - 5-10 min deposit timeout (more players = higher no-show risk)
 - Partial deposit: host chooses start-with-depositors or cancel-all
 - Wager guard for 3-4 players removed in v1.4
+- TIMEOUT_SECONDS=600 (10 min) — confirmed in 20-01; PERMISSIONLESS_RECLAIM_TIMEOUT=1200
+- MatchEscrow SPACE=232: players:[Pubkey;4]+max_players+deposits_mask replaces two Pubkeys+two bools
+- TS-INV-5 v1.4: settle/cancel windows overlap — mutual exclusion is STATE-enforced (not time-enforced)
+- Compile stubs (todo!) in instruction bodies allow incremental rewrite across plans 20-01/02/03
 
 ### Pending Todos
 - Run 25-test suite when McAfee exclusion is configured
@@ -53,9 +57,10 @@ Progress: [░░░░░░░░░░] 0% (0/10 plans)
 - Devnet wallet at 0.97 SOL — need ~2.12 SOL to redeploy program
 - main.js is ~2870 lines — search by function name, not line number
 - IDL must sync atomically across 3 locations after program rebuild
+- lib.rs instruction bodies are todo!() stubs (plans 20-02/20-03 must complete before anchor build)
 
 ## Session Continuity
 
-Last session: 2026-02-27
-Stopped at: v1.4 roadmap created, phases 20-23 defined
+Last session: 2026-02-27T22:28:53Z
+Stopped at: Completed 20-01-PLAN.md — N-player struct rewrite + test sync
 Resume file: None

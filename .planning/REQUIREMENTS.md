@@ -54,20 +54,20 @@
 
 ### Client HUD (HUD)
 
-- [ ] **HUD-01**: N HP bars displayed (color-coded per player)
-- [ ] **HUD-02**: Eliminated players' HP bars show greyed/crossed-out state
-- [ ] **HUD-03**: Current turn player indicated (arrow, glow, or highlight)
-- [ ] **HUD-04**: Player names displayed above/beside each HP bar
-- [ ] **HUD-05**: 4-player layout: horizontal strip across top, each bar ~1/4 width
+- [x] **HUD-01**: N HP bars displayed (color-coded per player)
+- [x] **HUD-02**: Eliminated players' HP bars show greyed/crossed-out state
+- [x] **HUD-03**: Current turn player indicated (arrow, glow, or highlight)
+- [x] **HUD-04**: Player names displayed above/beside each HP bar
+- [x] **HUD-05**: 4-player layout: horizontal strip across top, each bar ~1/4 width
 
 ### Client Lobby (LOBBY)
 
-- [ ] **LOBBY-01**: Room creation includes "Number of players" selector (2/3/4)
-- [ ] **LOBBY-02**: Room list shows `currentPlayers/maxPlayers` (e.g. "2/4")
-- [ ] **LOBBY-03**: Waiting room shows all N joined players with ready status
-- [ ] **LOBBY-04**: Game starts only when all slots filled AND all players ready
-- [ ] **LOBBY-05**: Color picker per player with duplicate prevention
-- [ ] **LOBBY-06**: Quick Match finds rooms matching selected player count
+- [x] **LOBBY-01**: Room creation includes "Number of players" selector (2/3/4)
+- [x] **LOBBY-02**: Room list shows `currentPlayers/maxPlayers` (e.g. "2/4")
+- [x] **LOBBY-03**: Waiting room shows all N joined players with ready status
+- [x] **LOBBY-04**: Game starts only when all slots filled AND all players ready
+- [x] **LOBBY-05**: Color picker per player with duplicate prevention
+- [x] **LOBBY-06**: Quick Match finds rooms matching selected player count
 
 ### GameBridge (BRIDGE)
 
@@ -150,17 +150,17 @@
 | PHASER-05 | Phase 18 | Complete |
 | PHASER-06 | Phase 18 | Complete |
 | PHASER-07 | Phase 18 | Complete |
-| HUD-01 | Phase 19 | Pending |
-| HUD-02 | Phase 19 | Pending |
-| HUD-03 | Phase 19 | Pending |
-| HUD-04 | Phase 19 | Pending |
-| HUD-05 | Phase 19 | Pending |
-| LOBBY-01 | Phase 19 | Pending |
-| LOBBY-02 | Phase 19 | Pending |
-| LOBBY-03 | Phase 19 | Pending |
-| LOBBY-04 | Phase 19 | Pending |
-| LOBBY-05 | Phase 19 | Pending |
-| LOBBY-06 | Phase 19 | Pending |
+| HUD-01 | Phase 19 | Complete |
+| HUD-02 | Phase 19 | Complete |
+| HUD-03 | Phase 19 | Complete |
+| HUD-04 | Phase 19 | Complete |
+| HUD-05 | Phase 19 | Complete |
+| LOBBY-01 | Phase 19 | Complete |
+| LOBBY-02 | Phase 19 | Complete |
+| LOBBY-03 | Phase 19 | Complete |
+| LOBBY-04 | Phase 19 | Complete |
+| LOBBY-05 | Phase 19 | Complete |
+| LOBBY-06 | Phase 19 | Complete |
 | BRIDGE-01 | Phase 18 | Complete |
 | BRIDGE-02 | Phase 18 | Complete |
 | BRIDGE-03 | Phase 18 | Complete |

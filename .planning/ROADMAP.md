@@ -5,7 +5,7 @@
 - ✅ **v1.0 Development** - Phases 1-4 (pre-GSD, shipped 18 Feb 2026)
 - ✅ **v1.1 Security Hardening** - Phases 1-8 (shipped 23 Feb 2026)
 - ✅ **v1.2 Launch Readiness** - Phases 9-14 (shipped 25 Feb 2026)
-- 🚧 **v1.3 4-Player Multiplayer** - Phases 15-19 (in progress)
+- ✅ **v1.3 4-Player Multiplayer** - Phases 15-19 (shipped 27 Feb 2026)
 
 ---
 
@@ -62,7 +62,7 @@ Jupiter ecosystem integration, polished UI, stats pipeline, mobile, security, ch
 - [x] **Phase 16: Room Schema and Battle Engine** — players[] room model, N-player fire handler, terrain spawn
 - [x] **Phase 17: Server Systems** — 5 surgical N-player fixes: wager guard, reconnect broadcast, playerIndex, shopReady remap, debug log
 - [x] **Phase 18: Client Phaser and GameBridge** — tanks[] array, elimination handler, bridge state shape
-- [ ] **Phase 19: React HUD and Lobby UI** — N HP bars, player count selector, N-slot waiting room
+- [x] **Phase 19: React HUD and Lobby UI** — N HP bars, player count selector, N-slot waiting room
 
 ---
 
@@ -182,8 +182,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 19-01-PLAN.md — BattleHUD N-player HP strip, PlayerHPBar component, elimination overlay + Leave Match, GameBridge placement fix, Win/Lose placement leaderboards
-- [ ] 19-02-PLAN.md — Server startPick guard + roomUpdate event, player count selector, N-slot waiting room, color de-dup, room list player count badges
+- [x] 19-01-PLAN.md — BattleHUD N-player HP strip, PlayerHPBar component, elimination overlay + Leave Match, GameBridge placement fix, Win/Lose placement leaderboards
+- [x] 19-02-PLAN.md — Server startPick guard + roomUpdate event, player count selector, N-slot waiting room, color de-dup, room list player count badges
 
 ---
 
@@ -200,7 +200,7 @@ Plans:
 | 16. Room Schema and Battle Engine | v1.3 | 3/3 | Complete | 26 Feb 2026 |
 | 17. Server Systems | v1.3 | 1/1 | Complete | 26 Feb 2026 |
 | 18. Client Phaser and GameBridge | v1.3 | 2/2 | Complete | 26 Feb 2026 |
-| 19. React HUD and Lobby UI | v1.3 | 0/2 | Not started | - |
+| 19. React HUD and Lobby UI | v1.3 | 2/2 | Complete | 27 Feb 2026 |
 
 ---
 

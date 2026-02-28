@@ -125,12 +125,12 @@ Plans:
   4. The host can choose `escrowPartialStart` (starts match with depositors, kicks others) or `escrowCancelAll` (full refund, back to lobby)
   5. A 3-player or 4-player room can select Quick Match, Duel, or High Roller in the lobby without being blocked by the wager guard
   6. After a BO3 match, `playAgain` resets with the correct `maxPlayers` (3 or 4) preserved
-**Plans:** TBD
+**Plans:** 3 plans
 
 Plans:
-- [ ] 22-01: main.js escrow orchestration — room-full escrow creation, parallel deposit TX dispatch, N-confirmation tracking, escrowActive (SRV-09, SRV-10, SRV-11, SRV-12, SRV-18)
-- [ ] 22-02: main.js partial deposit flow — timeout handling, escrowPartialDeposit event, escrowPartialStart handler, escrowCancelAll handler, wager guard removal (SRV-13, SRV-14, SRV-15, SRV-16)
-- [ ] 22-03: Tech debt — SHOT milestone N-player recording, playAgain maxPlayers preservation (DEBT-01, DEBT-02)
+- [ ] 22-01-PLAN.md — N-player escrow orchestration: deposit timeout to 5min, N-player wallet collection, parallel deposit TX dispatch, depositsMask verification, escrowDepositStatus events (SRV-09, SRV-10, SRV-11, SRV-12, SRV-18)
+- [ ] 22-02-PLAN.md — Partial deposit flow: 3-branch timeout (zero/partial/all), escrowPartialDeposit event, escrowPartialStart + escrowCancelAll handlers, wager guard removal (SRV-13, SRV-14, SRV-15, SRV-16)
+- [ ] 22-03-PLAN.md — Tech debt: N-player SHOT milestones + prestige + DB persist, playAgain maxPlayers + escrow re-creation, failedSettlements N-player (DEBT-01, DEBT-02)
 
 ### Phase 23: Client UX
 **Goal:** Players in any wagered room see real-time deposit status for all participants, a countdown timer, and the host can make the partial deposit choice from the lobby; the battle HUD shows the live pot, and all match modes are selectable for 3-4 player rooms.

@@ -70,7 +70,17 @@ Browser-based multiplayer artillery combat on Solana with real SOL wagering, set
 
 ### Active
 
-(No active milestone — define next with `/gsd:new-milestone`)
+#### Current Milestone: v2.0 — Practice Mode Public Launch
+
+**Goal:** Ship a clean, frictionless 2-player practice experience with no wallet required and no token references visible. First public release.
+
+**Target features:**
+- Handle system: first-time entry modal, localStorage persistence, TopBar display
+- Menu cleanup: grey out locked features (Armory, Prestige, Barracks) with COMING SOON badges
+- Token masking: hide all SHOT/Jupiter/prestige references from the visible UI
+- Lobby: 2-player only, practice active, wagered modes greyed with COMING SOON
+- Practice stats: localStorage tracking (matches, wins, losses, K/D) for future Barracks migration
+- Zero wallet requirement: play immediately after entering a handle
 
 ### Out of Scope
 
@@ -122,7 +132,7 @@ Many "failures" are design decisions (4 states, 24h timeout, PDA seeds), not bug
 
 ## Current State
 
-v1.4 shipped. Full 2-4 player wagered multiplayer working with on-chain escrow settlement. All match modes (Practice, Quick Match, Duel, High Roller, Custom Challenge) available for 2-4 players. Partial deposit handling with host choice. 42/42 requirements met, 18/18 integration checks, 5/5 E2E flows verified.
+v1.4 shipped. Full 2-4 player wagered multiplayer working with on-chain escrow settlement. Starting v2.0: strip down to a clean 2-player practice experience for first public launch. No wallet required, no token references visible. Ship something clean, get feedback, then expand.
 
 ## Key Decisions
 
@@ -153,5 +163,9 @@ v1.4 shipped. Full 2-4 player wagered multiplayer working with on-chain escrow s
 | Quick Match hardcoded to 2-player | 3-4p uses Custom Challenge | ✓ Good — simplifies matchmaking |
 | Timeout >2 alive = elimination, <=2 = forfeit | Different behavior appropriate for each | ✓ Good |
 
+| 2-player only for public launch | Ship clean, get feedback, then expand to 4p | — Pending |
+| Handle system (not wallet) for identity | Zero friction onboarding, no wallet required | — Pending |
+| Token masking for practice launch | Hide SHOT/Jupiter until wagering goes live | — Pending |
+
 ---
-*Last updated: 28 Feb 2026 after v1.4 milestone*
+*Last updated: 28 Feb 2026 after v2.0 milestone started*

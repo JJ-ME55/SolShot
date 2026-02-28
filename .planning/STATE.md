@@ -4,15 +4,15 @@
 
 See: .planning/PROJECT.md (updated 28 Feb 2026)
 **Core value:** Browser-based multiplayer artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** Planning next milestone
+**Current focus:** v2.0 — Practice Mode Public Launch
 
 ## Current Position
 
-Milestone: v1.4 — N-Player Escrow — SHIPPED
-Phase: —
+Milestone: v2.0 — Practice Mode Public Launch
+Phase: Not started (defining requirements)
 Plan: —
-Status: Ready for next milestone
-Last activity: 28 Feb 2026 — v1.4 milestone complete and archived
+Status: Defining requirements
+Last activity: 28 Feb 2026 — Milestone v2.0 started
 
 ## Performance Metrics
 
@@ -33,13 +33,10 @@ Last activity: 28 Feb 2026 — v1.4 milestone complete and archived
 - 90/7/3 BPS split hardcoded in escrow program
 - SHOT mint authority burned (no changes possible)
 - Three audits complete: SOS, DB, BOK — all PASS
-- N-player escrow: players[4] array, deposits_mask bitmap, 10-min on-chain timeout
-- Winner-takes-all N-player settlement (not placement split)
-- Equal wagers only (simpler PDA, fairer gameplay)
-- Partial deposit: host chooses start-with-depositors or cancel-all
-- remaining_accounts pattern for cancel/reclaim (no named player accounts)
-- 5 min client deposit timeout, 10 min on-chain timeout
-- pot = wager * deposits_mask.count_ones()
+- 2-player only for public launch (ship clean, expand to 4p later)
+- Handle system for identity (not wallet) — zero friction onboarding
+- Token masking: hide all SHOT/Jupiter/prestige references until wagering goes live
+- DO NOT TOUCH: server files, escrow.js, solana.js, shot-token.js, battle logic, wager logic
 
 ### Pending Todos
 - Run 25-test suite when McAfee exclusion is configured

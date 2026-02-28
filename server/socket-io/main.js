@@ -9,7 +9,7 @@ import { createMatchState, validateAction, transitionState, getNextTurn, isRound
 import { initGold, getBalance, earnGold, spendGold, awardKillBonus, awardRoundWinBonus, awardPlacementGold } from '../services/gold.js';
 import { WEAPON_CATALOG, getWeapon, getWeaponCost, getAllLaunchWeapons } from '../models/Weapon.js';
 import { handleAuthenticate, verifyAuthMessage, verifyWalletSignature } from '../middleware/auth.js';
-import { verifyBalance, isValidWager, settleMatch, refundWager, WAGER_TIERS, MATCH_MODES, validateMatchMode, isEscrowEnabled, createMatchEscrow, buildDepositTransaction, getEscrowState } from '../services/solana.js';
+import { verifyBalance, isValidWager, settleMatch, refundWager, WAGER_TIERS, MATCH_MODES, validateMatchMode, isEscrowEnabled, createMatchEscrow, buildDepositTransaction, getEscrowState, startWithDepositorsEscrow } from '../services/solana.js';
 import { cancelMatchEscrow } from '../services/escrow.js';
 import { recordMatchPlayed, prestigeBurn, getPrestigeInfo, getShotBalance, PRESTIGE_TIERS, PRESTIGE_WEAPON_IDS, loadMilestoneState, saveMilestoneState, verifyBurnTransaction, getPlayerShotState, SHOT_MILESTONES } from '../services/shot-token.js';
 import { trackConnection, trackDisconnection, trackMatchCreated, trackMatchCompleted, trackMatchCancelled, trackWager, trackSettlement, trackForfeit, trackShot, trackDamage, trackGoldEarned, trackShotEmission, trackShotBurn, trackError } from '../services/monitoring.js';
@@ -58,8 +58,8 @@ var pendingReconnects = {}
 // Turn timers keyed by roomId
 var turnTimers = {}
 
-// DCA-01: Deposit countdown timers keyed by roomId — 2-minute window after escrow emit
-const DEPOSIT_TIMEOUT_MS = 120_000  // 2 minutes — litepaper escrow flow
+// DCA-01: Deposit countdown timers keyed by roomId — 5-minute window after escrow emit
+const DEPOSIT_TIMEOUT_MS = 300_000  // 5 minutes — N-player deposit window (SRV-12)
 var depositTimers = {}
 
 // Matchmaking queues — keyed by "matchMode:matchLength" (e.g., "quick_match:1")
@@ -1185,43 +1185,38 @@ const mainsocket = (io) => {
 
             // Create on-chain escrow for wagered matches
             if (roomWager > 0 && isEscrowEnabled()) {
-                const hostWallet = ws?.wallets[room.players[0]?.socketId]
-                if (hostWallet && joinerWallet) {
+                // SRV-09: Collect all N player wallets for N-player escrow creation
+                const allWallets = room.players.map(p => ws?.wallets[p.socketId]).filter(Boolean)
+                if (allWallets.length === room.players.length) {
                     try {
-                        const escrowResult = await createMatchEscrow(roomId, roomWager, [hostWallet, joinerWallet])
+                        const escrowResult = await createMatchEscrow(roomId, roomWager, allWallets)
                         if (escrowResult.success) {
                             room.escrowPDA = escrowResult.escrowPDA
                             console.log(`[Match] Escrow created for room ${roomId}: ${escrowResult.escrowPDA}`)
 
-                            // Build deposit transactions for both players to sign
-                            const [hostDeposit, joinerDeposit] = await Promise.all([
-                                buildDepositTransaction(roomId, hostWallet),
-                                buildDepositTransaction(roomId, joinerWallet),
-                            ])
+                            // SRV-10: Build deposit transactions for all N players in parallel
+                            const depositTxs = await Promise.all(
+                                room.players.map(p => buildDepositTransaction(roomId, ws?.wallets[p.socketId]))
+                            )
 
-                            // Send deposit instructions to each player
-                            const hostSocket = io.sockets.sockets.get(room.players[0]?.socketId)
-                            // DCA-01: Compute deposit deadline before emitting so both players get same value
+                            // DCA-01: Compute deposit deadline before emitting so all players get same value
                             const depositDeadline = Date.now() + DEPOSIT_TIMEOUT_MS
-                            if (hostSocket && hostDeposit.success) {
-                                hostSocket.emit('escrowDeposit', {
-                                    roomId,
-                                    transaction: hostDeposit.transaction,
-                                    escrowPDA: escrowResult.escrowPDA,
-                                    wager: roomWager,
-                                    depositDeadlineMs: depositDeadline,
-                                })
-                            }
-                            if (joinerDeposit.success) {
-                                client.emit('escrowDeposit', {
-                                    roomId,
-                                    transaction: joinerDeposit.transaction,
-                                    escrowPDA: escrowResult.escrowPDA,
-                                    wager: roomWager,
-                                    depositDeadlineMs: depositDeadline,
-                                })
-                            }
-                            // DCA-01: Deposit countdown — cancel escrow if not both deposited within 2 min
+
+                            // Emit escrowDeposit to each player
+                            room.players.forEach((p, i) => {
+                                const sock = io.sockets.sockets.get(p.socketId)
+                                if (sock && depositTxs[i]?.success) {
+                                    sock.emit('escrowDeposit', {
+                                        roomId,
+                                        transaction: depositTxs[i].transaction,
+                                        escrowPDA: escrowResult.escrowPDA,
+                                        wager: roomWager,
+                                        depositDeadlineMs: depositDeadline,
+                                    })
+                                }
+                            })
+
+                            // DCA-01: Deposit countdown — cancel escrow if not all players deposited within 5 min
                             depositTimers[roomId] = setTimeout(async () => {
                                 delete depositTimers[roomId]
                                 const wsCheck = wagerStates[roomId]
@@ -1230,12 +1225,11 @@ const mainsocket = (io) => {
                                 // If all players already deposited, nothing to do
                                 const allDeposited = roomCheck.players.every(p => wsCheck.deposits && wsCheck.deposits[p.socketId])
                                 if (allDeposited) return
-                                // Cancel escrow and refund
-                                const p1wallet = wsCheck.wallets[roomCheck.players[0]?.socketId]
-                                const p2wallet = wsCheck.wallets[roomCheck.players[1]?.socketId]
-                                if (p1wallet && p2wallet && isEscrowEnabled()) {
+                                // N-player: collect all wallets for cancel
+                                const allCancelWallets = roomCheck.players.map(p => wsCheck.wallets[p.socketId]).filter(Boolean)
+                                if (allCancelWallets.length > 0 && isEscrowEnabled()) {
                                     try {
-                                        await cancelMatchEscrow(roomId, [p1wallet, p2wallet].filter(Boolean))
+                                        await cancelMatchEscrow(roomId, allCancelWallets)
                                     } catch (err) {
                                         console.error(`[Escrow] Deposit timeout cancel failed for ${roomId}:`, err.message)
                                     }
@@ -1545,53 +1539,56 @@ const mainsocket = (io) => {
                 broadcastRooms(io);
 
                 // Escrow creation for wagered queue matches
-                const matchJoinerWallet = authenticatedWallets[client.id] || null;
-                if (wagerAmount > 0 && isEscrowEnabled() && opponent.wallet && matchJoinerWallet) {
-                    try {
-                        const escrowResult = await createMatchEscrow(roomId, wagerAmount, [opponent.wallet, matchJoinerWallet]);
-                        if (escrowResult.success) {
-                            roomData.escrowPDA = escrowResult.escrowPDA;
-                            const [hostDeposit, joinerDeposit] = await Promise.all([
-                                buildDepositTransaction(roomId, opponent.wallet),
-                                buildDepositTransaction(roomId, matchJoinerWallet),
-                            ]);
-                            // DCA-01: Compute deposit deadline before emitting so both players get same value
-                            const depositDeadline = Date.now() + DEPOSIT_TIMEOUT_MS
-                            if (opponentSocket && hostDeposit.success) {
-                                opponentSocket.emit('escrowDeposit', { roomId, transaction: hostDeposit.transaction, escrowPDA: escrowResult.escrowPDA, wager: wagerAmount, depositDeadlineMs: depositDeadline });
-                            }
-                            if (joinerDeposit.success) {
-                                client.emit('escrowDeposit', { roomId, transaction: joinerDeposit.transaction, escrowPDA: escrowResult.escrowPDA, wager: wagerAmount, depositDeadlineMs: depositDeadline });
-                            }
-                            // DCA-01: Deposit countdown — cancel escrow if not both deposited within 2 min
-                            depositTimers[roomId] = setTimeout(async () => {
-                                delete depositTimers[roomId]
-                                const wsCheck = wagerStates[roomId]
-                                const roomCheck = findRoom(roomId)
-                                if (!roomCheck || !wsCheck) return
-                                // If all players already deposited, nothing to do
-                                const allDeposited = roomCheck.players.every(p => wsCheck.deposits && wsCheck.deposits[p.socketId])
-                                if (allDeposited) return
-                                // Cancel escrow and refund
-                                const p1wallet = wsCheck.wallets[roomCheck.players[0]?.socketId]
-                                const p2wallet = wsCheck.wallets[roomCheck.players[1]?.socketId]
-                                if (p1wallet && p2wallet && isEscrowEnabled()) {
-                                    try {
-                                        await cancelMatchEscrow(roomId, [p1wallet, p2wallet].filter(Boolean))
-                                    } catch (err) {
-                                        console.error(`[Escrow] Deposit timeout cancel failed for ${roomId}:`, err.message)
+                if (wagerAmount > 0 && isEscrowEnabled()) {
+                    // SRV-09: Collect all N player wallets (queue is always 2-player, but use N-player pattern for consistency)
+                    const allQueueWallets = roomData.players.map(p => wagerStates[roomId]?.wallets[p.socketId]).filter(Boolean)
+                    if (allQueueWallets.length === roomData.players.length) {
+                        try {
+                            const escrowResult = await createMatchEscrow(roomId, wagerAmount, allQueueWallets);
+                            if (escrowResult.success) {
+                                roomData.escrowPDA = escrowResult.escrowPDA;
+                                // SRV-10: Build deposit transactions for all N players in parallel
+                                const depositTxs = await Promise.all(
+                                    roomData.players.map(p => buildDepositTransaction(roomId, wagerStates[roomId]?.wallets[p.socketId]))
+                                );
+                                // DCA-01: Compute deposit deadline before emitting so all players get same value
+                                const depositDeadline = Date.now() + DEPOSIT_TIMEOUT_MS
+                                // Emit escrowDeposit to each player
+                                roomData.players.forEach((p, i) => {
+                                    const sock = io.sockets.sockets.get(p.socketId)
+                                    if (sock && depositTxs[i]?.success) {
+                                        sock.emit('escrowDeposit', { roomId, transaction: depositTxs[i].transaction, escrowPDA: escrowResult.escrowPDA, wager: wagerAmount, depositDeadlineMs: depositDeadline });
                                     }
-                                }
-                                io.sockets.in(roomId).emit('escrowDepositTimeout', { roomId })
-                                await removeRoom(roomId)
-                                broadcastRooms(io)
-                                io.socketsLeave(roomId)
-                            }, DEPOSIT_TIMEOUT_MS)
-                        } else {
-                            console.error(`[Queue] Escrow creation failed for ${roomId}:`, escrowResult.error);
+                                })
+                                // DCA-01: Deposit countdown — cancel escrow if not all players deposited within 5 min
+                                depositTimers[roomId] = setTimeout(async () => {
+                                    delete depositTimers[roomId]
+                                    const wsCheck = wagerStates[roomId]
+                                    const roomCheck = findRoom(roomId)
+                                    if (!roomCheck || !wsCheck) return
+                                    // If all players already deposited, nothing to do
+                                    const allDeposited = roomCheck.players.every(p => wsCheck.deposits && wsCheck.deposits[p.socketId])
+                                    if (allDeposited) return
+                                    // N-player: collect all wallets for cancel
+                                    const allCancelWallets = roomCheck.players.map(p => wsCheck.wallets[p.socketId]).filter(Boolean)
+                                    if (allCancelWallets.length > 0 && isEscrowEnabled()) {
+                                        try {
+                                            await cancelMatchEscrow(roomId, allCancelWallets)
+                                        } catch (err) {
+                                            console.error(`[Escrow] Deposit timeout cancel failed for ${roomId}:`, err.message)
+                                        }
+                                    }
+                                    io.sockets.in(roomId).emit('escrowDepositTimeout', { roomId })
+                                    await removeRoom(roomId)
+                                    broadcastRooms(io)
+                                    io.socketsLeave(roomId)
+                                }, DEPOSIT_TIMEOUT_MS)
+                            } else {
+                                console.error(`[Queue] Escrow creation failed for ${roomId}:`, escrowResult.error);
+                            }
+                        } catch (err) {
+                            console.error(`[Queue] Escrow error for ${roomId}:`, err.message);
                         }
-                    } catch (err) {
-                        console.error(`[Queue] Escrow error for ${roomId}:`, err.message);
                     }
                 }
 
@@ -2005,11 +2002,13 @@ const mainsocket = (io) => {
                         return
                     }
 
-                    // Determine which player this is (players[0] = host)
-                    const isHost = room.players[0]?.socketId === client.id
-                    const depositConfirmed = isHost
-                        ? escrowState.playerOneDeposited
-                        : escrowState.playerTwoDeposited
+                    // N-player: determine player index and check deposit via bitmask
+                    const playerIndex = room.players.findIndex(p => p.socketId === client.id)
+                    if (playerIndex < 0) {
+                        client.emit('escrowError', { reason: 'Player not found in room' })
+                        return
+                    }
+                    const depositConfirmed = (escrowState.depositsMask & (1 << playerIndex)) !== 0
 
                     if (!depositConfirmed) {
                         client.emit('escrowError', { reason: 'Deposit not confirmed on-chain' })
@@ -2035,6 +2034,23 @@ const mainsocket = (io) => {
             if (!ws.deposits) ws.deposits = {}
             ws.deposits[client.id] = txSignature
 
+            // Track first depositor for partial-deposit decision-maker (Phase 22-02)
+            if (!ws.firstDepositorSocketId) {
+                ws.firstDepositorSocketId = client.id
+            }
+
+            // SRV-18: Emit real-time deposit status to all room members
+            io.sockets.in(rid).emit('escrowDepositStatus', {
+                roomId: rid,
+                deposits: room.players.map(p => ({
+                    socketId: p.socketId,
+                    wallet: ws.wallets?.[p.socketId] || null,
+                    confirmed: !!(ws.deposits?.[p.socketId]),
+                })),
+                numDeposited: Object.keys(ws.deposits || {}).length,
+                totalPlayers: room.players.length,
+            })
+
             const allDeposited = room.players.every(p => ws.deposits && ws.deposits[p.socketId])
 
             console.log(`[Escrow] Deposit confirmed: ${client.id} for room ${rid} (TX: ${txSignature})`)
@@ -2046,7 +2062,7 @@ const mainsocket = (io) => {
                     clearTimeout(depositTimers[rid])
                     delete depositTimers[rid]
                 }
-                console.log(`[Escrow] Both deposits confirmed for room ${rid} — match is escrowed`)
+                console.log(`[Escrow] All ${room.players.length} deposits confirmed for room ${rid} — match is escrowed`)
                 io.sockets.in(rid).emit('escrowActive', {
                     roomId: rid,
                     escrowPDA: room.escrowPDA,

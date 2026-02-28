@@ -1,6 +1,6 @@
 import React from 'react';
 import WalletDisplay from './WalletDisplay';
-import ShotPriceTicker from './ShotPriceTicker';
+
 
 const styles = {
   bar: {
@@ -84,10 +84,9 @@ function TopBar({ title, onBack, showWallet = true }) {
           )}
         </div>
 
-        {/* Center: Title + SHOT price ticker */}
+        {/* Center: Title */}
         <div style={styles.center}>
           {title && <div style={styles.title}>{title}</div>}
-          <ShotPriceTicker />
         </div>
 
         {/* Right: Handle or Wallet */}

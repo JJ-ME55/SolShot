@@ -143,11 +143,11 @@ Plans:
   4. A non-depositing player who is kicked receives a notification and is returned to the menu screen
   5. During a wagered match, the battle HUD displays the total pot (e.g., "Pot: 1.2 SOL")
   6. A 3-player or 4-player room can select Quick Match, Duel, or High Roller from the lobby mode tabs
-**Plans:** TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 23-01: LobbyScreen deposit flow — per-player status badges, countdown timer, partial deposit host UI, kick notification (CLT-01, CLT-02, CLT-03, CLT-04, CLT-05, CLT-07, CLT-08)
-- [ ] 23-02: BattleScreen — total pot display in HUD (CLT-06)
+- [ ] 23-01-PLAN.md — LobbyScreen deposit flow: per-player status badges, countdown timer, partial deposit host UI, kick notification, formatWagerWithPayout N-player fix (CLT-01, CLT-02, CLT-03, CLT-04, CLT-05, CLT-07, CLT-08)
+- [ ] 23-02-PLAN.md — BattleScreen potDisplay N-player fix (CLT-06)
 
 ---
 

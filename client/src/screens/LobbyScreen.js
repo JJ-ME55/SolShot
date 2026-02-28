@@ -627,10 +627,10 @@ function LobbyScreen({ navigate }) {
     .filter(p => p.socketId !== (window.socket && window.socket.id))
     .map(p => p.color);
 
-  const formatWagerWithPayout = (amount) => {
+  const formatWagerWithPayout = (amount, players = 2) => {
     if (amount === 0) return 'FREE';
-    const pot = (amount * 2).toFixed(2);
-    const payout = (amount * 2 * 0.90).toFixed(3);
+    const pot = (amount * players).toFixed(2);
+    const payout = (amount * players * 0.90).toFixed(3);
     return pot + ' SOL pot \u2014 winner takes ' + payout + ' SOL';
   };
 
@@ -862,7 +862,7 @@ function LobbyScreen({ navigate }) {
                     </div>
 
                     <div style={s.wagerBadge(room.wager || 0)}>
-                      {formatWagerWithPayout(room.wager || 0)}
+                      {formatWagerWithPayout(room.wager || 0, room.maxPlayers || 2)}
                     </div>
 
                     <Button

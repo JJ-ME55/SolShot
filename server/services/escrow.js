@@ -469,35 +469,35 @@ export async function cancelMatchEscrow(matchId, playerAddresses) {
 }
 
 /**
- * DCA-02: Permissionless reclaim — anyone can trigger refund after 48 hours.
+ * DCA-02: Permissionless reclaim — anyone can trigger refund after 2x timeout.
  * Caller receives PDA rent as incentive. No authority/player restriction.
+ * Players are passed via remainingAccounts in player-index order (deposited players only).
+ * PermissionlessReclaim struct has NO config account — only escrow, caller, systemProgram.
  *
  * @param {string} matchId
- * @param {string} playerOneAddress
- * @param {string} playerTwoAddress
+ * @param {string[]} playerAddresses — deposited player wallet addresses in player-index order (base58)
  * @returns {Promise<{success: boolean, txSignature?: string, error?: string}>}
  */
-export async function permissionlessReclaimEscrow(matchId, playerOneAddress, playerTwoAddress) {
+export async function permissionlessReclaimEscrow(matchId, playerAddresses) {
     if (!program) return { success: false, error: 'Escrow not initialized' };
 
     try {
-        const [escrowPDA] = PublicKey.findProgramAddressSync(
-            [Buffer.from('match'), Buffer.from(matchId)],
-            program.programId,
-        );
-
-        const playerOnePubkey = new PublicKey(playerOneAddress);
-        const playerTwoPubkey = new PublicKey(playerTwoAddress);
+        const [escrowPDA] = getEscrowPDA(matchId);
 
         const tx = await program.methods
             .permissionlessReclaim()
             .accounts({
                 escrow: escrowPDA,
                 caller: provider.wallet.publicKey,
-                playerOne: playerOnePubkey,
-                playerTwo: playerTwoPubkey,
                 systemProgram: SystemProgram.programId,
             })
+            .remainingAccounts(
+                playerAddresses.map(addr => ({
+                    pubkey: new PublicKey(addr),
+                    isWritable: true,
+                    isSigner: false,
+                }))
+            )
             .rpc();
 
         console.log(`[Escrow] Permissionless reclaim TX: ${tx}`);
@@ -509,9 +509,55 @@ export async function permissionlessReclaimEscrow(matchId, playerOneAddress, pla
 }
 
 /**
- * Fetch escrow account data for a match.
- * Useful for verifying deposit status.
+ * Start match with only the players who have deposited (ESC-11).
+ * Authority calls this when deposit timeout fires and some (but not all) players have deposited.
+ * Reduces max_players to numDeposited (min 2), compacts players array, activates the match.
+ * Non-depositors are kicked — their slots become invalid.
+ *
+ * @param {string} matchId
+ * @returns {Promise<{success: boolean, txSignature?: string, error?: string}>}
+ */
+export async function startWithDepositorsEscrow(matchId) {
+    if (!program) return { success: false, error: 'Escrow not initialized' };
+    try {
+        const [escrowPDA] = getEscrowPDA(matchId);
+        const [configPDA] = getConfigPDA();
+        const tx = await program.methods
+            .startWithDepositors()
+            .accounts({
+                escrow: escrowPDA,
+                authority: getEscrowKeypair().publicKey,
+                config: configPDA,
+            })
+            .rpc();
+        console.log(`[Escrow] startWithDepositors for ${matchId} — TX: ${tx}`);
+        return { success: true, txSignature: tx };
+    } catch (err) {
+        console.error(`[Escrow] startWithDepositors failed for ${matchId}:`, err.message);
+        return { success: false, error: err.message };
+    }
+}
+
+/**
+ * Popcount helper — count number of set bits in a bitmask.
+ * Used to derive numDeposited from depositsMask.
+ *
+ * @param {number} n — integer bitmask
+ * @returns {number} — number of set bits
+ */
+function countBits(n) {
+    let count = 0;
+    while (n) { count += n & 1; n >>= 1; }
+    return count;
+}
+
+/**
+ * Fetch escrow account data for a match (N-player fields with backward-compat shims).
  * Returns activated_at field (OC-07) — 0 means match not yet active.
+ *
+ * Backward-compat shims for main.js:
+ *   playerOneDeposited = (depositsMask & 1) !== 0
+ *   playerTwoDeposited = (depositsMask & 2) !== 0
  *
  * @param {string} matchId
  * @returns {Promise<object|null>}
@@ -522,18 +568,24 @@ export async function getEscrowState(matchId) {
     try {
         const [escrowPDA] = getEscrowPDA(matchId);
         const escrow = await program.account.matchEscrow.fetch(escrowPDA);
+        const maxPlayers = escrow.maxPlayers;
+        const depositsMask = escrow.depositsMask;
+        const numDeposited = countBits(depositsMask);
         return {
             matchId: escrow.matchId,
             authority: escrow.authority.toBase58(),
-            playerOne: escrow.playerOne.toBase58(),
-            playerTwo: escrow.playerTwo.toBase58(),
+            players: escrow.players.slice(0, maxPlayers).map(p => p.toBase58()),
+            maxPlayers,
             wagerLamports: escrow.wagerLamports.toNumber(),
             wagerSOL: escrow.wagerLamports.toNumber() / LAMPORTS_PER_SOL,
-            playerOneDeposited: escrow.playerOneDeposited,
-            playerTwoDeposited: escrow.playerTwoDeposited,
+            depositsMask,
+            numDeposited,
             state: Object.keys(escrow.state)[0],
             createdAt: escrow.createdAt.toNumber(),
             activatedAt: escrow.activatedAt?.toNumber() || 0,
+            // Backward-compat shims for main.js lines 2011-2012
+            playerOneDeposited: (depositsMask & 1) !== 0,
+            playerTwoDeposited: (depositsMask & 2) !== 0,
         };
     } catch (err) {
         // Account doesn't exist or was closed

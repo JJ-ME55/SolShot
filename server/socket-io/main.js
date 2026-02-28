@@ -1216,28 +1216,108 @@ const mainsocket = (io) => {
                                 }
                             })
 
-                            // DCA-01: Deposit countdown — cancel escrow if not all players deposited within 5 min
+                            // DCA-01: Deposit countdown — 3-branch partial deposit flow (SRV-13)
                             depositTimers[roomId] = setTimeout(async () => {
                                 delete depositTimers[roomId]
                                 const wsCheck = wagerStates[roomId]
                                 const roomCheck = findRoom(roomId)
                                 if (!roomCheck || !wsCheck) return
-                                // If all players already deposited, nothing to do
-                                const allDeposited = roomCheck.players.every(p => wsCheck.deposits && wsCheck.deposits[p.socketId])
-                                if (allDeposited) return
-                                // N-player: collect all wallets for cancel
-                                const allCancelWallets = roomCheck.players.map(p => wsCheck.wallets[p.socketId]).filter(Boolean)
-                                if (allCancelWallets.length > 0 && isEscrowEnabled()) {
-                                    try {
-                                        await cancelMatchEscrow(roomId, allCancelWallets)
-                                    } catch (err) {
-                                        console.error(`[Escrow] Deposit timeout cancel failed for ${roomId}:`, err.message)
+
+                                const numDeposited = Object.keys(wsCheck.deposits || {}).length
+                                const totalPlayers = roomCheck.players.length
+
+                                // Branch 1: All deposited — nothing to do (timer should have been cleared)
+                                if (numDeposited === totalPlayers) return
+
+                                // Branch 2: Zero deposits — cancel outright and destroy room
+                                if (numDeposited === 0) {
+                                    const allCancelWallets = roomCheck.players.map(p => wsCheck.wallets[p.socketId]).filter(Boolean)
+                                    if (allCancelWallets.length > 0 && isEscrowEnabled()) {
+                                        try {
+                                            await cancelMatchEscrow(roomId, allCancelWallets)
+                                        } catch (err) {
+                                            console.error(`[Escrow] Deposit timeout cancel failed for ${roomId}:`, err.message)
+                                        }
                                     }
+                                    io.sockets.in(roomId).emit('escrowDepositTimeout', { roomId })
+                                    await removeRoom(roomId)
+                                    broadcastRooms(io)
+                                    io.socketsLeave(roomId)
+                                    return
                                 }
-                                io.sockets.in(roomId).emit('escrowDepositTimeout', { roomId })
-                                await removeRoom(roomId)
-                                broadcastRooms(io)
-                                io.socketsLeave(roomId)
+
+                                // Branch 3: Partial deposits — emit to decision-maker, start 30s decision window
+                                const depositorSocketIds = roomCheck.players
+                                    .filter(p => wsCheck.deposits?.[p.socketId])
+                                    .map(p => p.socketId)
+                                const nonDepositorSocketIds = roomCheck.players
+                                    .filter(p => !wsCheck.deposits?.[p.socketId])
+                                    .map(p => p.socketId)
+
+                                // Decision-maker: first depositor (tracked in escrowDepositConfirm), fallback to host
+                                const decisionMakerSocketId = wsCheck.firstDepositorSocketId || roomCheck.players[0].socketId
+                                const canStart = numDeposited >= 2
+
+                                // Store partial state for escrowPartialStart / escrowCancelAll handlers
+                                wsCheck.partialDecisionMaker = decisionMakerSocketId
+                                wsCheck.depositorSocketIds = depositorSocketIds
+                                wsCheck.nonDepositorSocketIds = nonDepositorSocketIds
+
+                                // Build depositor wallet list in room.players order (Pitfall 2: order matters for on-chain cancel)
+                                const depositorWallets = roomCheck.players
+                                    .filter(p => wsCheck.deposits?.[p.socketId])
+                                    .map(p => wsCheck.wallets[p.socketId])
+                                    .filter(Boolean)
+
+                                io.to(decisionMakerSocketId).emit('escrowPartialDeposit', {
+                                    roomId,
+                                    numDeposited,
+                                    totalPlayers,
+                                    depositorWallets,
+                                    canStart,
+                                    decisionWindowMs: 30_000,
+                                })
+
+                                // Notify non-decision-makers that deposit timed out with partial deposits
+                                roomCheck.players
+                                    .filter(p => p.socketId !== decisionMakerSocketId)
+                                    .forEach(p => {
+                                        const sock = io.sockets.sockets.get(p.socketId)
+                                        if (sock) {
+                                            sock.emit('escrowPartialWaiting', {
+                                                roomId,
+                                                numDeposited,
+                                                totalPlayers,
+                                                decisionMaker: decisionMakerSocketId,
+                                            })
+                                        }
+                                    })
+
+                                // 30-second decision window — auto-cancel if no decision (Pitfall 1: reuse depositTimers slot)
+                                depositTimers[roomId] = setTimeout(async () => {
+                                    delete depositTimers[roomId]
+                                    const ws2 = wagerStates[roomId]
+                                    const room2 = findRoom(roomId)
+                                    if (!ws2 || !room2 || !ws2.partialDecisionMaker) return
+
+                                    console.log(`[Escrow] Decision timeout for ${roomId} — auto-cancelling`)
+
+                                    // Auto-cancel: refund all depositors
+                                    const refundWallets = room2.players
+                                        .filter(p => ws2.deposits?.[p.socketId])
+                                        .map(p => ws2.wallets[p.socketId])
+                                        .filter(Boolean)
+                                    if (isEscrowEnabled() && refundWallets.length > 0) {
+                                        await cancelMatchEscrow(roomId, refundWallets).catch(err =>
+                                            console.error(`[Escrow] Decision timeout cancel failed for ${roomId}:`, err.message)
+                                        )
+                                    }
+
+                                    io.sockets.in(roomId).emit('escrowCancelledAll', { roomId, reason: 'decision_timeout' })
+                                    await removeRoom(roomId)
+                                    broadcastRooms(io)
+                                    io.socketsLeave(roomId)
+                                }, 30_000)
                             }, DEPOSIT_TIMEOUT_MS)
                         } else {
                             console.error(`[Match] Escrow creation failed for ${roomId}:`, escrowResult.error)
@@ -1346,12 +1426,6 @@ const mainsocket = (io) => {
             const maxPlayers = Number.isInteger(player.maxPlayers) && [2, 3, 4].includes(player.maxPlayers)
                 ? player.maxPlayers : 2;
 
-            // SYS-08: Block wager modes for 3-4 player rooms (escrow only supports 2-player)
-            if (wagerAmount > 0 && maxPlayers > 2) {
-                client.emit('createRoomError', { reason: 'Wager modes require 2 players. Use Practice mode for 3-4 player matches.' })
-                return
-            }
-
             const roomId = crypto.randomBytes(4).toString('hex')
             client.join(roomId)
             client.roomId = roomId
@@ -1400,7 +1474,7 @@ const mainsocket = (io) => {
 
             rooms.set(roomId, roomData)
             trackMatchCreated()
-            if (wagerAmount > 0) trackWager(wagerAmount * 2)  // Both players wager
+            if (wagerAmount > 0) trackWager(wagerAmount * maxPlayers)  // All N players wager
             broadcastRooms(io)
 
             // Notify creator of their waiting room state
@@ -1535,7 +1609,7 @@ const mainsocket = (io) => {
                 client.join(roomId);
 
                 trackMatchCreated();
-                if (wagerAmount > 0) trackWager(wagerAmount * 2);
+                if (wagerAmount > 0) trackWager(wagerAmount * roomData.maxPlayers);  // All N players wager
                 broadcastRooms(io);
 
                 // Escrow creation for wagered queue matches

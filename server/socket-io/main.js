@@ -2145,6 +2145,136 @@ const mainsocket = (io) => {
             }
         })
 
+        // SRV-14: Host/first-depositor chooses to start match with depositors only
+        client.on('escrowPartialStart', async () => {
+            if (!requireAuth(client, 'escrowPartialStart')) return
+            const room = findRoom(client.roomId)
+            const ws = wagerStates[client.roomId]
+            if (!room || !ws) return
+
+            // Only the decision-maker can choose
+            if (ws.partialDecisionMaker !== client.id) {
+                client.emit('escrowError', { reason: 'Only the decision-maker can choose' })
+                return
+            }
+            if (!ws.depositorSocketIds || ws.depositorSocketIds.length < 2) {
+                client.emit('escrowError', { reason: 'Need at least 2 depositors to start' })
+                return
+            }
+
+            // Clear decision timer
+            if (depositTimers[client.roomId]) {
+                clearTimeout(depositTimers[client.roomId])
+                delete depositTimers[client.roomId]
+            }
+
+            // Call on-chain startWithDepositors
+            if (isEscrowEnabled()) {
+                try {
+                    const result = await startWithDepositorsEscrow(client.roomId)
+                    if (!result.success) {
+                        client.emit('escrowError', { reason: result.error || 'Start with depositors failed on-chain' })
+                        return
+                    }
+                } catch (err) {
+                    console.error(`[Escrow] startWithDepositors failed for ${client.roomId}:`, err.message)
+                    client.emit('escrowError', { reason: 'On-chain start failed' })
+                    return
+                }
+            }
+
+            // Kick non-depositors — notify and remove from Socket.IO room (Pitfall 3: leave BEFORE compact)
+            for (const sid of ws.nonDepositorSocketIds || []) {
+                const kickedSocket = io.sockets.sockets.get(sid)
+                if (kickedSocket) {
+                    kickedSocket.emit('kickedFromRoom', {
+                        reason: 'You did not deposit in time. The match is starting without you.',
+                        destination: 'lobby',
+                    })
+                    kickedSocket.leave(client.roomId)
+                    kickedSocket.roomId = null
+                    kickedSocket.isHost = false
+                }
+            }
+
+            // Compact room.players to depositors only
+            room.players = room.players.filter(p => ws.depositorSocketIds.includes(p.socketId))
+            room.maxPlayers = room.players.length
+
+            // Promote first player to host if current host was kicked
+            if (room.players.length > 0 && !room.players.some(p => p.isHost)) {
+                room.players[0].isHost = true
+                const newHostSocket = io.sockets.sockets.get(room.players[0].socketId)
+                if (newHostSocket) newHostSocket.isHost = true
+            }
+
+            console.log(`[Escrow] Partial start for ${client.roomId}: ${room.players.length} depositors, ${(ws.nonDepositorSocketIds || []).length} kicked`)
+
+            // Emit escrowActive to remaining players
+            io.sockets.in(client.roomId).emit('escrowActive', {
+                roomId: client.roomId,
+                escrowPDA: room.escrowPDA,
+                totalPot: ws.amount * room.players.length,
+            })
+
+            // Cleanup partial state
+            delete ws.partialDecisionMaker
+            delete ws.nonDepositorSocketIds
+            delete ws.depositorSocketIds
+
+            broadcastRooms(io)
+        })
+
+        // SRV-15: Host/first-depositor chooses to cancel match and refund all depositors
+        client.on('escrowCancelAll', async () => {
+            if (!requireAuth(client, 'escrowCancelAll')) return
+            const room = findRoom(client.roomId)
+            const ws = wagerStates[client.roomId]
+            if (!room || !ws) return
+
+            // Only the decision-maker can choose
+            if (ws.partialDecisionMaker !== client.id) {
+                client.emit('escrowError', { reason: 'Only the decision-maker can choose' })
+                return
+            }
+
+            // Clear decision timer
+            if (depositTimers[client.roomId]) {
+                clearTimeout(depositTimers[client.roomId])
+                delete depositTimers[client.roomId]
+            }
+
+            // Refund depositors on-chain (Pitfall 2: use room.players order)
+            const depositorWallets = room.players
+                .filter(p => ws.deposits?.[p.socketId])
+                .map(p => ws.wallets[p.socketId])
+                .filter(Boolean)
+            if (isEscrowEnabled() && depositorWallets.length > 0) {
+                await cancelMatchEscrow(client.roomId, depositorWallets).catch(err =>
+                    console.error(`[Escrow] Cancel-all failed for ${client.roomId}:`, err.message)
+                )
+            }
+
+            console.log(`[Escrow] Cancel-all for ${client.roomId}: refunding ${depositorWallets.length} depositors, room preserved`)
+
+            // Preserve room — reset deposit and escrow state only
+            room.active = false
+            room.escrowPDA = null
+            room.players.forEach(p => { p.isReady = false })
+            ws.deposits = {}
+            delete ws.firstDepositorSocketId
+            delete ws.partialDecisionMaker
+            delete ws.nonDepositorSocketIds
+            delete ws.depositorSocketIds
+
+            io.sockets.in(client.roomId).emit('escrowCancelledAll', {
+                roomId: client.roomId,
+                reason: 'host_cancelled',
+            })
+
+            broadcastRooms(io)
+        })
+
         // === NEW: Server-authoritative fire event (Task 2.5) ===
         // Client sends input only → server runs physics → broadcasts results to both
         // H062: Wrap fire handler in safeHandler for unhandled rejection protection

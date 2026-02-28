@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 27 Feb 2026)
 ## Current Position
 
 Milestone: v1.4 — N-Player Escrow
-Phase: 21 of 23 (Server Escrow Services) — In progress
-Plan: 01 of 2 in phase 21 (N-Player escrow.js API update)
-Status: In progress — plan 21-01 complete, ready for plan 21-02
-Last activity: 28 Feb 2026 — Completed 21-01-PLAN.md (escrow.js N-player rewrite)
+Phase: 21 of 23 (Server Escrow Services) — Phase complete
+Plan: 02 of 2 in phase 21 (Caller update — solana.js + main.js)
+Status: Phase 21 complete — ready for phase 22
+Last activity: 28 Feb 2026 — Completed 21-02-PLAN.md (N-player caller update)
 
-Progress: [████░░░░░░] 40% (4/10 plans)
+Progress: [█████░░░░░] 50% (5/10 plans)
 
 ## Performance Metrics
 
@@ -52,7 +52,12 @@ Progress: [████░░░░░░] 40% (4/10 plans)
 - Phase 20 COMPLETE: anchor build succeeds, all 69 cargo tests pass, IDL synced to server/idl/
 - escrow.js N-player: createMatchEscrow takes playerAddresses[], cancel+reclaim use .remainingAccounts(), getEscrowState returns depositsMask + backward-compat shims
 - PermissionlessReclaim has NO config account (only escrow, caller, systemProgram) — unlike CancelMatch which has config
-- getEscrowState shims playerOneDeposited/playerTwoDeposited via depositsMask bitmask — keeps main.js unchanged until plan 21-02
+- getEscrowState shims playerOneDeposited/playerTwoDeposited via depositsMask bitmask — main.js updated in 21-02
+- solana.js settleMatch: playerCount param (default 2), totalPot = wagerSOL * playerCount
+- solana.js refundWager: playerAddresses[] array replaces separate playerOneAddress/playerTwoAddress params
+- solana.js re-exports startWithDepositorsEscrow for callers
+- main.js: all cancelMatchEscrow/createMatchEscrow/refundWager call sites use array form with .filter(Boolean)
+- main.js: totalPot display uses room?.players?.length || 2 (not hardcoded * 2)
 
 ### Pending Todos
 - Run 25-test suite when McAfee exclusion is configured
@@ -65,13 +70,11 @@ Progress: [████░░░░░░] 40% (4/10 plans)
 - McAfee blocks solana-test-validator on Windows — tests need exclusion
 - Devnet wallet at 0.97 SOL — need ~2.12 SOL to redeploy program with v1.4 instructions
 - main.js is ~2870 lines — search by function name, not line number
-- server/services/escrow.js N-player API update COMPLETE (plan 21-01)
-- server/socket-io/main.js cancel/refund flows must be updated to pass player arrays (5 call sites) — plan 21-02
-- server/services/solana.js settleMatch still uses wager * 2 hardcode — must fix in plan 21-02
-- start_with_depositors exported as startWithDepositorsEscrow — caller integration in main.js is plan 21-02
+- Phase 21 COMPLETE: escrow.js N-player API (21-01) + solana.js/main.js caller updates (21-02) done
+- Phase 22 (client escrow integration) is next — no server-side blockers remain
 
 ## Session Continuity
 
-Last session: 2026-02-28T07:08:47Z
-Stopped at: Completed 21-01-PLAN.md — escrow.js N-player API rewrite (createMatchEscrow, cancelMatchEscrow, permissionlessReclaimEscrow, getEscrowState, startWithDepositorsEscrow)
+Last session: 2026-02-28T07:14:26Z
+Stopped at: Completed 21-02-PLAN.md — N-player caller update (solana.js settleMatch/refundWager, main.js all 8 escrow call sites)
 Resume file: None

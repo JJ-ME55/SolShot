@@ -6,8 +6,8 @@ const styles = {
   bar: {
     display: 'flex',
     alignItems: 'center',
-    height: 48,
-    padding: '0 14px',
+    height: 60,
+    padding: '0 18px',
     borderBottom: '1px solid var(--od)',
     background: 'rgba(10, 12, 8, 0.7)',
     flexShrink: 0,
@@ -37,29 +37,36 @@ const styles = {
   backBtn: {
     display: 'flex',
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
     background: 'none',
     border: 'none',
     color: 'var(--kh)',
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 13,
+    fontSize: 15,
     letterSpacing: 2,
     textTransform: 'uppercase',
     cursor: 'pointer',
-    padding: '5px 10px',
+    padding: '6px 12px',
     borderRadius: 3,
     transition: 'color 0.15s',
   },
   title: {
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 18,
+    fontSize: 22,
     color: 'var(--bn)',
     letterSpacing: 2,
     textTransform: 'uppercase',
   },
+  handleText: {
+    fontFamily: "'Share Tech Mono', monospace",
+    fontSize: 14,
+    color: 'var(--bn)',
+    letterSpacing: 2,
+  },
 };
 
 function TopBar({ title, onBack, showWallet = true }) {
+  const handle = localStorage.getItem('solshot_handle');
   return (
     <div style={styles.bar}>
       <div style={styles.wrapper}>
@@ -83,9 +90,13 @@ function TopBar({ title, onBack, showWallet = true }) {
           <ShotPriceTicker />
         </div>
 
-        {/* Right: Wallet */}
+        {/* Right: Handle or Wallet */}
         <div style={styles.right}>
-          {showWallet && <WalletDisplay compact />}
+          {handle ? (
+            <span style={styles.handleText}>{handle}</span>
+          ) : (
+            showWallet && <WalletDisplay compact />
+          )}
         </div>
       </div>
     </div>

@@ -888,6 +888,9 @@ function LobbyScreen({ navigate }) {
           </div>
           <div style={s.waitingSubtext}>
             {modeConfig.label + ' / BO' + matchLength + (effectiveWager > 0 ? ' / ' + effectiveWager + ' SOL' : '')}
+            {depositStatuses.length > 0 && effectiveWager > 0 && (
+              <span>{' -- ' + depositStatuses.filter(d => d.confirmed).length + '/' + depositStatuses.length + ' DEPOSITED'}</span>
+            )}
           </div>
 
           {/* Player slots */}
@@ -936,6 +939,22 @@ function LobbyScreen({ navigate }) {
                           letterSpacing: 1,
                         }}>YOU</span>
                       )}
+                      {/* Deposit status badge — only shown when escrow deposit phase is active */}
+                      {depositStatuses.length > 0 && (() => {
+                        const ds = depositStatuses.find(d => d.socketId === p.socketId);
+                        if (!ds) return null;
+                        return (
+                          <span style={{
+                            fontFamily: "'Share Tech Mono', monospace",
+                            fontSize: 11,
+                            letterSpacing: 1,
+                            color: ds.confirmed ? 'var(--sg)' : 'var(--am)',
+                            marginLeft: 'auto',
+                          }}>
+                            {ds.confirmed ? 'DEPOSITED' : 'PENDING...'}
+                          </span>
+                        );
+                      })()}
                     </>
                   ) : (
                     <span style={{
@@ -952,6 +971,77 @@ function LobbyScreen({ navigate }) {
               );
             })}
           </div>
+
+          {/* Countdown timer — driven by server depositDeadlineMs */}
+          {depositCountdown !== null && (
+            <div style={{
+              fontFamily: "'Share Tech Mono', monospace",
+              fontSize: depositCountdown <= 30 ? 18 : 14,
+              color: depositCountdown <= 30 ? '#ff6644' : 'var(--kh)',
+              letterSpacing: 2,
+              marginTop: 4,
+              animation: depositCountdown <= 10 ? 'fl 1s ease-in-out infinite' : 'none',
+            }}>
+              {Math.floor(depositCountdown / 60) + ':' + String(depositCountdown % 60).padStart(2, '0') + ' ' + (partialDepositInfo ? 'DECISION TIME' : 'DEPOSIT WINDOW')}
+            </div>
+          )}
+
+          {/* Partial deposit decision panel */}
+          {partialDepositInfo && (
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 8,
+              marginTop: 8,
+              padding: '12px 16px',
+              background: 'rgba(42, 51, 31, 0.4)',
+              border: '1px solid var(--ol)',
+              borderRadius: 4,
+              width: 260,
+            }}>
+              <div style={{
+                fontFamily: "'Share Tech Mono', monospace",
+                fontSize: 13,
+                color: 'var(--am)',
+                letterSpacing: 1,
+                textAlign: 'center',
+              }}>
+                {partialDepositInfo.numDeposited + '/' + partialDepositInfo.totalPlayers + ' PLAYERS DEPOSITED'}
+              </div>
+              {isDecisionMaker ? (
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {partialDepositInfo.canStart && (
+                    <Button
+                      variant="primary"
+                      onClick={handlePartialStart}
+                      style={{ fontSize: 13, padding: '8px 16px' }}
+                    >
+                      {'START WITH ' + partialDepositInfo.numDeposited}
+                    </Button>
+                  )}
+                  <Button
+                    variant="secondary"
+                    onClick={handleCancelAll}
+                    style={{ fontSize: 13, padding: '8px 16px' }}
+                  >
+                    CANCEL AND REFUND
+                  </Button>
+                </div>
+              ) : partialDepositInfo.waitingForDecision ? (
+                <div style={{
+                  fontFamily: "'Share Tech Mono', monospace",
+                  fontSize: 12,
+                  color: 'var(--kh)',
+                  letterSpacing: 1,
+                  opacity: 0.7,
+                  animation: 'fl 2s ease-in-out infinite',
+                }}>
+                  WAITING FOR HOST DECISION...
+                </div>
+              ) : null}
+            </div>
+          )}
 
           <Button
             variant="secondary"
@@ -1012,6 +1102,26 @@ function LobbyScreen({ navigate }) {
           onClose={() => {
             localStorage.setItem('solshot_escrow_seen', 'true');
             setShowEscrow(false);
+          }}
+        />
+      )}
+
+      {/* ═══ KICKED MODAL (non-depositor removed from room) ═══ */}
+      {kickedMessage && (
+        <Modal
+          title="REMOVED FROM MATCH"
+          message={kickedMessage}
+          buttons={[{
+            label: 'RETURN TO MENU',
+            variant: 'secondary',
+            onClick: () => {
+              setKickedMessage(null);
+              navigate('menu');
+            },
+          }]}
+          onClose={() => {
+            setKickedMessage(null);
+            navigate('menu');
           }}
         />
       )}

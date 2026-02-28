@@ -17,6 +17,7 @@ import LoseScreen from './screens/LoseScreen';
 import ArmoryScreen from './screens/ArmoryScreen';
 import PrestigeScreen from './screens/PrestigeScreen';
 import BarracksScreen from './screens/BarracksScreen';
+import HandleModal from './components/HandleModal';
 
 // A8: Socket bridge for Phaser scenes — non-enumerable to reduce XSS discovery surface
 Object.defineProperty(window, 'socket', {
@@ -30,6 +31,13 @@ function AppInner() {
   const [screen, setScreen] = useState('loading');
   const [screenData, setScreenData] = useState({});
   const [faqOpen, setFaqOpen] = useState(false);
+
+  // Phase 24: Persistent handle identity — blocks menu until set
+  const [handle, setHandle] = useState(() => localStorage.getItem('solshot_handle'));
+
+  const handleHandleComplete = useCallback((h) => {
+    setHandle(h);
+  }, []);
 
   // CS-04: Use wallet adapter hook directly for rejoin logic (avoids window.solWallet)
   const { publicKey, signMessage } = useWallet();
@@ -146,6 +154,9 @@ function AppInner() {
   return (
     <Layout>
       {renderScreen()}
+      {!handle && screen !== 'loading' && (
+        <HandleModal onComplete={handleHandleComplete} />
+      )}
       <PortraitWarning />
       <button
         onClick={() => setFaqOpen(true)}

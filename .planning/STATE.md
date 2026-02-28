@@ -4,17 +4,17 @@
 
 See: .planning/PROJECT.md (updated 27 Feb 2026)
 **Core value:** Browser-based multiplayer artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** v1.4 — Phase 23: Client UX
+**Current focus:** v1.4 — MILESTONE COMPLETE
 
 ## Current Position
 
-Milestone: v1.4 — N-Player Escrow
-Phase: 23 of 23 (Client UX) — In progress
-Plan: 01 of 3 in phase 23 (LobbyScreen deposit UX)
-Status: In progress — 23-01 complete, ready for 23-02 or 23-03
-Last activity: 28 Feb 2026 — Completed 23-01-PLAN.md (LobbyScreen deposit badges, countdown timer, partial decision UI, kick modal, N-player pot math)
+Milestone: v1.4 — N-Player Escrow — COMPLETE
+Phase: 23 of 23 (Client UX) — COMPLETE
+Plan: 02 of 2 in phase 23 (BattleScreen potDisplay N-player fix)
+Status: All phases complete — milestone ready for audit
+Last activity: 28 Feb 2026 — Completed Phase 23 (LobbyScreen deposit UX + BattleScreen potDisplay)
 
-Progress: [█████████░] 90% (9/10 plans)
+Progress: [██████████] 100% (10/10 plans)
 
 ## Performance Metrics
 
@@ -24,7 +24,9 @@ Progress: [█████████░] 90% (9/10 plans)
 - v1.2 plans completed: 15 (across 6 phases)
 - v1.3 plans completed: 10 (across 5 phases)
 
-**Total across all milestones:** 65 plans, 24 phases
+- v1.4 plans completed: 10 (across 4 phases)
+
+**Total across all milestones:** 75 plans, 28 phases
 
 ## Accumulated Context
 
@@ -85,12 +87,11 @@ Progress: [█████████░] 90% (9/10 plans)
 - main.js is now ~3143 lines — search by function name, not line number
 - Phase 21 COMPLETE: escrow.js N-player API (21-01) + solana.js/main.js caller updates (21-02) done
 - Phase 22 COMPLETE: all 3 plans done — N-player escrow socket handlers fully upgraded
-- Phase 23 plan 01 COMPLETE: LobbyScreen deposit badges, countdown timer, partial decision UI, kick modal, N-player pot math (formatWagerWithPayout)
-- Phase 23 plan 02 COMPLETE (prior session): BattleScreen potDisplay N-player fix (wager * numPlayersInMatch)
-- Phase 23 plan 03 remaining — check 23-03-PLAN.md for remaining client UX items
+- Phase 23 COMPLETE: LobbyScreen deposit UX (23-01) + BattleScreen potDisplay (23-02) done
+- v1.4 MILESTONE COMPLETE: all 42 requirements satisfied (ESC-01..14, SRV-01..18, CLT-01..08, DEBT-01..02)
 
 ## Session Continuity
 
-Last session: 2026-02-28T11:26:19Z
-Stopped at: Completed 23-01-PLAN.md — LobbyScreen N-player escrow deposit UX (badges, countdown, partial decision, kick modal, pot math)
+Last session: 2026-02-28
+Stopped at: v1.4 milestone complete — all 4 phases (20-23) executed and verified
 Resume file: None

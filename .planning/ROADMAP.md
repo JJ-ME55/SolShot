@@ -6,7 +6,7 @@
 - ✅ **v1.1 Security Hardening** - Phases 1-8 (shipped 23 Feb 2026)
 - ✅ **v1.2 Launch Readiness** - Phases 9-14 (shipped 25 Feb 2026)
 - ✅ **v1.3 4-Player Multiplayer** - Phases 15-19 (shipped 27 Feb 2026)
-- 🚧 **v1.4 N-Player Escrow** - Phases 20-23 (in progress)
+- ✅ **v1.4 N-Player Escrow** - Phases 20-23 (shipped 28 Feb 2026)
 
 ---
 
@@ -77,7 +77,7 @@ See: milestones/v1.3-ROADMAP.md for full details.
 - [x] **Phase 20: Anchor Program** — Rewrite MatchEscrow for N players (struct, instructions, events, errors)
 - [x] **Phase 21: Server Escrow Services** — Update escrow.js and solana.js service layer for N-player context
 - [x] **Phase 22: Server Socket Handlers** — Update main.js for N-player escrow flow, partial deposits, tech debt
-- [ ] **Phase 23: Client UX** — Deposit status, countdown timer, partial deposit UI, pot display, mode unlock
+- [x] **Phase 23: Client UX** — Deposit status, countdown timer, partial deposit UI, pot display, mode unlock
 
 ## Phase Details
 
@@ -146,8 +146,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 23-01-PLAN.md — LobbyScreen deposit flow: per-player status badges, countdown timer, partial deposit host UI, kick notification, formatWagerWithPayout N-player fix (CLT-01, CLT-02, CLT-03, CLT-04, CLT-05, CLT-07, CLT-08)
-- [ ] 23-02-PLAN.md — BattleScreen potDisplay N-player fix (CLT-06)
+- [x] 23-01-PLAN.md — LobbyScreen deposit flow: per-player status badges, countdown timer, partial deposit host UI, kick notification, formatWagerWithPayout N-player fix (CLT-01, CLT-02, CLT-03, CLT-04, CLT-05, CLT-07, CLT-08)
+- [x] 23-02-PLAN.md — BattleScreen potDisplay N-player fix (CLT-06)
 
 ---
 
@@ -162,7 +162,7 @@ Plans:
 | 20. Anchor Program | v1.4 | 3/3 | Complete | 27 Feb 2026 |
 | 21. Server Escrow Services | v1.4 | 2/2 | Complete | 28 Feb 2026 |
 | 22. Server Socket Handlers | v1.4 | 3/3 | Complete | 28 Feb 2026 |
-| 23. Client UX | v1.4 | 0/2 | Not started | - |
+| 23. Client UX | v1.4 | 2/2 | Complete | 28 Feb 2026 |
 
 ---
 

@@ -47,14 +47,14 @@ Requirements for N-player escrow upgrade. Each maps to roadmap phases.
 
 ### Client UX
 
-- [ ] **CLT-01**: Deposit flow works for N players — `signAndSendEscrowDeposit` unchanged (already player-agnostic)
-- [ ] **CLT-02**: Lobby shows per-player deposit status (checkmarks/pending icons for each player)
-- [ ] **CLT-03**: Deposit countdown timer visible to all players (5-minute countdown)
-- [ ] **CLT-04**: Host sees partial deposit choice UI when timeout fires with some deposits ("Start with 2" or "Cancel all")
-- [ ] **CLT-05**: Non-depositor receives kick notification and returns to menu
-- [ ] **CLT-06**: Total pot displayed in battle HUD during wagered matches ("Pot: 1.2 SOL")
-- [ ] **CLT-07**: All match modes (Quick Match, Duel, High Roller, Custom Challenge) available for 3-4 player rooms
-- [ ] **CLT-08**: Match mode UI in LobbyScreen updated to show all modes regardless of player count
+- [x] **CLT-01**: Deposit flow works for N players — `signAndSendEscrowDeposit` unchanged (already player-agnostic)
+- [x] **CLT-02**: Lobby shows per-player deposit status (checkmarks/pending icons for each player)
+- [x] **CLT-03**: Deposit countdown timer visible to all players (5-minute countdown)
+- [x] **CLT-04**: Host sees partial deposit choice UI when timeout fires with some deposits ("Start with 2" or "Cancel all")
+- [x] **CLT-05**: Non-depositor receives kick notification and returns to menu
+- [x] **CLT-06**: Total pot displayed in battle HUD during wagered matches ("Pot: 1.2 SOL")
+- [x] **CLT-07**: All match modes (Quick Match, Duel, High Roller, Custom Challenge) available for 3-4 player rooms
+- [x] **CLT-08**: Match mode UI in LobbyScreen updated to show all modes regardless of player count
 
 ### Tech Debt
 
@@ -127,14 +127,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SRV-16 | Phase 22 | Complete |
 | SRV-17 | Phase 21 | Complete |
 | SRV-18 | Phase 22 | Complete |
-| CLT-01 | Phase 23 | Pending |
-| CLT-02 | Phase 23 | Pending |
-| CLT-03 | Phase 23 | Pending |
-| CLT-04 | Phase 23 | Pending |
-| CLT-05 | Phase 23 | Pending |
-| CLT-06 | Phase 23 | Pending |
-| CLT-07 | Phase 23 | Pending |
-| CLT-08 | Phase 23 | Pending |
+| CLT-01 | Phase 23 | Complete |
+| CLT-02 | Phase 23 | Complete |
+| CLT-03 | Phase 23 | Complete |
+| CLT-04 | Phase 23 | Complete |
+| CLT-05 | Phase 23 | Complete |
+| CLT-06 | Phase 23 | Complete |
+| CLT-07 | Phase 23 | Complete |
+| CLT-08 | Phase 23 | Complete |
 | DEBT-01 | Phase 22 | Complete |
 | DEBT-02 | Phase 22 | Complete |
 
@@ -145,4 +145,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-02-27*
-*Last updated: 2026-02-28 — Phase 22 (SRV-09 through SRV-16, SRV-18, DEBT-01, DEBT-02) marked Complete*
+*Last updated: 2026-02-28 — Phase 23 (CLT-01 through CLT-08) marked Complete — all v1.4 requirements complete*

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import TopBar from '../components/TopBar';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
@@ -293,6 +293,14 @@ function LobbyScreen({ navigate }) {
   const [waitingRoomPlayers, setWaitingRoomPlayers] = useState([]);
   const [waitingRoomMax, setWaitingRoomMax] = useState(2);
 
+  // Deposit flow state (N-player escrow)
+  const [depositStatuses, setDepositStatuses] = useState([]);
+  const [depositCountdown, setDepositCountdown] = useState(null);
+  const [isDecisionMaker, setIsDecisionMaker] = useState(false);
+  const [partialDepositInfo, setPartialDepositInfo] = useState(null);
+  const [kickedMessage, setKickedMessage] = useState(null);
+  const countdownRef = useRef(null);
+
   // CS-04: Use context hook instead of window.solWallet
   const { signAndSendEscrowDeposit, walletAddress } = useSolShotWallet();
 
@@ -334,6 +342,25 @@ function LobbyScreen({ navigate }) {
     return 'SOLDIER';
   }, [walletAddress]);
 
+  /* ── deposit state cleanup helper ── */
+  const clearDepositState = useCallback(() => {
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+      countdownRef.current = null;
+    }
+    setDepositCountdown(null);
+    setDepositStatuses([]);
+    setIsDecisionMaker(false);
+    setPartialDepositInfo(null);
+  }, []);
+
+  /* ── unmount: clear countdown interval ── */
+  useEffect(() => {
+    return () => {
+      if (countdownRef.current) clearInterval(countdownRef.current);
+    };
+  }, []);
+
   /* ── fetch rooms on mount ── */
   useEffect(() => {
     if (window.socket) {
@@ -365,10 +392,91 @@ function LobbyScreen({ navigate }) {
         setError('Failed to deposit wager. Try again or lower your wager.');
       }
     }
+    // Start countdown timer from server timestamp
+    if (data.depositDeadlineMs) {
+      if (countdownRef.current) clearInterval(countdownRef.current);
+      const tick = () => {
+        const rem = Math.max(0, Math.ceil((data.depositDeadlineMs - Date.now()) / 1000));
+        setDepositCountdown(rem);
+        if (rem <= 0) {
+          clearInterval(countdownRef.current);
+          countdownRef.current = null;
+        }
+      };
+      tick();
+      countdownRef.current = setInterval(tick, 1000);
+    }
+  });
+
+  /* ── socket: per-player deposit status updates ── */
+  useSocket('escrowDepositStatus', (data) => {
+    setDepositStatuses(data?.deposits || []);
+  });
+
+  /* ── socket: partial deposit — decision maker (host) view ── */
+  useSocket('escrowPartialDeposit', (data) => {
+    setIsDecisionMaker(true);
+    setPartialDepositInfo({
+      numDeposited: data.numDeposited,
+      totalPlayers: data.totalPlayers,
+      canStart: data.canStart,
+    });
+    // Replace deposit countdown with 30s decision countdown
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    const decisionDeadline = Date.now() + (data.decisionWindowMs || 30000);
+    const tick = () => {
+      const rem = Math.max(0, Math.ceil((decisionDeadline - Date.now()) / 1000));
+      setDepositCountdown(rem);
+      if (rem <= 0) {
+        clearInterval(countdownRef.current);
+        countdownRef.current = null;
+      }
+    };
+    tick();
+    countdownRef.current = setInterval(tick, 1000);
+  });
+
+  /* ── socket: partial deposit — non-decision-maker (non-host) view ── */
+  useSocket('escrowPartialWaiting', (data) => {
+    setPartialDepositInfo({
+      numDeposited: data.numDeposited,
+      totalPlayers: data.totalPlayers,
+      canStart: false,
+      waitingForDecision: true,
+    });
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    setDepositCountdown(null);
+  });
+
+  /* ── socket: all deposits confirmed, match starting ── */
+  useSocket('escrowActive', () => {
+    clearDepositState();
+  });
+
+  /* ── socket: host cancelled, room preserved, all refunded ── */
+  useSocket('escrowCancelledAll', () => {
+    clearDepositState();
+    setWaiting(false);
+    setError('Match cancelled -- all deposits refunded.');
+  });
+
+  /* ── socket: deposit window expired, match cancelled ── */
+  useSocket('escrowDepositTimeout', () => {
+    clearDepositState();
+    setWaiting(false);
+    setError('Deposit window expired -- match cancelled.');
+  });
+
+  /* ── socket: kicked from room (non-depositor) ── */
+  useSocket('kickedFromRoom', (data) => {
+    clearDepositState();
+    setWaiting(false);
+    setKickedMessage(data?.reason || 'You were removed from the match.');
   });
 
   /* ── socket: game starts ── */
   useSocket('startPick', (data) => {
+    clearDepositState();
     setWaiting(false);
     setQueueState(null);
     setWaitingRoomPlayers([]);
@@ -388,6 +496,7 @@ function LobbyScreen({ navigate }) {
 
   /* ── socket: opponent left while waiting ── */
   useSocket('opponentLeft', () => {
+    clearDepositState();
     setWaiting(false);
     setWaitingRoomPlayers([]);
     setError('A player has left the lobby');
@@ -495,6 +604,16 @@ function LobbyScreen({ navigate }) {
     if (!window.socket) return;
     window.socket.emit('leaveQueue');
     setQueueState(null);
+  }, []);
+
+  const handlePartialStart = useCallback(() => {
+    if (!window.socket) return;
+    window.socket.emit('escrowPartialStart');
+  }, []);
+
+  const handleCancelAll = useCallback(() => {
+    if (!window.socket) return;
+    window.socket.emit('escrowCancelAll');
   }, []);
 
   /* ── helpers ── */

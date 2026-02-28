@@ -250,9 +250,10 @@ function BattleScreen({ navigate, screenData }) {
     if (!canvasRef.current) return;
 
     // Set wager and pot on bridge initial state
+    const numPlayersInMatch = screenData?.players?.length || screenData?.maxPlayers || 2;
     bridge.updateState({
       wager: wager,
-      potDisplay: wager * 2,
+      potDisplay: wager * numPlayersInMatch,
       round: screenData?.round || 1,
       totalRounds: screenData?.totalRounds || 5,
       gold: screenData?.goldBalance?.[window.socket?.id] || 1000,

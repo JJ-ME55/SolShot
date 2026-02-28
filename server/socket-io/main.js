@@ -87,13 +87,18 @@ function resetForPlayAgain(roomId, room, paRoundType, io) {
     delete room.heightmap
 
     // Reset match state, Gold, and inventories for new game
-    matchStates[roomId] = createMatchState(roomId, paRoundType)
+    matchStates[roomId] = createMatchState(roomId, paRoundType, room.players.length)
     delete goldStates[roomId]
     delete weaponInventories[roomId]
     delete shopReady[roomId]
-    // A7: Clear wager state on rematch — previous escrow was settled/cancelled.
-    // New match has no wager unless players re-queue through matchmaking.
-    delete wagerStates[roomId]
+    // A7: Clear deposit state for rematch — preserve wager amount and wallets for new escrow round
+    if (wagerStates[roomId]) {
+        wagerStates[roomId].deposits = {}
+        delete wagerStates[roomId].firstDepositorSocketId
+        delete wagerStates[roomId].partialDecisionMaker
+        delete wagerStates[roomId].nonDepositorSocketIds
+        delete wagerStates[roomId].depositorSocketIds
+    }
     if (shopTimers[roomId]) {
         clearTimeout(shopTimers[roomId])
         delete shopTimers[roomId]
@@ -101,11 +106,87 @@ function resetForPlayAgain(roomId, room, paRoundType, io) {
 
     io.sockets.in(roomId).emit('playAgain', {})
     room.players.forEach(p => { p.playAgain = false; })
+
+    // Trigger fresh escrow round for wagered rematches
+    const ws = wagerStates[roomId]
+    if (ws && ws.amount > 0 && isEscrowEnabled()) {
+        const allWallets = room.players.map(p => ws.wallets?.[p.socketId]).filter(Boolean)
+        if (allWallets.length === room.players.length) {
+            ;(async () => {
+                try {
+                    const escrowResult = await createMatchEscrow(roomId, ws.amount, allWallets)
+                    if (escrowResult.success) {
+                        room.escrowPDA = escrowResult.escrowPDA
+                        console.log(`[Match] PlayAgain escrow created for room ${roomId}: ${escrowResult.escrowPDA}`)
+
+                        const depositTxs = await Promise.all(
+                            room.players.map(p => buildDepositTransaction(roomId, ws.wallets?.[p.socketId]))
+                        )
+                        const depositDeadline = Date.now() + DEPOSIT_TIMEOUT_MS
+                        room.players.forEach((p, i) => {
+                            const sock = io.sockets.sockets.get(p.socketId)
+                            if (sock && depositTxs[i]?.success) {
+                                sock.emit('escrowDeposit', {
+                                    roomId,
+                                    transaction: depositTxs[i].transaction,
+                                    escrowPDA: escrowResult.escrowPDA,
+                                    wager: ws.amount,
+                                    depositDeadlineMs: depositDeadline,
+                                })
+                            }
+                        })
+                        // Start deposit timer with partial deposit flow (same as joinRoom)
+                        depositTimers[roomId] = setTimeout(async () => {
+                            delete depositTimers[roomId]
+                            const wsCheck = wagerStates[roomId]
+                            const roomCheck = findRoom(roomId)
+                            if (!roomCheck || !wsCheck) return
+                            const numDep = Object.keys(wsCheck.deposits || {}).length
+                            if (numDep === roomCheck.players.length) return
+                            if (numDep === 0) {
+                                const cancelWals = roomCheck.players.map(p => wsCheck.wallets[p.socketId]).filter(Boolean)
+                                if (cancelWals.length > 0 && isEscrowEnabled()) {
+                                    await cancelMatchEscrow(roomId, cancelWals).catch(e => console.error(`[Escrow] PlayAgain timeout cancel: ${e.message}`))
+                                }
+                                io.sockets.in(roomId).emit('escrowDepositTimeout', { roomId })
+                                await removeRoom(roomId)
+                                broadcastRooms(io)
+                                io.socketsLeave(roomId)
+                                return
+                            }
+                            // Partial deposit branch
+                            const depSids = roomCheck.players.filter(p => wsCheck.deposits?.[p.socketId]).map(p => p.socketId)
+                            const nonDepSids = roomCheck.players.filter(p => !wsCheck.deposits?.[p.socketId]).map(p => p.socketId)
+                            const decMaker = wsCheck.firstDepositorSocketId || roomCheck.players[0].socketId
+                            wsCheck.partialDecisionMaker = decMaker
+                            wsCheck.depositorSocketIds = depSids
+                            wsCheck.nonDepositorSocketIds = nonDepSids
+                            const depWals = roomCheck.players.filter(p => wsCheck.deposits?.[p.socketId]).map(p => wsCheck.wallets[p.socketId]).filter(Boolean)
+                            io.to(decMaker).emit('escrowPartialDeposit', { roomId, numDeposited: depSids.length, totalPlayers: roomCheck.players.length, depositorWallets: depWals, canStart: depSids.length >= 2, decisionWindowMs: 30_000 })
+                            depositTimers[roomId] = setTimeout(async () => {
+                                delete depositTimers[roomId]
+                                const ws3 = wagerStates[roomId]; const r3 = findRoom(roomId)
+                                if (!ws3 || !r3 || !ws3.partialDecisionMaker) return
+                                const refWals = r3.players.filter(p => ws3.deposits?.[p.socketId]).map(p => ws3.wallets[p.socketId]).filter(Boolean)
+                                if (isEscrowEnabled() && refWals.length > 0) await cancelMatchEscrow(roomId, refWals).catch(e => console.error(`[Escrow] PlayAgain decision timeout: ${e.message}`))
+                                io.sockets.in(roomId).emit('escrowCancelledAll', { roomId, reason: 'decision_timeout' })
+                                await removeRoom(roomId); broadcastRooms(io); io.socketsLeave(roomId)
+                            }, 30_000)
+                        }, DEPOSIT_TIMEOUT_MS)
+                    } else {
+                        console.error(`[Match] PlayAgain escrow creation failed for ${roomId}:`, escrowResult.error)
+                    }
+                } catch (err) {
+                    console.error(`[Match] PlayAgain escrow error for ${roomId}:`, err.message)
+                }
+            })()
+        }
+    }
 }
 
 // SF-03: In-memory store for failed settlements — retry via cancelMatchEscrow (DB: H020/H050)
 const failedSettlements = new Map();
-// Shape: { [roomId]: { matchId, escrowPDA, p1wallet, p2wallet, wagerSOL, failedAt, attempts, error } }
+// Shape: { [roomId]: { matchId, escrowPDA, allWallets, wagerSOL, failedAt, attempts, error } }
 
 // SF-03: Retry failed settlements every 60 seconds
 setInterval(async () => {
@@ -117,7 +198,7 @@ setInterval(async () => {
         }
         try {
             console.log(`[Recovery] Retrying cancel for ${matchId} (attempt ${data.attempts + 1})`);
-            const result = await cancelMatchEscrow(matchId, [data.p1wallet, data.p2wallet].filter(Boolean));
+            const result = await cancelMatchEscrow(matchId, data.allWallets || [data.p1wallet, data.p2wallet].filter(Boolean));
             if (result.success) {
                 console.log(`[Recovery] Successfully cancelled escrow for ${matchId}: ${result.txSignature}`);
                 failedSettlements.delete(matchId);
@@ -134,16 +215,12 @@ setInterval(async () => {
 
 // SF-03: Attempt cancel recovery and store for retry if needed
 async function handleSettlementFailure(roomId, room, ws, error) {
-    // room snapshot may use players[] (new schema) or legacy host/player fields
-    const p1socketId = room?.players?.[0]?.socketId || room?.host?.socketId || null;
-    const p2socketId = room?.players?.[1]?.socketId || room?.player?.socketId || null;
-    const p1wallet = ws?.wallets?.[p1socketId] || null;
-    const p2wallet = ws?.wallets?.[p2socketId] || null;
+    const allWallets = (room?.players || []).map(p => ws?.wallets?.[p.socketId]).filter(Boolean);
     const escrowPDA = room?.escrowPDA || null;
 
-    if (p1wallet && p2wallet) {
+    if (allWallets.length > 0) {
         try {
-            const cancelResult = await cancelMatchEscrow(roomId, [p1wallet, p2wallet].filter(Boolean));
+            const cancelResult = await cancelMatchEscrow(roomId, allWallets);
             if (cancelResult.success) {
                 console.log(`[Recovery] Immediate cancel succeeded for ${roomId}: ${cancelResult.txSignature}`);
                 return; // Recovery succeeded, no need to store
@@ -158,8 +235,7 @@ async function handleSettlementFailure(roomId, room, ws, error) {
     failedSettlements.set(roomId, {
         matchId: roomId,
         escrowPDA,
-        p1wallet,
-        p2wallet,
+        allWallets,
         wagerSOL: ws?.amount || 0,
         failedAt: Date.now(),
         attempts: 1,

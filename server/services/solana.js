@@ -186,14 +186,15 @@ export function calculateSettlement(totalWagerSOL) {
  * @param {string} loserAddress - Loser's wallet
  * @param {number} wagerSOL - Each player's wager
  * @param {string} [matchId] - Room ID for escrow PDA lookup
+ * @param {number} [playerCount=2] - Number of players who deposited (N-player pot = wager * playerCount)
  * @returns {Promise<{success: boolean, settlement: object, txSignature?: string}>}
  */
-export async function settleMatch(winnerAddress, loserAddress, wagerSOL, matchId) {
+export async function settleMatch(winnerAddress, loserAddress, wagerSOL, matchId, playerCount = 2) {
     if (wagerSOL === 0) {
         return { success: true, settlement: { winner: 0, treasury: 0, ops: 0 }, txSignature: null };
     }
 
-    const totalPot = wagerSOL * 2;
+    const totalPot = wagerSOL * playerCount;
     const settlement = calculateSettlement(totalPot);
 
     // If escrow program is live and we have a matchId, settle on-chain
@@ -228,18 +229,17 @@ export async function settleMatch(winnerAddress, loserAddress, wagerSOL, matchId
  * @param {string} playerAddress - Player to refund
  * @param {number} wagerSOL - Amount to refund
  * @param {string} [matchId] - Room ID for escrow lookup
- * @param {string} [playerOneAddress] - P1 wallet for cancel_match
- * @param {string} [playerTwoAddress] - P2 wallet for cancel_match
+ * @param {string[]} [playerAddresses] - Array of deposited player wallet addresses (base58) for cancel_match
  * @returns {Promise<{success: boolean, txSignature?: string}>}
  */
-export async function refundWager(playerAddress, wagerSOL, matchId, playerOneAddress, playerTwoAddress) {
+export async function refundWager(playerAddress, wagerSOL, matchId, playerAddresses) {
     if (wagerSOL === 0) {
         return { success: true, txSignature: null };
     }
 
     // If escrow is live, cancel on-chain (refunds all deposited players)
-    if (isEscrowEnabled() && matchId && playerOneAddress && playerTwoAddress) {
-        const result = await cancelMatchEscrow(matchId, playerOneAddress, playerTwoAddress);
+    if (isEscrowEnabled() && matchId && playerAddresses && playerAddresses.length > 0) {
+        const result = await cancelMatchEscrow(matchId, playerAddresses);
         if (result.success) {
             console.log('[Solana] On-chain refund:', { matchId, txSignature: result.txSignature });
             return { success: true, txSignature: result.txSignature };
@@ -278,6 +278,7 @@ export {
     buildDepositTransaction,
     getEscrowState,
     getEscrowPDA,
+    startWithDepositorsEscrow,
 } from './escrow.js';
 
 export { WINNER_SHARE, TREASURY_SHARE, OPS_SHARE };

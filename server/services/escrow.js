@@ -424,20 +424,18 @@ export async function settleMatchEscrow(matchId, winnerAddress) {
  * Cancel a match — refund all deposited players (OC-04, OC-05, OC-07, OC-09, OC-10).
  * Called by server on room cancel, disconnect timeout, etc.
  * Requires config PDA for authority pubkey + pause guard.
+ * Players are passed via remainingAccounts in player-index order (deposited players only).
  *
  * @param {string} matchId
- * @param {string} playerOneAddress
- * @param {string} playerTwoAddress
+ * @param {string[]} playerAddresses — deposited player wallet addresses in player-index order (base58)
  * @returns {Promise<{success: boolean, txSignature?: string, error?: string}>}
  */
-export async function cancelMatchEscrow(matchId, playerOneAddress, playerTwoAddress) {
+export async function cancelMatchEscrow(matchId, playerAddresses) {
     if (!program) {
         return { success: false, error: 'Escrow not initialized' };
     }
 
     try {
-        const playerOne = new PublicKey(playerOneAddress);
-        const playerTwo = new PublicKey(playerTwoAddress);
         const [escrowPDA] = getEscrowPDA(matchId);
         const [configPDA] = getConfigPDA();
 
@@ -446,11 +444,16 @@ export async function cancelMatchEscrow(matchId, playerOneAddress, playerTwoAddr
             .accounts({
                 escrow: escrowPDA,
                 caller: getEscrowKeypair().publicKey,
-                playerOne: playerOne,
-                playerTwo: playerTwo,
                 config: configPDA,
                 systemProgram: PublicKey.default,
             })
+            .remainingAccounts(
+                playerAddresses.map(addr => ({
+                    pubkey: new PublicKey(addr),
+                    isWritable: true,
+                    isSigner: false,
+                }))
+            )
             .rpc();
 
         console.log(`[Escrow] Cancelled match ${matchId} — TX: ${tx}`);

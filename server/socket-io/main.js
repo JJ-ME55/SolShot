@@ -479,30 +479,18 @@ function startTurnTimer(io, roomId) {
             {
                 const forfeitMatchId = `${roomId}:forfeit:${Date.now()}`
                 const isForfeitWagered = wsState && wsState.amount > 0
-                const hostWalletF = wsState?.wallets?.[hostId] || authenticatedWallets[hostId] || null
-                const playerWalletF = wsState?.wallets?.[playerId] || authenticatedWallets[playerId] || null
 
-                if (hostWalletF) {
-                    const forfeitResult = recordMatchPlayed(hostWalletF, {
+                for (const p of room.players) {
+                    const wallet = wsState?.wallets?.[p.socketId] || authenticatedWallets[p.socketId] || null
+                    if (!wallet) continue
+                    const forfeitResult = recordMatchPlayed(wallet, {
                         turnCount: ms.turnCount || 0,
                         matchId: forfeitMatchId,
                         isWagered: isForfeitWagered,
-                        isWinner: opponentId === hostId,
-                        maxRoundDamage: (ms.maxRoundDamage && ms.maxRoundDamage[hostId]) || 0,
-                        weaponsUsed: ms.weaponsUsed && ms.weaponsUsed[hostId]
-                            ? Array.from(ms.weaponsUsed[hostId]) : [],
-                    })
-                    if (forfeitResult.earned > 0) trackShotEmission(forfeitResult.earned)
-                }
-                if (playerWalletF) {
-                    const forfeitResult = recordMatchPlayed(playerWalletF, {
-                        turnCount: ms.turnCount || 0,
-                        matchId: forfeitMatchId,
-                        isWagered: isForfeitWagered,
-                        isWinner: opponentId === playerId,
-                        maxRoundDamage: (ms.maxRoundDamage && ms.maxRoundDamage[playerId]) || 0,
-                        weaponsUsed: ms.weaponsUsed && ms.weaponsUsed[playerId]
-                            ? Array.from(ms.weaponsUsed[playerId]) : [],
+                        isWinner: opponentId === p.socketId,
+                        maxRoundDamage: (ms.maxRoundDamage && ms.maxRoundDamage[p.socketId]) || 0,
+                        weaponsUsed: ms.weaponsUsed && ms.weaponsUsed[p.socketId]
+                            ? Array.from(ms.weaponsUsed[p.socketId]) : [],
                     })
                     if (forfeitResult.earned > 0) trackShotEmission(forfeitResult.earned)
                 }
@@ -2662,41 +2650,34 @@ const mainsocket = (io) => {
                         const matchId = `${this.roomId}:${ms.currentRound}:${Date.now()}`
                         const isWagered = wsState && wsState.amount > 0
 
-                        // Record match for both players (use wallet if available)
-                        const hostWallet = wsState?.wallets?.[hostId] || authenticatedWallets[hostId] || null
-                        const playerWallet = wsState?.wallets?.[playerId] || authenticatedWallets[playerId] || null
+                        // DEBT-01: Record match for all N players
+                        const playerWalletMap = {}
+                        for (const p of room.players) {
+                            playerWalletMap[p.socketId] = wsState?.wallets?.[p.socketId] || authenticatedWallets[p.socketId] || null
+                        }
 
                         // Phase 11: Snapshot milestones BEFORE recordMatchPlayed so we can diff after
-                        const hostMilestonesBefore = hostWallet
-                            ? new Set((getPlayerShotState(hostWallet)?.milestonesEarned || []))
-                            : new Set()
-                        const playerMilestonesBefore = playerWallet
-                            ? new Set((getPlayerShotState(playerWallet)?.milestonesEarned || []))
-                            : new Set()
-
-                        if (hostWallet) {
-                            shotResults[hostId] = recordMatchPlayed(hostWallet, {
-                                turnCount: ms.turnCount,
-                                matchId,
-                                isWagered,
-                                isWinner: matchResult.winner === hostId,
-                                maxRoundDamage: (ms.maxRoundDamage && ms.maxRoundDamage[hostId]) || 0,
-                                weaponsUsed: ms.weaponsUsed && ms.weaponsUsed[hostId]
-                                    ? Array.from(ms.weaponsUsed[hostId]) : [],
-                            })
-                            if (shotResults[hostId].earned > 0) trackShotEmission(shotResults[hostId].earned)
+                        const milestonesBefore = {}
+                        for (const p of room.players) {
+                            const wallet = playerWalletMap[p.socketId]
+                            milestonesBefore[p.socketId] = wallet
+                                ? new Set((getPlayerShotState(wallet)?.milestonesEarned || []))
+                                : new Set()
                         }
-                        if (playerWallet) {
-                            shotResults[playerId] = recordMatchPlayed(playerWallet, {
+
+                        for (const p of room.players) {
+                            const wallet = playerWalletMap[p.socketId]
+                            if (!wallet) continue
+                            shotResults[p.socketId] = recordMatchPlayed(wallet, {
                                 turnCount: ms.turnCount,
                                 matchId,
                                 isWagered,
-                                isWinner: matchResult.winner === playerId,
-                                maxRoundDamage: (ms.maxRoundDamage && ms.maxRoundDamage[playerId]) || 0,
-                                weaponsUsed: ms.weaponsUsed && ms.weaponsUsed[playerId]
-                                    ? Array.from(ms.weaponsUsed[playerId]) : [],
+                                isWinner: matchResult.winner === p.socketId,
+                                maxRoundDamage: (ms.maxRoundDamage && ms.maxRoundDamage[p.socketId]) || 0,
+                                weaponsUsed: ms.weaponsUsed && ms.weaponsUsed[p.socketId]
+                                    ? Array.from(ms.weaponsUsed[p.socketId]) : [],
                             })
-                            if (shotResults[playerId].earned > 0) trackShotEmission(shotResults[playerId].earned)
+                            if (shotResults[p.socketId].earned > 0) trackShotEmission(shotResults[p.socketId].earned)
                         }
 
                         // Phase 11: Compute newly earned milestones (diff against snapshot)
@@ -2732,15 +2713,16 @@ const mainsocket = (io) => {
                             wager: ws ? ws.amount : 0,
                             shotEarned: shotResults,
                             // Phase 11: Prestige info per player (client reads by own socket ID)
-                            prestigeInfo: {
-                                [hostId]: getPrestigeInfo(hostWallet),
-                                [playerId]: getPrestigeInfo(playerWallet)
-                            },
+                            prestigeInfo: Object.fromEntries(
+                                room.players.map(p => [p.socketId, getPrestigeInfo(playerWalletMap[p.socketId])])
+                            ),
                             // Phase 11: Milestones earned this match per player
-                            earnedMilestones: {
-                                [hostId]: getNewMilestones(hostWallet, hostMilestonesBefore),
-                                [playerId]: getNewMilestones(playerWallet, playerMilestonesBefore)
-                            }
+                            earnedMilestones: Object.fromEntries(
+                                room.players.map(p => [
+                                    p.socketId,
+                                    getNewMilestones(playerWalletMap[p.socketId], milestonesBefore[p.socketId] || new Set())
+                                ])
+                            )
                         }
                         setTimeout(() => {
                             io.sockets.in(roomId).emit('matchEnd', matchEndPayload)
@@ -2748,12 +2730,8 @@ const mainsocket = (io) => {
 
                         // === PERSIST STATS TO DB (fire-and-forget) ===
                         if (isDbConnected()) {
-                            const winnerId = matchResult.winner
-                            const loserId = winnerId === hostId ? playerId : hostId
-                            const winnerAddr = authenticatedWallets[winnerId] || wsState?.wallets?.[winnerId]
-                            const loserAddr = authenticatedWallets[loserId] || wsState?.wallets?.[loserId]
                             const wagerAmt = ws ? ws.amount : 0
-                            const solWonAmt = wagerAmt > 0 ? wagerAmt * 2 * 0.9 : 0 // 90% to winner after fees
+                            const solWonAmt = wagerAmt > 0 ? wagerAmt * room.players.length * 0.9 : 0 // 90% to winner after fees
 
                             // Phase 11: Build per-weapon $inc update for a player
                             const buildWeaponIncs = (pid) => {
@@ -2771,40 +2749,24 @@ const mainsocket = (io) => {
 
                             const persistStats = async () => {
                                 try {
-                                    if (winnerAddr) {
-                                        const winnerShotEarned = shotResults[winnerId]?.earned || 0
-                                        const winnerWeaponIncs = buildWeaponIncs(winnerId)
+                                    const winnerId = matchResult.winner
+                                    for (const p of room.players) {
+                                        const pid = p.socketId
+                                        const addr = authenticatedWallets[pid] || wsState?.wallets?.[pid]
+                                        if (!addr) continue
+                                        const isWinner = pid === winnerId
+                                        const playerShotEarned = shotResults[pid]?.earned || 0
+                                        const playerWeaponIncs = buildWeaponIncs(pid)
                                         await User.findOneAndUpdate(
-                                            { walletAddress: winnerAddr },
+                                            { walletAddress: addr },
                                             {
                                                 $inc: {
                                                     'stats.matchesPlayed': 1,
-                                                    'stats.wins': 1,
-                                                    'stats.totalSolWon': solWonAmt,
-                                                    'stats.totalShotEarned': winnerShotEarned,
-                                                    'stats.kills': ms.kills[winnerId] || 0,
-                                                    'stats.deaths': ms.totalDeaths[winnerId] || 0,
-                                                    ...winnerWeaponIncs
-                                                },
-                                                $set: { lastActive: new Date() }
-                                            },
-                                            { upsert: true }
-                                        )
-                                    }
-                                    if (loserAddr) {
-                                        const loserShotEarned = shotResults[loserId]?.earned || 0
-                                        const loserWeaponIncs = buildWeaponIncs(loserId)
-                                        await User.findOneAndUpdate(
-                                            { walletAddress: loserAddr },
-                                            {
-                                                $inc: {
-                                                    'stats.matchesPlayed': 1,
-                                                    'stats.losses': 1,
-                                                    'stats.totalSolLost': wagerAmt,
-                                                    'stats.totalShotEarned': loserShotEarned,
-                                                    'stats.kills': ms.kills[loserId] || 0,
-                                                    'stats.deaths': ms.totalDeaths[loserId] || 0,
-                                                    ...loserWeaponIncs
+                                                    ...(isWinner ? { 'stats.wins': 1, 'stats.totalSolWon': solWonAmt } : { 'stats.losses': 1, 'stats.totalSolLost': wagerAmt }),
+                                                    'stats.totalShotEarned': playerShotEarned,
+                                                    'stats.kills': ms.kills[pid] || 0,
+                                                    'stats.deaths': ms.totalDeaths[pid] || 0,
+                                                    ...playerWeaponIncs
                                                 },
                                                 $set: { lastActive: new Date() }
                                             },

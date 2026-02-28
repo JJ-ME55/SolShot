@@ -9,31 +9,31 @@ Requirements for N-player escrow upgrade. Each maps to roadmap phases.
 
 ### On-Chain Program
 
-- [ ] **ESC-01**: MatchEscrow account supports 2-4 players via `players: [Pubkey; 4]` fixed array with `max_players: u8` field
-- [ ] **ESC-02**: `deposits_mask: u8` bitmap tracks per-player deposit status (bit N = player N deposited)
-- [ ] **ESC-03**: `create_match` accepts N player wallets (2-4) and validates all are distinct and none is authority
-- [ ] **ESC-04**: `deposit_wager` identifies depositor by iterating `players[]` array and sets correct bit in `deposits_mask`
-- [ ] **ESC-05**: Match transitions to Active when all `max_players` have deposited (bitmap == `(1 << max_players) - 1`)
-- [ ] **ESC-06**: `settle_match` calculates total pot as `wager_lamports * num_deposited`, applies 90/7/3 BPS split, winner gets remainder
-- [ ] **ESC-07**: `settle_match` winner constraint validates against all entries in `players[]` array (not just first two)
-- [ ] **ESC-08**: `cancel_match` refunds all deposited players via `remaining_accounts` pattern with manual key validation
-- [ ] **ESC-09**: `permissionless_reclaim` refunds all deposited players via `remaining_accounts` with same validation
-- [ ] **ESC-10**: Deposit timeout reduced from 24h to 10 minutes on-chain (`TIMEOUT_SECONDS = 600`)
-- [ ] **ESC-11**: `start_with_depositors` instruction allows authority to reduce `max_players` to `num_deposited` (min 2), kick non-depositors, activate match
-- [ ] **ESC-12**: Account SPACE constant updated for new struct size (~236 bytes)
-- [ ] **ESC-13**: All events updated for N-player (MatchCreated, MatchCancelled emit player arrays, not binary fields)
-- [ ] **ESC-14**: Existing error codes extended (new: `TooFewPlayers`, `TooManyPlayers`, `MatchAlreadyStarted`)
+- [x] **ESC-01**: MatchEscrow account supports 2-4 players via `players: [Pubkey; 4]` fixed array with `max_players: u8` field
+- [x] **ESC-02**: `deposits_mask: u8` bitmap tracks per-player deposit status (bit N = player N deposited)
+- [x] **ESC-03**: `create_match` accepts N player wallets (2-4) and validates all are distinct and none is authority
+- [x] **ESC-04**: `deposit_wager` identifies depositor by iterating `players[]` array and sets correct bit in `deposits_mask`
+- [x] **ESC-05**: Match transitions to Active when all `max_players` have deposited (bitmap == `(1 << max_players) - 1`)
+- [x] **ESC-06**: `settle_match` calculates total pot as `wager_lamports * num_deposited`, applies 90/7/3 BPS split, winner gets remainder
+- [x] **ESC-07**: `settle_match` winner constraint validates against all entries in `players[]` array (not just first two)
+- [x] **ESC-08**: `cancel_match` refunds all deposited players via `remaining_accounts` pattern with manual key validation
+- [x] **ESC-09**: `permissionless_reclaim` refunds all deposited players via `remaining_accounts` with same validation
+- [x] **ESC-10**: Deposit timeout reduced from 24h to 10 minutes on-chain (`TIMEOUT_SECONDS = 600`)
+- [x] **ESC-11**: `start_with_depositors` instruction allows authority to reduce `max_players` to `num_deposited` (min 2), kick non-depositors, activate match
+- [x] **ESC-12**: Account SPACE constant updated for new struct size (~236 bytes)
+- [x] **ESC-13**: All events updated for N-player (MatchCreated, MatchCancelled emit player arrays, not binary fields)
+- [x] **ESC-14**: Existing error codes extended (new: `TooFewPlayers`, `TooManyPlayers`, `MatchAlreadyStarted`)
 
 ### Server Integration
 
-- [ ] **SRV-01**: `escrow.js:createMatchEscrow` accepts array of player addresses (2-4) instead of playerOne/playerTwo
-- [ ] **SRV-02**: `escrow.js:buildDepositTransaction` unchanged (player-agnostic, already works for any player)
-- [ ] **SRV-03**: `escrow.js:settleMatchEscrow` updated to pass winner validated against N players
-- [ ] **SRV-04**: `escrow.js:cancelMatchEscrow` passes N player addresses via remaining_accounts
-- [ ] **SRV-05**: `escrow.js:getEscrowState` returns `players[]`, `depositsMask`, `maxPlayers`, `numDeposited` instead of binary fields
-- [ ] **SRV-06**: `solana.js:settleMatch` accepts N-player context (winner from any of N players)
-- [ ] **SRV-07**: `solana.js:refundWager` passes all N player addresses for cancel
-- [ ] **SRV-08**: `solana.js:calculateSettlement` uses `wager * playerCount` for total pot (not `wager * 2`)
+- [x] **SRV-01**: `escrow.js:createMatchEscrow` accepts array of player addresses (2-4) instead of playerOne/playerTwo
+- [x] **SRV-02**: `escrow.js:buildDepositTransaction` unchanged (player-agnostic, already works for any player)
+- [x] **SRV-03**: `escrow.js:settleMatchEscrow` updated to pass winner validated against N players
+- [x] **SRV-04**: `escrow.js:cancelMatchEscrow` passes N player addresses via remaining_accounts
+- [x] **SRV-05**: `escrow.js:getEscrowState` returns `players[]`, `depositsMask`, `maxPlayers`, `numDeposited` instead of binary fields
+- [x] **SRV-06**: `solana.js:settleMatch` accepts N-player context (winner from any of N players)
+- [x] **SRV-07**: `solana.js:refundWager` passes all N player addresses for cancel
+- [x] **SRV-08**: `solana.js:calculateSettlement` uses `wager * playerCount` for total pot (not `wager * 2`)
 - [ ] **SRV-09**: `main.js` creates escrow with all `room.players` wallets on room-full (not just host+player)
 - [ ] **SRV-10**: `main.js` sends deposit TX to all N players in parallel on escrow creation
 - [ ] **SRV-11**: `main.js` tracks N deposit confirmations; emits `escrowActive` when all confirmed
@@ -42,7 +42,7 @@ Requirements for N-player escrow upgrade. Each maps to roadmap phases.
 - [ ] **SRV-14**: `main.js` handles host `escrowPartialStart` choice — calls `start_with_depositors` on-chain, kicks non-depositors, starts match
 - [ ] **SRV-15**: `main.js` handles host `escrowCancelAll` choice — calls `cancel_match`, refunds all, returns to lobby
 - [ ] **SRV-16**: SYS-08 wager guard removed — 3-4 player wagered matches allowed
-- [ ] **SRV-17**: IDL synced from `target/idl/` to `server/idl/solshot_escrow.json` after program rebuild
+- [x] **SRV-17**: IDL synced from `target/idl/` to `server/idl/solshot_escrow.json` after program rebuild
 - [ ] **SRV-18**: `escrowDepositStatus` socket event emitted after each confirmed deposit (shows "2/4 deposited")
 
 ### Client UX
@@ -95,28 +95,28 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ESC-01 | Phase 20 | Pending |
-| ESC-02 | Phase 20 | Pending |
-| ESC-03 | Phase 20 | Pending |
-| ESC-04 | Phase 20 | Pending |
-| ESC-05 | Phase 20 | Pending |
-| ESC-06 | Phase 20 | Pending |
-| ESC-07 | Phase 20 | Pending |
-| ESC-08 | Phase 20 | Pending |
-| ESC-09 | Phase 20 | Pending |
-| ESC-10 | Phase 20 | Pending |
-| ESC-11 | Phase 20 | Pending |
-| ESC-12 | Phase 20 | Pending |
-| ESC-13 | Phase 20 | Pending |
-| ESC-14 | Phase 20 | Pending |
-| SRV-01 | Phase 21 | Pending |
-| SRV-02 | Phase 21 | Pending |
-| SRV-03 | Phase 21 | Pending |
-| SRV-04 | Phase 21 | Pending |
-| SRV-05 | Phase 21 | Pending |
-| SRV-06 | Phase 21 | Pending |
-| SRV-07 | Phase 21 | Pending |
-| SRV-08 | Phase 21 | Pending |
+| ESC-01 | Phase 20 | Complete |
+| ESC-02 | Phase 20 | Complete |
+| ESC-03 | Phase 20 | Complete |
+| ESC-04 | Phase 20 | Complete |
+| ESC-05 | Phase 20 | Complete |
+| ESC-06 | Phase 20 | Complete |
+| ESC-07 | Phase 20 | Complete |
+| ESC-08 | Phase 20 | Complete |
+| ESC-09 | Phase 20 | Complete |
+| ESC-10 | Phase 20 | Complete |
+| ESC-11 | Phase 20 | Complete |
+| ESC-12 | Phase 20 | Complete |
+| ESC-13 | Phase 20 | Complete |
+| ESC-14 | Phase 20 | Complete |
+| SRV-01 | Phase 21 | Complete |
+| SRV-02 | Phase 21 | Complete |
+| SRV-03 | Phase 21 | Complete |
+| SRV-04 | Phase 21 | Complete |
+| SRV-05 | Phase 21 | Complete |
+| SRV-06 | Phase 21 | Complete |
+| SRV-07 | Phase 21 | Complete |
+| SRV-08 | Phase 21 | Complete |
 | SRV-09 | Phase 22 | Pending |
 | SRV-10 | Phase 22 | Pending |
 | SRV-11 | Phase 22 | Pending |
@@ -125,7 +125,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SRV-14 | Phase 22 | Pending |
 | SRV-15 | Phase 22 | Pending |
 | SRV-16 | Phase 22 | Pending |
-| SRV-17 | Phase 21 | Pending |
+| SRV-17 | Phase 21 | Complete |
 | SRV-18 | Phase 22 | Pending |
 | CLT-01 | Phase 23 | Pending |
 | CLT-02 | Phase 23 | Pending |
@@ -145,4 +145,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-02-27*
-*Last updated: 2026-02-27 — traceability filled after roadmap creation*
+*Last updated: 2026-02-28 — Phase 20 (ESC-01 through ESC-14) and Phase 21 (SRV-01 through SRV-08, SRV-17) marked Complete*

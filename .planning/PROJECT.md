@@ -57,22 +57,20 @@ Browser-based multiplayer artillery combat on Solana with real SOL wagering, set
 - React HUD: N HP bars (PlayerHPBar), turn arrow, elimination overlay, Leave Match, FINAL STANDINGS — v1.3
 - Lobby UI: player count selector (2/3/4), N-slot waiting room, color de-dup, room badges — v1.3
 - 2-player backward compatibility preserved across all N-player changes — v1.3
+- N-player Anchor escrow: players[4] array, deposits_mask bitmap, 10-min timeout, start_with_depositors — v1.4
+- N-player settlement: wager * deposits_mask.count_ones(), 90/7/3 BPS split, winner-takes-all — v1.4
+- Cancel/reclaim via remaining_accounts pattern (no hardcoded player accounts) — v1.4
+- Server escrow services: N-player createMatchEscrow, cancelMatchEscrow, settleMatch, refundWager — v1.4
+- Socket handlers: 5-min deposit timeout, 3-branch partial flow (all/zero/partial), host decision — v1.4
+- Client deposit UX: per-player badges, countdown timer, partial decision UI, kick notification — v1.4
+- BattleScreen N-player pot display with defensive fallback chain — v1.4
+- Wager guard removed — 3-4 player wagered matches allowed — v1.4
+- SHOT milestone recording for all N players (not just first 2) — v1.4
+- playAgain preserves maxPlayers for N-player rematches — v1.4
 
 ### Active
 
-#### Current Milestone: v1.4 — N-Player Escrow
-
-**Goal:** Upgrade the Anchor escrow program and full stack to support 2-4 player wagered matches with winner-takes-all settlement.
-
-**Target features:**
-- Anchor program rewrite: N-player deposits, winner-takes-all settlement (90/7/3 BPS), 5-10 min timeout
-- Partial deposit handling: depositors choose "start with depositors" (min 2) or "cancel and refund all"
-- Equal wagers enforced (all players match room creator's wager)
-- Server escrow.js + solana.js integration for N-player
-- Client deposit flow for N-player
-- Unlock Quick Match / Duel / High Roller for 3-4 players (remove wager guard)
-- Fix: SHOT milestone recording for players 3/4
-- Fix: playAgain maxPlayers preservation
+(No active milestone — define next with `/gsd:new-milestone`)
 
 ### Out of Scope
 
@@ -96,16 +94,18 @@ Browser-based multiplayer artillery combat on Solana with real SOL wagering, set
 - **v1.1 Security Hardening:** 8 phases, 25 plans. Three security audits (SOS, DB, BOK) all PASS.
 - **v1.2 Launch Readiness:** 6 phases, 15 plans. Jupiter integration, UI polish, stats pipeline, onboarding, security, checklist re-audit.
 - **v1.3 4-Player Multiplayer:** 5 phases, 10 plans. Full N-player refactor (server + client), 56/56 requirements met.
+- **v1.4 N-Player Escrow:** 4 phases, 10 plans. Full-stack escrow upgrade for 2-4 player wagered matches, 42/42 requirements met.
 
 ### Master Checklist Audit (24 Feb 2026)
 
 Full audit of 280-item Master Quality & Launch Checklist revealed ~153 PASS / ~110 FAIL / ~95 PARTIAL.
 Many "failures" are design decisions (4 states, 24h timeout, PDA seeds), not bugs.
 
-### Known Tech Debt (from v1.3 audit)
+### Known Tech Debt (from v1.4 audit)
 
-- SHOT milestone recording only covers players[0] and players[1] — players 3/4 miss rewards
-- playAgain resetForPlayAgain doesn't pass maxPlayers to createMatchState
+- tests/solshot-escrow.ts uses old 2-player API — TS integration tests cannot run against new program
+- Stale comment on PERMISSIONLESS_RECLAIM_TIMEOUT says '172800 seconds' (actual: 1200)
+- Stale comment 'Both players deposited' in main.js (code correctly uses N-player logic)
 - bridge.onEliminated callback dead wire (no functional impact)
 - tank1/tank2 shims in GameBridge state (no active readers)
 - Color de-dup is client-only (cosmetic race condition)
@@ -122,7 +122,7 @@ Many "failures" are design decisions (4 states, 24h timeout, PDA seeds), not bug
 
 ## Current State
 
-v1.3 shipped. Full 2-4 player multiplayer working in practice mode. Starting v1.4: N-player escrow upgrade across full stack (Anchor program, server, client). Accepting re-audit risk for lib.rs modifications.
+v1.4 shipped. Full 2-4 player wagered multiplayer working with on-chain escrow settlement. All match modes (Practice, Quick Match, Duel, High Roller, Custom Challenge) available for 2-4 players. Partial deposit handling with host choice. 42/42 requirements met, 18/18 integration checks, 5/5 E2E flows verified.
 
 ## Key Decisions
 
@@ -142,14 +142,16 @@ v1.3 shipped. Full 2-4 player multiplayer working in practice mode. Starting v1.
 | Placement scoring (4th=0..1st=3) | Fair N-player scoring for BO3/BO5 | ✓ Good |
 | No early exit in isMatchOver | All rounds always played for fairness | ✓ Good |
 | Wager guard for 3-4 players | Practice-only until escrow supports N | ✓ Good — will be removed in v1.4 |
-| Accept re-audit risk for lib.rs | N-player escrow needed for real gameplay | — Pending |
-| Winner-takes-all N-player | Same model as 2-player, simpler than placement split | — Pending |
-| Equal wagers only | Simpler PDA, fairer gameplay | — Pending |
-| 5-10 min deposit timeout (not 24h) | More players = higher chance of no-show | — Pending |
-| Partial deposit: start or cancel choice | Depositors decide, not auto-cancel | — Pending |
+| Accept re-audit risk for lib.rs | N-player escrow needed for real gameplay | ✓ Good — 69 cargo tests, audit passed |
+| Winner-takes-all N-player | Same model as 2-player, simpler than placement split | ✓ Good — clean implementation |
+| Equal wagers only | Simpler PDA, fairer gameplay | ✓ Good — one wager field per match |
+| 5-10 min deposit timeout (not 24h) | More players = higher chance of no-show | ✓ Good — 5 min client, 10 min on-chain |
+| Partial deposit: start or cancel choice | Depositors decide, not auto-cancel | ✓ Good — host UI with clear options |
+| deposits_mask bitmap (not bool array) | Single u8 tracks 4 players, efficient | ✓ Good — count_ones() for pot math |
+| remaining_accounts for cancel/reclaim | No named player accounts in structs | ✓ Good — scales to any N |
 | Dual-payload pattern (positions[] + tankPositions) | Backward compat during migration | ✓ Good — clean transition |
 | Quick Match hardcoded to 2-player | 3-4p uses Custom Challenge | ✓ Good — simplifies matchmaking |
 | Timeout >2 alive = elimination, <=2 = forfeit | Different behavior appropriate for each | ✓ Good |
 
 ---
-*Last updated: 27 Feb 2026 after v1.4 milestone started*
+*Last updated: 28 Feb 2026 after v1.4 milestone*

@@ -82,3 +82,31 @@ All work 21-23 Feb 2026. Three security audits (SOS, DB, BOK) — all CRITICAL/H
 **What's next:** N-player QA testing, tech debt fixes (SHOT milestones for players 3/4, playAgain maxPlayers), then deployment/mainnet readiness
 
 ### Last Phase Number: 19
+
+## v1.4 — N-Player Escrow (SHIPPED 2026-02-28)
+
+**Delivered:** Full-stack N-player escrow upgrade — Anchor program rewrite for 2-4 player wagered matches with winner-takes-all settlement, partial deposit handling with host choice, and client deposit UX with real-time status and countdown timer.
+
+**Phases completed:** 20-23 (10 plans total)
+
+**Key accomplishments:**
+- Anchor MatchEscrow rewritten for N-player: players[4] array, deposits_mask bitmap, 10-min timeout, start_with_depositors instruction
+- Server escrow services (escrow.js + solana.js) upgraded to N-player arrays and remaining_accounts pattern
+- Socket handlers for N-player deposit orchestration, 3-branch partial timeout (all/zero/partial), host decision flow
+- SHOT milestone recording and playAgain state fixed for all N players (tech debt from v1.3)
+- Client LobbyScreen with per-player deposit badges, countdown timer, partial decision UI, kick notification
+- BattleScreen pot display uses N-player math with defensive fallback chain
+
+**Stats:**
+- 11 code files changed, +3,635 / -471 lines
+- 41 commits across 4 phases
+- 4 phases, 10 plans
+- 2 days (27 Feb → 28 Feb 2026)
+
+**Git range:** `fdac49e` → `33c02be`
+
+**Audit:** 42/42 requirements satisfied, 18/18 integration, 5/5 E2E flows — PASSED. See milestones/v1.4-MILESTONE-AUDIT.md.
+
+**What's next:** Deployment, QA testing with real wallets, mainnet readiness
+
+### Last Phase Number: 23

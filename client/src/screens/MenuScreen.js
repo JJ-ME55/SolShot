@@ -4,12 +4,6 @@ import WalletDisplay from '../components/WalletDisplay';
 import ResponsibleGaming from '../components/ResponsibleGaming';
 import { useTelegram } from '../telegram/TelegramContext';
 
-const PARTNERS = [
-  { name: 'SOLANA',  color: '#9945FF' },
-  { name: 'JUPITER', color: '#C7F284' },
-  { name: 'METEORA', color: '#00D4AA' },
-  { name: 'CLAUDE',  color: '#D97706' },
-];
 
 const styles = {
   container: {
@@ -86,61 +80,40 @@ const styles = {
 
   tagline: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 14,
+    fontSize: 18,
     color: 'var(--kh)',
-    opacity: 0.6,
-    letterSpacing: 3,
-    marginTop: 8,
+    opacity: 0.7,
+    letterSpacing: 4,
+    marginTop: 10,
     textTransform: 'uppercase',
   },
 
   subTagline: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 11,
+    fontSize: 14,
     color: 'var(--kh)',
     opacity: 0.5,
     letterSpacing: 2,
-    marginTop: 4,
+    marginTop: 6,
+    marginBottom: 20,
     textTransform: 'uppercase',
     textAlign: 'center',
     zIndex: 1,
   },
 
-  // Ecosystem partners row
-  partnersRow: {
-    display: 'flex',
-    gap: 8,
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    marginTop: 10,
-    marginBottom: 20,
-    zIndex: 1,
-  },
-  partnerBadge: (color) => ({
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 10,
-    color: color,
-    letterSpacing: 2,
-    padding: '2px 8px',
-    border: '1px solid ' + color + '44',
-    borderRadius: 2,
-    background: color + '0A',
-  }),
-
   // Nav buttons
   navButtons: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 8,
-    width: 260,
+    gap: 10,
+    width: 300,
     zIndex: 1,
-    marginBottom: 16,
+    marginBottom: 20,
   },
 
   navButton: {
     width: '100%',
-    padding: '12px 20px',
+    padding: '14px 24px',
     position: 'relative',
     display: 'flex',
     alignItems: 'center',
@@ -155,6 +128,22 @@ const styles = {
     color: 'var(--kh)',
     opacity: 0,
     transition: 'opacity 0.15s, transform 0.15s',
+  },
+
+  comingSoonBadge: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    fontFamily: "'Share Tech Mono', monospace",
+    fontSize: 9,
+    letterSpacing: 1,
+    color: 'var(--bn)',
+    background: 'var(--sd)',
+    border: '1px solid var(--st)',
+    borderRadius: 3,
+    padding: '2px 6px',
+    textTransform: 'uppercase',
+    zIndex: 1,
   },
 
   // Wallet section
@@ -175,29 +164,6 @@ const styles = {
     zIndex: 1,
   },
 
-  jupiterCallout: {
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 10,
-    color: '#C7F284',
-    opacity: 0.6,
-    letterSpacing: 1,
-    textAlign: 'center',
-    marginTop: 4,
-    zIndex: 1,
-  },
-
-  learnMoreLink: {
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 11,
-    color: 'var(--kh)',
-    opacity: 0.5,
-    letterSpacing: 2,
-    textDecoration: 'none',
-    textTransform: 'uppercase',
-    zIndex: 1,
-    marginTop: 6,
-    display: 'block',
-  },
 };
 
 function MenuScreen({ navigate }) {
@@ -208,9 +174,9 @@ function MenuScreen({ navigate }) {
 
   const navItems = [
     { id: 'deploy', label: 'PLAY FREE', variant: 'primary', screen: 'lobby' },
-    { id: 'armory', label: 'ARMORY', variant: 'secondary', screen: 'armory' },
-    { id: 'prestige', label: 'PRESTIGE', variant: 'secondary', screen: 'prestige' },
-    { id: 'barracks', label: 'BARRACKS', variant: 'secondary', screen: 'barracks' },
+    { id: 'armory', label: 'ARMORY', variant: 'secondary', screen: 'armory', comingSoon: true },
+    { id: 'prestige', label: 'PRESTIGE', variant: 'secondary', screen: 'prestige', comingSoon: true },
+    { id: 'barracks', label: 'BARRACKS', variant: 'secondary', screen: 'barracks', comingSoon: true },
   ];
 
   return (
@@ -231,18 +197,11 @@ function MenuScreen({ navigate }) {
             src="/assets/images/branding/logo-transparent.png"
             alt="SolShot"
             onError={onLogoError}
-            style={{ width: 300, height: 'auto', objectFit: 'contain', marginBottom: 6 }}
+            style={{ width: 340, height: 'auto', objectFit: 'contain', marginBottom: 8 }}
           />
         )}
         <div style={styles.tagline}>SKILL, NOT LUCK</div>
-        <div style={styles.subTagline}>WAGER 0.1 — 1.0 SOL | NO DOWNLOAD REQUIRED</div>
-      </div>
-
-      {/* Ecosystem partners row */}
-      <div style={styles.partnersRow}>
-        {PARTNERS.map((p) => (
-          <span key={p.name} style={styles.partnerBadge(p.color)}>{p.name}</span>
-        ))}
+        <div style={styles.subTagline}>SKILL-BASED ARTILLERY COMBAT</div>
       </div>
 
       {/* Navigation buttons */}
@@ -257,20 +216,26 @@ function MenuScreen({ navigate }) {
             onMouseLeave={() => setHoveredBtn(null)}
           >
             <Button
-              variant={item.variant}
-              onClick={() => navigate(item.screen)}
-              style={styles.navButton}
+              variant={item.comingSoon ? 'disabled' : item.variant}
+              onClick={item.comingSoon ? undefined : () => navigate(item.screen)}
+              disabled={item.comingSoon}
+              style={{ ...styles.navButton, position: 'relative' }}
             >
               {item.label}
-              <span
-                style={{
-                  ...styles.arrow,
-                  opacity: hoveredBtn === item.id ? 1 : 0,
-                  transform: hoveredBtn === item.id ? 'translateX(0)' : 'translateX(-4px)',
-                }}
-              >
-                {'\u25B6'}
-              </span>
+              {item.comingSoon && (
+                <span style={styles.comingSoonBadge}>COMING SOON</span>
+              )}
+              {!item.comingSoon && (
+                <span
+                  style={{
+                    ...styles.arrow,
+                    opacity: hoveredBtn === item.id ? 1 : 0,
+                    transform: hoveredBtn === item.id ? 'translateX(0)' : 'translateX(-4px)',
+                  }}
+                >
+                  {'\u25B6'}
+                </span>
+              )}
             </Button>
           </div>
         ))}
@@ -298,12 +263,6 @@ function MenuScreen({ navigate }) {
       <div style={styles.walletSection}>
         <WalletDisplay />
       </div>
-
-      {/* Jupiter Mobile callout */}
-      <div style={styles.jupiterCallout}>NEW TO CRYPTO? USE JUPITER MOBILE</div>
-
-      {/* Learn More link */}
-      <a href="#" style={styles.learnMoreLink}>LEARN MORE</a>
 
       {/* Version tag */}
       <div style={styles.versionTag}>v0.5.0-alpha</div>

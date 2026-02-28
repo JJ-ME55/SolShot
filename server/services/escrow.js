@@ -269,29 +269,27 @@ export async function getConfigState() {
 
 /**
  * Create a match escrow on-chain (OC-04, OC-06, OC-08, OC-12).
- * Called by server when both players have joined a wagered room.
+ * Called by server when 2-4 players have joined a wagered room.
  * Requires config PDA for pause guard.
  *
  * @param {string} matchId — unique room ID
  * @param {number} wagerSOL — wager per player in SOL
- * @param {string} playerOneAddress — player 1 wallet (base58)
- * @param {string} playerTwoAddress — player 2 wallet (base58)
+ * @param {string[]} playerAddresses — array of 2-4 player wallet addresses (base58)
  * @returns {Promise<{success: boolean, txSignature?: string, escrowPDA?: string, error?: string}>}
  */
-export async function createMatchEscrow(matchId, wagerSOL, playerOneAddress, playerTwoAddress) {
+export async function createMatchEscrow(matchId, wagerSOL, playerAddresses) {
     if (!program) {
         return { success: false, error: 'Escrow not initialized' };
     }
 
     try {
         const wagerLamports = Math.round(wagerSOL * LAMPORTS_PER_SOL);
-        const playerOne = new PublicKey(playerOneAddress);
-        const playerTwo = new PublicKey(playerTwoAddress);
+        const players = playerAddresses.map(a => new PublicKey(a));
         const [escrowPDA] = getEscrowPDA(matchId);
         const [configPDA] = getConfigPDA();
 
         const tx = await program.methods
-            .createMatch(matchId, new BN(wagerLamports), playerOne, playerTwo)
+            .createMatch(matchId, new BN(wagerLamports), players)
             .accounts({
                 escrow: escrowPDA,
                 authority: getEscrowKeypair().publicKey,

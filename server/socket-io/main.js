@@ -117,7 +117,7 @@ setInterval(async () => {
         }
         try {
             console.log(`[Recovery] Retrying cancel for ${matchId} (attempt ${data.attempts + 1})`);
-            const result = await cancelMatchEscrow(matchId, data.p1wallet, data.p2wallet);
+            const result = await cancelMatchEscrow(matchId, [data.p1wallet, data.p2wallet].filter(Boolean));
             if (result.success) {
                 console.log(`[Recovery] Successfully cancelled escrow for ${matchId}: ${result.txSignature}`);
                 failedSettlements.delete(matchId);
@@ -143,7 +143,7 @@ async function handleSettlementFailure(roomId, room, ws, error) {
 
     if (p1wallet && p2wallet) {
         try {
-            const cancelResult = await cancelMatchEscrow(roomId, p1wallet, p2wallet);
+            const cancelResult = await cancelMatchEscrow(roomId, [p1wallet, p2wallet].filter(Boolean));
             if (cancelResult.success) {
                 console.log(`[Recovery] Immediate cancel succeeded for ${roomId}: ${cancelResult.txSignature}`);
                 return; // Recovery succeeded, no need to store
@@ -757,7 +757,7 @@ const mainsocket = (io) => {
                                 const p2w = ws.wallets[room.players?.[1]?.socketId]
                                 if (p1w && p2w && isEscrowEnabled()) {
                                     try {
-                                        await cancelMatchEscrow(roomId, p1w, p2w)
+                                        await cancelMatchEscrow(roomId, [p1w, p2w].filter(Boolean))
                                         console.log(`[Solana] Even disconnect refund (${reason}): room ${roomId}`)
                                     } catch (err) {
                                         console.error(`[Solana] Even disconnect refund failed:`, err.message)
@@ -813,7 +813,7 @@ const mainsocket = (io) => {
                         const allWallets = Object.values(ws.wallets).filter(Boolean)
                         const p1w = allWallets[0] || null
                         const p2w = allWallets[1] || null
-                        await refundWager(wallet, ws.amount, roomId, p1w, p2w)
+                        await refundWager(wallet, ws.amount, roomId, [p1w, p2w].filter(Boolean))
                     }
                 }
             }
@@ -1188,7 +1188,7 @@ const mainsocket = (io) => {
                 const hostWallet = ws?.wallets[room.players[0]?.socketId]
                 if (hostWallet && joinerWallet) {
                     try {
-                        const escrowResult = await createMatchEscrow(roomId, roomWager, hostWallet, joinerWallet)
+                        const escrowResult = await createMatchEscrow(roomId, roomWager, [hostWallet, joinerWallet])
                         if (escrowResult.success) {
                             room.escrowPDA = escrowResult.escrowPDA
                             console.log(`[Match] Escrow created for room ${roomId}: ${escrowResult.escrowPDA}`)
@@ -1235,7 +1235,7 @@ const mainsocket = (io) => {
                                 const p2wallet = wsCheck.wallets[roomCheck.players[1]?.socketId]
                                 if (p1wallet && p2wallet && isEscrowEnabled()) {
                                     try {
-                                        await cancelMatchEscrow(roomId, p1wallet, p2wallet)
+                                        await cancelMatchEscrow(roomId, [p1wallet, p2wallet].filter(Boolean))
                                     } catch (err) {
                                         console.error(`[Escrow] Deposit timeout cancel failed for ${roomId}:`, err.message)
                                     }
@@ -1548,7 +1548,7 @@ const mainsocket = (io) => {
                 const matchJoinerWallet = authenticatedWallets[client.id] || null;
                 if (wagerAmount > 0 && isEscrowEnabled() && opponent.wallet && matchJoinerWallet) {
                     try {
-                        const escrowResult = await createMatchEscrow(roomId, wagerAmount, opponent.wallet, matchJoinerWallet);
+                        const escrowResult = await createMatchEscrow(roomId, wagerAmount, [opponent.wallet, matchJoinerWallet]);
                         if (escrowResult.success) {
                             roomData.escrowPDA = escrowResult.escrowPDA;
                             const [hostDeposit, joinerDeposit] = await Promise.all([
@@ -1577,7 +1577,7 @@ const mainsocket = (io) => {
                                 const p2wallet = wsCheck.wallets[roomCheck.players[1]?.socketId]
                                 if (p1wallet && p2wallet && isEscrowEnabled()) {
                                     try {
-                                        await cancelMatchEscrow(roomId, p1wallet, p2wallet)
+                                        await cancelMatchEscrow(roomId, [p1wallet, p2wallet].filter(Boolean))
                                     } catch (err) {
                                         console.error(`[Escrow] Deposit timeout cancel failed for ${roomId}:`, err.message)
                                     }
@@ -2050,7 +2050,7 @@ const mainsocket = (io) => {
                 io.sockets.in(rid).emit('escrowActive', {
                     roomId: rid,
                     escrowPDA: room.escrowPDA,
-                    totalPot: ws.amount * 2,
+                    totalPot: ws.amount * (room?.players?.length || 2),
                 })
             }
         })
@@ -2396,7 +2396,7 @@ const mainsocket = (io) => {
                                     } else {
                                         settlementInfo = {
                                             wager: ws.amount,
-                                            totalPot: ws.amount * 2,
+                                            totalPot: ws.amount * (room?.players?.length || 2),
                                             winnerPayout: sResult.settlement.winner,
                                             treasuryFee: sResult.settlement.treasury,
                                             opsFee: sResult.settlement.ops,

@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 27 Feb 2026)
 ## Current Position
 
 Milestone: v1.4 — N-Player Escrow
-Phase: 20 of 23 (Anchor Program) — COMPLETE
-Plan: 03 of 3 in phase 20 (N-Player Cancel/Reclaim + start_with_depositors)
-Status: Phase complete — ready for Phase 21
-Last activity: 27 Feb 2026 — Completed 20-03-PLAN.md (cancel/reclaim N-player + anchor build + IDL sync)
+Phase: 21 of 23 (Server Escrow Services) — In progress
+Plan: 01 of 2 in phase 21 (N-Player escrow.js API update)
+Status: In progress — plan 21-01 complete, ready for plan 21-02
+Last activity: 28 Feb 2026 — Completed 21-01-PLAN.md (escrow.js N-player rewrite)
 
-Progress: [███░░░░░░░] 30% (3/10 plans)
+Progress: [████░░░░░░] 40% (4/10 plans)
 
 ## Performance Metrics
 
@@ -50,6 +50,9 @@ Progress: [███░░░░░░░] 30% (3/10 plans)
 - cancel_match and permissionless_reclaim use ctx.remaining_accounts — no named player accounts in structs
 - start_with_depositors compacts players[] array before reducing max_players — ensures contiguous depositor slots after partial-start
 - Phase 20 COMPLETE: anchor build succeeds, all 69 cargo tests pass, IDL synced to server/idl/
+- escrow.js N-player: createMatchEscrow takes playerAddresses[], cancel+reclaim use .remainingAccounts(), getEscrowState returns depositsMask + backward-compat shims
+- PermissionlessReclaim has NO config account (only escrow, caller, systemProgram) — unlike CancelMatch which has config
+- getEscrowState shims playerOneDeposited/playerTwoDeposited via depositsMask bitmask — keeps main.js unchanged until plan 21-02
 
 ### Pending Todos
 - Run 25-test suite when McAfee exclusion is configured
@@ -62,12 +65,13 @@ Progress: [███░░░░░░░] 30% (3/10 plans)
 - McAfee blocks solana-test-validator on Windows — tests need exclusion
 - Devnet wallet at 0.97 SOL — need ~2.12 SOL to redeploy program with v1.4 instructions
 - main.js is ~2870 lines — search by function name, not line number
-- server/services/escrow.js still uses old player_one/player_two API — must be updated in Phase 21
-- server/socket-io/main.js cancel/refund flows must be updated to pass remaining_accounts arrays
-- start_with_depositors call path needs new implementation in server (partial-deposit timeout handling)
+- server/services/escrow.js N-player API update COMPLETE (plan 21-01)
+- server/socket-io/main.js cancel/refund flows must be updated to pass player arrays (5 call sites) — plan 21-02
+- server/services/solana.js settleMatch still uses wager * 2 hardcode — must fix in plan 21-02
+- start_with_depositors exported as startWithDepositorsEscrow — caller integration in main.js is plan 21-02
 
 ## Session Continuity
 
-Last session: 2026-02-27T22:45:02Z
-Stopped at: Completed 20-03-PLAN.md — N-player cancel/reclaim + start_with_depositors + anchor build + IDL sync
+Last session: 2026-02-28T07:08:47Z
+Stopped at: Completed 21-01-PLAN.md — escrow.js N-player API rewrite (createMatchEscrow, cancelMatchEscrow, permissionlessReclaimEscrow, getEscrowState, startWithDepositorsEscrow)
 Resume file: None

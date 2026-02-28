@@ -4,17 +4,17 @@
 
 See: .planning/PROJECT.md (updated 27 Feb 2026)
 **Core value:** Browser-based multiplayer artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
-**Current focus:** v1.4 — Phase 20: Anchor Program
+**Current focus:** v1.4 — Phase 23: Client UX
 
 ## Current Position
 
 Milestone: v1.4 — N-Player Escrow
-Phase: 22 of 23 (Server Socket Handlers) — COMPLETE
-Plan: 03 of 3 in phase 22 (N-player SHOT milestones + playAgain fixes)
-Status: Phase 22 complete — ready for Phase 23
-Last activity: 28 Feb 2026 — Completed 22-03-PLAN.md (N-player SHOT milestone loops, prestige payload, DB persist, playAgain maxPlayers, wagered rematch escrow, failedSettlements N-player)
+Phase: 23 of 23 (Client UX) — In progress
+Plan: 02 of 3 in phase 23 (N-player pot display fix)
+Status: In progress — 23-02 complete, ready for 23-03
+Last activity: 28 Feb 2026 — Completed 23-02-PLAN.md (BattleScreen potDisplay: wager * numPlayersInMatch replacing hardcoded * 2)
 
-Progress: [████████░░] 80% (8/10 plans)
+Progress: [█████████░] 90% (9/10 plans)
 
 ## Performance Metrics
 
@@ -67,6 +67,7 @@ Progress: [████████░░] 80% (8/10 plans)
 - 22-03: playAgain wagered rematch triggers fresh escrow creation cycle (create PDA, build deposit TXs, escrowDeposit emit, deposit timer with 3-branch partial flow)
 - 22-03: failedSettlements shape changed to allWallets[] — handleSettlementFailure collects all room.players wallets; retry loop uses data.allWallets with backward-compat fallback
 - 22-03: solWonAmt = wagerAmt * room.players.length * 0.9 (not hardcoded * 2) — N-player DB persist loops over all players
+- 23-02: BattleScreen potDisplay uses `wager * numPlayersInMatch` with fallback chain: screenData?.players?.length || screenData?.maxPlayers || 2
 
 ### Pending Todos
 - Run 25-test suite when McAfee exclusion is configured
@@ -81,10 +82,12 @@ Progress: [████████░░] 80% (8/10 plans)
 - main.js is now ~3143 lines — search by function name, not line number
 - Phase 21 COMPLETE: escrow.js N-player API (21-01) + solana.js/main.js caller updates (21-02) done
 - Phase 22 COMPLETE: all 3 plans done — N-player escrow socket handlers fully upgraded
-- Phase 23 (client escrow integration) is next — handle escrowDeposit, escrowPartialDeposit, escrowPartialWaiting, kickedFromRoom, escrowCancelledAll events on client
+- Phase 23 plan 01 COMPLETE: BattleScreen escrow deposit handlers, N-player deposit status overlay, kicked/cancel flows, countdown timer (LobbyScreen + BattleScreen)
+- Phase 23 plan 02 COMPLETE: BattleScreen potDisplay N-player fix (wager * numPlayersInMatch)
+- Phase 23 plan 03 remaining — check 23-03-PLAN.md for remaining client UX items
 
 ## Session Continuity
 
-Last session: 2026-02-28T09:34:51Z
-Stopped at: Completed 22-03-PLAN.md — N-player SHOT milestones, playAgain maxPlayers, wagered rematch escrow, failedSettlements N-player (main.js)
+Last session: 2026-02-28T11:22:44Z
+Stopped at: Completed 23-02-PLAN.md — BattleScreen potDisplay N-player fix (wager * numPlayersInMatch)
 Resume file: None

@@ -1,9 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
-import JupiterSwap from '../components/JupiterSwap';
 import ShareCard from '../components/ShareCard';
-import ShotExplainer from '../components/ShotExplainer';
 import PrestigeIntro from '../components/PrestigeIntro';
 import TelegramShare from '../components/TelegramShare';
 import useSocket from '../hooks/useSocket';
@@ -235,48 +233,16 @@ function LoseScreen({ navigate, screenData }) {
   const [activeTab, setActiveTab] = useState('result');
   const [waitingRematch, setWaitingRematch] = useState(false);
   const [opponentLeft, setOpponentLeft] = useState(false);
-  const [shotPrice, setShotPrice] = useState(null);
-  const [showShotExplainer, setShowShotExplainer] = useState(false);
   const [matchesPlayed, setMatchesPlayed] = useState(0);
   const shareCardRef = useRef(null);
 
-  // Fetch current SHOT price from server (via getShotPrice socket handler)
-  useEffect(() => {
-    const socket = window.socket;
-    if (!socket) return;
-
-    const handlePrice = (price) => {
-      setShotPrice(price);
-    };
-
-    socket.on('shotPrice', handlePrice);
-    socket.emit('getShotPrice');
-
-    return () => {
-      socket.off('shotPrice', handlePrice);
-    };
-  }, []);
-
-  // Increment matches-played counter and conditionally show ShotExplainer
+  // Increment matches-played counter
   useEffect(() => {
     var prev = parseInt(localStorage.getItem('solshot_matches_played') || '0', 10);
     var next = prev + 1;
     localStorage.setItem('solshot_matches_played', String(next));
     setMatchesPlayed(next);
-
-    // Show SHOT explainer once if player earned SHOT and hasn't seen explanation yet
-    var shotEarnedData = screenData?.shotEarned || {};
-    var socketId = window.socket?.id;
-    var earned = socketId && shotEarnedData[socketId] ? shotEarnedData[socketId].earned : 0;
-    if (earned > 0 && !localStorage.getItem('solshot_shot_explained')) {
-      setTimeout(() => setShowShotExplainer(true), 500);
-    }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleShotExplainerClose = useCallback(() => {
-    localStorage.setItem('solshot_shot_explained', 'true');
-    setShowShotExplainer(false);
-  }, []);
 
   const wager = screenData?.wager || 0;
   const scores = screenData?.scores || {};
@@ -496,15 +462,13 @@ function LoseScreen({ navigate, screenData }) {
             </div>
           )}
 
-          {/* Prestige intro nudge — shown when eligible and ShotExplainer not active */}
-          {!showShotExplainer && (
-            <PrestigeIntro
-              currentTier={currentTierName}
-              shotBalance={shotBalance}
-              matchesPlayed={matchesPlayed}
-              onNavigatePrestige={() => navigate('prestige')}
-            />
-          )}
+          {/* Prestige intro nudge */}
+          <PrestigeIntro
+            currentTier={currentTierName}
+            shotBalance={shotBalance}
+            matchesPlayed={matchesPlayed}
+            onNavigatePrestige={() => navigate('prestige')}
+          />
         </div>
       )}
 
@@ -570,35 +534,8 @@ function LoseScreen({ navigate, screenData }) {
             />
           </div>
 
-          {/* Jupiter Swap CTA with price context */}
-          <div style={{ marginTop: 8, textAlign: 'center' }}>
-            <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 11, color: 'var(--kh)', letterSpacing: 1, opacity: 0.6, marginBottom: 4 }}>
-              GET SHOT FOR PRESTIGE UPGRADES
-            </div>
-            {shotPrice && shotPrice.usdPrice && (
-              <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: '#9945FF', letterSpacing: 1, opacity: 0.7, marginBottom: 6 }}>
-                {'SHOT: $' + shotPrice.usdPrice.toFixed(6) + ' USD'}
-                {shotPrice.priceChange24h != null && (
-                  <span style={{ color: shotPrice.priceChange24h >= 0 ? '#00ff88' : '#ff4444', marginLeft: 6 }}>
-                    {shotPrice.priceChange24h >= 0 ? '+' : ''}{shotPrice.priceChange24h.toFixed(1)}%
-                  </span>
-                )}
-              </div>
-            )}
-            <JupiterSwap
-              mode="modal"
-              buttonLabel="SWAP SOL -> SHOT"
-              buttonStyle={{ fontSize: 9, padding: '5px 12px' }}
-              onSuccess={() => {
-                if (window.socket) window.socket.emit('getShotInfo');
-              }}
-            />
-          </div>
         </>
       )}
-
-      {/* SHOT explainer modal — overlay, outside tabs, shown once on first SHOT earn */}
-      <ShotExplainer isOpen={showShotExplainer} onClose={handleShotExplainerClose} />
 
       {/* Opponent left modal — always visible, outside tab conditionals */}
       {opponentLeft && (

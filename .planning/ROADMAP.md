@@ -76,7 +76,7 @@ See: milestones/v1.3-ROADMAP.md for full details.
 
 - [x] **Phase 20: Anchor Program** — Rewrite MatchEscrow for N players (struct, instructions, events, errors)
 - [x] **Phase 21: Server Escrow Services** — Update escrow.js and solana.js service layer for N-player context
-- [ ] **Phase 22: Server Socket Handlers** — Update main.js for N-player escrow flow, partial deposits, tech debt
+- [x] **Phase 22: Server Socket Handlers** — Update main.js for N-player escrow flow, partial deposits, tech debt
 - [ ] **Phase 23: Client UX** — Deposit status, countdown timer, partial deposit UI, pot display, mode unlock
 
 ## Phase Details
@@ -128,9 +128,9 @@ Plans:
 **Plans:** 3 plans
 
 Plans:
-- [ ] 22-01-PLAN.md — N-player escrow orchestration: deposit timeout to 5min, N-player wallet collection, parallel deposit TX dispatch, depositsMask verification, escrowDepositStatus events (SRV-09, SRV-10, SRV-11, SRV-12, SRV-18)
-- [ ] 22-02-PLAN.md — Partial deposit flow: 3-branch timeout (zero/partial/all), escrowPartialDeposit event, escrowPartialStart + escrowCancelAll handlers, wager guard removal (SRV-13, SRV-14, SRV-15, SRV-16)
-- [ ] 22-03-PLAN.md — Tech debt: N-player SHOT milestones + prestige + DB persist, playAgain maxPlayers + escrow re-creation, failedSettlements N-player (DEBT-01, DEBT-02)
+- [x] 22-01-PLAN.md — N-player escrow orchestration: deposit timeout to 5min, N-player wallet collection, parallel deposit TX dispatch, depositsMask verification, escrowDepositStatus events (SRV-09, SRV-10, SRV-11, SRV-12, SRV-18)
+- [x] 22-02-PLAN.md — Partial deposit flow: 3-branch timeout (zero/partial/all), escrowPartialDeposit event, escrowPartialStart + escrowCancelAll handlers, wager guard removal (SRV-13, SRV-14, SRV-15, SRV-16)
+- [x] 22-03-PLAN.md — Tech debt: N-player SHOT milestones + prestige + DB persist, playAgain maxPlayers + escrow re-creation, failedSettlements N-player (DEBT-01, DEBT-02)
 
 ### Phase 23: Client UX
 **Goal:** Players in any wagered room see real-time deposit status for all participants, a countdown timer, and the host can make the partial deposit choice from the lobby; the battle HUD shows the live pot, and all match modes are selectable for 3-4 player rooms.
@@ -161,7 +161,7 @@ Plans:
 | 15-19. 4-Player Multiplayer | v1.3 | 10/10 | Complete | 27 Feb 2026 |
 | 20. Anchor Program | v1.4 | 3/3 | Complete | 27 Feb 2026 |
 | 21. Server Escrow Services | v1.4 | 2/2 | Complete | 28 Feb 2026 |
-| 22. Server Socket Handlers | v1.4 | 0/3 | Not started | - |
+| 22. Server Socket Handlers | v1.4 | 3/3 | Complete | 28 Feb 2026 |
 | 23. Client UX | v1.4 | 0/2 | Not started | - |
 
 ---

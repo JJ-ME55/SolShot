@@ -34,16 +34,16 @@ Requirements for N-player escrow upgrade. Each maps to roadmap phases.
 - [x] **SRV-06**: `solana.js:settleMatch` accepts N-player context (winner from any of N players)
 - [x] **SRV-07**: `solana.js:refundWager` passes all N player addresses for cancel
 - [x] **SRV-08**: `solana.js:calculateSettlement` uses `wager * playerCount` for total pot (not `wager * 2`)
-- [ ] **SRV-09**: `main.js` creates escrow with all `room.players` wallets on room-full (not just host+player)
-- [ ] **SRV-10**: `main.js` sends deposit TX to all N players in parallel on escrow creation
-- [ ] **SRV-11**: `main.js` tracks N deposit confirmations; emits `escrowActive` when all confirmed
-- [ ] **SRV-12**: `main.js` deposit timeout set to 5 minutes (300,000ms)
-- [ ] **SRV-13**: `main.js` on deposit timeout with partial deposits: emits `escrowPartialDeposit` to host with depositor list
-- [ ] **SRV-14**: `main.js` handles host `escrowPartialStart` choice — calls `start_with_depositors` on-chain, kicks non-depositors, starts match
-- [ ] **SRV-15**: `main.js` handles host `escrowCancelAll` choice — calls `cancel_match`, refunds all, returns to lobby
-- [ ] **SRV-16**: SYS-08 wager guard removed — 3-4 player wagered matches allowed
+- [x] **SRV-09**: `main.js` creates escrow with all `room.players` wallets on room-full (not just host+player)
+- [x] **SRV-10**: `main.js` sends deposit TX to all N players in parallel on escrow creation
+- [x] **SRV-11**: `main.js` tracks N deposit confirmations; emits `escrowActive` when all confirmed
+- [x] **SRV-12**: `main.js` deposit timeout set to 5 minutes (300,000ms)
+- [x] **SRV-13**: `main.js` on deposit timeout with partial deposits: emits `escrowPartialDeposit` to host with depositor list
+- [x] **SRV-14**: `main.js` handles host `escrowPartialStart` choice — calls `start_with_depositors` on-chain, kicks non-depositors, starts match
+- [x] **SRV-15**: `main.js` handles host `escrowCancelAll` choice — calls `cancel_match`, refunds all, returns to lobby
+- [x] **SRV-16**: SYS-08 wager guard removed — 3-4 player wagered matches allowed
 - [x] **SRV-17**: IDL synced from `target/idl/` to `server/idl/solshot_escrow.json` after program rebuild
-- [ ] **SRV-18**: `escrowDepositStatus` socket event emitted after each confirmed deposit (shows "2/4 deposited")
+- [x] **SRV-18**: `escrowDepositStatus` socket event emitted after each confirmed deposit (shows "2/4 deposited")
 
 ### Client UX
 
@@ -58,8 +58,8 @@ Requirements for N-player escrow upgrade. Each maps to roadmap phases.
 
 ### Tech Debt
 
-- [ ] **DEBT-01**: SHOT milestone recording covers all N players (not just players[0] and players[1])
-- [ ] **DEBT-02**: `playAgain` / `resetForPlayAgain` passes `maxPlayers` to `createMatchState`
+- [x] **DEBT-01**: SHOT milestone recording covers all N players (not just players[0] and players[1])
+- [x] **DEBT-02**: `playAgain` / `resetForPlayAgain` passes `maxPlayers` to `createMatchState`
 
 ## v2 Requirements
 
@@ -117,16 +117,16 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SRV-06 | Phase 21 | Complete |
 | SRV-07 | Phase 21 | Complete |
 | SRV-08 | Phase 21 | Complete |
-| SRV-09 | Phase 22 | Pending |
-| SRV-10 | Phase 22 | Pending |
-| SRV-11 | Phase 22 | Pending |
-| SRV-12 | Phase 22 | Pending |
-| SRV-13 | Phase 22 | Pending |
-| SRV-14 | Phase 22 | Pending |
-| SRV-15 | Phase 22 | Pending |
-| SRV-16 | Phase 22 | Pending |
+| SRV-09 | Phase 22 | Complete |
+| SRV-10 | Phase 22 | Complete |
+| SRV-11 | Phase 22 | Complete |
+| SRV-12 | Phase 22 | Complete |
+| SRV-13 | Phase 22 | Complete |
+| SRV-14 | Phase 22 | Complete |
+| SRV-15 | Phase 22 | Complete |
+| SRV-16 | Phase 22 | Complete |
 | SRV-17 | Phase 21 | Complete |
-| SRV-18 | Phase 22 | Pending |
+| SRV-18 | Phase 22 | Complete |
 | CLT-01 | Phase 23 | Pending |
 | CLT-02 | Phase 23 | Pending |
 | CLT-03 | Phase 23 | Pending |
@@ -135,8 +135,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CLT-06 | Phase 23 | Pending |
 | CLT-07 | Phase 23 | Pending |
 | CLT-08 | Phase 23 | Pending |
-| DEBT-01 | Phase 22 | Pending |
-| DEBT-02 | Phase 22 | Pending |
+| DEBT-01 | Phase 22 | Complete |
+| DEBT-02 | Phase 22 | Complete |
 
 **Coverage:**
 - v1.4 requirements: 42 total
@@ -145,4 +145,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-02-27*
-*Last updated: 2026-02-28 — Phase 20 (ESC-01 through ESC-14) and Phase 21 (SRV-01 through SRV-08, SRV-17) marked Complete*
+*Last updated: 2026-02-28 — Phase 22 (SRV-09 through SRV-16, SRV-18, DEBT-01, DEBT-02) marked Complete*

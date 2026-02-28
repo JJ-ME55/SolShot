@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 27 Feb 2026)
 ## Current Position
 
 Milestone: v1.4 — N-Player Escrow
-Phase: 21 of 23 (Server Escrow Services) — Phase complete
-Plan: 02 of 2 in phase 21 (Caller update — solana.js + main.js)
-Status: Phase 21 complete — ready for phase 22
-Last activity: 28 Feb 2026 — Completed 21-02-PLAN.md (N-player caller update)
+Phase: 22 of 23 (Server Socket Handlers) — In progress
+Plan: 01 of 3 in phase 22 (N-player escrow socket handler upgrade)
+Status: In progress — 22-01 complete, ready for 22-02
+Last activity: 28 Feb 2026 — Completed 22-01-PLAN.md (N-player escrow upgrade in main.js)
 
-Progress: [█████░░░░░] 50% (5/10 plans)
+Progress: [██████░░░░] 60% (6/10 plans)
 
 ## Performance Metrics
 
@@ -58,6 +58,8 @@ Progress: [█████░░░░░] 50% (5/10 plans)
 - solana.js re-exports startWithDepositorsEscrow for callers
 - main.js: all cancelMatchEscrow/createMatchEscrow/refundWager call sites use array form with .filter(Boolean)
 - main.js: totalPot display uses room?.players?.length || 2 (not hardcoded * 2)
+- 22-01: DEPOSIT_TIMEOUT_MS = 300_000 (5 min); joinRoom+joinQueue use room.players.map() for wallet collection; escrowDepositConfirm uses depositsMask bitmask (1 << playerIndex); firstDepositorSocketId tracked for Phase 22-02; escrowDepositStatus event emitted after each deposit
+- 22-01: escrowDepositStatus shape: {roomId, deposits:[{socketId, wallet, confirmed}], numDeposited, totalPlayers}
 
 ### Pending Todos
 - Run 25-test suite when McAfee exclusion is configured
@@ -75,6 +77,6 @@ Progress: [█████░░░░░] 50% (5/10 plans)
 
 ## Session Continuity
 
-Last session: 2026-02-28T07:14:26Z
-Stopped at: Completed 21-02-PLAN.md — N-player caller update (solana.js settleMatch/refundWager, main.js all 8 escrow call sites)
+Last session: 2026-02-28T09:19:48Z
+Stopped at: Completed 22-01-PLAN.md — N-player escrow socket handler upgrade (main.js)
 Resume file: None

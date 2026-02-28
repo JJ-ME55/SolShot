@@ -9,10 +9,17 @@ See: .planning/PROJECT.md (updated 28 Feb 2026)
 ## Current Position
 
 Milestone: v2.0 — Practice Mode Public Launch
-Phase: Not started (defining requirements)
+Phase: 24 — Handle System
 Plan: —
-Status: Defining requirements
-Last activity: 28 Feb 2026 — Milestone v2.0 started
+Status: Roadmap complete, ready to plan Phase 24
+Last activity: 28 Feb 2026 — v2.0 roadmap created (5 phases, 22 requirements)
+
+```
+Phase: [24][25][26][27][28]
+        [  ][  ][  ][  ][  ]
+         ^
+         current
+```
 
 ## Performance Metrics
 
@@ -24,6 +31,8 @@ Last activity: 28 Feb 2026 — Milestone v2.0 started
 - v1.4 plans completed: 10 (across 4 phases)
 
 **Total across all milestones:** 75 plans, 28 phases
+
+**v2.0 so far:** 0 plans, 0 phases complete
 
 ## Accumulated Context
 
@@ -37,6 +46,13 @@ Last activity: 28 Feb 2026 — Milestone v2.0 started
 - Handle system for identity (not wallet) — zero friction onboarding
 - Token masking: hide all SHOT/Jupiter/prestige references until wagering goes live
 - DO NOT TOUCH: server files, escrow.js, solana.js, shot-token.js, battle logic, wager logic
+
+### v2.0 Phase Decisions
+- Phase 24 delivers the handle modal + localStorage identity before any other screen is reachable
+- Phase 25 clusters all token suppression (ticker, WinScreen, ShotExplainer, SHOT text) with menu copy changes — same "hide wagering layer" intent
+- Phase 26 locks the lobby to 2-player practice only — separate phase because it is a distinct screen with distinct component changes
+- Phase 27 adds the localStorage stats service keyed by solshot_uid — no UI, pure data layer, designed for future Barracks migration
+- Phase 28 delivers the /how-to-play route as a new standalone page — last because it has no blockers beyond handle display and token masking
 
 ### Pending Todos
 - Run 25-test suite when McAfee exclusion is configured
@@ -54,5 +70,6 @@ Last activity: 28 Feb 2026 — Milestone v2.0 started
 ## Session Continuity
 
 Last session: 2026-02-28
-Stopped at: v1.4 milestone archived — ready for next milestone
+Stopped at: v2.0 roadmap created — ready to plan Phase 24 (Handle System)
 Resume file: None
+Next command: /gsd:plan-phase 24

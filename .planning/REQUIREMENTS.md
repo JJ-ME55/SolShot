@@ -88,35 +88,35 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| HANDLE-01 | — | Pending |
-| HANDLE-02 | — | Pending |
-| HANDLE-03 | — | Pending |
-| HANDLE-04 | — | Pending |
-| HANDLE-05 | — | Pending |
-| MENU-01 | — | Pending |
-| MENU-02 | — | Pending |
-| MENU-03 | — | Pending |
-| MASK-01 | — | Pending |
-| MASK-02 | — | Pending |
-| MASK-03 | — | Pending |
-| MASK-04 | — | Pending |
-| LOBBY-01 | — | Pending |
-| LOBBY-02 | — | Pending |
-| STATS-01 | — | Pending |
-| STATS-02 | — | Pending |
-| STATS-03 | — | Pending |
-| HTP-01 | — | Pending |
-| HTP-02 | — | Pending |
-| HTP-03 | — | Pending |
-| HTP-04 | — | Pending |
-| HTP-05 | — | Pending |
-| HTP-06 | — | Pending |
+| HANDLE-01 | Phase 24 | Pending |
+| HANDLE-02 | Phase 24 | Pending |
+| HANDLE-03 | Phase 24 | Pending |
+| HANDLE-04 | Phase 24 | Pending |
+| HANDLE-05 | Phase 24 | Pending |
+| MENU-01 | Phase 25 | Pending |
+| MENU-02 | Phase 25 | Pending |
+| MENU-03 | Phase 25 | Pending |
+| MASK-01 | Phase 25 | Pending |
+| MASK-02 | Phase 25 | Pending |
+| MASK-03 | Phase 25 | Pending |
+| MASK-04 | Phase 25 | Pending |
+| LOBBY-01 | Phase 26 | Pending |
+| LOBBY-02 | Phase 26 | Pending |
+| STATS-01 | Phase 27 | Pending |
+| STATS-02 | Phase 27 | Pending |
+| STATS-03 | Phase 27 | Pending |
+| HTP-01 | Phase 28 | Pending |
+| HTP-02 | Phase 28 | Pending |
+| HTP-03 | Phase 28 | Pending |
+| HTP-04 | Phase 28 | Pending |
+| HTP-05 | Phase 28 | Pending |
+| HTP-06 | Phase 28 | Pending |
 
 **Coverage:**
 - v2.0 requirements: 22 total
-- Mapped to phases: 0
-- Unmapped: 22
+- Mapped to phases: 22
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-28*
-*Last updated: 2026-02-28 after initial definition*
+*Last updated: 2026-02-28 — traceability mapped to Phases 24-28*

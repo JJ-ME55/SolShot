@@ -5,6 +5,7 @@ import ShareCard from '../components/ShareCard';
 import PrestigeIntro from '../components/PrestigeIntro';
 import TelegramShare from '../components/TelegramShare';
 import useSocket from '../hooks/useSocket';
+import { updatePracticeStats } from '../utils/practiceStats';
 
 /* ── styles ── */
 const s = {
@@ -236,18 +237,27 @@ function LoseScreen({ navigate, screenData }) {
   const [matchesPlayed, setMatchesPlayed] = useState(0);
   const shareCardRef = useRef(null);
 
-  // Increment matches-played counter
+  const wager = screenData?.wager || 0;
+  const scores = screenData?.scores || {};
+  const roundWins = screenData?.roundWins || {};
+  const myId = window.socket?.id;
+
+  // Record practice stats + increment matches-played counter
   useEffect(() => {
     var prev = parseInt(localStorage.getItem('solshot_matches_played') || '0', 10);
     var next = prev + 1;
     localStorage.setItem('solshot_matches_played', String(next));
     setMatchesPlayed(next);
+
+    // Phase 27: Record loss stats
+    const myKills = scores[myId]?.kills || 0;
+    const roundsPlayed = screenData?.round || 1;
+    const myRoundWins = myId && roundWins[myId] ? roundWins[myId] : 0;
+    const myDeaths = roundsPlayed - myRoundWins;
+    const myDamage = scores[myId]?.damageDealt || 0;
+    updatePracticeStats({ outcome: 'loss', kills: myKills, deaths: myDeaths, damageDealt: myDamage });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const wager = screenData?.wager || 0;
-  const scores = screenData?.scores || {};
-  const roundWins = screenData?.roundWins || {};
-  const myId = window.socket?.id;
   const myGold = screenData?.goldBalance && myId ? screenData.goldBalance[myId] : 0;
 
   // Derive opponent ID from roundWins keys

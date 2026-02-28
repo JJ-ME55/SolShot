@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 27 Feb 2026)
 ## Current Position
 
 Milestone: v1.4 — N-Player Escrow
-Phase: 22 of 23 (Server Socket Handlers) — In progress
-Plan: 02 of 3 in phase 22 (Partial deposit decision flow)
-Status: In progress — 22-02 complete, ready for 22-03
-Last activity: 28 Feb 2026 — Completed 22-02-PLAN.md (Partial deposit flow, escrowPartialStart, escrowCancelAll, wager guard removal)
+Phase: 22 of 23 (Server Socket Handlers) — COMPLETE
+Plan: 03 of 3 in phase 22 (N-player SHOT milestones + playAgain fixes)
+Status: Phase 22 complete — ready for Phase 23
+Last activity: 28 Feb 2026 — Completed 22-03-PLAN.md (N-player SHOT milestone loops, prestige payload, DB persist, playAgain maxPlayers, wagered rematch escrow, failedSettlements N-player)
 
-Progress: [███████░░░] 70% (7/10 plans)
+Progress: [████████░░] 80% (8/10 plans)
 
 ## Performance Metrics
 
@@ -62,6 +62,11 @@ Progress: [███████░░░] 70% (7/10 plans)
 - 22-01: escrowDepositStatus shape: {roomId, deposits:[{socketId, wallet, confirmed}], numDeposited, totalPlayers}
 - 22-02: 3-branch deposit timeout (all/zero/partial); partialDecisionMaker tracked in wagerStates; 30s decision timer reuses depositTimers[roomId]; escrowPartialStart kicks non-depositors + compacts room; escrowCancelAll preserves room; wager guard removed (SRV-16)
 - 22-02: cancelMatchEscrow wallet order always from room.players.filter().map() (not Object.keys); kickedSocket.leave() before room.players compact; escrowCancelAll resets deposit state without destroying room
+- 22-03: DEBT-01 fixed: recordMatchPlayed loops over all room.players (not hardcoded hostId/playerId) for match-end + forfeit paths; prestige+milestones in matchEndPayload keyed by socketId for all N players
+- 22-03: DEBT-02 fixed: createMatchState(roomId, paRoundType, room.players.length) in resetForPlayAgain; wagerStates preserved (amount+wallets kept, deposits cleared) for wagered rematches
+- 22-03: playAgain wagered rematch triggers fresh escrow creation cycle (create PDA, build deposit TXs, escrowDeposit emit, deposit timer with 3-branch partial flow)
+- 22-03: failedSettlements shape changed to allWallets[] — handleSettlementFailure collects all room.players wallets; retry loop uses data.allWallets with backward-compat fallback
+- 22-03: solWonAmt = wagerAmt * room.players.length * 0.9 (not hardcoded * 2) — N-player DB persist loops over all players
 
 ### Pending Todos
 - Run 25-test suite when McAfee exclusion is configured
@@ -73,12 +78,13 @@ Progress: [███████░░░] 70% (7/10 plans)
 ### Blockers/Concerns
 - McAfee blocks solana-test-validator on Windows — tests need exclusion
 - Devnet wallet at 0.97 SOL — need ~2.12 SOL to redeploy program with v1.4 instructions
-- main.js is ~2870 lines — search by function name, not line number
+- main.js is now ~3143 lines — search by function name, not line number
 - Phase 21 COMPLETE: escrow.js N-player API (21-01) + solana.js/main.js caller updates (21-02) done
-- Phase 22 (client escrow integration) is next — no server-side blockers remain
+- Phase 22 COMPLETE: all 3 plans done — N-player escrow socket handlers fully upgraded
+- Phase 23 (client escrow integration) is next — handle escrowDeposit, escrowPartialDeposit, escrowPartialWaiting, kickedFromRoom, escrowCancelledAll events on client
 
 ## Session Continuity
 
-Last session: 2026-02-28T09:26:14Z
-Stopped at: Completed 22-02-PLAN.md — Partial deposit decision flow + wager guard removal (main.js)
+Last session: 2026-02-28T09:34:51Z
+Stopped at: Completed 22-03-PLAN.md — N-player SHOT milestones, playAgain maxPlayers, wagered rematch escrow, failedSettlements N-player (main.js)
 Resume file: None

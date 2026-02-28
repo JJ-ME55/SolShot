@@ -17,6 +17,7 @@ import LoseScreen from './screens/LoseScreen';
 import ArmoryScreen from './screens/ArmoryScreen';
 import PrestigeScreen from './screens/PrestigeScreen';
 import BarracksScreen from './screens/BarracksScreen';
+import HowToPlayScreen from './screens/HowToPlayScreen';
 import HandleModal from './components/HandleModal';
 
 // A8: Socket bridge for Phaser scenes — non-enumerable to reduce XSS discovery surface
@@ -146,6 +147,8 @@ function AppInner() {
         return <PrestigeScreen navigate={navigate} />;
       case 'barracks':
         return <BarracksScreen navigate={navigate} />;
+      case 'howtoplay':
+        return <HowToPlayScreen navigate={navigate} />;
       default:
         return <MenuScreen navigate={navigate} />;
     }

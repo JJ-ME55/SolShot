@@ -241,6 +241,26 @@ function MenuScreen({ navigate }) {
         ))}
       </div>
 
+      {/* How To Play link */}
+      <div
+        onClick={() => navigate('howtoplay')}
+        style={{
+          fontFamily: "'Share Tech Mono', monospace",
+          fontSize: 13,
+          color: 'var(--kh)',
+          letterSpacing: 2,
+          cursor: 'pointer',
+          opacity: 0.6,
+          marginBottom: 12,
+          zIndex: 1,
+          transition: 'opacity 0.15s, color 0.15s',
+        }}
+        onMouseEnter={(e) => { e.target.style.opacity = '1'; e.target.style.color = 'var(--rg)'; }}
+        onMouseLeave={(e) => { e.target.style.opacity = '0.6'; e.target.style.color = 'var(--kh)'; }}
+      >
+        HOW TO PLAY
+      </div>
+
       {/* Telegram user badge (when in Telegram) */}
       {isTelegram && tgUser && (
         <div style={{

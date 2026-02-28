@@ -649,15 +649,36 @@ function LobbyScreen({ navigate }) {
           <div>
             <div style={s.sectionLabel}>MODE</div>
             <div style={s.modeRow}>
-              {MODE_KEYS.map((key) => (
-                <div
-                  key={key}
-                  style={s.modeBtn(matchMode === key, MATCH_MODES[key].color)}
-                  onClick={() => setMatchMode(key)}
-                >
-                  {MATCH_MODES[key].label}
-                </div>
-              ))}
+              {MODE_KEYS.map((key) => {
+                const locked = key !== 'practice';
+                return (
+                  <div
+                    key={key}
+                    style={{
+                      ...s.modeBtn(matchMode === key, MATCH_MODES[key].color),
+                      ...(locked ? { opacity: 0.4, cursor: 'not-allowed', position: 'relative' } : {}),
+                    }}
+                    onClick={locked ? undefined : () => setMatchMode(key)}
+                  >
+                    {MATCH_MODES[key].label}
+                    {locked && (
+                      <span style={{
+                        position: 'absolute',
+                        top: -7,
+                        right: -4,
+                        fontFamily: "'Share Tech Mono', monospace",
+                        fontSize: 8,
+                        letterSpacing: 0.5,
+                        color: 'var(--bn)',
+                        background: 'var(--sd)',
+                        border: '1px solid var(--st)',
+                        borderRadius: 2,
+                        padding: '1px 4px',
+                      }}>SOON</span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
             {matchMode === 'practice' && (
               <div style={{
@@ -669,7 +690,7 @@ function LobbyScreen({ navigate }) {
                 marginTop: 4,
                 textTransform: 'uppercase',
               }}>
-                PRACTICE FREE. EARN SHOT. WAGER WHEN READY.
+                FREE PRACTICE MODE
               </div>
             )}
           </div>
@@ -690,21 +711,7 @@ function LobbyScreen({ navigate }) {
             </div>
           </div>
 
-          {/* Player Count */}
-          <div>
-            <div style={s.sectionLabel}>PLAYERS</div>
-            <div style={s.matchRow}>
-              {[2, 3, 4].map((n) => (
-                <div
-                  key={n}
-                  style={s.matchBtn(numPlayers === n)}
-                  onClick={() => setNumPlayers(n)}
-                >
-                  {n + 'P'}
-                </div>
-              ))}
-            </div>
-          </div>
+          {/* Player Count — hidden for practice-only launch */}
 
           {/* Wager */}
           {isCustomMode ? (

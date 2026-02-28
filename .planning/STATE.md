@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 27 Feb 2026)
 
 Milestone: v1.4 — N-Player Escrow
 Phase: 23 of 23 (Client UX) — In progress
-Plan: 02 of 3 in phase 23 (N-player pot display fix)
-Status: In progress — 23-02 complete, ready for 23-03
-Last activity: 28 Feb 2026 — Completed 23-02-PLAN.md (BattleScreen potDisplay: wager * numPlayersInMatch replacing hardcoded * 2)
+Plan: 01 of 3 in phase 23 (LobbyScreen deposit UX)
+Status: In progress — 23-01 complete, ready for 23-02 or 23-03
+Last activity: 28 Feb 2026 — Completed 23-01-PLAN.md (LobbyScreen deposit badges, countdown timer, partial decision UI, kick modal, N-player pot math)
 
 Progress: [█████████░] 90% (9/10 plans)
 
@@ -67,6 +67,9 @@ Progress: [█████████░] 90% (9/10 plans)
 - 22-03: playAgain wagered rematch triggers fresh escrow creation cycle (create PDA, build deposit TXs, escrowDeposit emit, deposit timer with 3-branch partial flow)
 - 22-03: failedSettlements shape changed to allWallets[] — handleSettlementFailure collects all room.players wallets; retry loop uses data.allWallets with backward-compat fallback
 - 22-03: solWonAmt = wagerAmt * room.players.length * 0.9 (not hardcoded * 2) — N-player DB persist loops over all players
+- 23-01: clearDepositState pattern: extract shared cleanup into useCallback, call from every terminal event handler (escrowActive, escrowCancelledAll, escrowDepositTimeout, kickedFromRoom, startPick, opponentLeft)
+- 23-01: formatWagerWithPayout accepts players=2 default; pot = amount * players; call site passes room.maxPlayers || 2
+- 23-01: Countdown timer uses server depositDeadlineMs timestamp (not client Date.now() + duration) to avoid clock skew
 - 23-02: BattleScreen potDisplay uses `wager * numPlayersInMatch` with fallback chain: screenData?.players?.length || screenData?.maxPlayers || 2
 
 ### Pending Todos
@@ -82,12 +85,12 @@ Progress: [█████████░] 90% (9/10 plans)
 - main.js is now ~3143 lines — search by function name, not line number
 - Phase 21 COMPLETE: escrow.js N-player API (21-01) + solana.js/main.js caller updates (21-02) done
 - Phase 22 COMPLETE: all 3 plans done — N-player escrow socket handlers fully upgraded
-- Phase 23 plan 01 COMPLETE: BattleScreen escrow deposit handlers, N-player deposit status overlay, kicked/cancel flows, countdown timer (LobbyScreen + BattleScreen)
-- Phase 23 plan 02 COMPLETE: BattleScreen potDisplay N-player fix (wager * numPlayersInMatch)
+- Phase 23 plan 01 COMPLETE: LobbyScreen deposit badges, countdown timer, partial decision UI, kick modal, N-player pot math (formatWagerWithPayout)
+- Phase 23 plan 02 COMPLETE (prior session): BattleScreen potDisplay N-player fix (wager * numPlayersInMatch)
 - Phase 23 plan 03 remaining — check 23-03-PLAN.md for remaining client UX items
 
 ## Session Continuity
 
-Last session: 2026-02-28T11:22:44Z
-Stopped at: Completed 23-02-PLAN.md — BattleScreen potDisplay N-player fix (wager * numPlayersInMatch)
+Last session: 2026-02-28T11:26:19Z
+Stopped at: Completed 23-01-PLAN.md — LobbyScreen N-player escrow deposit UX (badges, countdown, partial decision, kick modal, pot math)
 Resume file: None

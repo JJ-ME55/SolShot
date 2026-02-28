@@ -521,7 +521,7 @@ function startTurnTimer(io, roomId) {
             transitionState(ms, MATCH_STATES.SETTLING)
 
             // Settle wager if applicable
-            // settleMatch signature: settleMatch(winnerAddress, loserAddress, wagerSOL, matchId)
+            // settleMatch signature: settleMatch(winnerAddress, loserAddress, wagerSOL, matchId, playerCount)
             // Must use wallet addresses from wagerStates — NOT socketIds
             let settlementSucceeded = true
             const wsState = wagerStates[roomId]
@@ -533,7 +533,7 @@ function startTurnTimer(io, roomId) {
                     const roomSnapshot = room ? { players: room.players, escrowPDA: room.escrowPDA } : null
                     const wsSnapshot = wsState ? { amount: wsState.amount, wallets: { ...wsState.wallets } } : null
                     try {
-                        const result = await settleMatch(winnerWallet, loserWallet, wsState.amount, roomId)
+                        const result = await settleMatch(winnerWallet, loserWallet, wsState.amount, roomId, room?.players?.length || 2)
                         // SF-02: Check for propagated failure
                         if (!result.success) {
                             settlementSucceeded = false
@@ -817,11 +817,10 @@ const mainsocket = (io) => {
                             }
 
                             if (shouldRefund) {
-                                const p1w = ws.wallets[room.players?.[0]?.socketId]
-                                const p2w = ws.wallets[room.players?.[1]?.socketId]
-                                if (p1w && p2w && isEscrowEnabled()) {
+                                const allRefundWallets = room.players.map(p => ws.wallets[p.socketId]).filter(Boolean)
+                                if (allRefundWallets.length >= 2 && isEscrowEnabled()) {
                                     try {
-                                        await cancelMatchEscrow(roomId, [p1w, p2w].filter(Boolean))
+                                        await cancelMatchEscrow(roomId, allRefundWallets)
                                         console.log(`[Solana] Even disconnect refund (${reason}): room ${roomId}`)
                                     } catch (err) {
                                         console.error(`[Solana] Even disconnect refund failed:`, err.message)
@@ -837,7 +836,7 @@ const mainsocket = (io) => {
                                 }
                             } else {
                                 try {
-                                    const settlementResult = await settleMatch(winnerWallet, loserWallet, ws.amount, roomId)
+                                    const settlementResult = await settleMatch(winnerWallet, loserWallet, ws.amount, roomId, room?.players?.length || 2)
                                     // SF-02: Check for propagated failure
                                     if (!settlementResult.success) {
                                         console.error(`[Solana] Forfeit settlement failed (${reason}):`, settlementResult.error)
@@ -875,9 +874,7 @@ const mainsocket = (io) => {
                     const wallet = ws.wallets[client.id]
                     if (wallet && ws.amount > 0) {
                         const allWallets = Object.values(ws.wallets).filter(Boolean)
-                        const p1w = allWallets[0] || null
-                        const p2w = allWallets[1] || null
-                        await refundWager(wallet, ws.amount, roomId, [p1w, p2w].filter(Boolean))
+                        await refundWager(wallet, ws.amount, roomId, allWallets)
                     }
                 }
             }
@@ -2669,7 +2666,7 @@ const mainsocket = (io) => {
                                 const roomSnapData = roomSnap ? { players: roomSnap.players, escrowPDA: roomSnap.escrowPDA } : null
                                 const wsSnapData = ws ? { amount: ws.amount, wallets: { ...ws.wallets } } : null
                                 try {
-                                    const sResult = await settleMatch(winnerWallet, loserWallet, ws.amount, roomId)
+                                    const sResult = await settleMatch(winnerWallet, loserWallet, ws.amount, roomId, roomSnap?.players?.length || 2)
                                     // SF-02: Check for propagated failure
                                     if (!sResult.success) {
                                         console.error('[Solana] Settlement returned failure:', sResult.error)

@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 27 Feb 2026)
 
 Milestone: v1.4 — N-Player Escrow
 Phase: 22 of 23 (Server Socket Handlers) — In progress
-Plan: 01 of 3 in phase 22 (N-player escrow socket handler upgrade)
-Status: In progress — 22-01 complete, ready for 22-02
-Last activity: 28 Feb 2026 — Completed 22-01-PLAN.md (N-player escrow upgrade in main.js)
+Plan: 02 of 3 in phase 22 (Partial deposit decision flow)
+Status: In progress — 22-02 complete, ready for 22-03
+Last activity: 28 Feb 2026 — Completed 22-02-PLAN.md (Partial deposit flow, escrowPartialStart, escrowCancelAll, wager guard removal)
 
-Progress: [██████░░░░] 60% (6/10 plans)
+Progress: [███████░░░] 70% (7/10 plans)
 
 ## Performance Metrics
 
@@ -60,6 +60,8 @@ Progress: [██████░░░░] 60% (6/10 plans)
 - main.js: totalPot display uses room?.players?.length || 2 (not hardcoded * 2)
 - 22-01: DEPOSIT_TIMEOUT_MS = 300_000 (5 min); joinRoom+joinQueue use room.players.map() for wallet collection; escrowDepositConfirm uses depositsMask bitmask (1 << playerIndex); firstDepositorSocketId tracked for Phase 22-02; escrowDepositStatus event emitted after each deposit
 - 22-01: escrowDepositStatus shape: {roomId, deposits:[{socketId, wallet, confirmed}], numDeposited, totalPlayers}
+- 22-02: 3-branch deposit timeout (all/zero/partial); partialDecisionMaker tracked in wagerStates; 30s decision timer reuses depositTimers[roomId]; escrowPartialStart kicks non-depositors + compacts room; escrowCancelAll preserves room; wager guard removed (SRV-16)
+- 22-02: cancelMatchEscrow wallet order always from room.players.filter().map() (not Object.keys); kickedSocket.leave() before room.players compact; escrowCancelAll resets deposit state without destroying room
 
 ### Pending Todos
 - Run 25-test suite when McAfee exclusion is configured
@@ -77,6 +79,6 @@ Progress: [██████░░░░] 60% (6/10 plans)
 
 ## Session Continuity
 
-Last session: 2026-02-28T09:19:48Z
-Stopped at: Completed 22-01-PLAN.md — N-player escrow socket handler upgrade (main.js)
+Last session: 2026-02-28T09:26:14Z
+Stopped at: Completed 22-02-PLAN.md — Partial deposit decision flow + wager guard removal (main.js)
 Resume file: None

@@ -36,8 +36,25 @@ function AppInner() {
   // Phase 24: Persistent handle identity — blocks menu until set
   const [handle, setHandle] = useState(() => localStorage.getItem('solshot_handle'));
 
-  const handleHandleComplete = useCallback((h) => {
+  const handleHandleComplete = useCallback((h, uid) => {
     setHandle(h);
+    if (window.socket?.connected) {
+      window.socket.emit('registerIdentity', { uid, handle: h });
+    }
+  }, []);
+
+  // Phase 28: Send practice identity to server on socket connect
+  useEffect(() => {
+    const sock = window.socket;
+    if (!sock) return;
+    const sendIdentity = () => {
+      const uid = localStorage.getItem('solshot_uid');
+      const h = localStorage.getItem('solshot_handle');
+      if (uid) sock.emit('registerIdentity', { uid, handle: h });
+    };
+    sock.on('connect', sendIdentity);
+    if (sock.connected) sendIdentity();
+    return () => sock.off('connect', sendIdentity);
   }, []);
 
   // CS-04: Use wallet adapter hook directly for rejoin logic (avoids window.solWallet)

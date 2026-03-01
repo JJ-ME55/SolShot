@@ -3,9 +3,18 @@ import mongoose from 'mongoose';
 const userSchema = new mongoose.Schema({
     walletAddress: {
         type: String,
-        required: true,
         unique: true,
+        sparse: true,
         index: true
+    },
+    uid: {
+        type: String,
+        unique: true,
+        sparse: true,
+    },
+    handle: {
+        type: String,
+        default: ''
     },
     username: {
         type: String,

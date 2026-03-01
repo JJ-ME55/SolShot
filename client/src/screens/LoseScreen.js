@@ -1,11 +1,10 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
 import ShareCard from '../components/ShareCard';
 
 import TelegramShare from '../components/TelegramShare';
 import useSocket from '../hooks/useSocket';
-import { updatePracticeStats } from '../utils/practiceStats';
 
 /* ── styles ── */
 const s = {
@@ -234,24 +233,12 @@ function LoseScreen({ navigate, screenData }) {
   const [activeTab, setActiveTab] = useState('result');
   const [waitingRematch, setWaitingRematch] = useState(false);
   const [opponentLeft, setOpponentLeft] = useState(false);
-  const [matchesPlayed, setMatchesPlayed] = useState(0);
   const shareCardRef = useRef(null);
 
   const wager = screenData?.wager || 0;
   const scores = screenData?.scores || {};
   const roundWins = screenData?.roundWins || {};
   const myId = window.socket?.id;
-
-  // Record practice stats
-  useEffect(() => {
-    const myKills = scores[myId]?.kills || 0;
-    const roundsPlayed = screenData?.round || 1;
-    const myRoundWins = myId && roundWins[myId] ? roundWins[myId] : 0;
-    const myDeaths = roundsPlayed - myRoundWins;
-    const myDamage = scores[myId]?.damageDealt || 0;
-    const updated = updatePracticeStats({ outcome: 'loss', kills: myKills, deaths: myDeaths, damageDealt: myDamage });
-    setMatchesPlayed(updated.matchesPlayed);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const myGold = screenData?.goldBalance && myId ? screenData.goldBalance[myId] : 0;
 

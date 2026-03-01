@@ -50,6 +50,9 @@ var wagerStates = {}
 // Authenticated wallets keyed by socketId → walletAddress
 var authenticatedWallets = {}
 
+// Practice identity keyed by socketId → { uid, handle }
+var playerUids = {}
+
 // Disconnect/reconnect: pending timers keyed by walletAddress
 var disconnectTimers = {}
 // Pending reconnect info keyed by walletAddress → { roomId, isHost, socketId (old), name, color }
@@ -738,6 +741,21 @@ const mainsocket = (io) => {
             client.emit('authResult', result)
         })
 
+        // === PRACTICE IDENTITY (Phase 28) ===
+        client.on('registerIdentity', ({ uid, handle }) => {
+            if (!uid || typeof uid !== 'string' || uid.length < 10) return
+            playerUids[client.id] = { uid, handle: (handle || '').slice(0, 16) }
+
+            // Upsert user record in DB (fire-and-forget)
+            if (isDbConnected()) {
+                User.findOneAndUpdate(
+                    { uid },
+                    { $set: { handle: (handle || '').slice(0, 16), lastActive: new Date() } },
+                    { upsert: true }
+                ).catch(err => console.error('[Identity] upsert error:', err.message))
+            }
+        })
+
 
         // O5: Shared cleanup — handles forfeit settlement, room teardown, and client reset
         // Used by both disconnect and leaveRoom to eliminate duplicate logic
@@ -974,11 +992,13 @@ const mainsocket = (io) => {
                     }
                     await cleanupRoom(fakeClient, io, 'reconnect_timeout')
                     delete authenticatedWallets[client.id]
+                    delete playerUids[client.id]
                 }, RECONNECT_WINDOW_MS)
             } else {
                 // No reconnect window — immediate cleanup (lobby, no wallet, etc.)
                 await cleanupRoom(client, io, 'disconnect')
                 delete authenticatedWallets[client.id]
+                delete playerUids[client.id]
             }
         })
 
@@ -1096,6 +1116,11 @@ const mainsocket = (io) => {
                 // Remap ms.players[] array entry
                 const msIdx = ms.players ? ms.players.indexOf(oldSocketId) : -1
                 if (msIdx !== -1) ms.players[msIdx] = client.id
+                // Remap practice identity
+                if (playerUids[oldSocketId]) {
+                    playerUids[client.id] = playerUids[oldSocketId]
+                    delete playerUids[oldSocketId]
+                }
             }
 
             // Notify all other players that this player reconnected
@@ -1975,13 +2000,15 @@ const mainsocket = (io) => {
             client._lastStatsFetch = now
 
             const wallet = authenticatedWallets[client.id] || null
-            const defaultStats = { matchesPlayed: 0, wins: 0, losses: 0, totalSolWon: 0, totalSolLost: 0, totalShotEarned: 0, shotBurned: 0, prestigeTier: 0 }
-            if (!wallet || !isDbConnected()) {
+            const uidInfo = playerUids[client.id]
+            const defaultStats = { matchesPlayed: 0, wins: 0, losses: 0, totalSolWon: 0, totalSolLost: 0, totalShotEarned: 0, shotBurned: 0, prestigeTier: 0, kills: 0, deaths: 0 }
+            if ((!wallet && !uidInfo) || !isDbConnected()) {
                 client.emit('statsData', defaultStats)
                 return
             }
             try {
-                const user = await User.findOne({ walletAddress: wallet })
+                const query = wallet ? { walletAddress: wallet } : { uid: uidInfo.uid }
+                const user = await User.findOne(query)
                 client.emit('statsData', user?.stats || defaultStats)
             } catch (err) {
                 console.error('[Stats] getStats error:', err.message)
@@ -2826,12 +2853,14 @@ const mainsocket = (io) => {
                                     for (const p of room.players) {
                                         const pid = p.socketId
                                         const addr = authenticatedWallets[pid] || wsState?.wallets?.[pid]
-                                        if (!addr) continue
+                                        const uidInfo = playerUids[pid]
+                                        if (!addr && !uidInfo) continue
+                                        const query = addr ? { walletAddress: addr } : { uid: uidInfo.uid }
                                         const isWinner = pid === winnerId
                                         const playerShotEarned = shotResults[pid]?.earned || 0
                                         const playerWeaponIncs = buildWeaponIncs(pid)
                                         await User.findOneAndUpdate(
-                                            { walletAddress: addr },
+                                            query,
                                             {
                                                 $inc: {
                                                     'stats.matchesPlayed': 1,

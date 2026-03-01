@@ -133,11 +133,7 @@ const ShareCard = React.forwardRef(function ShareCard({ isWin, solAmount, shotEa
               {solSign + solAmount.toFixed(3) + ' SOL'}
             </div>
           )}
-          {showShot && (
-            <div style={s.shotLine}>
-              {'+' + shotEarned + ' SHOT'}
-            </div>
-          )}
+          {/* SHOT line hidden in practice mode */}
           <div style={s.spacer} />
           <div style={s.footerRow}>
             <div style={s.footerUrl}>SOLSHOT.GG</div>

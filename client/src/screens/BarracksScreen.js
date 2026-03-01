@@ -278,7 +278,7 @@ function BarracksScreen({ navigate }) {
                   <div style={s.statLabel}>SOL EARNED</div>
                 </div>
                 <div style={s.statCard}>
-                  <div style={shotEarned > 0 ? s.statValue : s.statValueDim}>{fmtShot(shotEarned)}</div>
+                  <div style={s.statValueDim}>???</div>
                   <div style={s.statLabel}>SHOT EARNED</div>
                 </div>
               </div>

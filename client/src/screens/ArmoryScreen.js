@@ -3,7 +3,7 @@ import TopBar from '../components/TopBar';
 import Button from '../components/Button';
 import { COSMETIC_ITEMS, TIER_COLORS } from '../data/tiers';
 
-const TABS = ['SOL SHOP', 'SHOT BURNS'];
+const TABS = ['SOL SHOP', 'COSMETICS'];
 
 /* ── styles ── */
 const s = {
@@ -18,9 +18,9 @@ const s = {
   },
   tab: (active) => ({
     flex: 1,
-    padding: '8px 0',
+    padding: '10px 0',
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 14,
+    fontSize: 16,
     letterSpacing: 2,
     textAlign: 'center',
     cursor: 'pointer',
@@ -50,8 +50,8 @@ const s = {
   itemCard: (tierColor, selected) => ({
     display: 'flex',
     alignItems: 'center',
-    gap: 10,
-    padding: '7px 10px',
+    gap: 12,
+    padding: '9px 12px',
     borderRadius: 4,
     cursor: 'pointer',
     borderLeft: `3px solid ${tierColor}`,
@@ -62,15 +62,15 @@ const s = {
     transition: 'all 0.12s ease',
   }),
   itemIcon: (tierColor) => ({
-    width: 26,
-    height: 26,
-    borderRadius: 3,
+    width: 34,
+    height: 34,
+    borderRadius: 4,
     background: `${tierColor}11`,
     border: `1px solid ${tierColor}33`,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: 12,
+    fontSize: 16,
     color: tierColor,
     flexShrink: 0,
   }),
@@ -80,20 +80,20 @@ const s = {
   },
   itemName: {
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 14,
+    fontSize: 15,
     color: 'var(--bn)',
     letterSpacing: 1,
   },
   itemType: (tierColor) => ({
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 11,
+    fontSize: 13,
     color: tierColor,
     letterSpacing: 1,
     opacity: 0.8,
   }),
   itemPrice: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 13,
+    fontSize: 14,
     color: 'var(--gd)',
     letterSpacing: 1,
     flexShrink: 0,
@@ -110,19 +110,19 @@ const s = {
   },
   detailName: {
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 20,
+    fontSize: 24,
     color: 'var(--bn)',
     letterSpacing: 2,
   },
   detailTier: (color) => ({
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 13,
+    fontSize: 16,
     color: color,
     letterSpacing: 2,
   }),
   detailDesc: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 13,
+    fontSize: 14,
     color: 'var(--kh)',
     letterSpacing: 1,
     lineHeight: 1.6,
@@ -130,10 +130,10 @@ const s = {
   },
   detailType: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 11,
+    fontSize: 13,
     color: 'var(--st)',
     letterSpacing: 2,
-    padding: '3px 8px',
+    padding: '4px 10px',
     border: '1px solid var(--sd)',
     borderRadius: 3,
     display: 'inline-block',
@@ -219,7 +219,7 @@ function ArmoryScreen({ navigate }) {
                     <div style={s.itemName}>{item.name}</div>
                     <div style={s.itemType(tc)}>{item.tier}</div>
                   </div>
-                  <div style={s.itemPrice}>{item.price}</div>
+                  <div style={s.itemPrice}>{item.price.includes('SHOT') ? '??? SHOT' : item.price}</div>
                 </div>
               );
             })}
@@ -238,9 +238,9 @@ function ArmoryScreen({ navigate }) {
               <Button
                 variant="gold"
                 disabled
-                style={{ fontSize: 10, padding: '8px 16px', marginTop: 8 }}
+                style={{ fontSize: 14, padding: '10px 20px', marginTop: 8 }}
               >
-                {selectedItem.price}
+                {selectedItem.price.includes('SHOT') ? '??? SHOT' : selectedItem.price}
               </Button>
               <div style={s.comingSoon}>COMING SOON</div>
             </>

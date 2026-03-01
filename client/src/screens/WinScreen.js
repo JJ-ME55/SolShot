@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
 import ShareCard from '../components/ShareCard';
-import PrestigeIntro from '../components/PrestigeIntro';
+
 import TelegramShare from '../components/TelegramShare';
 import useSocket from '../hooks/useSocket';
 import { updatePracticeStats } from '../utils/practiceStats';
@@ -254,20 +254,15 @@ function WinScreen({ navigate, screenData }) {
   const roundWins = screenData?.roundWins || {};
   const myId = window.socket?.id;
 
-  // Record practice stats + increment matches-played counter
+  // Record practice stats
   useEffect(() => {
-    var prev = parseInt(localStorage.getItem('solshot_matches_played') || '0', 10);
-    var next = prev + 1;
-    localStorage.setItem('solshot_matches_played', String(next));
-    setMatchesPlayed(next);
-
-    // Phase 27: Record win stats
     const myKills = scores[myId]?.kills || 0;
     const roundsPlayed = screenData?.round || 1;
     const myRoundWins = myId && roundWins[myId] ? roundWins[myId] : 0;
     const myDeaths = roundsPlayed - myRoundWins;
     const myDamage = scores[myId]?.damageDealt || 0;
-    updatePracticeStats({ outcome: 'win', kills: myKills, deaths: myDeaths, damageDealt: myDamage });
+    const updated = updatePracticeStats({ outcome: 'win', kills: myKills, deaths: myDeaths, damageDealt: myDamage });
+    setMatchesPlayed(updated.matchesPlayed);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Derive earnings
@@ -291,10 +286,6 @@ function WinScreen({ navigate, screenData }) {
   const myPrestige = (screenData?.prestigeInfo && myId)
     ? (screenData.prestigeInfo[myId] || null)
     : null;
-  // PrestigeIntro props
-  const currentTierName = myPrestige && myPrestige.tier ? myPrestige.tier.name : null;
-  const shotBalance = myPrestige ? (myPrestige.balance || 0) : 0;
-
   /* ── socket: playAgain -> back to shop ── */
   useSocket('playAgain', () => {
     setWaitingRematch(false);
@@ -460,7 +451,7 @@ function WinScreen({ navigate, screenData }) {
               myMilestones.map((ms, i) => (
                 <div key={ms.id || i} style={s.milestoneItem}>
                   <span style={s.milestoneLabel}>{ms.label}</span>
-                  <span style={s.milestoneReward}>{'+' + ms.reward + ' SHOT'}</span>
+                  <span style={s.milestoneReward}>{'+??? SHOT'}</span>
                 </div>
               ))
             ) : (
@@ -483,7 +474,7 @@ function WinScreen({ navigate, screenData }) {
                       <div style={s.prestigeBarFill(prestigePct)} />
                     </div>
                     <div style={s.prestigeBarLabel}>
-                      {myPrestige.balance + ' / ' + myPrestige.nextTier.burnCost + ' SHOT to ' + myPrestige.nextTier.name}
+                      {'??? / ??? SHOT to ' + myPrestige.nextTier.name}
                     </div>
                   </>
                 ) : (
@@ -499,13 +490,6 @@ function WinScreen({ navigate, screenData }) {
             </div>
           )}
 
-          {/* Prestige intro nudge */}
-          <PrestigeIntro
-            currentTier={currentTierName}
-            shotBalance={shotBalance}
-            matchesPlayed={matchesPlayed}
-            onNavigatePrestige={() => navigate('prestige')}
-          />
         </div>
       )}
 

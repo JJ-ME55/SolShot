@@ -38,29 +38,7 @@ function WalletDisplay({ compact = false }) {
   if (!connected) {
     return (
       <div style={styles.container}>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-          <WalletMultiButton />
-          {!compact && (
-            <a
-              href="https://solana.com/learn/blockchain-basics"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                fontFamily: "'Share Tech Mono', monospace",
-                fontSize: 10,
-                color: 'var(--kh)',
-                opacity: 0.6,
-                letterSpacing: 1,
-                textDecoration: 'none',
-                display: 'block',
-                textAlign: 'center',
-                marginTop: 4,
-              }}
-            >
-              {'WHAT IS A WALLET?'}
-            </a>
-          )}
-        </div>
+        <WalletMultiButton />
       </div>
     );
   }
@@ -75,15 +53,7 @@ function WalletDisplay({ compact = false }) {
         </span>
       </div>
 
-      {/* SHOT Balance */}
-      {!compact && (
-        <div style={styles.chip}>
-          <span style={{ ...styles.icon, color: 'var(--am)' }}>{'\u2B21'}</span>
-          <span style={styles.shotValue}>
-            {shotBalance.toLocaleString()} SHOT
-          </span>
-        </div>
-      )}
+      {/* SHOT Balance — hidden in practice mode */}
 
       <WalletMultiButton />
     </div>

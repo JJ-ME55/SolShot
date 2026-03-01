@@ -1,4 +1,5 @@
-const STORAGE_KEY = 'solshot_stats';
+const STORAGE_PREFIX = 'solshot_stats_';
+const FALLBACK_KEY = 'solshot_stats';
 
 const EMPTY_STATS = {
   matchesPlayed: 0,
@@ -10,10 +11,16 @@ const EMPTY_STATS = {
   lastMatchAt: null,
 };
 
+/** Get the storage key for the current user's stats. */
+function getStorageKey() {
+  const uid = localStorage.getItem('solshot_uid');
+  return uid ? STORAGE_PREFIX + uid : FALLBACK_KEY;
+}
+
 /** Read current stats from localStorage. Returns a stats object (never null). */
 export function getPracticeStats() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(getStorageKey());
     if (!raw) return { ...EMPTY_STATS };
     const parsed = JSON.parse(raw);
     return { ...EMPTY_STATS, ...parsed };
@@ -36,6 +43,6 @@ export function updatePracticeStats({ outcome, kills = 0, deaths = 0, damageDeal
   stats.deaths += deaths;
   stats.damageDealt += damageDealt;
   stats.lastMatchAt = new Date().toISOString();
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(stats));
+  localStorage.setItem(getStorageKey(), JSON.stringify(stats));
   return stats;
 }

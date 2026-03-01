@@ -528,9 +528,7 @@ function CombatCard({ handle, rank, wallet, stats, onClose }) {
               <div style={{ ...s.earnIconFallback, color: '#ffb627' }}>&#11041;</div>
             )}
             <div>
-              <div style={formatShot(totalShotEarned) ? s.earnValShot : s.earnValDim}>
-                {formatShot(totalShotEarned) || '--'}
-              </div>
+              <div style={s.earnValDim}>???</div>
               <div style={s.earnLbl}>$SHOT Earned</div>
             </div>
           </div>

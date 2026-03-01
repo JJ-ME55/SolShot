@@ -10,17 +10,17 @@ const FAQ_SECTIONS = [
   {
     id: 'weapons',
     question: 'How do weapons work?',
-    answer: 'You get 20 weapons to choose from at the start of each match \u2014 pick your best 10. Each weapon has different damage, blast radius, and special effects. Unlock 5 prestige weapons by burning SHOT tokens.',
+    answer: 'You get 20 weapons to choose from at the start of each match \u2014 pick your best 10. Each weapon has different damage, blast radius, and special effects. More weapons coming soon!',
   },
   {
     id: 'shot-token',
     question: 'What is SHOT?',
-    answer: 'SHOT is the SolShot game token. You earn it from playing matches. Burn SHOT to unlock prestige tiers (Bronze through Diamond), each granting access to more powerful exclusive weapons.',
+    answer: 'SHOT is the SolShot game token. Details on earning and using SHOT are coming soon!',
   },
   {
     id: 'prestige',
     question: 'What are prestige tiers?',
-    answer: 'There are 5 prestige tiers: Bronze, Silver, Gold, Platinum, and Diamond. Each tier unlocks exclusive weapons and cosmetics. Advance by burning SHOT tokens on the Prestige screen.',
+    answer: 'There are 5 prestige tiers: Bronze, Silver, Gold, Platinum, and Diamond. Each tier unlocks exclusive weapons and cosmetics. Details on advancing tiers coming soon!',
   },
   {
     id: 'wagering',
@@ -30,7 +30,7 @@ const FAQ_SECTIONS = [
   {
     id: 'wallets',
     question: 'Which wallets work?',
-    answer: 'Any Solana wallet that supports Wallet Adapter \u2014 Phantom, Solflare, Backpack, and more. Connect your wallet to play wagered matches and earn SHOT.',
+    answer: 'Any Solana wallet that supports Wallet Adapter \u2014 Phantom, Solflare, Backpack, and more. Wallet features coming soon!',
   },
   {
     id: 'mobile',

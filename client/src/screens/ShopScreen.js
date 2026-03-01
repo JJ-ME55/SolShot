@@ -3,7 +3,7 @@ import TopBar from '../components/TopBar';
 import Button from '../components/Button';
 import WeaponCard from '../components/WeaponCard';
 import Modal from '../components/Modal';
-import JupiterSwap from '../components/JupiterSwap';
+
 import useSocket from '../hooks/useSocket';
 import WEAPONS, { getTierColor, getWeaponIconUrl, getWeaponById } from '../data/weapons';
 import { PRESTIGE_TIERS } from '../data/tiers';
@@ -556,13 +556,8 @@ function ShopScreen({ navigate, screenData }) {
                       letterSpacing: 1,
                       marginBottom: 6,
                     }}>
-                      {'REQUIRES ' + prestigeMeta.burnCost.toLocaleString() + ' SHOT BURN'}
+                      {'REQUIRES ??? SHOT BURN'}
                     </div>
-                    <JupiterSwap
-                      mode="modal"
-                      buttonLabel={'BUY SHOT TO UNLOCK ' + prestigeMeta.tierName.toUpperCase()}
-                      buttonStyle={{ fontSize: 8, padding: '5px 10px' }}
-                    />
                   </div>
                 );
               })()}

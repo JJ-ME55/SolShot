@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import TopBar from '../components/TopBar';
 import Button from '../components/Button';
-import JupiterSwap from '../components/JupiterSwap';
+
 import { PRESTIGE_TIERS } from '../data/tiers';
 import { useSolShotWallet } from '../wallet/WalletContext';
 
@@ -16,38 +16,38 @@ const s = {
   /* Left: Current rank */
   leftPanel: {
     width: '35%',
-    minWidth: 180,
+    minWidth: 200,
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: '20px 16px',
-    gap: 10,
+    padding: '24px 20px',
+    gap: 12,
     borderRight: '1px solid var(--ol)',
   },
   badgeRing: () => ({
-    width: 140,
-    height: 140,
+    width: 160,
+    height: 160,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
   }),
   badgeTier: (color) => ({
     fontFamily: "'Bebas Neue', sans-serif",
-    fontSize: 40,
+    fontSize: 48,
     color: color,
     lineHeight: 1,
   }),
   rankName: {
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 20,
+    fontSize: 26,
     color: 'var(--bn)',
     letterSpacing: 3,
     textAlign: 'center',
   },
   rankSub: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 13,
+    fontSize: 15,
     color: 'var(--kh)',
     letterSpacing: 2,
     opacity: 0.7,
@@ -55,10 +55,10 @@ const s = {
   },
   shotBalance: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 14,
+    fontSize: 16,
     color: 'var(--sp)',
     letterSpacing: 1,
-    padding: '5px 12px',
+    padding: '6px 14px',
     border: '1px solid rgba(153, 69, 255, 0.2)',
     borderRadius: 3,
     background: 'rgba(153, 69, 255, 0.04)',
@@ -78,19 +78,19 @@ const s = {
   },
   nextTierInfo: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 11,
+    fontSize: 14,
     color: 'var(--kh)',
     letterSpacing: 1,
     opacity: 0.6,
     textAlign: 'center',
-    marginTop: 4,
+    marginTop: 6,
   },
   burnResult: {
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 12,
+    fontSize: 14,
     letterSpacing: 2,
     textAlign: 'center',
-    padding: '6px 14px',
+    padding: '8px 16px',
     border: '1px solid',
     borderRadius: 4,
     marginTop: 8,
@@ -105,10 +105,10 @@ const s = {
   },
   tierHeader: {
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 16,
+    fontSize: 18,
     color: 'var(--am)',
     letterSpacing: 2,
-    padding: '12px 14px',
+    padding: '14px 16px',
     borderBottom: '1px solid var(--ol)',
   },
   tierList: {
@@ -122,8 +122,8 @@ const s = {
   tierRow: (color, isCurrent) => ({
     display: 'flex',
     alignItems: 'center',
-    gap: 12,
-    padding: '8px 10px',
+    gap: 14,
+    padding: '10px 12px',
     borderRadius: 4,
     border: isCurrent ? `1px solid ${color}` : '1px solid transparent',
     background: isCurrent ? `rgba(${hexToRgb(color)}, 0.06)` : 'transparent',
@@ -142,26 +142,26 @@ const s = {
   },
   tierName: (color) => ({
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 14,
+    fontSize: 16,
     color: color,
     letterSpacing: 1,
   }),
   tierCost: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 12,
+    fontSize: 13,
     color: 'var(--kh)',
     letterSpacing: 1,
     opacity: 0.6,
   },
   tierReward: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 12,
+    fontSize: 13,
     color: 'var(--kh)',
     letterSpacing: 1,
     opacity: 0.5,
     flexShrink: 0,
     textAlign: 'right',
-    maxWidth: 160,
+    maxWidth: 180,
     whiteSpace: 'nowrap',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
@@ -275,10 +275,8 @@ function PrestigeScreen({ navigate }) {
   };
 
   // Button label logic
-  let burnLabel = 'BURN SHOT TO RANK UP';
-  if (burning) burnLabel = 'BURNING...';
-  else if (isMaxTier) burnLabel = 'MAX PRESTIGE';
-  else if (nextTier) burnLabel = `BURN ${nextTier.cost.toLocaleString()} SHOT`;
+  let burnLabel = 'COMING SOON';
+  if (isMaxTier) burnLabel = 'MAX PRESTIGE';
 
   return (
     <>
@@ -289,7 +287,7 @@ function PrestigeScreen({ navigate }) {
         <div style={s.leftPanel}>
           <div style={s.badgeRing()}>
             {BADGE_IMAGES[currentPrestige.tier] ? (
-              <img src={BADGE_IMAGES[currentPrestige.tier]} alt={currentPrestige.name} style={{ width: 140, height: 140, objectFit: 'contain' }} />
+              <img src={BADGE_IMAGES[currentPrestige.tier]} alt={currentPrestige.name} style={{ width: 160, height: 160, objectFit: 'contain', borderRadius: '50%' }} />
             ) : (
               <span style={s.badgeTier(currentPrestige.color)}>P{currentPrestige.tier}</span>
             )}
@@ -298,20 +296,19 @@ function PrestigeScreen({ navigate }) {
           <div style={s.rankSub}>CURRENT RANK</div>
 
           <div style={s.shotBalance}>
-            {'* ' + shotBalance.toFixed(0) + ' SHOT'}
+            {'* ??? SHOT'}
           </div>
 
           {nextTier && (
             <div style={s.nextTierInfo}>
-              NEXT: {nextTier.name.toUpperCase()} ({nextTier.cost.toLocaleString()} SHOT)
+              NEXT: {nextTier.name.toUpperCase()} (??? SHOT)
             </div>
           )}
 
           <Button
             variant="gold"
-            disabled={!canBurn}
-            onClick={handleBurn}
-            style={{ fontSize: 9, padding: '6px 14px', marginTop: 6, opacity: burning ? 0.6 : 1 }}
+            disabled
+            style={{ fontSize: 13, padding: '10px 20px', marginTop: 8 }}
           >
             {burnLabel}
           </Button>
@@ -326,16 +323,6 @@ function PrestigeScreen({ navigate }) {
             </div>
           )}
 
-          {/* Jupiter Swap — buy SHOT for prestige burns */}
-          <JupiterSwap
-            mode="modal"
-            buttonLabel="BUY SHOT"
-            buttonStyle={{ marginTop: 8, fontSize: 9, padding: '6px 14px' }}
-            onSuccess={() => {
-              // Refresh SHOT balance after swap
-              if (window.socket) window.socket.emit('getShotInfo');
-            }}
-          />
 
           {isMaxTier && (
             <div style={s.comingSoon}>DIAMOND ACHIEVED</div>
@@ -353,7 +340,7 @@ function PrestigeScreen({ navigate }) {
                 <div key={tier.tier} style={s.tierRow(tier.color, tier.tier === currentTier)}>
                   <div style={s.tierBadge()}>
                     {BADGE_IMAGES[tier.tier] ? (
-                      <img src={BADGE_IMAGES[tier.tier]} alt={tier.name} style={{ width: 52, height: 52, objectFit: 'contain', opacity: isCompleted ? 1 : 0.4 }} />
+                      <img src={BADGE_IMAGES[tier.tier]} alt={tier.name} style={{ width: 52, height: 52, objectFit: 'contain', borderRadius: '50%', opacity: isCompleted ? 1 : 0.4 }} />
                     ) : (
                       <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: tier.color }}>{tier.tier === 0 ? '--' : 'P' + tier.tier}</span>
                     )}
@@ -365,7 +352,7 @@ function PrestigeScreen({ navigate }) {
                       {isNext && ' \u25C4'}
                     </div>
                     <div style={s.tierCost}>
-                      {tier.cost === 0 ? 'DEFAULT' : tier.cost.toLocaleString() + ' SHOT'}
+                      {tier.cost === 0 ? 'DEFAULT' : '??? SHOT'}
                     </div>
                   </div>
                   <div style={s.tierReward}>{tier.reward}</div>

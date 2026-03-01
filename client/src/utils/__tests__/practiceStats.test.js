@@ -4,6 +4,8 @@ import { getPracticeStats, updatePracticeStats } from '../practiceStats';
 const store = {};
 beforeEach(() => {
   Object.keys(store).forEach(k => delete store[k]);
+  // Seed solshot_uid so stats are keyed by user
+  store['solshot_uid'] = 'test-uid-123';
   jest.spyOn(Storage.prototype, 'getItem').mockImplementation(k => store[k] || null);
   jest.spyOn(Storage.prototype, 'setItem').mockImplementation((k, v) => { store[k] = v; });
 });
@@ -22,7 +24,7 @@ describe('getPracticeStats', () => {
   });
 
   test('returns parsed stats when stored', () => {
-    store['solshot_stats'] = JSON.stringify({ matchesPlayed: 5, wins: 3, losses: 2, kills: 10, deaths: 5, damageDealt: 2000, lastMatchAt: '2026-01-01' });
+    store['solshot_stats_test-uid-123'] = JSON.stringify({ matchesPlayed: 5, wins: 3, losses: 2, kills: 10, deaths: 5, damageDealt: 2000, lastMatchAt: '2026-01-01' });
     const s = getPracticeStats();
     expect(s.matchesPlayed).toBe(5);
     expect(s.wins).toBe(3);
@@ -30,9 +32,16 @@ describe('getPracticeStats', () => {
   });
 
   test('returns empty stats on corrupt JSON', () => {
-    store['solshot_stats'] = 'not json';
+    store['solshot_stats_test-uid-123'] = 'not json';
     const s = getPracticeStats();
     expect(s.matchesPlayed).toBe(0);
+  });
+
+  test('falls back to solshot_stats key when no uid', () => {
+    delete store['solshot_uid'];
+    store['solshot_stats'] = JSON.stringify({ matchesPlayed: 7, wins: 4, losses: 3, kills: 0, deaths: 0, damageDealt: 0, lastMatchAt: null });
+    const s = getPracticeStats();
+    expect(s.matchesPlayed).toBe(7);
   });
 });
 
@@ -67,10 +76,10 @@ describe('updatePracticeStats', () => {
     expect(s.damageDealt).toBe(450);
   });
 
-  test('persists to localStorage', () => {
+  test('persists to uid-keyed localStorage', () => {
     updatePracticeStats({ outcome: 'win', kills: 1, deaths: 0, damageDealt: 50 });
-    expect(store['solshot_stats']).toBeTruthy();
-    const parsed = JSON.parse(store['solshot_stats']);
+    expect(store['solshot_stats_test-uid-123']).toBeTruthy();
+    const parsed = JSON.parse(store['solshot_stats_test-uid-123']);
     expect(parsed.wins).toBe(1);
   });
 

@@ -111,7 +111,7 @@ function PrestigeIntro({ currentTier, shotBalance, matchesPlayed, onNavigatePres
       />
       <div style={styles.content}>
         <div style={styles.text}>
-          {'Ready to level up? Burn SHOT to unlock prestige tiers and exclusive weapons!'}
+          {'Ready to level up? Unlock prestige tiers and exclusive weapons! Coming soon.'}
         </div>
         <div style={styles.buttonRow}>
           <button style={styles.btnLearnMore} onClick={handleLearnMore}>

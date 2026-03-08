@@ -176,7 +176,7 @@ function MenuScreen({ navigate }) {
     { id: 'deploy', label: 'PLAY FREE', variant: 'primary', screen: 'lobby' },
     { id: 'armory', label: 'ARMORY', variant: 'secondary', screen: 'armory', comingSoon: true },
     { id: 'prestige', label: 'PRESTIGE', variant: 'secondary', screen: 'prestige', comingSoon: true },
-    { id: 'barracks', label: 'BARRACKS', variant: 'secondary', screen: 'barracks', comingSoon: true },
+    { id: 'barracks', label: 'BARRACKS', variant: 'secondary', screen: 'barracks' },
   ];
 
   return (

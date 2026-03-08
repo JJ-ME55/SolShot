@@ -136,7 +136,7 @@ export class Tank extends GameObjects.Sprite {
         this.texture.update()
 
 
-        this.scene.time.addEvent({delay: 500, callback: this.emitPower, callbackScope: this, loop: true})
+        this.scene.time.addEvent({delay: 100, callback: this.emitPower, callbackScope: this, loop: true})
 
         this.scene.physics.world.on('worldstep', this.physicsStep, this)
         this.scene.physics.world.on('worldstep', this.step, this)
@@ -242,7 +242,16 @@ export class Tank extends GameObjects.Sprite {
             this.moveRight()
         }
         if (this.leftSteps === 0 && this.rightSteps === 0) {
-            this.moving = false
+            if (this.moving) {
+                this.moving = false
+                // Sync final position to server after A/D movement completes
+                if (this.gameType === 3 && this === this.scene.tanks[this.scene.myPlayerIndex]) {
+                    window.socket && window.socket.emit('positionUpdate', {
+                        x: this.body.x,
+                        y: this.body.y,
+                    })
+                }
+            }
         }
 
         this.prevPos = {x: this.x, y: this.y}

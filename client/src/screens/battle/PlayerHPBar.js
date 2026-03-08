@@ -6,7 +6,7 @@ const ordinal = (n) =>
   n === 1 ? '1st' : n === 2 ? '2nd' : n === 3 ? '3rd' : n + 'th';
 
 function PlayerHPBar({ player, isActive, isMe }) {
-  const rawHp = player?.hp ?? MAX_HP;
+  const rawHp = Math.min(MAX_HP, player?.hp ?? MAX_HP);
   const hp = Math.max(0, Math.min(100, Math.round((rawHp / MAX_HP) * 100)));
   const isEliminated = player?.alive === false;
 
@@ -81,7 +81,7 @@ function PlayerHPBar({ player, isActive, isMe }) {
           whiteSpace: 'nowrap',
           flex: 1,
         }}>
-          {isMe ? 'YOU' : (player?.name || 'UNKNOWN')}
+          {player?.name || (isMe ? 'YOU' : 'UNKNOWN')}
         </span>
       </div>
 

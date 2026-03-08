@@ -7,7 +7,7 @@ import User from '../models/User.js';
 import { processShot, generateTerrain, generateTankPositions, generateWind, WEAPON_DATA } from '../services/physics.js';
 import { createMatchState, validateAction, transitionState, getNextTurn, isRoundOver, isMatchOver, getRoundPlacement, PLACEMENT_POINTS, resetForNextRound, MATCH_STATES } from '../services/match.js';
 import { initGold, getBalance, earnGold, spendGold, awardKillBonus, awardRoundWinBonus, awardPlacementGold } from '../services/gold.js';
-import { WEAPON_CATALOG, getWeapon, getWeaponCost, getAllLaunchWeapons } from '../models/Weapon.js';
+import { WEAPON_CATALOG, PRESTIGE_WEAPONS, getWeapon, getWeaponCost, getAllLaunchWeapons } from '../models/Weapon.js';
 import { handleAuthenticate, verifyAuthMessage, verifyWalletSignature } from '../middleware/auth.js';
 import { verifyBalance, isValidWager, settleMatch, refundWager, WAGER_TIERS, MATCH_MODES, validateMatchMode, isEscrowEnabled, createMatchEscrow, buildDepositTransaction, getEscrowState, startWithDepositorsEscrow } from '../services/solana.js';
 import { cancelMatchEscrow } from '../services/escrow.js';
@@ -936,16 +936,18 @@ const mainsocket = (io) => {
             removeFromAllQueues(client.id);
             trackDisconnection()
             const walletAddress = authenticatedWallets[client.id]
+            const uidInfo = playerUids[client.id]
+            const reconnectKey = walletAddress || (uidInfo?.uid ? `uid:${uidInfo.uid}` : null)
             const roomId = client.roomId
             const ms = roomId ? matchStates[roomId] : null
             const room = roomId ? findRoom(roomId) : null
 
-            // Only offer reconnect window during active match (BATTLE or WEAPON_SHOP) with a wallet
-            if (walletAddress && roomId && ms && room &&
+            // Offer reconnect window during active match with wallet OR uid identity
+            if (reconnectKey && roomId && ms && room &&
                 (ms.status === MATCH_STATES.BATTLE || ms.status === MATCH_STATES.WEAPON_SHOP)) {
 
-                // Store reconnect info keyed by wallet
-                pendingReconnects[walletAddress] = {
+                // Store reconnect info keyed by wallet or uid
+                pendingReconnects[reconnectKey] = {
                     roomId,
                     isHost: client.isHost,
                     playerIndex: room.players ? room.players.findIndex(p => p.socketId === client.id) : -1,
@@ -967,9 +969,9 @@ const mainsocket = (io) => {
                     : (opponentId && io.to(opponentId).emit('opponentDisconnected', { reconnectWindowMs: RECONNECT_WINDOW_MS }))
 
                 // Deferred cleanup — runs after 30s if no reconnect
-                disconnectTimers[walletAddress] = setTimeout(async () => {
-                    delete pendingReconnects[walletAddress]
-                    delete disconnectTimers[walletAddress]
+                disconnectTimers[reconnectKey] = setTimeout(async () => {
+                    delete pendingReconnects[reconnectKey]
+                    delete disconnectTimers[reconnectKey]
 
                     // Re-read state (may have changed during window)
                     const currentMs = matchStates[roomId]
@@ -1011,35 +1013,44 @@ const mainsocket = (io) => {
 
         // === RECONNECT: Rejoin a match after disconnect ===
         client.on('rejoinRoom', async (data) => {
-            if (!data || !data.walletAddress) {
-                client.emit('rejoinError', { reason: 'Missing wallet address' })
+            if (!data) {
+                client.emit('rejoinError', { reason: 'Missing rejoin data' })
                 return
             }
 
-            const walletAddress = data.walletAddress
+            let reconnectKey = null
 
-            // SA-02: Ed25519 re-verification before restoring auth (DB: H006)
-            const { message, signature, timestamp } = data
-            if (!message || !signature || !timestamp) {
-                client.emit('rejoinError', { reason: 'Signature required for rejoin' })
+            if (data.walletAddress) {
+                // Wallet-based rejoin: verify Ed25519 signature
+                const walletAddress = data.walletAddress
+                const { message, signature, timestamp } = data
+                if (!message || !signature || !timestamp) {
+                    client.emit('rejoinError', { reason: 'Signature required for rejoin' })
+                    return
+                }
+
+                const msgCheck = verifyAuthMessage(message, walletAddress, timestamp)
+                if (!msgCheck.valid) {
+                    client.emit('rejoinError', { reason: msgCheck.reason || 'Invalid auth message' })
+                    return
+                }
+
+                const sigCheck = verifyWalletSignature(walletAddress, message, signature)
+                if (!sigCheck.valid) {
+                    client.emit('rejoinError', { reason: sigCheck.reason || 'Signature verification failed' })
+                    return
+                }
+
+                reconnectKey = walletAddress
+            } else if (data.uid) {
+                // UID-based rejoin (practice mode): match by uid key
+                reconnectKey = `uid:${data.uid}`
+            } else {
+                client.emit('rejoinError', { reason: 'Missing wallet address or uid' })
                 return
             }
 
-            // Verify the auth message format and timestamp
-            const msgCheck = verifyAuthMessage(message, walletAddress, timestamp)
-            if (!msgCheck.valid) {
-                client.emit('rejoinError', { reason: msgCheck.reason || 'Invalid auth message' })
-                return
-            }
-
-            // Verify the Ed25519 signature
-            const sigCheck = verifyWalletSignature(walletAddress, message, signature)
-            if (!sigCheck.valid) {
-                client.emit('rejoinError', { reason: sigCheck.reason || 'Signature verification failed' })
-                return
-            }
-
-            const pending = pendingReconnects[walletAddress]
+            const pending = pendingReconnects[reconnectKey]
             if (!pending) {
                 client.emit('rejoinError', { reason: 'No active match to rejoin' })
                 return
@@ -1050,17 +1061,17 @@ const mainsocket = (io) => {
             const ms = matchStates[roomId]
 
             if (!room || !ms) {
-                delete pendingReconnects[walletAddress]
+                delete pendingReconnects[reconnectKey]
                 client.emit('rejoinError', { reason: 'Match no longer exists' })
                 return
             }
 
             // Cancel the deferred cleanup timer
-            if (disconnectTimers[walletAddress]) {
-                clearTimeout(disconnectTimers[walletAddress])
-                delete disconnectTimers[walletAddress]
+            if (disconnectTimers[reconnectKey]) {
+                clearTimeout(disconnectTimers[reconnectKey])
+                delete disconnectTimers[reconnectKey]
             }
-            delete pendingReconnects[walletAddress]
+            delete pendingReconnects[reconnectKey]
 
             // Map new socket to the old player slot
             client.join(roomId)
@@ -1068,9 +1079,14 @@ const mainsocket = (io) => {
             client.isHost = isHost
             client.name = name
             client.color = color
-            client.walletAddress = walletAddress
-            client.isAuthenticated = true
-            authenticatedWallets[client.id] = walletAddress
+            if (data.walletAddress) {
+                client.walletAddress = data.walletAddress
+                client.isAuthenticated = true
+                authenticatedWallets[client.id] = data.walletAddress
+            }
+            if (data.uid) {
+                playerUids[client.id] = { uid: data.uid, handle: name || '' }
+            }
 
             // Update room references from old socketId to new
             // N-player: find and remap the reconnecting player's slot in room.players[]
@@ -1203,7 +1219,8 @@ const mainsocket = (io) => {
             var room = findRoom(roomId)
             if (!room || room.players.length >= room.maxPlayers) return
             // E12: Push placeholder immediately to prevent race during async balance check (Node.js atomic)
-            const joinerSlot = { name: sanitizeName(name), color, socketId: client.id, isReady: false, playAgain: false, pos: null, isHost: false }
+            const joinerHandle = playerUids[client.id]?.handle
+            const joinerSlot = { name: joinerHandle || sanitizeName(name), color, socketId: client.id, isReady: false, playAgain: false, pos: null, isHost: false }
             room.players.push(joinerSlot)
 
             // Verify wager compatibility
@@ -1516,8 +1533,9 @@ const mainsocket = (io) => {
             client.join(roomId)
             client.roomId = roomId
             client.isHost = true
-            // H017: Sanitize player name
-            const creatorSlot = { name: sanitizeName(player.name), color: player.color, socketId: client.id, isReady: false, playAgain: false, pos: null, isHost: true }
+            // H017: Sanitize player name — prefer server-side handle from playerUids
+            const creatorHandle = playerUids[client.id]?.handle
+            const creatorSlot = { name: creatorHandle || sanitizeName(player.name), color: player.color, socketId: client.id, isReady: false, playAgain: false, pos: null, isHost: true }
 
             const roomData = {
                 roomId: roomId,
@@ -1857,20 +1875,21 @@ const mainsocket = (io) => {
                     goldBalancePayload[pid] = getBalance(goldStates[client.roomId], pid)
                     inventoryPayload[pid] = inv[pid] || [0]
                 }
+                const shopDuration = room.matchMode === 'practice' ? 20 : SHOP_DURATION
                 io.sockets.in(client.roomId).emit('shopPhase', {
                     weapons,
                     goldBalance: goldBalancePayload,
                     inventory: inventoryPayload,
-                    timer: SHOP_DURATION,
+                    timer: shopDuration,
                     totalRounds: ms ? ms.maxRounds : 1,
                     round: ms ? ms.currentRound + 1 : 1
                 })
 
-                // Start shop timer — auto-end shop after SHOP_DURATION seconds
+                // Start shop timer — auto-end shop after shopDuration seconds
                 if (shopTimers[client.roomId]) clearTimeout(shopTimers[client.roomId])
                 shopTimers[client.roomId] = setTimeout(() => {
                     endShopPhase(io, client.roomId)
-                }, SHOP_DURATION * 1000)
+                }, shopDuration * 1000)
 
                 // Also emit startGame for backward compatibility
                 io.sockets.in(client.roomId).emit('startGame', {})
@@ -2001,7 +2020,12 @@ const mainsocket = (io) => {
 
             const wallet = authenticatedWallets[client.id] || null
             const uidInfo = playerUids[client.id]
-            const defaultStats = { matchesPlayed: 0, wins: 0, losses: 0, totalSolWon: 0, totalSolLost: 0, totalShotEarned: 0, shotBurned: 0, prestigeTier: 0, kills: 0, deaths: 0 }
+            const defaultStats = {
+                matchesPlayed: 0, wins: 0, losses: 0,
+                totalDamage: 0, bestWinStreak: 0,
+                handle: '', signatureWeapon: null,
+                kills: 0, deaths: 0
+            }
             if ((!wallet && !uidInfo) || !isDbConnected()) {
                 client.emit('statsData', defaultStats)
                 return
@@ -2009,10 +2033,137 @@ const mainsocket = (io) => {
             try {
                 const query = wallet ? { walletAddress: wallet } : { uid: uidInfo.uid }
                 const user = await User.findOne(query)
-                client.emit('statsData', user?.stats || defaultStats)
+                if (!user) {
+                    client.emit('statsData', defaultStats)
+                    return
+                }
+                // Compute signature weapon from weaponStats (most shots fired, exclude Single Shot id=0)
+                let sigWeapon = null
+                const weaponStats = user.stats?.weaponStats
+                if (weaponStats && weaponStats instanceof Map) {
+                    let maxShots = 0
+                    for (const [wId, wData] of weaponStats.entries()) {
+                        if (wId === '0') continue // Exclude Single Shot
+                        const shots = wData?.shotsFired || 0
+                        if (shots > maxShots) {
+                            maxShots = shots
+                            const weapon = WEAPON_CATALOG[parseInt(wId)] || PRESTIGE_WEAPONS[parseInt(wId)]
+                            sigWeapon = weapon ? weapon.name : null
+                        }
+                    }
+                }
+                const stats = user.stats || {}
+                client.emit('statsData', {
+                    ...stats.toObject ? stats.toObject() : stats,
+                    handle: user.handle || '',
+                    callsign: user.handle || '',
+                    totalDamage: stats.totalDamage || 0,
+                    bestWinStreak: stats.bestWinStreak || 0,
+                    signatureWeapon: sigWeapon,
+                })
             } catch (err) {
                 console.error('[Stats] getStats error:', err.message)
                 client.emit('statsData', defaultStats)
+            }
+        })
+
+        // ── Leaderboard ──
+        client.on('getLeaderboard', async () => {
+            const now = Date.now()
+            if (client._lastLeaderboardFetch && (now - client._lastLeaderboardFetch) < 3000) return
+            client._lastLeaderboardFetch = now
+
+            if (!isDbConnected()) {
+                client.emit('leaderboardData', { players: [] })
+                return
+            }
+            try {
+                const top = await User.find(
+                    { 'stats.matchesPlayed': { $gte: 1 } },
+                    { handle: 1, 'stats.wins': 1, 'stats.losses': 1, 'stats.matchesPlayed': 1, 'stats.totalDamage': 1, 'stats.bestWinStreak': 1 }
+                ).sort({ 'stats.wins': -1, 'stats.matchesPlayed': 1 }).limit(20).lean()
+
+                const players = top.map(u => ({
+                    callsign: u.handle || 'UNKNOWN',
+                    wins: u.stats?.wins || 0,
+                    losses: u.stats?.losses || 0,
+                    matches: u.stats?.matchesPlayed || 0,
+                    totalDamage: u.stats?.totalDamage || 0,
+                    bestStreak: u.stats?.bestWinStreak || 0,
+                }))
+                client.emit('leaderboardData', { players })
+            } catch (err) {
+                console.error('[Leaderboard] error:', err.message)
+                client.emit('leaderboardData', { players: [] })
+            }
+        })
+
+        // ── Callsign Challenge Flow ──
+        client.on('challengeCallsign', (data) => {
+            const targetHandle = (data?.callsign || '').trim().toUpperCase()
+            if (!targetHandle || targetHandle.length < 1 || targetHandle.length > 16) {
+                client.emit('challengeError', { reason: 'Invalid callsign' })
+                return
+            }
+            // Don't challenge yourself
+            const myHandle = (playerUids[client.id]?.handle || '').toUpperCase()
+            if (myHandle && myHandle === targetHandle) {
+                client.emit('challengeError', { reason: 'You cannot challenge yourself' })
+                return
+            }
+            // Find connected player with matching handle
+            let targetSocketId = null
+            for (const [sid, info] of Object.entries(playerUids)) {
+                if ((info.handle || '').toUpperCase() === targetHandle) {
+                    // Verify they're still connected
+                    const targetSocket = io.sockets.sockets.get(sid)
+                    if (targetSocket) {
+                        targetSocketId = sid
+                        break
+                    }
+                }
+            }
+            if (!targetSocketId) {
+                client.emit('challengeError', { reason: targetHandle + ' is not online' })
+                return
+            }
+            // Check if target is already in a room
+            const targetSocket = io.sockets.sockets.get(targetSocketId)
+            if (targetSocket.roomId) {
+                client.emit('challengeError', { reason: targetHandle + ' is already in a match' })
+                return
+            }
+            const challengerName = playerUids[client.id]?.handle || 'UNKNOWN'
+            targetSocket.emit('challengeReceived', {
+                fromSocketId: client.id,
+                fromCallsign: challengerName,
+            })
+            client.emit('challengeSent', { callsign: targetHandle })
+        })
+
+        client.on('acceptChallenge', (data) => {
+            const challengerSocketId = data?.fromSocketId
+            if (!challengerSocketId) return
+            const challengerSocket = io.sockets.sockets.get(challengerSocketId)
+            if (!challengerSocket) {
+                client.emit('challengeError', { reason: 'Challenger disconnected' })
+                return
+            }
+            // Notify challenger — they should create the room
+            challengerSocket.emit('challengeAccepted', {
+                bySocketId: client.id,
+                byCallsign: playerUids[client.id]?.handle || 'UNKNOWN',
+            })
+        })
+
+        client.on('declineChallenge', (data) => {
+            const challengerSocketId = data?.fromSocketId
+            if (!challengerSocketId) return
+            const challengerSocket = io.sockets.sockets.get(challengerSocketId)
+            if (challengerSocket) {
+                challengerSocket.emit('challengeDeclined', {
+                    byCallsign: playerUids[client.id]?.handle || 'UNKNOWN',
+                })
             }
         })
 
@@ -2859,21 +3010,45 @@ const mainsocket = (io) => {
                                         const isWinner = pid === winnerId
                                         const playerShotEarned = shotResults[pid]?.earned || 0
                                         const playerWeaponIncs = buildWeaponIncs(pid)
+                                        // Build match history entry
+                                        const opponents = room.players.filter(op => op.socketId !== pid).map(op => op.name).join(', ')
+                                        const historyEntry = {
+                                            opponent: opponents || 'UNKNOWN',
+                                            result: isWinner ? 'win' : 'loss',
+                                            mode: room.matchMode || 'practice',
+                                            damageDealt: ms.scores[pid] || 0,
+                                            kills: ms.kills[pid] || 0,
+                                            deaths: ms.totalDeaths[pid] || 0,
+                                            goldEarned: (goldStates[roomId] && goldStates[roomId][pid]) || 0,
+                                            playedAt: new Date()
+                                        }
+                                        const matchDamage = ms.scores[pid] || 0
+                                        // Step 1: Increment counters + streak tracking
                                         await User.findOneAndUpdate(
                                             query,
                                             {
                                                 $inc: {
                                                     'stats.matchesPlayed': 1,
-                                                    ...(isWinner ? { 'stats.wins': 1, 'stats.totalSolWon': solWonAmt } : { 'stats.losses': 1, 'stats.totalSolLost': wagerAmt }),
+                                                    'stats.totalDamage': matchDamage,
+                                                    ...(isWinner
+                                                        ? { 'stats.wins': 1, 'stats.totalSolWon': solWonAmt, 'stats.consecutiveWins': 1 }
+                                                        : { 'stats.losses': 1, 'stats.totalSolLost': wagerAmt }),
                                                     'stats.totalShotEarned': playerShotEarned,
                                                     'stats.kills': ms.kills[pid] || 0,
                                                     'stats.deaths': ms.totalDeaths[pid] || 0,
                                                     ...playerWeaponIncs
                                                 },
-                                                $set: { lastActive: new Date() }
+                                                ...(!isWinner ? { $set: { 'stats.consecutiveWins': 0, lastActive: new Date() } } : { $set: { lastActive: new Date() } }),
+                                                $push: { matchHistory: { $each: [historyEntry], $slice: -50 } }
                                             },
                                             { upsert: true }
                                         )
+                                        // Step 2: Update bestWinStreak if current exceeds it (pipeline update)
+                                        if (isWinner) {
+                                            await User.findOneAndUpdate(query, [
+                                                { $set: { 'stats.bestWinStreak': { $max: ['$stats.bestWinStreak', '$stats.consecutiveWins'] } } }
+                                            ])
+                                        }
                                     }
                                     logger.info('[Stats] Persisted match stats')
                                 } catch (err) {

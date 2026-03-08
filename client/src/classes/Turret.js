@@ -49,7 +49,7 @@ export class Turret extends GameObjects.Sprite {
         // opponentAngleChange listener REMOVED — N-player: opponents' turret rotation
         // is not animated on other clients. Positions sync authoritatively via turnResult.
 
-        this.scene.time.addEvent({delay: 500, callback: this.emitRotation, callbackScope: this, loop: true})
+        this.scene.time.addEvent({delay: 100, callback: this.emitRotation, callbackScope: this, loop: true})
 
         this.scene.physics.world.on('worldstep', this.weaponUpdate, this)
     }

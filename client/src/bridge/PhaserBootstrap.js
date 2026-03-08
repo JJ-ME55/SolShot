@@ -83,6 +83,12 @@ function startBattle(container, sceneData, bridge) {
 function destroyBattle() {
   if (gameInstance) {
     try {
+      // Explicitly close Web Audio context before destroy to prevent
+      // "Cannot resume a context that has been closed" on next game boot
+      const ctx = gameInstance.sound?.context;
+      if (ctx && ctx.state !== 'closed') {
+        ctx.close().catch(() => {});
+      }
       gameInstance.destroy(true);
     } catch (_) { /* ignore cleanup errors */ }
     gameInstance = null;

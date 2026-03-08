@@ -289,6 +289,7 @@ function LobbyScreen({ navigate }) {
   const [queueState, setQueueState] = useState(null); // null | 'searching' | 'matched'
   const [error, setError] = useState(null);
   const [showEscrow, setShowEscrow] = useState(false);
+  const [matchFound, setMatchFound] = useState(false);
   const [numPlayers, setNumPlayers] = useState(2);
   const [waitingRoomPlayers, setWaitingRoomPlayers] = useState([]);
   const [waitingRoomMax, setWaitingRoomMax] = useState(2);
@@ -299,6 +300,9 @@ function LobbyScreen({ navigate }) {
   const [isDecisionMaker, setIsDecisionMaker] = useState(false);
   const [partialDepositInfo, setPartialDepositInfo] = useState(null);
   const [kickedMessage, setKickedMessage] = useState(null);
+  const [challengeCallsign, setChallengeCallsign] = useState('');
+  const [challengeSentTo, setChallengeSentTo] = useState(null);
+  const [incomingChallenge, setIncomingChallenge] = useState(null); // { fromSocketId, fromCallsign }
   const countdownRef = useRef(null);
 
   // CS-04: Use context hook instead of window.solWallet
@@ -336,6 +340,8 @@ function LobbyScreen({ navigate }) {
 
   /* ── derived player name from wallet context ── */
   const getPlayerName = useCallback(() => {
+    const handle = localStorage.getItem('solshot_handle');
+    if (handle) return handle;
     if (walletAddress) {
       return walletAddress.slice(0, 4) + '...' + walletAddress.slice(-4);
     }
@@ -480,7 +486,11 @@ function LobbyScreen({ navigate }) {
     setWaiting(false);
     setQueueState(null);
     setWaitingRoomPlayers([]);
-    navigate('shop', data);
+    setMatchFound(true);
+    setTimeout(() => {
+      setMatchFound(false);
+      navigate('shop', data);
+    }, 800);
   });
 
   /* ── socket: join error ── */
@@ -524,6 +534,47 @@ function LobbyScreen({ navigate }) {
 
   useSocket('queueLeft', () => {
     setQueueState(null);
+  });
+
+  /* ── socket: callsign challenge events ── */
+  useSocket('challengeSent', (data) => {
+    setChallengeSentTo(data?.callsign || null);
+  });
+
+  useSocket('challengeError', (data) => {
+    setChallengeSentTo(null);
+    setError(data?.reason || 'Challenge failed');
+  });
+
+  useSocket('challengeReceived', (data) => {
+    setIncomingChallenge({ fromSocketId: data.fromSocketId, fromCallsign: data.fromCallsign });
+  });
+
+  useSocket('challengeAccepted', () => {
+    // Opponent accepted — create the room automatically
+    setChallengeSentTo(null);
+    // Inline createRoom logic to avoid forward reference issue
+    if (!window.socket) return;
+    const handle = localStorage.getItem('solshot_handle');
+    const name = handle || (walletAddress ? walletAddress.slice(0, 4) + '...' + walletAddress.slice(-4) : 'SOLDIER');
+    const color = TANK_COLORS[selectedColor].phaserHex;
+    window.socket.emit('createRoom', {
+      player: {
+        name,
+        color,
+        walletAddress: walletAddress || null,
+        wager: 0,
+        matchLength: 1,
+        matchMode: 'practice',
+        maxPlayers: 2,
+      },
+    });
+    setWaiting(true);
+  });
+
+  useSocket('challengeDeclined', (data) => {
+    setChallengeSentTo(null);
+    setError((data?.byCallsign || 'Player') + ' declined your challenge');
   });
 
   /* ── cleanup: leave queue on unmount ── */
@@ -809,6 +860,61 @@ function LobbyScreen({ navigate }) {
               {effectiveWager > 0 ? '◆ ' + effectiveWager + ' SOL WAGER' : '◆ FREE MATCH'}
             </div>
           </div>
+
+          {/* Challenge by Callsign */}
+          <div>
+            <div style={s.sectionLabel}>CHALLENGE PLAYER</div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input
+                type="text"
+                placeholder="ENTER CALLSIGN"
+                value={challengeCallsign}
+                onChange={(e) => setChallengeCallsign(e.target.value.toUpperCase().slice(0, 16))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && challengeCallsign.trim()) {
+                    window.socket?.emit('challengeCallsign', { callsign: challengeCallsign.trim() });
+                  }
+                }}
+                style={{
+                  flex: 1,
+                  padding: '8px 10px',
+                  fontFamily: "'Share Tech Mono', monospace",
+                  fontSize: 13,
+                  letterSpacing: 2,
+                  background: 'rgba(42, 51, 31, 0.3)',
+                  border: '1px solid var(--ol)',
+                  borderRadius: 3,
+                  color: 'var(--bn)',
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                  textTransform: 'uppercase',
+                }}
+              />
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  if (challengeCallsign.trim()) {
+                    window.socket?.emit('challengeCallsign', { callsign: challengeCallsign.trim() });
+                  }
+                }}
+                style={{ fontSize: 12, padding: '8px 14px', letterSpacing: 1, whiteSpace: 'nowrap' }}
+              >
+                SEND
+              </Button>
+            </div>
+            {challengeSentTo && (
+              <div style={{
+                fontFamily: "'Share Tech Mono', monospace",
+                fontSize: 11,
+                color: 'var(--am)',
+                letterSpacing: 1,
+                marginTop: 4,
+                animation: 'fl 2s ease-in-out infinite',
+              }}>
+                CHALLENGE SENT TO {challengeSentTo}...
+              </div>
+            )}
+          </div>
         </div>
 
         {/* ═══ RIGHT PANEL ═══ */}
@@ -844,6 +950,20 @@ function LobbyScreen({ navigate }) {
                       <span style={s.hostName}>
                         {room.host?.name || 'UNKNOWN'}
                       </span>
+                      {(room.currentPlayers || 1) < (room.maxPlayers || 2) && (
+                        <span style={{
+                          fontFamily: "'Share Tech Mono', monospace",
+                          fontSize: 9,
+                          letterSpacing: 1,
+                          padding: '1px 5px',
+                          borderRadius: 2,
+                          color: 'var(--am)',
+                          border: '1px solid rgba(255,191,0,0.25)',
+                          background: 'rgba(255,191,0,0.06)',
+                          flexShrink: 0,
+                          animation: 'fl 2s ease-in-out infinite',
+                        }}>WAITING</span>
+                      )}
                       <span style={{
                         fontFamily: "'Share Tech Mono', monospace",
                         fontSize: 11,
@@ -877,7 +997,7 @@ function LobbyScreen({ navigate }) {
                       onClick={() => joinRoom(room.roomId)}
                       style={{ fontSize: 13, padding: '6px 14px', letterSpacing: 2 }}
                     >
-                      JOIN
+                      CHALLENGE
                     </Button>
                   </div>
                 );
@@ -891,8 +1011,13 @@ function LobbyScreen({ navigate }) {
       {waiting && (
         <div style={s.waitingOverlay}>
           <div style={s.waitingText}>
-            {waitingRoomPlayers.length + '/' + waitingRoomMax + ' PLAYERS'}
+            {waitingRoomPlayers.length >= waitingRoomMax ? waitingRoomPlayers.length + '/' + waitingRoomMax + ' PLAYERS' : 'AWAITING OPPONENT...'}
           </div>
+          {waitingRoomPlayers.length < waitingRoomMax && (
+            <div style={s.waitingSubtext}>
+              {waitingRoomPlayers.length + '/' + waitingRoomMax + ' PLAYERS'}
+            </div>
+          )}
           <div style={s.waitingSubtext}>
             {modeConfig.label + ' / BO' + matchLength + (effectiveWager > 0 ? ' / ' + effectiveWager + ' SOL' : '')}
             {depositStatuses.length > 0 && effectiveWager > 0 && (
@@ -1131,6 +1256,60 @@ function LobbyScreen({ navigate }) {
             navigate('menu');
           }}
         />
+      )}
+
+      {/* ═══ INCOMING CHALLENGE MODAL ═══ */}
+      {incomingChallenge && (
+        <Modal
+          title="INCOMING CHALLENGE"
+          message={incomingChallenge.fromCallsign + ' wants to battle you!'}
+          buttons={[
+            {
+              label: 'ACCEPT',
+              variant: 'primary',
+              onClick: () => {
+                window.socket?.emit('acceptChallenge', { fromSocketId: incomingChallenge.fromSocketId });
+                setIncomingChallenge(null);
+              },
+            },
+            {
+              label: 'DECLINE',
+              variant: 'secondary',
+              onClick: () => {
+                window.socket?.emit('declineChallenge', { fromSocketId: incomingChallenge.fromSocketId });
+                setIncomingChallenge(null);
+              },
+            },
+          ]}
+          onClose={() => {
+            window.socket?.emit('declineChallenge', { fromSocketId: incomingChallenge.fromSocketId });
+            setIncomingChallenge(null);
+          }}
+        />
+      )}
+
+      {/* ═══ MATCH FOUND FLASH ═══ */}
+      {matchFound && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(10, 12, 8, 0.9)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 50,
+        }}>
+          <div style={{
+            fontFamily: "'Black Ops One', cursive",
+            fontSize: 36,
+            color: 'var(--am)',
+            letterSpacing: 6,
+            animation: 'fl 1s ease-in-out infinite',
+            textShadow: '0 0 20px rgba(255,191,0,0.4)',
+          }}>
+            MATCH FOUND
+          </div>
+        </div>
       )}
     </>
   );

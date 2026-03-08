@@ -98,6 +98,8 @@ function BattleScreen({ navigate, screenData }) {
   const [error, setError] = useState(null);
   const [disconnectCountdown, setDisconnectCountdown] = useState(null);
   const countdownRef = useRef(null);
+  const [turnTimer, setTurnTimer] = useState(60);
+  const turnTimerRef = useRef(null);
 
   // CS-04: Use context hook instead of window.solWallet
   const { signAndSendEscrowDeposit } = useSolShotWallet();
@@ -225,20 +227,107 @@ function BattleScreen({ navigate, screenData }) {
     }
   });
 
+  /* -- Turn timer: 60s countdown, resets on turn change -- */
+  useEffect(() => {
+    if (!phaserReady) return;
+    // Reset to 60 whenever the turn changes
+    setTurnTimer(60);
+    if (turnTimerRef.current) clearInterval(turnTimerRef.current);
+    turnTimerRef.current = setInterval(() => {
+      setTurnTimer((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => {
+      if (turnTimerRef.current) clearInterval(turnTimerRef.current);
+    };
+  }, [gameState.currentPlayerIndex, phaserReady]);
+
   /* -- Cleanup countdown interval on unmount -- */
   useEffect(() => {
     return () => {
-      if (countdownRef.current) {
-        clearInterval(countdownRef.current);
-      }
+      if (countdownRef.current) clearInterval(countdownRef.current);
+      if (turnTimerRef.current) clearInterval(turnTimerRef.current);
     };
   }, []);
 
-  /* -- ESC key for exit menu -- */
+  /* -- Global keyboard controls -- */
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === 'Escape') {
-        setShowExit((prev) => !prev);
+      // Skip if user is typing in an input field
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+      const b = bridgeRef.current;
+      if (!b) return;
+
+      switch (e.key) {
+        case 'Escape':
+          setShowExit((prev) => !prev);
+          break;
+
+        // ── Angle: Q/E or Left/Right arrows ──
+        case 'q':
+        case 'Q':
+        case 'ArrowLeft': {
+          e.preventDefault();
+          const cur = b.state.players?.[b.state.myPlayerIndex]?.angle || 45;
+          b.setAngle(Math.max(0, cur - (e.shiftKey ? 5 : 1)));
+          break;
+        }
+        case 'e':
+        case 'E':
+        case 'ArrowRight': {
+          e.preventDefault();
+          const cur = b.state.players?.[b.state.myPlayerIndex]?.angle || 45;
+          b.setAngle(Math.min(180, cur + (e.shiftKey ? 5 : 1)));
+          break;
+        }
+
+        // ── Power: W/S or Up/Down arrows ──
+        case 'w':
+        case 'W':
+        case 'ArrowUp': {
+          e.preventDefault();
+          const cur = b.state.players?.[b.state.myPlayerIndex]?.power || 60;
+          b.setPower(Math.min(100, cur + (e.shiftKey ? 5 : 1)));
+          break;
+        }
+        case 's':
+        case 'S':
+        case 'ArrowDown': {
+          e.preventDefault();
+          const cur = b.state.players?.[b.state.myPlayerIndex]?.power || 60;
+          b.setPower(Math.max(5, cur - (e.shiftKey ? 5 : 1)));
+          break;
+        }
+
+        // ── Movement: A/D ──
+        case 'a':
+        case 'A':
+          b.moveLeft();
+          break;
+        case 'd':
+        case 'D':
+          b.moveRight();
+          break;
+
+        // ── Fire: Space ──
+        case ' ':
+          e.preventDefault();
+          b.fire();
+          break;
+
+        // ── Weapon select: 1-9 number keys ──
+        case '1': case '2': case '3': case '4': case '5':
+        case '6': case '7': case '8': case '9': {
+          const weaponIdx = parseInt(e.key, 10) - 1;
+          const weapons = b.state.weapons || [];
+          if (weaponIdx < weapons.length) {
+            b.selectWeapon(weaponIdx);
+          }
+          break;
+        }
+
+        default:
+          break;
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -301,6 +390,7 @@ function BattleScreen({ navigate, screenData }) {
           bridge={bridge}
           gameState={gameState}
           wager={wager}
+          turnTimer={turnTimer}
           onLeaveMatch={handleLeaveMatch}
         />
       )}

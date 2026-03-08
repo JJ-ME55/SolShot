@@ -14,7 +14,8 @@ const userSchema = new mongoose.Schema({
     },
     handle: {
         type: String,
-        default: ''
+        default: '',
+        index: true
     },
     username: {
         type: String,
@@ -24,6 +25,8 @@ const userSchema = new mongoose.Schema({
         matchesPlayed: { type: Number, default: 0 },
         wins: { type: Number, default: 0 },
         losses: { type: Number, default: 0 },
+        totalDamage: { type: Number, default: 0 },
+        bestWinStreak: { type: Number, default: 0 },
         totalSolWon: { type: Number, default: 0 },
         totalSolLost: { type: Number, default: 0 },
         totalShotEarned: { type: Number, default: 0 },
@@ -51,6 +54,16 @@ const userSchema = new mongoose.Schema({
         totalBurned: { type: Number, default: 0 },
         claimedMatchIds: { type: [String], default: [] },
     },
+    matchHistory: [{
+        opponent: { type: String, default: '' },
+        result: { type: String, enum: ['win', 'loss', 'draw'], default: 'loss' },
+        mode: { type: String, default: 'practice' },
+        damageDealt: { type: Number, default: 0 },
+        kills: { type: Number, default: 0 },
+        deaths: { type: Number, default: 0 },
+        goldEarned: { type: Number, default: 0 },
+        playedAt: { type: Date, default: Date.now }
+    }],
     lastActive: { type: Date, default: Date.now }
 }, {
     timestamps: true

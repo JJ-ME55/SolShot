@@ -1993,8 +1993,8 @@ export class sniperrifle {
 
     blast = (weapon, obj, blowTank = false) => {
         var grd = [{relativePosition: 0, color: 'rgba(0,0,0,0)'}, {relativePosition: 1, color: 'rgba(220,220,220,1)'}]
-        var data = {thickness: 0, gradient: grd, blowPower: 300, soundEffect: 'sniper', soundConfig: {volume: 2}}
-        weapon.terrain.blast(1, Math.floor(obj.body.x), Math.floor(obj.body.y), 1, data, true, this.id.toString())
+        var data = {thickness: 8, gradient: grd, blowPower: 300, soundEffect: 'sniper', soundConfig: {volume: 2}}
+        weapon.terrain.blast(1, Math.floor(obj.body.x), Math.floor(obj.body.y), 8, data, blowTank, this.id.toString())
         var vec = new Phaser.Math.Vector2(1,1)
 
         for (let index = 0; index < 200; index++) {

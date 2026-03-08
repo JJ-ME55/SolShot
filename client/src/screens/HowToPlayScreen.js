@@ -113,10 +113,13 @@ const s = {
 };
 
 const CONTROLS = [
-  ['LEFT / RIGHT', 'Adjust aim angle'],
-  ['UP / DOWN', 'Adjust shot power'],
+  ['Q / E  or  LEFT / RIGHT', 'Adjust aim angle'],
+  ['W / S  or  UP / DOWN', 'Adjust shot power'],
+  ['A / D', 'Move tank (4 steps per turn)'],
   ['SPACE', 'Fire weapon'],
-  ['1-8', 'Select weapon slot'],
+  ['1-9', 'Select weapon slot'],
+  ['SHIFT + key', 'Adjust angle/power by 5'],
+  ['ESC', 'Forfeit / exit menu'],
 ];
 
 function HowToPlayScreen({ navigate }) {

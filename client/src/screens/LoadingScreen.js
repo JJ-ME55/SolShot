@@ -26,15 +26,15 @@ const styles = {
   },
   logoText: {
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 28,
+    fontSize: 36,
     letterSpacing: 2,
     animation: 'su 0.4s ease-out 0.2s both',
   },
   barContainer: {
-    width: 300,
-    height: 6,
+    width: 340,
+    height: 8,
     background: 'var(--od)',
-    borderRadius: 3,
+    borderRadius: 4,
     overflow: 'hidden',
     border: '1px solid var(--ol)',
     animation: 'su 0.4s ease-out 0.4s both',
@@ -47,15 +47,15 @@ const styles = {
   },
   statusText: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 14,
+    fontSize: 18,
     color: 'var(--kh)',
-    letterSpacing: 3,
+    letterSpacing: 4,
     textTransform: 'uppercase',
     animation: 'su 0.4s ease-out 0.5s both',
   },
   percentText: {
     fontFamily: "'Bebas Neue', sans-serif",
-    fontSize: 36,
+    fontSize: 48,
     color: 'var(--bn)',
     animation: 'su 0.4s ease-out 0.45s both',
   },
@@ -161,7 +161,7 @@ function LoadingScreen({ navigate }) {
       if (cancelled) return;
       setProgress(90);
       setStatus('ARMING WEAPONS...');
-      await new Promise((r) => setTimeout(r, 300));
+      await new Promise((r) => setTimeout(r, 100));
 
       // Done
       if (cancelled) return;
@@ -174,7 +174,7 @@ function LoadingScreen({ navigate }) {
         if (!cancelled) {
           navigate('menu');
         }
-      }, 400);
+      }, 150);
     };
 
     run();
@@ -197,7 +197,7 @@ function LoadingScreen({ navigate }) {
           src="/assets/images/branding/logo-transparent.png"
           alt="SolShot"
           onError={onLogoError}
-          style={{ width: 260, height: 'auto', objectFit: 'contain', animation: 'eg 0.5s ease-out both' }}
+          style={{ width: 320, height: 'auto', objectFit: 'contain', animation: 'eg 0.5s ease-out both' }}
         />
       )}
 

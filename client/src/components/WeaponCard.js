@@ -6,17 +6,13 @@ const s = {
     display: 'flex',
     alignItems: 'center',
     gap: 10,
-    padding: '6px 10px',
+    padding: '8px 12px',
     borderRadius: 4,
     cursor: 'pointer',
+    borderTop: selected ? `1px solid ${tierColor}` : hovered ? '1px solid var(--ol)' : '1px solid transparent',
+    borderRight: selected ? `1px solid ${tierColor}` : hovered ? '1px solid var(--ol)' : '1px solid transparent',
+    borderBottom: selected ? `1px solid ${tierColor}` : hovered ? '1px solid var(--ol)' : '1px solid transparent',
     borderLeft: `3px solid ${tierColor}`,
-    border: selected
-      ? `1px solid ${tierColor}`
-      : hovered
-        ? '1px solid var(--ol)'
-        : '1px solid transparent',
-    borderLeftWidth: 3,
-    borderLeftColor: tierColor,
     background: selected
       ? `rgba(${hexToRgb(tierColor)}, 0.06)`
       : hovered
@@ -26,8 +22,8 @@ const s = {
     boxShadow: selected ? `0 0 8px rgba(${hexToRgb(tierColor)}, 0.15)` : 'none',
   }),
   iconBox: (tierColor) => ({
-    width: 36,
-    height: 36,
+    width: 40,
+    height: 40,
     borderRadius: 3,
     background: 'rgba(10, 12, 8, 0.6)',
     border: `1px solid ${tierColor}33`,
@@ -38,8 +34,8 @@ const s = {
     overflow: 'hidden',
   }),
   iconImg: {
-    width: 28,
-    height: 28,
+    width: 32,
+    height: 32,
     objectFit: 'contain',
     imageRendering: 'pixelated',
   },
@@ -55,7 +51,7 @@ const s = {
   },
   name: {
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 13,
+    fontSize: 14,
     color: 'var(--bn)',
     letterSpacing: 1,
     whiteSpace: 'nowrap',
@@ -64,7 +60,7 @@ const s = {
   },
   tierLabel: (tierColor) => ({
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 11,
+    fontSize: 12,
     color: tierColor,
     letterSpacing: 1,
     opacity: 0.8,
@@ -76,10 +72,10 @@ const s = {
     alignItems: 'center',
   },
   statBar: (width, color) => ({
-    width: 50,
-    height: 3,
-    borderRadius: 2,
-    background: 'rgba(184, 168, 138, 0.1)',
+    width: 60,
+    height: 6,
+    borderRadius: 3,
+    background: 'rgba(184, 168, 138, 0.15)',
     position: 'relative',
     overflow: 'hidden',
   }),
@@ -95,11 +91,11 @@ const s = {
   }),
   statLabel: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 10,
+    fontSize: 11,
     color: 'var(--kh)',
     letterSpacing: 1,
     opacity: 0.6,
-    width: 30,
+    width: 32,
   },
   priceArea: {
     display: 'flex',
@@ -110,13 +106,13 @@ const s = {
   },
   price: (isFree) => ({
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 13,
+    fontSize: 14,
     letterSpacing: 1,
     color: isFree ? 'var(--kh)' : 'var(--gd)',
   }),
   owned: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 11,
+    fontSize: 12,
     color: 'var(--sg)',
     letterSpacing: 1,
   },

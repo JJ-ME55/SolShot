@@ -406,11 +406,15 @@ function pathToHeightmap(path, width) {
         sorted.push({ x: width - 1, y: sorted[sorted.length - 1].y });
     }
 
-    // Linear interpolation between consecutive path points
+    // Linear interpolation between consecutive path points.
+    // Use ceil(p1.x) for startX so t is always >= 0, preventing
+    // extrapolation that overwrites correct values from previous segments
+    // (bug: when two path points share the same integer x column,
+    // floor(p1.x) could cause t < 0, placing heightmap above terrain).
     for (let i = 0; i < sorted.length - 1; i++) {
         const p1 = sorted[i];
         const p2 = sorted[i + 1];
-        const startX = Math.max(0, Math.floor(p1.x));
+        const startX = Math.max(0, Math.ceil(p1.x));
         const endX = Math.min(width - 1, Math.floor(p2.x));
 
         for (let x = startX; x <= endX; x++) {
@@ -457,9 +461,12 @@ export function generateTankPositions(heightmap, N = 2, width = TERRAIN_WIDTH) {
         // Preserve original 2-player behavior exactly for backward compat
         const hostX = Math.floor(width * 0.2 + (crypto.randomInt(1000) / 1000) * width * 0.15);
         const playerX = Math.floor(width * 0.65 + (crypto.randomInt(1000) / 1000) * width * 0.15);
+        // Tank shape is drawn in the top half of its 24px canvas; with default
+        // center origin the visible bottom aligns with the sprite position.
+        // Offset 0 = tank bottom sits exactly on terrain surface.
         return [
-            { x: hostX, y: heightmap[hostX] - 15 },
-            { x: playerX, y: heightmap[playerX] - 15 },
+            { x: hostX, y: heightmap[hostX] },
+            { x: playerX, y: heightmap[playerX] },
         ];
     }
     // N > 2: divide [10%, 90%] into N equal zones
@@ -472,7 +479,7 @@ export function generateTankPositions(heightmap, N = 2, width = TERRAIN_WIDTH) {
         const innerStart = Math.floor(zoneStart + zoneWidth * 0.2);
         const innerWidth = Math.floor(zoneWidth * 0.6);
         const x = Math.min(width - 1, innerStart + Math.floor(crypto.randomInt(Math.max(1, innerWidth))));
-        positions.push({ x, y: heightmap[x] - 15 });
+        positions.push({ x, y: heightmap[x] });
     }
     return positions;
 }
@@ -575,17 +582,19 @@ function processSingleShot(weapon, trajectory, terrain, tanks, shooterId) {
 function processSniperShot(weapon, trajectory, terrain, tanks, shooterId) {
     const impact = calculateImpact(trajectory, terrain, tanks);
     let damage = {};
+    let newTerrain = terrain;
 
     if (impact.type !== 'outOfBounds') {
         damage = calculateDamage(impact, weapon.weaponId, tanks, shooterId);
-        // 1px blast — negligible terrain deform, but apply for consistency
+        // Small crater (8px) for visual feedback on impact
+        newTerrain = deformTerrain(terrain, impact, 8);
     }
 
     return {
         trajectory: trimTrajectory(trajectory, impact.frameIndex),
         impact: { x: impact.x, y: impact.y, type: impact.type },
         damage,
-        newTerrain: terrain  // 1px crater is negligible
+        newTerrain
     };
 }
 

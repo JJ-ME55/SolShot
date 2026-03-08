@@ -10,17 +10,9 @@ const styles = {
     textAlign: 'center',
     zIndex: 2,
   },
-  helplineRow: {
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 10,
-    color: 'var(--kh, #6b7280)',
-    opacity: 0.5,
-    letterSpacing: 1,
-    marginBottom: 3,
-  },
   legalRow: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 10,
+    fontSize: 11,
     color: 'var(--kh, #6b7280)',
     opacity: 0.4,
     letterSpacing: 1,
@@ -37,10 +29,6 @@ const styles = {
     marginLeft: 4,
     marginRight: 4,
   },
-  badge: {
-    fontWeight: 'bold',
-    marginRight: 6,
-  },
 };
 
 const ToS_URL = 'https://github.com/JJ-ME55/SolShot/blob/main/Docs/SOLSHOT_TERMS_OF_SERVICE.md';
@@ -49,37 +37,9 @@ const PP_URL = 'https://github.com/JJ-ME55/SolShot/blob/main/Docs/SOLSHOT_PRIVAC
 function ResponsibleGaming() {
   return (
     <div style={styles.container}>
-      <div style={styles.helplineRow}>
-        <span style={styles.badge}>18+</span>
-        PLAY RESPONSIBLY
-        <a
-          href="https://www.begambleaware.org"
-          target="_blank"
-          rel="noopener noreferrer"
-          style={styles.link}
-        >
-          BeGambleAware
-        </a>
-        <span style={styles.separator}>|</span>
-        <a
-          href="https://www.ncpgambling.org"
-          target="_blank"
-          rel="noopener noreferrer"
-          style={styles.link}
-        >
-          NCPG
-        </a>
-        <span style={styles.separator}>|</span>
-        <a
-          href="https://www.gamcare.org.uk"
-          target="_blank"
-          rel="noopener noreferrer"
-          style={styles.link}
-        >
-          GamCare
-        </a>
-      </div>
       <div style={styles.legalRow}>
+        18+
+        <span style={styles.separator}>|</span>
         <a
           href={ToS_URL}
           target="_blank"

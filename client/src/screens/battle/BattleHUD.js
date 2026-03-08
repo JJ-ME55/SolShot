@@ -99,7 +99,7 @@ const moveBtn = (disabled) => ({
   userSelect: 'none',
 });
 
-function BattleHUD({ bridge, gameState, wager, onLeaveMatch }) {
+function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch }) {
   const {
     players = [],
     myPlayerIndex = -1,
@@ -146,7 +146,7 @@ function BattleHUD({ bridge, gameState, wager, onLeaveMatch }) {
       </div>
 
       {/* ═══ TURN INDICATOR ═══ */}
-      <div style={{ display: 'flex', justifyContent: 'center', marginTop: 2 }}>
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', marginTop: 2, gap: 8 }}>
         <div style={{
           ...s.turnLabel,
           ...(isPlayerTurn ? s.turnLabelActive : s.turnLabelWaiting),
@@ -157,6 +157,20 @@ function BattleHUD({ bridge, gameState, wager, onLeaveMatch }) {
               : "OPPONENT'S TURN"
           )}
         </div>
+        {turnTimer != null && (
+          <div style={{
+            fontFamily: "'Bebas Neue', sans-serif",
+            fontSize: 20,
+            color: turnTimer <= 10 ? 'var(--rd)' : 'var(--kh)',
+            letterSpacing: 1,
+            lineHeight: 1,
+            opacity: turnTimer <= 10 ? 1 : 0.6,
+            animation: turnTimer <= 10 ? 'fl 1s ease-in-out infinite' : 'none',
+            pointerEvents: 'none',
+          }}>
+            {turnTimer}s
+          </div>
+        )}
       </div>
 
       {/* ═══ BOTTOM ROW ═══ */}
@@ -211,8 +225,8 @@ function BattleHUD({ bridge, gameState, wager, onLeaveMatch }) {
         </div>
       </div>
 
-      {/* ═══ ELIMINATION OVERLAY ═══ */}
-      {isEliminated && (
+      {/* ═══ ELIMINATION OVERLAY (3+ players only; 2-player ends immediately) ═══ */}
+      {isEliminated && players.length > 2 && (
         <div style={{
           position: 'absolute',
           top: '50%',

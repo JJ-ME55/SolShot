@@ -87,51 +87,67 @@ function AppInner() {
       });
     };
 
+    let rejoinRetries = 0;
+    const MAX_REJOIN_RETRIES = 3;
+    let rejoinTimer = null;
+
     const attemptRejoin = async () => {
-      const walletAddress = publicKey?.toBase58();
-      if (!walletAddress || !signMessage) {
-        // Wallet not ready yet — retry once after 2s (covers async wallet adapter init)
-        if (!attemptRejoin._retried) {
-          attemptRejoin._retried = true;
-          setTimeout(attemptRejoin, 2000);
-        }
+      // Try uid-based rejoin first (practice mode) — avoids wallet popup noise
+      const uid = localStorage.getItem('solshot_uid');
+      if (uid) {
+        window.socket.emit('rejoinRoom', { uid });
         return;
       }
-      // Reset retry flag on successful attempt
-      attemptRejoin._retried = false;
 
-      try {
-        const timestamp = Date.now();
-        const message = `SolShot Auth: ${walletAddress} at ${timestamp}`;
-        const encodedMessage = new TextEncoder().encode(message);
-        const signature = await signMessage(encodedMessage);
-        const signatureBase64 = btoa(String.fromCharCode(...signature));
+      const walletAddress = publicKey?.toBase58();
+      if (walletAddress && signMessage) {
+        // Wallet-based rejoin with Ed25519 signature
+        try {
+          const timestamp = Date.now();
+          const message = `SolShot Auth: ${walletAddress} at ${timestamp}`;
+          const encodedMessage = new TextEncoder().encode(message);
+          const signature = await signMessage(encodedMessage);
+          const signatureBase64 = btoa(String.fromCharCode(...signature));
 
-        window.socket.emit('rejoinRoom', {
-          walletAddress,
-          message,
-          signature: signatureBase64,
-          timestamp,
-        });
-      } catch (err) {
-        console.warn('[SolShot] Rejoin signature failed:', err.message);
-        // Don't block — if signMessage fails (user rejects), the 30s reconnect window
-        // allows another attempt on next socket connect event
+          window.socket.emit('rejoinRoom', {
+            walletAddress,
+            message,
+            signature: signatureBase64,
+            timestamp,
+          });
+        } catch (err) {
+          console.warn('[SolShot] Rejoin wallet signature failed:', err.message);
+        }
+      }
+    };
+
+    const handleRejoinError = (data) => {
+      // Retry — server may not have processed old socket disconnect yet
+      if (rejoinRetries < MAX_REJOIN_RETRIES) {
+        rejoinRetries++;
+        rejoinTimer = setTimeout(attemptRejoin, 1000);
       }
     };
 
     window.socket.on('rejoinSuccess', handleRejoinSuccess);
+    window.socket.on('rejoinError', handleRejoinError);
 
-    // If socket is already connected, try rejoin immediately
+    // Delay first attempt by 500ms to let server detect old socket disconnect
+    const scheduleRejoin = () => {
+      rejoinRetries = 0;
+      rejoinTimer = setTimeout(attemptRejoin, 500);
+    };
+
     if (window.socket.connected) {
-      attemptRejoin();
+      scheduleRejoin();
     }
-    // Also try on each (re)connect
-    window.socket.on('connect', attemptRejoin);
+    window.socket.on('connect', scheduleRejoin);
 
     return () => {
+      if (rejoinTimer) clearTimeout(rejoinTimer);
       window.socket.off('rejoinSuccess', handleRejoinSuccess);
-      window.socket.off('connect', attemptRejoin);
+      window.socket.off('rejoinError', handleRejoinError);
+      window.socket.off('connect', scheduleRejoin);
     };
   }, [publicKey, signMessage, navigate]); // eslint-disable-line react-hooks/exhaustive-deps
 

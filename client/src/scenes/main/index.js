@@ -27,6 +27,7 @@ export class MainScene extends Scene {
     this.myPlayerIndex = -1;       // which tanks[i] is the local player; -1 until terrainGenerated
     this.currentPlayerIndex = 0;   // whose turn it is, 0-based index
     this._eliminated = {};          // { [index]: boolean } for tracking eliminated players
+    this._pendingEliminations = []; // queued until after trajectory animation completes
     this._lastPositions = [];       // cache positions[] from last terrainGenerated/turnResult
     // Practice mode turn tracking (type4 only)
     this.activeTank = 0;
@@ -44,6 +45,7 @@ export class MainScene extends Scene {
     this.blastCache = new BlastCache(this);
     this._bridge = null;
     this._turnResultCooldown = 0;
+    this._firePending = false;
 
     // Socket handler refs for cleanup (Fix 4)
     this._socketHandlers = {};
@@ -117,13 +119,9 @@ export class MainScene extends Scene {
     this.load.audio('magicbeans_grow', ['assets/sounds/others/magicbeans_grow.wav']);
     this.load.audio('rock', ['assets/sounds/others/rock.wav']);
     this.load.audio('rocket', ['assets/sounds/others/rocket.wav']);
-    this.load.audio('tracer', ['assets/sounds/others/tracer.wav']);
-    this.load.audio('split', ['assets/sounds/others/split.wav']);
-    this.load.audio('magicwall', ['assets/sounds/others/magicwall.wav']);
-    this.load.audio('zapper', ['assets/sounds/others/zapper.wav']);
-    this.load.audio('skipperbounce', ['assets/sounds/others/skipperbounce.wav']);
-    this.load.audio('homing', ['assets/sounds/others/homing.wav']);
-    this.load.audio('sniper', ['assets/sounds/others/sniper.wav']);
+    // NOTE: tracer, split, magicwall, zapper, skipperbounce, homing, sniper
+    // audio files do not exist yet — removed to prevent decode errors.
+    // Safe sound wrapper in create() silently skips missing keys at play time.
   };
 
   create = () => {
@@ -356,6 +354,59 @@ export class MainScene extends Scene {
     }
 
     // Non-multiplayer (type4 practice mode) — legacy local turn switching
+    // Apply server-authoritative positions + gold from pending result (knockback, etc.)
+    if (this.pendingTurnResult) {
+      if (this._turnResultCooldown > 0) {
+        this._turnResultCooldown--;
+        return;
+      }
+      const pr = this.pendingTurnResult;
+      // Sync heightmap FIRST (before position snap uses it)
+      if (pr.terrainUpdate && pr.terrainUpdate.length > 0) {
+        this._serverHeightmap = pr.terrainUpdate;
+        this.terrain.applyHeightmap(pr.terrainUpdate);
+      }
+      // Sync HP from server
+      if (pr.players && Array.isArray(pr.players)) {
+        pr.players.forEach((pd, i) => {
+          const tank = this.tanks[i];
+          if (tank && tank.scoreHandler && pd.hp !== undefined) {
+            tank.scoreHandler.hp = Math.max(0, pd.hp);
+          }
+        });
+      }
+      // Sync positions (includes knockback)
+      const positions = pr.positions;
+      if (positions && Array.isArray(positions)) {
+        positions.forEach((pos, i) => {
+          const tank = this.tanks[i];
+          if (!tank) return;
+          const px = pos.x ?? pos.pos?.x;
+          if (px === undefined) return;
+          // Only sync X (knockback). Let physicsStep settle Y.
+          if (Math.abs(tank.x - px) > 1) {
+            tank.setPosition(px, tank.y);
+            if (tank.body) tank.body.x = px;
+            tank.settled = false;
+          }
+        });
+        this._lastPositions = positions;
+      }
+      // Sync gold
+      const socket = window.socket;
+      if (pr.goldBalance && socket && this._bridge) {
+        const myGold = pr.goldBalance[socket.id];
+        if (myGold !== undefined) this._bridge.updateState({ gold: myGold });
+      }
+      // Flush pending eliminations
+      while (this._pendingEliminations?.length > 0) {
+        const e = this._pendingEliminations.shift();
+        this._playEliminationEffect(e.tankIndex, e.eliminatedId, e.killedById, e.reason);
+      }
+      this._bridge && this._pushStateToBridge();
+      this.pendingTurnResult = null;
+    }
+
     const t0 = this.tanks[0];
     const t1 = this.tanks[1];
     if (!t0 || !t1) return;
@@ -382,6 +433,12 @@ export class MainScene extends Scene {
 
   // ── Activate the current player's tank and deactivate all others ──
   _activateCurrentTank = () => {
+    this._firePending = false; // Reset fire guard on turn change
+    // Fix 2: Flush queued eliminations (covers timeout path where applyTurnResult never runs)
+    while (this._pendingEliminations?.length > 0) {
+      const e = this._pendingEliminations.shift();
+      this._playEliminationEffect(e.tankIndex, e.eliminatedId, e.killedById, e.reason);
+    }
     this.tanks.forEach((t, i) => {
       const isMyTankAndMyTurn = (i === this.myPlayerIndex && i === this.currentPlayerIndex);
       t.active = isMyTankAndMyTurn;
@@ -456,6 +513,7 @@ export class MainScene extends Scene {
   // ── Elimination: wreckage, kill text, spectator mode ──
 
   _playEliminationEffect = (tankIndex, eliminatedId, killedById, reason) => {
+    if (!this.sys?.isActive()) return; // Guard: scene may be shutting down
     const tank = this.tanks[tankIndex];
     if (!tank) return;
 
@@ -621,30 +679,19 @@ export class MainScene extends Scene {
     this._nameLabels = this.tanks.map((t, i) => {
       const label = this.add.text(t.x, t.y - 32, t.name || '', {
         fontFamily: "'Share Tech Mono', monospace",
-        fontSize: '11px',
+        fontSize: '14px',
         color: t.color || '#ffffff',
         stroke: '#000000',
-        strokeThickness: 2,
+        strokeThickness: 3,
+        resolution: 2,
       });
       label.setOrigin(0.5, 1);
       label.setDepth(15);
       return label;
     });
 
-    // "YOU" marker above local player's tank — Solana green accent
-    if (this.myPlayerIndex >= 0 && this.tanks[this.myPlayerIndex]) {
-      const myTank = this.tanks[this.myPlayerIndex];
-      this._youMarker = this.add.text(myTank.x, myTank.y - 44, 'YOU', {
-        fontFamily: "'Black Ops One', cursive",
-        fontSize: '10px',
-        color: '#14f195',
-        stroke: '#000000',
-        strokeThickness: 2,
-        align: 'center',
-      });
-      this._youMarker.setOrigin(0.5, 1);
-      this._youMarker.setDepth(15);
-    }
+    // "YOU" marker removed — HUD already shows player identity at top,
+    // and the turn pointer arrow indicates the active tank.
   };
 
   _updateNameLabels = () => {
@@ -676,6 +723,8 @@ export class MainScene extends Scene {
       this._hasHadFirstTurn = true;
       return;
     }
+
+    try { this.sound.play('click', { volume: 0.3 }); } catch (_) {}
 
     const flash = this.add.text(
       this.renderer.width / 2,
@@ -787,12 +836,15 @@ export class MainScene extends Scene {
       this.myPlayerIndex = resolvedPositions.findIndex(p => p.socketId === socket.id);
       this._lastPositions = resolvedPositions;
 
-      // Position all tanks
+      // Position all tanks — extract x/y from flat or nested format
       resolvedPositions.forEach((pos, i) => {
         const tank = this.tanks[i];
         if (!tank) return;
-        tank.setPosition(pos.x, pos.y);
-        const rotation = this.terrain.getSlope(pos.x, pos.y);
+        const px = pos.x ?? pos.pos?.x;
+        const py = pos.y ?? pos.pos?.y;
+        if (px === undefined || py === undefined) return;
+        tank.setPosition(px, py);
+        const rotation = this.terrain.getSlope(px, py);
         if (rotation !== undefined) tank.setRotation(rotation);
         tank.enablePhysics();
       });
@@ -839,7 +891,9 @@ export class MainScene extends Scene {
     };
 
     this._socketHandlers.fireRejected = ({ reason }) => {
-      console.warn('[SolShot] Fire rejected:', reason);
+      // Only log unexpected rejections — "Not your turn" is normal during turn transitions
+      if (reason !== 'Not your turn') console.warn('[SolShot] Fire rejected:', reason);
+      this._firePending = false;
       // Re-enable controls for local player — guard against myPlayerIndex < 0
       if (this.myPlayerIndex >= 0 && this.tanks[this.myPlayerIndex]) {
         this.tanks[this.myPlayerIndex].active = true;
@@ -847,8 +901,27 @@ export class MainScene extends Scene {
       this._pushStateToBridge();
     };
 
+    // ── Handle turnTimeout — server auto-advances turn when timer expires ──
+    this._socketHandlers.turnTimeout = (data) => {
+      const { nextTurn } = data;
+      if (!nextTurn) return;
+      // Resolve nextTurn socketId to player index
+      let nextIdx = this._lastPositions.findIndex(p => p.socketId === nextTurn);
+      if (nextIdx < 0 && data.currentPlayerIndex !== undefined) {
+        nextIdx = data.currentPlayerIndex;
+      }
+      if (nextIdx >= 0) {
+        this.currentPlayerIndex = nextIdx;
+      }
+      this._firePending = false;
+      this._activateCurrentTank();
+      this.showTurnPointer();
+      this._pushStateToBridge();
+    };
+
     socket.on('turnResult', this._socketHandlers.turnResult);
     socket.on('fireRejected', this._socketHandlers.fireRejected);
+    socket.on('turnTimeout', this._socketHandlers.turnTimeout);
 
     // ── STEP 4: Handle playerEliminated — tank wreckage, kill text, spectator mode ──
     this._socketHandlers.playerEliminated = ({ eliminatedId, killedById, survivingPlayers, reason }) => {
@@ -856,12 +929,13 @@ export class MainScene extends Scene {
       const idx = positions.findIndex(p => p.socketId === eliminatedId);
       if (idx !== -1 && !this._eliminated[idx]) {
         this._eliminated[idx] = true;
-        this._playEliminationEffect(idx, eliminatedId, killedById, reason);
-        // Update bridge with elimination state
+        // Fix 2: Queue elimination effect — play after trajectory animation completes
+        this._pendingEliminations.push({ tankIndex: idx, eliminatedId, killedById, reason });
+        // Update bridge immediately so HP bar shows "OUT"
         if (this._bridge) {
           const survivorCount = survivingPlayers ? survivingPlayers.length :
             this.tanks.filter((_, i) => !this._eliminated[i]).length;
-          const placement = this.tanks.length - survivorCount;
+          const placement = survivorCount + 1; // eliminated = one worse than survivors
           this._bridge.setPlayerEliminated(idx, placement);
         }
       }
@@ -869,13 +943,48 @@ export class MainScene extends Scene {
       // Use encapsulated _lastPositions lookup (not window.socket?.id)
       const mySocketId = this._lastPositions?.[this.myPlayerIndex]?.socketId;
       if (mySocketId && eliminatedId === mySocketId) {
-        const survivorCount = survivingPlayers ? survivingPlayers.length :
-          this.tanks.filter((_, i) => !this._eliminated[i]).length;
-        const placement = survivorCount + 1; // I placed one worse than survivors count
-        this._enterSpectatorMode(placement);
+        // In 2-player games, matchEnd fires 3s later — skip spectator mode
+        // (no one to spectate, just wait for win/lose screen)
+        if (this.tanks.length > 2) {
+          const survivorCount = survivingPlayers ? survivingPlayers.length :
+            this.tanks.filter((_, i) => !this._eliminated[i]).length;
+          const placement = survivorCount + 1; // I placed one worse than survivors count
+          this._enterSpectatorMode(placement);
+        }
       }
     };
     socket.on('playerEliminated', this._socketHandlers.playerEliminated);
+
+    // ── Opponent turret/power sync (smooth aiming feedback) ──
+    this._socketHandlers.opponentAngleChange = ({ rotation }) => {
+      if (typeof rotation !== 'number') return;
+      this.tanks.forEach((tank, i) => {
+        if (i !== this.myPlayerIndex && tank.turret) {
+          tank.turret.aimRotation = rotation;
+          if (!tank.turret.previousAngleTimer) {
+            tank.turret.previousAngleTimer = this.time.addEvent({
+              delay: 16, callback: tank.turret.lerpRelativeRotation, callbackScope: tank.turret, loop: true
+            });
+          }
+        }
+      });
+    };
+    socket.on('opponentAngleChange', this._socketHandlers.opponentAngleChange);
+
+    this._socketHandlers.opponentPowerChange = ({ power }) => {
+      if (typeof power !== 'number') return;
+      this.tanks.forEach((tank, i) => {
+        if (i !== this.myPlayerIndex) {
+          tank.aimPower = power;
+          if (!tank.previousPowerTimer) {
+            tank.previousPowerTimer = this.time.addEvent({
+              delay: 16, callback: tank.lerpPower, callbackScope: tank, loop: true
+            });
+          }
+        }
+      });
+    };
+    socket.on('opponentPowerChange', this._socketHandlers.opponentPowerChange);
   };
 
   // ── Apply authoritative turn result from server ──
@@ -954,22 +1063,23 @@ export class MainScene extends Scene {
     if (resolvedPositions && Array.isArray(resolvedPositions)) {
       resolvedPositions.forEach((pos, i) => {
         const tank = this.tanks[i];
-        if (!tank || pos.x === undefined) return;
-        const snappedY = this._serverHeightmap
-          ? (this._serverHeightmap[Math.min(1199, Math.max(0, Math.floor(pos.x)))] || pos.y) - 15
-          : pos.y;
-        tank.setPosition(pos.x, snappedY);
+        if (!tank) return;
+        const px = pos.x ?? pos.pos?.x;
+        if (px === undefined) return;
+
+        // Fix 1: Only sync X from server (knockback). Let physicsStep settle Y
+        // naturally on the terrain bitmap — avoids the -15 offset drift/snapback.
+        if (Math.abs(tank.x - px) > 1) {
+          tank.setPosition(px, tank.y);
+          if (tank.body) tank.body.x = px;
+          tank.settled = false; // Re-settle at new X
+        }
       });
       this._lastPositions = resolvedPositions;
-    } else if (this._serverHeightmap) {
-      // Fallback: no server positions, just snap Y to terrain for all tanks
+    } else {
+      // Fallback: no server positions — let physicsStep re-settle after terrain change
       this.tanks.forEach(tank => {
-        if (tank) {
-          const tx = Math.min(1199, Math.max(0, Math.floor(tank.x)));
-          if (this._serverHeightmap[tx] !== undefined) {
-            tank.setPosition(tank.x, this._serverHeightmap[tx] - 15);
-          }
-        }
+        if (tank) tank.settled = false;
       });
     }
 
@@ -980,6 +1090,12 @@ export class MainScene extends Scene {
         x: myTank.x,
         y: myTank.y,
       });
+    }
+
+    // Fix 2: Flush queued eliminations now that positions are synced
+    while (this._pendingEliminations?.length > 0) {
+      const e = this._pendingEliminations.shift();
+      this._playEliminationEffect(e.tankIndex, e.eliminatedId, e.killedById, e.reason);
     }
 
     // 4. Update gold
@@ -1371,19 +1487,21 @@ export class MainScene extends Scene {
       : this.tanks[this.activeTank - 1];
     if (!myTank || !myTank.active) return;
 
+    // Guard against double-fire race condition: disable BEFORE emitting
+    if (this._firePending) return;
+
     const weaponObj = myTank.weapons[myTank.selectedWeapon];
     if (!weaponObj) return;
 
     if (this.sceneData.gameType === 3) {
       const socket = window.socket;
       if (socket) {
+        // Disable controls BEFORE emitting to prevent double-fire
+        this._firePending = true;
+        myTank.active = false;
+        this._pushStateToBridge();
+
         // SERVER IS GOD: Send only angle/power/weaponId to server.
-        // Server runs physics and broadcasts turnResult to both players.
-        //
-        // Server calculateTrajectory expects angle in RADIANS matching
-        // turret.rotation (the absolute rotation of the turret sprite).
-        // Server then does: rotation = angle - PI/2  (same as client's
-        // Weapon.defaultShoot: rotation = turret.rotation - PI/2).
         const angle = myTank.turret ? myTank.turret.rotation : 0;
 
         socket.emit('fire', {
@@ -1399,10 +1517,6 @@ export class MainScene extends Scene {
 
         // DON'T fire locally — wait for server turnResult.
         // Server trajectory is authoritative; both players see the same projectile.
-
-        // Disable controls until turnResult arrives
-        myTank.active = false;
-        this._pushStateToBridge();
       }
     } else {
       // Non-multiplayer (type4 practice) — fire locally only

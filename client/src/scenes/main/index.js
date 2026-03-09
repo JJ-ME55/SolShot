@@ -393,24 +393,15 @@ export class MainScene extends Scene {
           }
         });
       }
-      // Sync positions — snap X from server, Y from client terrain surface
+      // Sync X positions from server — Y settling handled by physicsStep
       const positions = pr.positions;
       if (positions && Array.isArray(positions)) {
         positions.forEach((pos, i) => {
           const tank = this.tanks[i];
-          if (!tank) return;
+          if (!tank || !tank.body) return;
           const px = pos.x ?? pos.pos?.x;
           if (px === undefined) return;
-          const surfaceY = this.terrain.getTerrainSurfaceY(Math.floor(px));
-          const snapY = surfaceY < this.terrain.height ? surfaceY - 1 : tank.y;
-          tank.setPosition(px, snapY);
-          if (tank.body) {
-            tank.body.x = px;
-            tank.body.y = snapY;
-            tank.body.stop();
-            tank.body.setGravity(0);
-          }
-          tank.settled = true;
+          tank.body.x = px;
         });
         this._lastPositions = positions;
       }
@@ -1089,42 +1080,18 @@ export class MainScene extends Scene {
     if (resolvedPositions && Array.isArray(resolvedPositions)) {
       resolvedPositions.forEach((pos, i) => {
         const tank = this.tanks[i];
-        if (!tank) return;
+        if (!tank || !tank.body) return;
         const px = pos.x ?? pos.pos?.x;
         if (px === undefined) return;
 
-        // Sync X from server, then snap Y to client terrain surface immediately.
-        // Server Y uses heightmap[x]-15 which doesn't match client bitmap exactly.
-        const surfaceY = this.terrain.getTerrainSurfaceY(Math.floor(px));
-        const snapY = surfaceY < this.terrain.height ? surfaceY - 1 : tank.y;
-        tank.setPosition(px, snapY);
-        if (tank.body) {
-          tank.body.x = px;
-          tank.body.y = snapY;
-          tank.body.stop();
-          tank.body.setGravity(0);
-        }
-        tank.settled = true; // Already at surface — no need for slow fall
+        // Sync X from server only — let physicsStep handle Y settling
+        // after terrain has been updated via applyHeightmap.
+        // Tanks were marked settled=false above when terrain was applied.
+        tank.body.x = px;
       });
       this._lastPositions = resolvedPositions;
-    } else {
-      // Fallback: no server positions — snap all tanks to terrain surface
-      if (this.tanks) {
-        this.tanks.forEach(tank => {
-          if (!tank) return;
-          const surfaceY = this.terrain.getTerrainSurfaceY(Math.floor(tank.x));
-          if (surfaceY < this.terrain.height) {
-            tank.setPosition(tank.x, surfaceY - 1);
-            if (tank.body) {
-              tank.body.y = surfaceY - 1;
-              tank.body.stop();
-              tank.body.setGravity(0);
-            }
-          }
-          tank.settled = true;
-        });
-      }
     }
+    // Y settling handled by Tank.physicsStep — it will snap to terrain surface
 
     // Report updated local player position back to server
     if (this.myPlayerIndex >= 0 && this.tanks[this.myPlayerIndex]) {

@@ -407,6 +407,8 @@ export class MainScene extends Scene {
           if (tank.body) {
             tank.body.x = px;
             tank.body.y = snapY;
+            tank.body.stop();
+            tank.body.setGravity(0);
           }
           tank.settled = true;
         });
@@ -1099,6 +1101,8 @@ export class MainScene extends Scene {
         if (tank.body) {
           tank.body.x = px;
           tank.body.y = snapY;
+          tank.body.stop();
+          tank.body.setGravity(0);
         }
         tank.settled = true; // Already at surface — no need for slow fall
       });
@@ -1111,7 +1115,11 @@ export class MainScene extends Scene {
           const surfaceY = this.terrain.getTerrainSurfaceY(Math.floor(tank.x));
           if (surfaceY < this.terrain.height) {
             tank.setPosition(tank.x, surfaceY - 1);
-            if (tank.body) tank.body.y = surfaceY - 1;
+            if (tank.body) {
+              tank.body.y = surfaceY - 1;
+              tank.body.stop();
+              tank.body.setGravity(0);
+            }
           }
           tank.settled = true;
         });

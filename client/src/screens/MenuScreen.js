@@ -182,7 +182,7 @@ function MenuScreen({ navigate }) {
   ];
 
   return (
-    <div style={{ ...styles.container, paddingBottom: isMobile ? 44 : 0 }}>
+    <div style={{ ...styles.container, paddingBottom: isMobile ? 44 : 0, ...(isMobile ? { justifyContent: 'flex-start', paddingTop: 10 } : {}) }}>
       {/* Background elements */}
       <div style={styles.bgTerrain} />
       <div style={styles.bgGlow} />
@@ -199,7 +199,7 @@ function MenuScreen({ navigate }) {
             src="/assets/images/branding/logo-transparent.png"
             alt="SolShot"
             onError={onLogoError}
-            style={{ width: isMobile ? 180 : 340, height: 'auto', objectFit: 'contain', marginBottom: isMobile ? 2 : 8 }}
+            style={{ width: isMobile ? 140 : 340, height: 'auto', objectFit: 'contain', marginBottom: isMobile ? 2 : 8 }}
           />
         )}
         <div style={{ ...styles.tagline, fontSize: isMobile ? 12 : 18, marginTop: isMobile ? 4 : 10, letterSpacing: isMobile ? 2 : 4 }}>SKILL, NOT LUCK</div>

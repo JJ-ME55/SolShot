@@ -226,7 +226,7 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
       {isMobile ? (
         <>
           {/* Angle slider — left edge, vertically centered */}
-          <div style={s.edgeSliderLeft}>
+          <div style={{ ...s.edgeSliderLeft, opacity: isPlayerTurn ? 1 : 0.08, transition: 'opacity 0.3s' }}>
             <AngleControl
               angle={players[myPlayerIndex]?.angle || 45}
               onChange={(v) => bridge.setAngle(v)}
@@ -237,7 +237,7 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
           </div>
 
           {/* Power slider — right edge, vertically centered */}
-          <div style={s.edgeSliderRight}>
+          <div style={{ ...s.edgeSliderRight, opacity: isPlayerTurn ? 1 : 0.08, transition: 'opacity 0.3s' }}>
             <PowerControl
               power={players[myPlayerIndex]?.power || 60}
               onChange={(v) => bridge.setPower(v)}
@@ -248,7 +248,7 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
           </div>
 
           {/* Bottom center: move buttons, weapon, fire, forfeit */}
-          <div style={s.mobileBottom}>
+          <div style={{ ...s.mobileBottom, opacity: isPlayerTurn ? 1 : 0.08, transition: 'opacity 0.3s' }}>
             <div style={{ display: 'flex', gap: 4, pointerEvents: 'auto' }}>
               <button
                 style={moveBtn(disabled || moveSteps <= 0, true)}

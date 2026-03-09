@@ -19,7 +19,7 @@ import { requireAuth, validatePayload, validateFireParams, sanitizeName, withLoc
 const PROFANITY_WORDS = [
     'nigger','nigga','niggers','niggas','negro','nig','coon','darkie','darky','sambo',
     'jigaboo','porchmonkey','spade','pickaninny','golliwog','buckwheat','uncletom',
-    'kike','kyke','jewbag','jewboy','heeb','hymie','yid','zhid','jewfag',
+    'kike','kyke','jewbag','jewboy','heeb','hymie','yid','zhid','jewfag','jew',
     'spic','spick','beaner','wetback','greaser','borderhopper',
     'chink','gook','slanteye','zipperhead','chinaman','chingchong','paki','raghead',
     'towelhead','cameljockey','sandnigger','muzzie','muzrat','jihadist',

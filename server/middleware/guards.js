@@ -99,7 +99,7 @@ export function validateFireParams({ angle, power, weaponId }) {
 const _PROF = [
     'nigger','nigga','niggers','niggas','negro','nig','coon','darkie','darky','sambo',
     'jigaboo','porchmonkey','spade','pickaninny','golliwog','buckwheat','uncletom',
-    'kike','kyke','jewbag','jewboy','heeb','hymie','yid','zhid','jewfag',
+    'kike','kyke','jewbag','jewboy','heeb','hymie','yid','zhid','jewfag','jew',
     'spic','spick','beaner','wetback','greaser','borderhopper',
     'chink','gook','slanteye','zipperhead','chinaman','chingchong','paki','raghead',
     'towelhead','cameljockey','sandnigger','muzzie','muzrat','jihadist',

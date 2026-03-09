@@ -9,7 +9,7 @@ const BANNED = [
   'nigger','nigga','niggers','niggas','negro','nig','coon','darkie','darky','sambo',
   'jigaboo','jiggaboo','porchmonkey','spook','spade','pickaninny','golliwog','buckwheat',
   'uncletom','jiggabo',
-  'kike','kyke','jewbag','jewboy','heeb','hymie','yid','zhid','jewfag',
+  'kike','kyke','jewbag','jewboy','heeb','hymie','yid','zhid','jewfag','jew',
   'spic','spick','beaner','wetback','greaser','borderhopper',
   'chink','gook','slanteye','zipperhead','chinaman','chingchong','paki','raghead',
   'towelhead','cameljockey',

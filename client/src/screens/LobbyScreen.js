@@ -303,6 +303,7 @@ function LobbyScreen({ navigate }) {
   const [challengeCallsign, setChallengeCallsign] = useState('');
   const [challengeSentTo, setChallengeSentTo] = useState(null);
   const [incomingChallenge, setIncomingChallenge] = useState(null); // { fromSocketId, fromCallsign }
+  const [confirmJoin, setConfirmJoin] = useState(null); // { roomId, hostName, mode, format }
   const countdownRef = useRef(null);
 
   // CS-04: Use context hook instead of window.solWallet
@@ -844,6 +845,10 @@ function LobbyScreen({ navigate }) {
               <Button variant="primary" onClick={createRoom} style={{ fontSize: 15, padding: '12px 20px', borderColor: '#ff6600', color: '#ff6600' }}>
                 CREATE CHALLENGE
               </Button>
+            ) : matchMode === 'practice' ? (
+              <Button variant="primary" onClick={createRoom} style={{ fontSize: 15, padding: '12px 20px' }}>
+                CREATE MATCH
+              </Button>
             ) : (
               <Button variant="primary" onClick={joinQueue} style={{ fontSize: 15, padding: '12px 20px' }}>
                 {'FIND ' + modeConfig.label}
@@ -994,7 +999,12 @@ function LobbyScreen({ navigate }) {
 
                     <Button
                       variant="secondary"
-                      onClick={() => joinRoom(room.roomId)}
+                      onClick={() => setConfirmJoin({
+                        roomId: room.roomId,
+                        hostName: room.host?.name || 'UNKNOWN',
+                        mode: rMode?.label || 'MATCH',
+                        format: 'BO' + (room.totalRounds || 1),
+                      })}
                       style={{ fontSize: 13, padding: '6px 14px', letterSpacing: 2 }}
                     >
                       CHALLENGE
@@ -1285,6 +1295,30 @@ function LobbyScreen({ navigate }) {
             window.socket?.emit('declineChallenge', { fromSocketId: incomingChallenge.fromSocketId });
             setIncomingChallenge(null);
           }}
+        />
+      )}
+
+      {/* ═══ JOIN CONFIRMATION MODAL ═══ */}
+      {confirmJoin && (
+        <Modal
+          title="JOIN MATCH?"
+          message={confirmJoin.hostName + ' — ' + confirmJoin.mode + ' / ' + confirmJoin.format}
+          buttons={[
+            {
+              label: 'YES',
+              variant: 'primary',
+              onClick: () => {
+                joinRoom(confirmJoin.roomId);
+                setConfirmJoin(null);
+              },
+            },
+            {
+              label: 'NO',
+              variant: 'secondary',
+              onClick: () => setConfirmJoin(null),
+            },
+          ]}
+          onClose={() => setConfirmJoin(null)}
         />
       )}
 

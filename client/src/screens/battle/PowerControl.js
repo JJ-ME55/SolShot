@@ -46,6 +46,12 @@ const s = {
     cursor: disabled ? 'default' : 'pointer',
     opacity: disabled ? 0.4 : 1,
   }),
+  sliderVerticalWrap: {
+    width: 6,
+    height: 120,
+    position: 'relative',
+    overflow: 'visible',
+  },
   sliderVertical: (disabled) => ({
     width: 120,
     height: 6,
@@ -56,8 +62,13 @@ const s = {
     outline: 'none',
     cursor: disabled ? 'default' : 'pointer',
     opacity: disabled ? 0.4 : 1,
-    writingMode: 'vertical-lr',
-    direction: 'rtl',
+    transform: 'rotate(-90deg)',
+    transformOrigin: 'center',
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    marginTop: -3,
+    marginLeft: -60,
   }),
   unit: {
     fontFamily: "'Share Tech Mono', monospace",
@@ -127,16 +138,31 @@ function PowerControl({ power, onChange, disabled, compact = false, vertical = f
         }}
       />
       <span style={s.unit}>%</span>
-      <input
-        type="range"
-        min={5}
-        max={100}
-        step={1}
-        value={power || 60}
-        onChange={handleSlider}
-        disabled={disabled}
-        style={vertical ? s.sliderVertical(disabled) : s.slider(disabled, compact)}
-      />
+      {vertical ? (
+        <div style={s.sliderVerticalWrap}>
+          <input
+            type="range"
+            min={5}
+            max={100}
+            step={1}
+            value={power || 60}
+            onChange={handleSlider}
+            disabled={disabled}
+            style={s.sliderVertical(disabled)}
+          />
+        </div>
+      ) : (
+        <input
+          type="range"
+          min={5}
+          max={100}
+          step={1}
+          value={power || 60}
+          onChange={handleSlider}
+          disabled={disabled}
+          style={s.slider(disabled, compact)}
+        />
+      )}
     </div>
   );
 }

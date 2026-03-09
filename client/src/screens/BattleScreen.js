@@ -181,41 +181,7 @@ function BattleScreen({ navigate, screenData }) {
     });
   });
 
-  /* -- Socket: opponent disconnected — show countdown overlay -- */
-  useSocket('opponentDisconnected', (data) => {
-    const windowMs = data.reconnectWindowMs || 30000;
-    let remaining = Math.ceil(windowMs / 1000);
-    setDisconnectCountdown(remaining);
-    countdownRef.current = setInterval(() => {
-      remaining--;
-      if (remaining <= 0) {
-        clearInterval(countdownRef.current);
-        countdownRef.current = null;
-        setDisconnectCountdown(null);
-      } else {
-        setDisconnectCountdown(remaining);
-      }
-    }, 1000);
-  });
-
-  /* -- Socket: opponent reconnected — dismiss countdown -- */
-  useSocket('opponentReconnected', () => {
-    if (countdownRef.current) {
-      clearInterval(countdownRef.current);
-      countdownRef.current = null;
-    }
-    setDisconnectCountdown(null);
-  });
-
-  /* -- Socket: reconnect window expired — opponent forfeited -- */
-  useSocket('reconnectExpired', () => {
-    if (countdownRef.current) {
-      clearInterval(countdownRef.current);
-      countdownRef.current = null;
-    }
-    setDisconnectCountdown(null);
-    setError('Opponent disconnected — you win by forfeit');
-  });
+  /* -- Reconnect handlers removed for P1 launch -- */
 
   /* -- Socket: turn timeout — server auto-advanced the turn -- */
   useSocket('turnTimeout', (data) => {
@@ -405,14 +371,7 @@ function BattleScreen({ navigate, screenData }) {
         />
       )}
 
-      {/* Opponent Disconnect Countdown */}
-      {disconnectCountdown !== null && (
-        <div style={s.disconnectOverlay}>
-          <div style={s.disconnectText}>OPPONENT DISCONNECTED</div>
-          <div style={s.disconnectTimer}>{disconnectCountdown}s</div>
-          <div style={s.disconnectText}>WAITING FOR RECONNECT...</div>
-        </div>
-      )}
+      {/* Disconnect overlay removed — reconnect disabled for P1 */}
 
       {/* Error Modal */}
       {error && (

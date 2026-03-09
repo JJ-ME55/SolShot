@@ -393,20 +393,21 @@ export class MainScene extends Scene {
           }
         });
       }
-      // Sync positions (includes knockback)
+      // Sync positions (includes knockback + terrain-adjusted Y)
       const positions = pr.positions;
       if (positions && Array.isArray(positions)) {
         positions.forEach((pos, i) => {
           const tank = this.tanks[i];
           if (!tank) return;
           const px = pos.x ?? pos.pos?.x;
+          const py = pos.y ?? pos.pos?.y;
           if (px === undefined) return;
-          // Only sync X (knockback). Let physicsStep settle Y.
-          if (Math.abs(tank.x - px) > 1) {
-            tank.setPosition(px, tank.y);
-            if (tank.body) tank.body.x = px;
-            tank.settled = false;
+          tank.setPosition(px, py !== undefined ? py : tank.y);
+          if (tank.body) {
+            tank.body.x = px;
+            if (py !== undefined) tank.body.y = py;
           }
+          tank.settled = false;
         });
         this._lastPositions = positions;
       }
@@ -1087,15 +1088,17 @@ export class MainScene extends Scene {
         const tank = this.tanks[i];
         if (!tank) return;
         const px = pos.x ?? pos.pos?.x;
+        const py = pos.y ?? pos.pos?.y;
         if (px === undefined) return;
 
-        // Fix 1: Only sync X from server (knockback). Let physicsStep settle Y
-        // naturally on the terrain bitmap — avoids the -15 offset drift/snapback.
-        if (Math.abs(tank.x - px) > 1) {
-          tank.setPosition(px, tank.y);
-          if (tank.body) tank.body.x = px;
-          tank.settled = false; // Re-settle at new X
+        // Sync both X and Y from server — server recalculates Y on deformed terrain.
+        // Then let physicsStep do a final snap to the client terrain bitmap for pixel-accuracy.
+        tank.setPosition(px, py !== undefined ? py : tank.y);
+        if (tank.body) {
+          tank.body.x = px;
+          if (py !== undefined) tank.body.y = py;
         }
+        tank.settled = false; // physicsStep will snap to exact surface pixel
       });
       this._lastPositions = resolvedPositions;
     } else {

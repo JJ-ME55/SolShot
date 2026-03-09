@@ -996,73 +996,11 @@ const mainsocket = (io) => {
             // Remove from matchmaking queue first (before room cleanup)
             removeFromAllQueues(client.id);
             trackDisconnection()
-            const walletAddress = authenticatedWallets[client.id]
-            const uidInfo = playerUids[client.id]
-            const reconnectKey = walletAddress || (uidInfo?.uid ? `uid:${uidInfo.uid}` : null)
-            const roomId = client.roomId
-            const ms = roomId ? matchStates[roomId] : null
-            const room = roomId ? findRoom(roomId) : null
 
-            // Offer reconnect window during active match with wallet OR uid identity
-            if (reconnectKey && roomId && ms && room &&
-                (ms.status === MATCH_STATES.BATTLE || ms.status === MATCH_STATES.WEAPON_SHOP)) {
-
-                // Store reconnect info keyed by wallet or uid
-                pendingReconnects[reconnectKey] = {
-                    roomId,
-                    isHost: client.isHost,
-                    playerIndex: room.players ? room.players.findIndex(p => p.socketId === client.id) : -1,
-                    oldSocketId: client.id,
-                    name: client.name,
-                    color: client.color,
-                }
-
-                // Notify all other players of disconnect with countdown
-                const opponentId = room.players
-                    ? (room.players.find(p => p.socketId !== client.id)?.socketId || null)
-                    : null
-                room.players
-                    ? room.players.filter(p => p.socketId !== client.id).forEach(p => {
-                        io.to(p.socketId).emit('opponentDisconnected', {
-                            reconnectWindowMs: RECONNECT_WINDOW_MS,
-                        })
-                    })
-                    : (opponentId && io.to(opponentId).emit('opponentDisconnected', { reconnectWindowMs: RECONNECT_WINDOW_MS }))
-
-                // Deferred cleanup — runs after 30s if no reconnect
-                disconnectTimers[reconnectKey] = setTimeout(async () => {
-                    delete pendingReconnects[reconnectKey]
-                    delete disconnectTimers[reconnectKey]
-
-                    // Re-read state (may have changed during window)
-                    const currentMs = matchStates[roomId]
-                    const currentRoom = findRoom(roomId)
-                    if (!currentRoom || !currentMs) return
-
-                    if (currentRoom && currentRoom.players) {
-                        currentRoom.players
-                            .filter(p => p.socketId !== client.id)
-                            .forEach(p => io.to(p.socketId).emit('reconnectExpired', {}))
-                    }
-
-                    // Perform forfeit settlement (reuse cleanupRoom logic)
-                    // Create a fake client-like object for cleanupRoom
-                    const fakeClient = {
-                        id: client.id,
-                        roomId: roomId,
-                        isHost: client.isHost,
-                        leave: () => {},
-                    }
-                    await cleanupRoom(fakeClient, io, 'reconnect_timeout')
-                    delete authenticatedWallets[client.id]
-                    delete playerUids[client.id]
-                }, RECONNECT_WINDOW_MS)
-            } else {
-                // No reconnect window — immediate cleanup (lobby, no wallet, etc.)
-                await cleanupRoom(client, io, 'disconnect')
-                delete authenticatedWallets[client.id]
-                delete playerUids[client.id]
-            }
+            // Immediate cleanup — no reconnect window (disabled for P1 launch)
+            await cleanupRoom(client, io, 'disconnect')
+            delete authenticatedWallets[client.id]
+            delete playerUids[client.id]
         })
 
 
@@ -1072,8 +1010,11 @@ const mainsocket = (io) => {
         })
 
 
-        // === RECONNECT: Rejoin a match after disconnect ===
+        // === RECONNECT: Disabled for P1 launch ===
         client.on('rejoinRoom', async (data) => {
+            client.emit('rejoinError', { reason: 'Reconnect is disabled' })
+            return
+            // --- Original rejoin logic below (dead code) ---
             if (!data) {
                 client.emit('rejoinError', { reason: 'Missing rejoin data' })
                 return

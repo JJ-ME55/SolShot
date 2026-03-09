@@ -44,7 +44,7 @@ function startBattle(container, sceneData, bridge) {
       },
     },
     scale: {
-      mode: Phaser.Scale.FIT,
+      mode: Phaser.Scale.ENVELOP,
       autoCenter: Phaser.Scale.CENTER_BOTH,
     },
     render: {

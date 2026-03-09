@@ -16,7 +16,7 @@ const s = {
     width: '100%',
     height: '100%',
     overflow: 'hidden',
-    background: '#000',
+    background: '#0a1a0a',
     cursor: 'url("/assets/images/crosshair.svg") 16 16, crosshair',
   },
   canvas: {

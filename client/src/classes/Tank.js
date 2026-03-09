@@ -290,29 +290,30 @@ export class Tank extends GameObjects.Sprite {
 
         if (newX === prevX && newY === prevY) {
             // No physics movement — settling phase
-            if (surfaceY < this.terrain.height) {
-                // There IS terrain below — snap to surface
-                if (tankY < surfaceY - 1) {
-                    // In air above surface — fall down (up to 4px/frame)
-                    const dist = surfaceY - 1 - tankY;
-                    if (dist <= 4) {
-                        this.body.y = surfaceY - 1;
-                        var rotation = this.terrain.getSlope(this.body.x, this.body.y);
-                        if (rotation !== undefined) this.setRotation(rotation);
-                        this.settled = true;
-                    } else {
-                        this.body.y = tankY + 4;
-                        this.settled = false;
-                    }
-                } else {
-                    // At or below surface — snap to surface
+            if (this.terrain.getPixel(this.body.x, this.body.y).alpha > 0) {
+                // INSIDE terrain — push UP to surface
+                this.body.y = surfaceY - 1;
+                var rotation = this.terrain.getSlope(this.body.x, this.body.y);
+                if (rotation !== undefined) {
+                    this.setRotation(rotation);
+                }
+                this.settled = true;
+            } else if (tankY < surfaceY - 1) {
+                // In air above surface — fall down (up to 4px/frame)
+                const dist = surfaceY - 1 - tankY;
+                if (dist <= 4) {
                     this.body.y = surfaceY - 1;
                     var rotation = this.terrain.getSlope(this.body.x, this.body.y);
-                    if (rotation !== undefined) this.setRotation(rotation);
+                    if (rotation !== undefined) {
+                        this.setRotation(rotation);
+                    }
                     this.settled = true;
+                } else {
+                    this.body.y = tankY + 4;
+                    this.settled = false;
                 }
-            } else {
-                // No terrain in this column — clamp to bottom, never fall off-screen
+            } else if (surfaceY >= this.terrain.height) {
+                // No terrain below — clamp to bottom, never fall off-screen
                 if (tankY < this.terrain.height - 2) {
                     this.body.y = Math.min(tankY + 4, this.terrain.height - 2);
                     this.settled = false;
@@ -320,6 +321,14 @@ export class Tank extends GameObjects.Sprite {
                     this.body.y = this.terrain.height - 2;
                     this.settled = true;
                 }
+            } else {
+                // On surface
+                this.body.y = surfaceY - 1;
+                var rotation = this.terrain.getSlope(this.body.x, this.body.y);
+                if (rotation !== undefined) {
+                    this.setRotation(rotation);
+                }
+                this.settled = true;
             }
             return;
         }

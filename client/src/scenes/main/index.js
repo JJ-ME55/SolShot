@@ -393,15 +393,20 @@ export class MainScene extends Scene {
           }
         });
       }
-      // Sync X positions from server — Y settling handled by physicsStep
+      // Sync positions (includes knockback)
       const positions = pr.positions;
       if (positions && Array.isArray(positions)) {
         positions.forEach((pos, i) => {
           const tank = this.tanks[i];
-          if (!tank || !tank.body) return;
+          if (!tank) return;
           const px = pos.x ?? pos.pos?.x;
           if (px === undefined) return;
-          tank.body.x = px;
+          // Only sync X (knockback). Let physicsStep settle Y.
+          if (Math.abs(tank.x - px) > 1) {
+            tank.setPosition(px, tank.y);
+            if (tank.body) tank.body.x = px;
+            tank.settled = false;
+          }
         });
         this._lastPositions = positions;
       }
@@ -1080,18 +1085,25 @@ export class MainScene extends Scene {
     if (resolvedPositions && Array.isArray(resolvedPositions)) {
       resolvedPositions.forEach((pos, i) => {
         const tank = this.tanks[i];
-        if (!tank || !tank.body) return;
+        if (!tank) return;
         const px = pos.x ?? pos.pos?.x;
         if (px === undefined) return;
 
-        // Sync X from server only — let physicsStep handle Y settling
-        // after terrain has been updated via applyHeightmap.
-        // Tanks were marked settled=false above when terrain was applied.
-        tank.body.x = px;
+        // Fix 1: Only sync X from server (knockback). Let physicsStep settle Y
+        // naturally on the terrain bitmap — avoids the -15 offset drift/snapback.
+        if (Math.abs(tank.x - px) > 1) {
+          tank.setPosition(px, tank.y);
+          if (tank.body) tank.body.x = px;
+          tank.settled = false; // Re-settle at new X
+        }
       });
       this._lastPositions = resolvedPositions;
+    } else {
+      // Fallback: no server positions — let physicsStep re-settle after terrain change
+      this.tanks.forEach(tank => {
+        if (tank) tank.settled = false;
+      });
     }
-    // Y settling handled by Tank.physicsStep — it will snap to terrain surface
 
     // Report updated local player position back to server
     if (this.myPlayerIndex >= 0 && this.tanks[this.myPlayerIndex]) {

@@ -393,21 +393,22 @@ export class MainScene extends Scene {
           }
         });
       }
-      // Sync positions (includes knockback + terrain-adjusted Y)
+      // Sync positions — snap X from server, Y from client terrain surface
       const positions = pr.positions;
       if (positions && Array.isArray(positions)) {
         positions.forEach((pos, i) => {
           const tank = this.tanks[i];
           if (!tank) return;
           const px = pos.x ?? pos.pos?.x;
-          const py = pos.y ?? pos.pos?.y;
           if (px === undefined) return;
-          tank.setPosition(px, py !== undefined ? py : tank.y);
+          const surfaceY = this.terrain.getTerrainSurfaceY(Math.floor(px));
+          const snapY = surfaceY < this.terrain.height ? surfaceY - 1 : tank.y;
+          tank.setPosition(px, snapY);
           if (tank.body) {
             tank.body.x = px;
-            if (py !== undefined) tank.body.y = py;
+            tank.body.y = snapY;
           }
-          tank.settled = false;
+          tank.settled = true;
         });
         this._lastPositions = positions;
       }
@@ -1088,24 +1089,33 @@ export class MainScene extends Scene {
         const tank = this.tanks[i];
         if (!tank) return;
         const px = pos.x ?? pos.pos?.x;
-        const py = pos.y ?? pos.pos?.y;
         if (px === undefined) return;
 
-        // Sync both X and Y from server — server recalculates Y on deformed terrain.
-        // Then let physicsStep do a final snap to the client terrain bitmap for pixel-accuracy.
-        tank.setPosition(px, py !== undefined ? py : tank.y);
+        // Sync X from server, then snap Y to client terrain surface immediately.
+        // Server Y uses heightmap[x]-15 which doesn't match client bitmap exactly.
+        const surfaceY = this.terrain.getTerrainSurfaceY(Math.floor(px));
+        const snapY = surfaceY < this.terrain.height ? surfaceY - 1 : tank.y;
+        tank.setPosition(px, snapY);
         if (tank.body) {
           tank.body.x = px;
-          if (py !== undefined) tank.body.y = py;
+          tank.body.y = snapY;
         }
-        tank.settled = false; // physicsStep will snap to exact surface pixel
+        tank.settled = true; // Already at surface — no need for slow fall
       });
       this._lastPositions = resolvedPositions;
     } else {
-      // Fallback: no server positions — let physicsStep re-settle after terrain change
-      this.tanks.forEach(tank => {
-        if (tank) tank.settled = false;
-      });
+      // Fallback: no server positions — snap all tanks to terrain surface
+      if (this.tanks) {
+        this.tanks.forEach(tank => {
+          if (!tank) return;
+          const surfaceY = this.terrain.getTerrainSurfaceY(Math.floor(tank.x));
+          if (surfaceY < this.terrain.height) {
+            tank.setPosition(tank.x, surfaceY - 1);
+            if (tank.body) tank.body.y = surfaceY - 1;
+          }
+          tank.settled = true;
+        });
+      }
     }
 
     // Report updated local player position back to server

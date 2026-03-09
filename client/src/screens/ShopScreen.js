@@ -107,6 +107,7 @@ const s = {
   /* Detail panel */
   detailBox: {
     flex: 1,
+    minHeight: 0,
     background: 'rgba(42, 51, 31, 0.2)',
     border: '1px solid var(--ol)',
     borderRadius: 4,
@@ -114,6 +115,7 @@ const s = {
     display: 'flex',
     flexDirection: 'column',
     gap: 6,
+    overflowY: 'auto',
   },
   detailName: {
     fontFamily: "'Black Ops One', cursive",

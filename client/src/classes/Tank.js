@@ -314,8 +314,9 @@ export class Tank extends GameObjects.Sprite {
                 }
             } else if (surfaceY >= this.terrain.height) {
                 // No terrain below — clamp to visible area
-                // ENVELOP crops aggressively in Telegram/browser chrome
-                const maxY = Math.floor(this.terrain.height * 0.6);
+                // Use camera worldView to get actual visible bounds (works with ENVELOP + any viewport)
+                const cam = this.scene.cameras?.main;
+                const maxY = cam ? Math.floor(cam.worldView.bottom - 20) : Math.floor(this.terrain.height * 0.5);
                 if (tankY < maxY) {
                     this.body.y = Math.min(tankY + 4, maxY);
                     this.settled = false;

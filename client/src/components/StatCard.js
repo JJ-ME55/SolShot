@@ -1,21 +1,24 @@
-import React, { useRef, useCallback, useState } from 'react';
+import React, { useRef, useCallback, useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import html2canvas from 'html2canvas';
 
 /**
  * StatCard — Practice mode shareable stat card.
- * 16:9 locked, military/tactical aesthetic.
- * Props: { player } — MongoDB player object with fields:
- *   callsign, wins, losses, totalDamage, bestWinStreak,
- *   matchesPlayed, signatureWeapon
+ * Fixed 720x405 (16:9) card, scaled to fit viewport via CSS transform.
+ * All internal sizes use fixed px — no vw units — so html2canvas export
+ * works correctly on any device / zoom level.
  */
 
 const CARD_URL = 'https://solshot.gg';
+const CARD_W = 720;
+const CARD_H = 405;
 
 function StatCard({ player, onClose }) {
   const cardRef = useRef(null);
+  const wrapRef = useRef(null);
   const [feedback, setFeedback] = useState('');
   const [feedbackOk, setFeedbackOk] = useState(false);
+  const [scale, setScale] = useState(1);
 
   const {
     callsign = 'OPERATIVE',
@@ -38,6 +41,19 @@ function StatCard({ player, onClose }) {
     ? `${(totalDamage / 1000).toFixed(1)}K`
     : totalDamage;
 
+  // Scale card to fit viewport
+  useEffect(() => {
+    const updateScale = () => {
+      const maxW = window.innerWidth - 40;
+      const maxH = window.innerHeight - 180; // room for buttons below
+      const s = Math.min(1, maxW / CARD_W, maxH / CARD_H);
+      setScale(s);
+    };
+    updateScale();
+    window.addEventListener('resize', updateScale);
+    return () => window.removeEventListener('resize', updateScale);
+  }, []);
+
   const exportCard = useCallback(async () => {
     if (!cardRef.current) return;
     setFeedback('RENDERING...');
@@ -46,8 +62,12 @@ function StatCard({ player, onClose }) {
       const canvas = await html2canvas(cardRef.current, {
         backgroundColor: '#0d0f09',
         scale: 3,
+        width: CARD_W,
+        height: CARD_H,
         logging: false,
         useCORS: true,
+        // Ignore the CSS transform so html2canvas captures at native 720x405
+        ignoreTransform: true,
       });
       const blob = await new Promise((res) => canvas.toBlob(res, 'image/png'));
       // Try clipboard first
@@ -91,97 +111,103 @@ function StatCard({ player, onClose }) {
 
   return (
     <div style={s.overlay} onClick={onClose}>
-      {/* THE CARD — 16:9 locked */}
-      <div
-        ref={cardRef}
-        style={s.card}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Scanline overlay */}
-        <div style={s.scanlines} />
+      {/* Scale wrapper — sizes the card visually, card itself is always 720x405 */}
+      <div ref={wrapRef} style={{
+        width: CARD_W * scale,
+        height: CARD_H * scale,
+        flexShrink: 0,
+      }}>
+        <div
+          ref={cardRef}
+          style={{ ...s.card, transform: `scale(${scale})`, transformOrigin: 'top left' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Scanline overlay */}
+          <div style={s.scanlines} />
 
-        {/* Vignette */}
-        <div style={s.vignette} />
+          {/* Vignette */}
+          <div style={s.vignette} />
 
-        {/* Top orange bar */}
-        <div style={s.topBar} />
+          {/* Top orange bar */}
+          <div style={s.topBar} />
 
-        {/* Bottom dim bar */}
-        <div style={s.bottomBar} />
+          {/* Bottom dim bar */}
+          <div style={s.bottomBar} />
 
-        {/* Corner brackets */}
-        {cornerBrackets.map((bracket, i) => (
-          <div key={i} style={{ ...s.cornerBase, ...bracket }} />
-        ))}
+          {/* Corner brackets */}
+          {cornerBrackets.map((bracket, i) => (
+            <div key={i} style={{ ...s.cornerBase, ...bracket }} />
+          ))}
 
-        {/* Left accent strip */}
-        <div style={s.leftAccent} />
+          {/* Left accent strip */}
+          <div style={s.leftAccent} />
 
-        {/* Main content */}
-        <div style={s.content}>
+          {/* Main content */}
+          <div style={s.content}>
 
-          {/* TOP ROW — branding + QR */}
-          <div style={s.topRow}>
-            <div>
-              <div style={s.brandName}>SOLSHOT.GG</div>
-              <div style={s.brandSub}>PRACTICE MODE // SEASON ZERO</div>
-            </div>
-            <div style={s.qrBox}>
-              <QRCodeSVG
-                value={CARD_URL}
-                size={54}
-                fgColor="#EDE9D5"
-                bgColor="transparent"
-                level="L"
-                style={{ width: '100%', height: '100%' }}
-              />
-            </div>
-          </div>
-
-          {/* CALLSIGN HERO */}
-          <div style={s.heroSection}>
-            <div style={s.callsignLabel}>// CALLSIGN</div>
-            <div style={s.callsignText}>{callsign.toUpperCase() || '\u2014'}</div>
-
-            {/* Signature weapon */}
-            <div style={s.weaponRow}>
-              <div style={s.weaponDash} />
-              <div style={{
-                ...s.weaponText,
-                color: displayWeapon === 'CLASSIFIED' ? '#363929' : '#E8572A',
-              }}>
-                SIGNATURE WEAPON: {displayWeapon}
+            {/* TOP ROW — branding + QR */}
+            <div style={s.topRow}>
+              <div>
+                <div style={s.brandName}>SOLSHOT.GG</div>
+                <div style={s.brandSub}>PRACTICE MODE // SEASON ZERO</div>
               </div>
-              <div style={s.weaponFade} />
-            </div>
-          </div>
-
-          {/* STATS ROW */}
-          <div style={s.statsRow}>
-            {stats.map((stat, i) => (
-              <div key={stat.label} style={{
-                ...s.statCell,
-                borderRight: i < 4 ? '1px solid #1e2114' : 'none',
-              }}>
-                <div style={s.statValue}>{stat.value}</div>
-                <div style={s.statLabel}>{stat.label}</div>
+              <div style={s.qrBox}>
+                <QRCodeSVG
+                  value={CARD_URL}
+                  size={54}
+                  fgColor="#EDE9D5"
+                  bgColor="transparent"
+                  level="L"
+                  style={{ width: '100%', height: '100%' }}
+                />
               </div>
-            ))}
-          </div>
-
-          {/* BOTTOM BAR */}
-          <div style={s.footerRow}>
-            <div style={s.footerTease}>WAGERING UNLOCKS SOON</div>
-            <div style={s.footerMeta}>
-              {winRate}% WIN RATE // {matchesPlayed} MATCHES PLAYED // solshot.gg
             </div>
-          </div>
 
+            {/* CALLSIGN HERO */}
+            <div style={s.heroSection}>
+              <div style={s.callsignLabel}>// CALLSIGN</div>
+              <div style={s.callsignText}>{callsign.toUpperCase() || '\u2014'}</div>
+
+              {/* Signature weapon */}
+              <div style={s.weaponRow}>
+                <div style={s.weaponDash} />
+                <div style={{
+                  ...s.weaponText,
+                  color: displayWeapon === 'CLASSIFIED' ? '#7a8060' : '#E8572A',
+                }}>
+                  SIGNATURE WEAPON: {displayWeapon}
+                </div>
+                <div style={s.weaponFade} />
+              </div>
+            </div>
+
+            {/* STATS ROW */}
+            <div style={s.statsRow}>
+              {stats.map((stat, i) => (
+                <div key={stat.label} style={{
+                  ...s.statCell,
+                  borderRight: i < 4 ? '1px solid #1e2114' : 'none',
+                }}>
+                  <div style={s.statValue}>{stat.value}</div>
+                  <div style={s.statLabel}>{stat.label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* BOTTOM BAR */}
+            <div style={s.footerRow}>
+              <div style={s.footerTease}>WAGERING UNLOCKS SOON</div>
+              <div style={s.footerMeta}>
+                {winRate}% WIN RATE // {matchesPlayed} MATCHES PLAYED // solshot.gg
+              </div>
+            </div>
+
+          </div>
         </div>
       </div>
 
       {/* ACTION BUTTONS — outside the card */}
-      <div style={s.btnRow}>
+      <div style={{ ...s.btnRow, width: CARD_W * scale }}>
         <button style={s.exportBtn} onClick={(e) => { e.stopPropagation(); exportCard(); }}>
           EXPORT CARD
         </button>
@@ -189,7 +215,7 @@ function StatCard({ player, onClose }) {
           SHARE TO X
         </button>
       </div>
-      <button style={s.closeBtn} onClick={(e) => { e.stopPropagation(); onClose(); }}>
+      <button style={{ ...s.closeBtn, width: CARD_W * scale }} onClick={(e) => { e.stopPropagation(); onClose(); }}>
         CLOSE
       </button>
       <div style={feedbackOk ? s.feedbackOk : s.feedback}>
@@ -207,7 +233,7 @@ const cornerBrackets = [
   { bottom: 10, right: 10, borderBottom: '1px solid #E8572A55', borderRight: '1px solid #E8572A55' },
 ];
 
-/* ── Styles ── */
+/* ── Styles — all fixed px, no vw units ── */
 const s = {
   overlay: {
     position: 'fixed', inset: 0,
@@ -217,8 +243,8 @@ const s = {
     zIndex: 9000, gap: 14, padding: 20,
   },
   card: {
-    width: 'min(calc(100vw - 40px), 720px)',
-    aspectRatio: '16/9',
+    width: CARD_W,
+    height: CARD_H,
     position: 'relative',
     background: 'linear-gradient(145deg, #161912 0%, #0d0f09 40%, #131610 100%)',
     border: '1px solid #2e3120',
@@ -252,31 +278,31 @@ const s = {
   content: {
     position: 'absolute', inset: 0, zIndex: 3,
     display: 'flex', flexDirection: 'column',
-    padding: 'clamp(12px, 3.2%, 24px)',
+    padding: 24,
   },
 
   /* Top row */
   topRow: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-    marginBottom: 'clamp(4px, 1.2%, 10px)',
+    marginBottom: 10,
   },
   brandName: {
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 'clamp(9px, 1.9vw, 14px)',
+    fontSize: 14,
     color: '#E8572A',
     letterSpacing: '0.18em',
     lineHeight: 1,
   },
   brandSub: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 'clamp(6px, 1vw, 8px)',
-    color: '#363929',
+    fontSize: 8,
+    color: '#7a8060',
     letterSpacing: '0.14em',
     marginTop: 3,
   },
   qrBox: {
-    width: 'clamp(32px, 7vw, 54px)',
-    aspectRatio: '1',
+    width: 54,
+    height: 54,
     background: '#1a1c14',
     border: '1px solid #2e3120',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -287,18 +313,18 @@ const s = {
   heroSection: {
     flex: 1, display: 'flex', flexDirection: 'column',
     justifyContent: 'center',
-    paddingLeft: 'clamp(2px, 0.8%, 6px)',
+    paddingLeft: 6,
   },
   callsignLabel: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 'clamp(5px, 0.9vw, 7px)',
-    color: '#363929',
+    fontSize: 7,
+    color: '#7a8060',
     letterSpacing: '0.35em',
-    marginBottom: 'clamp(2px, 0.5%, 4px)',
+    marginBottom: 4,
   },
   callsignText: {
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 'clamp(28px, 7.5vw, 58px)',
+    fontSize: 58,
     color: '#EDE9D5',
     letterSpacing: '0.04em',
     lineHeight: 0.95,
@@ -306,16 +332,16 @@ const s = {
   },
   weaponRow: {
     display: 'flex', alignItems: 'center',
-    gap: 'clamp(4px, 0.8%, 7px)',
-    marginTop: 'clamp(3px, 0.8%, 7px)',
+    gap: 7,
+    marginTop: 7,
   },
   weaponDash: {
-    width: 'clamp(10px, 2.2vw, 18px)', height: 1,
+    width: 18, height: 1,
     background: '#E8572A', flexShrink: 0,
   },
   weaponText: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 'clamp(7px, 1.3vw, 10px)',
+    fontSize: 10,
     letterSpacing: '0.14em',
     whiteSpace: 'nowrap',
   },
@@ -327,55 +353,54 @@ const s = {
   /* Stats row */
   statsRow: {
     borderTop: '1px solid #252718',
-    paddingTop: 'clamp(6px, 1.5%, 12px)',
+    paddingTop: 12,
     display: 'grid',
     gridTemplateColumns: 'repeat(5, 1fr)',
-    gap: 'clamp(2px, 0.5%, 4px)',
-    marginBottom: 'clamp(4px, 1%, 8px)',
+    gap: 4,
+    marginBottom: 8,
   },
   statCell: {
     textAlign: 'center',
-    padding: 'clamp(4px, 1%, 8px) 0',
+    padding: '8px 0',
   },
   statValue: {
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 'clamp(13px, 3vw, 24px)',
+    fontSize: 24,
     color: '#EDE9D5',
     lineHeight: 1,
   },
   statLabel: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 'clamp(4px, 0.8vw, 6.5px)',
-    color: '#363929',
+    fontSize: 6.5,
+    color: '#7a8060',
     letterSpacing: '0.12em',
-    marginTop: 'clamp(2px, 0.4%, 4px)',
+    marginTop: 4,
   },
 
   /* Footer */
   footerRow: {
     borderTop: '1px solid #1e2114',
-    paddingTop: 'clamp(4px, 0.9%, 7px)',
+    paddingTop: 7,
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
   footerTease: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 'clamp(5px, 0.85vw, 6.5px)',
-    color: '#2a2d1c',
+    fontSize: 6.5,
+    color: '#6b7050',
     letterSpacing: '0.18em',
   },
   footerMeta: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 'clamp(5px, 0.85vw, 6.5px)',
-    color: '#2a2d1c',
+    fontSize: 6.5,
+    color: '#6b7050',
     letterSpacing: '0.12em',
   },
 
   /* Action buttons */
   btnRow: {
     display: 'flex', gap: 10,
-    width: 'min(calc(100vw - 40px), 720px)',
   },
   exportBtn: {
     flex: 1,
@@ -405,11 +430,10 @@ const s = {
     textTransform: 'uppercase',
   },
   closeBtn: {
-    width: 'min(calc(100vw - 40px), 720px)',
     background: 'transparent',
     border: '1px solid #2e3120',
     borderRadius: 5,
-    color: '#363929',
+    color: '#7a8060',
     fontFamily: "'Share Tech Mono', monospace",
     fontSize: 11,
     letterSpacing: 2,
@@ -420,7 +444,7 @@ const s = {
   feedback: {
     fontFamily: "'Share Tech Mono', monospace",
     fontSize: 8,
-    color: '#363929',
+    color: '#7a8060',
     letterSpacing: '0.2em',
     textAlign: 'center',
     height: 14,

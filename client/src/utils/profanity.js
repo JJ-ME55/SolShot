@@ -107,7 +107,12 @@ function normalise(text) {
   return s;
 }
 
+// Allowlist: innocent words containing banned substrings (e.g. jewel contains jew)
+const allowPattern = /jewel|jewelry|jeweler|jewell/gi;
+
 export function containsProfanity(text) {
-  // Check both raw and normalised forms
-  return pattern.test(text) || pattern.test(normalise(text));
+  // Strip allowed words first, then check remainder
+  const rawClean = text.toLowerCase().replace(allowPattern, '');
+  const normClean = normalise(text).replace(allowPattern, '');
+  return pattern.test(rawClean) || pattern.test(normClean);
 }

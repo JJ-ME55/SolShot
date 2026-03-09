@@ -62,7 +62,16 @@ function normaliseName(text) {
         .replace(/!/g, 'i').replace(/\+/g, 't');
     return s.replace(/(.)\1{1,}/g, '$1');
 }
-function isProfane(text) { return PROFANITY_RE.test(text) || PROFANITY_RE.test(normaliseName(text)); }
+// Allowlist: innocent words containing banned substrings (e.g. jewel contains jew)
+const PROFANITY_ALLOW = /jewel|jewelry|jeweler|jewell/gi;
+function isProfane(text) {
+    const raw = text.toLowerCase();
+    const norm = normaliseName(text);
+    // Strip allowed words first, then check remainder
+    const rawClean = raw.replace(PROFANITY_ALLOW, '');
+    const normClean = norm.replace(PROFANITY_ALLOW, '');
+    return PROFANITY_RE.test(rawClean) || PROFANITY_RE.test(normClean);
+}
 
 // Helper: check if MongoDB is connected before DB operations
 function isDbConnected() {

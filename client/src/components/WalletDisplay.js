@@ -37,11 +37,40 @@ function WalletDisplay({ compact = false }) {
   const { balance, shotBalance, connected } = useSolShotWallet();
   const isMobile = useIsMobile();
 
-  // Mobile: greyed-out non-functional wallet button (teething issues — re-enable for mainnet)
+  // Mobile: static dummy button — no wallet adapter, no click handler (re-enable for mainnet)
   if (isMobile) {
     return (
-      <div style={{ ...styles.container, opacity: 0.35, pointerEvents: 'none' }}>
-        <WalletMultiButton />
+      <div style={{ position: 'relative', display: 'inline-block' }}>
+        <div style={{
+          padding: '8px 16px',
+          borderRadius: 4,
+          background: 'rgba(42, 51, 31, 0.4)',
+          border: '1px solid var(--ol)',
+          fontFamily: "'Share Tech Mono', monospace",
+          fontSize: 13,
+          letterSpacing: 2,
+          color: 'var(--kh)',
+          opacity: 0.4,
+          cursor: 'default',
+        }}>
+          CONNECT
+        </div>
+        <span style={{
+          position: 'absolute',
+          top: -6,
+          right: -6,
+          fontFamily: "'Share Tech Mono', monospace",
+          fontSize: 7,
+          letterSpacing: 1,
+          color: 'var(--bn)',
+          background: 'var(--sd)',
+          border: '1px solid var(--st)',
+          borderRadius: 3,
+          padding: '1px 4px',
+          textTransform: 'uppercase',
+        }}>
+          SOON
+        </span>
       </div>
     );
   }

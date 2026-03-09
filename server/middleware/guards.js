@@ -146,8 +146,11 @@ export function sanitizeName(name) {
     const cleaned = name.replace(/[^a-zA-Z0-9 \-_.]/g, '').trim();
     if (cleaned.length === 0) return 'Player';
     const capped = cleaned.substring(0, 20);
-    // Profanity guard
-    if (_PROF_RE.test(capped) || _PROF_RE.test(_norm(capped))) return 'Player';
+    // Profanity guard (strip allowlisted words first — e.g. jewel contains jew)
+    const _ALLOW = /jewel|jewelry|jeweler|jewell/gi;
+    const rawClean = capped.toLowerCase().replace(_ALLOW, '');
+    const normClean = _norm(capped).replace(_ALLOW, '');
+    if (_PROF_RE.test(rawClean) || _PROF_RE.test(normClean)) return 'Player';
     return capped;
 }
 

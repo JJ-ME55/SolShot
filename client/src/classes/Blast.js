@@ -102,7 +102,9 @@ export class Blast {
         if (this.maxRadius > this.innerRadius) {
             this.animateHole1()
             // N-player knockback: iterate all tanks in scene.tanks[]
-            if (this.blowTank === true && this.scene.tanks && this.scene.tanks.length > 0) {
+            // Skip knockback in multiplayer (gameType 3) — server handles positions authoritatively
+            const isMultiplayer = this.scene.sceneData && this.scene.sceneData.gameType === 3;
+            if (this.blowTank === true && !isMultiplayer && this.scene.tanks && this.scene.tanks.length > 0) {
                 const tanks = this.scene.tanks
                 for (let i = 0; i < tanks.length; i++) {
                     const tank = tanks[i]

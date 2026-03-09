@@ -314,8 +314,8 @@ export class Tank extends GameObjects.Sprite {
                 }
             } else if (surfaceY >= this.terrain.height) {
                 // No terrain below — clamp to visible area
-                // ENVELOP crops bottom on wide phones (20:9 loses ~16%)
-                const maxY = Math.floor(this.terrain.height * 0.75);
+                // ENVELOP crops aggressively in Telegram/browser chrome
+                const maxY = Math.floor(this.terrain.height * 0.6);
                 if (tankY < maxY) {
                     this.body.y = Math.min(tankY + 4, maxY);
                     this.settled = false;

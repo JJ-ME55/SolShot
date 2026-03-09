@@ -321,6 +321,7 @@ export class Tank extends GameObjects.Sprite {
                     this.body.y = this.terrain.height - 2;
                     this.body.stop();
                     this.body.setGravity(0);
+                    this.body.allowGravity = false;
                     this.settled = true;
                 }
             } else {

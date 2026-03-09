@@ -199,7 +199,7 @@ function MenuScreen({ navigate }) {
             src="/assets/images/branding/logo-transparent.png"
             alt="SolShot"
             onError={onLogoError}
-            style={{ width: isMobile ? 140 : 340, height: 'auto', objectFit: 'contain', marginBottom: isMobile ? 2 : 8 }}
+            style={{ width: isMobile ? 160 : 340, height: 'auto', objectFit: 'contain', marginBottom: isMobile ? 2 : 8 }}
           />
         )}
         <div style={{ ...styles.tagline, fontSize: isMobile ? 12 : 18, marginTop: isMobile ? 4 : 10, letterSpacing: isMobile ? 2 : 4 }}>SKILL, NOT LUCK</div>
@@ -207,7 +207,7 @@ function MenuScreen({ navigate }) {
       </div>
 
       {/* Navigation buttons */}
-      <div style={{ ...styles.navButtons, width: isMobile ? 220 : 300, gap: isMobile ? 6 : 10, marginBottom: isMobile ? 8 : 20 }}>
+      <div style={{ ...styles.navButtons, width: isMobile ? 150 : 300, gap: isMobile ? 6 : 10, marginBottom: isMobile ? 8 : 20 }}>
         {navItems.map((item, idx) => (
           <div
             key={item.id}
@@ -289,8 +289,8 @@ function MenuScreen({ navigate }) {
       {/* Version tag */}
       <div style={styles.versionTag}>v0.5.0-alpha</div>
 
-      {/* Responsible gaming disclosure */}
-      <ResponsibleGaming navigate={navigate} />
+      {/* Responsible gaming disclosure — hidden on mobile (declutter) */}
+      {!isMobile && <ResponsibleGaming navigate={navigate} />}
     </div>
   );
 }

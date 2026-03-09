@@ -135,7 +135,7 @@ function _norm(t) {
     return t.toLowerCase().replace(/0/g,'o').replace(/1/g,'i').replace(/3/g,'e')
         .replace(/4/g,'a').replace(/5/g,'s').replace(/7/g,'t').replace(/8/g,'b')
         .replace(/@/g,'a').replace(/\$/g,'s').replace(/!/g,'i')
-        .replace(/(.)\1{2,}/g,'$1');
+        .replace(/(.)\1{1,}/g,'$1');
 }
 
 export function sanitizeName(name) {

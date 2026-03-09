@@ -60,7 +60,7 @@ function normaliseName(text) {
         .replace(/4/g, 'a').replace(/5/g, 's').replace(/7/g, 't')
         .replace(/8/g, 'b').replace(/@/g, 'a').replace(/\$/g, 's')
         .replace(/!/g, 'i').replace(/\+/g, 't');
-    return s.replace(/(.)\1{2,}/g, '$1');
+    return s.replace(/(.)\1{1,}/g, '$1');
 }
 function isProfane(text) { return PROFANITY_RE.test(text) || PROFANITY_RE.test(normaliseName(text)); }
 

@@ -103,7 +103,7 @@ function normalise(text) {
        .replace(/!/g, 'i')
        .replace(/\+/g, 't');
   // Collapse repeated chars (3+ of same → 1)
-  s = s.replace(/(.)\1{2,}/g, '$1');
+  s = s.replace(/(.)\1{1,}/g, '$1');
   return s;
 }
 

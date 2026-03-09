@@ -1,6 +1,7 @@
 import React from 'react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { useSolShotWallet } from '../wallet/WalletContext';
+import useIsMobile from '../hooks/useIsMobile';
 
 const styles = {
   container: {
@@ -34,6 +35,16 @@ const styles = {
 function WalletDisplay({ compact = false }) {
   // CS-04: Use context hook instead of polling window.solWallet
   const { balance, shotBalance, connected } = useSolShotWallet();
+  const isMobile = useIsMobile();
+
+  // Mobile: greyed-out non-functional wallet button (teething issues — re-enable for mainnet)
+  if (isMobile) {
+    return (
+      <div style={{ ...styles.container, opacity: 0.35, pointerEvents: 'none' }}>
+        <WalletMultiButton />
+      </div>
+    );
+  }
 
   if (!connected) {
     return (

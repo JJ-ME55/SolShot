@@ -182,7 +182,7 @@ function MenuScreen({ navigate }) {
   ];
 
   return (
-    <div style={styles.container}>
+    <div style={{ ...styles.container, paddingBottom: isMobile ? 44 : 0 }}>
       {/* Background elements */}
       <div style={styles.bgTerrain} />
       <div style={styles.bgGlow} />
@@ -282,7 +282,7 @@ function MenuScreen({ navigate }) {
       )}
 
       {/* Wallet display */}
-      <div style={styles.walletSection}>
+      <div style={{ ...styles.walletSection, marginBottom: isMobile ? 40 : 12 }}>
         <WalletDisplay />
       </div>
 

@@ -522,9 +522,9 @@ function LobbyScreen({ navigate }) {
   });
 
   useSocket('queueMatched', () => {
-    // Match found — server will also emit startPick which navigates to shop
+    // Match found — server will emit roomUpdate + startPick after 2.5s delay
     setQueueState('matched');
-    setWaiting(false);
+    setWaiting(true);
   });
 
   useSocket('queueError', (data) => {

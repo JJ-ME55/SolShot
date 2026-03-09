@@ -5,7 +5,7 @@ const s = {
     fontFamily: "'Black Ops One', cursive",
     fontSize: compact ? 14 : 18,
     letterSpacing: compact ? 2 : 4,
-    padding: compact ? '8px 28px' : '12px 42px',
+    padding: compact ? '6px 20px' : '12px 42px',
     borderRadius: 4,
     border: 'none',
     cursor: disabled ? 'default' : 'pointer',

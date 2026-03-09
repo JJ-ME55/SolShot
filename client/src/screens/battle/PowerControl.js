@@ -1,11 +1,12 @@
 import React, { useCallback, useState, useRef } from 'react';
 
 const s = {
-  container: (compact) => ({
+  container: (compact, vertical) => ({
     display: 'flex',
+    flexDirection: vertical ? 'column' : 'row',
     alignItems: 'center',
-    gap: compact ? 4 : 6,
-    padding: compact ? '3px 6px' : '4px 10px',
+    gap: vertical ? 2 : compact ? 4 : 6,
+    padding: vertical ? '4px 3px' : compact ? '3px 6px' : '4px 10px',
     background: 'rgba(10, 12, 8, 0.7)',
     borderRadius: 3,
     border: '1px solid var(--ol)',
@@ -45,6 +46,19 @@ const s = {
     cursor: disabled ? 'default' : 'pointer',
     opacity: disabled ? 0.4 : 1,
   }),
+  sliderVertical: (disabled) => ({
+    width: 120,
+    height: 6,
+    appearance: 'none',
+    WebkitAppearance: 'none',
+    background: 'var(--od)',
+    borderRadius: 2,
+    outline: 'none',
+    cursor: disabled ? 'default' : 'pointer',
+    opacity: disabled ? 0.4 : 1,
+    writingMode: 'vertical-lr',
+    direction: 'rtl',
+  }),
   unit: {
     fontFamily: "'Share Tech Mono', monospace",
     fontSize: 11,
@@ -53,7 +67,7 @@ const s = {
   },
 };
 
-function PowerControl({ power, onChange, disabled, compact = false }) {
+function PowerControl({ power, onChange, disabled, compact = false, vertical = false }) {
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
   const inputRef = useRef(null);
@@ -92,7 +106,7 @@ function PowerControl({ power, onChange, disabled, compact = false }) {
   const displayPower = Math.round(power || 60);
 
   return (
-    <div style={s.container(compact)}>
+    <div style={s.container(compact, vertical)}>
       <span style={s.label(compact)}>PWR</span>
       <input
         ref={inputRef}
@@ -109,6 +123,7 @@ function PowerControl({ power, onChange, disabled, compact = false }) {
           ...s.valueInput(editing ? parseInt(editValue, 10) || 60 : displayPower, compact),
           opacity: disabled ? 0.4 : 1,
           cursor: disabled ? 'default' : 'text',
+          ...(vertical ? { textAlign: 'center', width: 30, minWidth: 30 } : {}),
         }}
       />
       <span style={s.unit}>%</span>
@@ -120,7 +135,7 @@ function PowerControl({ power, onChange, disabled, compact = false }) {
         value={power || 60}
         onChange={handleSlider}
         disabled={disabled}
-        style={s.slider(disabled, compact)}
+        style={vertical ? s.sliderVertical(disabled) : s.slider(disabled, compact)}
       />
     </div>
   );

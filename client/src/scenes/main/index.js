@@ -379,6 +379,10 @@ export class MainScene extends Scene {
       if (pr.terrainUpdate && pr.terrainUpdate.length > 0) {
         this._serverHeightmap = pr.terrainUpdate;
         this.terrain.applyHeightmap(pr.terrainUpdate);
+        // Mark all tanks unsettled so they re-snap to the new terrain surface
+        if (this.tanks) {
+          this.tanks.forEach(t => { if (t) t.settled = false; });
+        }
       }
       // Sync HP from server
       if (pr.players && Array.isArray(pr.players)) {
@@ -1013,6 +1017,10 @@ export class MainScene extends Scene {
     if (terrainUpdate && terrainUpdate.length > 0) {
       this._serverHeightmap = terrainUpdate;
       this.terrain.applyHeightmap(terrainUpdate);
+      // Mark all tanks unsettled so they re-snap to the new terrain surface
+      if (this.tanks) {
+        this.tanks.forEach(t => { if (t) t.settled = false; });
+      }
     }
 
     // 2. Update HP from server — use authoritative HP values

@@ -545,6 +545,21 @@ export class Terrain extends Textures.CanvasTexture {
     
 
 
+    /**
+     * Scan top-down for the first opaque pixel at column x.
+     * Returns the Y coordinate of the terrain surface, or this.height if no terrain.
+     */
+    getTerrainSurfaceY = (x) => {
+        const col = Math.floor(x);
+        if (col < 0 || col >= this.width) return this.height;
+        for (let y = 0; y < this.height; y++) {
+            if (this.getPixel(col, y).alpha > 0) {
+                return y;
+            }
+        }
+        return this.height;
+    }
+
     retractPoint = (x, y, velocity, accelaration, gravity) => {
         if (velocity === undefined) return
         if (accelaration === undefined) accelaration = new Phaser.Math.Vector2(0, 0)

@@ -1,4 +1,5 @@
 import React from 'react';
+import useIsMobile from '../hooks/useIsMobile';
 
 const styles = {
   container: {
@@ -33,8 +34,13 @@ const styles = {
 };
 
 function ResponsibleGaming({ navigate }) {
+  const isMobile = useIsMobile();
+  const containerStyle = isMobile
+    ? { ...styles.container, position: 'relative', marginTop: 'auto' }
+    : styles.container;
+
   return (
-    <div style={styles.container}>
+    <div style={containerStyle}>
       <div style={styles.legalRow}>
         18+
         <span style={styles.separator}>|</span>

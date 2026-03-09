@@ -26,7 +26,7 @@ const s = {
     fontSize: compact ? 11 : 14,
     color: 'var(--bn)',
     letterSpacing: 1,
-    minWidth: compact ? 80 : 120,
+    minWidth: compact ? 60 : 120,
     textAlign: 'center',
     whiteSpace: 'nowrap',
   }),
@@ -66,7 +66,7 @@ function WeaponSelector({ weapons, currentIndex, onChange, disabled, compact = f
     onChange(newIdx);
   }, [disabled, total, idx, onChange]);
 
-  const iconSize = compact ? 24 : 32;
+  const iconSize = compact ? 20 : 32;
 
   return (
     <div style={s.container(compact)}>

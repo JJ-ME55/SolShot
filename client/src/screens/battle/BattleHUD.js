@@ -82,6 +82,35 @@ const s = {
     border: '1px solid rgba(204, 34, 0, 0.2)',
     animation: 'fl 2s ease-in-out infinite',
   },
+  // Mobile edge sliders
+  edgeSliderLeft: {
+    position: 'absolute',
+    left: 4,
+    top: '50%',
+    transform: 'translateY(-50%)',
+    pointerEvents: 'auto',
+    zIndex: 11,
+  },
+  edgeSliderRight: {
+    position: 'absolute',
+    right: 4,
+    top: '50%',
+    transform: 'translateY(-50%)',
+    pointerEvents: 'auto',
+    zIndex: 11,
+  },
+  // Mobile bottom center controls
+  mobileBottom: {
+    marginTop: 'auto',
+    display: 'flex',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    gap: 6,
+    paddingBottom: 'max(8px, env(safe-area-inset-bottom))',
+    paddingLeft: 50,
+    paddingRight: 50,
+    flexWrap: 'wrap',
+  },
 };
 
 
@@ -193,67 +222,124 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
         )}
       </div>
 
-      {/* BOTTOM ROW */}
-      <div style={{ ...s.bottomRow, padding: compact ? '4px 8px' : '8px 12px', gap: compact ? 6 : 10 }}>
-        {/* Left: Angle + Power */}
-        <div style={s.controlsLeft}>
-          <AngleControl
-            angle={players[myPlayerIndex]?.angle || 45}
-            onChange={(v) => bridge.setAngle(v)}
-            disabled={disabled}
-            compact={compact}
-          />
-          <PowerControl
-            power={players[myPlayerIndex]?.power || 60}
-            onChange={(v) => bridge.setPower(v)}
-            disabled={disabled}
-            compact={compact}
-          />
-        </div>
-
-        {/* Center: Weapon + Fire */}
-        <div style={s.controlsCenter}>
-          <WeaponSelector
-            weapons={weapons}
-            currentIndex={currentWeaponIndex}
-            onChange={(idx) => bridge.selectWeapon(idx)}
-            disabled={disabled}
-            compact={compact}
-          />
-          <FireButton
-            onClick={() => bridge.fire()}
-            disabled={disabled}
-            compact={compact}
-          />
-        </div>
-
-        {/* Right: Move Controls + Counter + Forfeit (mobile) */}
-        <div style={s.controlsRight}>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button
-              style={moveBtn(disabled || moveSteps <= 0, compact)}
-              onClick={() => bridge.moveLeft()}
-              disabled={disabled || moveSteps <= 0}
-            >
-              {'< A'}
-            </button>
-            <button
-              style={moveBtn(disabled || moveSteps <= 0, compact)}
-              onClick={() => bridge.moveRight()}
-              disabled={disabled || moveSteps <= 0}
-            >
-              {'D >'}
-            </button>
+      {/* MOBILE LAYOUT: vertical edge sliders + bottom center controls */}
+      {isMobile ? (
+        <>
+          {/* Angle slider — left edge, vertically centered */}
+          <div style={s.edgeSliderLeft}>
+            <AngleControl
+              angle={players[myPlayerIndex]?.angle || 45}
+              onChange={(v) => bridge.setAngle(v)}
+              disabled={disabled}
+              compact
+              vertical
+            />
           </div>
-          <MoveCounter moves={moveSteps} />
-          {/* Mobile forfeit button — ESC doesn't exist on phones */}
-          {isMobile && (
-            <button style={forfeitBtn} onClick={onForfeit}>
+
+          {/* Power slider — right edge, vertically centered */}
+          <div style={s.edgeSliderRight}>
+            <PowerControl
+              power={players[myPlayerIndex]?.power || 60}
+              onChange={(v) => bridge.setPower(v)}
+              disabled={disabled}
+              compact
+              vertical
+            />
+          </div>
+
+          {/* Bottom center: move buttons, weapon, fire, forfeit */}
+          <div style={s.mobileBottom}>
+            <div style={{ display: 'flex', gap: 4, pointerEvents: 'auto' }}>
+              <button
+                style={moveBtn(disabled || moveSteps <= 0, true)}
+                onClick={() => bridge.moveLeft()}
+                disabled={disabled || moveSteps <= 0}
+              >
+                {'< A'}
+              </button>
+              <button
+                style={moveBtn(disabled || moveSteps <= 0, true)}
+                onClick={() => bridge.moveRight()}
+                disabled={disabled || moveSteps <= 0}
+              >
+                {'D >'}
+              </button>
+            </div>
+            <MoveCounter moves={moveSteps} />
+            <div style={{ pointerEvents: 'auto' }}>
+              <WeaponSelector
+                weapons={weapons}
+                currentIndex={currentWeaponIndex}
+                onChange={(idx) => bridge.selectWeapon(idx)}
+                disabled={disabled}
+                compact
+              />
+            </div>
+            <div style={{ pointerEvents: 'auto' }}>
+              <FireButton
+                onClick={() => bridge.fire()}
+                disabled={disabled}
+                compact
+              />
+            </div>
+            <button style={{ ...forfeitBtn, pointerEvents: 'auto' }} onClick={onForfeit}>
               FORFEIT
             </button>
-          )}
+          </div>
+        </>
+      ) : (
+        /* DESKTOP LAYOUT: original bottom row */
+        <div style={{ ...s.bottomRow, padding: '8px 12px', gap: 10 }}>
+          {/* Left: Angle + Power */}
+          <div style={s.controlsLeft}>
+            <AngleControl
+              angle={players[myPlayerIndex]?.angle || 45}
+              onChange={(v) => bridge.setAngle(v)}
+              disabled={disabled}
+            />
+            <PowerControl
+              power={players[myPlayerIndex]?.power || 60}
+              onChange={(v) => bridge.setPower(v)}
+              disabled={disabled}
+            />
+          </div>
+
+          {/* Center: Weapon + Fire */}
+          <div style={s.controlsCenter}>
+            <WeaponSelector
+              weapons={weapons}
+              currentIndex={currentWeaponIndex}
+              onChange={(idx) => bridge.selectWeapon(idx)}
+              disabled={disabled}
+            />
+            <FireButton
+              onClick={() => bridge.fire()}
+              disabled={disabled}
+            />
+          </div>
+
+          {/* Right: Move Controls + Counter */}
+          <div style={s.controlsRight}>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button
+                style={moveBtn(disabled || moveSteps <= 0, false)}
+                onClick={() => bridge.moveLeft()}
+                disabled={disabled || moveSteps <= 0}
+              >
+                {'< A'}
+              </button>
+              <button
+                style={moveBtn(disabled || moveSteps <= 0, false)}
+                onClick={() => bridge.moveRight()}
+                disabled={disabled || moveSteps <= 0}
+              >
+                {'D >'}
+              </button>
+            </div>
+            <MoveCounter moves={moveSteps} />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ELIMINATION OVERLAY (3+ players only; 2-player ends immediately) */}
       {isEliminated && players.length > 2 && (

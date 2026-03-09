@@ -269,53 +269,77 @@ export class Tank extends GameObjects.Sprite {
                 this._fallWarned = true
             }
         }
+        if (this.body.x < 0 || this.body.x > this.scene.terrain.width - 1) return
+
+        // Surface-snap settling: find terrain surface and settle ON it, never inside
+        const surfaceY = this.terrain.getTerrainSurfaceY(this.body.x);
+        const tankY = this.body.y;
+
         if (this.body.y < 0) {
-            if (this.body.x < 0 || this.body.x > this.scene.terrain.width - 1) return
-
+            // Above canvas — fall down
             if (this.body.gravity.length() === 0) {
-                this.body.y = this.body.y + 1
-                this.settled = false
+                this.body.y = this.body.y + 1;
+                this.settled = false;
             }
+            return;
         }
-        else if (this.body.y >= 0) {
-            if (this.body.x < 0 || this.body.x > this.scene.terrain.width - 1) return
 
-            var [newX, newY, prevX, prevY] = this.scene.terrain.retractPoint(this.body.x, this.body.y, this.body.velocity, this.body.acceleration, this.body.gravity)
-            var pos = {x: prevX, y: prevY}
+        // Check if moving (has velocity/accel/gravity)
+        var [newX, newY, prevX, prevY] = this.scene.terrain.retractPoint(this.body.x, this.body.y, this.body.velocity, this.body.acceleration, this.body.gravity)
+        var pos = {x: prevX, y: prevY}
 
-            if (newX === prevX && newY === prevY) {
-                if (this.terrain.getPixel(this.body.x, this.body.y).alpha === 0) {
-                    this.body.y = this.body.y + 1
-                    if (this.terrain.getPixel(this.body.x, this.body.y).alpha !== 0) {
-                        var rotation = this.terrain.getSlope(this.body.x, this.body.y)
-                        if (rotation !== undefined) {
-                            this.setRotation(rotation)
-                        }
-                        this.settled = true
-                    }
-                    else {
-                        this.settled = false
-                    }
+        if (newX === prevX && newY === prevY) {
+            // No physics movement — settling phase
+            if (this.terrain.getPixel(this.body.x, this.body.y).alpha > 0) {
+                // INSIDE terrain — push UP to surface
+                this.body.y = surfaceY - 1;
+                var rotation = this.terrain.getSlope(this.body.x, this.body.y);
+                if (rotation !== undefined) {
+                    this.setRotation(rotation);
                 }
-                else {
-                    this.settled = true
+                this.settled = true;
+            } else if (tankY < surfaceY - 1) {
+                // In air above surface — fall down (up to 4px/frame)
+                const dist = surfaceY - 1 - tankY;
+                if (dist <= 4) {
+                    this.body.y = surfaceY - 1;
+                    var rotation = this.terrain.getSlope(this.body.x, this.body.y);
+                    if (rotation !== undefined) {
+                        this.setRotation(rotation);
+                    }
+                    this.settled = true;
+                } else {
+                    this.body.y = tankY + 4;
+                    this.settled = false;
                 }
-                return
+            } else if (surfaceY >= this.terrain.height) {
+                // No terrain below — keep falling
+                this.body.y = tankY + 1;
+                this.settled = false;
+            } else {
+                // On surface
+                this.body.y = surfaceY - 1;
+                var rotation = this.terrain.getSlope(this.body.x, this.body.y);
+                if (rotation !== undefined) {
+                    this.setRotation(rotation);
+                }
+                this.settled = true;
             }
-
-            this.body.x = pos.x
-            this.body.y = pos.y
-
-            var rotation = this.terrain.getSlope(pos.x, pos.y)
-            if (rotation !== undefined) {
-                this.setRotation(rotation)
-            }
-            this.settled = true
-
-            this.body.stop()
-            this.body.setGravity(0)
-            this.body.preUpdate(true, 0)
+            return;
         }
+
+        this.body.x = pos.x
+        this.body.y = pos.y
+
+        var rotation = this.terrain.getSlope(pos.x, pos.y)
+        if (rotation !== undefined) {
+            this.setRotation(rotation)
+        }
+        this.settled = true
+
+        this.body.stop()
+        this.body.setGravity(0)
+        this.body.preUpdate(true, 0)
     }
 
 

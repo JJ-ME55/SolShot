@@ -1129,7 +1129,7 @@ const mainsocket = (io) => {
             client.join(roomId)
             client.roomId = roomId
             client.isHost = isHost
-            client.name = name
+            client.name = sanitizeName(name)
             client.color = color
             if (data.walletAddress) {
                 client.walletAddress = data.walletAddress
@@ -1137,7 +1137,7 @@ const mainsocket = (io) => {
                 authenticatedWallets[client.id] = data.walletAddress
             }
             if (data.uid) {
-                playerUids[client.id] = { uid: data.uid, handle: name || '' }
+                playerUids[client.id] = { uid: data.uid, handle: sanitizeName(name) }
             }
 
             // Update room references from old socketId to new
@@ -1825,6 +1825,19 @@ const mainsocket = (io) => {
                     }
                 }
 
+                // Emit roomUpdate so both players see the waiting room lobby
+                io.sockets.in(roomId).emit('roomUpdate', {
+                    players: roomData.players.map(p => ({
+                        socketId: p.socketId,
+                        name: p.name,
+                        color: p.color,
+                        isReady: p.isReady || false,
+                        isHost: p.isHost || false,
+                    })),
+                    maxPlayers: queueMaxPlayers,
+                    currentPlayers: roomData.players.length,
+                });
+
                 // Emit queueMatched to both players so client can clear searching UI
                 const matchData = {
                     roomId,
@@ -1840,13 +1853,17 @@ const mainsocket = (io) => {
                 }
                 client.emit('queueMatched', matchData);
 
-                // Emit startPick — same final event as manual joinRoom flow
-                io.sockets.in(roomId).emit('startPick', {
-                    host: hostEntry,           // backward compat
-                    player: playerEntry,       // backward compat
-                    players: roomData.players, // canonical N-player
-                    wager: wagerAmount
-                });
+                // Emit startPick after delay — same as manual joinRoom flow
+                setTimeout(() => {
+                    const checkRoom = findRoom(roomId);
+                    if (!checkRoom || !checkRoom.active) return;
+                    io.sockets.in(roomId).emit('startPick', {
+                        host: hostEntry,           // backward compat
+                        player: playerEntry,       // backward compat
+                        players: roomData.players, // canonical N-player
+                        wager: wagerAmount
+                    });
+                }, 2500);
 
                 console.log(`[Queue] Matched: ${opponent.name} vs ${sanitizeName(playerName)} in ${matchMode} (${roundType}) @ ${wagerAmount} SOL — room ${roomId}`);
             } else {

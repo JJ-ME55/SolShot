@@ -313,13 +313,16 @@ export class Tank extends GameObjects.Sprite {
                     this.settled = false;
                 }
             } else if (surfaceY >= this.terrain.height) {
-                // No terrain below — clamp to visible area (ENVELOP crops bottom ~8%)
-                const maxY = Math.floor(this.terrain.height * 0.85);
+                // No terrain below — clamp to visible area
+                // ENVELOP crops bottom on wide phones (20:9 loses ~16%)
+                const maxY = Math.floor(this.terrain.height * 0.75);
                 if (tankY < maxY) {
                     this.body.y = Math.min(tankY + 4, maxY);
                     this.settled = false;
                 } else {
                     this.body.y = maxY;
+                    this.body.stop();
+                    this.body.setGravity(0);
                     this.settled = true;
                 }
             } else {

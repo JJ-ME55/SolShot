@@ -15,6 +15,55 @@ import { recordMatchPlayed, prestigeBurn, getPrestigeInfo, getShotBalance, PREST
 import { trackConnection, trackDisconnection, trackMatchCreated, trackMatchCompleted, trackMatchCancelled, trackWager, trackSettlement, trackForfeit, trackShot, trackDamage, trackGoldEarned, trackShotEmission, trackShotBurn, trackError } from '../services/monitoring.js';
 import { requireAuth, validatePayload, validateFireParams, sanitizeName, withLock, safeHandler } from '../middleware/guards.js';
 
+// Profanity filter (server-side guard — mirrors client profanity.js)
+const PROFANITY_WORDS = [
+    'nigger','nigga','niggers','niggas','negro','nig','coon','darkie','darky','sambo',
+    'jigaboo','porchmonkey','spade','pickaninny','golliwog','buckwheat','uncletom',
+    'kike','kyke','jewbag','jewboy','heeb','hymie','yid','zhid','jewfag',
+    'spic','spick','beaner','wetback','greaser','borderhopper',
+    'chink','gook','slanteye','zipperhead','chinaman','chingchong','paki','raghead',
+    'towelhead','cameljockey','sandnigger','muzzie','muzrat','jihadist',
+    'redskin','injun','squaw','wagonburner',
+    'mick','paddy','wop','dago','guinea','greaseball','kraut','polack',
+    'gypo','pikey','tinker','halfbreed','mulatto','mongrel',
+    'faggot','fag','faggy','dyke','lesbo','tranny','shemale','ladyboy','homo','sodomite',
+    'battyboy','bugger','pansy','sissy',
+    'retard','retarded','tard','spaz','spastic','mongoloid','mong','cripple','gimp',
+    'fuck','fucker','fucked','fucking','fuckface','fuckhead','motherfucker','assfuck',
+    'shit','shite','shithead','shitface','shitbag','shithole','bullshit',
+    'bitch','biatch','bytch','biotch','bitchass',
+    'cunt','kunt','dick','dickhead','dickface','dicksucker',
+    'cock','cocksucker','cockhead','cockface',
+    'pussy','penis','prick','asshole','arsehole','asswipe','assclown','asshat',
+    'vagina','twat','snatch','clunge',
+    'slut','slag','sket','whore','hooker','skank','hoe','thot',
+    'cumslut','cumwhore','blowjob','handjob','gangbang','cumshot','dildo','buttfuck',
+    'tits','titty','boob','boobs','nipple','nutsack','ballsack','schlong',
+    'boner','cum','jizz','spunk','semen','wanker','wank','tosser','fap',
+    'rape','rapist','molest','molester','pedo','pedophile','paedo','groomer',
+    'kys','killself','killurself','killyourself','suicide','suicidal','selfharm',
+    'lynch','genocide','massacre','decapitate','behead',
+    'nazi','nazism','hitler','heil','siegheil','kkk','klan','kuklux',
+    'aryan','whitepride','whitepower','1488','jihad','atomwaffen','boogaloo',
+    'incel','femoid','foid','roastie',
+    'admin','administrator','moderator','solshot','official','support','staff','developer','devteam',
+    'cocaine','heroin','methamphetamine','crackhead','fentanyl',
+    'dumbass','dipshit','dumbfuck','numbnuts','douchebag','scumbag','bellend','knobhead','gobshite',
+];
+const PROFANITY_RE = new RegExp(PROFANITY_WORDS.join('|'), 'i');
+
+// Normalise leet speak for server-side profanity check
+function normaliseName(text) {
+    let s = text.toLowerCase()
+        .replace(/[\u200B-\u200F\u2028-\u202F\uFEFF\u00AD]/g, '')
+        .replace(/0/g, 'o').replace(/1/g, 'i').replace(/3/g, 'e')
+        .replace(/4/g, 'a').replace(/5/g, 's').replace(/7/g, 't')
+        .replace(/8/g, 'b').replace(/@/g, 'a').replace(/\$/g, 's')
+        .replace(/!/g, 'i').replace(/\+/g, 't');
+    return s.replace(/(.)\1{2,}/g, '$1');
+}
+function isProfane(text) { return PROFANITY_RE.test(text) || PROFANITY_RE.test(normaliseName(text)); }
+
 // Helper: check if MongoDB is connected before DB operations
 function isDbConnected() {
     return mongoose.connection.readyState === 1; // 1 = connected
@@ -744,13 +793,16 @@ const mainsocket = (io) => {
         // === PRACTICE IDENTITY (Phase 28) ===
         client.on('registerIdentity', ({ uid, handle }) => {
             if (!uid || typeof uid !== 'string' || uid.length < 10) return
-            playerUids[client.id] = { uid, handle: (handle || '').slice(0, 16) }
+            let clean = (handle || '').slice(0, 16)
+            // Server-side profanity guard (normalises leet speak)
+            if (isProfane(clean)) clean = 'Player' + uid.slice(0, 4)
+            playerUids[client.id] = { uid, handle: clean }
 
             // Upsert user record in DB (fire-and-forget)
             if (isDbConnected()) {
                 User.findOneAndUpdate(
                     { uid },
-                    { $set: { handle: (handle || '').slice(0, 16), lastActive: new Date() } },
+                    { $set: { handle: clean, lastActive: new Date() } },
                     { upsert: true }
                 ).catch(err => console.error('[Identity] upsert error:', err.message))
             }
@@ -1431,27 +1483,30 @@ const mainsocket = (io) => {
                 }
             }
 
+            // Always broadcast roomUpdate so both players see the lobby
+            io.sockets.in(client.roomId).emit('roomUpdate', {
+                players: room.players.map(p => ({
+                    socketId: p.socketId,
+                    name: p.name,
+                    color: p.color,
+                    isReady: p.isReady || false,
+                    isHost: p.isHost || false,
+                })),
+                maxPlayers: room.maxPlayers,
+                currentPlayers: room.players.length,
+            })
+
             if (room.players.length === room.maxPlayers) {
-                // Room is full -- start the match
-                io.sockets.in(client.roomId).emit('startPick', {
-                    host: room.players[0],      // backward compat
-                    player: room.players[1],    // backward compat (undefined for 3-4 player)
-                    players: room.players,      // canonical N-player
-                    wager: roomWager
-                })
-            } else {
-                // Room partially filled -- broadcast waiting room state
-                io.sockets.in(client.roomId).emit('roomUpdate', {
-                    players: room.players.map(p => ({
-                        socketId: p.socketId,
-                        name: p.name,
-                        color: p.color,
-                        isReady: p.isReady || false,
-                        isHost: p.isHost || false,
-                    })),
-                    maxPlayers: room.maxPlayers,
-                    currentPlayers: room.players.length,
-                })
+                // Room is full -- brief lobby display then start match
+                setTimeout(() => {
+                    if (!room || !room.active) return // room may have been destroyed
+                    io.sockets.in(client.roomId).emit('startPick', {
+                        host: room.players[0],      // backward compat
+                        player: room.players[1],    // backward compat (undefined for 3-4 player)
+                        players: room.players,      // canonical N-player
+                        wager: roomWager
+                    })
+                }, 2000)
             }
         })
 

@@ -18,6 +18,8 @@ import ArmoryScreen from './screens/ArmoryScreen';
 import PrestigeScreen from './screens/PrestigeScreen';
 import BarracksScreen from './screens/BarracksScreen';
 import HowToPlayScreen from './screens/HowToPlayScreen';
+import TermsScreen from './screens/TermsScreen';
+import PrivacyScreen from './screens/PrivacyScreen';
 import HandleModal from './components/HandleModal';
 
 // A8: Socket bridge for Phaser scenes — non-enumerable to reduce XSS discovery surface
@@ -182,6 +184,10 @@ function AppInner() {
         return <BarracksScreen navigate={navigate} />;
       case 'howtoplay':
         return <HowToPlayScreen navigate={navigate} />;
+      case 'terms':
+        return <TermsScreen navigate={navigate} />;
+      case 'privacy':
+        return <PrivacyScreen navigate={navigate} />;
       default:
         return <MenuScreen navigate={navigate} />;
     }
@@ -194,29 +200,32 @@ function AppInner() {
         <HandleModal onComplete={handleHandleComplete} />
       )}
       <PortraitWarning />
-      <button
-        onClick={() => setFaqOpen(true)}
-        aria-label="Open FAQ"
-        style={{
-          position: 'fixed',
-          bottom: 12,
-          right: 12,
-          zIndex: 9000,
-          width: 40,
-          height: 40,
-          borderRadius: '50%',
-          background: 'rgba(10, 12, 8, 0.85)',
-          border: '1px solid var(--ol)',
-          color: '#fff',
-          fontFamily: "'Black Ops One', cursive",
-          fontSize: 18,
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          lineHeight: 1,
-        }}
-      >?</button>
+      {/* Hide FAQ button during battle/shop to avoid cluttering gameplay */}
+      {screen !== 'battle' && screen !== 'shop' && (
+        <button
+          onClick={() => setFaqOpen(true)}
+          aria-label="Open FAQ"
+          style={{
+            position: 'fixed',
+            bottom: 12,
+            right: 12,
+            zIndex: 9000,
+            width: 40,
+            height: 40,
+            borderRadius: '50%',
+            background: 'rgba(10, 12, 8, 0.85)',
+            border: '1px solid var(--ol)',
+            color: '#fff',
+            fontFamily: "'Black Ops One', cursive",
+            fontSize: 18,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            lineHeight: 1,
+          }}
+        >?</button>
+      )}
       <FAQ isOpen={faqOpen} onClose={() => setFaqOpen(false)} />
     </Layout>
   );

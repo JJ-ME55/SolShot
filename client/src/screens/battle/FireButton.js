@@ -1,11 +1,11 @@
 import React from 'react';
 
 const s = {
-  button: (disabled) => ({
+  button: (disabled, compact) => ({
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 18,
-    letterSpacing: 4,
-    padding: '12px 42px',
+    fontSize: compact ? 14 : 18,
+    letterSpacing: compact ? 2 : 4,
+    padding: compact ? '8px 28px' : '12px 42px',
     borderRadius: 4,
     border: 'none',
     cursor: disabled ? 'default' : 'pointer',
@@ -23,10 +23,10 @@ const s = {
   }),
 };
 
-function FireButton({ onClick, disabled }) {
+function FireButton({ onClick, disabled, compact = false }) {
   return (
     <button
-      style={s.button(disabled)}
+      style={s.button(disabled, compact)}
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
     >

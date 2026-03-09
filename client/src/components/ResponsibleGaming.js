@@ -23,6 +23,7 @@ const styles = {
     borderBottom: '1px solid rgba(107, 114, 128, 0.3)',
     marginLeft: 4,
     marginRight: 4,
+    cursor: 'pointer',
   },
   separator: {
     opacity: 0.4,
@@ -31,32 +32,25 @@ const styles = {
   },
 };
 
-const ToS_URL = 'https://github.com/JJ-ME55/SolShot/blob/main/Docs/SOLSHOT_TERMS_OF_SERVICE.md';
-const PP_URL = 'https://github.com/JJ-ME55/SolShot/blob/main/Docs/SOLSHOT_PRIVACY_POLICY.md';
-
-function ResponsibleGaming() {
+function ResponsibleGaming({ navigate }) {
   return (
     <div style={styles.container}>
       <div style={styles.legalRow}>
         18+
         <span style={styles.separator}>|</span>
-        <a
-          href={ToS_URL}
-          target="_blank"
-          rel="noopener noreferrer"
+        <span
           style={styles.link}
+          onClick={() => navigate && navigate('terms')}
         >
           Terms of Service
-        </a>
+        </span>
         <span style={styles.separator}>|</span>
-        <a
-          href={PP_URL}
-          target="_blank"
-          rel="noopener noreferrer"
+        <span
           style={styles.link}
+          onClick={() => navigate && navigate('privacy')}
         >
           Privacy Policy
-        </a>
+        </span>
       </div>
     </div>
   );

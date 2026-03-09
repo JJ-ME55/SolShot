@@ -304,7 +304,21 @@ export class MainScene extends Scene {
   //   1. Detecting when the local firing animation finishes so we can apply pendingTurnResult
   //   2. Non-multiplayer (type4) local turn switching
   checkSwitchTurn = () => {
-    if (this.terrain.animate === true) return;
+    // Safety valve: if terrain.animate is stuck for >10s (e.g. gravity sim error),
+    // force-clear it so the game doesn't freeze permanently
+    if (this.terrain.animate === true) {
+      if (!this._animateStuckStart) {
+        this._animateStuckStart = Date.now();
+      } else if (Date.now() - this._animateStuckStart > 10000) {
+        console.warn('[SolShot] terrain.animate stuck for 10s — force-clearing');
+        this.terrain.animate = false;
+        this.terrain.matrix = [];
+        this.terrain.blastArray = [];
+        this._animateStuckStart = null;
+      }
+      return;
+    }
+    this._animateStuckStart = null;
     if (this.terrain.blastArray.length !== 0) return;
     if (this.gameOver === true) return;
 
@@ -1196,6 +1210,14 @@ export class MainScene extends Scene {
 
     const moveProjectile = () => {
       if (completed) return;
+      // Guard: if scene was destroyed mid-animation, bail out cleanly
+      if (!this.sys || !this.sys.isActive()) {
+        completed = true;
+        try { projectile.destroy(); } catch (_) {}
+        try { if (glowRing) glowRing.destroy(); } catch (_) {}
+        if (this._trajectoryTimer) { try { this._trajectoryTimer.remove(false); } catch (_) {} }
+        return;
+      }
 
       frameIndex += speed;
       if (frameIndex >= trajectory.length) {
@@ -1661,6 +1683,17 @@ export class MainScene extends Scene {
       });
     }
     this._socketHandlers = {};
+
+    // Clean up trajectory animation timer (prevents post-destroy callbacks)
+    if (this._trajectoryTimer) {
+      try { this._trajectoryTimer.remove(false); } catch (_) {}
+      this._trajectoryTimer = null;
+    }
+
+    // Clean up any pending turn result to prevent stale state on re-create
+    this.pendingTurnResult = null;
+    this._turnResultCooldown = 0;
+    this._firePending = false;
 
     // Clean up spectator graphics
     this._clearSpectatorAimLine();

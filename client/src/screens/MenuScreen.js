@@ -3,6 +3,7 @@ import Button from '../components/Button';
 import WalletDisplay from '../components/WalletDisplay';
 import ResponsibleGaming from '../components/ResponsibleGaming';
 import { useTelegram } from '../telegram/TelegramContext';
+import useIsMobile from '../hooks/useIsMobile';
 
 
 const styles = {
@@ -170,6 +171,7 @@ function MenuScreen({ navigate }) {
   const [hoveredBtn, setHoveredBtn] = useState(null);
   const [logoFailed, setLogoFailed] = useState(false);
   const { isTelegram, user: tgUser } = useTelegram();
+  const isMobile = useIsMobile();
   const onLogoError = useCallback(() => setLogoFailed(true), []);
 
   const navItems = [
@@ -186,26 +188,26 @@ function MenuScreen({ navigate }) {
       <div style={styles.bgGlow} />
 
       {/* Logo */}
-      <div style={styles.logoSection}>
+      <div style={{ ...styles.logoSection, marginBottom: isMobile ? 2 : 6 }}>
         {logoFailed ? (
           <div style={styles.logoRow}>
-            <span style={{ ...styles.logoText, color: 'var(--bn)' }}>SOL</span>
-            <span style={{ ...styles.logoText, color: 'var(--rd)' }}>SHOT</span>
+            <span style={{ ...styles.logoText, fontSize: isMobile ? 28 : 44, color: 'var(--bn)' }}>SOL</span>
+            <span style={{ ...styles.logoText, fontSize: isMobile ? 28 : 44, color: 'var(--rd)' }}>SHOT</span>
           </div>
         ) : (
           <img
             src="/assets/images/branding/logo-transparent.png"
             alt="SolShot"
             onError={onLogoError}
-            style={{ width: 340, height: 'auto', objectFit: 'contain', marginBottom: 8 }}
+            style={{ width: isMobile ? 180 : 340, height: 'auto', objectFit: 'contain', marginBottom: isMobile ? 2 : 8 }}
           />
         )}
-        <div style={styles.tagline}>SKILL, NOT LUCK</div>
-        <div style={styles.subTagline}>SKILL-BASED ARTILLERY COMBAT</div>
+        <div style={{ ...styles.tagline, fontSize: isMobile ? 12 : 18, marginTop: isMobile ? 4 : 10, letterSpacing: isMobile ? 2 : 4 }}>SKILL, NOT LUCK</div>
+        <div style={{ ...styles.subTagline, fontSize: isMobile ? 10 : 14, marginTop: isMobile ? 2 : 6, marginBottom: isMobile ? 8 : 20 }}>SKILL-BASED ARTILLERY COMBAT</div>
       </div>
 
       {/* Navigation buttons */}
-      <div style={styles.navButtons}>
+      <div style={{ ...styles.navButtons, width: isMobile ? 220 : 300, gap: isMobile ? 6 : 10, marginBottom: isMobile ? 8 : 20 }}>
         {navItems.map((item, idx) => (
           <div
             key={item.id}
@@ -219,7 +221,7 @@ function MenuScreen({ navigate }) {
               variant={item.comingSoon ? 'disabled' : item.variant}
               onClick={item.comingSoon ? undefined : () => navigate(item.screen)}
               disabled={item.comingSoon}
-              style={{ ...styles.navButton, position: 'relative' }}
+              style={{ ...styles.navButton, padding: isMobile ? '8px 16px' : '14px 24px', position: 'relative' }}
             >
               {item.label}
               {item.comingSoon && (
@@ -246,12 +248,12 @@ function MenuScreen({ navigate }) {
         onClick={() => navigate('howtoplay')}
         style={{
           fontFamily: "'Share Tech Mono', monospace",
-          fontSize: 13,
+          fontSize: isMobile ? 11 : 13,
           color: 'var(--kh)',
           letterSpacing: 2,
           cursor: 'pointer',
           opacity: 0.6,
-          marginBottom: 12,
+          marginBottom: isMobile ? 6 : 12,
           zIndex: 1,
           transition: 'opacity 0.15s, color 0.15s',
         }}
@@ -288,7 +290,7 @@ function MenuScreen({ navigate }) {
       <div style={styles.versionTag}>v0.5.0-alpha</div>
 
       {/* Responsible gaming disclosure */}
-      <ResponsibleGaming />
+      <ResponsibleGaming navigate={navigate} />
     </div>
   );
 }

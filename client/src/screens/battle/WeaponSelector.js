@@ -2,15 +2,15 @@ import React, { useCallback } from 'react';
 import { getWeaponIconUrl } from '../../data/weapons';
 
 const s = {
-  container: {
+  container: (compact) => ({
     display: 'flex',
     alignItems: 'center',
-    gap: 6,
-    padding: '4px 10px',
+    gap: compact ? 4 : 6,
+    padding: compact ? '3px 6px' : '4px 10px',
     background: 'rgba(10, 12, 8, 0.7)',
     borderRadius: 3,
     border: '1px solid var(--ol)',
-  },
+  }),
   arrow: (disabled) => ({
     fontFamily: "'Share Tech Mono', monospace",
     fontSize: 20,
@@ -21,15 +21,15 @@ const s = {
     lineHeight: 1,
     transition: 'color 0.15s ease',
   }),
-  weaponName: {
+  weaponName: (compact) => ({
     fontFamily: "'Black Ops One', cursive",
-    fontSize: 14,
+    fontSize: compact ? 11 : 14,
     color: 'var(--bn)',
     letterSpacing: 1,
-    minWidth: 120,
+    minWidth: compact ? 80 : 120,
     textAlign: 'center',
     whiteSpace: 'nowrap',
-  },
+  }),
   ammo: {
     fontFamily: "'Share Tech Mono', monospace",
     fontSize: 11,
@@ -46,7 +46,7 @@ const s = {
   },
 };
 
-function WeaponSelector({ weapons, currentIndex, onChange, disabled }) {
+function WeaponSelector({ weapons, currentIndex, onChange, disabled, compact = false }) {
   const current = weapons && weapons.length > 0
     ? weapons[currentIndex] || weapons[0]
     : { name: 'Single Shot' };
@@ -66,8 +66,10 @@ function WeaponSelector({ weapons, currentIndex, onChange, disabled }) {
     onChange(newIdx);
   }, [disabled, total, idx, onChange]);
 
+  const iconSize = compact ? 24 : 32;
+
   return (
-    <div style={s.container}>
+    <div style={s.container(compact)}>
       <span
         style={s.arrow(disabled || total <= 1)}
         onClick={handlePrev}
@@ -76,8 +78,8 @@ function WeaponSelector({ weapons, currentIndex, onChange, disabled }) {
       </span>
 
       <div style={s.nameBlock}>
-        <img src={getWeaponIconUrl(current.name || 'Single Shot')} alt="" style={{ width: 32, height: 32, objectFit: 'contain', imageRendering: 'pixelated', marginBottom: 3 }} onError={(e) => { e.target.style.display = 'none'; }} />
-        <span style={s.weaponName}>
+        <img src={getWeaponIconUrl(current.name || 'Single Shot')} alt="" style={{ width: iconSize, height: iconSize, objectFit: 'contain', imageRendering: 'pixelated', marginBottom: 3 }} onError={(e) => { e.target.style.display = 'none'; }} />
+        <span style={s.weaponName(compact)}>
           {current.name || 'SINGLE SHOT'}
         </span>
         <span style={s.ammo}>

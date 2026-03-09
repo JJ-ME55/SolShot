@@ -95,6 +95,30 @@ export function validateFireParams({ angle, power, weaponId }) {
 //
 // Fixes: H017 — megabyte player name broadcast
 
+// Profanity check for display names (shared with main.js logic)
+const _PROF = [
+    'nigger','nigga','negro','nig','coon','darkie','sambo','jigaboo','porchmonkey','kike',
+    'kyke','jewbag','jewboy','heeb','hymie','spic','spick','beaner','wetback','chink','gook',
+    'slanteye','zipperhead','chinaman','chingchong','paki','raghead','towelhead','cameljockey',
+    'sandnigger','muzzie','redskin','injun','faggot','fag','faggy','dyke','tranny','shemale',
+    'homo','sodomite','retard','retarded','tard','spaz','spastic','mongoloid','cripple',
+    'fuck','fucker','fucking','fuckface','motherfucker','shit','shithead','shithole',
+    'bitch','biatch','cunt','kunt','dick','dickhead','dicksucker','cock','cocksucker',
+    'pussy','penis','prick','asshole','arsehole','twat','slut','whore','hooker','skank',
+    'hoe','thot','cumslut','blowjob','gangbang','dildo','tits','titty','boob','wanker',
+    'rape','rapist','molest','pedo','pedophile','groomer','kys','killself','suicide',
+    'nazi','hitler','heil','kkk','klan','aryan','whitepride','whitepower','1488','jihad',
+    'admin','moderator','solshot','official','support','staff','developer','devteam',
+    'dumbass','dipshit','dumbfuck','douchebag','scumbag','bellend','knobhead',
+];
+const _PROF_RE = new RegExp(_PROF.join('|'), 'i');
+function _norm(t) {
+    return t.toLowerCase().replace(/0/g,'o').replace(/1/g,'i').replace(/3/g,'e')
+        .replace(/4/g,'a').replace(/5/g,'s').replace(/7/g,'t').replace(/8/g,'b')
+        .replace(/@/g,'a').replace(/\$/g,'s').replace(/!/g,'i')
+        .replace(/(.)\1{2,}/g,'$1');
+}
+
 export function sanitizeName(name) {
     if (typeof name !== 'string' || name.trim().length === 0) {
         return 'Player';
@@ -102,7 +126,10 @@ export function sanitizeName(name) {
     // Allow alphanumeric, spaces, dashes, underscores, and periods
     const cleaned = name.replace(/[^a-zA-Z0-9 \-_.]/g, '').trim();
     if (cleaned.length === 0) return 'Player';
-    return cleaned.substring(0, 20);
+    const capped = cleaned.substring(0, 20);
+    // Profanity guard
+    if (_PROF_RE.test(capped) || _PROF_RE.test(_norm(capped))) return 'Player';
+    return capped;
 }
 
 // ─── withLock ───────────────────────────────────────────────

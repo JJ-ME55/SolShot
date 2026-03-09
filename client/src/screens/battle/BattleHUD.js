@@ -9,6 +9,7 @@ import AngleControl from './AngleControl';
 import PowerControl from './PowerControl';
 import WeaponSelector from './WeaponSelector';
 import FireButton from './FireButton';
+import useIsMobile from '../../hooks/useIsMobile';
 
 const s = {
   overlay: {
@@ -84,11 +85,11 @@ const s = {
 };
 
 
-const moveBtn = (disabled) => ({
+const moveBtn = (disabled, compact) => ({
   fontFamily: "'Black Ops One', cursive",
-  fontSize: 14,
+  fontSize: compact ? 11 : 14,
   letterSpacing: 2,
-  padding: '8px 18px',
+  padding: compact ? '6px 12px' : '8px 18px',
   borderRadius: 3,
   border: 'none',
   cursor: disabled ? 'default' : 'pointer',
@@ -99,7 +100,22 @@ const moveBtn = (disabled) => ({
   userSelect: 'none',
 });
 
-function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch }) {
+const forfeitBtn = {
+  fontFamily: "'Share Tech Mono', monospace",
+  fontSize: 10,
+  letterSpacing: 1,
+  padding: '4px 8px',
+  borderRadius: 3,
+  border: '1px solid rgba(204, 34, 0, 0.3)',
+  background: 'rgba(204, 34, 0, 0.15)',
+  color: 'var(--rd)',
+  cursor: 'pointer',
+  pointerEvents: 'auto',
+  userSelect: 'none',
+  opacity: 0.7,
+};
+
+function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfeit }) {
   const {
     players = [],
     myPlayerIndex = -1,
@@ -119,10 +135,12 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch }) {
   } = gameState;
 
   const disabled = !isPlayerTurn || isFiring;
+  const isMobile = useIsMobile();
+  const compact = isMobile;
 
   return (
     <div style={s.overlay}>
-      {/* ═══ TOP ROW ═══ */}
+      {/* TOP ROW */}
       <div style={s.topRow}>
         {/* N-player HP bar strip */}
         <div style={{ display: 'flex', gap: 4, flex: 1 }}>
@@ -145,10 +163,12 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch }) {
         </div>
       </div>
 
-      {/* ═══ TURN INDICATOR ═══ */}
+      {/* TURN INDICATOR */}
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', marginTop: 2, gap: 8 }}>
         <div style={{
           ...s.turnLabel,
+          fontSize: compact ? 12 : 16,
+          padding: compact ? '4px 10px' : '6px 16px',
           ...(isPlayerTurn ? s.turnLabelActive : s.turnLabelWaiting),
         }}>
           {isPlayerTurn ? 'YOUR TURN' : (
@@ -160,7 +180,7 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch }) {
         {turnTimer != null && (
           <div style={{
             fontFamily: "'Bebas Neue', sans-serif",
-            fontSize: 20,
+            fontSize: compact ? 16 : 20,
             color: turnTimer <= 10 ? 'var(--rd)' : 'var(--kh)',
             letterSpacing: 1,
             lineHeight: 1,
@@ -173,19 +193,21 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch }) {
         )}
       </div>
 
-      {/* ═══ BOTTOM ROW ═══ */}
-      <div style={s.bottomRow}>
+      {/* BOTTOM ROW */}
+      <div style={{ ...s.bottomRow, padding: compact ? '4px 8px' : '8px 12px', gap: compact ? 6 : 10 }}>
         {/* Left: Angle + Power */}
         <div style={s.controlsLeft}>
           <AngleControl
             angle={players[myPlayerIndex]?.angle || 45}
             onChange={(v) => bridge.setAngle(v)}
             disabled={disabled}
+            compact={compact}
           />
           <PowerControl
             power={players[myPlayerIndex]?.power || 60}
             onChange={(v) => bridge.setPower(v)}
             disabled={disabled}
+            compact={compact}
           />
         </div>
 
@@ -196,25 +218,27 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch }) {
             currentIndex={currentWeaponIndex}
             onChange={(idx) => bridge.selectWeapon(idx)}
             disabled={disabled}
+            compact={compact}
           />
           <FireButton
             onClick={() => bridge.fire()}
             disabled={disabled}
+            compact={compact}
           />
         </div>
 
-        {/* Right: Move Controls + Counter */}
+        {/* Right: Move Controls + Counter + Forfeit (mobile) */}
         <div style={s.controlsRight}>
           <div style={{ display: 'flex', gap: 6 }}>
             <button
-              style={moveBtn(disabled || moveSteps <= 0)}
+              style={moveBtn(disabled || moveSteps <= 0, compact)}
               onClick={() => bridge.moveLeft()}
               disabled={disabled || moveSteps <= 0}
             >
               {'< A'}
             </button>
             <button
-              style={moveBtn(disabled || moveSteps <= 0)}
+              style={moveBtn(disabled || moveSteps <= 0, compact)}
               onClick={() => bridge.moveRight()}
               disabled={disabled || moveSteps <= 0}
             >
@@ -222,10 +246,16 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch }) {
             </button>
           </div>
           <MoveCounter moves={moveSteps} />
+          {/* Mobile forfeit button — ESC doesn't exist on phones */}
+          {isMobile && (
+            <button style={forfeitBtn} onClick={onForfeit}>
+              FORFEIT
+            </button>
+          )}
         </div>
       </div>
 
-      {/* ═══ ELIMINATION OVERLAY (3+ players only; 2-player ends immediately) ═══ */}
+      {/* ELIMINATION OVERLAY (3+ players only; 2-player ends immediately) */}
       {isEliminated && players.length > 2 && (
         <div style={{
           position: 'absolute',

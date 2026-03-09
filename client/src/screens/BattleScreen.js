@@ -392,6 +392,7 @@ function BattleScreen({ navigate, screenData }) {
           wager={wager}
           turnTimer={turnTimer}
           onLeaveMatch={handleLeaveMatch}
+          onForfeit={() => setShowExit(true)}
         />
       )}
 

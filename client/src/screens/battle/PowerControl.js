@@ -1,31 +1,31 @@
 import React, { useCallback, useState, useRef } from 'react';
 
 const s = {
-  container: {
+  container: (compact) => ({
     display: 'flex',
     alignItems: 'center',
-    gap: 6,
-    padding: '4px 10px',
+    gap: compact ? 4 : 6,
+    padding: compact ? '3px 6px' : '4px 10px',
     background: 'rgba(10, 12, 8, 0.7)',
     borderRadius: 3,
     border: '1px solid var(--ol)',
-  },
-  label: {
+  }),
+  label: (compact) => ({
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 11,
+    fontSize: compact ? 9 : 11,
     color: 'var(--kh)',
     letterSpacing: 1,
     opacity: 0.7,
-    minWidth: 32,
-  },
-  valueInput: (power) => ({
+    minWidth: compact ? 24 : 32,
+  }),
+  valueInput: (power, compact) => ({
     fontFamily: "'Bebas Neue', sans-serif",
-    fontSize: 20,
+    fontSize: compact ? 16 : 20,
     color: power > 80 ? 'var(--rg)' : power > 50 ? 'var(--am)' : 'var(--bn)',
     letterSpacing: 1,
     lineHeight: 1,
-    minWidth: 32,
-    width: 42,
+    minWidth: compact ? 26 : 32,
+    width: compact ? 34 : 42,
     textAlign: 'right',
     background: 'transparent',
     border: 'none',
@@ -34,8 +34,8 @@ const s = {
     cursor: 'text',
     pointerEvents: 'auto',
   }),
-  slider: (disabled) => ({
-    width: 120,
+  slider: (disabled, compact) => ({
+    width: compact ? 70 : 120,
     height: 6,
     appearance: 'none',
     WebkitAppearance: 'none',
@@ -53,7 +53,7 @@ const s = {
   },
 };
 
-function PowerControl({ power, onChange, disabled }) {
+function PowerControl({ power, onChange, disabled, compact = false }) {
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
   const inputRef = useRef(null);
@@ -92,8 +92,8 @@ function PowerControl({ power, onChange, disabled }) {
   const displayPower = Math.round(power || 60);
 
   return (
-    <div style={s.container}>
-      <span style={s.label}>PWR</span>
+    <div style={s.container(compact)}>
+      <span style={s.label(compact)}>PWR</span>
       <input
         ref={inputRef}
         type="text"
@@ -106,7 +106,7 @@ function PowerControl({ power, onChange, disabled }) {
         onKeyDown={handleKeyDown}
         disabled={disabled}
         style={{
-          ...s.valueInput(editing ? parseInt(editValue, 10) || 60 : displayPower),
+          ...s.valueInput(editing ? parseInt(editValue, 10) || 60 : displayPower, compact),
           opacity: disabled ? 0.4 : 1,
           cursor: disabled ? 'default' : 'text',
         }}
@@ -120,7 +120,7 @@ function PowerControl({ power, onChange, disabled }) {
         value={power || 60}
         onChange={handleSlider}
         disabled={disabled}
-        style={s.slider(disabled)}
+        style={s.slider(disabled, compact)}
       />
     </div>
   );

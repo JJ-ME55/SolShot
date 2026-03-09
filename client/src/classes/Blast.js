@@ -27,6 +27,8 @@ export class Blast {
         this.canvas = document.createElement('canvas')
         this.canvas.width = this.maxRadius * 2
         this.canvas.height = this.maxRadius * 2
+        // Initialize context with willReadFrequently before Phaser wraps it
+        this.canvas.getContext('2d', { willReadFrequently: true });
         this.textureId = Math.random().toString(32).slice(2, 7)
 
         this.scene.textures.addCanvas(this.textureId, this.canvas)

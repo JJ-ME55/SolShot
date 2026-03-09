@@ -16,6 +16,10 @@ export class Terrain extends Textures.CanvasTexture {
         var canvas = document.createElement('canvas');
         canvas.height = height
         canvas.width = width
+        // Initialize 2D context with willReadFrequently BEFORE Phaser wraps it —
+        // terrain uses getImageData heavily (gravity sim, heightmap sync).
+        // Must be set on first getContext call; subsequent calls ignore options.
+        canvas.getContext('2d', { willReadFrequently: true });
         if (scene.textures.exists('terrain')) scene.textures.remove('terrain')
         scene.textures.addCanvas('terrain', canvas);
 
@@ -75,14 +79,15 @@ export class Terrain extends Textures.CanvasTexture {
 
 
     save = () => {
-        //this.update()
-        this.previousSaved = this.context.getImageData(0, 0, this.width, this.height)
+        const ctx = this.context || this.canvas.getContext('2d');
+        this.previousSaved = ctx.getImageData(0, 0, this.width, this.height)
     }
 
 
 
     restore = () => {
-        this.context.putImageData(this.previousSaved, 0, 0)
+        const ctx = this.context || this.canvas.getContext('2d');
+        ctx.putImageData(this.previousSaved, 0, 0)
         this.update()
     }
 
@@ -179,7 +184,7 @@ export class Terrain extends Textures.CanvasTexture {
             // Refresh the Phaser CanvasTexture so blast-drawn pixels appear on screen
             this.update()
         }
-        
+
         if (this.matrix.length === 0) {
             this.animate = false
             return
@@ -197,22 +202,30 @@ export class Terrain extends Textures.CanvasTexture {
                     }
                 }
             }
-        
+
             this.matrix = this.matrix.filter((ele) => {
                 return (ele.base < ele.ground)
             })
 
-            //this.update()
-            var toDelete = []
-        
-            this.matrix.forEach((ele, i) => {
-                //try {
-                    var data = this.context.getImageData(ele.x, ele.top, 1, ele.base - ele.top)
-                    this.context.putImageData(data, ele.x, ele.top + 1)
+            try {
+                const ctx = this.context || this.canvas.getContext('2d');
+                this.matrix.forEach((ele, i) => {
+                    // Guard: skip columns with zero/negative height (prevents getImageData crash)
+                    const h = ele.base - ele.top;
+                    if (h <= 0 || ele.x < 0 || ele.x >= this.width || ele.top < 0) return;
+                    var data = ctx.getImageData(ele.x, ele.top, 1, h)
+                    ctx.putImageData(data, ele.x, ele.top + 1)
                     this.setPixel(ele.x, ele.top, 0, 0, 0, 0)
                     ele.top = ele.top + 1
                     ele.base = ele.base + 1
-            })
+                })
+            } catch (err) {
+                // CRITICAL: If gravity sim crashes, clear the matrix to prevent permanent freeze.
+                // Without this, terrain.animate stays true forever → checkSwitchTurn blocks → game frozen.
+                console.error('[SolShot] updateTerrain gravity error:', err.message);
+                this.matrix = [];
+                this.animate = false;
+            }
 
             this.update()
         }

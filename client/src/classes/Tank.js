@@ -313,15 +313,12 @@ export class Tank extends GameObjects.Sprite {
                     this.settled = false;
                 }
             } else if (surfaceY >= this.terrain.height) {
-                // No terrain below — clamp to visible area
-                // Use camera worldView to get actual visible bounds (works with ENVELOP + any viewport)
-                const cam = this.scene.cameras?.main;
-                const maxY = cam ? Math.floor(cam.worldView.bottom - 20) : Math.floor(this.terrain.height * 0.5);
-                if (tankY < maxY) {
-                    this.body.y = Math.min(tankY + 4, maxY);
+                // No terrain below — clamp to canvas bottom (FIT mode shows full canvas)
+                if (tankY < this.terrain.height - 2) {
+                    this.body.y = Math.min(tankY + 4, this.terrain.height - 2);
                     this.settled = false;
                 } else {
-                    this.body.y = maxY;
+                    this.body.y = this.terrain.height - 2;
                     this.body.stop();
                     this.body.setGravity(0);
                     this.settled = true;

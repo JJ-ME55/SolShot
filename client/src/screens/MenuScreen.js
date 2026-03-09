@@ -182,109 +182,207 @@ function MenuScreen({ navigate }) {
   ];
 
   return (
-    <div style={{ ...styles.container, paddingBottom: isMobile ? 44 : 0, ...(isMobile ? { justifyContent: 'flex-start', paddingTop: 10 } : {}) }}>
+    <div style={{ ...styles.container, paddingBottom: isMobile ? 44 : 0, ...(isMobile ? { justifyContent: 'center', paddingTop: 0 } : {}) }}>
       {/* Background elements */}
       <div style={styles.bgTerrain} />
       <div style={styles.bgGlow} />
 
-      {/* Logo */}
-      <div style={{ ...styles.logoSection, marginBottom: isMobile ? 2 : 6 }}>
-        {logoFailed ? (
-          <div style={styles.logoRow}>
-            <span style={{ ...styles.logoText, fontSize: isMobile ? 28 : 44, color: 'var(--bn)' }}>SOL</span>
-            <span style={{ ...styles.logoText, fontSize: isMobile ? 28 : 44, color: 'var(--rd)' }}>SHOT</span>
+      {isMobile ? (
+        /* ═══ MOBILE LANDSCAPE LAYOUT ═══ */
+        <>
+          {/* Wallet — top right (crypto standard) */}
+          <div style={{ position: 'absolute', top: 8, right: 12, zIndex: 10 }}>
+            <WalletDisplay />
           </div>
-        ) : (
-          <img
-            src="/assets/images/branding/logo-transparent.png"
-            alt="SolShot"
-            onError={onLogoError}
-            style={{ width: isMobile ? 160 : 340, height: 'auto', objectFit: 'contain', marginBottom: isMobile ? 2 : 8 }}
-          />
-        )}
-        <div style={{ ...styles.tagline, fontSize: isMobile ? 12 : 18, marginTop: isMobile ? 4 : 10, letterSpacing: isMobile ? 2 : 4 }}>SKILL, NOT LUCK</div>
-        <div style={{ ...styles.subTagline, fontSize: isMobile ? 10 : 14, marginTop: isMobile ? 2 : 6, marginBottom: isMobile ? 8 : 20 }}>SKILL-BASED ARTILLERY COMBAT</div>
-      </div>
 
-      {/* Navigation buttons */}
-      <div style={{ ...styles.navButtons, width: isMobile ? 150 : 300, gap: isMobile ? 6 : 10, marginBottom: isMobile ? 8 : 20 }}>
-        {navItems.map((item, idx) => (
-          <div
-            key={item.id}
-            style={{
-              animation: `si 0.3s ease-out ${idx * 0.08}s both`,
-            }}
-            onMouseEnter={() => setHoveredBtn(item.id)}
-            onMouseLeave={() => setHoveredBtn(null)}
-          >
-            <Button
-              variant={item.comingSoon ? 'disabled' : item.variant}
-              onClick={item.comingSoon ? undefined : () => navigate(item.screen)}
-              disabled={item.comingSoon}
-              style={{ ...styles.navButton, padding: isMobile ? '8px 16px' : '14px 24px', position: 'relative' }}
-            >
-              {item.label}
-              {item.comingSoon && (
-                <span style={styles.comingSoonBadge}>COMING SOON</span>
-              )}
-              {!item.comingSoon && (
-                <span
-                  style={{
-                    ...styles.arrow,
-                    opacity: hoveredBtn === item.id ? 1 : 0,
-                    transform: hoveredBtn === item.id ? 'translateX(0)' : 'translateX(-4px)',
-                  }}
+          {/* Logo — bigger, centered */}
+          <div style={{ ...styles.logoSection, marginBottom: 4 }}>
+            {logoFailed ? (
+              <div style={styles.logoRow}>
+                <span style={{ ...styles.logoText, fontSize: 32, color: 'var(--bn)' }}>SOL</span>
+                <span style={{ ...styles.logoText, fontSize: 32, color: 'var(--rd)' }}>SHOT</span>
+              </div>
+            ) : (
+              <img
+                src="/assets/images/branding/logo-transparent.png"
+                alt="SolShot"
+                onError={onLogoError}
+                style={{ width: 215, height: 'auto', objectFit: 'contain', marginBottom: 2 }}
+              />
+            )}
+            <div style={{ ...styles.tagline, fontSize: 10, marginTop: 2, letterSpacing: 2 }}>SKILL, NOT LUCK</div>
+          </div>
+
+          {/* 2x2 button grid */}
+          <div style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 6,
+            width: 320,
+            justifyContent: 'center',
+            zIndex: 1,
+            marginBottom: 6,
+          }}>
+            {navItems.map((item, idx) => (
+              <div
+                key={item.id}
+                style={{
+                  width: 'calc(50% - 3px)',
+                  animation: `si 0.3s ease-out ${idx * 0.06}s both`,
+                }}
+              >
+                <Button
+                  variant={item.comingSoon ? 'disabled' : item.variant}
+                  onClick={item.comingSoon ? undefined : () => navigate(item.screen)}
+                  disabled={item.comingSoon}
+                  style={{ ...styles.navButton, padding: '7px 10px', fontSize: 12, position: 'relative' }}
                 >
-                  {'\u25B6'}
-                </span>
-              )}
-            </Button>
+                  {item.label}
+                  {item.comingSoon && (
+                    <span style={{ ...styles.comingSoonBadge, fontSize: 7, top: -6, right: -4, padding: '1px 4px' }}>SOON</span>
+                  )}
+                </Button>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
 
-      {/* How To Play link */}
-      <div
-        onClick={() => navigate('howtoplay')}
-        style={{
-          fontFamily: "'Share Tech Mono', monospace",
-          fontSize: isMobile ? 11 : 13,
-          color: 'var(--kh)',
-          letterSpacing: 2,
-          cursor: 'pointer',
-          opacity: 0.6,
-          marginBottom: isMobile ? 6 : 12,
-          zIndex: 1,
-          transition: 'opacity 0.15s, color 0.15s',
-        }}
-        onMouseEnter={(e) => { e.target.style.opacity = '1'; e.target.style.color = 'var(--rg)'; }}
-        onMouseLeave={(e) => { e.target.style.opacity = '0.6'; e.target.style.color = 'var(--kh)'; }}
-      >
-        HOW TO PLAY
-      </div>
+          {/* HOW TO PLAY link */}
+          <div
+            onClick={() => navigate('howtoplay')}
+            style={{
+              fontFamily: "'Share Tech Mono', monospace",
+              fontSize: 10,
+              color: 'var(--kh)',
+              letterSpacing: 2,
+              cursor: 'pointer',
+              opacity: 0.5,
+              zIndex: 1,
+            }}
+          >
+            HOW TO PLAY
+          </div>
 
-      {/* Telegram user badge (when in Telegram) */}
-      {isTelegram && tgUser && (
-        <div style={{
-          fontFamily: "'Share Tech Mono', monospace",
-          fontSize: 13,
-          color: 'var(--kh)',
-          letterSpacing: 1,
-          padding: '4px 12px',
-          border: '1px solid var(--ol)',
-          borderRadius: 3,
-          marginBottom: 8,
-          zIndex: 1,
-          opacity: 0.7,
-        }}>
-          {'TG: @' + (tgUser.username || tgUser.first_name || 'UNKNOWN')}
-        </div>
+          {/* Telegram badge */}
+          {isTelegram && tgUser && (
+            <div style={{
+              fontFamily: "'Share Tech Mono', monospace",
+              fontSize: 11,
+              color: 'var(--kh)',
+              letterSpacing: 1,
+              padding: '2px 8px',
+              border: '1px solid var(--ol)',
+              borderRadius: 3,
+              marginTop: 4,
+              zIndex: 1,
+              opacity: 0.7,
+            }}>
+              {'TG: @' + (tgUser.username || tgUser.first_name || 'UNKNOWN')}
+            </div>
+          )}
+        </>
+      ) : (
+        /* ═══ DESKTOP LAYOUT (unchanged) ═══ */
+        <>
+          {/* Logo */}
+          <div style={{ ...styles.logoSection, marginBottom: 6 }}>
+            {logoFailed ? (
+              <div style={styles.logoRow}>
+                <span style={{ ...styles.logoText, fontSize: 44, color: 'var(--bn)' }}>SOL</span>
+                <span style={{ ...styles.logoText, fontSize: 44, color: 'var(--rd)' }}>SHOT</span>
+              </div>
+            ) : (
+              <img
+                src="/assets/images/branding/logo-transparent.png"
+                alt="SolShot"
+                onError={onLogoError}
+                style={{ width: 340, height: 'auto', objectFit: 'contain', marginBottom: 8 }}
+              />
+            )}
+            <div style={{ ...styles.tagline, fontSize: 18, marginTop: 10, letterSpacing: 4 }}>SKILL, NOT LUCK</div>
+            <div style={{ ...styles.subTagline, fontSize: 14, marginTop: 6, marginBottom: 20 }}>SKILL-BASED ARTILLERY COMBAT</div>
+          </div>
+
+          {/* Navigation buttons */}
+          <div style={{ ...styles.navButtons, width: 300, gap: 10, marginBottom: 20 }}>
+            {navItems.map((item, idx) => (
+              <div
+                key={item.id}
+                style={{
+                  animation: `si 0.3s ease-out ${idx * 0.08}s both`,
+                }}
+                onMouseEnter={() => setHoveredBtn(item.id)}
+                onMouseLeave={() => setHoveredBtn(null)}
+              >
+                <Button
+                  variant={item.comingSoon ? 'disabled' : item.variant}
+                  onClick={item.comingSoon ? undefined : () => navigate(item.screen)}
+                  disabled={item.comingSoon}
+                  style={{ ...styles.navButton, padding: '14px 24px', position: 'relative' }}
+                >
+                  {item.label}
+                  {item.comingSoon && (
+                    <span style={styles.comingSoonBadge}>COMING SOON</span>
+                  )}
+                  {!item.comingSoon && (
+                    <span
+                      style={{
+                        ...styles.arrow,
+                        opacity: hoveredBtn === item.id ? 1 : 0,
+                        transform: hoveredBtn === item.id ? 'translateX(0)' : 'translateX(-4px)',
+                      }}
+                    >
+                      {'\u25B6'}
+                    </span>
+                  )}
+                </Button>
+              </div>
+            ))}
+          </div>
+
+          {/* How To Play link */}
+          <div
+            onClick={() => navigate('howtoplay')}
+            style={{
+              fontFamily: "'Share Tech Mono', monospace",
+              fontSize: 13,
+              color: 'var(--kh)',
+              letterSpacing: 2,
+              cursor: 'pointer',
+              opacity: 0.6,
+              marginBottom: 12,
+              zIndex: 1,
+              transition: 'opacity 0.15s, color 0.15s',
+            }}
+            onMouseEnter={(e) => { e.target.style.opacity = '1'; e.target.style.color = 'var(--rg)'; }}
+            onMouseLeave={(e) => { e.target.style.opacity = '0.6'; e.target.style.color = 'var(--kh)'; }}
+          >
+            HOW TO PLAY
+          </div>
+
+          {/* Telegram user badge (when in Telegram) */}
+          {isTelegram && tgUser && (
+            <div style={{
+              fontFamily: "'Share Tech Mono', monospace",
+              fontSize: 13,
+              color: 'var(--kh)',
+              letterSpacing: 1,
+              padding: '4px 12px',
+              border: '1px solid var(--ol)',
+              borderRadius: 3,
+              marginBottom: 8,
+              zIndex: 1,
+              opacity: 0.7,
+            }}>
+              {'TG: @' + (tgUser.username || tgUser.first_name || 'UNKNOWN')}
+            </div>
+          )}
+
+          {/* Wallet display */}
+          <div style={{ ...styles.walletSection, marginBottom: 12 }}>
+            <WalletDisplay />
+          </div>
+        </>
       )}
-
-      {/* Wallet display */}
-      <div style={{ ...styles.walletSection, marginBottom: isMobile ? 40 : 12 }}>
-        <WalletDisplay />
-      </div>
 
       {/* Version tag */}
       <div style={styles.versionTag}>v0.5.0-alpha</div>

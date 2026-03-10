@@ -2776,14 +2776,31 @@ const mainsocket = (io) => {
             }
             if (goldEarned > 0) trackGoldEarned(goldEarned)
 
+            // ── Payload optimization: downsample trajectory (client steps by 2) ──
+            const thinTrajectory = (pts) => {
+                if (!pts || pts.length <= 2) return pts
+                const out = []
+                for (let i = 0; i < pts.length; i += 2) out.push(pts[i])
+                // Always include the last point for accurate impact position
+                if (out[out.length - 1] !== pts[pts.length - 1]) out.push(pts[pts.length - 1])
+                return out
+            }
+            // Only send terrain if shot actually hit something that deforms it
+            // (terrain/tank/base impacts all create craters; outOfBounds does not)
+            const hitSomething = result.impact && result.impact.type !== 'outOfBounds'
+            const hasSubEffects = !!(result.scatterPoints || result.spiderLegs || result.tunnelExit)
+            // Terrain weapons (Dirt Ball=25, Magic Wall=12) always modify terrain
+            const isTerrainWeapon = weaponId === 25 || weaponId === 12
+            const terrainChanged = hitSomething || hasSubEffects || isTerrainWeapon
+
             // Broadcast turn result to ALL players (includes goldEarned + balances)
             io.sockets.in(this.roomId).emit('turnResult', {
                 playerId: this.id,
                 weaponId,
-                trajectory: result.trajectory,
+                trajectory: thinTrajectory(result.trajectory),
                 impact: result.impact,
                 damage: result.damage,
-                terrainUpdate: result.newTerrain,
+                terrainUpdate: (terrainChanged || isTerrainWeapon) ? result.newTerrain : null,
                 scores: ms ? ms.scores : {},
                 hp: ms ? ms.hp : {},
                 nextTurn: ms ? ms.currentTurn : null,
@@ -2806,7 +2823,7 @@ const mainsocket = (io) => {
                     hostId: room.players[0]?.socketId || null,
                 },
                 scatterPoints: result.scatterPoints || null,
-                subTrajectories: result.subTrajectories || null,
+                subTrajectories: result.subTrajectories ? result.subTrajectories.map(thinTrajectory) : null,
                 spiderLegs: result.spiderLegs || null,
                 tunnelEntry: result.tunnelEntry || null,
                 tunnelExit: result.tunnelExit || null

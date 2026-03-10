@@ -1197,7 +1197,7 @@ export class MainScene extends Scene {
     let frameIndex = 0;
     let trailFrame = 0;
     let completed = false;
-    const speed = 2;
+    const speed = 1; // Server pre-thins trajectory (every 2nd point), so step by 1
 
     const spawnTrail = (x, y) => {
       const p = this.add.circle(
@@ -1293,7 +1293,7 @@ export class MainScene extends Scene {
       let fi = 0;
       let tf = 0;
       let done = false;
-      const spd = 2;
+      const spd = 1; // Server pre-thins trajectory
 
       const timer = this.time.addEvent({
         delay: 1000 / 60,

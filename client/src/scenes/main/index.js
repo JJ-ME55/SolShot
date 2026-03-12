@@ -319,7 +319,10 @@ export class MainScene extends Scene {
       return;
     }
     this._animateStuckStart = null;
-    if (this.terrain.blastArray.length !== 0) return;
+    // Only block on terrain-digging blasts (non-visualOnly).
+    // Visual-only blasts (multiplayer) are cosmetic and shouldn't delay turn switching.
+    const blockingBlasts = this.terrain.blastArray.filter(b => !b.visualOnly);
+    if (blockingBlasts.length !== 0) return;
     if (this.gameOver === true) return;
 
     // Safety: if any alive tank is unsettled for too long (>3s), force settle all

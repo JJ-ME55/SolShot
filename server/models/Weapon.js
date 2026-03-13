@@ -58,7 +58,9 @@ export const PRESTIGE_WEAPONS = {
  * @returns {object|null} Weapon data or null if not found
  */
 export function getWeapon(weaponId) {
-    return WEAPON_CATALOG[weaponId] || null;
+    // MARKETING MODE: also check prestige weapons
+    // TODO: revert to WEAPON_CATALOG only after marketing recording
+    return WEAPON_CATALOG[weaponId] || PRESTIGE_WEAPONS[weaponId] || null;
 }
 
 /**

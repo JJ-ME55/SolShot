@@ -895,6 +895,11 @@ export class MainScene extends Scene {
       // Store nonce for next fire
       this._turnSeq = data.seq;
 
+      // Snap tanks to server-authoritative positions BEFORE animation starts.
+      // Trajectory was calculated from these positions, so the projectile origin
+      // must match where the tank visually sits.
+      this._syncTankPositions(data.positions);
+
       // Animate server trajectory for ALL shots (own + opponent).
       // Server trajectory is authoritative — both players see the same projectile
       // in the same place. No local fire means no dual-projectile.
@@ -1008,6 +1013,28 @@ export class MainScene extends Scene {
     socket.on('opponentPowerChange', this._socketHandlers.opponentPowerChange);
   };
 
+  // ── Snap tanks to server-authoritative positions ──
+  _syncTankPositions = (positions) => {
+    if (!positions || !Array.isArray(positions)) return;
+    positions.forEach((pos, i) => {
+      const tank = this.tanks[i];
+      if (!tank) return;
+      const px = pos.x ?? pos.pos?.x;
+      const py = pos.y ?? pos.pos?.y;
+      if (px === undefined && py === undefined) return;
+      const finalX = px !== undefined ? px : tank.x;
+      const finalY = py !== undefined ? py : tank.y;
+      const dx = Math.abs(tank.x - finalX);
+      const dy = Math.abs(tank.y - finalY);
+      if (dx > 1 || dy > 1) {
+        tank.setPosition(finalX, finalY);
+        if (tank.body) { tank.body.x = finalX; tank.body.y = finalY; }
+        tank.settled = false;
+      }
+    });
+    this._lastPositions = positions;
+  };
+
   // ── Apply authoritative turn result from server ──
   applyTurnResult = (data) => {
     const socket = window.socket;
@@ -1092,12 +1119,15 @@ export class MainScene extends Scene {
         const px = pos.x ?? pos.pos?.x;
         if (px === undefined) return;
 
-        // Fix 1: Only sync X from server (knockback). Let physicsStep settle Y
-        // naturally on the terrain bitmap — avoids the -15 offset drift/snapback.
-        if (Math.abs(tank.x - px) > 1) {
-          tank.setPosition(px, tank.y);
-          if (tank.body) tank.body.x = px;
-          tank.settled = false; // Re-settle at new X
+        const py = pos.y ?? pos.pos?.y;
+        const dx = px !== undefined ? Math.abs(tank.x - px) : 0;
+        const dy = py !== undefined ? Math.abs(tank.y - py) : 0;
+        if (dx > 1 || dy > 1) {
+          const finalX = px !== undefined ? px : tank.x;
+          const finalY = py !== undefined ? py : tank.y;
+          tank.setPosition(finalX, finalY);
+          if (tank.body) { tank.body.x = finalX; tank.body.y = finalY; }
+          tank.settled = false; // Re-settle at new position
         }
       });
       this._lastPositions = resolvedPositions;

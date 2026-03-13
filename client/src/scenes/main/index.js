@@ -1200,7 +1200,9 @@ export class MainScene extends Scene {
     let frameIndex = 0;
     let trailFrame = 0;
     let completed = false;
-    const speed = 1; // Server pre-thins trajectory (every 2nd point), so step by 1
+    // Dynamic speed: cap animation at ~3 seconds (180 frames at 60fps)
+    const MAX_ANIM_FRAMES = 180;
+    const speed = Math.max(1, Math.ceil(trajectory.length / MAX_ANIM_FRAMES));
 
     const spawnTrail = (x, y) => {
       const p = this.add.circle(
@@ -1267,11 +1269,8 @@ export class MainScene extends Scene {
       projectile.setPosition(point.x, point.y);
       if (glowRing) glowRing.setPosition(point.x, point.y);
 
-      // Trail particles every 2nd frame
-      trailFrame++;
-      if (trailFrame % 2 === 0) {
-        spawnTrail(point.x, point.y);
-      }
+      // Trail particles every frame (speed already skips points, so trail stays dense)
+      spawnTrail(point.x, point.y);
     };
 
     this._trajectoryTimer = this.time.addEvent({
@@ -1296,7 +1295,8 @@ export class MainScene extends Scene {
       let fi = 0;
       let tf = 0;
       let done = false;
-      const spd = 1; // Server pre-thins trajectory
+      // Dynamic speed: cap animation at ~3 seconds (180 frames at 60fps)
+      const spd = Math.max(1, Math.ceil(traj.length / 180));
 
       const timer = this.time.addEvent({
         delay: 1000 / 60,
@@ -1316,13 +1316,10 @@ export class MainScene extends Scene {
           }
           const pt = traj[Math.min(Math.floor(fi), traj.length - 1)];
           proj.setPosition(pt.x, pt.y);
-          // Trail every 2nd frame
-          tf++;
-          if (tf % 2 === 0) {
-            const p = this.add.circle(pt.x + (Math.random() - 0.5) * 2, pt.y + (Math.random() - 0.5) * 2, vis.trailSize, vis.trail, 0.7);
-            p.setDepth(4);
-            this.tweens.add({ targets: p, alpha: 0, scale: 0.3, duration: vis.trailLife, ease: 'Quad.easeOut', onComplete: () => { try { p.destroy(); } catch (_) {} } });
-          }
+          // Trail every frame (speed already skips points)
+          const p = this.add.circle(pt.x + (Math.random() - 0.5) * 2, pt.y + (Math.random() - 0.5) * 2, vis.trailSize, vis.trail, 0.7);
+          p.setDepth(4);
+          this.tweens.add({ targets: p, alpha: 0, scale: 0.3, duration: vis.trailLife, ease: 'Quad.easeOut', onComplete: () => { try { p.destroy(); } catch (_) {} } });
         },
         callbackScope: this,
         repeat: Math.ceil(traj.length / spd) + 5,

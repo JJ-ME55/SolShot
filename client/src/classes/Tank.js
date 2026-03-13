@@ -274,6 +274,17 @@ export class Tank extends GameObjects.Sprite {
         }
         if (this.body.x < 0 || this.body.x > this.scene.terrain.width - 1) return
 
+        // During active knockback arc, let Phaser physics handle movement.
+        // Only intervene once velocity drops low enough to settle.
+        if (!this.settled && this.body.allowGravity) {
+            const speed = this.body.velocity.length();
+            if (speed > 20) return; // still in arc — don't fight Phaser
+            // Slow enough to settle — kill physics and let settling logic take over
+            this.body.stop();
+            this.body.setGravity(0);
+            this.body.allowGravity = false;
+        }
+
         // Surface-snap settling: find terrain surface and settle ON it, never inside
         const surfaceY = this.terrain.getTerrainSurfaceY(this.body.x);
         const tankY = this.body.y;

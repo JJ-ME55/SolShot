@@ -1875,8 +1875,11 @@ const mainsocket = (io) => {
                     goldStates[client.roomId] = initGold(playerIds)
                     weaponInventories[client.roomId] = {}
                     for (const pid of playerIds) {
-                        const prestige = getPrestigeInfo(authenticatedWallets[pid] || '')
-                        weaponInventories[client.roomId][pid] = [0, ...(prestige.unlockedWeapons || [])]
+                        // MARKETING MODE: unlock all prestige weapons for everyone
+                        // TODO: revert to prestige-gated after marketing recording
+                        // const prestige = getPrestigeInfo(authenticatedWallets[pid] || '')
+                        // weaponInventories[client.roomId][pid] = [0, ...(prestige.unlockedWeapons || [])]
+                        weaponInventories[client.roomId][pid] = [0, ...PRESTIGE_WEAPON_IDS]
                     }
                 }
 

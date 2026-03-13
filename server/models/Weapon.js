@@ -23,20 +23,20 @@ export const WEAPON_TIERS = {
  */
 export const WEAPON_CATALOG = {
     0:  { id: 0,  name: 'Single Shot',   tier: WEAPON_TIERS.FREE,      goldCost: 0,     blastRadius: 46,  damageFactor: 0.76 },
-    25: { id: 25, name: 'Dirt Ball',      tier: WEAPON_TIERS.STANDARD,  goldCost: 150,   blastRadius: 0,   damageFactor: 0 },
-    12: { id: 12, name: 'Magic Wall',     tier: WEAPON_TIERS.STANDARD,  goldCost: 200,   blastRadius: 0,   damageFactor: 0 },
-    20: { id: 20, name: 'Skipper',        tier: WEAPON_TIERS.TACTICAL,  goldCost: 350,   blastRadius: 52,  damageFactor: 1.06 },
-    2:  { id: 2,  name: '3 Shot',         tier: WEAPON_TIERS.TACTICAL,  goldCost: 400,   blastRadius: 46,  damageFactor: 0.48 },
-    10: { id: 10, name: 'Spider',         tier: WEAPON_TIERS.TACTICAL,  goldCost: 400,   blastRadius: 28,  damageFactor: 0.79 },
-    5:  { id: 5,  name: 'Heatseeker',     tier: WEAPON_TIERS.TACTICAL,  goldCost: 500,   blastRadius: 80,  damageFactor: 0.63 },
-    15: { id: 15, name: 'Napalm',         tier: WEAPON_TIERS.RARE,      goldCost: 600,   blastRadius: 60,  damageFactor: 0.42 },
-    7:  { id: 7,  name: 'Pile Driver',    tier: WEAPON_TIERS.RARE,      goldCost: 600,   blastRadius: 46,  damageFactor: 0.54 },
-    11: { id: 11, name: 'Sniper Rifle',   tier: WEAPON_TIERS.RARE,      goldCost: 700,   blastRadius: 1,   damageFactor: 100 },
-    1:  { id: 1,  name: 'Big Shot',       tier: WEAPON_TIERS.RARE,      goldCost: 700,   blastRadius: 90,  damageFactor: 0.39 },
-    17: { id: 17, name: 'Ground Hog',     tier: WEAPON_TIERS.EPIC,      goldCost: 900,   blastRadius: 70,  damageFactor: 0.86 },
-    4:  { id: 4,  name: 'Jackhammer',     tier: WEAPON_TIERS.EPIC,      goldCost: 1000,  blastRadius: 36,  damageFactor: 0.39 },
-    16: { id: 16, name: 'Hail Storm',     tier: WEAPON_TIERS.EPIC,      goldCost: 1200,  blastRadius: 36,  damageFactor: 0.33 },
-    9:  { id: 9,  name: 'Crazy Ivan',     tier: WEAPON_TIERS.LEGENDARY, goldCost: 2500,  blastRadius: 36,  damageFactor: 0.61 },
+    25: { id: 25, name: 'Dirt Ball',      tier: WEAPON_TIERS.STANDARD,  goldCost: 1,     blastRadius: 0,   damageFactor: 0 },
+    12: { id: 12, name: 'Magic Wall',     tier: WEAPON_TIERS.STANDARD,  goldCost: 1,     blastRadius: 0,   damageFactor: 0 },
+    20: { id: 20, name: 'Skipper',        tier: WEAPON_TIERS.TACTICAL,  goldCost: 1,     blastRadius: 52,  damageFactor: 1.06 },
+    2:  { id: 2,  name: '3 Shot',         tier: WEAPON_TIERS.TACTICAL,  goldCost: 1,     blastRadius: 46,  damageFactor: 0.48 },
+    10: { id: 10, name: 'Spider',         tier: WEAPON_TIERS.TACTICAL,  goldCost: 1,     blastRadius: 28,  damageFactor: 0.79 },
+    5:  { id: 5,  name: 'Heatseeker',     tier: WEAPON_TIERS.TACTICAL,  goldCost: 1,     blastRadius: 80,  damageFactor: 0.63 },
+    15: { id: 15, name: 'Napalm',         tier: WEAPON_TIERS.RARE,      goldCost: 1,     blastRadius: 60,  damageFactor: 0.42 },
+    7:  { id: 7,  name: 'Pile Driver',    tier: WEAPON_TIERS.RARE,      goldCost: 1,     blastRadius: 46,  damageFactor: 0.54 },
+    11: { id: 11, name: 'Sniper Rifle',   tier: WEAPON_TIERS.RARE,      goldCost: 1,     blastRadius: 1,   damageFactor: 100 },
+    1:  { id: 1,  name: 'Big Shot',       tier: WEAPON_TIERS.RARE,      goldCost: 1,     blastRadius: 90,  damageFactor: 0.39 },
+    17: { id: 17, name: 'Ground Hog',     tier: WEAPON_TIERS.EPIC,      goldCost: 1,     blastRadius: 70,  damageFactor: 0.86 },
+    4:  { id: 4,  name: 'Jackhammer',     tier: WEAPON_TIERS.EPIC,      goldCost: 1,     blastRadius: 36,  damageFactor: 0.39 },
+    16: { id: 16, name: 'Hail Storm',     tier: WEAPON_TIERS.EPIC,      goldCost: 1,     blastRadius: 36,  damageFactor: 0.33 },
+    9:  { id: 9,  name: 'Crazy Ivan',     tier: WEAPON_TIERS.LEGENDARY, goldCost: 1,     blastRadius: 36,  damageFactor: 0.61 },
 };
 
 /**
@@ -94,7 +94,9 @@ export function isPrestigeWeapon(weaponId) {
  * @returns {object[]} Array of weapon data objects
  */
 export function getAllLaunchWeapons() {
-    return Object.values(WEAPON_CATALOG);
+    // MARKETING MODE: include prestige weapons in shop list
+    // TODO: revert to WEAPON_CATALOG only after marketing recording
+    return [...Object.values(WEAPON_CATALOG), ...Object.values(PRESTIGE_WEAPONS)];
 }
 
 /**

@@ -1897,7 +1897,7 @@ const mainsocket = (io) => {
                     goldBalancePayload[pid] = getBalance(goldStates[client.roomId], pid)
                     inventoryPayload[pid] = inv[pid] || [0]
                 }
-                const shopDuration = room.matchMode === 'practice' ? 20 : SHOP_DURATION
+                const shopDuration = room.matchMode === 'practice' ? 25 : SHOP_DURATION
                 io.sockets.in(client.roomId).emit('shopPhase', {
                     weapons,
                     goldBalance: goldBalancePayload,

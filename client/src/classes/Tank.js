@@ -102,6 +102,9 @@ export class Tank extends GameObjects.Sprite {
         this.scene.physics.add.collider(this, this.scene.rightWall)
 
         this.body.setSize(1,1)
+        // Disable world gravity for tanks — physicsStep handles Y settling directly.
+        // Only Blast.js re-enables allowGravity temporarily for knockback arcs.
+        this.body.allowGravity = false
         this.turret = new Turret(this.scene, this, this.id)
 
         // Legacy opponentShoot handler REMOVED — server-authoritative fire path
@@ -297,6 +300,8 @@ export class Tank extends GameObjects.Sprite {
                 if (rotation !== undefined) {
                     this.setRotation(rotation);
                 }
+                this.body.stop();
+                this.body.allowGravity = false;
                 this.settled = true;
             } else if (tankY < surfaceY - 1) {
                 // In air above surface — fall down (up to 4px/frame)
@@ -307,6 +312,8 @@ export class Tank extends GameObjects.Sprite {
                     if (rotation !== undefined) {
                         this.setRotation(rotation);
                     }
+                    this.body.stop();
+                    this.body.allowGravity = false;
                     this.settled = true;
                 } else {
                     this.body.y = tankY + 4;
@@ -331,6 +338,8 @@ export class Tank extends GameObjects.Sprite {
                 if (rotation !== undefined) {
                     this.setRotation(rotation);
                 }
+                this.body.stop();
+                this.body.allowGravity = false;
                 this.settled = true;
             }
             return;
@@ -347,6 +356,7 @@ export class Tank extends GameObjects.Sprite {
 
         this.body.stop()
         this.body.setGravity(0)
+        this.body.allowGravity = false
         this.body.preUpdate(true, 0)
     }
 

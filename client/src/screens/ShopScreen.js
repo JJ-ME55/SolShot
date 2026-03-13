@@ -3,6 +3,7 @@ import TopBar from '../components/TopBar';
 import Button from '../components/Button';
 import WeaponCard from '../components/WeaponCard';
 import Modal from '../components/Modal';
+import useIsMobile from '../hooks/useIsMobile';
 
 import useSocket from '../hooks/useSocket';
 import WEAPONS, { getTierColor, getWeaponIconUrl, getWeaponById } from '../data/weapons';
@@ -23,7 +24,7 @@ PRESTIGE_TIERS.forEach((tier) => {
   }
 });
 
-/* ── styles ── */
+/* ── shared styles (desktop + mobile) ── */
 const s = {
   container: {
     flex: 1,
@@ -69,7 +70,7 @@ const s = {
     gap: 4,
   },
 
-  /* Right: Detail + Status */
+  /* Right: Detail + Status (desktop only) */
   rightPanel: {
     width: '34%',
     minWidth: 180,
@@ -77,6 +78,8 @@ const s = {
     flexDirection: 'column',
     padding: '10px 14px',
     gap: 10,
+    overflowY: 'auto',
+    WebkitOverflowScrolling: 'touch',
   },
 
   /* Timer */
@@ -251,6 +254,180 @@ const s = {
   },
 };
 
+/* ── mobile-only styles ── */
+const mob = {
+  container: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+  },
+  catalogPanel: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+  },
+  catalogHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '6px 10px',
+    borderBottom: '1px solid var(--ol)',
+  },
+  catalogList: {
+    flex: 1,
+    overflowY: 'auto',
+    WebkitOverflowScrolling: 'touch',
+    padding: '4px 6px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 3,
+  },
+  /* Persistent bottom bar: timer | loadout | ready */
+  statusBar: {
+    display: 'flex',
+    alignItems: 'center',
+    padding: '6px 10px',
+    gap: 8,
+    borderTop: '1px solid var(--ol)',
+    background: 'rgba(13, 15, 9, 0.95)',
+    flexShrink: 0,
+  },
+  statusTimer: (urgent) => ({
+    fontFamily: "'Bebas Neue', sans-serif",
+    fontSize: 22,
+    color: urgent ? 'var(--rd)' : 'var(--am)',
+    letterSpacing: 2,
+    lineHeight: 1,
+    minWidth: 28,
+    textAlign: 'center',
+    animation: urgent ? 'fl 0.5s ease-in-out infinite' : 'none',
+  }),
+  statusLoadout: {
+    flex: 1,
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: 3,
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  statusChip: (tierColor) => ({
+    fontFamily: "'Share Tech Mono', monospace",
+    fontSize: 10,
+    color: tierColor,
+    letterSpacing: 1,
+    padding: '2px 6px',
+    borderRadius: 2,
+    border: `1px solid ${tierColor}33`,
+    background: `rgba(${hexToRgb(tierColor)}, 0.06)`,
+    whiteSpace: 'nowrap',
+  }),
+  /* Bottom sheet overlay */
+  sheetBackdrop: {
+    position: 'fixed',
+    inset: 0,
+    background: 'rgba(0, 0, 0, 0.5)',
+    zIndex: 8000,
+  },
+  sheet: {
+    position: 'fixed',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 8001,
+    background: 'linear-gradient(180deg, #1a1c14 0%, #0d0f09 100%)',
+    borderTop: '2px solid var(--ol)',
+    borderRadius: '12px 12px 0 0',
+    padding: '12px 16px',
+    paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
+    maxHeight: '65vh',
+    overflowY: 'auto',
+    WebkitOverflowScrolling: 'touch',
+    animation: 'sheetUp 0.2s ease-out',
+  },
+  sheetHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    background: 'var(--ol)',
+    alignSelf: 'center',
+    marginBottom: 4,
+    flexShrink: 0,
+  },
+  sheetHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  sheetName: {
+    fontFamily: "'Black Ops One', cursive",
+    fontSize: 20,
+    color: 'var(--bn)',
+    letterSpacing: 2,
+  },
+  sheetTier: (tierColor) => ({
+    fontFamily: "'Share Tech Mono', monospace",
+    fontSize: 13,
+    color: tierColor,
+    letterSpacing: 2,
+  }),
+  sheetDesc: {
+    fontFamily: "'Share Tech Mono', monospace",
+    fontSize: 12,
+    color: 'var(--kh)',
+    letterSpacing: 1,
+    lineHeight: 1.5,
+    opacity: 0.8,
+  },
+  sheetStats: {
+    display: 'flex',
+    gap: 12,
+  },
+  sheetStatRow: {
+    flex: 1,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+  },
+  sheetStatLabel: {
+    fontFamily: "'Share Tech Mono', monospace",
+    fontSize: 11,
+    color: 'var(--kh)',
+    letterSpacing: 1,
+    width: 34,
+    opacity: 0.7,
+  },
+  sheetStatBar: {
+    flex: 1,
+    height: 8,
+    borderRadius: 4,
+    background: 'rgba(184, 168, 138, 0.15)',
+    overflow: 'hidden',
+  },
+  sheetPrice: {
+    fontFamily: "'Share Tech Mono', monospace",
+    fontSize: 15,
+    color: 'var(--gd)',
+    letterSpacing: 1,
+    textAlign: 'center',
+  },
+  sheetPrestige: {
+    textAlign: 'center',
+  },
+};
+
+/* ── keyframe injection for bottom sheet animation ── */
+if (typeof document !== 'undefined' && !document.getElementById('shop-sheet-anim')) {
+  const style = document.createElement('style');
+  style.id = 'shop-sheet-anim';
+  style.textContent = `@keyframes sheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }`;
+  document.head.appendChild(style);
+}
+
 function hexToRgb(hex) {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
@@ -260,6 +437,8 @@ function hexToRgb(hex) {
 
 
 function ShopScreen({ navigate, screenData }) {
+  const isMobile = useIsMobile();
+
   // Normalize data — lobby format has {host, player}, between-round has {hostId, player1, player2}
   const hostInfo = screenData?.host || {
     socketId: screenData?.hostId,
@@ -328,6 +507,8 @@ function ShopScreen({ navigate, screenData }) {
     if (data.success) {
       setGold(data.balance);
       if (data.inventory) setInventory(data.inventory);
+      // On mobile, close the bottom sheet after successful buy
+      if (isMobile) setSelectedWeaponId(null);
     } else {
       setError(data.reason || 'Purchase failed');
     }
@@ -437,6 +618,217 @@ function ShopScreen({ navigate, screenData }) {
   const selectedWeapon = selectedWeaponId !== null ? getWeaponById(selectedWeaponId) : null;
   const isOwned = (id) => inventory.includes(id);
 
+  /* ══════════════════════════════════════════════
+     MOBILE LAYOUT — bottom sheet
+     ══════════════════════════════════════════════ */
+  if (isMobile) {
+    return (
+      <>
+        <TopBar title="WEAPON SHOP" />
+
+        <div style={mob.container}>
+          {/* ─── Weapon list (full width) ─── */}
+          <div style={mob.catalogPanel}>
+            <div style={mob.catalogHeader}>
+              <span style={{ ...s.catalogTitle, fontSize: 14 }}>ARSENAL</span>
+              <span style={{ ...s.goldChip, fontSize: 13 }}>
+                <img src="/assets/images/currency/icon-gold.png" alt="" style={{ width: 11, height: 11, verticalAlign: 'middle', marginRight: 3 }} />
+                {gold + ' GOLD'}
+              </span>
+            </div>
+
+            <div style={mob.catalogList}>
+              {weapons.map((w) => {
+                const meta = getWeaponById(w.id) || w;
+                return (
+                  <WeaponCard
+                    key={w.id}
+                    weapon={meta}
+                    selected={selectedWeaponId === w.id}
+                    owned={isOwned(w.id)}
+                    iconUrl={getWeaponIconUrl(meta.name)}
+                    onClick={() => setSelectedWeaponId(w.id)}
+                  />
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ─── Opponent activity toast ─── */}
+          {opponentActivity && (
+            <div style={{ ...s.activityLine, padding: '3px 0' }}>{opponentActivity}</div>
+          )}
+
+          {/* ─── Persistent bottom bar: timer | loadout chips | ready ─── */}
+          <div style={mob.statusBar}>
+            <span style={mob.statusTimer(timeRemaining <= 5)}>
+              {String(timeRemaining).padStart(2, '0')}
+            </span>
+
+            <div style={mob.statusLoadout}>
+              {inventory.map((id) => {
+                const w = getWeaponById(id);
+                if (!w) return null;
+                return (
+                  <span key={id} style={mob.statusChip(getTierColor(w.tier))}>
+                    {w.name}
+                  </span>
+                );
+              })}
+            </div>
+
+            <Button
+              variant={isReady ? 'disabled' : 'primary'}
+              onClick={handleReady}
+              disabled={isReady}
+              style={{ fontSize: 12, padding: '6px 14px', whiteSpace: 'nowrap' }}
+            >
+              {isReady ? 'WAITING...' : 'READY'}
+            </Button>
+          </div>
+        </div>
+
+        {/* ─── Bottom sheet: weapon detail + buy ─── */}
+        {selectedWeapon && (
+          <>
+            <div style={mob.sheetBackdrop} onClick={() => setSelectedWeaponId(null)} />
+            <div style={mob.sheet}>
+              <div style={mob.sheetHandle} />
+
+              {/* Header: name + tier + price */}
+              <div style={mob.sheetHeader}>
+                <div>
+                  <div style={mob.sheetName}>{selectedWeapon.name}</div>
+                  <div style={mob.sheetTier(getTierColor(selectedWeapon.tier))}>
+                    {selectedWeapon.tier}
+                  </div>
+                </div>
+                <div style={{ ...mob.sheetPrice, fontSize: 17 }}>
+                  {isOwned(selectedWeapon.id)
+                    ? 'EQUIPPED'
+                    : selectedWeapon.goldCost === 0
+                      ? 'FREE'
+                      : selectedWeapon.goldCost + 'G'
+                  }
+                </div>
+              </div>
+
+              {/* Description */}
+              {selectedWeapon.desc && (
+                <div style={mob.sheetDesc}>{selectedWeapon.desc}</div>
+              )}
+
+              {/* Stat bars — side by side */}
+              <div style={mob.sheetStats}>
+                <div style={mob.sheetStatRow}>
+                  <span style={mob.sheetStatLabel}>DMG</span>
+                  <div style={mob.sheetStatBar}>
+                    <div style={s.detailStatFill(
+                      Math.min(100, (selectedWeapon.damageFactor / 3.75) * 100),
+                      getTierColor(selectedWeapon.tier)
+                    )} />
+                  </div>
+                </div>
+                <div style={mob.sheetStatRow}>
+                  <span style={mob.sheetStatLabel}>BLR</span>
+                  <div style={mob.sheetStatBar}>
+                    <div style={s.detailStatFill(
+                      Math.min(100, (selectedWeapon.blastRadius / 90) * 100),
+                      getTierColor(selectedWeapon.tier)
+                    )} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Prestige info */}
+              {(() => {
+                const prestigeMeta = PRESTIGE_WEAPON_META[selectedWeapon.id];
+                if (!prestigeMeta) return null;
+                return (
+                  <div style={mob.sheetPrestige}>
+                    <span style={{
+                      fontFamily: "'Black Ops One', cursive",
+                      fontSize: 11,
+                      color: prestigeMeta.color,
+                      letterSpacing: 2,
+                    }}>
+                      {prestigeMeta.tierName.toUpperCase() + ' PRESTIGE'}
+                    </span>
+                    <span style={{
+                      fontFamily: "'Share Tech Mono', monospace",
+                      fontSize: 10,
+                      color: 'var(--sp)',
+                      letterSpacing: 1,
+                      marginLeft: 8,
+                    }}>
+                      {'REQUIRES ??? SHOT BURN'}
+                    </span>
+                  </div>
+                );
+              })()}
+
+              {/* Buy button — full width, big tap target */}
+              {!isOwned(selectedWeapon.id) && selectedWeapon.goldCost > 0 && (
+                <Button
+                  variant="gold"
+                  onClick={() => buyWeapon(selectedWeapon.id)}
+                  disabled={isReady || gold < selectedWeapon.goldCost}
+                  style={{ fontSize: 14, padding: '10px 0', width: '100%' }}
+                >
+                  {'BUY — ' + selectedWeapon.goldCost + 'G'}
+                </Button>
+              )}
+
+              {isOwned(selectedWeapon.id) && (
+                <div style={{
+                  fontFamily: "'Share Tech Mono', monospace",
+                  fontSize: 12,
+                  color: 'var(--sg)',
+                  letterSpacing: 2,
+                  textAlign: 'center',
+                  padding: '6px 0',
+                }}>
+                  IN YOUR LOADOUT
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* ═══ ERROR MODAL ═══ */}
+        {error && (
+          <Modal
+            title="ERROR"
+            message={error}
+            buttons={[
+              {
+                label: error === 'Opponent has left the match' ? 'RETURN TO LOBBY' : 'DISMISS',
+                variant: 'secondary',
+                onClick: () => {
+                  if (error === 'Opponent has left the match') {
+                    navigate('lobby');
+                  } else {
+                    setError(null);
+                  }
+                },
+              },
+            ]}
+            onClose={() => {
+              if (error === 'Opponent has left the match') {
+                navigate('lobby');
+              } else {
+                setError(null);
+              }
+            }}
+          />
+        )}
+      </>
+    );
+  }
+
+  /* ══════════════════════════════════════════════
+     DESKTOP LAYOUT — original two-panel
+     ══════════════════════════════════════════════ */
   return (
     <>
       <TopBar title="WEAPON SHOP" />

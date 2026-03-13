@@ -45,7 +45,7 @@ function StatCard({ player, onClose }) {
   useEffect(() => {
     const updateScale = () => {
       const maxW = window.innerWidth - 40;
-      const maxH = window.innerHeight - 180; // room for buttons below
+      const maxH = window.innerHeight - 140; // room for buttons below
       const s = Math.min(1, maxW / CARD_W, maxH / CARD_H);
       setScale(s);
     };
@@ -241,6 +241,7 @@ const s = {
     display: 'flex', flexDirection: 'column',
     alignItems: 'center', justifyContent: 'center',
     zIndex: 9000, gap: 14, padding: 20,
+    overflowY: 'auto', WebkitOverflowScrolling: 'touch',
   },
   card: {
     width: CARD_W,

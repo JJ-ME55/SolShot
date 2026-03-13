@@ -1274,7 +1274,7 @@ export class MainScene extends Scene {
         try { if (glowRing) glowRing.destroy(); } catch (_) {}
 
         // ── Post-impact effects ──
-        if (weaponId === 9 && scatterPoints && scatterPoints.length > 0) {
+        if ((weaponId === 9 || weaponId === 22) && scatterPoints && scatterPoints.length > 0) {
           this.playScatterExplosions(scatterPoints, weaponId);
         } else if (spiderLegs && spiderLegs.length > 0) {
           // Spider: animate legs crawling outward then exploding

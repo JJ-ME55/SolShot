@@ -906,6 +906,7 @@ function processFragmentShot(weapon, trajectory, terrain, tanks, shooterId) {
         const subFactor = weapon.subDamageFactor || 32 / 20;
         const fragRadius = weapon.blastRadius * 1.5; // how far fragments travel from center
         const rng = weaponSeededRandom(weapon.weaponId, impact.x, impact.y);
+        const scatterPoints = [];
 
         for (let i = 0; i < fragCount; i++) {
             const angle = (2 * Math.PI * i) / fragCount;
@@ -914,6 +915,7 @@ function processFragmentShot(weapon, trajectory, terrain, tanks, shooterId) {
             const subY = Math.max(0, Math.min(TERRAIN_HEIGHT - 1, impact.y + Math.sin(angle) * dist));
             const subPoint = { x: subX, y: subY };
 
+            scatterPoints.push({ x: Math.round(subX), y: Math.round(subY) });
             const subDmg = calculateDamageWithRadius(subPoint, subBlastR, subFactor, tanks, shooterId);
             mergeDamage(damage, subDmg);
             newTerrain = deformTerrain(newTerrain, subPoint, subBlastR);
@@ -924,7 +926,8 @@ function processFragmentShot(weapon, trajectory, terrain, tanks, shooterId) {
         trajectory: trimTrajectory(trajectory, impact.frameIndex),
         impact: { x: impact.x, y: impact.y, type: impact.type },
         damage,
-        newTerrain
+        newTerrain,
+        scatterPoints
     };
 }
 

@@ -73,7 +73,9 @@ export class Blast {
         }
 
         // SolShot: Camera shake on explosion — intensity scales with blast radius
-        if (this.scene && this.scene.cameras && this.scene.cameras.main) {
+        // Skip shake for scatter sub-explosions (fragments) — one big shake from the main blast is enough
+        const isScatter = this.blastType && this.blastType.includes('.scatter');
+        if (!isScatter && this.scene && this.scene.cameras && this.scene.cameras.main) {
             const intensity = Math.min(0.02, this.maxRadius / 3000)
             const duration = Math.min(300, 80 + this.maxRadius * 2)
             this.scene.cameras.main.shake(duration, intensity)

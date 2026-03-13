@@ -87,7 +87,13 @@ export class MainScene extends Scene {
 
   preload = () => {
     this.load.image('wall', 'assets/images/wall.png');
-    this.load.image('bg-default', 'assets/images/backgrounds/bg-jungle.png');
+    // Load all 6 background themes — one is picked randomly in createBackground()
+    this.load.image('bg-jungle', 'assets/images/backgrounds/bg-jungle.png');
+    this.load.image('bg-arctic', 'assets/images/backgrounds/bg-arctic.png');
+    this.load.image('bg-desert', 'assets/images/backgrounds/bg-desert.png');
+    this.load.image('bg-moon', 'assets/images/backgrounds/bg-moon.png');
+    this.load.image('bg-volcanic', 'assets/images/backgrounds/bg-volcanic.png');
+    this.load.image('bg-default', 'assets/images/backgrounds/bg-default.png');
     this.load.audio('background', ['assets/sounds/background.mp3']);
     this.load.audio('click', ['assets/sounds/click.wav']);
     this.load.audio('winner', ['assets/sounds/winner.mp3']);
@@ -230,16 +236,27 @@ export class MainScene extends Scene {
     this.rightWall.setOrigin(0, 0);
   };
 
+  // Background themes with matching base fill colors
+  _bgThemes = [
+    { key: 'bg-jungle',   fill: '#0a1a0a' },
+    { key: 'bg-arctic',   fill: '#0a0f1a' },
+    { key: 'bg-desert',   fill: '#1a140a' },
+    { key: 'bg-moon',     fill: '#0a0a0f' },
+    { key: 'bg-volcanic', fill: '#1a0a0a' },
+    { key: 'bg-default',  fill: '#0a1a0a' },
+  ];
+
   createBackground = () => {
     var canvas = document.createElement('canvas');
     var ctx = canvas.getContext('2d');
     canvas.height = this.renderer.height;
     canvas.width = this.renderer.width;
-    // Base fill: dark green so no black shows anywhere
-    ctx.fillStyle = '#0a1a0a';
+    // Pick a random background theme
+    const theme = this._bgThemes[Math.floor(Math.random() * this._bgThemes.length)];
+    ctx.fillStyle = theme.fill;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     // Sky: draw background image, vertically centered in the upper portion
-    var bgTex = this.textures.exists('bg-default') ? this.textures.get('bg-default') : null;
+    var bgTex = this.textures.exists(theme.key) ? this.textures.get(theme.key) : null;
     if (bgTex && bgTex.source && bgTex.source[0]) {
       var img = bgTex.source[0].image;
       // Scale image to fill canvas width, position sky in upper half
@@ -251,14 +268,18 @@ export class MainScene extends Scene {
       var offsetY = -(drawH * 0.25);
       ctx.drawImage(img, 0, 0, img.width, img.height, 0, offsetY, drawW, drawH);
     }
-    // Gradient fade from jungle scene into dark terrain area (smooth transition)
+    // Gradient fade from sky into dark terrain area (smooth transition)
+    // Parse theme fill hex → RGB for gradient stops
+    const r = parseInt(theme.fill.slice(1,3), 16);
+    const g = parseInt(theme.fill.slice(3,5), 16);
+    const b = parseInt(theme.fill.slice(5,7), 16);
     var fadeGrad = ctx.createLinearGradient(0, canvas.height * 0.4, 0, canvas.height * 0.55);
-    fadeGrad.addColorStop(0, 'rgba(10,26,10,0)');
-    fadeGrad.addColorStop(1, 'rgba(10,26,10,1)');
+    fadeGrad.addColorStop(0, `rgba(${r},${g},${b},0)`);
+    fadeGrad.addColorStop(1, `rgba(${r},${g},${b},1)`);
     ctx.fillStyle = fadeGrad;
     ctx.fillRect(0, Math.floor(canvas.height * 0.4), canvas.width, Math.ceil(canvas.height * 0.15));
     // Solid dark fill below the gradient for terrain area
-    ctx.fillStyle = '#0a1a0a';
+    ctx.fillStyle = theme.fill;
     ctx.fillRect(0, Math.floor(canvas.height * 0.55), canvas.width, Math.ceil(canvas.height * 0.45));
     if (this.textures.exists('background')) this.textures.remove('background');
     this.background = this.textures.addCanvas('background', canvas);

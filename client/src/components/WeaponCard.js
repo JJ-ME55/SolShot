@@ -140,6 +140,8 @@ function WeaponCard({ weapon, selected, owned, iconUrl, onClick }) {
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onTouchStart={() => setHovered(true)}
+      onTouchEnd={() => setHovered(false)}
     >
       {/* Icon */}
       <div style={s.iconBox(tierColor)}>

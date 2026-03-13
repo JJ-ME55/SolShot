@@ -18,31 +18,31 @@ import crypto from 'crypto';
 // Litepaper v2.0: 15 launch + 5 prestige = 20 total
 export const WEAPON_DATA = {
     // --- FREE ---
-    0:  { name: 'Single Shot',    blastRadius: 46, damageFactor: 60/46,  type: 'single',         gravity: 300, bounceCount: 3 },
+    0:  { name: 'Single Shot',    blastRadius: 46, damageFactor: 35/46,  type: 'single',         gravity: 300, bounceCount: 3 },
     // --- STANDARD ---
     25: { name: 'Dirt Ball',      blastRadius: 0,  damageFactor: 0,      type: 'terrain_create',  gravity: 300, bounceCount: 3 },
     12: { name: 'Magic Wall',     blastRadius: 0,  damageFactor: 0,      type: 'wall',            gravity: 300, bounceCount: 0 },
     // --- TACTICAL ---
-    20: { name: 'Skipper',        blastRadius: 52, damageFactor: 40/52,  type: 'bouncer',         gravity: 300, bounceCount: 4 },
-    2:  { name: '3 Shot',         blastRadius: 46, damageFactor: 20/46,  type: 'multi',           gravity: 300, bounceCount: 3, count: 3 },
-    10: { name: 'Spider',         blastRadius: 28, damageFactor: 20/28,  type: 'spider',          gravity: 300, bounceCount: 0, count: 6 },
-    5:  { name: 'Heatseeker',     blastRadius: 80, damageFactor: 40/80,  type: 'homing',          gravity: 300, bounceCount: 0 },
+    20: { name: 'Skipper',        blastRadius: 52, damageFactor: 55/52,  type: 'bouncer',         gravity: 300, bounceCount: 4 },
+    2:  { name: '3 Shot',         blastRadius: 46, damageFactor: 22/46,  type: 'multi',           gravity: 300, bounceCount: 3, count: 3 },
+    10: { name: 'Spider',         blastRadius: 28, damageFactor: 22/28,  type: 'spider',          gravity: 300, bounceCount: 0, count: 6 },
+    5:  { name: 'Heatseeker',     blastRadius: 80, damageFactor: 50/80,  type: 'homing',          gravity: 300, bounceCount: 0 },
     // --- RARE ---
-    15: { name: 'Napalm',         blastRadius: 60, damageFactor: 20/60,  type: 'area',            gravity: 300, bounceCount: 0 },
-    7:  { name: 'Pile Driver',    blastRadius: 46, damageFactor: 20/46,  type: 'drill',           gravity: 300, bounceCount: 0, drillCount: 6 },
+    15: { name: 'Napalm',         blastRadius: 60, damageFactor: 25/60,  type: 'area',            gravity: 300, bounceCount: 0 },
+    7:  { name: 'Pile Driver',    blastRadius: 46, damageFactor: 25/46,  type: 'drill',           gravity: 300, bounceCount: 0, drillCount: 6 },
     11: { name: 'Sniper Rifle',   blastRadius: 1,  damageFactor: 100,    type: 'sniper',          gravity: 300, bounceCount: 0 },
-    1:  { name: 'Big Shot',       blastRadius: 90, damageFactor: 30/90,  type: 'single',          gravity: 300, bounceCount: 3 },
+    1:  { name: 'Big Shot',       blastRadius: 90, damageFactor: 35/90,  type: 'single',          gravity: 300, bounceCount: 3 },
     // --- EPIC ---
-    17: { name: 'Ground Hog',     blastRadius: 70, damageFactor: 50/70,  type: 'tunnel',          gravity: 300, bounceCount: 0 },
-    4:  { name: 'Jackhammer',     blastRadius: 36, damageFactor: 10/36,  type: 'drill',           gravity: 300, bounceCount: 0, drillCount: 5 },
-    16: { name: 'Hail Storm',     blastRadius: 36, damageFactor: 10/36,  type: 'rain',            gravity: 300, bounceCount: 0, count: 10 },
+    17: { name: 'Ground Hog',     blastRadius: 70, damageFactor: 60/70,  type: 'tunnel',          gravity: 300, bounceCount: 0 },
+    4:  { name: 'Jackhammer',     blastRadius: 36, damageFactor: 14/36,  type: 'drill',           gravity: 300, bounceCount: 0, drillCount: 5 },
+    16: { name: 'Hail Storm',     blastRadius: 36, damageFactor: 12/36,  type: 'rain',            gravity: 300, bounceCount: 0, count: 10 },
     // --- LEGENDARY ---
-    9:  { name: 'Crazy Ivan',     blastRadius: 36, damageFactor: 20/36,  type: 'scatter',         gravity: 300, bounceCount: 0, count: 15 },
+    9:  { name: 'Crazy Ivan',     blastRadius: 36, damageFactor: 22/36,  type: 'scatter',         gravity: 300, bounceCount: 0, count: 15 },
     // --- PRESTIGE ---
-    24: { name: 'Homing Missile', blastRadius: 80, damageFactor: 60/80,  type: 'homing',          gravity: 300, bounceCount: 0 },
-    29: { name: 'Cruiser',        blastRadius: 80, damageFactor: 80/80,  type: 'roller',          gravity: 300, bounceCount: 0 },
-    26: { name: 'Tommy Gun',      blastRadius: 16, damageFactor: 20/16,  type: 'multi',           gravity: 300, bounceCount: 3, count: 12 },
-    21: { name: 'Chain Reaction', blastRadius: 46, damageFactor: 20/46,  type: 'chain',           gravity: 300, bounceCount: 0, count: 15 },
+    24: { name: 'Homing Missile', blastRadius: 80, damageFactor: 50/80,  type: 'homing',          gravity: 300, bounceCount: 0 },
+    29: { name: 'Cruiser',        blastRadius: 80, damageFactor: 70/80,  type: 'roller',          gravity: 300, bounceCount: 0 },
+    26: { name: 'Tommy Gun',      blastRadius: 16, damageFactor: 22/16,  type: 'multi',           gravity: 300, bounceCount: 3, count: 12 },
+    21: { name: 'Chain Reaction', blastRadius: 46, damageFactor: 22/46,  type: 'chain',           gravity: 300, bounceCount: 0, count: 15 },
     22: { name: 'Pineapple',      blastRadius: 80, damageFactor: 40/80,  type: 'fragment',        gravity: 300, bounceCount: 3, count: 20, subBlastRadius: 20, subDamageFactor: 32/20 },
 };
 

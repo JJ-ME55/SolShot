@@ -79,6 +79,8 @@ function Button({ variant = 'primary', children, onClick, style, disabled, ...pr
       onClick={disabled ? undefined : onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onTouchStart={() => setHovered(true)}
+      onTouchEnd={() => setHovered(false)}
       {...props}
     >
       {children}

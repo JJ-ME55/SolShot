@@ -691,8 +691,8 @@ function ShopScreen({ navigate, screenData }) {
         {/* ─── Bottom sheet: weapon detail + buy ─── */}
         {selectedWeapon && (
           <>
-            <div style={mob.sheetBackdrop} onClick={() => setSelectedWeaponId(null)} />
-            <div style={mob.sheet}>
+            <div style={mob.sheetBackdrop} onTouchEnd={(e) => { e.stopPropagation(); setSelectedWeaponId(null); }} onClick={() => setSelectedWeaponId(null)} />
+            <div style={mob.sheet} onTouchEnd={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
               <div style={mob.sheetHandle} />
 
               {/* Header: name + tier + price */}

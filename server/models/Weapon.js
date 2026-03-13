@@ -22,21 +22,21 @@ export const WEAPON_TIERS = {
  * ID matches the index in client's weaponArray
  */
 export const WEAPON_CATALOG = {
-    0:  { id: 0,  name: 'Single Shot',   tier: WEAPON_TIERS.FREE,      goldCost: 0,     blastRadius: 46,  damageFactor: 1.30 },
+    0:  { id: 0,  name: 'Single Shot',   tier: WEAPON_TIERS.FREE,      goldCost: 0,     blastRadius: 46,  damageFactor: 0.76 },
     25: { id: 25, name: 'Dirt Ball',      tier: WEAPON_TIERS.STANDARD,  goldCost: 150,   blastRadius: 0,   damageFactor: 0 },
     12: { id: 12, name: 'Magic Wall',     tier: WEAPON_TIERS.STANDARD,  goldCost: 200,   blastRadius: 0,   damageFactor: 0 },
-    20: { id: 20, name: 'Skipper',        tier: WEAPON_TIERS.TACTICAL,  goldCost: 350,   blastRadius: 52,  damageFactor: 0.77 },
-    2:  { id: 2,  name: '3 Shot',         tier: WEAPON_TIERS.TACTICAL,  goldCost: 400,   blastRadius: 46,  damageFactor: 0.43 },
-    10: { id: 10, name: 'Spider',         tier: WEAPON_TIERS.TACTICAL,  goldCost: 400,   blastRadius: 28,  damageFactor: 0.71 },
-    5:  { id: 5,  name: 'Heatseeker',     tier: WEAPON_TIERS.TACTICAL,  goldCost: 500,   blastRadius: 80,  damageFactor: 0.50 },
-    15: { id: 15, name: 'Napalm',         tier: WEAPON_TIERS.RARE,      goldCost: 600,   blastRadius: 60,  damageFactor: 0.33 },
-    7:  { id: 7,  name: 'Pile Driver',    tier: WEAPON_TIERS.RARE,      goldCost: 600,   blastRadius: 46,  damageFactor: 0.43 },
+    20: { id: 20, name: 'Skipper',        tier: WEAPON_TIERS.TACTICAL,  goldCost: 350,   blastRadius: 52,  damageFactor: 1.06 },
+    2:  { id: 2,  name: '3 Shot',         tier: WEAPON_TIERS.TACTICAL,  goldCost: 400,   blastRadius: 46,  damageFactor: 0.48 },
+    10: { id: 10, name: 'Spider',         tier: WEAPON_TIERS.TACTICAL,  goldCost: 400,   blastRadius: 28,  damageFactor: 0.79 },
+    5:  { id: 5,  name: 'Heatseeker',     tier: WEAPON_TIERS.TACTICAL,  goldCost: 500,   blastRadius: 80,  damageFactor: 0.63 },
+    15: { id: 15, name: 'Napalm',         tier: WEAPON_TIERS.RARE,      goldCost: 600,   blastRadius: 60,  damageFactor: 0.42 },
+    7:  { id: 7,  name: 'Pile Driver',    tier: WEAPON_TIERS.RARE,      goldCost: 600,   blastRadius: 46,  damageFactor: 0.54 },
     11: { id: 11, name: 'Sniper Rifle',   tier: WEAPON_TIERS.RARE,      goldCost: 700,   blastRadius: 1,   damageFactor: 100 },
-    1:  { id: 1,  name: 'Big Shot',       tier: WEAPON_TIERS.RARE,      goldCost: 700,   blastRadius: 90,  damageFactor: 0.33 },
-    17: { id: 17, name: 'Ground Hog',     tier: WEAPON_TIERS.EPIC,      goldCost: 900,   blastRadius: 70,  damageFactor: 0.71 },
-    4:  { id: 4,  name: 'Jackhammer',     tier: WEAPON_TIERS.EPIC,      goldCost: 1000,  blastRadius: 36,  damageFactor: 0.28 },
-    16: { id: 16, name: 'Hail Storm',     tier: WEAPON_TIERS.EPIC,      goldCost: 1200,  blastRadius: 36,  damageFactor: 0.28 },
-    9:  { id: 9,  name: 'Crazy Ivan',     tier: WEAPON_TIERS.LEGENDARY, goldCost: 2500,  blastRadius: 36,  damageFactor: 0.56 },
+    1:  { id: 1,  name: 'Big Shot',       tier: WEAPON_TIERS.RARE,      goldCost: 700,   blastRadius: 90,  damageFactor: 0.39 },
+    17: { id: 17, name: 'Ground Hog',     tier: WEAPON_TIERS.EPIC,      goldCost: 900,   blastRadius: 70,  damageFactor: 0.86 },
+    4:  { id: 4,  name: 'Jackhammer',     tier: WEAPON_TIERS.EPIC,      goldCost: 1000,  blastRadius: 36,  damageFactor: 0.39 },
+    16: { id: 16, name: 'Hail Storm',     tier: WEAPON_TIERS.EPIC,      goldCost: 1200,  blastRadius: 36,  damageFactor: 0.33 },
+    9:  { id: 9,  name: 'Crazy Ivan',     tier: WEAPON_TIERS.LEGENDARY, goldCost: 2500,  blastRadius: 36,  damageFactor: 0.61 },
 };
 
 /**
@@ -45,10 +45,10 @@ export const WEAPON_CATALOG = {
  * Bronze=Homing Missile, Silver=Cruiser, Gold=Tommy Gun, Platinum=Chain Reaction, Diamond=Pineapple
  */
 export const PRESTIGE_WEAPONS = {
-    24: { id: 24, name: 'Homing Missile',  tier: WEAPON_TIERS.PRESTIGE, goldCost: 0, blastRadius: 80,  damageFactor: 0.75 },
-    29: { id: 29, name: 'Cruiser',         tier: WEAPON_TIERS.PRESTIGE, goldCost: 0, blastRadius: 80,  damageFactor: 1.00 },
-    26: { id: 26, name: 'Tommy Gun',       tier: WEAPON_TIERS.PRESTIGE, goldCost: 0, blastRadius: 16,  damageFactor: 1.25 },
-    21: { id: 21, name: 'Chain Reaction',  tier: WEAPON_TIERS.PRESTIGE, goldCost: 0, blastRadius: 46,  damageFactor: 0.43 },
+    24: { id: 24, name: 'Homing Missile',  tier: WEAPON_TIERS.PRESTIGE, goldCost: 0, blastRadius: 80,  damageFactor: 0.63 },
+    29: { id: 29, name: 'Cruiser',         tier: WEAPON_TIERS.PRESTIGE, goldCost: 0, blastRadius: 80,  damageFactor: 0.88 },
+    26: { id: 26, name: 'Tommy Gun',       tier: WEAPON_TIERS.PRESTIGE, goldCost: 0, blastRadius: 16,  damageFactor: 1.38 },
+    21: { id: 21, name: 'Chain Reaction',  tier: WEAPON_TIERS.PRESTIGE, goldCost: 0, blastRadius: 46,  damageFactor: 0.48 },
     22: { id: 22, name: 'Pineapple',       tier: WEAPON_TIERS.PRESTIGE, goldCost: 0, blastRadius: 80,  damageFactor: 0.50 },
 };
 

@@ -301,6 +301,7 @@ export class Tank extends GameObjects.Sprite {
                     this.setRotation(rotation);
                 }
                 this.body.stop();
+                this.body.setGravity(0);
                 this.body.allowGravity = false;
                 this.settled = true;
             } else if (tankY < surfaceY - 1) {
@@ -313,6 +314,7 @@ export class Tank extends GameObjects.Sprite {
                         this.setRotation(rotation);
                     }
                     this.body.stop();
+                    this.body.setGravity(0);
                     this.body.allowGravity = false;
                     this.settled = true;
                 } else {
@@ -339,6 +341,7 @@ export class Tank extends GameObjects.Sprite {
                     this.setRotation(rotation);
                 }
                 this.body.stop();
+                this.body.setGravity(0);
                 this.body.allowGravity = false;
                 this.settled = true;
             }

@@ -28,7 +28,7 @@ export class BlastCache {
 
         if (this.canvasArray.hasOwnProperty(type)) {
             var c = document.createElement('canvas')
-            var ctx = c.getContext('2d')
+            var ctx = c.getContext('2d', { willReadFrequently: true })
             c.width = canvas.width
             c.height = canvas.height
             ctx.drawImage(canvas, 0, 0)

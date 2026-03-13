@@ -608,6 +608,8 @@ function processDrillShot(weapon, trajectory, terrain, tanks, shooterId) {
     const damage = {};
     let newTerrain = terrain;
 
+    const scatterPoints = [];
+
     if (impact.type !== 'outOfBounds') {
         const count = weapon.drillCount || 5;
         const spacing = weapon.blastRadius * 0.8; // vertical spacing between drill blasts
@@ -620,6 +622,7 @@ function processDrillShot(weapon, trajectory, terrain, tanks, shooterId) {
             // Clamp to terrain bounds
             if (subPoint.y >= TERRAIN_HEIGHT) subPoint.y = TERRAIN_HEIGHT - 1;
 
+            scatterPoints.push({ x: Math.round(subPoint.x), y: Math.round(subPoint.y) });
             const subDmg = calculateDamageWithRadius(subPoint, weapon.blastRadius, weapon.damageFactor, tanks, shooterId);
             mergeDamage(damage, subDmg);
             newTerrain = deformTerrain(newTerrain, subPoint, weapon.blastRadius);
@@ -630,7 +633,8 @@ function processDrillShot(weapon, trajectory, terrain, tanks, shooterId) {
         trajectory: trimTrajectory(trajectory, impact.frameIndex),
         impact: { x: impact.x, y: impact.y, type: impact.type },
         damage,
-        newTerrain
+        newTerrain,
+        scatterPoints
     };
 }
 
@@ -783,6 +787,8 @@ function processAreaShot(weapon, trajectory, terrain, tanks, shooterId) {
     const damage = {};
     let newTerrain = terrain;
 
+    const scatterPoints = [];
+
     if (impact.type !== 'outOfBounds') {
         // Napalm: 5 burn ticks spread along terrain
         const burnCount = 5;
@@ -794,6 +800,7 @@ function processAreaShot(weapon, trajectory, terrain, tanks, shooterId) {
             const subY = newTerrain[subX] !== undefined ? newTerrain[subX] : impact.y;
             const subPoint = { x: subX, y: subY };
 
+            scatterPoints.push({ x: Math.round(subX), y: Math.round(subY) });
             const subDmg = calculateDamageWithRadius(subPoint, weapon.blastRadius, weapon.damageFactor, tanks, shooterId);
             mergeDamage(damage, subDmg);
             // Napalm melts terrain
@@ -805,7 +812,8 @@ function processAreaShot(weapon, trajectory, terrain, tanks, shooterId) {
         trajectory: trimTrajectory(trajectory, impact.frameIndex),
         impact: { x: impact.x, y: impact.y, type: impact.type },
         damage,
-        newTerrain
+        newTerrain,
+        scatterPoints
     };
 }
 
@@ -817,6 +825,8 @@ function processRainShot(weapon, trajectory, terrain, tanks, shooterId) {
     const impact = calculateImpact(trajectory, terrain, tanks);
     const damage = {};
     let newTerrain = terrain;
+
+    const scatterPoints = [];
 
     if (impact.type !== 'outOfBounds') {
         const count = weapon.count || 10;
@@ -830,6 +840,7 @@ function processRainShot(weapon, trajectory, terrain, tanks, shooterId) {
             const dropY = newTerrain[dropX] !== undefined ? newTerrain[dropX] : impact.y;
             const subPoint = { x: dropX, y: dropY };
 
+            scatterPoints.push({ x: Math.round(dropX), y: Math.round(dropY) });
             const subDmg = calculateDamageWithRadius(subPoint, weapon.blastRadius, weapon.damageFactor, tanks, shooterId);
             mergeDamage(damage, subDmg);
             newTerrain = deformTerrain(newTerrain, subPoint, weapon.blastRadius);
@@ -840,7 +851,8 @@ function processRainShot(weapon, trajectory, terrain, tanks, shooterId) {
         trajectory: trimTrajectory(trajectory, impact.frameIndex),
         impact: { x: impact.x, y: impact.y, type: impact.type },
         damage,
-        newTerrain
+        newTerrain,
+        scatterPoints
     };
 }
 
@@ -852,6 +864,8 @@ function processChainShot(weapon, trajectory, terrain, tanks, shooterId) {
     const impact = calculateImpact(trajectory, terrain, tanks);
     const damage = {};
     let newTerrain = terrain;
+
+    const scatterPoints = [];
 
     if (impact.type !== 'outOfBounds') {
         const count = weapon.count || 15;
@@ -871,6 +885,7 @@ function processChainShot(weapon, trajectory, terrain, tanks, shooterId) {
             const subY = newTerrain[subX] !== undefined ? newTerrain[subX] : impact.y;
             const subPoint = { x: subX, y: subY };
 
+            scatterPoints.push({ x: Math.round(subX), y: Math.round(subY) });
             const subDmg = calculateDamageWithRadius(subPoint, weapon.blastRadius, weapon.damageFactor, tanks, shooterId);
             mergeDamage(damage, subDmg);
             newTerrain = deformTerrain(newTerrain, subPoint, weapon.blastRadius);
@@ -881,7 +896,8 @@ function processChainShot(weapon, trajectory, terrain, tanks, shooterId) {
         trajectory: trimTrajectory(trajectory, impact.frameIndex),
         impact: { x: impact.x, y: impact.y, type: impact.type },
         damage,
-        newTerrain
+        newTerrain,
+        scatterPoints
     };
 }
 

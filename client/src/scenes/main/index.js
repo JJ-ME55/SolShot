@@ -1274,7 +1274,9 @@ export class MainScene extends Scene {
         try { if (glowRing) glowRing.destroy(); } catch (_) {}
 
         // ── Post-impact effects ──
-        if ((weaponId === 9 || weaponId === 22) && scatterPoints && scatterPoints.length > 0) {
+        if (scatterPoints && scatterPoints.length > 0) {
+          // Scatter-style sub-explosions: Crazy Ivan (9), Pineapple (22),
+          // Pile Driver (7), Jackhammer (4), Napalm (15), Hail Storm (16), Chain Reaction (21)
           this.playScatterExplosions(scatterPoints, weaponId);
         } else if (spiderLegs && spiderLegs.length > 0) {
           // Spider: animate legs crawling outward then exploding
@@ -1478,25 +1480,38 @@ export class MainScene extends Scene {
     this.terrain.blast(1, Math.floor(x), Math.floor(y), blastRadius, data, true, (weaponId || 0).toString() + '.opp');
   };
 
-  // ── Crazy Ivan scatter: staggered sub-explosions at server-provided positions ──
+  // ── Staggered sub-explosions at server-provided positions ──
+  // Used by: Crazy Ivan (9), Pineapple (22), Pile Driver (7), Jackhammer (4),
+  //          Napalm (15), Hail Storm (16), Chain Reaction (21)
+  _scatterStyles = {
+    9:  { radius: 36, thickness: 18, blowPower: 50, delay: 40,
+          grd: [{relativePosition: 0, color: 'rgba(0,0,0,0)'}, {relativePosition: 0.01, color: 'rgba(0,0,0,0.4)'}, {relativePosition: 0.4, color: 'rgba(120,120,0,1)'}, {relativePosition: 1, color: 'rgba(255,255,0,1)'}] },
+    22: { radius: 20, thickness: 12, blowPower: 40, delay: 30,
+          grd: [{relativePosition: 0, color: 'rgba(0,0,0,0)'}, {relativePosition: 0.01, color: 'rgba(0,0,0,0.4)'}, {relativePosition: 0.4, color: 'rgba(0,120,40,1)'}, {relativePosition: 1, color: 'rgba(0,255,100,1)'}] },
+    7:  { radius: 46, thickness: 20, blowPower: 30, delay: 80,
+          grd: [{relativePosition: 0, color: 'rgba(0,0,0,0)'}, {relativePosition: 0.01, color: 'rgba(0,0,0,0.4)'}, {relativePosition: 0.4, color: 'rgba(100,0,140,1)'}, {relativePosition: 1, color: 'rgba(200,80,255,1)'}] },
+    4:  { radius: 36, thickness: 16, blowPower: 25, delay: 90,
+          grd: [{relativePosition: 0, color: 'rgba(0,0,0,0)'}, {relativePosition: 0.01, color: 'rgba(0,0,0,0.4)'}, {relativePosition: 0.4, color: 'rgba(140,0,80,1)'}, {relativePosition: 1, color: 'rgba(255,0,150,1)'}] },
+    15: { radius: 30, thickness: 14, blowPower: 20, delay: 120,
+          grd: [{relativePosition: 0, color: 'rgba(0,0,0,0)'}, {relativePosition: 0.01, color: 'rgba(0,0,0,0.4)'}, {relativePosition: 0.4, color: 'rgba(180,60,0,1)'}, {relativePosition: 1, color: 'rgba(255,100,0,1)'}] },
+    16: { radius: 36, thickness: 14, blowPower: 30, delay: 60,
+          grd: [{relativePosition: 0, color: 'rgba(0,0,0,0)'}, {relativePosition: 0.01, color: 'rgba(0,0,0,0.4)'}, {relativePosition: 0.4, color: 'rgba(80,140,200,1)'}, {relativePosition: 1, color: 'rgba(140,200,255,1)'}] },
+    21: { radius: 46, thickness: 18, blowPower: 40, delay: 50,
+          grd: [{relativePosition: 0, color: 'rgba(0,0,0,0)'}, {relativePosition: 0.01, color: 'rgba(0,0,0,0.4)'}, {relativePosition: 0.4, color: 'rgba(180,100,0,1)'}, {relativePosition: 1, color: 'rgba(255,170,0,1)'}] },
+  };
+
   playScatterExplosions = (scatterPoints, weaponId) => {
-    const info = {
-      radius: 36,
-      grd: [{relativePosition: 0, color: 'rgba(0,0,0,0)'}, {relativePosition: 0.01, color: 'rgba(0,0,0,0.4)'}, {relativePosition: 0.4, color: 'rgba(120,120,0,1)'}, {relativePosition: 1, color: 'rgba(255,255,0,1)'}],
-      thickness: 18,
-      blowPower: 50,
-    };
+    const style = this._scatterStyles[weaponId] || this._scatterStyles[9];
     const hitRadius = this.tanks[0]?.hitRadius || 6;
-    const blastRadius = Math.max(info.radius - hitRadius, 1);
+    const blastRadius = Math.max(style.radius - hitRadius, 1);
 
     scatterPoints.forEach((pt, i) => {
-      // Stagger blasts: 40ms apart for rapid-fire cluster effect
-      this.time.delayedCall(i * 40, () => {
+      this.time.delayedCall(i * style.delay, () => {
         const data = {
-          thickness: info.thickness,
-          gradient: info.grd,
-          blowPower: info.blowPower,
-          soundEffect: i === 0 ? 'expshort' : (i % 3 === 0 ? 'expshort' : null), // Sound every 3rd blast
+          thickness: style.thickness,
+          gradient: style.grd,
+          blowPower: style.blowPower,
+          soundEffect: i === 0 ? 'expshort' : (i % 3 === 0 ? 'expshort' : null),
           soundConfig: { volume: 0.2 },
           visualOnly: true,
         };

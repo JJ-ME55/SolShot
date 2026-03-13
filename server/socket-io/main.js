@@ -305,7 +305,7 @@ async function handleSettlementFailure(roomId, room, ws, error) {
     console.warn(`[Recovery] Stored failed settlement for retry: ${roomId}`);
 }
 
-const SHOP_DURATION = 30; // seconds
+const SHOP_DURATION = 45; // seconds — MARKETING MODE (revert to 30 after recording)
 const RECONNECT_WINDOW_MS = 30000; // 30 seconds to reconnect
 const TURN_TIMEOUT_MS = 60000;     // 60 seconds per turn
 

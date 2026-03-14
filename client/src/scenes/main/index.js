@@ -1507,7 +1507,7 @@ export class MainScene extends Scene {
   _scatterStyles = {
     9:  { radius: 36, thickness: 18, blowPower: 50, delay: 40,
           grd: [{relativePosition: 0, color: 'rgba(0,0,0,0)'}, {relativePosition: 0.01, color: 'rgba(0,0,0,0.4)'}, {relativePosition: 0.4, color: 'rgba(120,120,0,1)'}, {relativePosition: 1, color: 'rgba(255,255,0,1)'}] },
-    22: { radius: 20, thickness: 12, blowPower: 40, delay: 30,
+    22: { radius: 20, thickness: 12, blowPower: 40, delay: 60,
           grd: [{relativePosition: 0, color: 'rgba(0,0,0,0)'}, {relativePosition: 0.01, color: 'rgba(0,0,0,0.4)'}, {relativePosition: 0.4, color: 'rgba(0,120,40,1)'}, {relativePosition: 1, color: 'rgba(0,255,100,1)'}] },
     7:  { radius: 46, thickness: 20, blowPower: 30, delay: 80,
           grd: [{relativePosition: 0, color: 'rgba(0,0,0,0)'}, {relativePosition: 0.01, color: 'rgba(0,0,0,0.4)'}, {relativePosition: 0.4, color: 'rgba(100,0,140,1)'}, {relativePosition: 1, color: 'rgba(200,80,255,1)'}] },
@@ -1526,13 +1526,23 @@ export class MainScene extends Scene {
     const hitRadius = this.tanks[0]?.hitRadius || 6;
     const blastRadius = Math.max(style.radius - hitRadius, 1);
 
-    scatterPoints.forEach((pt, i) => {
+    // Cap visual scatter to 10 points max — server calculates full damage,
+    // but rendering 20 concurrent Blast objects crashes mobile browsers.
+    const maxVisual = 10;
+    let pts = scatterPoints;
+    if (pts.length > maxVisual) {
+      // Evenly sample from the full set so coverage looks complete
+      const step = pts.length / maxVisual;
+      pts = Array.from({ length: maxVisual }, (_, i) => scatterPoints[Math.floor(i * step)]);
+    }
+
+    pts.forEach((pt, i) => {
       this.time.delayedCall(i * style.delay, () => {
         const data = {
           thickness: style.thickness,
           gradient: style.grd,
           blowPower: style.blowPower,
-          soundEffect: i === 0 ? 'expshort' : (i % 3 === 0 ? 'expshort' : null),
+          soundEffect: i === 0 ? 'expshort' : (i % 4 === 0 ? 'expshort' : null),
           soundConfig: { volume: 0.2 },
           visualOnly: true,
         };

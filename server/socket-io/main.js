@@ -3156,6 +3156,8 @@ const mainsocket = (io) => {
 
             const { path, heightmap } = generateTerrain(1200, 800, seed32)
             const wind = generateWind()
+            // Pick random background theme (0-5) so both clients show the same one
+            const backgroundIndex = Math.floor(Math.random() * 6)
 
             // Store server-side
             room.heightmap = heightmap
@@ -3218,6 +3220,7 @@ const mainsocket = (io) => {
                 },
                 seed: fullSeed,
                 wind,
+                backgroundIndex,
                 firstTurn: ms ? ms.currentTurn : null,
                 seq: ms ? ms.turnSequence : 0  // Fix 4: initial nonce for first fire
             }

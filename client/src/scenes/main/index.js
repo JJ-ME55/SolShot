@@ -251,8 +251,9 @@ export class MainScene extends Scene {
     var ctx = canvas.getContext('2d');
     canvas.height = this.renderer.height;
     canvas.width = this.renderer.width;
-    // Pick a random background theme
-    const theme = this._bgThemes[Math.floor(Math.random() * this._bgThemes.length)];
+    // Use server-chosen index if available, otherwise random
+    const idx = this._backgroundIndex ?? Math.floor(Math.random() * this._bgThemes.length);
+    const theme = this._bgThemes[idx % this._bgThemes.length];
     ctx.fillStyle = theme.fill;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     // Sky: draw background image, vertically centered in the upper portion
@@ -848,7 +849,10 @@ export class MainScene extends Scene {
 
     // ── STEP 1: Server-generated terrain ──
     // Both clients listen for terrainGenerated. Host triggers requestTerrain.
-    this._socketHandlers.terrainGenerated = ({ path, heightmap, positions, tankPositions, seed, wind, firstTurn, seq }) => {
+    this._socketHandlers.terrainGenerated = ({ path, heightmap, positions, tankPositions, seed, wind, backgroundIndex, firstTurn, seq }) => {
+      // Re-draw background with server-chosen theme so both clients match
+      this._backgroundIndex = backgroundIndex ?? Math.floor(Math.random() * 6);
+      this.createBackground();
       // Store server heightmap for later terrain sync
       this._serverHeightmap = heightmap;
       this._turnSeq = seq || 0;
@@ -1295,9 +1299,10 @@ export class MainScene extends Scene {
         try { if (glowRing) glowRing.destroy(); } catch (_) {}
 
         // ── Post-impact effects ──
-        if (scatterPoints && scatterPoints.length > 0) {
-          // Scatter-style sub-explosions: Crazy Ivan (9), Pineapple (22),
+        if (scatterPoints && scatterPoints.length > 0 && weaponId !== 22) {
+          // Scatter-style sub-explosions: Crazy Ivan (9),
           // Pile Driver (7), Jackhammer (4), Napalm (15), Hail Storm (16), Chain Reaction (21)
+          // Pineapple (22) skipped — main radius-80 blast is enough; 20 fragments crash mobile
           this.playScatterExplosions(scatterPoints, weaponId);
         } else if (spiderLegs && spiderLegs.length > 0) {
           // Spider: animate legs crawling outward then exploding

@@ -292,7 +292,7 @@ export class MainScene extends Scene {
     ctx.fillRect(0, Math.floor(canvas.height * 0.55), canvas.width, Math.ceil(canvas.height * 0.45));
     if (this.textures.exists('background')) this.textures.remove('background');
     this.background = this.textures.addCanvas('background', canvas);
-    this._bgImage = this.add.image(canvas.width / 2, canvas.height / 2, 'background').setDepth(-3);
+    this._bgImage = this.add.image(canvas.width / 2, canvas.height / 2, 'background').setDepth(-10);
   };
 
   createBlastLayer = () => {

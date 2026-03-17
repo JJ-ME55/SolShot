@@ -247,6 +247,14 @@ export class MainScene extends Scene {
   ];
 
   createBackground = () => {
+    // Destroy previous background sprite before removing its texture —
+    // prevents Phaser "canvasData null" crash when called a second time
+    // (terrainGenerated re-calls this to sync background theme between clients)
+    if (this._bgImage) {
+      this._bgImage.destroy();
+      this._bgImage = null;
+    }
+
     var canvas = document.createElement('canvas');
     var ctx = canvas.getContext('2d');
     canvas.height = this.renderer.height;
@@ -284,7 +292,7 @@ export class MainScene extends Scene {
     ctx.fillRect(0, Math.floor(canvas.height * 0.55), canvas.width, Math.ceil(canvas.height * 0.45));
     if (this.textures.exists('background')) this.textures.remove('background');
     this.background = this.textures.addCanvas('background', canvas);
-    this.add.image(canvas.width / 2, canvas.height / 2, 'background').setDepth(-3);
+    this._bgImage = this.add.image(canvas.width / 2, canvas.height / 2, 'background').setDepth(-3);
   };
 
   createBlastLayer = () => {

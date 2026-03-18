@@ -910,6 +910,8 @@ function processFragmentShot(weapon, trajectory, terrain, tanks, shooterId) {
     const damage = {};
     let newTerrain = terrain;
 
+    const scatterPoints = [];
+
     if (impact.type !== 'outOfBounds') {
         // Main blast
         const mainDmg = calculateDamageWithRadius(impact, weapon.blastRadius, weapon.damageFactor, tanks, shooterId);
@@ -922,7 +924,6 @@ function processFragmentShot(weapon, trajectory, terrain, tanks, shooterId) {
         const subFactor = weapon.subDamageFactor || 32 / 20;
         const fragRadius = weapon.blastRadius * 1.5; // how far fragments travel from center
         const rng = weaponSeededRandom(weapon.weaponId, impact.x, impact.y);
-        const scatterPoints = [];
 
         for (let i = 0; i < fragCount; i++) {
             const angle = (2 * Math.PI * i) / fragCount;

@@ -3082,11 +3082,13 @@ const mainsocket = (io) => {
                                             },
                                             { upsert: true }
                                         )
-                                        // Step 2: Update bestWinStreak if current exceeds it (pipeline update)
+                                        // Step 2: Update bestWinStreak if current exceeds it
                                         if (isWinner) {
-                                            await User.findOneAndUpdate(query, [
-                                                { $set: { 'stats.bestWinStreak': { $max: ['$stats.bestWinStreak', '$stats.consecutiveWins'] } } }
-                                            ])
+                                            const user = await User.findOne(query)
+                                            if (user && (user.stats?.consecutiveWins || 0) > (user.stats?.bestWinStreak || 0)) {
+                                                user.stats.bestWinStreak = user.stats.consecutiveWins
+                                                await user.save()
+                                            }
                                         }
                                     }
                                     logger.info('[Stats] Persisted match stats')

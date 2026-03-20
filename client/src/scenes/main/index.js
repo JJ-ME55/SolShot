@@ -236,14 +236,32 @@ export class MainScene extends Scene {
     this.rightWall.setOrigin(0, 0);
   };
 
-  // Background themes with matching base fill colors
+  // Background themes with matching base fill colors and terrain layer palettes
   _bgThemes = [
-    { key: 'bg-jungle',   fill: '#0a1a0a' },
-    { key: 'bg-arctic',   fill: '#0a0f1a' },
-    { key: 'bg-desert',   fill: '#1a140a' },
-    { key: 'bg-moon',     fill: '#0a0a0f' },
-    { key: 'bg-volcanic', fill: '#1a0a0a' },
-    { key: 'bg-default',  fill: '#0a1a0a' },
+    { key: 'bg-jungle',   fill: '#0a1a0a', terrainLayers: [
+      {color: 'rgba(107,123,61,1)', width: 10}, {color: 'rgba(92,106,53,1)', width: 30},
+      {color: 'rgba(74,86,42,1)', width: 70}, {color: 'rgba(58,69,31,1)', width: 130}, {color: 'rgba(42,51,31,1)', width: 200}
+    ]},
+    { key: 'bg-arctic',   fill: '#0a0f1a', terrainLayers: [
+      {color: 'rgba(190,200,210,1)', width: 10}, {color: 'rgba(160,172,185,1)', width: 30},
+      {color: 'rgba(130,145,160,1)', width: 70}, {color: 'rgba(100,115,132,1)', width: 130}, {color: 'rgba(72,85,100,1)', width: 200}
+    ]},
+    { key: 'bg-desert',   fill: '#1a140a', terrainLayers: [
+      {color: 'rgba(210,180,120,1)', width: 10}, {color: 'rgba(185,155,95,1)', width: 30},
+      {color: 'rgba(160,130,75,1)', width: 70}, {color: 'rgba(130,105,60,1)', width: 130}, {color: 'rgba(100,80,45,1)', width: 200}
+    ]},
+    { key: 'bg-moon',     fill: '#0a0a0f', terrainLayers: [
+      {color: 'rgba(140,140,150,1)', width: 10}, {color: 'rgba(115,115,125,1)', width: 30},
+      {color: 'rgba(90,90,100,1)', width: 70}, {color: 'rgba(65,65,75,1)', width: 130}, {color: 'rgba(45,45,55,1)', width: 200}
+    ]},
+    { key: 'bg-volcanic', fill: '#1a0a0a', terrainLayers: [
+      {color: 'rgba(180,80,30,1)', width: 10}, {color: 'rgba(150,60,20,1)', width: 30},
+      {color: 'rgba(120,45,15,1)', width: 70}, {color: 'rgba(90,30,10,1)', width: 130}, {color: 'rgba(60,20,8,1)', width: 200}
+    ]},
+    { key: 'bg-default',  fill: '#0a1a0a', terrainLayers: [
+      {color: 'rgba(107,123,61,1)', width: 10}, {color: 'rgba(92,106,53,1)', width: 30},
+      {color: 'rgba(74,86,42,1)', width: 70}, {color: 'rgba(58,69,31,1)', width: 130}, {color: 'rgba(42,51,31,1)', width: 200}
+    ]},
   ];
 
   createBackground = () => {
@@ -262,6 +280,7 @@ export class MainScene extends Scene {
     // Use server-chosen index if available, otherwise random
     const idx = this._backgroundIndex ?? Math.floor(Math.random() * this._bgThemes.length);
     const theme = this._bgThemes[idx % this._bgThemes.length];
+    this._currentTheme = theme; // Store for terrain layer colors
     ctx.fillStyle = theme.fill;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     // Sky: draw background image, vertically centered in the upper portion

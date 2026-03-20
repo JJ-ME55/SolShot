@@ -20,6 +20,17 @@ export const setTerrain = (ctx, width, height, path, terrain) => {
         ctx.closePath()
         ctx.fill()
 
+        // Tint base terrain with theme's deepest layer color
+        const baseLayers = terrain.scene?._currentTheme?.terrainLayers;
+        if (baseLayers && baseLayers.length > 0) {
+            ctx.globalCompositeOperation = 'source-atop'
+            ctx.fillStyle = baseLayers[baseLayers.length - 1].color
+            ctx.globalAlpha = 0.5
+            ctx.fill()
+            ctx.globalAlpha = 1.0
+            ctx.globalCompositeOperation = 'source-over'
+        }
+
         // Refresh Phaser texture after base terrain fill
         terrain.update()
 
@@ -129,7 +140,11 @@ const createLayers = (ctx, path, terrain) => {
     var angle, img, pattern;
     img = [new Image(), new Image(), new Image(), new Image(), new Image()]
     pattern = [null, null, null, null, null]
-    var layers = [{color: 'rgba(107,123,61,1)', width: 10}, {color: 'rgba(92,106,53,1)', width: 30}, {color: 'rgba(74,86,42,1)', width: 70}, {color: 'rgba(58,69,31,1)', width: 130}, {color: 'rgba(42,51,31,1)', width: 200}]
+    // Use theme-matched terrain layers if available, otherwise default green
+    var layers = terrain.scene?._currentTheme?.terrainLayers || [
+        {color: 'rgba(107,123,61,1)', width: 10}, {color: 'rgba(92,106,53,1)', width: 30},
+        {color: 'rgba(74,86,42,1)', width: 70}, {color: 'rgba(58,69,31,1)', width: 130}, {color: 'rgba(42,51,31,1)', width: 200}
+    ]
 
     //layers.reverse()
 
@@ -156,6 +171,14 @@ const createLayers = (ctx, path, terrain) => {
             ctx.strokeStyle = pattern[index]
             ctx.globalCompositeOperation = 'source-atop'
             ctx.stroke()
+
+            // Tint this layer with theme color — draw color overlay using multiply blend
+            ctx.globalCompositeOperation = 'source-atop'
+            ctx.fillStyle = layer.color
+            ctx.globalAlpha = 0.55
+            ctx.fill()
+            ctx.globalAlpha = 1.0
+
             // Refresh Phaser CanvasTexture after each layer draw
             terrain.update()
             if (index === 0) {

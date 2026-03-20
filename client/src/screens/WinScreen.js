@@ -175,10 +175,25 @@ function WinScreen({ navigate, screenData }) {
     }
   }, []);
 
+  const [rematchWaiting, setRematchWaiting] = useState(false);
+
   /* ── socket: opponent left ── */
   useSocket('opponentLeft', () => {
     setOpponentLeft(true);
+    setRematchWaiting(false);
   });
+
+  /* ── socket: play again accepted by both sides ── */
+  useSocket('playAgain', () => {
+    navigate('shop');
+  });
+
+  const handleRematch = useCallback(() => {
+    if (window.socket) {
+      window.socket.emit('playAgainRequest');
+      setRematchWaiting(true);
+    }
+  }, []);
 
   const handleLobby = useCallback(() => {
     if (window.socket) window.socket.emit('leaveRoom');
@@ -188,6 +203,11 @@ function WinScreen({ navigate, screenData }) {
   const handleMenu = useCallback(() => {
     if (window.socket) window.socket.emit('leaveRoom');
     navigate('menu');
+  }, [navigate]);
+
+  const handleBarracks = useCallback(() => {
+    if (window.socket) window.socket.emit('leaveRoom');
+    navigate('barracks');
   }, [navigate]);
 
 
@@ -327,13 +347,26 @@ function WinScreen({ navigate, screenData }) {
             </Button>
           </div>
           <div style={s.buttonRow}>
-            <Button variant="primary" onClick={handleLobby} style={{ fontSize: 14, padding: '10px 24px' }}>
-              PLAY AGAIN
+            <Button variant="primary" onClick={() => navigate('barracks')} style={{ fontSize: 13, padding: '10px 20px' }}>
+              VIEW BARRACKS
+            </Button>
+          </div>
+          <div style={s.buttonRow}>
+            <Button
+              variant="primary"
+              onClick={handleRematch}
+              disabled={rematchWaiting || opponentLeft}
+              style={{ fontSize: 14, padding: '10px 24px' }}
+            >
+              {rematchWaiting ? 'WAITING...' : 'REMATCH'}
             </Button>
             <Button variant="secondary" onClick={handleMenu} style={{ fontSize: 13, padding: '10px 20px' }}>
               EXIT
             </Button>
           </div>
+          {rematchWaiting && (
+            <div style={s.waitingText}>WAITING FOR OPPONENT...</div>
+          )}
         </>
       )}
 

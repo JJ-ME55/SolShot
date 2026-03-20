@@ -11,7 +11,7 @@ import { WEAPON_CATALOG, PRESTIGE_WEAPONS, getWeapon, getWeaponCost, getAllLaunc
 import { handleAuthenticate, verifyAuthMessage, verifyWalletSignature } from '../middleware/auth.js';
 import { verifyBalance, isValidWager, settleMatch, refundWager, WAGER_TIERS, MATCH_MODES, validateMatchMode, isEscrowEnabled, createMatchEscrow, buildDepositTransaction, getEscrowState, startWithDepositorsEscrow } from '../services/solana.js';
 import { cancelMatchEscrow } from '../services/escrow.js';
-import { recordMatchPlayed, prestigeBurn, getPrestigeInfo, getShotBalance, PRESTIGE_TIERS, PRESTIGE_WEAPON_IDS, loadMilestoneState, saveMilestoneState, verifyBurnTransaction, getPlayerShotState, SHOT_MILESTONES } from '../services/shot-token.js';
+import { recordMatchPlayed, prestigeBurn, getPrestigeInfo, getShotBalance, PRESTIGE_TIERS, loadMilestoneState, saveMilestoneState, verifyBurnTransaction, getPlayerShotState, SHOT_MILESTONES } from '../services/shot-token.js';
 import { trackConnection, trackDisconnection, trackMatchCreated, trackMatchCompleted, trackMatchCancelled, trackWager, trackSettlement, trackForfeit, trackShot, trackDamage, trackGoldEarned, trackShotEmission, trackShotBurn, trackError } from '../services/monitoring.js';
 import { requireAuth, validatePayload, validateFireParams, sanitizeName, withLock, safeHandler } from '../middleware/guards.js';
 
@@ -305,7 +305,7 @@ async function handleSettlementFailure(roomId, room, ws, error) {
     console.warn(`[Recovery] Stored failed settlement for retry: ${roomId}`);
 }
 
-const SHOP_DURATION = 45; // seconds — MARKETING MODE (revert to 30 after recording)
+const SHOP_DURATION = 30; // seconds
 const RECONNECT_WINDOW_MS = 30000; // 30 seconds to reconnect
 const TURN_TIMEOUT_MS = 60000;     // 60 seconds per turn
 
@@ -1875,11 +1875,8 @@ const mainsocket = (io) => {
                     goldStates[client.roomId] = initGold(playerIds)
                     weaponInventories[client.roomId] = {}
                     for (const pid of playerIds) {
-                        // MARKETING MODE: unlock all prestige weapons for everyone
-                        // TODO: revert to prestige-gated after marketing recording
-                        // const prestige = getPrestigeInfo(authenticatedWallets[pid] || '')
-                        // weaponInventories[client.roomId][pid] = [0, ...(prestige.unlockedWeapons || [])]
-                        weaponInventories[client.roomId][pid] = [0, ...PRESTIGE_WEAPON_IDS]
+                        const prestige = getPrestigeInfo(authenticatedWallets[pid] || '')
+                        weaponInventories[client.roomId][pid] = [0, ...(prestige.unlockedWeapons || [])]
                     }
                 }
 

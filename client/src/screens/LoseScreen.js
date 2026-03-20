@@ -318,21 +318,13 @@ function LoseScreen({ navigate, screenData }) {
             </Button>
           </div>
           <div style={s.buttonRow}>
-            <Button
-              variant="primary"
-              onClick={handleRematch}
-              disabled={rematchWaiting || opponentLeft}
-              style={{ fontSize: 14, padding: '10px 24px' }}
-            >
-              {rematchWaiting ? 'WAITING...' : 'RUN IT BACK'}
+            <Button variant="primary" onClick={handleLobby} style={{ fontSize: 14, padding: '10px 24px' }}>
+              PLAY AGAIN
             </Button>
             <Button variant="secondary" onClick={handleMenu} style={{ fontSize: 13, padding: '10px 20px' }}>
               EXIT
             </Button>
           </div>
-          {rematchWaiting && (
-            <div style={s.waitingText}>WAITING FOR OPPONENT...</div>
-          )}
         </>
       )}
 

@@ -656,15 +656,17 @@ function StatCard({ player, onClose, logoUrl, qrValue, showQr = true, prestigeIc
   };
 
   const exportCard = useCallback(async () => {
-    if (!exportRef.current) return;
+    if (!cardRef.current) return;
     setFeedback('RENDERING...');
     setFeedbackOk(false);
     try {
-      const canvas = await html2canvas(exportRef.current, {
+      // Export from the visible preview card at high DPI for crisp output
+      // html2canvas can't reliably render offscreen nodes
+      const canvas = await html2canvas(cardRef.current, {
         backgroundColor: '#0d0f09',
-        scale: 1, // export node is already at canonical size
-        width: EXPORT_W,
-        height: EXPORT_H,
+        scale: 3,
+        width: CARD_W,
+        height: CARD_H,
         logging: false,
         useCORS: true,
         ignoreTransform: true,
@@ -760,7 +762,7 @@ function StatCard({ player, onClose, logoUrl, qrValue, showQr = true, prestigeIc
           EXPORT CARD
         </button>
         <button style={s.shareBtn} onClick={(e) => { e.stopPropagation(); shareToX(); }}>
-          SHARE TO X
+          POST TO X
         </button>
       </div>
       <button style={{ ...s.closeBtn, width: CARD_W * scale }} onClick={(e) => { e.stopPropagation(); onClose(); }}>

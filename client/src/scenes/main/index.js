@@ -1263,9 +1263,12 @@ export class MainScene extends Scene {
     let frameIndex = 0;
     let trailFrame = 0;
     let completed = false;
-    // Dynamic speed: cap animation at ~3 seconds (180 frames at 60fps)
-    const MAX_ANIM_FRAMES = 180;
-    const speed = Math.max(1, Math.ceil(trajectory.length / MAX_ANIM_FRAMES));
+    // Dynamic speed: long shots ~2s, short shots ~1s (60fps)
+    const MIN_FRAMES = 60;   // 1s floor
+    const MAX_FRAMES = 120;  // 2s ceiling
+    const MAX_TRAJ = 1500;   // approx longest trajectory length
+    const targetFrames = Math.round(MIN_FRAMES + (MAX_FRAMES - MIN_FRAMES) * Math.min(1, trajectory.length / MAX_TRAJ));
+    const speed = Math.max(1, Math.ceil(trajectory.length / targetFrames));
 
     const spawnTrail = (x, y) => {
       const p = this.add.circle(

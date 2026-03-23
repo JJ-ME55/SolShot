@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 23 Mar 2026)
 
 Milestone: v3.0 — Public Practice Launch
 Phase: 29 — Desktop Mouse-Aim and Control Settings
-Plan: 01 of 3 complete
+Plan: 02 of 3 complete
 Status: In progress
-Last activity: 23 Mar 2026 — Completed 29-01-PLAN.md (control scheme foundation)
+Last activity: 23 Mar 2026 — Completed 29-02-PLAN.md (Phaser mouse-aim pointer handlers)
 
 Progress: [░░░░░░░░░░░░░░░░░░░░] ~3% (1/9 plans across v3.0 phases)
 
@@ -28,7 +28,7 @@ Progress: [░░░░░░░░░░░░░░░░░░░░] ~3% (1/
 
 **Total across all milestones:** 75 plans, 33 phases
 
-**v3.0 so far:** 1 plan complete (29-01)
+**v3.0 so far:** 2 plans complete (29-01, 29-02)
 
 ## Accumulated Context
 
@@ -48,6 +48,9 @@ Progress: [░░░░░░░░░░░░░░░░░░░░] ~3% (1/
 - useControlScheme hook: localStorage key is `solshot_control_scheme`, default `'mouse'` desktop / `'classic'` mobile
 - window.controlScheme is the React-to-Phaser interop channel for control scheme (mirrors window.socket pattern)
 - CONTROLS selector in MenuScreen is desktop-only — mobile deferred to Phase 30
+- Mouse-aim own-turn guard uses myTank.active (not currentPlayerIndex comparison) — works for type3 and type4
+- Mouse-aim MAX_DIST = renderer.width * 0.30 (30% canvas width = power 100)
+- Mouse-aim powerChange emitted to socket on pointermove (type3 only) for live opponent HUD sync
 
 ### v3.0 Branch Strategy
 - `main` = live demo at solshot.gg (Vercel + Render deploy from here)
@@ -74,6 +77,6 @@ Progress: [░░░░░░░░░░░░░░░░░░░░] ~3% (1/
 ## Session Continuity
 
 Last session: 2026-03-23
-Stopped at: Completed 29-01-PLAN.md — control scheme hook + MenuScreen toggle + BattleHUD prop plumbing
+Stopped at: Completed 29-02-PLAN.md — Phaser mouse-aim pointer handlers (turret tracks cursor, distance=power, click=fire)
 Resume file: None
-Next command: /gsd:execute-phase (plan 29-02 — Phaser mouse-aim in MainScene)
+Next command: /gsd:execute-phase (plan 29-03 — HUD read-only sliders + conditional fire button for mouse-aim)

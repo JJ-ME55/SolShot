@@ -202,6 +202,51 @@ export class MainScene extends Scene {
       }
     });
 
+    // ── Mouse-aim input handlers ──
+    // Registered here so they work for both type3 (multiplayer) and type4 (practice).
+    this._mouseAimHandlers = {
+      move: (pointer) => {
+        if (!this._isMouseAimActive()) return;
+        const myTank = this.myPlayerIndex >= 0 ? this.tanks[this.myPlayerIndex] : null;
+        if (!myTank?.turret || !myTank.active) return;
+
+        // Calculate absolute angle from turret to cursor
+        const absoluteAngle = Phaser.Math.Angle.Between(
+          myTank.turret.x, myTank.turret.y,
+          pointer.worldX, pointer.worldY
+        );
+
+        // Set turret rotation — relativeRotation is angle relative to tank body
+        myTank.turret.relativeRotation = absoluteAngle - myTank.rotation;
+        myTank.turret.setRotation(absoluteAngle);
+        myTank.turret.needEmitAngleChange = true;
+
+        // Map cursor distance from turret to power (5–100)
+        const dist = Phaser.Math.Distance.Between(
+          myTank.turret.x, myTank.turret.y,
+          pointer.worldX, pointer.worldY
+        );
+        const MAX_DIST = this.renderer ? this.renderer.width * 0.30 : 250;
+        const power = Math.round(Phaser.Math.Clamp((dist / MAX_DIST) * 100, 5, 100));
+        myTank.setPower(power);
+
+        // Emit powerChange so opponent sees live power, and bridge shows updated HUD
+        if (this.sceneData?.gameType === 3) {
+          const socket = window.socket;
+          if (socket) socket.emit('powerChange', { power });
+        }
+      },
+
+      down: (pointer) => {
+        if (pointer.button !== 0) return; // left click only
+        if (!this._isMouseAimActive()) return;
+        this.handleFireFromReact();
+      },
+    };
+
+    this.input.on('pointermove', this._mouseAimHandlers.move);
+    this.input.on('pointerdown', this._mouseAimHandlers.down);
+
     this._created = true;
   };
 
@@ -834,6 +879,16 @@ export class MainScene extends Scene {
         });
       }
     });
+  };
+
+  // ── Mouse-aim guard ──
+  // Returns true when mouse-aim input should be processed.
+  _isMouseAimActive = () => {
+    if (window.controlScheme !== 'mouse') return false;
+    if (this._firePending) return false;
+    const myTank = this.myPlayerIndex >= 0 ? this.tanks[this.myPlayerIndex] : null;
+    if (!myTank || !myTank.active) return false;
+    return true;
   };
 
   // ── Type 3: Online multiplayer — SERVER IS GOD ──
@@ -1813,6 +1868,13 @@ export class MainScene extends Scene {
     this.pendingTurnResult = null;
     this._turnResultCooldown = 0;
     this._firePending = false;
+
+    // Clean up mouse-aim pointer handlers
+    if (this._mouseAimHandlers) {
+      this.input.off('pointermove', this._mouseAimHandlers.move);
+      this.input.off('pointerdown', this._mouseAimHandlers.down);
+      this._mouseAimHandlers = null;
+    }
 
     // Clean up spectator graphics
     this._clearSpectatorAimLine();

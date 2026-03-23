@@ -87,13 +87,34 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (populated by roadmapper) | | |
+| AIM-01 | Phase 29 | Pending |
+| AIM-02 | Phase 29 | Pending |
+| AIM-03 | Phase 29 | Pending |
+| AIM-04 | Phase 29 | Pending |
+| AIM-05 | Phase 29 | Pending |
+| AIM-06 | Phase 29 | Pending |
+| CTRL-01 | Phase 29 | Pending |
+| CTRL-02 | Phase 29 | Pending |
+| CTRL-03 | Phase 29 | Pending |
+| AIM-07 | Phase 30 | Pending |
+| AIM-08 | Phase 30 | Pending |
+| AIM-09 | Phase 30 | Pending |
+| AIM-10 | Phase 30 | Pending |
+| TERR-01 | Phase 31 | Pending |
+| TERR-02 | Phase 31 | Pending |
+| TERR-03 | Phase 31 | Pending |
+| ESC-01 | Phase 31 | Pending |
+| ESC-02 | Phase 31 | Pending |
+| ESC-03 | Phase 31 | Pending |
+| ESC-04 | Phase 31 | Pending |
+| PUB-01 | Phase 32 | Pending |
+| PUB-02 | Phase 32 | Pending |
 
 **Coverage:**
-- v3.0 requirements: 18 total
-- Mapped to phases: 0
-- Unmapped: 18
+- v3.0 requirements: 22 total (note: header previously said 18 — actual count is 22)
+- Mapped to phases: 22
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-23*
-*Last updated: 2026-03-23 after initial definition*
+*Last updated: 2026-03-23 after roadmap creation — traceability filled in*

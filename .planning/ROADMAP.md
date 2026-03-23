@@ -7,7 +7,8 @@
 - ✅ **v1.2 Launch Readiness** - Phases 9-14 (shipped 25 Feb 2026)
 - ✅ **v1.3 4-Player Multiplayer** - Phases 15-19 (shipped 27 Feb 2026)
 - ✅ **v1.4 N-Player Escrow** - Phases 20-23 (shipped 28 Feb 2026)
-- 🔄 **v2.0 Practice Mode Public Launch** - Phases 24-28 (in progress)
+- ✅ **v2.0 Practice Mode Public Launch** - Phases 24-28 (shipped 23 Mar 2026)
+- 🔄 **v3.0 Public Practice Launch** - Phases 29-32 (in progress)
 
 ---
 
@@ -83,95 +84,94 @@ See: milestones/v1.4-ROADMAP.md for full details.
 
 </details>
 
+<details>
+<summary>✅ v2.0 Practice Mode Public Launch (Phases 24-28) - SHIPPED 23 Mar 2026</summary>
+
+Clean 2-player practice experience with zero friction onboarding. Handle system, token masking, lobby lockdown, practice stats, How To Play. Demo live at solshot.gg.
+
+- Phase 24: Handle System
+- Phase 25: Menu and Token Masking
+- Phase 26: Lobby Lockdown
+- Phase 27: Practice Stats
+- Phase 28: How To Play
+
+</details>
+
 ---
 
-## v2.0 — Practice Mode Public Launch
+## v3.0 — Public Practice Launch
 
-**Overview:** Client-only milestone that makes SolShot publicly playable with zero friction. No wallet required, no token references visible. New players get a persistent handle, land in a clean practice-mode lobby, play 2-player matches, and can read how to play. All wagering and token surfaces are suppressed until a future milestone enables them.
+**Overview:** Overhaul aiming controls for intuitive game feel on desktop and mobile, add terrain wall decay for long-match balance, harden the escrow program for mainnet readiness, and go public with leaderboard and community launch content. The aiming overhaul ships first because game feel must be right before players share or promote the game.
 
-**Scope constraint:** DO NOT TOUCH server files, escrow.js, solana.js, shot-token.js, battle logic, or wager logic. All changes are client-side React components.
+**Coverage:** 22 requirements across 6 categories mapped to 4 phases (29-32).
 
-**Coverage:** 22 requirements across 6 categories mapped to 5 phases (24-28).
+**Note:** REQUIREMENTS.md header states 18 requirements but the actual count is 22. All 22 requirement IDs are mapped below.
 
 ---
 
-### Phase 24 — Handle System
+### Phase 29 — Desktop Mouse-Aim and Control Settings
 
-**Goal:** Every visitor has a persistent identity before they reach the menu.
+**Goal:** Desktop players can aim intuitively using their mouse, with a persistent control scheme preference that defaults to the new system.
 
-**Dependencies:** None (foundation layer)
+**Dependencies:** None (Phaser scene is the target; React sliders become read-only displays)
 
-**Requirements:** HANDLE-01, HANDLE-02, HANDLE-03, HANDLE-04, HANDLE-05
+**Requirements:** AIM-01, AIM-02, AIM-03, AIM-04, AIM-05, AIM-06, CTRL-01, CTRL-02, CTRL-03
 
 **Success Criteria:**
-1. A visitor with no prior localStorage sees a modal before the menu loads, with no way to bypass it
-2. Entering a handle and confirming writes `solshot_handle` and `solshot_uid` to localStorage, and the modal dismisses to the menu
-3. The modal clearly communicates that the handle is permanent (visible "Choose carefully" language)
-4. Handle input rejects strings longer than 16 characters and strips leading/trailing whitespace and control characters
-5. The TopBar shows the player's handle in the position where the wallet address would appear, with no wallet connection UI
+1. On desktop, moving the mouse over the game canvas rotates the turret barrel to track the cursor angle relative to the tank in real time during the player's own turn
+2. Mouse distance from the tank changes the power level displayed in the React HUD (clamped 5–100), and the slider reflects the live value as a read-only indicator
+3. Left-clicking the canvas fires the selected weapon — no separate FIRE button click required on desktop
+4. Q and E keys still adjust the angle as fine-tune controls on top of mouse aim; the two input modes co-exist without conflict
+5. The settings or menu screen has a control scheme selector; selecting Classic Sliders restores the previous slider-and-button behavior; the chosen scheme persists across browser sessions via localStorage
+6. The control scheme defaults to Mouse Aim on fresh load (no prior localStorage entry)
 
 ---
 
-### Phase 25 — Menu and Token Masking
+### Phase 30 — Mobile Tap-to-Aim
 
-**Goal:** The menu presents a clean practice-mode product with no token economy visible.
+**Goal:** Mobile players can aim by tapping the canvas, matching the intuitiveness of the desktop mouse-aim without requiring a drag gesture.
 
-**Dependencies:** Phase 24 (handle must exist before menu is usable)
+**Dependencies:** Phase 29 (control scheme toggle already wired; mobile mode slots in as the second scheme option)
 
-**Requirements:** MENU-01, MENU-02, MENU-03, MASK-01, MASK-02, MASK-03, MASK-04
+**Requirements:** AIM-07, AIM-08, AIM-09, AIM-10
 
 **Success Criteria:**
-1. The menu subtagline reads "SKILL-BASED ARTILLERY COMBAT" — the SOL wager range is gone
-2. Armory, Prestige, and Barracks buttons are visually disabled with a COMING SOON badge and do not respond to clicks
-3. PLAY FREE is the only interactive button on the menu
-4. The SHOT price ticker does not appear anywhere in the TopBar or menu layout
-5. The WinScreen shows no SHOT reward card, no Jupiter swap CTA, and no CONVERT WINNINGS section; the ShotExplainer modal never opens; any SHOT amount display shows "???" in its place
+1. On mobile, tapping anywhere on the game canvas rotates the turret toward the tapped position; the barrel snaps to that angle immediately
+2. Tap-to-aim is only active during the local player's own turn; tapping during the opponent's turn or during a projectile animation has no effect
+3. The power slider and FIRE button remain the primary controls on mobile — tapping the canvas only sets angle, and the player must explicitly press FIRE to shoot
+4. The control scheme selector on the settings or menu screen shows Tap to Aim (not Mouse Aim) as the option label on mobile, and Classic Sliders remains available as a fallback
 
 ---
 
-### Phase 26 — Lobby Lockdown
+### Phase 31 — Terrain Wall Decay and Escrow Hardening
 
-**Goal:** The lobby presents only the practice 2-player mode with no wagered options available.
+**Goal:** Magic Walls expire automatically so terrain cannot lock down maps permanently, and the escrow program is validated against all failure modes before mainnet.
 
-**Dependencies:** Phase 24 (handle required for lobby identity), Phase 25 (token masking active before lobby is reachable)
+**Dependencies:** Phase 29 and Phase 30 are independent of this phase; this can begin as soon as Phase 29 ships (or in parallel)
 
-**Requirements:** LOBBY-01, LOBBY-02
+**Requirements:** TERR-01, TERR-02, TERR-03, ESC-01, ESC-02, ESC-03, ESC-04
 
 **Success Criteria:**
-1. The player count selector is not visible in the lobby; the match always creates with exactly 2 players
-2. Quick Match, Duel, and High Roller mode tabs are visually disabled with COMING SOON treatment and cannot be selected; Practice is the active default
+1. Magic Wall placements are tracked server-side with the round number they were placed; no existing terrain logic is changed for non-wall placements
+2. After N rounds (default 3–5, configurable in server constants), wall segments are removed from the terrain heightmap and the removal is broadcast to all clients
+3. On the final round before a wall expires, the wall is rendered with a visual crack or fade effect so players can see it is about to disappear
+4. A full integration test runs against devnet: create escrow → both players deposit → match completes → winner settled → funds distributed at 90/7/3 BPS — test passes without manual intervention
+5. Edge cases are tested and documented: timeout refund path, cancel mid-match, double-settle guard, and disconnect during deposit — all resolve without stuck funds or server crashes
+6. Burn TX replay protection (the in-memory verifiedBurnTxs Set) survives a server restart without accepting duplicate transactions
 
 ---
 
-### Phase 27 — Practice Stats
+### Phase 32 — Leaderboard and Launch Content
 
-**Goal:** Every match outcome is recorded locally so players accumulate a meaningful record from day one.
+**Goal:** The game is publicly shareable with a leaderboard that gives players a reason to keep playing and compete.
 
-**Dependencies:** Phase 24 (requires `solshot_uid` to key stats), Phase 26 (stats written after a practice match completes)
+**Dependencies:** Phase 29, Phase 30 (aiming must feel good before public promotion), Phase 31 (escrow hardened before main push)
 
-**Requirements:** STATS-01, STATS-02, STATS-03
-
-**Success Criteria:**
-1. After a completed practice match, matches played, wins, losses, and K/D ratio are updated in localStorage under the player's `solshot_uid`
-2. Stats persist across browser sessions and accumulate correctly across multiple matches
-3. The localStorage data structure uses field names and shape that map cleanly to the future Barracks server schema (no lossy fields, no client-specific keys mixed into the record)
-
----
-
-### Phase 28 — How To Play
-
-**Goal:** Any visitor can learn the game fully before ever playing a match.
-
-**Dependencies:** Phase 24 (TopBar handle display), Phase 25 (no SHOT references on page)
-
-**Requirements:** HTP-01, HTP-02, HTP-03, HTP-04, HTP-05, HTP-06
+**Requirements:** PUB-01, PUB-02
 
 **Success Criteria:**
-1. Navigating to `/how-to-play` renders the full How To Play page with all sections and the complete weapons table, no wallet or login required
-2. The page is visually consistent with SolShot: Black Ops One headings, Share Tech Mono body text, olive-dark background, bone text color, orange-rust accent elements
-3. The weapons table is the visual centrepiece of the page, rendered cleanly with all weapon entries and stats
-4. The TopBar on the How To Play page has an onBack prop that returns the user to the menu when clicked
-5. The MenuScreen has a HOW TO PLAY link below the main nav buttons, styled as a secondary element that does not compete with PLAY FREE
+1. A leaderboard screen is accessible from the menu and shows ranked players by wins, kills, and K/D ratio with no wallet connection required to view
+2. Launch announcement content (tweet or thread copy, screenshots) is prepared and ready to post — the game demo at solshot.gg reflects the finished aiming overhaul before the announcement goes out
 
 ---
 
@@ -184,15 +184,16 @@ See: milestones/v1.4-ROADMAP.md for full details.
 | 9-14. Launch Readiness | v1.2 | 15/15 | Complete | 25 Feb 2026 |
 | 15-19. 4-Player Multiplayer | v1.3 | 10/10 | Complete | 27 Feb 2026 |
 | 20-23. N-Player Escrow | v1.4 | 10/10 | Complete | 28 Feb 2026 |
-| 24. Handle System | v2.0 | 0/? | Pending | — |
-| 25. Menu and Token Masking | v2.0 | 0/? | Pending | — |
-| 26. Lobby Lockdown | v2.0 | 0/? | Pending | — |
-| 27. Practice Stats | v2.0 | 0/? | Pending | — |
-| 28. How To Play | v2.0 | 0/? | Pending | — |
+| 24-28. Practice Mode Public Launch | v2.0 | — | Complete | 23 Mar 2026 |
+| 29. Desktop Mouse-Aim and Control Settings | v3.0 | 0/? | Pending | — |
+| 30. Mobile Tap-to-Aim | v3.0 | 0/? | Pending | — |
+| 31. Terrain Wall Decay and Escrow Hardening | v3.0 | 0/? | Pending | — |
+| 32. Leaderboard and Launch Content | v3.0 | 0/? | Pending | — |
 
 ---
 
 *Roadmap created: 26 Feb 2026*
 *v1.3 archived: 27 Feb 2026*
 *v1.4 archived: 28 Feb 2026*
-*v2.0 added: 28 Feb 2026*
+*v2.0 archived: 23 Mar 2026*
+*v3.0 added: 23 Mar 2026*

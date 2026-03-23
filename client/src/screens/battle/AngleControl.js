@@ -78,23 +78,25 @@ const s = {
   },
 };
 
-function AngleControl({ angle, onChange, disabled, compact = false, vertical = false }) {
+function AngleControl({ angle, onChange, disabled, readOnly = false, compact = false, vertical = false }) {
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
   const inputRef = useRef(null);
 
+  const sliderDisabled = disabled || readOnly;
+
   const handleSlider = useCallback((e) => {
-    if (!disabled) {
+    if (!disabled && !readOnly) {
       onChange(Number(e.target.value));
     }
-  }, [disabled, onChange]);
+  }, [disabled, readOnly, onChange]);
 
   const handleFocus = useCallback(() => {
-    if (disabled) return;
+    if (disabled || readOnly) return;
     setEditing(true);
     setEditValue(String(Math.round(angle || 45)));
     setTimeout(() => inputRef.current?.select(), 0);
-  }, [disabled, angle]);
+  }, [disabled, readOnly, angle]);
 
   const commitValue = useCallback(() => {
     setEditing(false);
@@ -119,24 +121,35 @@ function AngleControl({ angle, onChange, disabled, compact = false, vertical = f
   return (
     <div style={s.container(compact, vertical)}>
       <span style={s.label(compact)}>ANG</span>
-      <input
-        ref={inputRef}
-        type="text"
-        inputMode="numeric"
-        pattern="[0-9]*"
-        value={editing ? editValue : displayAngle}
-        onChange={(e) => setEditValue(e.target.value.replace(/[^0-9]/g, ''))}
-        onFocus={handleFocus}
-        onBlur={commitValue}
-        onKeyDown={handleKeyDown}
-        disabled={disabled}
-        style={{
+      {readOnly ? (
+        <span style={{
           ...s.valueInput(compact),
-          opacity: disabled ? 0.4 : 1,
-          cursor: disabled ? 'default' : 'text',
+          cursor: 'default',
+          pointerEvents: 'none',
           ...(vertical ? { textAlign: 'center', width: 30, minWidth: 30 } : {}),
-        }}
-      />
+        }}>
+          {displayAngle}
+        </span>
+      ) : (
+        <input
+          ref={inputRef}
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          value={editing ? editValue : displayAngle}
+          onChange={(e) => setEditValue(e.target.value.replace(/[^0-9]/g, ''))}
+          onFocus={handleFocus}
+          onBlur={commitValue}
+          onKeyDown={handleKeyDown}
+          disabled={disabled}
+          style={{
+            ...s.valueInput(compact),
+            opacity: disabled ? 0.4 : 1,
+            cursor: disabled ? 'default' : 'text',
+            ...(vertical ? { textAlign: 'center', width: 30, minWidth: 30 } : {}),
+          }}
+        />
+      )}
       <span style={s.unit}>deg</span>
       {vertical ? (
         <div style={s.sliderVerticalWrap}>
@@ -146,9 +159,9 @@ function AngleControl({ angle, onChange, disabled, compact = false, vertical = f
             max={180}
             step={1}
             value={angle || 45}
-            onChange={handleSlider}
-            disabled={disabled}
-            style={s.sliderVertical(disabled)}
+            onChange={readOnly ? () => {} : handleSlider}
+            disabled={sliderDisabled}
+            style={s.sliderVertical(sliderDisabled)}
           />
         </div>
       ) : (
@@ -158,9 +171,9 @@ function AngleControl({ angle, onChange, disabled, compact = false, vertical = f
           max={180}
           step={1}
           value={angle || 45}
-          onChange={handleSlider}
-          disabled={disabled}
-          style={s.slider(disabled, compact)}
+          onChange={readOnly ? () => {} : handleSlider}
+          disabled={sliderDisabled}
+          style={s.slider(sliderDisabled, compact)}
         />
       )}
     </div>

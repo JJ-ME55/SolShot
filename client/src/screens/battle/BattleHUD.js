@@ -166,6 +166,7 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
   const disabled = !isPlayerTurn || isFiring;
   const isMobile = useIsMobile();
   const compact = isMobile;
+  const mouseAimActive = !isMobile && controlScheme === 'mouse';
 
   return (
     <div style={s.overlay}>
@@ -296,11 +297,13 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
               angle={players[myPlayerIndex]?.angle || 45}
               onChange={(v) => bridge.setAngle(v)}
               disabled={disabled}
+              readOnly={mouseAimActive}
             />
             <PowerControl
               power={players[myPlayerIndex]?.power || 60}
               onChange={(v) => bridge.setPower(v)}
               disabled={disabled}
+              readOnly={mouseAimActive}
             />
           </div>
 
@@ -312,10 +315,12 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
               onChange={(idx) => bridge.selectWeapon(idx)}
               disabled={disabled}
             />
-            <FireButton
-              onClick={() => bridge.fire()}
-              disabled={disabled}
-            />
+            {!mouseAimActive && (
+              <FireButton
+                onClick={() => bridge.fire()}
+                disabled={disabled}
+              />
+            )}
           </div>
 
           {/* Right: Move Controls + Counter */}

@@ -1,70 +1,71 @@
-# Requirements: SolShot v2.0 — Practice Mode Public Launch
+# Requirements: SolShot v3.0 — Public Practice Launch
 
-**Defined:** 2026-02-28
+**Defined:** 2026-03-23
 **Core Value:** Browser-based multiplayer artillery combat on Solana with real SOL wagering, settled trustlessly via on-chain escrow.
 
-## v2.0 Requirements
+## v3.0 Requirements
 
-Requirements for practice mode public launch. Clean, frictionless 2-player experience with no wallet required and no token references visible.
+Requirements for public practice launch. Aiming overhaul, terrain balance, escrow hardening, and community launch.
 
-### Handle System
+### Aiming — Desktop
 
-- [ ] **HANDLE-01**: First-time visitor with no handle sees entry modal before menu loads
-- [ ] **HANDLE-02**: Handle stored as `solshot_handle` in localStorage with generated UUID as `solshot_uid`
-- [ ] **HANDLE-03**: Handle max 16 characters, sanitized (trim whitespace, strip control chars)
-- [ ] **HANDLE-04**: Modal clearly states handle is permanent ("Choose carefully")
-- [ ] **HANDLE-05**: Handle displayed in TopBar where wallet display would be (practice mode)
+- [ ] **AIM-01**: Player can aim turret by moving mouse cursor over game canvas — turret barrel tracks cursor position relative to tank
+- [ ] **AIM-02**: Mouse distance from tank maps to power level (clamped 5–100)
+- [ ] **AIM-03**: Left-click fires the current weapon
+- [ ] **AIM-04**: Q/E keyboard aim still works as fine-tune fallback on top of mouse aim
+- [ ] **AIM-05**: Mouse aim only active during player's own turn
+- [ ] **AIM-06**: React angle/power sliders update as read-only displays reflecting mouse position
 
-### Menu Screen
+### Aiming — Mobile
 
-- [ ] **MENU-01**: Armory, Prestige, and Barracks buttons greyed out and disabled with COMING SOON badge
-- [ ] **MENU-02**: PLAY FREE is the only active button
-- [ ] **MENU-03**: Subtagline changed from "WAGER 0.1 — 1.0 SOL" to "SKILL-BASED ARTILLERY COMBAT"
+- [ ] **AIM-07**: Player can tap anywhere on game canvas to rotate turret toward that position
+- [ ] **AIM-08**: Power slider remains as primary power control on mobile
+- [ ] **AIM-09**: FIRE button remains as primary fire trigger on mobile
+- [ ] **AIM-10**: Tap-to-aim only active during player's own turn
 
-### Token Masking
+### Control Settings
 
-- [ ] **MASK-01**: ShotPriceTicker returns null (hidden entirely), removed from TopBar
-- [ ] **MASK-02**: WinScreen hides SHOT earned reward card, Jupiter swap CTA, and CONVERT WINNINGS section
-- [ ] **MASK-03**: ShotExplainer modal disabled — never shows
-- [ ] **MASK-04**: All visible SHOT references (including prestige burn costs) replaced with ???
+- [ ] **CTRL-01**: Settings/menu screen has control scheme selector (Classic Sliders / Mouse Aim on desktop, Classic Sliders / Tap to Aim on mobile)
+- [ ] **CTRL-02**: Control preference persists in localStorage
+- [ ] **CTRL-03**: Default is new aiming (mouse/tap), classic available as fallback
 
-### Lobby
+### Terrain
 
-- [ ] **LOBBY-01**: Player count locked to 2, selector hidden
-- [ ] **LOBBY-02**: Practice mode active, wagered modes (Quick Match, Duel, High Roller) greyed with COMING SOON
+- [ ] **TERR-01**: Magic Wall placements tracked by server with round-placed timestamp
+- [ ] **TERR-02**: Walls expire after N rounds (configurable, default 3–5) and terrain reverts
+- [ ] **TERR-03**: Visual indicator on walls approaching expiry (crack/fade on final round)
 
-### Practice Stats
+### Escrow Hardening
 
-- [ ] **STATS-01**: Track matches played, wins, losses, and K/D in localStorage keyed by `solshot_uid`
-- [ ] **STATS-02**: Stats not connected to any wallet or server
-- [ ] **STATS-03**: Data structure designed for easy migration to Barracks later
+- [ ] **ESC-01**: Integration test covers full match flow: create → deposit → play → settle on devnet
+- [ ] **ESC-02**: Stress test with multiple concurrent escrow matches
+- [ ] **ESC-03**: Edge case audit: timeout refund, cancel mid-match, double-settle, disconnect during deposit
+- [ ] **ESC-04**: Verify burn TX replay protection survives server restart
 
-### How To Play
+### Go Public
 
-- [ ] **HTP-01**: `/how-to-play` route renders the full How To Play page with all content from provided doc
-- [ ] **HTP-02**: Page styled to match SolShot aesthetic (Black Ops One headings, Share Tech Mono body, olive dark bg, bone text, orange-rust accents)
-- [ ] **HTP-03**: Weapons table rendered cleanly as the centrepiece of the page
-- [ ] **HTP-04**: TopBar with onBack prop navigates back to menu
-- [ ] **HTP-05**: MenuScreen has subtle HOW TO PLAY link below main nav (secondary treatment, doesn't compete with PLAY FREE)
-- [ ] **HTP-06**: No wallet required to view, no SHOT references
+- [ ] **PUB-01**: Leaderboard screen accessible from menu showing top players by wins/K/D
+- [ ] **PUB-02**: Launch announcement content ready (tweet/thread, screenshots)
 
 ## Future Requirements
 
-Deferred to post-launch milestones.
+Deferred to post-v3.0 milestones (from TODO.md roadmap).
 
-### Wagering & Token Economy
-- **WAG-01**: Wallet connection flow for wagered matches
-- **WAG-02**: SHOT token visibility and price ticker
-- **WAG-03**: Jupiter swap integration for in-game token purchase
-- **WAG-04**: Prestige burn costs displayed (currently masked with ???)
+### Telegram Mini App (Phase 8 in TODO.md)
+- **TG-01**: Telegram bot via BotFather
+- **TG-02**: Embedded wallets via Privy/Dynamic
+- **TG-03**: Share match results to Telegram chat
+- **TG-04**: Invite friend via TG deep link
 
-### Multiplayer Expansion
-- **MP-01**: 3-4 player practice matches
-- **MP-02**: 3-4 player wagered matches (N-player escrow already built in v1.4)
+### 3P/4P Expansion (Phase 9 in TODO.md)
+- **MP-01**: 3-4 player practice matches enabled in lobby
+- **MP-02**: Seeker/dApp Store submission
 
-### Barracks
-- **BAR-01**: Barracks screen UI with stats display
-- **BAR-02**: Migration from localStorage practice stats to server/wallet-linked stats
+### Token Launch + Wagering (Phase 10 in TODO.md)
+- **WAG-01**: SHOT token on mainnet with Metaplex metadata
+- **WAG-02**: Meteora LP + Jupiter listing
+- **WAG-03**: Wagered match modes live on mainnet
+- **WAG-04**: SHOT Consumables Shop (5 items, burn on purchase)
 
 ## Out of Scope
 
@@ -72,15 +73,13 @@ Explicitly excluded. Documented to prevent scope creep.
 
 | Feature | Reason |
 |---------|--------|
-| Server-side file changes | Practice launch is client-only; server logic is stable |
-| Wallet connection | Practice mode requires zero blockchain interaction |
-| SHOT token display | Hidden until wagering goes live |
-| Barracks UI | Stats are tracked but UI deferred to post-launch |
-| 3-4 player modes | Ship clean 2-player first, expand after feedback |
+| Trajectory preview / aim assist | Tactical Scope is a future SHOT consumable, not a free feature |
+| Touch-drag aim (Angry Birds style) | User decided tap-to-aim is better UX for mobile |
+| New weapons or balance changes | Out of scope for this milestone |
+| Wallet connection changes | Practice mode, no blockchain interaction |
+| Token/SHOT visibility | Stays masked until wagering milestone |
 | Mainnet deployment | Separate operational task |
-| New weapons or balance changes | Out of scope for launch prep |
-| Battle logic changes | Do not touch BattleScreen game logic |
-| Win/Lose navigation flow changes | Do not modify existing screen flow |
+| 3-4 player lobby unlock | Deferred to multiplayer expansion milestone |
 
 ## Traceability
 
@@ -88,35 +87,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| HANDLE-01 | Phase 24 | Pending |
-| HANDLE-02 | Phase 24 | Pending |
-| HANDLE-03 | Phase 24 | Pending |
-| HANDLE-04 | Phase 24 | Pending |
-| HANDLE-05 | Phase 24 | Pending |
-| MENU-01 | Phase 25 | Pending |
-| MENU-02 | Phase 25 | Pending |
-| MENU-03 | Phase 25 | Pending |
-| MASK-01 | Phase 25 | Pending |
-| MASK-02 | Phase 25 | Pending |
-| MASK-03 | Phase 25 | Pending |
-| MASK-04 | Phase 25 | Pending |
-| LOBBY-01 | Phase 26 | Pending |
-| LOBBY-02 | Phase 26 | Pending |
-| STATS-01 | Phase 27 | Pending |
-| STATS-02 | Phase 27 | Pending |
-| STATS-03 | Phase 27 | Pending |
-| HTP-01 | Phase 28 | Pending |
-| HTP-02 | Phase 28 | Pending |
-| HTP-03 | Phase 28 | Pending |
-| HTP-04 | Phase 28 | Pending |
-| HTP-05 | Phase 28 | Pending |
-| HTP-06 | Phase 28 | Pending |
+| (populated by roadmapper) | | |
 
 **Coverage:**
-- v2.0 requirements: 22 total
-- Mapped to phases: 22
-- Unmapped: 0
+- v3.0 requirements: 18 total
+- Mapped to phases: 0
+- Unmapped: 18
 
 ---
-*Requirements defined: 2026-02-28*
-*Last updated: 2026-02-28 — traceability mapped to Phases 24-28*
+*Requirements defined: 2026-03-23*
+*Last updated: 2026-03-23 after initial definition*

@@ -70,17 +70,17 @@ Browser-based multiplayer artillery combat on Solana with real SOL wagering, set
 
 ### Active
 
-#### Current Milestone: v2.0 — Practice Mode Public Launch
+#### Current Milestone: v3.0 — Public Practice Launch
 
-**Goal:** Ship a clean, frictionless 2-player practice experience with no wallet required and no token references visible. First public release.
+**Goal:** Overhaul aiming controls for intuitive game feel on desktop and mobile, add terrain wall decay for balance, harden escrow for mainnet readiness, and go public with community launch.
 
 **Target features:**
-- Handle system: first-time entry modal, localStorage persistence, TopBar display
-- Menu cleanup: grey out locked features (Armory, Prestige, Barracks) with COMING SOON badges
-- Token masking: hide all SHOT/Jupiter/prestige references from the visible UI
-- Lobby: 2-player only, practice active, wagered modes greyed with COMING SOON
-- Practice stats: localStorage tracking (matches, wins, losses, K/D) for future Barracks migration
-- Zero wallet requirement: play immediately after entering a handle
+- Desktop mouse-aim: cursor position relative to tank sets angle + power, left-click fires
+- Mobile tap-to-aim: tap canvas to rotate turret to that angle, power via slider, FIRE button to shoot
+- Control scheme toggle in settings/menu (classic sliders vs new aiming)
+- Terrain wall decay: Magic Walls expire after N rounds instead of permanent
+- Go public: launch tweets, gameplay trailer, leaderboard, community building
+- Escrow hardening: integration test, stress test, edge case audit (parallel with practice)
 
 ### Out of Scope
 
@@ -105,6 +105,7 @@ Browser-based multiplayer artillery combat on Solana with real SOL wagering, set
 - **v1.2 Launch Readiness:** 6 phases, 15 plans. Jupiter integration, UI polish, stats pipeline, onboarding, security, checklist re-audit.
 - **v1.3 4-Player Multiplayer:** 5 phases, 10 plans. Full N-player refactor (server + client), 56/56 requirements met.
 - **v1.4 N-Player Escrow:** 4 phases, 10 plans. Full-stack escrow upgrade for 2-4 player wagered matches, 42/42 requirements met.
+- **v2.0 Practice Mode Public Launch:** 5 phases. Handle system, token masking, lobby lockdown, practice stats, How To Play. Demo live at solshot.gg.
 
 ### Master Checklist Audit (24 Feb 2026)
 
@@ -132,7 +133,7 @@ Many "failures" are design decisions (4 states, 24h timeout, PDA seeds), not bug
 
 ## Current State
 
-v1.4 shipped. Full 2-4 player wagered multiplayer working with on-chain escrow settlement. Starting v2.0: strip down to a clean 2-player practice experience for first public launch. No wallet required, no token references visible. Ship something clean, get feedback, then expand.
+v2.0 shipped. Demo live at solshot.gg with practice mode. Starting v3.0: overhaul aiming controls (mouse-aim desktop, tap-to-aim mobile), add terrain wall decay, harden escrow, and go public. Working on `launch` branch — `main` stays stable for the live demo.
 
 ## Key Decisions
 
@@ -163,9 +164,13 @@ v1.4 shipped. Full 2-4 player wagered multiplayer working with on-chain escrow s
 | Quick Match hardcoded to 2-player | 3-4p uses Custom Challenge | ✓ Good — simplifies matchmaking |
 | Timeout >2 alive = elimination, <=2 = forfeit | Different behavior appropriate for each | ✓ Good |
 
-| 2-player only for public launch | Ship clean, get feedback, then expand to 4p | — Pending |
-| Handle system (not wallet) for identity | Zero friction onboarding, no wallet required | — Pending |
-| Token masking for practice launch | Hide SHOT/Jupiter until wagering goes live | — Pending |
+| 2-player only for public launch | Ship clean, get feedback, then expand to 4p | ✓ Good — demo live |
+| Handle system (not wallet) for identity | Zero friction onboarding, no wallet required | ✓ Good — shipped v2.0 |
+| Token masking for practice launch | Hide SHOT/Jupiter until wagering goes live | ✓ Good — shipped v2.0 |
+| Mouse-aim desktop, tap-to-aim mobile | Intuitive game feel, lower friction than sliders | — Pending |
+| Control scheme toggle in settings | Let players choose classic vs new controls | — Pending |
+| Terrain wall decay (N rounds) | Prevent permanent map gridlock in long matches | — Pending |
+| `launch` branch for dev, `main` for live demo | Protect live demo while building new features | ✓ Good — branches created |
 
 ---
 *Last updated: 28 Feb 2026 after v2.0 milestone started*

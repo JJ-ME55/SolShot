@@ -110,3 +110,22 @@ All work 21-23 Feb 2026. Three security audits (SOS, DB, BOK) — all CRITICAL/H
 **What's next:** Deployment, QA testing with real wallets, mainnet readiness
 
 ### Last Phase Number: 23
+
+## v2.0 — Practice Mode Public Launch (SHIPPED 2026-03-23)
+
+**Delivered:** Clean 2-player practice experience with zero friction onboarding. Handle system, token masking, lobby lockdown to practice-only, localStorage stats, How To Play page. Demo live at solshot.gg.
+
+**Phases completed:** 24-28 (shipped outside GSD tracking)
+
+**Key accomplishments:**
+- Handle system: first-time modal, localStorage persistence, TopBar display
+- Menu cleanup: greyed locked features with COMING SOON badges
+- Token masking: all SHOT/Jupiter/prestige references hidden
+- Lobby locked to 2-player practice mode
+- Practice stats in localStorage
+- How To Play page at /how-to-play
+- Friends testing complete, teaser content recorded
+
+**What's next:** Public practice launch — aiming overhaul, terrain wall decay, community, escrow hardening
+
+### Last Phase Number: 28

@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SolShot Stat Card — Prestige Accent Preview</title>
+<link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #080a06;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    gap: 36px;
+    padding: 40px 20px;
+    font-family: 'Share Tech Mono', monospace;
+    color: #EDE9D5;
+  }
+  h2 {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    color: #50553D;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+
+<h2>// No Prestige — Base Card</h2>
+<div id="card0"></div>
+
+<h2>// Bronze Prestige</h2>
+<div id="card1"></div>
+
+<h2>// Silver Prestige</h2>
+<div id="card2"></div>
+
+<h2>// Gold Prestige</h2>
+<div id="card3"></div>
+
+<h2>// Diamond Prestige</h2>
+<div id="card4"></div>
+
+<h2>// New Player — No Prestige, Classified</h2>
+<div id="card5"></div>
+
+<script>
+const W = 720, H = 405;
+const BASE = '#E8572A';
+
+const PRESTIGE = {
+  bronze:  { label:'BRONZE',  primary:'#C47A2C', glow:'rgba(196,122,44,0.25)',  bracketAlpha:'44', stampOp:0.28 },
+  silver:  { label:'SILVER',  primary:'#9FA6AD', glow:'rgba(159,166,173,0.25)', bracketAlpha:'40', stampOp:0.28 },
+  gold:    { label:'GOLD',    primary:'#D4AF37', glow:'rgba(212,175,55,0.32)',  bracketAlpha:'50', stampOp:0.34 },
+  diamond: { label:'DIAMOND', primary:'#6FD3FF', glow:'rgba(111,211,255,0.30)', bracketAlpha:'50', stampOp:0.36 },
+};
+
+function fmt(v) { return v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(1)+'K':''+v; }
+function fKD(w,l) { return l===0?(w>0?w.toFixed(2):'0.00'):(w/l).toFixed(2); }
+function fWR(w,m) { return m?Math.round(w/m*100):0; }
+function dW(sw) { return (!sw||sw==='Single Shot')?'CLASSIFIED':sw.toUpperCase(); }
+function csSize(cs) { const l=cs.length; return l<=6?64:l<=10?54:l<=14?42:33; }
+
+function card(el, p) {
+  const cs = (p.callsign||'OPERATIVE').toUpperCase();
+  const wr = fWR(p.wins,p.matchesPlayed);
+  const kd = fKD(p.wins,p.losses);
+  const dm = fmt(p.totalDamage);
+  const dw = dW(p.signatureWeapon);
+  const sz = csSize(cs);
+
+  const pm = p.prestigeTier ? PRESTIGE[p.prestigeTier] : null;
+  const accent = pm?.primary || BASE;
+  const bAlpha = pm?.bracketAlpha || '44';
+  const bColor = `${accent}${bAlpha}`;
+  const weaponBar = dw==='CLASSIFIED' ? '#434734' : (pm ? accent : BASE);
+  const isDiamond = pm?.label === 'DIAMOND';
+
+  const stats = [
+    {l:'DMG',v:dm},{l:'WINS',v:p.wins},{l:'LOSSES',v:p.losses},{l:'K / D',v:kd},{l:'STREAK',v:p.bestWinStreak+'W'}
+  ];
+  const statsH = stats.map((s,i) => `
+    <div style="text-align:center;padding:6px 2px;${i<4?'border-right:1px solid #1e2114;':''}display:flex;flex-direction:column;align-items:center;justify-content:center;">
+      <div style="font-family:'Black Ops One',cursive;font-size:27.5px;color:#EDE9D5;line-height:1;white-space:nowrap;">${s.v}</div>
+      <div style="font-family:'Share Tech Mono',monospace;font-size:7.5px;color:#50553D;letter-spacing:0.14em;margin-top:5px;">${s.l}</div>
+    </div>`).join('');
+
+  // Win rate glow
+  const wrGlow = pm
+    ? `0 0 30px ${pm.glow}, 0 0 60px ${pm.glow.replace(/[\d.]+\)$/,'0.08)')}, 0 2px 6px rgba(0,0,0,0.7)`
+    : '0 0 30px rgba(232,87,42,0.30), 0 0 60px rgba(232,87,42,0.10), 0 2px 6px rgba(0,0,0,0.7)';
+
+  // Prestige stamp / vacant badge
+  let prestigeH = '';
+  if (!pm) {
+    // Vacant badge placeholder
+    prestigeH = `
+      <div style="position:absolute;right:40px;top:34%;transform:rotate(-5deg);pointer-events:none;z-index:2;
+        display:flex;flex-direction:column;align-items:center;gap:6px;opacity:0.08;">
+        <div style="width:40px;height:40px;border-radius:50%;border:1.5px dashed #EDE9D5;
+          display:flex;align-items:center;justify-content:center;">
+          <div style="position:relative;width:12px;height:14px;">
+            <div style="position:absolute;top:0;left:2px;width:8px;height:6px;
+              border-radius:4px 4px 0 0;border:1.5px solid #EDE9D5;border-bottom:none;"></div>
+            <div style="position:absolute;bottom:0;left:0;width:12px;height:9px;
+              background:#EDE9D5;border-radius:1px;"></div>
+          </div>
+        </div>
+        <div style="font-family:'Share Tech Mono',monospace;font-size:7px;color:#EDE9D5;
+          letter-spacing:0.22em;white-space:nowrap;">CLEARANCE: LOCKED</div>
+      </div>`;
+  } else if (pm) {
+    const badgeSrc = `/assets/images/badges/badge-${p.prestigeTier}.png`;
+    const isGold = pm?.label === 'GOLD';
+    const imgFilter = isDiamond ? 'grayscale(0.1) brightness(1.5)' : isGold ? 'grayscale(0.1) brightness(1.4)' : 'grayscale(0.2) brightness(1.3)';
+    const stampGlow = (isGold || isDiamond) ? `0 0 12px ${pm.glow}, 0 0 4px ${pm.glow}` : `0 0 10px ${pm.glow}`;
+    prestigeH = `
+      <div style="position:absolute;right:12px;top:38%;width:60px;height:1px;transform:rotate(-5deg);
+        background:linear-gradient(90deg,${pm.primary}14,${pm.primary}06);pointer-events:none;z-index:2;"></div>
+      <div style="position:absolute;right:32px;top:36%;transform:rotate(-5deg);pointer-events:none;z-index:2;">
+        <div style="display:flex;align-items:center;gap:7px;opacity:${pm.stampOp};">
+          <img src="${badgeSrc}" alt="" style="width:24px;height:24px;object-fit:contain;filter:${imgFilter};"
+            onerror="this.style.display='none'">
+          <div style="font-family:'Share Tech Mono',monospace;letter-spacing:0.18em;color:${pm.primary};
+            font-size:12px;white-space:nowrap;text-shadow:${stampGlow};">CLEARANCE: ${pm.label}</div>
+        </div>
+        <div style="position:absolute;inset:-6px -14px;border:1px solid ${pm.primary}22;border-radius:2px;pointer-events:none;"></div>
+        <div style="position:absolute;inset:-9px -17px;border:1px solid ${pm.primary}0e;border-radius:3px;pointer-events:none;"></div>
+      </div>`;
+  }
+
+  // Top bar prestige tint overlay
+  const topBarTint = pm ? `
+    <div style="position:absolute;top:0;left:0;right:0;height:2px;z-index:4;opacity:0.3;pointer-events:none;
+      background:linear-gradient(90deg,transparent 0%,${accent} 15%,${accent} 85%,transparent 100%);"></div>` : '';
+
+  el.innerHTML = `
+  <div style="width:${W}px;height:${H}px;position:relative;
+    background:linear-gradient(155deg,#1a1d14 0%,#0d0f09 35%,#111410 70%,#0d0f09 100%);
+    border:1px solid #2e3120;box-shadow:0 0 0 1px #E8572A12,0 24px 80px rgba(0,0,0,0.9),inset 0 1px 0 rgba(255,255,255,0.02);
+    overflow:hidden;border-radius:2px;">
+
+    <!-- Targeting lines -->
+    <div style="position:absolute;inset:0;z-index:0;pointer-events:none;
+      background-image:linear-gradient(32deg,transparent 48%,#E8572A06 49%,#E8572A06 49.5%,transparent 50%),
+      linear-gradient(-15deg,transparent 48%,#E8572A04 49%,#E8572A04 49.5%,transparent 50%);"></div>
+
+    <!-- Reticle -->
+    <div style="position:absolute;right:90px;top:40%;width:100px;height:100px;z-index:0;pointer-events:none;opacity:0.05;">
+      <div style="position:absolute;inset:0;border:1px solid #EDE9D5;border-radius:50%;"></div>
+      <div style="position:absolute;inset:16px;border:1px solid #EDE9D5;border-radius:50%;opacity:0.4;"></div>
+      <div style="position:absolute;top:50%;left:0;right:0;height:1px;background:#EDE9D5;"></div>
+      <div style="position:absolute;left:50%;top:0;bottom:0;width:1px;background:#EDE9D5;"></div>
+    </div>
+
+    <!-- Vertical telemetry -->
+    <div style="position:absolute;right:140px;top:8%;bottom:8%;width:1px;z-index:0;pointer-events:none;
+      background:linear-gradient(180deg,transparent,#E8572A08 30%,#E8572A08 70%,transparent);"></div>
+
+    <!-- Scanlines -->
+    <div style="position:absolute;inset:0;z-index:1;pointer-events:none;
+      background-image:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,0.10) 3px,rgba(0,0,0,0.10) 4px);"></div>
+
+    <!-- Vignette -->
+    <div style="position:absolute;inset:0;z-index:1;pointer-events:none;
+      background:radial-gradient(ellipse at center,transparent 45%,rgba(0,0,0,0.55) 100%);"></div>
+
+    <!-- Top bar (base) -->
+    <div style="position:absolute;top:0;left:0;right:0;height:2px;z-index:4;
+      background:linear-gradient(90deg,transparent 0%,${BASE} 15%,${BASE} 85%,transparent 100%);"></div>
+    ${topBarTint}
+
+    <!-- Bottom bar -->
+    <div style="position:absolute;bottom:0;left:0;right:0;height:1px;z-index:4;
+      background:linear-gradient(90deg,transparent,#2e3120 30%,#2e3120 70%,transparent);height:2px;"></div>
+
+    <!-- Corner brackets (prestige-tinted) -->
+    <div style="position:absolute;width:16px;height:16px;z-index:5;top:8px;left:8px;border-top:1px solid ${bColor};border-left:1px solid ${bColor};"></div>
+    <div style="position:absolute;width:16px;height:16px;z-index:5;top:8px;right:8px;border-top:1px solid ${bColor};border-right:1px solid ${bColor};"></div>
+    <div style="position:absolute;width:16px;height:16px;z-index:5;bottom:8px;left:8px;border-bottom:1px solid ${bColor};border-left:1px solid ${bColor};"></div>
+    <div style="position:absolute;width:16px;height:16px;z-index:5;bottom:8px;right:8px;border-bottom:1px solid ${bColor};border-right:1px solid ${bColor};"></div>
+
+    <!-- Left accent -->
+    <div style="position:absolute;left:0;top:12%;bottom:12%;width:2px;z-index:2;
+      background:linear-gradient(180deg,transparent,#E8572A33 35%,#E8572A33 65%,transparent);"></div>
+    <!-- Right accent -->
+    <div style="position:absolute;right:0;top:20%;bottom:20%;width:1px;z-index:2;
+      background:linear-gradient(180deg,transparent,#2e312055 40%,#2e312055 60%,transparent);"></div>
+
+    ${prestigeH}
+
+    <!-- Content -->
+    <div style="position:absolute;inset:0;z-index:3;display:flex;flex-direction:column;padding:20px 28px 16px 28px;">
+
+      <!-- Top row -->
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;">
+        <div>
+          <div style="font-family:'Black Ops One',cursive;font-size:13px;color:#E8572A;letter-spacing:0.18em;line-height:1;">SOLSHOT.GG</div>
+          <div style="font-family:'Share Tech Mono',monospace;font-size:7.5px;color:#50553D;letter-spacing:0.14em;margin-top:3px;">PRACTICE MODE // SEASON ZERO</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:3px;">
+          <div style="width:48px;height:48px;background:#13150f;border:1px solid #2e3120;display:flex;align-items:center;justify-content:center;padding:3px;">
+            <div style="width:38px;height:38px;background:repeating-conic-gradient(#EDE9D5 0% 25%,transparent 0% 50%) 0 0/6px 6px;opacity:0.6;"></div>
+          </div>
+          <div style="font-family:'Share Tech Mono',monospace;font-size:5.5px;color:#434734;letter-spacing:0.16em;">SCAN TO DEPLOY</div>
+        </div>
+      </div>
+
+      <!-- Callsign -->
+      <div style="flex:0 0 auto;padding-left:4px;">
+        <div style="font-family:'Share Tech Mono',monospace;font-size:7px;color:#50553D;letter-spacing:0.35em;margin-bottom:1px;">// CALLSIGN</div>
+        <div style="font-family:'Black Ops One',cursive;font-size:${sz}px;color:#EDE9D5;letter-spacing:0.01em;line-height:0.92;
+          max-width:500px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+          text-shadow:0 2px 18px rgba(232,87,42,0.28),0 0 45px rgba(232,87,42,0.10),0 2px 5px rgba(0,0,0,0.95);">${cs}</div>
+
+        <!-- Weapon plate (prestige-tinted bar) -->
+        <div style="display:flex;align-items:stretch;margin-top:7px;background:#0d0f09cc;border:1px solid #2E3120;
+          border-radius:1px;max-width:320px;overflow:hidden;">
+          <div style="width:5px;flex-shrink:0;background:${weaponBar};"></div>
+          <div style="padding:6px 14px;">
+            <div style="font-family:'Share Tech Mono',monospace;font-size:6.5px;color:#50553D;letter-spacing:0.22em;line-height:1;margin-bottom:2px;">SIGNATURE WEAPON</div>
+            <div style="font-family:'Share Tech Mono',monospace;font-size:13px;letter-spacing:0.10em;line-height:1.2;
+              color:${dw==='CLASSIFIED'?'#7a8060':'#EDE9D5'};">${dw}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Hero metric (prestige glow) -->
+      <div style="display:flex;align-items:baseline;gap:6px;margin-top:6px;padding-left:4px;">
+        <div style="font-family:'Share Tech Mono',monospace;font-size:9px;color:#50553D;letter-spacing:0.22em;">WIN RATE</div>
+        <div style="font-family:'Black Ops One',cursive;font-size:50px;color:#E8572A;line-height:1;letter-spacing:0.01em;
+          text-shadow:${wrGlow};">${wr}<span style="font-size:28px;color:#E8572A77;margin-left:1px;">%</span></div>
+      </div>
+
+      <div style="flex:1;"></div>
+
+      <!-- Stats row -->
+      <div style="border-top:1px solid #1E2114;padding-top:10px;display:grid;grid-template-columns:repeat(5,1fr);gap:0;margin-bottom:6px;">
+        ${statsH}
+      </div>
+
+      <!-- Footer -->
+      <div style="border-top:1px solid #1E2114;padding-top:6px;display:flex;justify-content:space-between;align-items:center;">
+        <div style="font-family:'Share Tech Mono',monospace;font-size:6.5px;color:#434734;letter-spacing:0.18em;">WAGER PROTOCOL: LOCKED</div>
+        <div style="font-family:'Share Tech Mono',monospace;font-size:6.5px;color:#434734;letter-spacing:0.12em;">${p.matchesPlayed} MATCHES &bull; solshot.gg</div>
+      </div>
+
+    </div>
+  </div>`;
+}
+
+// ── Test profiles — one per tier + base + weak ──
+
+card(document.getElementById('card0'), {
+  callsign: 'GHOST_42',
+  wins: 58, losses: 71, totalDamage: 18234, bestWinStreak: 5,
+  matchesPlayed: 129, signatureWeapon: 'Heatseeker', prestigeTier: null,
+});
+
+card(document.getElementById('card1'), {
+  callsign: 'ROOKIE',
+  wins: 24, losses: 31, totalDamage: 6800, bestWinStreak: 3,
+  matchesPlayed: 55, signatureWeapon: 'Big Shot', prestigeTier: 'bronze',
+});
+
+card(document.getElementById('card2'), {
+  callsign: 'SPECTRE',
+  wins: 142, losses: 98, totalDamage: 48200, bestWinStreak: 8,
+  matchesPlayed: 240, signatureWeapon: 'Sniper Rifle', prestigeTier: 'silver',
+});
+
+card(document.getElementById('card3'), {
+  callsign: 'VIPER',
+  wins: 847, losses: 312, totalDamage: 389500, bestWinStreak: 23,
+  matchesPlayed: 1159, signatureWeapon: 'Crazy Ivan', prestigeTier: 'gold',
+});
+
+card(document.getElementById('card4'), {
+  callsign: 'DARK_DESTROYER',
+  wins: 2041, losses: 189, totalDamage: 1042000, bestWinStreak: 67,
+  matchesPlayed: 2230, signatureWeapon: 'Pineapple', prestigeTier: 'diamond',
+});
+
+card(document.getElementById('card5'), {
+  callsign: 'Noob',
+  wins: 2, losses: 8, totalDamage: 847, bestWinStreak: 1,
+  matchesPlayed: 10, signatureWeapon: null, prestigeTier: null,
+});
+</script>
+</body>
+</html>

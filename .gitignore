@@ -33,3 +33,6 @@ _archive/junk/nul
 # Keypair files — never commit raw secret keys
 solshot-dev.json
 solshot-server.json
+
+# Large media — store externally (Google Drive, S3, etc.)
+Markiting videos/

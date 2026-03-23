@@ -1,0 +1,76 @@
+{
+  "skill": "grand-library",
+  "version": "1.0.0",
+  "project_name": "SolShot",
+  "mode": "existing",
+  "created": "2026-02-22",
+  "updated": "2026-02-24",
+  "phases": {
+    "survey": {
+      "status": "complete",
+      "started": "2026-02-22",
+      "completed": "2026-02-22",
+      "mode_detected": "existing",
+      "docs_proposed": 9,
+      "files_scanned": 61,
+      "existing_docs_found": 27
+    },
+    "interview": {
+      "status": "complete",
+      "started": "2026-02-22",
+      "completed": "2026-02-24",
+      "topics_total": 7,
+      "topics_completed": 7,
+      "topics_remaining": [],
+      "topics_deferred": [],
+      "decisions_captured": 51,
+      "research_queries": 0,
+      "verification_items": 1,
+      "note": "All 7 topics complete. Security-posture completed 2026-02-24 after v1.1 security hardening."
+    },
+    "draft": {
+      "status": "complete",
+      "started": "2026-02-24",
+      "completed": "2026-02-24",
+      "current_wave": 4,
+      "waves_total": 4,
+      "docs_generated": 9,
+      "docs_validated": 0,
+      "note": "All 9 docs generated across 4 waves. Pending user review and validation."
+    },
+    "reconcile": {
+      "status": "pending",
+      "started": null,
+      "completed": null,
+      "conflicts_found": 0,
+      "gaps_found": 0,
+      "verification_items": 0,
+      "resolved": 0
+    }
+  },
+  "artifacts": {
+    "project_brief": ".docs/PROJECT_BRIEF.md",
+    "doc_manifest": ".docs/DOC_MANIFEST.md",
+    "decisions": [
+      ".docs/DECISIONS/competition-pitch.md",
+      ".docs/DECISIONS/player-onboarding.md",
+      ".docs/DECISIONS/crypto-explainer.md",
+      ".docs/DECISIONS/architecture.md",
+      ".docs/DECISIONS/escrow-flow.md",
+      ".docs/DECISIONS/token-economics.md",
+      ".docs/DECISIONS/security-posture.md"
+    ],
+    "generated_docs": [
+      ".docs/one-pager.md",
+      ".docs/how-to-play.md",
+      ".docs/crypto-explainer.md",
+      ".docs/token-economics.md",
+      ".docs/architecture.md",
+      ".docs/security-model.md",
+      ".docs/deployment-sequence.md",
+      ".docs/edge-case-playbook.md",
+      ".docs/competitive-landscape.md"
+    ],
+    "reconciliation_report": null
+  }
+}

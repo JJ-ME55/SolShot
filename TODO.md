@@ -1,5 +1,5 @@
 # SOLSHOT — MASTER TODO
-## Updated: 10 Mar 2026
+## Updated: 23 Mar 2026
 
 ---
 
@@ -10,9 +10,9 @@
 
 ---
 
-## COMPLETED (Phases 1–4)
+## COMPLETED (Phases 1–6)
 
-All foundational code, on-chain programs, deployment, and art assets are complete.
+All foundational code, on-chain programs, deployment, art assets, and friends testing are complete.
 Collapsed for brevity — see git history for details.
 
 <details>
@@ -62,73 +62,147 @@ Collapsed for brevity — see git history for details.
 - [x] 5C: Terms of Service, Privacy Policy, ResponsibleGaming component, 18+ age requirement
 </details>
 
----
+<details>
+<summary>Phase 6: Friends Test (DONE)</summary>
 
-## PHASE 6: FRIENDS TEST (Current — ~few days)
-
-Private testing with close circle before going public.
-
-### 6A: Smoke Test
-- [ ] `https://solshot.gg` loads on desktop + mobile
-- [ ] Wallet connect works (Phantom/Solflare)
-- [ ] Two players: create practice match → join via OPEN LOBBIES → full game plays through
-- [ ] Stat card export works (desktop + mobile)
-- [ ] Mobile: vertical sliders, HUD fade, menu logo, shop READY button
-- [ ] Profanity filter blocks test words (e.g. "j3w")
-- [ ] No red console errors (CORS, mixed content, CSP)
-
-### 6B: Bug Fixes from Friends Testing
-- [ ] Collect feedback, fix issues as they come up
-
-### 6C: Teaser Content (during friends test)
-- [ ] Screen recordings of gameplay
-- [ ] Teaser tweets from @SolShotGG
-- [ ] 5-10 gameplay screenshots
+- [x] 6A: Smoke test (desktop + mobile, wallet connect, full match, stat card, profanity filter)
+- [x] 6B: Bug fixes from friends testing
+- [x] 6C: Teaser content (screen recordings, tweets, screenshots)
+</details>
 
 ---
 
-## PHASE 7: PUBLIC PRACTICE LAUNCH
+## PHASE 7: PUBLIC PRACTICE LAUNCH (Current)
 
-Practice mode goes live. Build community and hype.
+Practice mode goes live. The game needs to feel tight and intuitive before anyone outside our circle touches it. This phase is about controls, game feel, community presence, and escrow confidence.
 
-### 7A: UX Improvements (from friends testing)
-- [ ] Mouse-aim + click-to-fire on desktop (hover to aim turret, click to shoot)
-- [ ] Touch-drag aim on mobile (Angry Birds style — finger drag to rotate cannon)
-- [ ] Terrain walls persist for X rounds instead of permanent (balance tweak)
+### 7A: Aiming Overhaul — Desktop
 
-### 7B: Go Public
-- [ ] Launch announcement tweet/thread
+**Current state:** Turret aim is controlled by Q/E keys (rotate in Phaser) or a React slider (AngleControl.js). Power is a separate slider. Fire is a button click via GameBridge → `handleFireFromReact()`. This works but feels clunky — two separate sliders for what should be one fluid gesture.
+
+**Target:** Mouse-aim + click-to-fire.
+- Hover cursor over the game canvas to aim the turret — turret barrel tracks mouse position relative to the tank
+- Mouse position maps to both **angle** (direction from tank to cursor) AND **power** (distance from tank to cursor, clamped to [5, 100] range)
+- Left-click to fire
+- The existing React sliders stay visible as **readouts** (showing current angle/power values) but are no longer the primary input — mouse position drives them
+- Implementation touches: `MainScene` needs a `pointermove` listener that calculates angle + power from cursor position relative to the active tank, then calls `bridge.setAngle()` and `bridge.setPower()` to keep React HUD in sync. `pointerdown` calls `bridge.fire()`
+- Q/E keyboard aim should still work as a fallback/fine-tune on top of mouse aim
+- Key constraint: only tracks when it's your turn (check `myPlayerIndex === currentPlayerIndex`)
+
+### 7B: Aiming Overhaul — Mobile
+
+**Current state:** Vertical sliders on screen edges (left = angle, right = power) plus FIRE button. Functional but fiddly on small screens — hard to dial in precise angles with a fat thumb on a thin slider.
+
+**Target:** Touch-drag aim (Angry Birds style).
+- Touch and drag from your tank to set angle + power in one gesture
+- Drag direction = aim direction (inverted — drag left to shoot right, like pulling back a slingshot)
+- Drag distance = power (further pull = more power)
+- Release to fire (or tap a confirm button — TBD based on feel)
+- Show a dotted guide line from tank in the aim direction while dragging (client-only, not a trajectory preview — just direction + power indicator)
+- Existing sliders become read-only indicators during drag, or hide entirely on mobile
+- Must work in landscape orientation
+- Touch target: entire game canvas area, not a small button
+
+### 7C: Terrain Walls — Decay After X Rounds
+
+**Current state:** Magic Wall (weapon ID 12) creates an 8px wide, 140px tall permanent terrain barrier via `processWallShot()` in physics.js. Once placed, walls never degrade — they accumulate and can gridlock the map in longer matches.
+
+**Target:** Walls persist for N rounds (suggest 3-5, tuneable), then crumble.
+- Server tracks wall placements: `{ x, width, height, roundPlaced }` per room
+- Each round start, check wall age → if expired, revert that section of heightmap
+- Visual: walls could visually crack/fade on their final round as a warning
+- Balances the meta — walls become tactical tempo plays, not permanent map control
+
+### 7D: Go Public
+
+- [ ] Launch announcement tweet/thread from @SolShotGG
 - [ ] Gameplay trailer (30-60 sec)
-- [ ] Share to Discord, Solana communities
-
-### 7C: Community Building
+- [ ] Share to Discord, Solana communities, CT
 - [ ] Leaderboard live and competitive
-- [ ] Players sharing stat cards
-- [ ] Ongoing tweets teasing upcoming wagering + token launch
+- [ ] Players sharing stat cards organically
+- [ ] Ongoing tweets teasing upcoming features
 
-### 7D: Escrow Hardening (Claude + John, during public practice)
-- [ ] Integration test: full match flow with devnet wallets
-- [ ] Stress test escrow (multiple concurrent matches)
-- [ ] Audit escrow edge cases (timeout, cancel, double-settle)
+### 7E: Escrow Hardening (Claude + John, during public practice)
+
+Run in parallel with public practice — players are on practice mode, we're stress-testing escrow behind the scenes.
+
+- [ ] Integration test: full match flow with devnet wallets (create → deposit → play → settle)
+- [ ] Stress test: multiple concurrent escrow matches
+- [ ] Audit edge cases: timeout refund, cancel mid-match, double-settle attempt, player disconnect during deposit
+- [ ] Verify `verifiedBurnTxs` replay protection survives server restart (currently in-memory Set — may need Redis or DB)
 
 ---
 
-## PHASE 8: TOKEN LAUNCH + WAGERING (1v1)
+## PHASE 8: TELEGRAM MINI APP
 
-SHOT token goes live. Wagering enabled for 1v1.
+Get SolShot into Telegram as a distribution channel. Embedded wallets mean zero friction — no Phantom required.
 
-### 8A: Token
+### 8A: Bot & Mini App Setup
+- [ ] Create bot via BotFather
+- [ ] Wire Telegram middleware (code exists in codebase, just enable)
+- [ ] Deploy and test Mini App loads inside Telegram
+- [ ] Landscape orientation + viewport handling inside TG WebApp
+
+### 8B: Embedded Wallets (Privy or Dynamic)
+- [ ] Evaluate Privy vs Dynamic for embedded wallet UX
+- [ ] Integrate chosen provider — auto-create wallet on first play, no seed phrase
+- [ ] Bridge embedded wallet to existing `WalletContext` so game code doesn't change
+- [ ] Test: user opens TG → plays match → wallet created silently → ready for future wagering
+
+### 8C: Telegram-Specific UX
+- [ ] Share match results to Telegram chat (stat card or text summary)
+- [ ] Invite friend via TG deep link → opens Mini App → joins lobby
+- [ ] TG username as callsign option (or auto-populate)
+
+---
+
+## PHASE 9: MULTI-PLAYER EXPANSION (3P/4P)
+
+Expand beyond 1v1. Full brief with code-level implementation details in `SOLSHOT_SEEKER_AND_4PLAYER_BRIEF.md`.
+
+### 9A: 3-4 Player Mode
+- [ ] Server: `players[]` array replaces `host`/`player`, add `maxPlayers`, `currentPlayerIndex`
+- [ ] Server: N-player `getNextTurn()`, `isRoundOver()`, elimination logic
+- [ ] Server: expand room creation, join, ready, terrain generation for N players
+- [ ] Server: N-player fire handler with `playerEliminated` event
+- [ ] Client: tank array replaces `createTank1()`/`createTank2()` in MainScene
+- [ ] Client: `myPlayerIndex === currentPlayerIndex` turn detection
+- [ ] Client: N HP bars, elimination visuals, turn indicator in React HUD
+- [ ] Client: player count selector in lobby, N-player waiting room
+
+### 9B: Seeker / dApp Store
+- [ ] MWA integration (`@solana-mobile/wallet-standard-mobile`)
+- [ ] PWA → TWA → signed APK via Bubblewrap CLI
+- [ ] `assetlinks.json` hosted at `solshot.gg/.well-known/`
+- [ ] Genesis Token badge detection in lobby
+- [ ] `.skr` domain display for Seeker wallets
+- [ ] **BLOCKER:** Confirm wagering policy with Solana Mobile (`#dapp-store` Discord)
+- [ ] dApp Store submission (assets, legal, signed APK)
+
+### 9C: Hull Upgrades / Tank Customization
+- [ ] Persistent hull upgrades (increase hull strength over time)
+- [ ] Visual tank customization (skins already planned, extend to hull/body mods)
+- [ ] Upgrade progression system (earn through matches or spend SHOT)
+
+---
+
+## PHASE 10: TOKEN LAUNCH + WAGERING
+
+SHOT token goes live. Wagering enabled. Runs alongside or after Phase 9 — token + LP can launch while 3P/4P is in dev, wagering flips on when ready.
+
+### 10A: Token
 - [ ] SHOT token metadata (Metaplex — name, symbol, image)
 - [ ] SHOT token on mainnet
 - [ ] Meteora single-sided LP
 - [ ] Jupiter listing
 
-### 8B: Wagering 1v1
+### 10B: Wagering (1v1 first, then N-player)
 - [ ] Enable wagered match modes (Quick Match, Duel, High Roller)
 - [ ] Escrow live on mainnet
+- [ ] N-player escrow extension (if 3P/4P is ready)
 - [ ] Team takes initial funds from LP to support development
 
-### 8C: SHOT Consumables Shop
+### 10C: SHOT Consumables Shop
 
 New shop section where players spend SHOT tokens on temporary power-ups. Each consumable lasts **5 matches** then expires. SHOT is **burned on purchase** — permanent supply sink that creates real token demand without being pay-to-win.
 
@@ -156,52 +230,25 @@ New shop section where players spend SHOT tokens on temporary power-ups. Each co
 
 ---
 
-## PHASE 9: MULTI-PLAYER EXPANSION (3P/4P)
-
-Expand beyond 1v1.
-
-### 9A: 3-4 Player Mode
-- [ ] Server: expand room/match logic for 3-4 players
-- [ ] Client: HUD, turn order, HP bars for 3-4 tanks
-- [ ] Wagered 3P/4P matches
-- [ ] Seeker/mobile optimization pass
-
-### 9B: Hull Upgrades / Tank Customization
-- [ ] Persistent hull upgrades (increase hull strength over time)
-- [ ] Visual tank customization (skins already planned, extend to hull/body mods)
-- [ ] Upgrade progression system (earn through matches or spend SHOT)
-
-### 9C: Seeker Focus
-- [ ] Optimize for Seeker device
-- [ ] Saga/Seeker dApp store submission
-
----
-
-## PHASE 10: TOURNAMENT MODE
+## PHASE 11: TOURNAMENT MODE
 
 Players enter and compete in a series of matches for a prize pool.
 
-### 10A: Tournament System
+### 11A: Tournament System
 - [ ] Tournament creation (entry fee, player cap, prize structure)
 - [ ] Bracket/series match flow
 - [ ] Prize pool escrow + payout
 
 ---
 
-## PHASE 11: PLATFORM EXPANSION
+## PHASE 12: PRODUCTION HARDENING & TEST INFRA
 
-### 11A: Telegram Mini App
-- [ ] Create bot via BotFather
-- [ ] Wire middleware (code exists, just enable)
-- [ ] Test Mini App after deploy
-- [ ] Wallet solution (Privy/Dynamic for embedded wallets)
-
-### 11B: Test Infrastructure
+### 12A: Test Infrastructure
 - [ ] Playwright E2E for two-player flow
 - [ ] Server integration tests passing
 - [ ] Load testing (50+ concurrent matches)
 
-### 11C: Production Hardening
+### 12B: Production Hardening
 - [ ] Cloudflare DDoS protection
 - [ ] Cloudflare caching rules (assets cached, API/WebSocket bypassed)
 - [ ] Remove localhost from production CORS

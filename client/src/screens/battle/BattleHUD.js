@@ -144,7 +144,7 @@ const forfeitBtn = {
   opacity: 0.7,
 };
 
-function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfeit }) {
+function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfeit, controlScheme }) {
   const {
     players = [],
     myPlayerIndex = -1,

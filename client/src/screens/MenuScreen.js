@@ -4,6 +4,7 @@ import WalletDisplay from '../components/WalletDisplay';
 import ResponsibleGaming from '../components/ResponsibleGaming';
 import { useTelegram } from '../telegram/TelegramContext';
 import useIsMobile from '../hooks/useIsMobile';
+import useControlScheme from '../hooks/useControlScheme';
 
 
 const styles = {
@@ -165,6 +166,30 @@ const styles = {
     zIndex: 1,
   },
 
+  // Control scheme selector
+  controlSchemeSection: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+    zIndex: 1,
+  },
+
+  controlSchemeLabel: {
+    fontFamily: "'Share Tech Mono', monospace",
+    fontSize: 11,
+    color: 'var(--kh)',
+    opacity: 0.5,
+    letterSpacing: 3,
+    textTransform: 'uppercase',
+  },
+
+  controlSchemePicker: {
+    display: 'flex',
+    gap: 6,
+  },
+
 };
 
 function MenuScreen({ navigate }) {
@@ -172,6 +197,7 @@ function MenuScreen({ navigate }) {
   const [logoFailed, setLogoFailed] = useState(false);
   const { isTelegram, user: tgUser } = useTelegram();
   const isMobile = useIsMobile();
+  const [scheme, setScheme] = useControlScheme(isMobile);
   const onLogoError = useCallback(() => setLogoFailed(true), []);
 
   const navItems = [
@@ -357,6 +383,49 @@ function MenuScreen({ navigate }) {
             onMouseLeave={(e) => { e.target.style.opacity = '0.6'; e.target.style.color = 'var(--kh)'; }}
           >
             HOW TO PLAY
+          </div>
+
+          {/* Control scheme selector (desktop only) */}
+          <div style={styles.controlSchemeSection}>
+            <span style={styles.controlSchemeLabel}>CONTROLS</span>
+            <div style={styles.controlSchemePicker}>
+              <button
+                style={{
+                  fontFamily: "'Share Tech Mono', monospace",
+                  fontSize: 12,
+                  letterSpacing: 2,
+                  padding: '6px 16px',
+                  borderRadius: 3,
+                  border: scheme === 'mouse' ? '1px solid var(--am)' : '1px solid var(--ol)',
+                  background: scheme === 'mouse' ? 'rgba(255, 185, 30, 0.12)' : 'transparent',
+                  color: scheme === 'mouse' ? 'var(--am)' : 'var(--kh)',
+                  opacity: scheme === 'mouse' ? 1 : 0.45,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s',
+                }}
+                onClick={() => setScheme('mouse')}
+              >
+                MOUSE AIM
+              </button>
+              <button
+                style={{
+                  fontFamily: "'Share Tech Mono', monospace",
+                  fontSize: 12,
+                  letterSpacing: 2,
+                  padding: '6px 16px',
+                  borderRadius: 3,
+                  border: scheme === 'classic' ? '1px solid var(--am)' : '1px solid var(--ol)',
+                  background: scheme === 'classic' ? 'rgba(255, 185, 30, 0.12)' : 'transparent',
+                  color: scheme === 'classic' ? 'var(--am)' : 'var(--kh)',
+                  opacity: scheme === 'classic' ? 1 : 0.45,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s',
+                }}
+                onClick={() => setScheme('classic')}
+              >
+                CLASSIC
+              </button>
+            </div>
           </div>
 
           {/* Telegram user badge (when in Telegram) */}

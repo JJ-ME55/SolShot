@@ -3,6 +3,8 @@ import GameBridge from '../bridge/GameBridge';
 import { startBattle, destroyBattle } from '../bridge/PhaserBootstrap';
 import useGameState from '../hooks/useGameState';
 import useSocket from '../hooks/useSocket';
+import useIsMobile from '../hooks/useIsMobile';
+import useControlScheme from '../hooks/useControlScheme';
 import BattleHUD from './battle/BattleHUD';
 import ExitMenu from './battle/ExitMenu';
 import Modal from '../components/Modal';
@@ -100,6 +102,9 @@ function BattleScreen({ navigate, screenData }) {
   const countdownRef = useRef(null);
   const [turnTimer, setTurnTimer] = useState(60);
   const turnTimerRef = useRef(null);
+
+  const isMobile = useIsMobile();
+  const [controlScheme] = useControlScheme(isMobile);
 
   // CS-04: Use context hook instead of window.solWallet
   const { signAndSendEscrowDeposit } = useSolShotWallet();
@@ -359,6 +364,7 @@ function BattleScreen({ navigate, screenData }) {
           turnTimer={turnTimer}
           onLeaveMatch={handleLeaveMatch}
           onForfeit={() => setShowExit(true)}
+          controlScheme={controlScheme}
         />
       )}
 

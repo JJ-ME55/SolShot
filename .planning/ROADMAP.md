@@ -117,6 +117,13 @@ Clean 2-player practice experience with zero friction onboarding. Handle system,
 
 **Requirements:** AIM-01, AIM-02, AIM-03, AIM-04, AIM-05, AIM-06, CTRL-01, CTRL-02, CTRL-03
 
+**Plans:** 3 plans
+
+Plans:
+- [ ] 29-01-PLAN.md — Control scheme hook, MenuScreen toggle, BattleHUD prop plumbing
+- [ ] 29-02-PLAN.md — Phaser mouse-aim pointer handlers in MainScene
+- [ ] 29-03-PLAN.md — Read-only sliders, FireButton gating, end-to-end verification
+
 **Success Criteria:**
 1. On desktop, moving the mouse over the game canvas rotates the turret barrel to track the cursor angle relative to the tank in real time during the player's own turn
 2. Mouse distance from the tank changes the power level displayed in the React HUD (clamped 5–100), and the slider reflects the live value as a read-only indicator
@@ -185,7 +192,7 @@ Clean 2-player practice experience with zero friction onboarding. Handle system,
 | 15-19. 4-Player Multiplayer | v1.3 | 10/10 | Complete | 27 Feb 2026 |
 | 20-23. N-Player Escrow | v1.4 | 10/10 | Complete | 28 Feb 2026 |
 | 24-28. Practice Mode Public Launch | v2.0 | — | Complete | 23 Mar 2026 |
-| 29. Desktop Mouse-Aim and Control Settings | v3.0 | 0/? | Pending | — |
+| 29. Desktop Mouse-Aim and Control Settings | v3.0 | 0/3 | Planned | — |
 | 30. Mobile Tap-to-Aim | v3.0 | 0/? | Pending | — |
 | 31. Terrain Wall Decay and Escrow Hardening | v3.0 | 0/? | Pending | — |
 | 32. Leaderboard and Launch Content | v3.0 | 0/? | Pending | — |

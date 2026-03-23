@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 23 Mar 2026)
 
 Milestone: v3.0 — Public Practice Launch
 Phase: 29 — Desktop Mouse-Aim and Control Settings
-Plan: —
-Status: Ready to plan
-Last activity: 23 Mar 2026 — Roadmap created for v3.0
+Plan: 01 of 3 complete
+Status: In progress
+Last activity: 23 Mar 2026 — Completed 29-01-PLAN.md (control scheme foundation)
 
-Progress: [░░░░░░░░░░░░░░░░░░░░] 0% (0/4 phases)
+Progress: [░░░░░░░░░░░░░░░░░░░░] ~3% (1/9 plans across v3.0 phases)
 
 ## Performance Metrics
 
@@ -28,7 +28,7 @@ Progress: [░░░░░░░░░░░░░░░░░░░░] 0% (0/4
 
 **Total across all milestones:** 75 plans, 33 phases
 
-**v3.0 so far:** 0 plans, 0 phases complete
+**v3.0 so far:** 1 plan complete (29-01)
 
 ## Accumulated Context
 
@@ -45,6 +45,9 @@ Progress: [░░░░░░░░░░░░░░░░░░░░] 0% (0/4
 - Terrain walls decay after N rounds (suggest 3-5, tuneable)
 - Control scheme defaults to new aiming; classic sliders available as fallback
 - CTRL requirements ship with Phase 29 (desktop) since toggle is first needed there
+- useControlScheme hook: localStorage key is `solshot_control_scheme`, default `'mouse'` desktop / `'classic'` mobile
+- window.controlScheme is the React-to-Phaser interop channel for control scheme (mirrors window.socket pattern)
+- CONTROLS selector in MenuScreen is desktop-only — mobile deferred to Phase 30
 
 ### v3.0 Branch Strategy
 - `main` = live demo at solshot.gg (Vercel + Render deploy from here)
@@ -71,6 +74,6 @@ Progress: [░░░░░░░░░░░░░░░░░░░░] 0% (0/4
 ## Session Continuity
 
 Last session: 2026-03-23
-Stopped at: v3.0 roadmap created — 4 phases, 22 requirements mapped
+Stopped at: Completed 29-01-PLAN.md — control scheme hook + MenuScreen toggle + BattleHUD prop plumbing
 Resume file: None
-Next command: /gsd:plan-phase 29
+Next command: /gsd:execute-phase (plan 29-02 — Phaser mouse-aim in MainScene)

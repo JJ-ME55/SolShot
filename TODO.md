@@ -97,14 +97,13 @@ Practice mode is LIVE on solshot.gg (main branch). New features on `launch` bran
 - [ ] Must work in landscape orientation
 - [ ] Touch target: entire game canvas area, not a small button
 
-### 7C: Terrain Walls — Decay After X Rounds [ ]
+### 7C: Terrain Walls — Decay After 6 Turns [x]
 
-**Current state:** Magic Wall creates permanent terrain. Walls accumulate and can gridlock the map.
-
-**Target:** Walls persist for N rounds (suggest 3-5, tuneable), then crumble.
-- [ ] Server tracks wall placements: `{ x, width, height, roundPlaced }` per room
-- [ ] Each round start, check wall age → if expired, revert that section of heightmap
-- [ ] Visual: walls could visually crack/fade on their final round as a warning
+- [x] `processWallShot` returns `wallPlacement` with original heights
+- [x] Room tracks `walls[]` with `turnPlaced` timestamp
+- [x] `decayWalls()` reverts terrain after 6 turns (tuneable constant)
+- [x] `wallDecay` socket event updates client terrain
+- [ ] Visual: walls could visually crack/fade on their final turn as a warning (nice-to-have)
 
 ### 7D: Go Public [~]
 - [x] Leaderboard live and competitive

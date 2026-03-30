@@ -4,7 +4,7 @@ import { getShotPrice, startPricePolling } from '../services/jupiter-price.js';
 import logger from '../services/logger.js';
 import Match from '../models/Match.js';
 import User from '../models/User.js';
-import { processShot, generateTerrain, generateTankPositions, generateWind, WEAPON_DATA } from '../services/physics.js';
+import { processShot, generateTerrain, generateTankPositions, generateWind, WEAPON_DATA, decayWalls } from '../services/physics.js';
 import { createMatchState, validateAction, transitionState, getNextTurn, isRoundOver, isMatchOver, getRoundPlacement, PLACEMENT_POINTS, resetForNextRound, MATCH_STATES } from '../services/match.js';
 import { initGold, getBalance, earnGold, spendGold, awardKillBonus, awardRoundWinBonus, awardPlacementGold } from '../services/gold.js';
 import { WEAPON_CATALOG, PRESTIGE_WEAPONS, getWeapon, getWeaponCost, getAllLaunchWeapons } from '../models/Weapon.js';
@@ -760,6 +760,12 @@ const mainsocket = (io) => {
 
         // Update terrain
         room.heightmap = result.newTerrain;
+
+        // Track wall placement for decay
+        if (result.wallPlacement) {
+            if (!room.walls) room.walls = [];
+            room.walls.push({ ...result.wallPlacement, turnPlaced: ms.turnCount });
+        }
         for (const p of room.players) {
             if (p.pos) {
                 const px = Math.min(1199, Math.max(0, Math.floor(p.pos.x)));
@@ -860,6 +866,24 @@ const mainsocket = (io) => {
             tunnelEntry: result.tunnelEntry || null,
             tunnelExit: result.tunnelExit || null,
         });
+
+        // Wall decay check — crumble expired walls
+        if (room.walls && room.walls.length > 0) {
+            const { decayed } = decayWalls(room.heightmap, room.walls, ms.turnCount);
+            if (decayed) {
+                // Update tank positions after terrain revert
+                for (const p of room.players) {
+                    if (p.pos) {
+                        const px = Math.min(1199, Math.max(0, Math.floor(p.pos.x)));
+                        p.pos.y = room.heightmap[px] - 15;
+                    }
+                }
+                ioRef.sockets.in(roomId).emit('wallDecay', {
+                    terrain: room.heightmap,
+                    positions: room.players.map(p => ({ socketId: p.socketId, pos: p.pos })),
+                });
+            }
+        }
 
         // Check round/match end
         if (!isRoundOver(ms)) {
@@ -2999,6 +3023,12 @@ const mainsocket = (io) => {
             // Update server terrain state
             room.heightmap = result.newTerrain
 
+            // Track wall placement for decay
+            if (result.wallPlacement && ms) {
+                if (!room.walls) room.walls = [];
+                room.walls.push({ ...result.wallPlacement, turnPlaced: ms.turnCount });
+            }
+
             // Update tank Y positions to match deformed terrain (N-player)
             // Without this, next shot starts from old position which may be inside terrain
             for (const p of room.players) {
@@ -3162,6 +3192,23 @@ const mainsocket = (io) => {
                 tunnelEntry: result.tunnelEntry || null,
                 tunnelExit: result.tunnelExit || null
             })
+
+            // Wall decay check — crumble expired walls
+            if (ms && room.walls && room.walls.length > 0) {
+                const { decayed } = decayWalls(room.heightmap, room.walls, ms.turnCount);
+                if (decayed) {
+                    for (const p of room.players) {
+                        if (p.pos) {
+                            const px = Math.min(1199, Math.max(0, Math.floor(p.pos.x)));
+                            p.pos.y = room.heightmap[px] - 15;
+                        }
+                    }
+                    io.sockets.in(this.roomId).emit('wallDecay', {
+                        terrain: room.heightmap,
+                        positions: room.players.map(p => ({ socketId: p.socketId, pos: p.pos })),
+                    });
+                }
+            }
 
             // Restart turn timer for the next player
             if (ms && !isRoundOver(ms)) {

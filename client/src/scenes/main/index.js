@@ -1056,6 +1056,18 @@ export class MainScene extends Scene {
     socket.on('fireRejected', this._socketHandlers.fireRejected);
     socket.on('turnTimeout', this._socketHandlers.turnTimeout);
 
+    // ── Wall decay: server reverted expired walls, redraw terrain ──
+    this._socketHandlers.wallDecay = ({ terrain, positions }) => {
+      if (terrain && this.terrain) {
+        this._serverHeightmap = terrain;
+        this.terrain.applyHeightmap(terrain);
+      }
+      if (positions) {
+        this._syncTankPositions(positions);
+      }
+    };
+    socket.on('wallDecay', this._socketHandlers.wallDecay);
+
     // ── STEP 4: Handle playerEliminated — tank wreckage, kill text, spectator mode ──
     this._socketHandlers.playerEliminated = ({ eliminatedId, killedById, survivingPlayers, reason }) => {
       const positions = this._lastPositions || [];

@@ -1,5 +1,5 @@
 # SOLSHOT — MASTER TODO
-## Updated: 23 Mar 2026
+## Updated: 30 Mar 2026
 
 ---
 
@@ -74,62 +74,68 @@ Collapsed for brevity — see git history for details.
 
 ## PHASE 7: PUBLIC PRACTICE LAUNCH (Current)
 
-Practice mode goes live. The game needs to feel tight and intuitive before anyone outside our circle touches it. This phase is about controls, game feel, community presence, and escrow confidence.
+Practice mode is LIVE on solshot.gg (main branch). New features on `launch` branch.
 
-### 7A: Aiming Overhaul — Desktop
+### 7A: Aiming Overhaul — Desktop [x]
+- [x] Mouse-aim pointer handlers in MainScene (pointermove → angle + power, pointerdown → fire)
+- [x] readOnly slider mode for AngleControl + PowerControl when mouse-aim active
+- [x] Conditional FireButton (hidden on desktop when mouse-aim active)
+- [x] useControlScheme hook (mouse vs classic, localStorage persistence)
+- [x] Q/E keyboard aim still works as fallback
 
-**Current state:** Turret aim is controlled by Q/E keys (rotate in Phaser) or a React slider (AngleControl.js). Power is a separate slider. Fire is a button click via GameBridge → `handleFireFromReact()`. This works but feels clunky — two separate sliders for what should be one fluid gesture.
+### 7B: Aiming Overhaul — Mobile [ ]
 
-**Target:** Mouse-aim + click-to-fire.
-- Hover cursor over the game canvas to aim the turret — turret barrel tracks mouse position relative to the tank
-- Mouse position maps to both **angle** (direction from tank to cursor) AND **power** (distance from tank to cursor, clamped to [5, 100] range)
-- Left-click to fire
-- The existing React sliders stay visible as **readouts** (showing current angle/power values) but are no longer the primary input — mouse position drives them
-- Implementation touches: `MainScene` needs a `pointermove` listener that calculates angle + power from cursor position relative to the active tank, then calls `bridge.setAngle()` and `bridge.setPower()` to keep React HUD in sync. `pointerdown` calls `bridge.fire()`
-- Q/E keyboard aim should still work as a fallback/fine-tune on top of mouse aim
-- Key constraint: only tracks when it's your turn (check `myPlayerIndex === currentPlayerIndex`)
-
-### 7B: Aiming Overhaul — Mobile
-
-**Current state:** Vertical sliders on screen edges (left = angle, right = power) plus FIRE button. Functional but fiddly on small screens — hard to dial in precise angles with a fat thumb on a thin slider.
+**Current state:** Vertical sliders on screen edges (left = angle, right = power) plus FIRE button. Functional but fiddly on small screens.
 
 **Target:** Touch-drag aim (Angry Birds style).
-- Touch and drag from your tank to set angle + power in one gesture
-- Drag direction = aim direction (inverted — drag left to shoot right, like pulling back a slingshot)
-- Drag distance = power (further pull = more power)
-- Release to fire (or tap a confirm button — TBD based on feel)
-- Show a dotted guide line from tank in the aim direction while dragging (client-only, not a trajectory preview — just direction + power indicator)
-- Existing sliders become read-only indicators during drag, or hide entirely on mobile
-- Must work in landscape orientation
-- Touch target: entire game canvas area, not a small button
+- [ ] Touch and drag from your tank to set angle + power in one gesture
+- [ ] Drag direction = aim direction (inverted — drag left to shoot right, like pulling back a slingshot)
+- [ ] Drag distance = power (further pull = more power)
+- [ ] Release to fire (or tap a confirm button — TBD based on feel)
+- [ ] Show a dotted guide line from tank in the aim direction while dragging
+- [ ] Existing sliders become read-only indicators during drag, or hide entirely on mobile
+- [ ] Must work in landscape orientation
+- [ ] Touch target: entire game canvas area, not a small button
 
-### 7C: Terrain Walls — Decay After X Rounds
+### 7C: Terrain Walls — Decay After X Rounds [ ]
 
-**Current state:** Magic Wall (weapon ID 12) creates an 8px wide, 140px tall permanent terrain barrier via `processWallShot()` in physics.js. Once placed, walls never degrade — they accumulate and can gridlock the map in longer matches.
+**Current state:** Magic Wall creates permanent terrain. Walls accumulate and can gridlock the map.
 
 **Target:** Walls persist for N rounds (suggest 3-5, tuneable), then crumble.
-- Server tracks wall placements: `{ x, width, height, roundPlaced }` per room
-- Each round start, check wall age → if expired, revert that section of heightmap
-- Visual: walls could visually crack/fade on their final round as a warning
-- Balances the meta — walls become tactical tempo plays, not permanent map control
+- [ ] Server tracks wall placements: `{ x, width, height, roundPlaced }` per room
+- [ ] Each round start, check wall age → if expired, revert that section of heightmap
+- [ ] Visual: walls could visually crack/fade on their final round as a warning
 
-### 7D: Go Public
-
+### 7D: Go Public [~]
+- [x] Leaderboard live and competitive
+- [x] Demo practice mode live on solshot.gg
 - [ ] Launch announcement tweet/thread from @SolShotGG
 - [ ] Gameplay trailer (30-60 sec)
 - [ ] Share to Discord, Solana communities, CT
-- [ ] Leaderboard live and competitive
 - [ ] Players sharing stat cards organically
 - [ ] Ongoing tweets teasing upcoming features
 
-### 7E: Escrow Hardening (Claude + John, during public practice)
+### 7E: Escrow Hardening [ ]
 
-Run in parallel with public practice — players are on practice mode, we're stress-testing escrow behind the scenes.
+Run in parallel with public practice — stress-testing escrow behind the scenes.
 
 - [ ] Integration test: full match flow with devnet wallets (create → deposit → play → settle)
 - [ ] Stress test: multiple concurrent escrow matches
 - [ ] Audit edge cases: timeout refund, cancel mid-match, double-settle attempt, player disconnect during deposit
 - [ ] Verify `verifiedBurnTxs` replay protection survives server restart (currently in-memory Set — may need Redis or DB)
+
+### 7F: AI Practice Mode (Shot Bot) [x] — `launch` branch
+
+- [x] Server-side AI service (`server/services/ai.js`) — probabilistic aiming, weapon-aware selection, calibration
+- [x] `createAIMatch` socket handler — creates room, injects Shot Bot, starts shop
+- [x] `scheduleAITurn`/`executeAITurn` — server fires on AI's turn with 2.5-3.5s delay
+- [x] "VS SHOT BOT" menu button + AIPracticeScreen (color picker, START)
+- [x] White tank color (id: 8) reserved for Shot Bot
+- [x] `isAIMatch` flag flows through shop → battle → win/lose
+- [x] "PRACTICE VS AI — STATS NOT RECORDED" banner on results
+- [x] Stats/milestones/settlement skipped for AI matches
+- [x] AI rooms hidden from lobby, cleanup on disconnect
+- [x] 40-turn matches (20 each) for practice
 
 ---
 
@@ -158,17 +164,25 @@ Get SolShot into Telegram as a distribution channel. Embedded wallets mean zero 
 
 ## PHASE 9: MULTI-PLAYER EXPANSION (3P/4P)
 
-Expand beyond 1v1. Full brief with code-level implementation details in `SOLSHOT_SEEKER_AND_4PLAYER_BRIEF.md`.
+Expand beyond 1v1. Full brief in `SOLSHOT_SEEKER_AND_4PLAYER_BRIEF.md`.
 
-### 9A: 3-4 Player Mode
-- [ ] Server: `players[]` array replaces `host`/`player`, add `maxPlayers`, `currentPlayerIndex`
-- [ ] Server: N-player `getNextTurn()`, `isRoundOver()`, elimination logic
-- [ ] Server: expand room creation, join, ready, terrain generation for N players
-- [ ] Server: N-player fire handler with `playerEliminated` event
-- [ ] Client: tank array replaces `createTank1()`/`createTank2()` in MainScene
-- [ ] Client: `myPlayerIndex === currentPlayerIndex` turn detection
-- [ ] Client: N HP bars, elimination visuals, turn indicator in React HUD
-- [ ] Client: player count selector in lobby, N-player waiting room
+### 9A: 3-4 Player Mode — Core [x]
+- [x] Server: `players[]` array replaces `host`/`player`, add `maxPlayers`, `currentPlayerIndex`
+- [x] Server: N-player `getNextTurn()`, `isRoundOver()`, elimination logic, `getRoundPlacement()`
+- [x] Server: expand room creation, join, ready, terrain generation for N players
+- [x] Server: N-player fire handler with `playerEliminated` event
+- [x] Client: `this.tanks[]` array replaces `createTank1()`/`createTank2()` in MainScene
+- [x] Client: `myPlayerIndex === currentPlayerIndex` turn detection
+- [x] Client: N HP bars, elimination visuals, turn indicator in React HUD
+- [x] Client: player count selector in lobby, N-player waiting room
+- [x] Escrow: N-player deposit/settle support
+
+### 9A-QA: 3-4 Player QA & Polish [ ]
+- [ ] 3-player match: full flow test (create → join → shop → battle → elimination → results)
+- [ ] 4-player match: same flow test
+- [ ] Edge cases: mid-match disconnect with 3+ players, all-but-one eliminated
+- [ ] HUD spacing for 3-4 HP bars on mobile
+- [ ] Rematch flow with N players
 
 ### 9B: Seeker / dApp Store
 - [ ] MWA integration (`@solana-mobile/wallet-standard-mobile`)
@@ -188,7 +202,7 @@ Expand beyond 1v1. Full brief with code-level implementation details in `SOLSHOT
 
 ## PHASE 10: TOKEN LAUNCH + WAGERING
 
-SHOT token goes live. Wagering enabled. Runs alongside or after Phase 9 — token + LP can launch while 3P/4P is in dev, wagering flips on when ready.
+SHOT token goes live. Wagering enabled.
 
 ### 10A: Token
 - [ ] SHOT token metadata (Metaplex — name, symbol, image)
@@ -204,35 +218,29 @@ SHOT token goes live. Wagering enabled. Runs alongside or after Phase 9 — toke
 
 ### 10C: SHOT Consumables Shop
 
-New shop section where players spend SHOT tokens on temporary power-ups. Each consumable lasts **5 matches** then expires. SHOT is **burned on purchase** — permanent supply sink that creates real token demand without being pay-to-win.
+New shop section where players spend SHOT tokens on temporary power-ups. Each consumable lasts **5 matches** then expires. SHOT is **burned on purchase** — permanent supply sink.
 
 **Consumables:**
 
-1. **Tactical Scope** — Shows a 2-3 dot trajectory preview line from the barrel tip, giving a rough indication of shot arc. Not a full trajectory — just enough to reduce guesswork for new players.
-
-2. **Reinforced Armor** — +25 bonus HP per match (start at 275 instead of 250). Doesn't stack. Visible to opponent via a small shield icon on the HP bar.
-
-3. **Overcharge** — Power slider max increases from 100 to 115, giving ~15% extra range on all weapons. Subtle but meaningful for long-range shots across big terrain gaps.
-
-4. **Extra Rations** — Start each match with 1200G instead of 1000G in the weapon shop. One extra mid-tier weapon or two cheap ones. Advantage fades as rounds progress and gold accumulates naturally.
-
-5. **Smoke Screen** — Blocks the opponent's Tactical Scope if they have one active. Their preview dots disappear for the duration of your Smoke Screen. Counter-play item — only useful if the opponent bought Scope.
+1. **Tactical Scope** — 2-3 dot trajectory preview from barrel tip
+2. **Reinforced Armor** — +25 bonus HP per match (275 instead of 250)
+3. **Overcharge** — Power max increases from 100 to 115
+4. **Extra Rations** — Start with 1200G instead of 1000G
+5. **Smoke Screen** — Blocks opponent's Tactical Scope
 
 **Implementation:**
-- [ ] Server: consumable state per player (type, matchesRemaining) stored in MongoDB User model
-- [ ] Server: apply effects at match start (bonus HP, gold, power cap) and decrement counter
-- [ ] Server: SHOT burn verification on purchase (reuse prestige burn flow)
-- [ ] Client: consumables tab in weapon shop or dedicated pre-match shop screen
-- [ ] Client: active consumable indicators on HUD (small icons)
-- [ ] Client: Tactical Scope renderer — 2-3 dots along local trajectory calculation
-- [ ] Client: Smoke Screen — suppress Scope rendering when opponent has it active
-- [ ] Pricing TBD — ballpark 25-100 SHOT per consumable depending on power level
+- [ ] Server: consumable state per player (type, matchesRemaining) in MongoDB
+- [ ] Server: apply effects at match start, decrement counter
+- [ ] Server: SHOT burn verification on purchase
+- [ ] Client: consumables tab in shop or pre-match screen
+- [ ] Client: active consumable indicators on HUD
+- [ ] Client: Tactical Scope renderer (2-3 dots)
+- [ ] Client: Smoke Screen (suppress Scope rendering)
+- [ ] Pricing TBD — ballpark 25-100 SHOT per consumable
 
 ---
 
 ## PHASE 11: TOURNAMENT MODE
-
-Players enter and compete in a series of matches for a prize pool.
 
 ### 11A: Tournament System
 - [ ] Tournament creation (entry fee, player cap, prize structure)

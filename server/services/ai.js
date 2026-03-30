@@ -212,7 +212,7 @@ export function calculateAim(roomId, aiPos, targetPos, wind, weaponId) {
     const powerErr = (Math.random() - 0.5) * 10;  // ±5
     cal.shotCount++;
     return {
-      angle: clampAngle(perfectAngle + angleErr),
+      angle: clampAngleToRadians(perfectAngle + angleErr),
       power: clampPower(perfectPower + powerErr),
     };
   }
@@ -228,7 +228,7 @@ export function calculateAim(roomId, aiPos, targetPos, wind, weaponId) {
     const wallPower = Math.min(100, Math.max(15, wallDist * 0.14 + 5));
     cal.shotCount++;
     return {
-      angle: clampAngle(wallAngle),
+      angle: clampAngleToRadians(wallAngle),
       power: clampPower(wallPower),
     };
   }
@@ -239,7 +239,7 @@ export function calculateAim(roomId, aiPos, targetPos, wind, weaponId) {
     const powerErr = (Math.random() - 0.5) * 8;  // ±4
     cal.shotCount++;
     return {
-      angle: clampAngle(perfectAngle + angleErr),
+      angle: clampAngleToRadians(perfectAngle + angleErr),
       power: clampPower(perfectPower + powerErr),
     };
   }
@@ -265,7 +265,7 @@ export function calculateAim(roomId, aiPos, targetPos, wind, weaponId) {
   cal.errorFactor = Math.max(0.15, cal.errorFactor); // never perfect
 
   return {
-    angle: clampAngle(finalAngle),
+    angle: clampAngleToRadians(finalAngle),
     power: clampPower(finalPower),
   };
 }
@@ -344,12 +344,16 @@ function checkLineOfSight(from, to, terrain) {
 }
 
 /**
- * Clamp angle to valid game range [0, 180].
- * @param {number} angle
- * @returns {number}
+ * Clamp angle to valid game range [0, 180] degrees, then convert to radians.
+ * The server physics expects turret rotation in radians:
+ *   radians = (degrees * PI / 180) - PI / 2
+ * This matches the client's handleAngleFromReact conversion.
+ * @param {number} angleDeg - Angle in degrees (0=right, 90=up, 180=left)
+ * @returns {number} Angle in radians for processShot
  */
-function clampAngle(angle) {
-  return Math.max(0, Math.min(180, angle));
+function clampAngleToRadians(angleDeg) {
+  const clamped = Math.max(0, Math.min(180, angleDeg));
+  return (clamped * Math.PI / 180) - Math.PI / 2;
 }
 
 /**

@@ -690,6 +690,9 @@ const mainsocket = (io) => {
     startPricePolling(30000);
 
     // ═══ AI TURN SCHEDULING ═══
+    // Defined in mainsocket scope so cleanupRoom can access it
+    const aiTurnTimers = {}; // { roomId: timeoutId } — prevents double-scheduling
+
     function scheduleAITurn(ioRef, roomId) {
         const room = findRoom(roomId);
         if (!room || !room.isAIMatch) return;
@@ -698,8 +701,17 @@ const mainsocket = (io) => {
         const AI_SOCKET_ID = `ai-bot-${roomId}`;
         if (ms.currentTurn !== AI_SOCKET_ID) return;
 
-        const delay = 500 + Math.floor(Math.random() * 500);
-        setTimeout(() => executeAITurn(ioRef, roomId), delay);
+        // Debounce: clear any existing scheduled AI turn
+        if (aiTurnTimers[roomId]) {
+            clearTimeout(aiTurnTimers[roomId]);
+        }
+
+        // 2.5-3.5s delay — enough for trajectory + blast animation to complete on client
+        const delay = 2500 + Math.floor(Math.random() * 1000);
+        aiTurnTimers[roomId] = setTimeout(() => {
+            delete aiTurnTimers[roomId];
+            executeAITurn(ioRef, roomId);
+        }, delay);
     }
 
     function executeAITurn(ioRef, roomId) {
@@ -1044,6 +1056,7 @@ const mainsocket = (io) => {
             // AI matches: simple cleanup, no settlement/forfeit needed
             const aiRoom = findRoom(roomId)
             if (aiRoom && aiRoom.isAIMatch) {
+                if (aiTurnTimers[roomId]) { clearTimeout(aiTurnTimers[roomId]); delete aiTurnTimers[roomId]; }
                 cleanupAI(roomId)
                 client.leave(roomId)
                 client.roomId = null

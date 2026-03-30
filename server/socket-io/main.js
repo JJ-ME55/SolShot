@@ -1907,6 +1907,11 @@ const mainsocket = (io) => {
                 totalRounds: 1,
                 round: 1,
                 isAIMatch: true,
+                // Player data for ShopScreen → BattleScreen flow
+                players: roomData.players,
+                host: humanSlot,
+                player: aiSlot,
+                wager: 0,
             });
 
             shopReady[roomId] = { [client.id]: false, [AI_SOCKET_ID]: true };

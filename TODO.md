@@ -176,7 +176,11 @@ Expand beyond 1v1. Full brief in `SOLSHOT_SEEKER_AND_4PLAYER_BRIEF.md`.
 - [x] Client: player count selector in lobby, N-player waiting room
 - [x] Escrow: N-player deposit/settle support
 
-### 9A-QA: 3-4 Player QA & Polish [ ]
+### 9A-QA: 3-4 Player QA & Polish [~]
+- [x] Fix timeout handler: N-player forfeit (was hardcoded to players[0]/[1])
+- [x] Fix ShopScreen pot display: wager * N (was hardcoded * 2)
+- [x] Unhide player count selector (2P/3P/4P) in LobbyScreen
+- [x] Spectator overlay for eliminated players (was already implemented)
 - [ ] 3-player match: full flow test (create → join → shop → battle → elimination → results)
 - [ ] 4-player match: same flow test
 - [ ] Edge cases: mid-match disconnect with 3+ players, all-but-one eliminated

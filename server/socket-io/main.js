@@ -488,6 +488,15 @@ function startTurnTimer(io, roomId) {
         const currentTurnId = ms.currentTurn
         if (!currentTurnId) return
 
+        // AI bot should never time out, but if it does, just re-schedule
+        if (room.isAIMatch && currentTurnId.startsWith('ai-bot-')) {
+            ms.turnCount++
+            ms.currentTurn = getNextTurn(ms)
+            startTurnTimer(io, roomId)
+            scheduleAITurn(io, roomId)
+            return
+        }
+
         const hostId = room.players ? room.players[0]?.socketId : null
         const playerId = room.players ? room.players[1]?.socketId : null
 
@@ -1031,6 +1040,17 @@ const mainsocket = (io) => {
         async function cleanupRoom(client, io, reason) {
             const roomId = client.roomId
             if (!roomId) return
+
+            // AI matches: simple cleanup, no settlement/forfeit needed
+            const aiRoom = findRoom(roomId)
+            if (aiRoom && aiRoom.isAIMatch) {
+                cleanupAI(roomId)
+                client.leave(roomId)
+                client.roomId = null
+                client.isHost = false
+                await removeRoom(roomId)
+                return
+            }
 
             const ws = wagerStates[roomId]
             const ms = matchStates[roomId]

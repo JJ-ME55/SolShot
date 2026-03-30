@@ -344,16 +344,23 @@ function checkLineOfSight(from, to, terrain) {
 }
 
 /**
- * Clamp angle to valid game range [0, 180] degrees, then convert to radians.
- * The server physics expects turret rotation in radians:
- *   radians = (degrees * PI / 180) - PI / 2
- * This matches the client's handleAngleFromReact conversion.
+ * Clamp angle to valid game range [0, 180] degrees, then convert to radians
+ * matching Phaser's turret.rotation convention (what the client sends to server).
+ *
+ * Phaser coordinate system:
+ *   0 rad    = pointing RIGHT
+ *   -PI/2    = pointing UP
+ *   ±PI      = pointing LEFT
+ *
+ * Our degree convention: 0° = right, 90° = up, 180° = left
+ * Conversion: radians = -(degrees * PI / 180)
+ *
  * @param {number} angleDeg - Angle in degrees (0=right, 90=up, 180=left)
- * @returns {number} Angle in radians for processShot
+ * @returns {number} Angle in radians (Phaser turret rotation format)
  */
 function clampAngleToRadians(angleDeg) {
   const clamped = Math.max(0, Math.min(180, angleDeg));
-  return (clamped * Math.PI / 180) - Math.PI / 2;
+  return -(clamped * Math.PI / 180);
 }
 
 /**

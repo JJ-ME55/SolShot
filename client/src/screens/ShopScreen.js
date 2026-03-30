@@ -875,7 +875,7 @@ function ShopScreen({ navigate, screenData }) {
           {/* Pot Display (if wagered) */}
           {wager > 0 && (
             <div style={s.potDisplay}>
-              <span style={s.potBadge}><img src="/assets/images/currency/icon-sol.png" alt="" style={{ width: 12, height: 12, verticalAlign: 'middle', marginRight: 4 }} />{'POT: ' + (wager * 2) + ' SOL'}</span>
+              <span style={s.potBadge}><img src="/assets/images/currency/icon-sol.png" alt="" style={{ width: 12, height: 12, verticalAlign: 'middle', marginRight: 4 }} />{'POT: ' + (wager * (screenData?.players?.length || 2)) + ' SOL'}</span>
             </div>
           )}
 

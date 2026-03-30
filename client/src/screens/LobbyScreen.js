@@ -763,7 +763,21 @@ function LobbyScreen({ navigate }) {
             </div>
           </div>
 
-          {/* Player Count — hidden for practice-only launch */}
+          {/* Player Count */}
+          <div>
+            <div style={s.sectionLabel}>PLAYERS</div>
+            <div style={s.matchRow}>
+              {[2, 3, 4].map((n) => (
+                <div
+                  key={n}
+                  style={s.matchBtn(numPlayers === n)}
+                  onClick={() => setNumPlayers(n)}
+                >
+                  {n + 'P'}
+                </div>
+              ))}
+            </div>
+          </div>
 
           {/* Wager */}
           {isCustomMode ? (

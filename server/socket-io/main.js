@@ -496,9 +496,6 @@ function startTurnTimer(io, roomId) {
             return
         }
 
-        const hostId = room.players ? room.players[0]?.socketId : null
-        const playerId = room.players ? room.players[1]?.socketId : null
-
         // LP-08: Track consecutive timeouts per player
         if (!ms.consecutiveTimeouts) ms.consecutiveTimeouts = {}
         ms.consecutiveTimeouts[currentTurnId] = (ms.consecutiveTimeouts[currentTurnId] || 0) + 1
@@ -574,8 +571,8 @@ function startTurnTimer(io, roomId) {
                 return
             }
 
-            // <=2 alive: original forfeit-ends-match path
-            const opponentId = currentTurnId === hostId ? playerId : hostId
+            // <=2 alive: forfeit ends match — find the surviving opponent
+            const opponentId = ms.players.find(id => id !== currentTurnId && ms.alive[id]) || null
 
             console.log(`[Forfeit] Player ${currentTurnId} timed out 3 consecutive turns — opponent ${opponentId} wins`)
 

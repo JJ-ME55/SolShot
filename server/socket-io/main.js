@@ -488,12 +488,11 @@ function startTurnTimer(io, roomId) {
         const currentTurnId = ms.currentTurn
         if (!currentTurnId) return
 
-        // AI bot should never time out, but if it does, just re-schedule
+        // AI bot should never time out, but if it does, just skip its turn
         if (room.isAIMatch && currentTurnId.startsWith('ai-bot-')) {
             ms.turnCount++
             ms.currentTurn = getNextTurn(ms)
             startTurnTimer(io, roomId)
-            scheduleAITurn(io, roomId)
             return
         }
 

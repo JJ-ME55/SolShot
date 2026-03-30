@@ -132,6 +132,7 @@ function LoseScreen({ navigate, screenData }) {
   const [showCard, setShowCard] = useState(false);
   const [playerStats, setPlayerStats] = useState(null);
 
+  const isAIMatch = screenData?.isAIMatch || false;
   const wager = screenData?.wager || 0;
   const scores = screenData?.scores || {};
   const roundWins = screenData?.roundWins || {};
@@ -198,6 +199,22 @@ function LoseScreen({ navigate, screenData }) {
         style={s.heroBanner}
         draggable={false}
       />
+
+      {/* AI Practice banner */}
+      {isAIMatch && (
+        <div style={{
+          background: 'rgba(255,255,255,0.08)',
+          padding: '5px 16px',
+          borderRadius: 6,
+          fontFamily: "'Share Tech Mono', monospace",
+          fontSize: 11,
+          color: 'rgba(255,255,255,0.4)',
+          letterSpacing: 2,
+          marginBottom: 4,
+        }}>
+          PRACTICE VS AI — STATS NOT RECORDED
+        </div>
+      )}
 
       {/* Tab Navigation */}
       <div style={s.tabNav}>
@@ -318,7 +335,7 @@ function LoseScreen({ navigate, screenData }) {
             </Button>
           </div>
           <div style={s.buttonRow}>
-            <Button variant="primary" onClick={handleLobby} style={{ fontSize: 14, padding: '10px 24px' }}>
+            <Button variant="primary" onClick={isAIMatch ? () => navigate('ai-practice') : handleLobby} style={{ fontSize: 14, padding: '10px 24px' }}>
               PLAY AGAIN
             </Button>
             <Button variant="secondary" onClick={handleMenu} style={{ fontSize: 13, padding: '10px 20px' }}>

@@ -555,6 +555,7 @@ function ShopScreen({ navigate, screenData }) {
       goldBalance: data.goldBalance,
       round: currentRound,
       totalRounds: totalRounds,
+      isAIMatch: screenData?.isAIMatch || false,
     });
   });
 

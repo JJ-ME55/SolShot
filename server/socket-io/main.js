@@ -3524,7 +3524,7 @@ const mainsocket = (io) => {
                     const pIds = room.players.map(p => p.socketId);
                     ms.players = pIds;
                     ms.alive = {};
-                    ms.turnsPerRound = pIds.length * 10;
+                    ms.turnsPerRound = room.isAIMatch ? pIds.length * 20 : pIds.length * 10;
                     // Initialize ALL per-player maps for every socket ID (CORE-06)
                     for (const id of pIds) {
                         ms.alive[id] = true;

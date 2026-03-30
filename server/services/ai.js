@@ -138,6 +138,13 @@ export function pickWeapon(inventory, aiPos, targetPos, terrain) {
  * Calculate aim (angle + power) for the AI's current shot.
  * Uses probabilistic error with calibration — NOT a fixed ramp.
  *
+ * ANGLE CONVENTION (matching client slider):
+ *   0° = flat LEFT, 90° = straight UP, 180° = flat RIGHT
+ *   Converted to radians via: (deg * PI/180) - PI/2
+ *
+ * POWER: physics-based. Range ≈ v²·sin(2θ)/g where v = power·8, g = 300.
+ *   Solving: power = sqrt(range · g / sin(2θ)) / 8
+ *
  * @param {string} roomId
  * @param {{ x: number, y: number }} aiPos
  * @param {{ x: number, y: number }} targetPos
@@ -148,7 +155,6 @@ export function pickWeapon(inventory, aiPos, targetPos, terrain) {
 export function calculateAim(roomId, aiPos, targetPos, wind, weaponId) {
   const cal = calibration[roomId];
   if (!cal) {
-    // No calibration state — init on the fly
     initAI(roomId);
     return calculateAim(roomId, aiPos, targetPos, wind, weaponId);
   }
@@ -168,104 +174,100 @@ export function calculateAim(roomId, aiPos, targetPos, wind, weaponId) {
   cal.lastTargetY = targetPos.y;
 
   // --- Calculate "perfect" aim ---
+  // Slider convention: 0° = flat LEFT, 90° = UP, 180° = flat RIGHT
   const dx = targetPos.x - aiPos.x;
-  const dy = targetPos.y - aiPos.y;
-  const dist = Math.sqrt(dx * dx + dy * dy);
+  const horizontalDist = Math.abs(dx);
 
-  // Base angle: atan2 gives direction, convert to game angle (0-180)
-  // In game coords: 0° = right, 90° = straight up, 180° = left
-  // We want a lofted arc, so aim ~55-70° above horizontal
-  const horizontalAngle = Math.atan2(-dy, Math.abs(dx)) * (180 / Math.PI);
-  // Loft: closer targets need higher arc, farther need flatter
-  const loft = Math.max(45, Math.min(75, 65 - dist * 0.02));
-  let perfectAngle = loft;
+  // Loft angle from horizontal: 30-50° depending on distance
+  // Closer targets need steeper arc, farther need flatter
+  const loftDeg = Math.max(30, Math.min(50, 45 - horizontalDist * 0.01));
 
-  // Flip for left-facing shots (target is to the left)
+  // Convert loft to slider degrees:
+  // Shooting LEFT (dx < 0): slider angle = 90 - loft (toward 0° = flat left)
+  // Shooting RIGHT (dx > 0): slider angle = 90 + loft (toward 180° = flat right)
+  let perfectAngle;
   if (dx < 0) {
-    perfectAngle = 180 - perfectAngle;
+    perfectAngle = 90 - loftDeg; // e.g. 90-40 = 50° (up-left)
+  } else {
+    perfectAngle = 90 + loftDeg; // e.g. 90+40 = 130° (up-right)
   }
 
-  // Power: scale with distance. Power range is 0-100.
-  // At ~600px distance, power should be ~80-90
-  let perfectPower = Math.min(100, Math.max(20, dist * 0.14 + 10));
+  // Power: physics-based using projectile range formula
+  // range = v²·sin(2θ)/g, v = power·8, g = 300
+  // power = sqrt(range · g / sin(2·loftRad)) / 8
+  const GRAVITY = 300;
+  const POWER_FACTOR = 8;
+  const loftRad = loftDeg * Math.PI / 180;
+  const sinFactor = Math.sin(2 * loftRad);
+  // Use horizontal distance as range, add ~10% to overshoot slightly (gravity eats range)
+  const effectiveRange = horizontalDist * 1.1;
+  let perfectPower = Math.sqrt(effectiveRange * GRAVITY / Math.max(0.1, sinFactor)) / POWER_FACTOR;
+  perfectPower = Math.max(15, Math.min(95, perfectPower));
 
   // --- Wind compensation (~60%) ---
-  // Wind pushes projectile horizontally; compensate by adjusting power and angle
-  // Positive wind = rightward push
-  const windCompensation = 0.6;
-  const windEffect = wind * windCompensation;
-
-  // If shooting right (dx > 0): headwind (wind < 0) needs more power, tailwind less
-  // If shooting left (dx < 0): opposite
+  // Wind pushes projectile horizontally; compensate by adjusting power
+  const windComp = wind * 0.6;
+  // Headwind (opposing shot direction) needs more power, tailwind needs less
   if (dx > 0) {
-    perfectPower -= windEffect * 0.15;
+    perfectPower -= windComp * 0.1; // shooting right: rightward wind = tailwind
   } else {
-    perfectPower += windEffect * 0.15;
+    perfectPower += windComp * 0.1; // shooting left: rightward wind = headwind
   }
-  perfectPower = Math.min(100, Math.max(10, perfectPower));
+  perfectPower = Math.max(15, Math.min(95, perfectPower));
 
   // --- Special weapon overrides ---
 
   // Homing weapons: minimal error, they track anyway
   if (wep.type === 'homing') {
-    const angleErr = (Math.random() - 0.5) * 10;  // ±5°
-    const powerErr = (Math.random() - 0.5) * 10;  // ±5
     cal.shotCount++;
     return {
-      angle: clampAngleToRadians(perfectAngle + angleErr),
-      power: clampPower(perfectPower + powerErr),
+      angle: degToServerAngle(perfectAngle + (Math.random() - 0.5) * 10),
+      power: clampPower(perfectPower + (Math.random() - 0.5) * 10),
     };
   }
 
-  // Magic Wall: aim to place between self and opponent (~20-35% of the way from AI)
+  // Magic Wall: place between self and opponent (~20-35% of the way)
   if (wep.type === 'wall') {
-    const wallFraction = 0.20 + Math.random() * 0.15; // 20-35%
-    const wallX = aiPos.x + dx * wallFraction;
-    const wallDx = wallX - aiPos.x;
-    const wallDist = Math.abs(wallDx);
-    let wallAngle = Math.max(50, Math.min(80, 70 - wallDist * 0.02));
-    if (wallDx < 0) wallAngle = 180 - wallAngle;
-    const wallPower = Math.min(100, Math.max(15, wallDist * 0.14 + 5));
+    const wallDist = horizontalDist * (0.20 + Math.random() * 0.15);
+    const wallLoft = 50; // steep arc for short distance
+    const wallAngle = dx < 0 ? 90 - wallLoft : 90 + wallLoft;
+    const wallPower = Math.sqrt(wallDist * GRAVITY / Math.sin(2 * wallLoft * Math.PI / 180)) / POWER_FACTOR;
     cal.shotCount++;
     return {
-      angle: clampAngleToRadians(wallAngle),
-      power: clampPower(wallPower),
+      angle: degToServerAngle(wallAngle),
+      power: clampPower(Math.max(15, Math.min(60, wallPower))),
     };
   }
 
-  // Dirt Ball (terrain_create): aim at opponent with small error
+  // Dirt Ball: aim at opponent with small error
   if (wep.type === 'terrain_create') {
-    const angleErr = (Math.random() - 0.5) * 8;  // ±4°
-    const powerErr = (Math.random() - 0.5) * 8;  // ±4
     cal.shotCount++;
     return {
-      angle: clampAngleToRadians(perfectAngle + angleErr),
-      power: clampPower(perfectPower + powerErr),
+      angle: degToServerAngle(perfectAngle + (Math.random() - 0.5) * 8),
+      power: clampPower(perfectPower + (Math.random() - 0.5) * 6),
     };
   }
 
   // --- Standard probabilistic aiming ---
 
-  // Roll shot luck (0-1): determines how accurate THIS particular shot is
+  // Roll shot luck: determines how accurate THIS particular shot is
   const shotLuck = Math.random();
-  // Effective error: even with high errorFactor, 30% of the time the shot is decent
   const effectiveError = cal.errorFactor * (0.3 + shotLuck * 0.7);
 
-  // Apply random error scaled by effective error
-  // Base angle error: ±20°, base power error: ±25%
+  // Apply random error (in slider degrees and power units)
   const angleError = (Math.random() - 0.5) * 2 * 20 * effectiveError;
   const powerError = (Math.random() - 0.5) * 2 * (perfectPower * 0.25) * effectiveError;
 
   const finalAngle = perfectAngle + angleError;
   const finalPower = perfectPower + powerError;
 
-  // --- Improve calibration after each shot ---
+  // Improve calibration
   cal.shotCount++;
   cal.errorFactor -= (0.15 + Math.random() * 0.1);
-  cal.errorFactor = Math.max(0.15, cal.errorFactor); // never perfect
+  cal.errorFactor = Math.max(0.15, cal.errorFactor);
 
   return {
-    angle: clampAngleToRadians(finalAngle),
+    angle: degToServerAngle(finalAngle),
     power: clampPower(finalPower),
   };
 }
@@ -344,23 +346,23 @@ function checkLineOfSight(from, to, terrain) {
 }
 
 /**
- * Clamp angle to valid game range [0, 180] degrees, then convert to radians
- * matching Phaser's turret.rotation convention (what the client sends to server).
+ * Convert slider degrees to the radian value processShot expects.
  *
- * Phaser coordinate system:
- *   0 rad    = pointing RIGHT
- *   -PI/2    = pointing UP
- *   ±PI      = pointing LEFT
+ * Slider convention: 0° = flat LEFT, 90° = straight UP, 180° = flat RIGHT
+ * Server convention: angle passed to processShot = turret.rotation from client
+ *   = (sliderDeg * PI / 180) - PI / 2
  *
- * Our degree convention: 0° = right, 90° = up, 180° = left
- * Conversion: radians = -(degrees * PI / 180)
+ * Verification:
+ *   0° (LEFT):  (0 · π/180) - π/2 = -π/2  → rotation=-π  → vx<0 ✓
+ *   90° (UP):   (π/2) - π/2 = 0            → rotation=-π/2 → vy<0 ✓
+ *   180° (RIGHT): (π) - π/2 = π/2          → rotation=0    → vx>0 ✓
  *
- * @param {number} angleDeg - Angle in degrees (0=right, 90=up, 180=left)
- * @returns {number} Angle in radians (Phaser turret rotation format)
+ * @param {number} sliderDeg - Angle in slider degrees (0=left, 90=up, 180=right)
+ * @returns {number} Angle in radians for processShot
  */
-function clampAngleToRadians(angleDeg) {
-  const clamped = Math.max(0, Math.min(180, angleDeg));
-  return -(clamped * Math.PI / 180);
+function degToServerAngle(sliderDeg) {
+  const clamped = Math.max(0, Math.min(180, sliderDeg));
+  return (clamped * Math.PI / 180) - Math.PI / 2;
 }
 
 /**

@@ -17,6 +17,7 @@ import LoseScreen from './screens/LoseScreen';
 import ArmoryScreen from './screens/ArmoryScreen';
 import PrestigeScreen from './screens/PrestigeScreen';
 import BarracksScreen from './screens/BarracksScreen';
+import AIPracticeScreen from './screens/AIPracticeScreen';
 import HowToPlayScreen from './screens/HowToPlayScreen';
 import TermsScreen from './screens/TermsScreen';
 import PrivacyScreen from './screens/PrivacyScreen';
@@ -99,6 +100,8 @@ function AppInner() {
         return <PrestigeScreen navigate={navigate} />;
       case 'barracks':
         return <BarracksScreen navigate={navigate} />;
+      case 'ai-practice':
+        return <AIPracticeScreen navigate={navigate} />;
       case 'howtoplay':
         return <HowToPlayScreen navigate={navigate} />;
       case 'terms':

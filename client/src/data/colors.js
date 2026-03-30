@@ -11,6 +11,7 @@ const TANK_COLORS = [
   { id: 5, name: 'BLUE',   hex: '#0066FF', phaserHex: 0x0066FF },
   { id: 6, name: 'PURPLE', hex: '#9900FF', phaserHex: 0x9900FF },
   { id: 7, name: 'PINK',   hex: '#FF00FF', phaserHex: 0xFF00FF },
+  { id: 8, name: 'WHITE',  hex: '#FFFFFF', phaserHex: 0xFFFFFF },
 ];
 
 export default TANK_COLORS;

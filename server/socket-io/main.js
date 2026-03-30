@@ -14,6 +14,7 @@ import { cancelMatchEscrow } from '../services/escrow.js';
 import { recordMatchPlayed, prestigeBurn, getPrestigeInfo, getShotBalance, PRESTIGE_TIERS, loadMilestoneState, saveMilestoneState, verifyBurnTransaction, getPlayerShotState, SHOT_MILESTONES } from '../services/shot-token.js';
 import { trackConnection, trackDisconnection, trackMatchCreated, trackMatchCompleted, trackMatchCancelled, trackWager, trackSettlement, trackForfeit, trackShot, trackDamage, trackGoldEarned, trackShotEmission, trackShotBurn, trackError } from '../services/monitoring.js';
 import { requireAuth, validatePayload, validateFireParams, sanitizeName, withLock, safeHandler } from '../middleware/guards.js';
+import { initAI, cleanupAI, pickWeapon, calculateAim, autoBuyWeapons } from '../services/ai.js';
 
 // Profanity filter (server-side guard — mirrors client profanity.js)
 const PROFANITY_WORDS = [
@@ -339,6 +340,7 @@ function requireAuthIfWagered(client, eventName) {
 function getOpenRooms() {
     const result = [];
     for (const room of rooms.values()) {
+        if (room.isAIMatch) continue;
         if (room.players && room.players.length < room.maxPlayers) {
             result.push({
                 roomId: room.roomId,
@@ -395,6 +397,7 @@ async function persistRoom(room) {
 
 // Helper: remove room from memory and mark cancelled in DB
 async function removeRoom(roomId) {
+    cleanupAI(roomId);
     const room = rooms.get(roomId);
     rooms.delete(roomId);
     delete matchStates[roomId];
@@ -676,6 +679,211 @@ function clearTurnTimer(roomId) {
 const mainsocket = (io) => {
     // JUP-02: Start Jupiter price polling on server init (30s interval, cached server-side)
     startPricePolling(30000);
+
+    // ═══ AI TURN SCHEDULING ═══
+    function scheduleAITurn(ioRef, roomId) {
+        const room = findRoom(roomId);
+        if (!room || !room.isAIMatch) return;
+        const ms = matchStates[roomId];
+        if (!ms || ms.status !== MATCH_STATES.BATTLE) return;
+        const AI_SOCKET_ID = `ai-bot-${roomId}`;
+        if (ms.currentTurn !== AI_SOCKET_ID) return;
+
+        const delay = 500 + Math.floor(Math.random() * 500);
+        setTimeout(() => executeAITurn(ioRef, roomId), delay);
+    }
+
+    function executeAITurn(ioRef, roomId) {
+        const room = findRoom(roomId);
+        if (!room || !room.isAIMatch) return;
+        const ms = matchStates[roomId];
+        if (!ms || ms.status !== MATCH_STATES.BATTLE) return;
+
+        const AI_SOCKET_ID = `ai-bot-${roomId}`;
+        if (ms.currentTurn !== AI_SOCKET_ID) return;
+
+        const aiSlot = room.players.find(p => p.socketId === AI_SOCKET_ID);
+        const humanSlot = room.players.find(p => p.socketId !== AI_SOCKET_ID && ms.alive[p.socketId]);
+        if (!aiSlot?.pos || !humanSlot?.pos) return;
+
+        // Pick weapon and aim
+        const inventory = weaponInventories[roomId]?.[AI_SOCKET_ID] || [0];
+        const weaponId = pickWeapon(inventory, aiSlot.pos, humanSlot.pos, room.heightmap);
+        const { angle, power } = calculateAim(roomId, aiSlot.pos, humanSlot.pos, room.wind || 0, weaponId);
+
+        // Consume weapon (not Single Shot)
+        if (weaponId !== 0) {
+            const inv = weaponInventories[roomId]?.[AI_SOCKET_ID];
+            if (inv) {
+                const idx = inv.indexOf(weaponId);
+                if (idx !== -1) inv.splice(idx, 1);
+            }
+        }
+
+        ms.turnSequence++;
+
+        // Run physics
+        const tanks = room.players
+            .filter(p => p.pos && ms.alive[p.socketId])
+            .map(p => ({ id: p.socketId, x: p.pos.x, y: p.pos.y, width: 40, height: 30 }));
+        const terrain = room.heightmap || new Array(1200).fill(400);
+
+        const result = processShot({
+            angle, power, weaponId,
+            startX: aiSlot.pos.x, startY: aiSlot.pos.y,
+            shooterId: AI_SOCKET_ID,
+            terrain, tanks,
+            wind: room.wind || 0,
+        });
+
+        console.log(`[AI] Shot Bot fires weapon ${weaponId} at angle=${angle.toFixed(1)} power=${power}`);
+
+        // Update terrain
+        room.heightmap = result.newTerrain;
+        for (const p of room.players) {
+            if (p.pos) {
+                const px = Math.min(1199, Math.max(0, Math.floor(p.pos.x)));
+                p.pos.y = result.newTerrain[px] - 15;
+            }
+        }
+
+        // Update scores, HP, kills
+        let goldEarned = 0;
+        for (const [playerId, dmg] of Object.entries(result.damage)) {
+            if (playerId !== AI_SOCKET_ID && dmg > 0) {
+                ms.scores[AI_SOCKET_ID] = (ms.scores[AI_SOCKET_ID] || 0) + dmg;
+            }
+        }
+        for (const [playerId, dmg] of Object.entries(result.damage)) {
+            if (ms.hp[playerId] === undefined) ms.hp[playerId] = 250;
+            const hpBefore = ms.hp[playerId];
+            ms.hp[playerId] = Math.max(0, ms.hp[playerId] - Math.abs(dmg));
+            if (hpBefore > 0 && ms.hp[playerId] <= 0 && playerId !== AI_SOCKET_ID) {
+                ms.kills[AI_SOCKET_ID] = (ms.kills[AI_SOCKET_ID] || 0) + 1;
+            }
+        }
+
+        const gold = goldStates[roomId];
+        if (gold) {
+            for (const [playerId, dmg] of Object.entries(result.damage)) {
+                if (playerId !== AI_SOCKET_ID && dmg > 0) {
+                    goldEarned += earnGold(gold, AI_SOCKET_ID, dmg);
+                }
+            }
+        }
+
+        // Elimination detection
+        const newlyEliminated = [];
+        for (const pid of ms.players) {
+            if (!result.damage?.[pid]) continue;
+            if (ms.hp[pid] <= 0 && ms.alive[pid]) {
+                ms.alive[pid] = false;
+                ms.eliminationOrder.push(pid);
+                newlyEliminated.push(pid);
+            }
+        }
+        for (const pid of newlyEliminated) {
+            if (gold) awardKillBonus(gold, AI_SOCKET_ID);
+            ioRef.sockets.in(roomId).emit('playerEliminated', {
+                eliminatedId: pid,
+                killedById: AI_SOCKET_ID,
+                survivingPlayers: ms.players.filter(id => ms.alive[id]),
+            });
+        }
+
+        ms.turnCount++;
+        ms.currentTurn = getNextTurn(ms);
+
+        // Thin trajectory helper
+        const thinTrajectory = (pts) => {
+            if (!pts || pts.length <= 2) return pts;
+            const out = [];
+            for (let i = 0; i < pts.length; i += 2) out.push(pts[i]);
+            if (out[out.length - 1] !== pts[pts.length - 1]) out.push(pts[pts.length - 1]);
+            return out;
+        };
+
+        const hitSomething = result.impact && result.impact.type !== 'outOfBounds';
+        const hasSubEffects = !!(result.scatterPoints || result.spiderLegs || result.tunnelExit);
+        const isTerrainWeapon = weaponId === 25 || weaponId === 12;
+        const terrainChanged = hitSomething || hasSubEffects || isTerrainWeapon;
+
+        // Broadcast turnResult (identical format to human fire)
+        ioRef.sockets.in(roomId).emit('turnResult', {
+            playerId: AI_SOCKET_ID,
+            weaponId,
+            trajectory: thinTrajectory(result.trajectory),
+            impact: result.impact,
+            damage: result.damage,
+            terrainUpdate: terrainChanged ? result.newTerrain : null,
+            scores: ms.scores,
+            hp: ms.hp,
+            nextTurn: ms.currentTurn,
+            seq: ms.turnSequence,
+            goldEarned,
+            goldBalance: goldStates[roomId] || {},
+            players: ms.players.map(id => {
+                const slot = room.players.find(p => p.socketId === id);
+                return { socketId: id, pos: slot ? slot.pos : null, hp: ms.hp[id] ?? 0, alive: ms.alive[id] ?? false };
+            }),
+            alive: ms.alive,
+            currentPlayerIndex: ms.currentPlayerIndex,
+            positions: room.players.map(p => ({ socketId: p.socketId, pos: p.pos })),
+            tankPositions: {
+                host: room.players[0]?.pos ? { x: room.players[0].pos.x, y: room.players[0].pos.y } : null,
+                player: room.players[1]?.pos ? { x: room.players[1].pos.x, y: room.players[1].pos.y } : null,
+                hostId: room.players[0]?.socketId || null,
+            },
+            scatterPoints: result.scatterPoints || null,
+            subTrajectories: result.subTrajectories ? result.subTrajectories.map(thinTrajectory) : null,
+            spiderLegs: result.spiderLegs || null,
+            tunnelEntry: result.tunnelEntry || null,
+            tunnelExit: result.tunnelExit || null,
+        });
+
+        // Check round/match end
+        if (!isRoundOver(ms)) {
+            startTurnTimer(ioRef, roomId);
+            scheduleAITurn(ioRef, roomId);
+            return;
+        }
+
+        // Round/match over
+        clearTurnTimer(roomId);
+        const ranked = getRoundPlacement(ms);
+        const matchResult = isMatchOver(ms);
+        ms.currentRound++;
+
+        if (matchResult.isOver) {
+            transitionState(ms, MATCH_STATES.COMPLETE);
+
+            const formattedScores = {};
+            for (const pid of ms.players) {
+                formattedScores[pid] = {
+                    damageDealt: ms.scores[pid] || 0,
+                    kills: ms.kills[pid] || 0,
+                };
+            }
+
+            setTimeout(() => {
+                ioRef.sockets.in(roomId).emit('matchEnd', {
+                    winner: matchResult.winner,
+                    survivorOrder: ranked,
+                    scores: formattedScores,
+                    roundWins: ms.roundWins,
+                    goldBalance: goldStates[roomId] || {},
+                    settlement: null,
+                    wager: 0,
+                    shotEarned: {},
+                    isAIMatch: true,
+                    prestigeInfo: {},
+                    earnedMilestones: {},
+                });
+                cleanupAI(roomId);
+                console.log(`[AI] Practice match ${roomId} ended — winner: ${matchResult.winner === AI_SOCKET_ID ? 'Shot Bot' : 'Human'}`);
+            }, 3000);
+        }
+    }
 
     return io.on("connection", (client) => {
         trackConnection()
@@ -1600,6 +1808,95 @@ const mainsocket = (io) => {
             })
         })
 
+        // ═══ AI PRACTICE MODE ═══
+        client.on('createAIMatch', safeHandler(async function(data) {
+            if (!data || typeof data !== 'object' || !data.player) return;
+            const { player } = data;
+
+            // Clean up any existing room
+            if (client.roomId !== null) {
+                client.leave(client.roomId);
+                await removeRoom(client.roomId);
+            }
+
+            const creatorHandle = playerUids[client.id]?.handle || sanitizeName(player.name || 'Player');
+            const roomId = crypto.randomBytes(4).toString('hex');
+            client.join(roomId);
+            client.roomId = roomId;
+            client.isHost = true;
+
+            const AI_SOCKET_ID = `ai-bot-${roomId}`;
+
+            const humanSlot = {
+                name: creatorHandle,
+                color: player.color || 0xFF0000,
+                socketId: client.id,
+                isReady: true,
+                playAgain: false,
+                pos: null,
+                isHost: true,
+            };
+
+            const aiSlot = {
+                name: 'Shot Bot',
+                color: 0xFFFFFF,
+                socketId: AI_SOCKET_ID,
+                isReady: true,
+                playAgain: false,
+                pos: null,
+                isHost: false,
+                isAI: true,
+            };
+
+            const roomData = {
+                roomId,
+                players: [humanSlot, aiSlot],
+                maxPlayers: 2,
+                active: true,
+                wager: 0,
+                matchMode: 'practice',
+                totalRounds: 1,
+                isAIMatch: true,
+            };
+
+            rooms.set(roomId, roomData);
+            matchStates[roomId] = createMatchState(roomId, '1', 2);
+
+            initAI(roomId);
+
+            const playerIds = [client.id, AI_SOCKET_ID];
+            goldStates[roomId] = initGold(playerIds);
+
+            const aiInventory = autoBuyWeapons(1000);
+            weaponInventories[roomId] = {
+                [client.id]: [0],
+                [AI_SOCKET_ID]: aiInventory,
+            };
+
+            const ms = matchStates[roomId];
+            transitionState(ms, MATCH_STATES.WEAPON_SHOP);
+
+            const weapons = getAllLaunchWeapons();
+            const shopDuration = 25;
+
+            client.emit('shopPhase', {
+                weapons,
+                goldBalance: { [client.id]: getBalance(goldStates[roomId], client.id) },
+                inventory: { [client.id]: [0] },
+                timer: shopDuration,
+                totalRounds: 1,
+                round: 1,
+                isAIMatch: true,
+            });
+
+            shopReady[roomId] = { [client.id]: false, [AI_SOCKET_ID]: true };
+            if (shopTimers[roomId]) clearTimeout(shopTimers[roomId]);
+            shopTimers[roomId] = setTimeout(() => {
+                endShopPhase(io, roomId);
+            }, shopDuration * 1000);
+
+            console.log(`[AI] Practice match created: ${roomId} — ${creatorHandle} vs Shot Bot`);
+        }));
 
 
         // ── Queue-based matchmaking (standard modes: practice, quick_match, duel, high_roller) ──
@@ -2832,6 +3129,7 @@ const mainsocket = (io) => {
             // Restart turn timer for the next player
             if (ms && !isRoundOver(ms)) {
                 startTurnTimer(io, this.roomId)
+                scheduleAITurn(io, this.roomId);
             }
 
             // Check if round is over
@@ -2936,52 +3234,56 @@ const mainsocket = (io) => {
                         // === SHOT TOKEN MILESTONES (Phase 6) ===
                         // LP-04: Enriched context with v2.1 milestone data
                         const shotResults = {}
-                        const wsState = wagerStates[this.roomId]
-                        const matchId = `${this.roomId}:${ms.currentRound}:${Date.now()}`
-                        const isWagered = wsState && wsState.amount > 0
+                        let playerWalletMap = {}
+                        let milestonesBefore = {}
+                        let getNewMilestones = () => []
 
-                        // DEBT-01: Record match for all N players
-                        const playerWalletMap = {}
-                        for (const p of room.players) {
-                            playerWalletMap[p.socketId] = wsState?.wallets?.[p.socketId] || authenticatedWallets[p.socketId] || null
-                        }
+                        if (!room.isAIMatch) {
+                            const wsState = wagerStates[this.roomId]
+                            const matchId = `${this.roomId}:${ms.currentRound}:${Date.now()}`
+                            const isWagered = wsState && wsState.amount > 0
 
-                        // Phase 11: Snapshot milestones BEFORE recordMatchPlayed so we can diff after
-                        const milestonesBefore = {}
-                        for (const p of room.players) {
-                            const wallet = playerWalletMap[p.socketId]
-                            milestonesBefore[p.socketId] = wallet
-                                ? new Set((getPlayerShotState(wallet)?.milestonesEarned || []))
-                                : new Set()
-                        }
+                            // DEBT-01: Record match for all N players
+                            for (const p of room.players) {
+                                playerWalletMap[p.socketId] = wsState?.wallets?.[p.socketId] || authenticatedWallets[p.socketId] || null
+                            }
 
-                        for (const p of room.players) {
-                            const wallet = playerWalletMap[p.socketId]
-                            if (!wallet) continue
-                            shotResults[p.socketId] = recordMatchPlayed(wallet, {
-                                turnCount: ms.turnCount,
-                                matchId,
-                                isWagered,
-                                isWinner: matchResult.winner === p.socketId,
-                                maxRoundDamage: (ms.maxRoundDamage && ms.maxRoundDamage[p.socketId]) || 0,
-                                weaponsUsed: ms.weaponsUsed && ms.weaponsUsed[p.socketId]
-                                    ? Array.from(ms.weaponsUsed[p.socketId]) : [],
-                            })
-                            if (shotResults[p.socketId].earned > 0) trackShotEmission(shotResults[p.socketId].earned)
-                        }
+                            // Phase 11: Snapshot milestones BEFORE recordMatchPlayed so we can diff after
+                            for (const p of room.players) {
+                                const wallet = playerWalletMap[p.socketId]
+                                milestonesBefore[p.socketId] = wallet
+                                    ? new Set((getPlayerShotState(wallet)?.milestonesEarned || []))
+                                    : new Set()
+                            }
 
-                        // Phase 11: Compute newly earned milestones (diff against snapshot)
-                        const getNewMilestones = (wallet, beforeSet) => {
-                            if (!wallet) return []
-                            const state = getPlayerShotState(wallet)
-                            if (!state) return []
-                            return (state.milestonesEarned || [])
-                                .filter(id => !beforeSet.has(id))
-                                .map(id => {
-                                    const milestone = SHOT_MILESTONES.find(m => m.id === id)
-                                    return milestone ? { id: milestone.id, label: milestone.label, reward: milestone.reward } : null
+                            for (const p of room.players) {
+                                const wallet = playerWalletMap[p.socketId]
+                                if (!wallet) continue
+                                shotResults[p.socketId] = recordMatchPlayed(wallet, {
+                                    turnCount: ms.turnCount,
+                                    matchId,
+                                    isWagered,
+                                    isWinner: matchResult.winner === p.socketId,
+                                    maxRoundDamage: (ms.maxRoundDamage && ms.maxRoundDamage[p.socketId]) || 0,
+                                    weaponsUsed: ms.weaponsUsed && ms.weaponsUsed[p.socketId]
+                                        ? Array.from(ms.weaponsUsed[p.socketId]) : [],
                                 })
-                                .filter(Boolean)
+                                if (shotResults[p.socketId].earned > 0) trackShotEmission(shotResults[p.socketId].earned)
+                            }
+
+                            // Phase 11: Compute newly earned milestones (diff against snapshot)
+                            getNewMilestones = (wallet, beforeSet) => {
+                                if (!wallet) return []
+                                const state = getPlayerShotState(wallet)
+                                if (!state) return []
+                                return (state.milestonesEarned || [])
+                                    .filter(id => !beforeSet.has(id))
+                                    .map(id => {
+                                        const milestone = SHOT_MILESTONES.find(m => m.id === id)
+                                        return milestone ? { id: milestone.id, label: milestone.label, reward: milestone.reward } : null
+                                    })
+                                    .filter(Boolean)
+                            }
                         }
 
                         // Delay matchEnd emit so client can animate the killing blow
@@ -3002,12 +3304,13 @@ const mainsocket = (io) => {
                             settlement: settlementInfo,
                             wager: ws ? ws.amount : 0,
                             shotEarned: shotResults,
+                            isAIMatch: room.isAIMatch || false,
                             // Phase 11: Prestige info per player (client reads by own socket ID)
-                            prestigeInfo: Object.fromEntries(
+                            prestigeInfo: room.isAIMatch ? {} : Object.fromEntries(
                                 room.players.map(p => [p.socketId, getPrestigeInfo(playerWalletMap[p.socketId])])
                             ),
                             // Phase 11: Milestones earned this match per player
-                            earnedMilestones: Object.fromEntries(
+                            earnedMilestones: room.isAIMatch ? {} : Object.fromEntries(
                                 room.players.map(p => [
                                     p.socketId,
                                     getNewMilestones(playerWalletMap[p.socketId], milestonesBefore[p.socketId] || new Set())
@@ -3016,10 +3319,12 @@ const mainsocket = (io) => {
                         }
                         setTimeout(() => {
                             io.sockets.in(roomId).emit('matchEnd', matchEndPayload)
+                            if (room.isAIMatch) cleanupAI(roomId);
                         }, ROUND_END_DELAY)
 
                         // === PERSIST STATS TO DB (fire-and-forget) ===
-                        if (isDbConnected()) {
+                        if (!room.isAIMatch && isDbConnected()) {
+                            const wsState = wagerStates[this.roomId]
                             const wagerAmt = ws ? ws.amount : 0
                             const solWonAmt = wagerAmt > 0 ? wagerAmt * room.players.length * 0.9 : 0 // 90% to winner after fees
 
@@ -3227,6 +3532,9 @@ const mainsocket = (io) => {
 
             // Send to both clients
             io.sockets.in(client.roomId).emit('terrainGenerated', terrainPayload)
+
+            // If AI match and it's AI's turn first, schedule AI move
+            scheduleAITurn(io, client.roomId);
         })
 
 

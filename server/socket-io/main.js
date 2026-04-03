@@ -763,6 +763,7 @@ const mainsocket = (io) => {
             if (!room.walls) room.walls = [];
             room.walls.push({ ...result.wallPlacement, turnPlaced: ms.turnCount });
         }
+
         for (const p of room.players) {
             if (p.pos) {
                 const px = Math.min(1199, Math.max(0, Math.floor(p.pos.x)));

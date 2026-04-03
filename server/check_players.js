@@ -1,0 +1,10 @@
+﻿import { MongoClient } from 'mongodb';
+const uri = 'mongodb+srv://solshot-server:Soja21245!!!!!@solshot.e86gwap.mongodb.net/solshot?appName=SolShot&retryWrites=true&w=majority';
+const client = new MongoClient(uri);
+await client.connect();
+const db = client.db('solshot');
+const sample = await db.collection('users').findOne({});
+console.log('Sample user doc:', JSON.stringify(sample, null, 2));
+const allUsers = await db.collection('users').find({}).toArray();
+console.log('All users:', JSON.stringify(allUsers, null, 2));
+await client.close();

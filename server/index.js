@@ -75,7 +75,26 @@ io.use((socket, next) => {
 // Telegram Mini App: validate initData and attach telegramUser to socket
 io.use(telegramSocketMiddleware);
 
+// 12B: www → non-www redirect (production only)
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+if (IS_PRODUCTION) {
+    app.use((req, res, next) => {
+        const host = req.headers.host || '';
+        if (host.startsWith('www.')) {
+            return res.redirect(301, `https://${host.slice(4)}${req.originalUrl}`);
+        }
+        next();
+    });
+}
+
 // CS-03: Enable Content Security Policy (DB: H031)
+// 12B: localhost removed from production CSP; only included in dev
+const devConnectSrc = IS_PRODUCTION ? [] : [
+    "http://localhost:5001",
+    "ws://localhost:5001",
+    "wss://localhost:5001",
+];
+
 app.use(helmet({
     contentSecurityPolicy: {
         directives: {
@@ -93,9 +112,6 @@ app.use(helmet({
                 "wss://solshot.onrender.com",
                 "https://solshot-server.onrender.com",
                 "wss://solshot-server.onrender.com",
-                "http://localhost:5001",
-                "ws://localhost:5001",
-                "wss://localhost:5001",
                 "https://api.jup.ag",
                 "https://plugin.jup.ag",
                 "https://tokens.jup.ag",
@@ -103,9 +119,13 @@ app.use(helmet({
                 "https://api.web3modal.org",
                 "https://pulse.walletconnect.org",
                 "https://explorer-api.walletconnect.com",
+                // Dynamic embedded wallet SDK
+                "https://app.dynamic.xyz",
+                "https://api.dynamic.xyz",
+                ...devConnectSrc,
             ],
             fontSrc: ["'self'", "https://fonts.gstatic.com", "https://fonts.googleapis.com"],
-            frameSrc: ["https://plugin.jup.ag"],
+            frameSrc: ["https://plugin.jup.ag", "https://app.dynamic.xyz"],
             objectSrc: ["'none'"],
             baseUri: ["'self'"],
             reportUri: ['/api/csp-report'],

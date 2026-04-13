@@ -15,6 +15,7 @@ import { recordMatchPlayed, prestigeBurn, getPrestigeInfo, getShotBalance, PREST
 import { trackConnection, trackDisconnection, trackMatchCreated, trackMatchCompleted, trackMatchCancelled, trackWager, trackSettlement, trackForfeit, trackShot, trackDamage, trackGoldEarned, trackShotEmission, trackShotBurn, trackError } from '../services/monitoring.js';
 import { requireAuth, validatePayload, validateFireParams, sanitizeName, withLock, safeHandler } from '../middleware/guards.js';
 import { initAI, cleanupAI, pickWeapon, calculateAim, autoBuyWeapons } from '../services/ai.js';
+import { CONSUMABLES, purchaseConsumable, decrementConsumables, getActiveConsumables, hasConsumable } from '../services/consumables.js';
 
 // Profanity filter (server-side guard — mirrors client profanity.js)
 const PROFANITY_WORDS = [
@@ -1922,6 +1923,15 @@ const mainsocket = (io) => {
             const playerIds = [client.id, AI_SOCKET_ID];
             goldStates[roomId] = initGold(playerIds);
 
+            // Extra Rations consumable: +200G starting gold
+            for (const pid of playerIds) {
+                const pWallet = authenticatedWallets[pid] || null;
+                const pState = pWallet ? getPlayerShotState(pWallet) : null;
+                if (pState && hasConsumable(pState, 'extra_rations')) {
+                    goldStates[roomId][pid] += 200;
+                }
+            }
+
             const aiInventory = autoBuyWeapons(1000);
             weaponInventories[roomId] = {
                 [client.id]: [0],
@@ -2230,6 +2240,16 @@ const mainsocket = (io) => {
                 } else {
                     // ── First shop (from lobby): initialize everything ──
                     goldStates[client.roomId] = initGold(playerIds)
+
+                    // Extra Rations consumable: +200G starting gold
+                    for (const pid of playerIds) {
+                        const pWallet = authenticatedWallets[pid] || null;
+                        const pState = pWallet ? getPlayerShotState(pWallet) : null;
+                        if (pState && hasConsumable(pState, 'extra_rations')) {
+                            goldStates[client.roomId][pid] += 200;
+                        }
+                    }
+
                     weaponInventories[client.roomId] = {}
                     for (const pid of playerIds) {
                         const prestige = getPrestigeInfo(authenticatedWallets[pid] || '')
@@ -2344,6 +2364,38 @@ const mainsocket = (io) => {
             })
         })
 
+        client.on('buyConsumable', (data) => {
+            if (!data?.consumableId) return;
+
+            const wallet = authenticatedWallets[client.id];
+            if (!wallet) {
+                client.emit('buyConsumableResult', { success: false, error: 'Not authenticated' });
+                return;
+            }
+
+            const state = getPlayerShotState(wallet);
+            if (!state) {
+                client.emit('buyConsumableResult', { success: false, error: 'No SHOT state' });
+                return;
+            }
+
+            const result = purchaseConsumable(state, data.consumableId);
+
+            if (result.success) {
+                saveMilestoneState(wallet);
+                trackShotBurn(CONSUMABLES[data.consumableId].cost);
+                client.emit('buyConsumableResult', {
+                    success: true,
+                    consumableId: data.consumableId,
+                    remaining: result.remaining,
+                    newBalance: state.balance,
+                    activeConsumables: state.consumables || {},
+                });
+            } else {
+                client.emit('buyConsumableResult', { success: false, error: result.error });
+            }
+        });
+
         // Client done shopping
         client.on('shopDone', () => {
             if (!requireAuthIfWagered(client, 'shopDone')) return
@@ -2381,10 +2433,12 @@ const mainsocket = (io) => {
                 return
             }
             const info = getPrestigeInfo(wallet)
+            const state = getPlayerShotState(wallet)
             client.emit('shotInfo', {
                 balance: getShotBalance(wallet),
                 prestige: info,
-                tiers: PRESTIGE_TIERS
+                tiers: PRESTIGE_TIERS,
+                consumables: state?.consumables || {},
             })
         })
 
@@ -2948,6 +3002,13 @@ const mainsocket = (io) => {
                 // Increment server-side nonce (client must send matching seq next turn)
                 ms.turnSequence++
 
+                // Overcharge consumable: allow power up to 115, otherwise cap at 100
+                const maxPower = (ms?.consumables?.[this.id]?.includes('overcharge')) ? 115 : 100;
+                if (power > maxPower) {
+                    this.emit('fireRejected', { reason: `Power exceeds max (${maxPower})` })
+                    return
+                }
+
                 // Validate weapon exists
                 if (!WEAPON_DATA[weaponId]) {
                     this.emit('fireRejected', { reason: 'Invalid weapon' })
@@ -3354,6 +3415,17 @@ const mainsocket = (io) => {
                                 if (shotResults[p.socketId].earned > 0) trackShotEmission(shotResults[p.socketId].earned)
                             }
 
+                            // Decrement consumables after match
+                            for (const p of room.players) {
+                                const wallet = playerWalletMap[p.socketId];
+                                if (!wallet) continue;
+                                const pState = getPlayerShotState(wallet);
+                                if (pState) {
+                                    decrementConsumables(pState);
+                                    saveMilestoneState(wallet);
+                                }
+                            }
+
                             // Phase 11: Compute newly earned milestones (diff against snapshot)
                             getNewMilestones = (wallet, beforeSet) => {
                                 if (!wallet) return []
@@ -3580,11 +3652,39 @@ const mainsocket = (io) => {
                         ms.roundWins[id] = ms.roundWins[id] || 0;
                         ms.placementPoints[id] = ms.placementPoints[id] || 0;
                         ms.damageDealtTotal[id] = ms.damageDealtTotal[id] || 0;
+
+                        // Apply consumable effects
+                        const playerWallet = authenticatedWallets[id] || null;
+                        const playerState = playerWallet ? getPlayerShotState(playerWallet) : null;
+                        const activeConsumables = getActiveConsumables(playerState);
+
+                        // Reinforced Armor: +25 HP
+                        if (activeConsumables.includes('reinforced_armor')) {
+                            ms.hp[id] = 275;
+                        }
+
+                        // Store active consumables in match state for client
+                        if (!ms.consumables) ms.consumables = {};
+                        ms.consumables[id] = activeConsumables;
                     }
                 } else {
                     // Initialize HP for all players (players[] already populated)
                     for (const id of ms.players) {
                         ms.hp[id] = 250;
+
+                        // Apply consumable effects
+                        const playerWallet = authenticatedWallets[id] || null;
+                        const playerState = playerWallet ? getPlayerShotState(playerWallet) : null;
+                        const activeConsumables = getActiveConsumables(playerState);
+
+                        // Reinforced Armor: +25 HP
+                        if (activeConsumables.includes('reinforced_armor')) {
+                            ms.hp[id] = 275;
+                        }
+
+                        // Store active consumables in match state for client
+                        if (!ms.consumables) ms.consumables = {};
+                        ms.consumables[id] = activeConsumables;
                     }
                 }
                 ms.currentTurn = getNextTurn(ms)
@@ -3609,7 +3709,8 @@ const mainsocket = (io) => {
                 wind,
                 backgroundIndex,
                 firstTurn: ms ? ms.currentTurn : null,
-                seq: ms ? ms.turnSequence : 0  // Fix 4: initial nonce for first fire
+                seq: ms ? ms.turnSequence : 0,  // Fix 4: initial nonce for first fire
+                consumables: ms?.consumables || {},
             }
             room._terrainCache = terrainPayload
 
@@ -3646,7 +3747,9 @@ const mainsocket = (io) => {
             if (!requireAuthIfWagered(client, 'powerChange')) return
             if (!data || typeof data !== 'object') return
             const { power } = data
-            if (typeof power !== 'number' || !Number.isFinite(power) || power < 0 || power > 100) return
+            const ms = matchStates[client.roomId];
+            const maxPower = (ms?.consumables?.[client.id]?.includes('overcharge')) ? 115 : 100;
+            if (typeof power !== 'number' || !Number.isFinite(power) || power < 0 || power > maxPower) return
             client.to(client.roomId).emit('opponentPowerChange', {power: power})
         })
 

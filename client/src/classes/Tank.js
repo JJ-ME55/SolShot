@@ -508,8 +508,9 @@ export class Tank extends GameObjects.Sprite {
 
     setPower = (power) => {
         power = Math.floor(power)
-        if (power > 100)
-            power = 100
+        const max = this.maxPower || 100
+        if (power > max)
+            power = max
         if (power < 1)
             power = 1
         this.power = power

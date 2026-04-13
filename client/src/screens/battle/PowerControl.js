@@ -78,7 +78,7 @@ const s = {
   },
 };
 
-function PowerControl({ power, onChange, disabled, readOnly = false, compact = false, vertical = false }) {
+function PowerControl({ power, onChange, disabled, readOnly = false, compact = false, vertical = false, max = 100 }) {
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
   const inputRef = useRef(null);
@@ -102,7 +102,7 @@ function PowerControl({ power, onChange, disabled, readOnly = false, compact = f
     setEditing(false);
     const num = parseInt(editValue, 10);
     if (!isNaN(num)) {
-      onChange(Math.max(5, Math.min(100, num)));
+      onChange(Math.max(5, Math.min(max, num)));
     }
   }, [editValue, onChange]);
 
@@ -156,7 +156,7 @@ function PowerControl({ power, onChange, disabled, readOnly = false, compact = f
           <input
             type="range"
             min={5}
-            max={100}
+            max={max}
             step={1}
             value={power || 60}
             onChange={readOnly ? () => {} : handleSlider}

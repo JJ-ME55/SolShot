@@ -227,7 +227,8 @@ export class MainScene extends Scene {
           pointer.worldX, pointer.worldY
         );
         const MAX_DIST = this.renderer ? this.renderer.width * 0.30 : 250;
-        const power = Math.round(Phaser.Math.Clamp((dist / MAX_DIST) * 100, 5, 100));
+        const maxPower = this._myConsumables?.includes('overcharge') ? 115 : 100;
+        const power = Math.round(Phaser.Math.Clamp((dist / MAX_DIST) * maxPower, 5, maxPower));
         myTank.setPower(power);
 
         // Emit powerChange so opponent sees live power, and bridge shows updated HUD
@@ -235,6 +236,8 @@ export class MainScene extends Scene {
           const socket = window.socket;
           if (socket) socket.emit('powerChange', { power });
         }
+
+        this._renderScopePreview();
       },
 
       down: (pointer) => {
@@ -829,6 +832,70 @@ export class MainScene extends Scene {
     }
   };
 
+  // ── Tactical Scope: trajectory preview dots (first 1/3 of arc) ──
+
+  _renderScopePreview = () => {
+    this._clearScopePreview();
+
+    if (!this._myConsumables?.includes('tactical_scope')) return;
+
+    // Check if any opponent has smoke_screen (blocks scope)
+    const myId = window.socket?.id;
+    const opponents = this._allConsumables || {};
+    const opponentHasSmoke = Object.entries(opponents).some(
+      ([id, cons]) => id !== myId && cons.includes('smoke_screen')
+    );
+    if (opponentHasSmoke) return;
+
+    const myTank = this.myPlayerIndex >= 0 ? this.tanks[this.myPlayerIndex] : null;
+    if (!myTank?.turret || !myTank.active) return;
+
+    const angle = myTank.turret.rotation;
+    const power = myTank.power || 60;
+    const wind = this.wind || 0;
+
+    // Simulate trajectory using same physics as server
+    const velocity = power * 8;
+    const rotation = angle - Math.PI / 2;
+    let vx = velocity * Math.cos(rotation);
+    let vy = velocity * Math.sin(rotation);
+    let x = myTank.turret.x;
+    let y = myTank.turret.y;
+    const gravity = 300;
+    const dt = 1 / 60;
+
+    const points = [];
+    for (let step = 0; step < 600; step++) {
+      vy += gravity * dt;
+      vx += wind * dt;
+      x += vx * dt;
+      y += vy * dt;
+      points.push({ x, y });
+      if (y > 800 || x < 0 || x > 1200) break;
+    }
+
+    // First 1/3 of trajectory
+    const thirdLen = Math.floor(points.length / 3);
+    if (thirdLen < 3) return;
+
+    // Place 3 dots evenly in the first third
+    this._scopeDots = [];
+    for (let i = 1; i <= 3; i++) {
+      const idx = Math.floor((thirdLen / 4) * i);
+      if (idx >= points.length) break;
+      const dot = this.add.circle(points[idx].x, points[idx].y, 3, 0x22ff22, 0.5);
+      dot.setDepth(10);
+      this._scopeDots.push(dot);
+    }
+  };
+
+  _clearScopePreview = () => {
+    if (this._scopeDots) {
+      this._scopeDots.forEach(d => { try { d.destroy(); } catch (_) {} });
+      this._scopeDots = [];
+    }
+  };
+
   // ── YOUR TURN flash overlay ──
 
   _flashYourTurn = () => {
@@ -931,7 +998,7 @@ export class MainScene extends Scene {
 
     // ── STEP 1: Server-generated terrain ──
     // Both clients listen for terrainGenerated. Host triggers requestTerrain.
-    this._socketHandlers.terrainGenerated = ({ path, heightmap, positions, tankPositions, seed, wind, backgroundIndex, firstTurn, seq }) => {
+    this._socketHandlers.terrainGenerated = ({ path, heightmap, positions, tankPositions, seed, wind, backgroundIndex, firstTurn, seq, consumables }) => {
       // Re-draw background with server-chosen theme so both clients match
       this._backgroundIndex = backgroundIndex ?? Math.floor(Math.random() * 6);
       this.createBackground();
@@ -980,6 +1047,16 @@ export class MainScene extends Scene {
       // Determine first turn from server — firstTurn is a socket.id
       const firstTurnIdx = resolvedPositions.findIndex(p => p.socketId === firstTurn);
       this.currentPlayerIndex = firstTurnIdx >= 0 ? firstTurnIdx : 0;
+
+      // Store consumable data for Tactical Scope + Overcharge
+      this._allConsumables = consumables || {};
+      this._myConsumables = consumables?.[socket.id] || [];
+
+      // Overcharge: raise power cap to 115
+      if (this._myConsumables.includes('overcharge')) {
+        const myTank = this.myPlayerIndex >= 0 ? this.tanks[this.myPlayerIndex] : null;
+        if (myTank) myTank.maxPower = 115;
+      }
 
       this._activateCurrentTank();
       this.showTurnPointer();
@@ -1689,6 +1766,9 @@ export class MainScene extends Scene {
   // keyboard handlers. They must emit the same socket events the originals did.
 
   handleFireFromReact = () => {
+    // Clear scope preview on fire
+    this._clearScopePreview();
+
     // Determine the active tank: in multiplayer use myPlayerIndex, in practice use activeTank
     const myTank = this.myPlayerIndex >= 0
       ? this.tanks[this.myPlayerIndex]
@@ -1742,6 +1822,7 @@ export class MainScene extends Scene {
       const socket = window.socket;
       if (socket) socket.emit('powerChange', { power: v });
     }
+    this._renderScopePreview();
   };
 
   handleAngleFromReact = (v) => {
@@ -1751,7 +1832,7 @@ export class MainScene extends Scene {
     if (!myTank || !myTank.turret || !myTank.active) return;
     const radians = Phaser.Math.DegToRad(v) - Math.PI / 2;
     myTank.turret.setRelativeRotation(radians - myTank.rotation);
-    // Angle emit is handled by Turret.emitRotation() on a 500ms timer
+    this._renderScopePreview();
   };
 
   handleWeaponSelectFromReact = (idx) => {

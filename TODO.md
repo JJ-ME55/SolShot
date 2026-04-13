@@ -83,20 +83,6 @@ Practice mode is LIVE on solshot.gg (main branch). New features on `launch` bran
 - [x] useControlScheme hook (mouse vs classic, localStorage persistence)
 - [x] Q/E keyboard aim still works as fallback
 
-### 7B: Aiming Overhaul — Mobile [ ]
-
-**Current state:** Vertical sliders on screen edges (left = angle, right = power) plus FIRE button. Functional but fiddly on small screens.
-
-**Target:** Touch-drag aim (Angry Birds style).
-- [ ] Touch and drag from your tank to set angle + power in one gesture
-- [ ] Drag direction = aim direction (inverted — drag left to shoot right, like pulling back a slingshot)
-- [ ] Drag distance = power (further pull = more power)
-- [ ] Release to fire (or tap a confirm button — TBD based on feel)
-- [ ] Show a dotted guide line from tank in the aim direction while dragging
-- [ ] Existing sliders become read-only indicators during drag, or hide entirely on mobile
-- [ ] Must work in landscape orientation
-- [ ] Touch target: entire game canvas area, not a small button
-
 ### 7C: Terrain Walls — Decay After 6 Turns [x]
 
 - [x] `processWallShot` returns `wallPlacement` with original heights
@@ -142,22 +128,22 @@ Run in parallel with public practice — stress-testing escrow behind the scenes
 
 Get SolShot into Telegram as a distribution channel. Embedded wallets mean zero friction — no Phantom required.
 
-### 8A: Bot & Mini App Setup
-- [ ] Create bot via BotFather
-- [ ] Wire Telegram middleware (code exists in codebase, just enable)
-- [ ] Deploy and test Mini App loads inside Telegram
-- [ ] Landscape orientation + viewport handling inside TG WebApp
+### 8A: Bot & Mini App Setup [x]
+- [x] Create bot via BotFather (@SolShotGG_bot)
+- [x] Wire Telegram middleware (telegramSocketMiddleware in server/index.js)
+- [x] Register Mini App URL (t.me/SolShotGG_bot/solshot)
+- [x] Landscape orientation + viewport handling (TelegramContext + Layout.js)
 
-### 8B: Embedded Wallets (Privy or Dynamic)
-- [ ] Evaluate Privy vs Dynamic for embedded wallet UX
-- [ ] Integrate chosen provider — auto-create wallet on first play, no seed phrase
-- [ ] Bridge embedded wallet to existing `WalletContext` so game code doesn't change
-- [ ] Test: user opens TG → plays match → wallet created silently → ready for future wagering
+### 8B: Embedded Wallets (Dynamic) [x]
+- [x] Chose Dynamic (cost-effective, free up to 10K users)
+- [x] DynamicTelegramWallet.js — auto-create wallet on first play
+- [x] Bridged to WalletContext (conditional: TG uses Dynamic, browser uses Phantom)
+- [x] REACT_APP_DYNAMIC_ENV_ID configured
 
-### 8C: Telegram-Specific UX
-- [ ] Share match results to Telegram chat (stat card or text summary)
-- [ ] Invite friend via TG deep link → opens Mini App → joins lobby
-- [ ] TG username as callsign option (or auto-populate)
+### 8C: Telegram-Specific UX [x]
+- [x] TelegramShare button on Win/Lose screens (TG only)
+- [x] Deep link invite: t.me/SolShotGG_bot/solshot?startapp=join_{roomId}
+- [x] TG username auto-populated as callsign (skips HandleModal)
 
 ---
 
@@ -219,27 +205,15 @@ SHOT token goes live. Wagering enabled.
 - [ ] N-player escrow extension (if 3P/4P is ready)
 - [ ] Team takes initial funds from LP to support development
 
-### 10C: SHOT Consumables Shop
+### 10C: SHOT Consumables Shop [x]
 
-New shop section where players spend SHOT tokens on temporary power-ups. Each consumable lasts **5 matches** then expires. SHOT is **burned on purchase** — permanent supply sink.
-
-**Consumables:**
-
-1. **Tactical Scope** — 2-3 dot trajectory preview from barrel tip
-2. **Reinforced Armor** — +25 bonus HP per match (275 instead of 250)
-3. **Overcharge** — Power max increases from 100 to 115
-4. **Extra Rations** — Start with 1200G instead of 1000G
-5. **Smoke Screen** — Blocks opponent's Tactical Scope
-
-**Implementation:**
-- [ ] Server: consumable state per player (type, matchesRemaining) in MongoDB
-- [ ] Server: apply effects at match start, decrement counter
-- [ ] Server: SHOT burn verification on purchase
-- [ ] Client: consumables tab in shop or pre-match screen
-- [ ] Client: active consumable indicators on HUD
-- [ ] Client: Tactical Scope renderer (2-3 dots)
-- [ ] Client: Smoke Screen (suppress Scope rendering)
-- [ ] Pricing TBD — ballpark 25-100 SHOT per consumable
+- [x] Per-match SHOT drip (2+3 wagered, 0.5+0.5 practice, 25/day cap)
+- [x] 5 consumables: Extra Rations (5), Smoke Screen (8), Tactical Scope (12), Reinforced Armor (18), Overcharge (25)
+- [x] Server: consumables.js service, buyConsumable handler, match-start effects, decrement after match
+- [x] Client: LoadoutScreen with purchase flow, LOADOUT menu button
+- [x] Client: consumable icons on PlayerHPBar (visible to all)
+- [x] Client: Tactical Scope renders first 1/3 of physics trajectory (blocked by Smoke Screen)
+- [x] Client: Overcharge raises power cap to 115 (Tank.js, PowerControl, mouse-aim, server validation)
 
 ---
 
@@ -259,11 +233,13 @@ New shop section where players spend SHOT tokens on temporary power-ups. Each co
 - [ ] Server integration tests passing
 - [ ] Load testing (50+ concurrent matches)
 
-### 12B: Production Hardening
-- [ ] Cloudflare DDoS protection
+### 12B: Production Hardening [~]
+- [x] Remove localhost from production CORS/CSP (env-aware)
+- [x] `www.solshot.gg` → `solshot.gg` 301 redirect (server + Vercel)
+- [x] Security headers (X-Content-Type-Options, X-Frame-Options, Referrer-Policy)
+- [x] Dynamic SDK domains added to CSP
+- [ ] Cloudflare DDoS protection (needs DNS setup)
 - [ ] Cloudflare caching rules (assets cached, API/WebSocket bypassed)
-- [ ] Remove localhost from production CORS
-- [ ] `www.solshot.gg` redirect
 
 ---
 

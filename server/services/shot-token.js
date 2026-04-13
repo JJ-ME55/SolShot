@@ -69,6 +69,13 @@ export const SHOT_MILESTONES = [
 // Prestige weapon IDs — used to determine usedNoPrestige flag
 export const PRESTIGE_WEAPON_IDS = [24, 29, 26, 21, 22];
 
+// Per-match SHOT drip — Litepaper v2.2
+const SHOT_PER_WAGERED_MATCH = 2;
+const SHOT_PER_WAGERED_WIN = 3;    // bonus on top of match drip
+const SHOT_PER_PRACTICE_MATCH = 0.5;
+const SHOT_PER_PRACTICE_WIN = 0.5;
+const DAILY_SHOT_CAP = 25;
+
 // Prestige tiers — Litepaper v2.0
 // Each tier burns SHOT permanently. Cumulative: 200+500+1200+2500+4000 = 8400 SHOT to Diamond
 export const PRESTIGE_TIERS = [
@@ -319,6 +326,28 @@ export function recordMatchPlayed(walletAddress, matchInfo = {}) {
         milestoneLabel = ms.label;
     }
 
+    // Per-match SHOT drip (daily capped at 25 SHOT)
+    const today = new Date().toISOString().slice(0, 10);
+    if (state._dailyDripDate !== today) {
+        state._dailyDripDate = today;
+        state._dailyDripTotal = 0;
+    }
+    let dripEarned = 0;
+    if (state._dailyDripTotal < DAILY_SHOT_CAP) {
+        if (isWagered) {
+            dripEarned += SHOT_PER_WAGERED_MATCH;
+            if (isWinner) dripEarned += SHOT_PER_WAGERED_WIN;
+        } else {
+            dripEarned += SHOT_PER_PRACTICE_MATCH;
+            if (isWinner) dripEarned += SHOT_PER_PRACTICE_WIN;
+        }
+        dripEarned = Math.min(dripEarned, DAILY_SHOT_CAP - state._dailyDripTotal);
+        state._dailyDripTotal += dripEarned;
+        state.balance += dripEarned;
+        state.totalShotEarned += dripEarned;
+        totalEarned += dripEarned;
+    }
+
     // H034: Clamp earned to remaining supply
     if (totalShotEmitted + totalEarned > SHOT_TOKEN_CONFIG.rewardPool) {
         const allowed = SHOT_TOKEN_CONFIG.rewardPool - totalShotEmitted;
@@ -343,6 +372,7 @@ export function recordMatchPlayed(walletAddress, matchInfo = {}) {
 
     return {
         earned: totalEarned,
+        dripEarned: dripEarned || 0,
         milestone: milestoneLabel,
         newBalance: state.balance,
         matchesPlayed: state.totalMatchesPlayed,

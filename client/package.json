@@ -4,6 +4,9 @@
   "private": true,
   "dependencies": {
     "@ampproject/remapping": "^2.3.0",
+    "@dynamic-labs/global-wallet": "^4.77.1",
+    "@dynamic-labs/sdk-react-core": "^4.77.1",
+    "@dynamic-labs/solana": "^4.77.1",
     "@jup-ag/jup-mobile-adapter": "^0.0.2",
     "@reown/appkit": "^1.8.18",
     "@reown/appkit-adapter-solana": "^1.8.18",

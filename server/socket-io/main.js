@@ -17,6 +17,21 @@ import { requireAuth, validatePayload, validateFireParams, sanitizeName, withLoc
 import { initAI, cleanupAI, pickWeapon, calculateAim, autoBuyWeapons } from '../services/ai.js';
 import { CONSUMABLES, purchaseConsumable, decrementConsumables, getActiveConsumables, hasConsumable } from '../services/consumables.js';
 
+// Cosmetic item costs (mirrors client/src/data/tiers.js COSMETIC_ITEMS)
+const COSMETIC_COSTS = {
+    // Camo Patterns (SHOT burns)
+    'camo_forest': 50, 'camo_desert': 50, 'camo_arctic': 100, 'camo_digital': 150,
+    'camo_lava': 300, 'camo_void': 600,
+    // Projectile Trails
+    'trail_fire': 75, 'trail_neon': 150, 'trail_plasma': 250, 'trail_phantom': 500,
+    // Explosion Effects
+    'blast_ring': 75, 'blast_skull': 200, 'blast_lightning': 350, 'blast_nuke': 750,
+    // Tank Skins
+    'skin_stealth': 200, 'skin_chrome': 400, 'tank_gold': 1000, 'skin_diamond': 2000,
+    // Kill Effects
+    'kill_confetti': 100, 'kill_fireworks': 200, 'kill_lightning': 400, 'kill_nuke': 800,
+};
+
 // Profanity filter (server-side guard — mirrors client profanity.js)
 const PROFANITY_WORDS = [
     'nigger','nigga','niggers','niggas','negro','nig','coon','darkie','darky','sambo',
@@ -2441,6 +2456,98 @@ const mainsocket = (io) => {
                 consumables: state?.consumables || {},
             })
         })
+
+        // === COSMETICS SYSTEM ===
+
+        // Buy a cosmetic item (burns SHOT)
+        client.on('buyCosmetic', async (data) => {
+            if (!data?.itemId) return;
+            const wallet = authenticatedWallets[client.id];
+            if (!wallet) {
+                client.emit('buyCosmeticResult', { success: false, error: 'Not authenticated' });
+                return;
+            }
+
+            const state = getPlayerShotState(wallet);
+            if (!state) {
+                client.emit('buyCosmeticResult', { success: false, error: 'No SHOT state' });
+                return;
+            }
+
+            const cost = COSMETIC_COSTS[data.itemId];
+            if (cost === undefined) {
+                client.emit('buyCosmeticResult', { success: false, error: 'Unknown item' });
+                return;
+            }
+            if (state.balance < cost) {
+                client.emit('buyCosmeticResult', { success: false, error: 'Insufficient SHOT' });
+                return;
+            }
+
+            // Deduct SHOT
+            state.balance -= cost;
+            state.shotBurned = (state.shotBurned || 0) + cost;
+            saveMilestoneState(wallet);
+            trackShotBurn(cost);
+
+            // Add to owned in MongoDB
+            try {
+                await User.findOneAndUpdate(
+                    { walletAddress: wallet },
+                    { $addToSet: { 'cosmetics.owned': data.itemId } }
+                );
+            } catch (err) {
+                console.error('[Cosmetics] DB update failed:', err.message);
+            }
+
+            client.emit('buyCosmeticResult', {
+                success: true,
+                itemId: data.itemId,
+                newBalance: state.balance,
+            });
+        });
+
+        // Equip/unequip a cosmetic item
+        client.on('equipCosmetic', async (data) => {
+            if (!data?.itemId || !data?.category) return;
+            const wallet = authenticatedWallets[client.id];
+            if (!wallet) return;
+
+            const validCategories = ['pattern', 'trail', 'blast', 'skin', 'kill'];
+            const category = data.category.toLowerCase();
+            if (!validCategories.includes(category)) return;
+
+            try {
+                const updateField = `cosmetics.equipped.${category}`;
+                // itemId of null means unequip
+                await User.findOneAndUpdate(
+                    { walletAddress: wallet },
+                    { $set: { [updateField]: data.itemId } }
+                );
+                client.emit('equipCosmeticResult', { success: true, category, itemId: data.itemId });
+            } catch (err) {
+                client.emit('equipCosmeticResult', { success: false, error: err.message });
+            }
+        });
+
+        // Fetch owned + equipped cosmetics
+        client.on('getCosmetics', async () => {
+            const wallet = authenticatedWallets[client.id];
+            if (!wallet) {
+                client.emit('cosmeticsData', { owned: [], equipped: {} });
+                return;
+            }
+
+            try {
+                const user = await User.findOne({ walletAddress: wallet }).select('cosmetics').lean();
+                client.emit('cosmeticsData', {
+                    owned: user?.cosmetics?.owned || [],
+                    equipped: user?.cosmetics?.equipped || {},
+                });
+            } catch (err) {
+                client.emit('cosmeticsData', { owned: [], equipped: {} });
+            }
+        });
 
         // Fetch persistent player stats from DB
         client.on('getStats', async () => {

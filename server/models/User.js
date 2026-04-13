@@ -64,6 +64,16 @@ const userSchema = new mongoose.Schema({
         goldEarned: { type: Number, default: 0 },
         playedAt: { type: Date, default: Date.now }
     }],
+    cosmetics: {
+        owned: { type: [String], default: [] },
+        equipped: {
+            pattern: { type: String, default: null },
+            trail: { type: String, default: null },
+            blast: { type: String, default: null },
+            skin: { type: String, default: null },
+            kill: { type: String, default: null },
+        },
+    },
     lastActive: { type: Date, default: Date.now }
 }, {
     timestamps: true

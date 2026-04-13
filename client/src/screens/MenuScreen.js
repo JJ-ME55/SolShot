@@ -204,7 +204,7 @@ function MenuScreen({ navigate }) {
     { id: 'deploy', label: 'PLAY FREE', variant: 'primary', screen: 'lobby' },
     { id: 'ai-practice', label: 'VS SHOT BOT', variant: 'secondary', screen: 'ai-practice' },
     { id: 'loadout', label: 'LOADOUT', variant: 'secondary', screen: 'loadout' },
-    { id: 'armory', label: 'ARMORY', variant: 'secondary', screen: 'armory', comingSoon: true },
+    { id: 'armory', label: 'ARMORY', variant: 'secondary', screen: 'armory' },
     { id: 'prestige', label: 'PRESTIGE', variant: 'secondary', screen: 'prestige', comingSoon: true },
     { id: 'barracks', label: 'BARRACKS', variant: 'secondary', screen: 'barracks' },
   ];

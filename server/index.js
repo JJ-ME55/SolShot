@@ -12,6 +12,7 @@ import { initShotState } from './services/shot-token.js'
 import { initKeys } from './services/keys.js';
 import { initEscrow } from './services/escrow.js';
 import { requireAdminKey } from './middleware/guards.js';
+import { telegramSocketMiddleware } from './middleware/telegram.js';
 
 dotenv.config()
 
@@ -70,6 +71,9 @@ io.use((socket, next) => {
 
     next();
 });
+
+// Telegram Mini App: validate initData and attach telegramUser to socket
+io.use(telegramSocketMiddleware);
 
 // CS-03: Enable Content Security Policy (DB: H031)
 app.use(helmet({

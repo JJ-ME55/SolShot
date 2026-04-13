@@ -396,9 +396,40 @@ function SolShotWalletInner({ children }) {
 }
 
 /**
- * Main wallet provider — wrap your app with this
+ * Main wallet provider — wrap your app with this.
+ * Detects Telegram and uses Dynamic embedded wallet instead of Phantom/Solflare.
  */
 export function SolShotWalletProvider({ children }) {
+    const isTelegram = !!window.Telegram?.WebApp?.initData;
+    const hasDynamicEnv = !!process.env.REACT_APP_DYNAMIC_ENV_ID;
+
+    // Telegram Mini App: use Dynamic embedded wallet
+    if (isTelegram && hasDynamicEnv) {
+        // Lazy import to avoid loading Dynamic in non-TG contexts
+        const { DynamicTelegramProvider, DynamicWalletInner } = require('./DynamicTelegramWallet');
+        return (
+            <DynamicTelegramProvider>
+                <DynamicWalletInner>
+                    <SolShotWalletContext.Provider value={{
+                        balance: 0,
+                        refreshBalance: () => {},
+                        walletAddress: null,
+                        connected: false,
+                        isAuthenticated: false,
+                        authenticate: () => {},
+                        shotBalance: 0,
+                        prestigeInfo: { tier: 0, tierName: 'Unranked' },
+                        signAndSendEscrowDeposit: async () => null,
+                        signAndBurnShot: async () => null,
+                    }}>
+                        {children}
+                    </SolShotWalletContext.Provider>
+                </DynamicWalletInner>
+            </DynamicTelegramProvider>
+        );
+    }
+
+    // Normal browser: use standard wallet adapter (Phantom/Solflare)
     // JUP-01: Jupiter Mobile adapter via Reown/WalletConnect
     // Hook must always be called (React rules of hooks — no conditional calls)
     // When REOWN_PROJECT_ID is empty, the adapters are still created but connection will fail gracefully

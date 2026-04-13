@@ -1697,6 +1697,7 @@ const mainsocket = (io) => {
 
             // Always broadcast roomUpdate so both players see the lobby
             io.sockets.in(client.roomId).emit('roomUpdate', {
+                roomId: client.roomId,
                 players: room.players.map(p => ({
                     socketId: p.socketId,
                     name: p.name,

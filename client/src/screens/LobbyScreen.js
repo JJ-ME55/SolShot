@@ -5,6 +5,7 @@ import Modal from '../components/Modal';
 import useSocket from '../hooks/useSocket';
 import TANK_COLORS from '../data/colors';
 import { useSolShotWallet } from '../wallet/WalletContext';
+import { useTelegram } from '../telegram/TelegramContext';
 
 /* ── match modes (mirrors server MATCH_MODES — Litepaper v2.1) ── */
 const MATCH_MODES = {
@@ -277,7 +278,8 @@ const s = {
 };
 
 
-function LobbyScreen({ navigate }) {
+function LobbyScreen({ navigate, screenData }) {
+  const { isTelegram } = useTelegram();
   /* ── state ── */
   const [rooms, setRooms] = useState([]);
   const [matchMode, setMatchMode] = useState('practice');
@@ -286,6 +288,7 @@ function LobbyScreen({ navigate }) {
   const [customWager, setCustomWager] = useState(0.1); // for custom_challenge mode
   const [selectedColor, setSelectedColor] = useState(0); // index into TANK_COLORS
   const [waiting, setWaiting] = useState(false); // waiting for opponent (custom_challenge / createRoom)
+  const [currentRoomId, setCurrentRoomId] = useState(null);
   const [queueState, setQueueState] = useState(null); // null | 'searching' | 'matched'
   const [error, setError] = useState(null);
   const [showEscrow, setShowEscrow] = useState(false);
@@ -387,6 +390,7 @@ function LobbyScreen({ navigate }) {
     if (data && data.players) {
       setWaitingRoomPlayers(data.players);
       setWaitingRoomMax(data.maxPlayers || 2);
+      if (data.roomId) setCurrentRoomId(data.roomId);
     }
   });
 
@@ -625,6 +629,13 @@ function LobbyScreen({ navigate }) {
       wager,
     });
   }, [getPlayerName, selectedColor, wager, walletAddress]);
+
+  // Telegram deep link: auto-join room if navigated with autoJoinRoomId
+  useEffect(() => {
+    const roomId = screenData?.autoJoinRoomId;
+    if (!roomId || !window.socket?.connected) return;
+    joinRoom(roomId);
+  }, [screenData?.autoJoinRoomId, joinRoom]);
 
   const cancelRoom = useCallback(() => {
     if (!window.socket) return;
@@ -1127,6 +1138,35 @@ function LobbyScreen({ navigate }) {
               );
             })}
           </div>
+
+          {/* Telegram invite link */}
+          {isTelegram && currentRoomId && waitingRoomPlayers.length < waitingRoomMax && (
+            <button
+              onClick={() => {
+                const inviteUrl = 'https://t.me/SolShotGG_bot/solshot?startapp=join_' + currentRoomId;
+                const tg = window.Telegram?.WebApp;
+                if (tg?.openTelegramLink) {
+                  tg.openTelegramLink('https://t.me/share/url?url=' + encodeURIComponent(inviteUrl) + '&text=' + encodeURIComponent('Join my SolShot match!'));
+                } else {
+                  window.open('https://t.me/share/url?url=' + encodeURIComponent(inviteUrl) + '&text=' + encodeURIComponent('Join my SolShot match!'), '_blank');
+                }
+              }}
+              style={{
+                background: 'none',
+                border: '1px solid #0088cc',
+                borderRadius: 4,
+                color: '#0088cc',
+                fontFamily: "'Share Tech Mono', monospace",
+                fontSize: 12,
+                letterSpacing: 2,
+                padding: '8px 16px',
+                cursor: 'pointer',
+                marginTop: 8,
+              }}
+            >
+              INVITE VIA TELEGRAM
+            </button>
+          )}
 
           {/* Countdown timer — driven by server depositDeadlineMs */}
           {depositCountdown !== null && (

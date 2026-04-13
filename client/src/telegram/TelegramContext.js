@@ -5,6 +5,7 @@ const TelegramContext = createContext({
   webApp: null,
   user: null,
   initData: null,
+  startParam: null,
 });
 
 export function TelegramProvider({ children }) {
@@ -13,6 +14,7 @@ export function TelegramProvider({ children }) {
     webApp: null,
     user: null,
     initData: null,
+    startParam: null,
   });
 
   useEffect(() => {
@@ -32,12 +34,14 @@ export function TelegramProvider({ children }) {
 
     const user = tg.initDataUnsafe?.user || null;
     const initData = tg.initData || null;
+    const startParam = tg.initDataUnsafe?.start_param || null;
 
     setState({
       isTelegram: true,
       webApp: tg,
       user,
       initData,
+      startParam,
     });
   }, []);
 

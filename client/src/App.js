@@ -22,6 +22,7 @@ import HowToPlayScreen from './screens/HowToPlayScreen';
 import TermsScreen from './screens/TermsScreen';
 import PrivacyScreen from './screens/PrivacyScreen';
 import HandleModal from './components/HandleModal';
+import { useTelegram } from './telegram/TelegramContext';
 
 // A8: Socket bridge for Phaser scenes — non-enumerable to reduce XSS discovery surface
 Object.defineProperty(window, 'socket', {
@@ -36,8 +37,29 @@ function AppInner() {
   const [screenData, setScreenData] = useState({});
   const [faqOpen, setFaqOpen] = useState(false);
 
+  const { isTelegram, user: tgUser, startParam } = useTelegram();
+
   // Phase 24: Persistent handle identity — blocks menu until set
-  const [handle, setHandle] = useState(() => localStorage.getItem('solshot_handle'));
+  // For Telegram users, auto-populate from TG username (skip HandleModal)
+  const [handle, setHandle] = useState(() => {
+    const stored = localStorage.getItem('solshot_handle');
+    if (stored) return stored;
+    return null;
+  });
+
+  // Auto-set handle from Telegram username (skips HandleModal for TG users)
+  useEffect(() => {
+    if (isTelegram && tgUser && !handle) {
+      const tgHandle = tgUser.username || tgUser.first_name || 'TG_Player';
+      const uid = 'tg_' + (tgUser.id || Date.now());
+      localStorage.setItem('solshot_handle', tgHandle);
+      localStorage.setItem('solshot_uid', uid);
+      setHandle(tgHandle);
+      if (window.socket?.connected) {
+        window.socket.emit('registerIdentity', { uid, handle: tgHandle });
+      }
+    }
+  }, [isTelegram, tgUser, handle]);
 
   const handleHandleComplete = useCallback((h, uid) => {
     setHandle(h);
@@ -59,6 +81,22 @@ function AppInner() {
     if (sock.connected) sendIdentity();
     return () => sock.off('connect', sendIdentity);
   }, []);
+
+  // Telegram deep link: auto-join room from startapp=join_{roomId}
+  useEffect(() => {
+    if (!startParam || !startParam.startsWith('join_')) return;
+    const roomId = startParam.slice(5); // strip "join_"
+    if (!roomId) return;
+    // Wait for socket to connect, then navigate to lobby with join intent
+    const sock = window.socket;
+    if (!sock) return;
+    const tryJoin = () => {
+      setScreenData({ autoJoinRoomId: roomId });
+      setScreen('lobby');
+    };
+    if (sock.connected) tryJoin();
+    else sock.once('connect', tryJoin);
+  }, [startParam]);
 
   // CS-04: Use wallet adapter hook directly for rejoin logic (avoids window.solWallet)
   const { publicKey, signMessage } = useWallet();

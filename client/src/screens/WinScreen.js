@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
 import StatCard from '../components/StatCard';
+import TelegramShare from '../components/TelegramShare';
+import { useTelegram } from '../telegram/TelegramContext';
 
 import useSocket from '../hooks/useSocket';
 
@@ -146,6 +148,7 @@ function WinScreen({ navigate, screenData }) {
   const [playerStats, setPlayerStats] = useState(null);
 
   const isAIMatch = screenData?.isAIMatch || false;
+  const { isTelegram } = useTelegram();
   const wager = screenData?.wager || 0;
   const scores = screenData?.scores || {};
   const roundWins = screenData?.roundWins || {};
@@ -362,6 +365,13 @@ function WinScreen({ navigate, screenData }) {
             }} style={{ fontSize: 13, padding: '10px 20px' }}>
               COPY RESULT
             </Button>
+            {isTelegram && (
+              <TelegramShare
+                isWinner={true}
+                playerScore={myId && roundWins[myId] ? roundWins[myId] : 0}
+                opponentScore={opponentId && roundWins[opponentId] ? roundWins[opponentId] : 0}
+              />
+            )}
           </div>
           <div style={s.buttonRow}>
             <Button variant="primary" onClick={() => navigate('barracks')} style={{ fontSize: 13, padding: '10px 20px' }}>

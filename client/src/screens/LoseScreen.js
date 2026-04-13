@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
 import StatCard from '../components/StatCard';
+import TelegramShare from '../components/TelegramShare';
+import { useTelegram } from '../telegram/TelegramContext';
 
 import useSocket from '../hooks/useSocket';
 
@@ -132,6 +134,7 @@ function LoseScreen({ navigate, screenData }) {
   const [showCard, setShowCard] = useState(false);
   const [playerStats, setPlayerStats] = useState(null);
 
+  const { isTelegram } = useTelegram();
   const isAIMatch = screenData?.isAIMatch || false;
   const wager = screenData?.wager || 0;
   const scores = screenData?.scores || {};
@@ -328,6 +331,13 @@ function LoseScreen({ navigate, screenData }) {
             }} style={{ fontSize: 13, padding: '10px 20px' }}>
               COPY RESULT
             </Button>
+            {isTelegram && (
+              <TelegramShare
+                isWinner={false}
+                playerScore={myId && roundWins[myId] ? roundWins[myId] : 0}
+                opponentScore={opponentId && roundWins[opponentId] ? roundWins[opponentId] : 0}
+              />
+            )}
           </div>
           <div style={s.buttonRow}>
             <Button variant="primary" onClick={() => navigate('barracks')} style={{ fontSize: 13, padding: '10px 20px' }}>

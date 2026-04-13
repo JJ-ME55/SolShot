@@ -187,6 +187,24 @@ function PlayerHPBar({ player, isActive, isMe }) {
         )}
       </div>
 
+      {/* Active consumable icons */}
+      {player?.consumables && player.consumables.length > 0 && (
+        <div style={{ display: 'flex', gap: 2, marginTop: 1 }}>
+          {player.consumables.map(c => (
+            <span key={c} title={c.replace(/_/g, ' ')} style={{
+              width: 14, height: 14, borderRadius: 2,
+              background: 'rgba(34,139,34,0.3)',
+              border: '1px solid rgba(34,139,34,0.5)',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              fontFamily: "'Share Tech Mono', monospace",
+              fontSize: 8, color: '#4CAF50', lineHeight: 1,
+            }}>
+              {c === 'reinforced_armor' ? 'A' : c === 'overcharge' ? 'O' : c === 'tactical_scope' ? 'T' : c === 'extra_rations' ? 'G' : c === 'smoke_screen' ? 'S' : '?'}
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* Inject keyframe for damage flash */}
       <style>{`
         @keyframes dmgFlash {

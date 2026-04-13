@@ -402,10 +402,40 @@ function SolShotWalletInner({ children }) {
 export function SolShotWalletProvider({ children }) {
     const isTelegram = !!window.Telegram?.WebApp?.initData;
     const hasDynamicEnv = !!process.env.REACT_APP_DYNAMIC_ENV_ID;
+    const useDynamic = isTelegram && hasDynamicEnv;
+
+    // All hooks must be called unconditionally (React rules of hooks)
+    // JUP-01: Jupiter Mobile adapter via Reown/WalletConnect
+    const { jupiterAdapter } = useWrappedReownAdapter({
+        appKitOptions: {
+            metadata: {
+                name: 'SolShot',
+                description: 'Artillery wagering on Solana',
+                url: 'https://solshot.gg',
+                icons: ['/logo192.png'],
+            },
+            projectId: REOWN_PROJECT_ID,
+            features: { analytics: false, email: false, socials: false },
+            enableWallets: false,
+        },
+    });
+
+    const wallets = useMemo(() => {
+        if (!REOWN_PROJECT_ID) {
+            return [
+                new PhantomWalletAdapter(),
+                new SolflareWalletAdapter(),
+            ];
+        }
+        return [
+            jupiterAdapter,
+            new PhantomWalletAdapter(),
+            new SolflareWalletAdapter(),
+        ].filter(Boolean);
+    }, [jupiterAdapter]);
 
     // Telegram Mini App: use Dynamic embedded wallet
-    if (isTelegram && hasDynamicEnv) {
-        // Lazy import to avoid loading Dynamic in non-TG contexts
+    if (useDynamic) {
         const { DynamicTelegramProvider, DynamicWalletInner } = require('./DynamicTelegramWallet');
         return (
             <DynamicTelegramProvider>
@@ -429,41 +459,7 @@ export function SolShotWalletProvider({ children }) {
         );
     }
 
-    // Normal browser: use standard wallet adapter (Phantom/Solflare)
-    // JUP-01: Jupiter Mobile adapter via Reown/WalletConnect
-    // Hook must always be called (React rules of hooks — no conditional calls)
-    // When REOWN_PROJECT_ID is empty, the adapters are still created but connection will fail gracefully
-    const { jupiterAdapter } = useWrappedReownAdapter({
-        appKitOptions: {
-            metadata: {
-                name: 'SolShot',
-                description: 'Artillery wagering on Solana',
-                url: 'https://solshot.gg',
-                icons: ['/logo192.png'],
-            },
-            projectId: REOWN_PROJECT_ID,
-            features: { analytics: false, email: false, socials: false },
-            enableWallets: false,
-        },
-    });
-
-    const wallets = useMemo(() => {
-        if (!REOWN_PROJECT_ID) {
-            // No project ID — hide Jupiter Mobile, log warning
-            console.warn('[SolShot] REACT_APP_REOWN_PROJECT_ID not set — Jupiter Mobile adapter disabled');
-            return [
-                new PhantomWalletAdapter(),
-                new SolflareWalletAdapter(),
-            ];
-        }
-        // Jupiter Mobile at position 0 (top of list, highlighted as RECOMMENDED)
-        return [
-            jupiterAdapter,
-            new PhantomWalletAdapter(),
-            new SolflareWalletAdapter(),
-        ].filter(Boolean);
-    }, [jupiterAdapter]);
-
+    // Normal browser: standard wallet adapter (Phantom/Solflare)
     return (
         <ConnectionProvider endpoint={RPC_URL}>
             <WalletProvider wallets={wallets} autoConnect>

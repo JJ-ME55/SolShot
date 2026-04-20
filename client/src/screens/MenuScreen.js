@@ -387,48 +387,7 @@ function MenuScreen({ navigate }) {
             HOW TO PLAY
           </div>
 
-          {/* Control scheme selector (desktop only) */}
-          <div style={styles.controlSchemeSection}>
-            <span style={styles.controlSchemeLabel}>CONTROLS</span>
-            <div style={styles.controlSchemePicker}>
-              <button
-                style={{
-                  fontFamily: "'Share Tech Mono', monospace",
-                  fontSize: 12,
-                  letterSpacing: 2,
-                  padding: '6px 16px',
-                  borderRadius: 3,
-                  border: scheme === 'mouse' ? '1px solid var(--am)' : '1px solid var(--ol)',
-                  background: scheme === 'mouse' ? 'rgba(255, 185, 30, 0.12)' : 'transparent',
-                  color: scheme === 'mouse' ? 'var(--am)' : 'var(--kh)',
-                  opacity: scheme === 'mouse' ? 1 : 0.45,
-                  cursor: 'pointer',
-                  transition: 'all 0.15s',
-                }}
-                onClick={() => setScheme('mouse')}
-              >
-                MOUSE AIM
-              </button>
-              <button
-                style={{
-                  fontFamily: "'Share Tech Mono', monospace",
-                  fontSize: 12,
-                  letterSpacing: 2,
-                  padding: '6px 16px',
-                  borderRadius: 3,
-                  border: scheme === 'classic' ? '1px solid var(--am)' : '1px solid var(--ol)',
-                  background: scheme === 'classic' ? 'rgba(255, 185, 30, 0.12)' : 'transparent',
-                  color: scheme === 'classic' ? 'var(--am)' : 'var(--kh)',
-                  opacity: scheme === 'classic' ? 1 : 0.45,
-                  cursor: 'pointer',
-                  transition: 'all 0.15s',
-                }}
-                onClick={() => setScheme('classic')}
-              >
-                CLASSIC
-              </button>
-            </div>
-          </div>
+          {/* Control scheme selector removed — classic is default, mouse-aim can be toggled in battle settings */}
 
           {/* Telegram user badge (when in Telegram) */}
           {isTelegram && tgUser && (

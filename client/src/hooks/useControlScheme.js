@@ -5,7 +5,7 @@ const LS_KEY = 'solshot_control_scheme';
 export default function useControlScheme(isMobile) {
   const [scheme, setScheme] = useState(() => {
     const stored = localStorage.getItem(LS_KEY);
-    return stored || (isMobile ? 'classic' : 'mouse');
+    return stored || 'classic';
   });
 
   const updateScheme = useCallback((v) => {

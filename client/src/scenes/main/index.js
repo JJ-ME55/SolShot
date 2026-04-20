@@ -1891,7 +1891,7 @@ export class MainScene extends Scene {
       x: t.x,
       y: t.y,
       hp: t.scoreHandler ? t.scoreHandler.hp : 250,
-      angle: t.turret ? Phaser.Math.RadToDeg(t.turret.relativeRotation + t.rotation + Math.PI / 2) : 45,
+      angle: t.turret ? Math.max(0, Math.min(180, Math.round(Phaser.Math.RadToDeg(t.turret.relativeRotation + t.rotation + Math.PI / 2)))) : 45,
       power: t.power || 60,
       name: t.name || '',
       color: t.color || '#FF0000',

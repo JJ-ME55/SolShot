@@ -1,3 +1,4 @@
+import './styles/tokens.css';
 import React, { useState, useCallback, useEffect } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { socket } from './socket/index';

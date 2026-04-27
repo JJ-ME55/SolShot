@@ -4,7 +4,7 @@ import { getShotPrice, startPricePolling } from '../services/jupiter-price.js';
 import logger from '../services/logger.js';
 import Match from '../models/Match.js';
 import User from '../models/User.js';
-import { processShot, generateTerrain, generateTankPositions, generateWind, WEAPON_DATA } from '../services/physics.js';
+import { processShot, generateTerrain, generateTankPositions, generateWind, WEAPON_DATA, decayWalls } from '../services/physics.js';
 import { createMatchState, validateAction, transitionState, getNextTurn, isRoundOver, isMatchOver, getRoundPlacement, PLACEMENT_POINTS, resetForNextRound, MATCH_STATES } from '../services/match.js';
 import { initGold, getBalance, earnGold, spendGold, awardKillBonus, awardRoundWinBonus, awardPlacementGold } from '../services/gold.js';
 import { WEAPON_CATALOG, PRESTIGE_WEAPONS, getWeapon, getWeaponCost, getAllLaunchWeapons } from '../models/Weapon.js';
@@ -15,6 +15,22 @@ import { recordMatchPlayed, prestigeBurn, getPrestigeInfo, getShotBalance, PREST
 import { trackConnection, trackDisconnection, trackMatchCreated, trackMatchCompleted, trackMatchCancelled, trackWager, trackSettlement, trackForfeit, trackShot, trackDamage, trackGoldEarned, trackShotEmission, trackShotBurn, trackError } from '../services/monitoring.js';
 import { requireAuth, validatePayload, validateFireParams, sanitizeName, withLock, safeHandler } from '../middleware/guards.js';
 import { initAI, cleanupAI, pickWeapon, calculateAim, autoBuyWeapons } from '../services/ai.js';
+import { CONSUMABLES, purchaseConsumable, decrementConsumables, getActiveConsumables, hasConsumable } from '../services/consumables.js';
+
+// Cosmetic item costs (mirrors client/src/data/tiers.js COSMETIC_ITEMS)
+const COSMETIC_COSTS = {
+    // Camo Patterns (SHOT burns)
+    'camo_forest': 50, 'camo_desert': 50, 'camo_arctic': 100, 'camo_digital': 150,
+    'camo_lava': 300, 'camo_void': 600,
+    // Projectile Trails
+    'trail_fire': 75, 'trail_neon': 150, 'trail_plasma': 250, 'trail_phantom': 500,
+    // Explosion Effects
+    'blast_ring': 75, 'blast_skull': 200, 'blast_lightning': 350, 'blast_nuke': 750,
+    // Tank Skins
+    'skin_stealth': 200, 'skin_chrome': 400, 'tank_gold': 1000, 'skin_diamond': 2000,
+    // Kill Effects
+    'kill_confetti': 100, 'kill_fireworks': 200, 'kill_lightning': 400, 'kill_nuke': 800,
+};
 
 // Profanity filter (server-side guard — mirrors client profanity.js)
 const PROFANITY_WORDS = [
@@ -496,9 +512,6 @@ function startTurnTimer(io, roomId) {
             return
         }
 
-        const hostId = room.players ? room.players[0]?.socketId : null
-        const playerId = room.players ? room.players[1]?.socketId : null
-
         // LP-08: Track consecutive timeouts per player
         if (!ms.consecutiveTimeouts) ms.consecutiveTimeouts = {}
         ms.consecutiveTimeouts[currentTurnId] = (ms.consecutiveTimeouts[currentTurnId] || 0) + 1
@@ -574,8 +587,8 @@ function startTurnTimer(io, roomId) {
                 return
             }
 
-            // <=2 alive: original forfeit-ends-match path
-            const opponentId = currentTurnId === hostId ? playerId : hostId
+            // <=2 alive: forfeit ends match — find the surviving opponent
+            const opponentId = ms.players.find(id => id !== currentTurnId && ms.alive[id]) || null
 
             console.log(`[Forfeit] Player ${currentTurnId} timed out 3 consecutive turns — opponent ${opponentId} wins`)
 
@@ -760,6 +773,13 @@ const mainsocket = (io) => {
 
         // Update terrain
         room.heightmap = result.newTerrain;
+
+        // Track wall placement for decay
+        if (result.wallPlacement) {
+            if (!room.walls) room.walls = [];
+            room.walls.push({ ...result.wallPlacement, turnPlaced: ms.turnCount });
+        }
+
         for (const p of room.players) {
             if (p.pos) {
                 const px = Math.min(1199, Math.max(0, Math.floor(p.pos.x)));
@@ -860,6 +880,24 @@ const mainsocket = (io) => {
             tunnelEntry: result.tunnelEntry || null,
             tunnelExit: result.tunnelExit || null,
         });
+
+        // Wall decay check — crumble expired walls
+        if (room.walls && room.walls.length > 0) {
+            const { decayed } = decayWalls(room.heightmap, room.walls, ms.turnCount);
+            if (decayed) {
+                // Update tank positions after terrain revert
+                for (const p of room.players) {
+                    if (p.pos) {
+                        const px = Math.min(1199, Math.max(0, Math.floor(p.pos.x)));
+                        p.pos.y = room.heightmap[px] - 15;
+                    }
+                }
+                ioRef.sockets.in(roomId).emit('wallDecay', {
+                    terrain: room.heightmap,
+                    positions: room.players.map(p => ({ socketId: p.socketId, pos: p.pos })),
+                });
+            }
+        }
 
         // Check round/match end
         if (!isRoundOver(ms)) {
@@ -1675,6 +1713,7 @@ const mainsocket = (io) => {
 
             // Always broadcast roomUpdate so both players see the lobby
             io.sockets.in(client.roomId).emit('roomUpdate', {
+                roomId: client.roomId,
                 players: room.players.map(p => ({
                     socketId: p.socketId,
                     name: p.name,
@@ -1898,6 +1937,15 @@ const mainsocket = (io) => {
 
             const playerIds = [client.id, AI_SOCKET_ID];
             goldStates[roomId] = initGold(playerIds);
+
+            // Extra Rations consumable: +200G starting gold
+            for (const pid of playerIds) {
+                const pWallet = authenticatedWallets[pid] || null;
+                const pState = pWallet ? getPlayerShotState(pWallet) : null;
+                if (pState && hasConsumable(pState, 'extra_rations')) {
+                    goldStates[roomId][pid] += 200;
+                }
+            }
 
             const aiInventory = autoBuyWeapons(1000);
             weaponInventories[roomId] = {
@@ -2207,6 +2255,16 @@ const mainsocket = (io) => {
                 } else {
                     // ── First shop (from lobby): initialize everything ──
                     goldStates[client.roomId] = initGold(playerIds)
+
+                    // Extra Rations consumable: +200G starting gold
+                    for (const pid of playerIds) {
+                        const pWallet = authenticatedWallets[pid] || null;
+                        const pState = pWallet ? getPlayerShotState(pWallet) : null;
+                        if (pState && hasConsumable(pState, 'extra_rations')) {
+                            goldStates[client.roomId][pid] += 200;
+                        }
+                    }
+
                     weaponInventories[client.roomId] = {}
                     for (const pid of playerIds) {
                         const prestige = getPrestigeInfo(authenticatedWallets[pid] || '')
@@ -2321,6 +2379,38 @@ const mainsocket = (io) => {
             })
         })
 
+        client.on('buyConsumable', (data) => {
+            if (!data?.consumableId) return;
+
+            const wallet = authenticatedWallets[client.id];
+            if (!wallet) {
+                client.emit('buyConsumableResult', { success: false, error: 'Not authenticated' });
+                return;
+            }
+
+            const state = getPlayerShotState(wallet);
+            if (!state) {
+                client.emit('buyConsumableResult', { success: false, error: 'No SHOT state' });
+                return;
+            }
+
+            const result = purchaseConsumable(state, data.consumableId);
+
+            if (result.success) {
+                saveMilestoneState(wallet);
+                trackShotBurn(CONSUMABLES[data.consumableId].cost);
+                client.emit('buyConsumableResult', {
+                    success: true,
+                    consumableId: data.consumableId,
+                    remaining: result.remaining,
+                    newBalance: state.balance,
+                    activeConsumables: state.consumables || {},
+                });
+            } else {
+                client.emit('buyConsumableResult', { success: false, error: result.error });
+            }
+        });
+
         // Client done shopping
         client.on('shopDone', () => {
             if (!requireAuthIfWagered(client, 'shopDone')) return
@@ -2358,12 +2448,106 @@ const mainsocket = (io) => {
                 return
             }
             const info = getPrestigeInfo(wallet)
+            const state = getPlayerShotState(wallet)
             client.emit('shotInfo', {
                 balance: getShotBalance(wallet),
                 prestige: info,
-                tiers: PRESTIGE_TIERS
+                tiers: PRESTIGE_TIERS,
+                consumables: state?.consumables || {},
             })
         })
+
+        // === COSMETICS SYSTEM ===
+
+        // Buy a cosmetic item (burns SHOT)
+        client.on('buyCosmetic', async (data) => {
+            if (!data?.itemId) return;
+            const wallet = authenticatedWallets[client.id];
+            if (!wallet) {
+                client.emit('buyCosmeticResult', { success: false, error: 'Not authenticated' });
+                return;
+            }
+
+            const state = getPlayerShotState(wallet);
+            if (!state) {
+                client.emit('buyCosmeticResult', { success: false, error: 'No SHOT state' });
+                return;
+            }
+
+            const cost = COSMETIC_COSTS[data.itemId];
+            if (cost === undefined) {
+                client.emit('buyCosmeticResult', { success: false, error: 'Unknown item' });
+                return;
+            }
+            if (state.balance < cost) {
+                client.emit('buyCosmeticResult', { success: false, error: 'Insufficient SHOT' });
+                return;
+            }
+
+            // Deduct SHOT
+            state.balance -= cost;
+            state.shotBurned = (state.shotBurned || 0) + cost;
+            saveMilestoneState(wallet);
+            trackShotBurn(cost);
+
+            // Add to owned in MongoDB
+            try {
+                await User.findOneAndUpdate(
+                    { walletAddress: wallet },
+                    { $addToSet: { 'cosmetics.owned': data.itemId } }
+                );
+            } catch (err) {
+                console.error('[Cosmetics] DB update failed:', err.message);
+            }
+
+            client.emit('buyCosmeticResult', {
+                success: true,
+                itemId: data.itemId,
+                newBalance: state.balance,
+            });
+        });
+
+        // Equip/unequip a cosmetic item
+        client.on('equipCosmetic', async (data) => {
+            if (!data?.itemId || !data?.category) return;
+            const wallet = authenticatedWallets[client.id];
+            if (!wallet) return;
+
+            const validCategories = ['pattern', 'trail', 'blast', 'skin', 'kill'];
+            const category = data.category.toLowerCase();
+            if (!validCategories.includes(category)) return;
+
+            try {
+                const updateField = `cosmetics.equipped.${category}`;
+                // itemId of null means unequip
+                await User.findOneAndUpdate(
+                    { walletAddress: wallet },
+                    { $set: { [updateField]: data.itemId } }
+                );
+                client.emit('equipCosmeticResult', { success: true, category, itemId: data.itemId });
+            } catch (err) {
+                client.emit('equipCosmeticResult', { success: false, error: err.message });
+            }
+        });
+
+        // Fetch owned + equipped cosmetics
+        client.on('getCosmetics', async () => {
+            const wallet = authenticatedWallets[client.id];
+            if (!wallet) {
+                client.emit('cosmeticsData', { owned: [], equipped: {} });
+                return;
+            }
+
+            try {
+                const user = await User.findOne({ walletAddress: wallet }).select('cosmetics').lean();
+                client.emit('cosmeticsData', {
+                    owned: user?.cosmetics?.owned || [],
+                    equipped: user?.cosmetics?.equipped || {},
+                });
+            } catch (err) {
+                client.emit('cosmeticsData', { owned: [], equipped: {} });
+            }
+        });
 
         // Fetch persistent player stats from DB
         client.on('getStats', async () => {
@@ -2416,6 +2600,7 @@ const mainsocket = (io) => {
                     totalDamage: stats.totalDamage || 0,
                     bestWinStreak: stats.bestWinStreak || 0,
                     signatureWeapon: sigWeapon,
+                    matchHistory: (user.matchHistory || []).slice(-6).reverse(),
                 })
             } catch (err) {
                 console.error('[Stats] getStats error:', err.message)
@@ -2925,6 +3110,13 @@ const mainsocket = (io) => {
                 // Increment server-side nonce (client must send matching seq next turn)
                 ms.turnSequence++
 
+                // Overcharge consumable: allow power up to 115, otherwise cap at 100
+                const maxPower = (ms?.consumables?.[this.id]?.includes('overcharge')) ? 115 : 100;
+                if (power > maxPower) {
+                    this.emit('fireRejected', { reason: `Power exceeds max (${maxPower})` })
+                    return
+                }
+
                 // Validate weapon exists
                 if (!WEAPON_DATA[weaponId]) {
                     this.emit('fireRejected', { reason: 'Invalid weapon' })
@@ -2998,6 +3190,12 @@ const mainsocket = (io) => {
 
             // Update server terrain state
             room.heightmap = result.newTerrain
+
+            // Track wall placement for decay
+            if (result.wallPlacement && ms) {
+                if (!room.walls) room.walls = [];
+                room.walls.push({ ...result.wallPlacement, turnPlaced: ms.turnCount });
+            }
 
             // Update tank Y positions to match deformed terrain (N-player)
             // Without this, next shot starts from old position which may be inside terrain
@@ -3163,6 +3361,23 @@ const mainsocket = (io) => {
                 tunnelExit: result.tunnelExit || null
             })
 
+            // Wall decay check — crumble expired walls
+            if (ms && room.walls && room.walls.length > 0) {
+                const { decayed } = decayWalls(room.heightmap, room.walls, ms.turnCount);
+                if (decayed) {
+                    for (const p of room.players) {
+                        if (p.pos) {
+                            const px = Math.min(1199, Math.max(0, Math.floor(p.pos.x)));
+                            p.pos.y = room.heightmap[px] - 15;
+                        }
+                    }
+                    io.sockets.in(this.roomId).emit('wallDecay', {
+                        terrain: room.heightmap,
+                        positions: room.players.map(p => ({ socketId: p.socketId, pos: p.pos })),
+                    });
+                }
+            }
+
             // Restart turn timer for the next player
             if (ms && !isRoundOver(ms)) {
                 startTurnTimer(io, this.roomId)
@@ -3306,6 +3521,17 @@ const mainsocket = (io) => {
                                         ? Array.from(ms.weaponsUsed[p.socketId]) : [],
                                 })
                                 if (shotResults[p.socketId].earned > 0) trackShotEmission(shotResults[p.socketId].earned)
+                            }
+
+                            // Decrement consumables after match
+                            for (const p of room.players) {
+                                const wallet = playerWalletMap[p.socketId];
+                                if (!wallet) continue;
+                                const pState = getPlayerShotState(wallet);
+                                if (pState) {
+                                    decrementConsumables(pState);
+                                    saveMilestoneState(wallet);
+                                }
                             }
 
                             // Phase 11: Compute newly earned milestones (diff against snapshot)
@@ -3534,11 +3760,39 @@ const mainsocket = (io) => {
                         ms.roundWins[id] = ms.roundWins[id] || 0;
                         ms.placementPoints[id] = ms.placementPoints[id] || 0;
                         ms.damageDealtTotal[id] = ms.damageDealtTotal[id] || 0;
+
+                        // Apply consumable effects
+                        const playerWallet = authenticatedWallets[id] || null;
+                        const playerState = playerWallet ? getPlayerShotState(playerWallet) : null;
+                        const activeConsumables = getActiveConsumables(playerState);
+
+                        // Reinforced Armor: +25 HP
+                        if (activeConsumables.includes('reinforced_armor')) {
+                            ms.hp[id] = 275;
+                        }
+
+                        // Store active consumables in match state for client
+                        if (!ms.consumables) ms.consumables = {};
+                        ms.consumables[id] = activeConsumables;
                     }
                 } else {
                     // Initialize HP for all players (players[] already populated)
                     for (const id of ms.players) {
                         ms.hp[id] = 250;
+
+                        // Apply consumable effects
+                        const playerWallet = authenticatedWallets[id] || null;
+                        const playerState = playerWallet ? getPlayerShotState(playerWallet) : null;
+                        const activeConsumables = getActiveConsumables(playerState);
+
+                        // Reinforced Armor: +25 HP
+                        if (activeConsumables.includes('reinforced_armor')) {
+                            ms.hp[id] = 275;
+                        }
+
+                        // Store active consumables in match state for client
+                        if (!ms.consumables) ms.consumables = {};
+                        ms.consumables[id] = activeConsumables;
                     }
                 }
                 ms.currentTurn = getNextTurn(ms)
@@ -3563,7 +3817,8 @@ const mainsocket = (io) => {
                 wind,
                 backgroundIndex,
                 firstTurn: ms ? ms.currentTurn : null,
-                seq: ms ? ms.turnSequence : 0  // Fix 4: initial nonce for first fire
+                seq: ms ? ms.turnSequence : 0,  // Fix 4: initial nonce for first fire
+                consumables: ms?.consumables || {},
             }
             room._terrainCache = terrainPayload
 
@@ -3600,7 +3855,9 @@ const mainsocket = (io) => {
             if (!requireAuthIfWagered(client, 'powerChange')) return
             if (!data || typeof data !== 'object') return
             const { power } = data
-            if (typeof power !== 'number' || !Number.isFinite(power) || power < 0 || power > 100) return
+            const ms = matchStates[client.roomId];
+            const maxPower = (ms?.consumables?.[client.id]?.includes('overcharge')) ? 115 : 100;
+            if (typeof power !== 'number' || !Number.isFinite(power) || power < 0 || power > maxPower) return
             client.to(client.roomId).emit('opponentPowerChange', {power: power})
         })
 

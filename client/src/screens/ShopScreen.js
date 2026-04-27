@@ -1,426 +1,19 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import TopBar from '../components/TopBar';
-import Button from '../components/Button';
-import WeaponCard from '../components/WeaponCard';
 import Modal from '../components/Modal';
 import useIsMobile from '../hooks/useIsMobile';
-
 import useSocket from '../hooks/useSocket';
 import WEAPONS, { getTierColor, getWeaponIconUrl, getWeaponById } from '../data/weapons';
 import { PRESTIGE_TIERS } from '../data/tiers';
 
-/* ── prestige weapon metadata (weapon ID → tier info) ── */
 const PRESTIGE_WEAPON_META = {};
 PRESTIGE_TIERS.forEach((tier) => {
   if (tier.weapons && tier.cost > 0) {
     tier.weapons.forEach((wId) => {
-      PRESTIGE_WEAPON_META[wId] = {
-        tierName: tier.name,
-        burnCost: tier.cost,
-        color: tier.color,
-        reward: tier.reward,
-      };
+      PRESTIGE_WEAPON_META[wId] = { tierName: tier.name, burnCost: tier.cost, color: tier.color, reward: tier.reward };
     });
   }
 });
 
-/* ── shared styles (desktop + mobile) ── */
-const s = {
-  container: {
-    flex: 1,
-    display: 'flex',
-    overflow: 'hidden',
-  },
-
-  /* Left: Weapon Catalog */
-  catalogPanel: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    borderRight: '1px solid var(--ol)',
-    overflow: 'hidden',
-  },
-  catalogHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '8px 12px',
-    borderBottom: '1px solid var(--ol)',
-  },
-  catalogTitle: {
-    fontFamily: "'Black Ops One', cursive",
-    fontSize: 18,
-    color: 'var(--am)',
-    letterSpacing: 2,
-  },
-  goldChip: {
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 16,
-    color: 'var(--gd)',
-    letterSpacing: 1,
-    display: 'flex',
-    alignItems: 'center',
-  },
-  catalogList: {
-    flex: 1,
-    overflowY: 'auto',
-    padding: '6px 8px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 4,
-  },
-
-  /* Right: Detail + Status (desktop only) */
-  rightPanel: {
-    width: '34%',
-    minWidth: 180,
-    display: 'flex',
-    flexDirection: 'column',
-    padding: '10px 14px',
-    gap: 10,
-    overflowY: 'auto',
-    WebkitOverflowScrolling: 'touch',
-  },
-
-  /* Timer */
-  timerBlock: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '6px 0',
-  },
-  timerValue: (urgent) => ({
-    fontFamily: "'Bebas Neue', sans-serif",
-    fontSize: 36,
-    color: urgent ? 'var(--rd)' : 'var(--am)',
-    letterSpacing: 4,
-    lineHeight: 1,
-    transition: 'color 0.3s ease',
-    animation: urgent ? 'fl 0.5s ease-in-out infinite' : 'none',
-  }),
-  timerLabel: {
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 12,
-    color: 'var(--kh)',
-    letterSpacing: 2,
-    textAlign: 'center',
-    marginTop: 2,
-  },
-
-  /* Detail panel */
-  detailBox: {
-    flex: 1,
-    minHeight: 0,
-    background: 'rgba(42, 51, 31, 0.2)',
-    border: '1px solid var(--ol)',
-    borderRadius: 4,
-    padding: '10px 12px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 6,
-    overflowY: 'auto',
-  },
-  detailName: {
-    fontFamily: "'Black Ops One', cursive",
-    fontSize: 22,
-    color: 'var(--bn)',
-    letterSpacing: 2,
-  },
-  detailTier: (tierColor) => ({
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 15,
-    color: tierColor,
-    letterSpacing: 2,
-  }),
-  detailDesc: {
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 14,
-    color: 'var(--kh)',
-    letterSpacing: 1,
-    lineHeight: 1.6,
-    opacity: 0.8,
-  },
-  detailStats: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 4,
-    marginTop: 4,
-  },
-  detailStatRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-  },
-  detailStatLabel: {
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 14,
-    color: 'var(--kh)',
-    letterSpacing: 1,
-    width: 75,
-    opacity: 0.7,
-  },
-  detailStatBar: {
-    flex: 1,
-    height: 10,
-    borderRadius: 5,
-    background: 'rgba(184, 168, 138, 0.15)',
-    overflow: 'hidden',
-  },
-  detailStatFill: (pct, color) => ({
-    width: pct + '%',
-    height: '100%',
-    borderRadius: 3,
-    background: color,
-    transition: 'width 0.3s ease',
-  }),
-  detailPrice: {
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 17,
-    color: 'var(--gd)',
-    letterSpacing: 1,
-    marginTop: 4,
-  },
-  emptyDetail: {
-    flex: 1,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 14,
-    color: 'var(--kh)',
-    letterSpacing: 2,
-    opacity: 0.4,
-  },
-
-  /* Loadout */
-  loadoutRow: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: 4,
-  },
-  loadoutChip: (tierColor) => ({
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 13,
-    color: tierColor,
-    letterSpacing: 1,
-    padding: '4px 10px',
-    borderRadius: 3,
-    border: `1px solid ${tierColor}33`,
-    background: `rgba(${hexToRgb(tierColor)}, 0.06)`,
-  }),
-  loadoutLabel: {
-    fontFamily: "'Black Ops One', cursive",
-    fontSize: 15,
-    color: 'var(--kh)',
-    letterSpacing: 2,
-    marginBottom: 4,
-  },
-
-  /* Bottom bar */
-  bottomBar: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 6,
-  },
-
-  /* Opponent activity */
-  activityLine: {
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 12,
-    color: 'var(--rg)',
-    letterSpacing: 1,
-    textAlign: 'center',
-    opacity: 0.9,
-    animation: 'si 0.4s ease-out both',
-  },
-
-  /* Pot display */
-  potDisplay: {
-    display: 'flex',
-    justifyContent: 'center',
-    padding: '4px 0',
-  },
-  potBadge: {
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 14,
-    color: 'var(--sg)',
-    letterSpacing: 1,
-    padding: '4px 12px',
-    borderRadius: 3,
-    border: '1px solid rgba(20, 241, 149, 0.2)',
-    background: 'rgba(20, 241, 149, 0.04)',
-    display: 'flex',
-    alignItems: 'center',
-  },
-};
-
-/* ── mobile-only styles ── */
-const mob = {
-  container: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'hidden',
-  },
-  catalogPanel: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'hidden',
-  },
-  catalogHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '6px 10px',
-    borderBottom: '1px solid var(--ol)',
-  },
-  catalogList: {
-    flex: 1,
-    overflowY: 'auto',
-    WebkitOverflowScrolling: 'touch',
-    padding: '4px 6px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 3,
-  },
-  /* Persistent bottom bar: timer | loadout | ready */
-  statusBar: {
-    display: 'flex',
-    alignItems: 'center',
-    padding: '6px 10px',
-    gap: 8,
-    borderTop: '1px solid var(--ol)',
-    background: 'rgba(13, 15, 9, 0.95)',
-    flexShrink: 0,
-  },
-  statusTimer: (urgent) => ({
-    fontFamily: "'Bebas Neue', sans-serif",
-    fontSize: 22,
-    color: urgent ? 'var(--rd)' : 'var(--am)',
-    letterSpacing: 2,
-    lineHeight: 1,
-    minWidth: 28,
-    textAlign: 'center',
-    animation: urgent ? 'fl 0.5s ease-in-out infinite' : 'none',
-  }),
-  statusLoadout: {
-    flex: 1,
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: 3,
-    alignItems: 'center',
-    overflow: 'hidden',
-  },
-  statusChip: (tierColor) => ({
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 10,
-    color: tierColor,
-    letterSpacing: 1,
-    padding: '2px 6px',
-    borderRadius: 2,
-    border: `1px solid ${tierColor}33`,
-    background: `rgba(${hexToRgb(tierColor)}, 0.06)`,
-    whiteSpace: 'nowrap',
-  }),
-  /* Bottom sheet overlay */
-  sheetBackdrop: {
-    position: 'fixed',
-    inset: 0,
-    background: 'rgba(0, 0, 0, 0.5)',
-    zIndex: 8000,
-  },
-  sheet: {
-    position: 'fixed',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    zIndex: 8001,
-    background: 'linear-gradient(180deg, #1a1c14 0%, #0d0f09 100%)',
-    borderTop: '2px solid var(--ol)',
-    borderRadius: '12px 12px 0 0',
-    padding: '12px 16px',
-    paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 8,
-    maxHeight: '65vh',
-    overflowY: 'auto',
-    WebkitOverflowScrolling: 'touch',
-    animation: 'sheetUp 0.2s ease-out',
-  },
-  sheetHandle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    background: 'var(--ol)',
-    alignSelf: 'center',
-    marginBottom: 4,
-    flexShrink: 0,
-  },
-  sheetHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  sheetName: {
-    fontFamily: "'Black Ops One', cursive",
-    fontSize: 20,
-    color: 'var(--bn)',
-    letterSpacing: 2,
-  },
-  sheetTier: (tierColor) => ({
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 13,
-    color: tierColor,
-    letterSpacing: 2,
-  }),
-  sheetDesc: {
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 12,
-    color: 'var(--kh)',
-    letterSpacing: 1,
-    lineHeight: 1.5,
-    opacity: 0.8,
-  },
-  sheetStats: {
-    display: 'flex',
-    gap: 12,
-  },
-  sheetStatRow: {
-    flex: 1,
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-  },
-  sheetStatLabel: {
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 11,
-    color: 'var(--kh)',
-    letterSpacing: 1,
-    width: 34,
-    opacity: 0.7,
-  },
-  sheetStatBar: {
-    flex: 1,
-    height: 8,
-    borderRadius: 4,
-    background: 'rgba(184, 168, 138, 0.15)',
-    overflow: 'hidden',
-  },
-  sheetPrice: {
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 15,
-    color: 'var(--gd)',
-    letterSpacing: 1,
-    textAlign: 'center',
-  },
-  sheetPrestige: {
-    textAlign: 'center',
-  },
-};
-
-/* ── keyframe injection for bottom sheet animation ── */
 if (typeof document !== 'undefined' && !document.getElementById('shop-sheet-anim')) {
   const style = document.createElement('style');
   style.id = 'shop-sheet-anim';
@@ -428,32 +21,92 @@ if (typeof document !== 'undefined' && !document.getElementById('shop-sheet-anim
   document.head.appendChild(style);
 }
 
-function hexToRgb(hex) {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `${r}, ${g}, ${b}`;
+/* 5-pip stat indicator — matches design reference */
+function StatPips({ value, max, color }) {
+  const filled = Math.ceil((value / max) * 5);
+  return (
+    <div style={{ display: 'inline-flex', gap: 2, verticalAlign: 'middle' }}>
+      {[0, 1, 2, 3, 4].map((i) => (
+        <div key={i} style={{
+          width: 8, height: 4,
+          background: i < filled ? color : 'var(--border)',
+        }} />
+      ))}
+    </div>
+  );
 }
 
+function WeaponRow({ weapon, selected, owned, iconUrl, onClick }) {
+  const tierColor = getTierColor(weapon.tier);
+  const dmgVal = Math.min(100, (weapon.damageFactor / 3.75) * 100);
+  const blastVal = Math.min(100, (weapon.blastRadius / 90) * 100);
+
+  return (
+    <div onClick={onClick} style={{
+      display: 'grid', gridTemplateColumns: '40px 1fr auto', gap: 12, alignItems: 'center',
+      padding: '10px 14px',
+      background: selected ? 'var(--bg-raised)' : 'transparent',
+      borderLeft: '2px solid ' + (selected ? tierColor : 'transparent'),
+      borderBottom: '1px solid var(--border)',
+      cursor: 'pointer',
+    }}>
+      {/* Icon */}
+      <div style={{
+        width: 36, height: 36,
+        background: 'var(--bg-deep)', border: '1px solid var(--border)',
+        clipPath: 'var(--clip-6)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+      }}>
+        {iconUrl ? (
+          <img src={iconUrl} alt={weapon.name}
+            style={{ width: 28, height: 28, objectFit: 'contain', imageRendering: 'pixelated' }}
+            onError={(e) => { e.target.style.display = 'none'; }} />
+        ) : (
+          <span style={{ fontSize: 14, color: tierColor }}>✱</span>
+        )}
+      </div>
+
+      {/* Name + stats */}
+      <div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+          <span style={{ fontFamily: 'var(--f-sec)', fontSize: 14, color: 'var(--bone)', letterSpacing: '0.04em' }}>{weapon.name}</span>
+          <span style={{ fontFamily: 'var(--f-mono)', fontSize: 9, color: tierColor, letterSpacing: '0.22em' }}>{weapon.tier}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5 }}>
+          <span style={{ fontFamily: 'var(--f-mono)', fontSize: 8, color: 'var(--muted)', letterSpacing: '0.2em' }}>DMG</span>
+          <StatPips value={dmgVal} max={100} color={tierColor} />
+          <span style={{ fontFamily: 'var(--f-mono)', fontSize: 8, color: 'var(--muted)', letterSpacing: '0.2em', marginLeft: 4 }}>BLR</span>
+          <StatPips value={blastVal} max={100} color={tierColor} />
+        </div>
+      </div>
+
+      {/* Cost */}
+      <div style={{
+        fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '0.15em',
+        color: owned ? '#7fd060' : weapon.goldCost === 0 ? 'var(--olive)' : tierColor,
+        minWidth: 60, textAlign: 'right',
+      }}>
+        {owned ? 'OWNED' : weapon.goldCost === 0 ? 'FREE' : weapon.goldCost + 'G'}
+      </div>
+    </div>
+  );
+}
 
 function ShopScreen({ navigate, screenData }) {
   const isMobile = useIsMobile();
 
-  // Normalize data — lobby format has {host, player}, between-round has {hostId, player1, player2}
   const hostInfo = screenData?.host || {
     socketId: screenData?.hostId,
     name: screenData?.player1?.name,
     color: screenData?.player1?.color,
   };
   const playerInfo = screenData?.player || {
-    socketId: null, // joiner's socketId isn't in battle screenData — server will provide via shopEnd
+    socketId: null,
     name: screenData?.player2?.name,
     color: screenData?.player2?.color,
   };
 
-  /* ── state ── */
   const [weapons, setWeapons] = useState(WEAPONS);
-  // Initialize gold from between-round data if available, else default 1000
   const [gold, setGold] = useState(() => {
     if (screenData?.goldBalance && window.socket) {
       const myGold = screenData.goldBalance[window.socket.id];
@@ -461,7 +114,7 @@ function ShopScreen({ navigate, screenData }) {
     }
     return 1000;
   });
-  const [inventory, setInventory] = useState([0]); // owned weapon IDs
+  const [inventory, setInventory] = useState([0]);
   const [selectedWeaponId, setSelectedWeaponId] = useState(null);
   const [timeRemaining, setTimeRemaining] = useState(30);
   const [isReady, setIsReady] = useState(false);
@@ -474,58 +127,38 @@ function ShopScreen({ navigate, screenData }) {
   const timerRef = useRef(null);
   const activityTimerRef = useRef(null);
 
-  /* ── socket: shop phase init ── */
   useSocket('shopPhase', (data) => {
     if (data.weapons) setWeapons(data.weapons);
-
-    // Store round info from server
     if (data.totalRounds != null) setTotalRounds(data.totalRounds);
     if (data.round != null) setCurrentRound(data.round);
-
-    // Find our gold balance — check all keys for our socket id
     if (data.goldBalance && window.socket) {
-      const myId = window.socket.id;
-      const myGold = data.goldBalance[myId];
+      const myGold = data.goldBalance[window.socket.id];
       if (myGold !== undefined) setGold(myGold);
     }
-
-    // Restore inventory from server (important for between-round shops)
     if (data.inventory && window.socket) {
-      const myId = window.socket.id;
-      const myInv = data.inventory[myId];
+      const myInv = data.inventory[window.socket.id];
       if (myInv && Array.isArray(myInv)) setInventory(myInv);
     }
-
-    // Timer: server sends `timer` (seconds). Start countdown from that value.
-    if (data.timer) {
-      setTimeRemaining(data.timer);
-    }
+    if (data.timer) setTimeRemaining(data.timer);
   });
 
-  /* ── socket: buy result ── */
   useSocket('buyWeaponResult', (data) => {
     if (data.success) {
       setGold(data.balance);
       if (data.inventory) setInventory(data.inventory);
-      // On mobile, close the bottom sheet after successful buy
       if (isMobile) setSelectedWeaponId(null);
     } else {
       setError(data.reason || 'Purchase failed');
     }
   });
 
-  /* ── socket: opponent bought weapon ── */
   useSocket('opponentBoughtWeapon', (data) => {
     setOpponentActivity('OPPONENT ACQUIRED: ' + (data.weaponName || 'UNKNOWN'));
-    // Clear activity after 3s
     if (activityTimerRef.current) clearTimeout(activityTimerRef.current);
     activityTimerRef.current = setTimeout(() => setOpponentActivity(null), 3000);
   });
 
-  /* ── socket: shop ends -> navigate to battle ── */
   useSocket('shopEnd', (data) => {
-    // Build N-player players[] array from server data.
-    // screenData.players comes from startPick (has socketId, name, color for all N players).
     const allPlayers = screenData?.players || [];
     const playersArray = allPlayers.map(p => ({
       socketId: p.socketId,
@@ -537,43 +170,29 @@ function ShopScreen({ navigate, screenData }) {
     navigate('battle', {
       gameType: 3,
       hostId: hostInfo.socketId,
-      // Backward-compat (BattleHUD still reads player1/player2 until Phase 19)
-      player1: {
-        name: hostInfo.name,
-        color: hostInfo.color,
-        weapons: data.hostWeapons,
-      },
-      player2: {
-        name: playerInfo.name,
-        color: playerInfo.color,
-        weapons: data.playerWeapons,
-      },
-      // N-player canonical
+      player1: { name: hostInfo.name, color: hostInfo.color, weapons: data.hostWeapons },
+      player2: { name: playerInfo.name, color: playerInfo.color, weapons: data.playerWeapons },
       players: playersArray,
       playerCount: playersArray.length || 2,
-      wager: wager,
+      wager,
       goldBalance: data.goldBalance,
       round: currentRound,
-      totalRounds: totalRounds,
+      totalRounds,
       isAIMatch: screenData?.isAIMatch || false,
     });
   });
 
-  /* ── socket: opponent left ── */
   useSocket('opponentLeft', () => {
     if (timerRef.current) clearInterval(timerRef.current);
     setError('Opponent has left the match');
   });
 
-  /* ── countdown timer ── */
   useEffect(() => {
     if (timerRef.current) clearInterval(timerRef.current);
-
     timerRef.current = setInterval(() => {
       setTimeRemaining((prev) => {
         if (prev <= 1) {
           clearInterval(timerRef.current);
-          // Auto-ready when timer expires
           if (!isReady && window.socket) {
             window.socket.emit('shopDone');
             setIsReady(true);
@@ -583,27 +202,12 @@ function ShopScreen({ navigate, screenData }) {
         return prev - 1;
       });
     }, 1000);
-
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* ── cleanup activity timer on unmount ── */
-  useEffect(() => {
-    return () => {
-      if (activityTimerRef.current) clearTimeout(activityTimerRef.current);
-    };
-  }, []);
+  useEffect(() => () => { if (activityTimerRef.current) clearTimeout(activityTimerRef.current); }, []);
+  useEffect(() => { if (window.socket) window.socket.emit('ready'); }, []);
 
-  /* ── emit ready on mount (triggers shopPhase from server) ── */
-  useEffect(() => {
-    if (window.socket) {
-      window.socket.emit('ready');
-    }
-  }, []);
-
-  /* ── actions ── */
   const buyWeapon = useCallback((weaponId) => {
     if (!window.socket || isReady) return;
     window.socket.emit('buyWeapon', { weaponId });
@@ -615,180 +219,177 @@ function ShopScreen({ navigate, screenData }) {
     setIsReady(true);
   }, [isReady]);
 
-  /* ── derived ── */
   const selectedWeapon = selectedWeaponId !== null ? getWeaponById(selectedWeaponId) : null;
   const isOwned = (id) => inventory.includes(id);
 
-  /* ══════════════════════════════════════════════
-     MOBILE LAYOUT — bottom sheet
-     ══════════════════════════════════════════════ */
+  const ErrorModal = error && (
+    <Modal
+      title="ERROR"
+      message={error}
+      buttons={[{
+        label: error === 'Opponent has left the match' ? 'RETURN TO LOBBY' : 'DISMISS',
+        variant: 'secondary',
+        onClick: () => {
+          if (error === 'Opponent has left the match') navigate('lobby');
+          else setError(null);
+        },
+      }]}
+      onClose={() => {
+        if (error === 'Opponent has left the match') navigate('lobby');
+        else setError(null);
+      }}
+    />
+  );
+
+  /* ══ MOBILE ══ */
   if (isMobile) {
     return (
-      <>
-        <TopBar title="WEAPON SHOP" />
-
-        <div style={mob.container}>
-          {/* ─── Weapon list (full width) ─── */}
-          <div style={mob.catalogPanel}>
-            <div style={mob.catalogHeader}>
-              <span style={{ ...s.catalogTitle, fontSize: 14 }}>ARSENAL</span>
-              <span style={{ ...s.goldChip, fontSize: 13 }}>
-                <img src="/assets/images/currency/icon-gold.png" alt="" style={{ width: 11, height: 11, verticalAlign: 'middle', marginRight: 3 }} />
-                {gold + ' GOLD'}
-              </span>
-            </div>
-
-            <div style={mob.catalogList}>
-              {weapons.map((w) => {
-                const meta = getWeaponById(w.id) || w;
-                return (
-                  <WeaponCard
-                    key={w.id}
-                    weapon={meta}
-                    selected={selectedWeaponId === w.id}
-                    owned={isOwned(w.id)}
-                    iconUrl={getWeaponIconUrl(meta.name)}
-                    onClick={() => setSelectedWeaponId(w.id)}
-                  />
-                );
-              })}
-            </div>
-          </div>
-
-          {/* ─── Opponent activity toast ─── */}
-          {opponentActivity && (
-            <div style={{ ...s.activityLine, padding: '3px 0' }}>{opponentActivity}</div>
-          )}
-
-          {/* ─── Persistent bottom bar: timer | loadout chips | ready ─── */}
-          <div style={mob.statusBar}>
-            <span style={mob.statusTimer(timeRemaining <= 5)}>
-              {String(timeRemaining).padStart(2, '0')}
-            </span>
-
-            <div style={mob.statusLoadout}>
-              {inventory.map((id) => {
-                const w = getWeaponById(id);
-                if (!w) return null;
-                return (
-                  <span key={id} style={mob.statusChip(getTierColor(w.tier))}>
-                    {w.name}
-                  </span>
-                );
-              })}
-            </div>
-
-            <Button
-              variant={isReady ? 'disabled' : 'primary'}
-              onClick={handleReady}
-              disabled={isReady}
-              style={{ fontSize: 12, padding: '6px 14px', whiteSpace: 'nowrap' }}
-            >
-              {isReady ? 'WAITING...' : 'READY'}
-            </Button>
+      <div style={{ position: 'relative', height: '100vh', background: 'var(--bg-deep)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {/* Header strip */}
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          padding: '10px 14px', borderBottom: '1px solid var(--border)',
+        }}>
+          <div style={{ fontFamily: 'var(--f-display)', fontSize: 14, color: 'var(--bone)', letterSpacing: '0.18em' }}>ARSENAL</div>
+          <div style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--accent)', letterSpacing: '0.15em' }}>
+            ◆ {gold} GOLD
           </div>
         </div>
 
-        {/* ─── Bottom sheet: weapon detail + buy ─── */}
+        <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          {weapons.map((w) => {
+            const meta = getWeaponById(w.id) || w;
+            return (
+              <WeaponRow key={w.id} weapon={meta} selected={selectedWeaponId === w.id}
+                owned={isOwned(w.id)} iconUrl={getWeaponIconUrl(meta.name)}
+                onClick={() => setSelectedWeaponId(w.id)} />
+            );
+          })}
+        </div>
+
+        {opponentActivity && (
+          <div style={{
+            fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--accent)',
+            letterSpacing: '0.2em', padding: '4px 10px', textAlign: 'center',
+            background: 'rgba(200,120,26,0.08)',
+          }}>{opponentActivity}</div>
+        )}
+
+        {/* Bottom status bar */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
+          borderTop: '1px solid var(--border)',
+          background: 'var(--bg-surface)', flexShrink: 0,
+        }}>
+          <span style={{
+            fontFamily: 'var(--f-display)', fontSize: 22,
+            color: timeRemaining <= 5 ? '#c86060' : 'var(--accent)',
+            letterSpacing: '0.12em', minWidth: 34, textAlign: 'center',
+          }}>{String(timeRemaining).padStart(2, '0')}</span>
+          <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap', gap: 3, overflow: 'hidden' }}>
+            {inventory.map((id) => {
+              const w = getWeaponById(id);
+              if (!w) return null;
+              const tc = getTierColor(w.tier);
+              return (
+                <span key={id} style={{
+                  fontFamily: 'var(--f-mono)', fontSize: 9, letterSpacing: '0.15em',
+                  padding: '2px 6px', color: tc, border: `1px solid ${tc}55`,
+                  whiteSpace: 'nowrap',
+                }}>{w.name}</span>
+              );
+            })}
+          </div>
+          <button
+            onClick={handleReady} disabled={isReady}
+            style={{
+              padding: '8px 14px',
+              background: isReady ? 'var(--muted)' : 'var(--accent)',
+              color: '#0e1209',
+              border: '1px solid ' + (isReady ? 'var(--border)' : 'var(--accent-hot)'),
+              clipPath: 'var(--clip-6)',
+              fontFamily: 'var(--f-display)', fontSize: 12, letterSpacing: '0.15em',
+              cursor: isReady ? 'default' : 'pointer',
+              opacity: isReady ? 0.6 : 1,
+              whiteSpace: 'nowrap',
+            }}>{isReady ? 'STANDBY…' : 'READY'}</button>
+        </div>
+
+        {/* Bottom sheet for selection */}
         {selectedWeapon && (
           <>
-            <div style={mob.sheetBackdrop} onTouchEnd={(e) => { e.stopPropagation(); setSelectedWeaponId(null); }} onClick={() => setSelectedWeaponId(null)} />
-            <div style={mob.sheet} onTouchEnd={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
-              <div style={mob.sheetHandle} />
+            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0, 0, 0, 0.6)', zIndex: 8000 }}
+              onClick={() => setSelectedWeaponId(null)} />
+            <div style={{
+              position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 8001,
+              background: 'var(--bg-surface)',
+              borderTop: '1px solid var(--accent)',
+              padding: '16px 18px',
+              paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
+              display: 'flex', flexDirection: 'column', gap: 10,
+              maxHeight: '70vh', overflowY: 'auto',
+              animation: 'sheetUp 0.2s ease-out',
+            }}>
+              <div style={{ width: 36, height: 4, background: 'var(--border)', alignSelf: 'center', marginBottom: 4 }} />
 
-              {/* Header: name + tier + price */}
-              <div style={mob.sheetHeader}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                 <div>
-                  <div style={mob.sheetName}>{selectedWeapon.name}</div>
-                  <div style={mob.sheetTier(getTierColor(selectedWeapon.tier))}>
-                    {selectedWeapon.tier}
-                  </div>
+                  <div style={{ fontFamily: 'var(--f-display)', fontSize: 20, color: 'var(--bone)', letterSpacing: '0.08em' }}>{selectedWeapon.name}</div>
+                  <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: getTierColor(selectedWeapon.tier), letterSpacing: '0.22em' }}>{selectedWeapon.tier}</div>
                 </div>
-                <div style={{ ...mob.sheetPrice, fontSize: 17 }}>
-                  {isOwned(selectedWeapon.id)
-                    ? 'EQUIPPED'
-                    : selectedWeapon.goldCost === 0
-                      ? 'FREE'
-                      : selectedWeapon.goldCost + 'G'
-                  }
+                <div style={{ fontFamily: 'var(--f-mono)', fontSize: 14, color: 'var(--accent)', letterSpacing: '0.12em' }}>
+                  {isOwned(selectedWeapon.id) ? 'EQUIPPED' : selectedWeapon.goldCost === 0 ? 'FREE' : selectedWeapon.goldCost + 'G'}
                 </div>
               </div>
 
-              {/* Description */}
               {selectedWeapon.desc && (
-                <div style={mob.sheetDesc}>{selectedWeapon.desc}</div>
+                <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--olive)', letterSpacing: '0.05em', lineHeight: 1.5 }}>
+                  {selectedWeapon.desc}
+                </div>
               )}
 
-              {/* Stat bars — side by side */}
-              <div style={mob.sheetStats}>
-                <div style={mob.sheetStatRow}>
-                  <span style={mob.sheetStatLabel}>DMG</span>
-                  <div style={mob.sheetStatBar}>
-                    <div style={s.detailStatFill(
-                      Math.min(100, (selectedWeapon.damageFactor / 3.75) * 100),
-                      getTierColor(selectedWeapon.tier)
-                    )} />
+              {[
+                ['DMG', Math.min(100, (selectedWeapon.damageFactor / 3.75) * 100)],
+                ['BLR', Math.min(100, (selectedWeapon.blastRadius / 90) * 100)],
+              ].map(([k, pct]) => (
+                <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontFamily: 'var(--f-mono)', fontSize: 9, color: 'var(--olive)', letterSpacing: '0.22em', width: 30 }}>{k}</span>
+                  <div style={{ display: 'flex', gap: 2 }}>
+                    {[0,1,2,3,4,5,6,7].map((i) => (
+                      <div key={i} style={{ width: 10, height: 6, background: i < Math.ceil((pct / 100) * 8) ? getTierColor(selectedWeapon.tier) : 'var(--border)' }} />
+                    ))}
                   </div>
                 </div>
-                <div style={mob.sheetStatRow}>
-                  <span style={mob.sheetStatLabel}>BLR</span>
-                  <div style={mob.sheetStatBar}>
-                    <div style={s.detailStatFill(
-                      Math.min(100, (selectedWeapon.blastRadius / 90) * 100),
-                      getTierColor(selectedWeapon.tier)
-                    )} />
-                  </div>
-                </div>
-              </div>
+              ))}
 
-              {/* Prestige info */}
               {(() => {
-                const prestigeMeta = PRESTIGE_WEAPON_META[selectedWeapon.id];
-                if (!prestigeMeta) return null;
+                const pm = PRESTIGE_WEAPON_META[selectedWeapon.id];
+                if (!pm) return null;
                 return (
-                  <div style={mob.sheetPrestige}>
-                    <span style={{
-                      fontFamily: "'Black Ops One', cursive",
-                      fontSize: 11,
-                      color: prestigeMeta.color,
-                      letterSpacing: 2,
-                    }}>
-                      {prestigeMeta.tierName.toUpperCase() + ' PRESTIGE'}
-                    </span>
-                    <span style={{
-                      fontFamily: "'Share Tech Mono', monospace",
-                      fontSize: 10,
-                      color: 'var(--sp)',
-                      letterSpacing: 1,
-                      marginLeft: 8,
-                    }}>
-                      {'REQUIRES ??? SHOT BURN'}
-                    </span>
+                  <div style={{ textAlign: 'center', fontFamily: 'var(--f-mono)', fontSize: 10, color: pm.color, letterSpacing: '0.22em' }}>
+                    {pm.tierName.toUpperCase()} PRESTIGE · REQUIRES ??? SHOT BURN
                   </div>
                 );
               })()}
 
-              {/* Buy button — full width, big tap target */}
               {!isOwned(selectedWeapon.id) && selectedWeapon.goldCost > 0 && (
-                <Button
-                  variant="gold"
+                <button
                   onClick={() => buyWeapon(selectedWeapon.id)}
                   disabled={isReady || gold < selectedWeapon.goldCost}
-                  style={{ fontSize: 14, padding: '10px 0', width: '100%' }}
-                >
-                  {'BUY — ' + selectedWeapon.goldCost + 'G'}
-                </Button>
+                  style={{
+                    width: '100%', padding: 12,
+                    background: gold < selectedWeapon.goldCost || isReady ? 'var(--muted)' : 'var(--accent)',
+                    color: '#0e1209',
+                    border: '1px solid ' + (gold < selectedWeapon.goldCost || isReady ? 'var(--border)' : 'var(--accent-hot)'),
+                    clipPath: 'var(--clip-6)',
+                    fontFamily: 'var(--f-display)', fontSize: 14, letterSpacing: '0.18em',
+                    cursor: gold < selectedWeapon.goldCost || isReady ? 'not-allowed' : 'pointer',
+                    opacity: gold < selectedWeapon.goldCost || isReady ? 0.6 : 1,
+                  }}>BUY — {selectedWeapon.goldCost}G</button>
               )}
 
               {isOwned(selectedWeapon.id) && (
-                <div style={{
-                  fontFamily: "'Share Tech Mono', monospace",
-                  fontSize: 12,
-                  color: 'var(--sg)',
-                  letterSpacing: 2,
-                  textAlign: 'center',
-                  padding: '6px 0',
-                }}>
+                <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: '#7fd060', letterSpacing: '0.22em', textAlign: 'center', padding: '6px 0' }}>
                   IN YOUR LOADOUT
                 </div>
               )}
@@ -796,236 +397,199 @@ function ShopScreen({ navigate, screenData }) {
           </>
         )}
 
-        {/* ═══ ERROR MODAL ═══ */}
-        {error && (
-          <Modal
-            title="ERROR"
-            message={error}
-            buttons={[
-              {
-                label: error === 'Opponent has left the match' ? 'RETURN TO LOBBY' : 'DISMISS',
-                variant: 'secondary',
-                onClick: () => {
-                  if (error === 'Opponent has left the match') {
-                    navigate('lobby');
-                  } else {
-                    setError(null);
-                  }
-                },
-              },
-            ]}
-            onClose={() => {
-              if (error === 'Opponent has left the match') {
-                navigate('lobby');
-              } else {
-                setError(null);
-              }
-            }}
-          />
-        )}
-      </>
+        {ErrorModal}
+      </div>
     );
   }
 
-  /* ══════════════════════════════════════════════
-     DESKTOP LAYOUT — original two-panel
-     ══════════════════════════════════════════════ */
+  /* ══ DESKTOP ══ */
   return (
-    <>
-      <TopBar title="WEAPON SHOP" />
-
-      <div style={s.container}>
-        {/* ═══ LEFT: WEAPON CATALOG ═══ */}
-        <div style={s.catalogPanel}>
-          <div style={s.catalogHeader}>
-            <span style={s.catalogTitle}>ARSENAL</span>
-            <span style={s.goldChip}><img src="/assets/images/currency/icon-gold.png" alt="" style={{ width: 12, height: 12, verticalAlign: 'middle', marginRight: 4 }} />{gold + ' GOLD'}</span>
+    <div style={{ position: 'relative', minHeight: '100vh', background: 'var(--bg-deep)', overflow: 'hidden' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', height: '100vh' }}>
+        {/* LEFT: Catalog */}
+        <div style={{ display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--border)', overflow: 'hidden' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            padding: '14px 20px', borderBottom: '1px solid var(--border)',
+          }}>
+            <div>
+              <div style={{ fontFamily: 'var(--f-display)', fontSize: 22, color: 'var(--bone)', letterSpacing: '0.12em' }}>WEAPON SHOP</div>
+              <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--olive)', letterSpacing: '0.22em', marginTop: 4 }}>
+                ROUND {currentRound} / {totalRounds} · SPEND YOUR GOLD
+              </div>
+            </div>
+            <div style={{ fontFamily: 'var(--f-mono)', fontSize: 14, color: 'var(--accent)', letterSpacing: '0.15em' }}>
+              ◆ {gold} GOLD
+            </div>
           </div>
 
-          <div style={s.catalogList}>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
             {weapons.map((w) => {
-              // Use local WEAPONS metadata for display, server weapons for availability
               const meta = getWeaponById(w.id) || w;
               return (
-                <WeaponCard
-                  key={w.id}
-                  weapon={meta}
-                  selected={selectedWeaponId === w.id}
-                  owned={isOwned(w.id)}
-                  iconUrl={getWeaponIconUrl(meta.name)}
-                  onClick={() => setSelectedWeaponId(w.id)}
-                />
+                <WeaponRow key={w.id} weapon={meta} selected={selectedWeaponId === w.id}
+                  owned={isOwned(w.id)} iconUrl={getWeaponIconUrl(meta.name)}
+                  onClick={() => setSelectedWeaponId(w.id)} />
               );
             })}
           </div>
         </div>
 
-        {/* ═══ RIGHT: DETAIL + STATUS ═══ */}
-        <div style={s.rightPanel}>
+        {/* RIGHT: Timer, Detail, Loadout, Ready */}
+        <div style={{ display: 'flex', flexDirection: 'column', padding: 18, gap: 14, overflowY: 'auto' }}>
           {/* Timer */}
-          <div>
-            <div style={s.timerBlock}>
-              <span style={s.timerValue(timeRemaining <= 5)}>
-                {String(timeRemaining).padStart(2, '0')}
-              </span>
+          <div style={{
+            background: 'var(--bg-surface)', border: '1px solid var(--border)',
+            clipPath: 'var(--clip-6)', padding: 18, textAlign: 'center',
+          }}>
+            <div style={{
+              fontFamily: 'var(--f-display)', fontSize: 48,
+              color: timeRemaining < 10 ? '#c86060' : 'var(--accent)',
+              lineHeight: 1, letterSpacing: '0.08em',
+              textShadow: timeRemaining < 10 ? 'none' : '0 0 20px rgba(218,138,40,0.3)',
+            }}>{String(timeRemaining).padStart(2, '0')}</div>
+            <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--olive)', letterSpacing: '0.22em', marginTop: 6 }}>
+              SECONDS REMAINING
             </div>
-            <div style={s.timerLabel}>SECONDS REMAINING</div>
           </div>
 
-          {/* Pot Display (if wagered) */}
+          {/* Pot */}
           {wager > 0 && (
-            <div style={s.potDisplay}>
-              <span style={s.potBadge}><img src="/assets/images/currency/icon-sol.png" alt="" style={{ width: 12, height: 12, verticalAlign: 'middle', marginRight: 4 }} />{'POT: ' + (wager * 2) + ' SOL'}</span>
+            <div style={{
+              fontFamily: 'var(--f-mono)', fontSize: 11, color: '#7fd060',
+              letterSpacing: '0.2em', textAlign: 'center',
+              padding: '6px 12px', border: '1px solid rgba(127,208,96,0.25)',
+            }}>
+              POT: {wager * (screenData?.players?.length || 2)} SOL
             </div>
           )}
 
-          {/* Weapon Detail */}
-          {selectedWeapon ? (
-            <div style={s.detailBox}>
-              <div style={s.detailName}>{selectedWeapon.name}</div>
-              <div style={s.detailTier(getTierColor(selectedWeapon.tier))}>
-                {selectedWeapon.tier}
-              </div>
-              <div style={s.detailDesc}>{selectedWeapon.desc}</div>
-
-              <div style={s.detailStats}>
-                <div style={s.detailStatRow}>
-                  <span style={s.detailStatLabel}>DAMAGE</span>
-                  <div style={s.detailStatBar}>
-                    <div style={s.detailStatFill(
-                      Math.min(100, (selectedWeapon.damageFactor / 3.75) * 100),
-                      getTierColor(selectedWeapon.tier)
-                    )} />
-                  </div>
+          {/* Weapon detail */}
+          <div style={{
+            flex: 1, minHeight: 280,
+            background: 'var(--bg-surface)', border: '1px solid var(--border)',
+            clipPath: 'var(--clip-6)', padding: 16,
+          }}>
+            {selectedWeapon ? (
+              <>
+                <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: getTierColor(selectedWeapon.tier), letterSpacing: '0.22em' }}>
+                  {selectedWeapon.tier}
                 </div>
-                <div style={s.detailStatRow}>
-                  <span style={s.detailStatLabel}>BLAST</span>
-                  <div style={s.detailStatBar}>
-                    <div style={s.detailStatFill(
-                      Math.min(100, (selectedWeapon.blastRadius / 90) * 100),
-                      getTierColor(selectedWeapon.tier)
-                    )} />
-                  </div>
+                <div style={{ fontFamily: 'var(--f-display)', fontSize: 20, color: 'var(--bone)', lineHeight: 1, marginTop: 4, letterSpacing: '0.08em' }}>
+                  {selectedWeapon.name}
                 </div>
-              </div>
-
-              <div style={s.detailPrice}>
-                {isOwned(selectedWeapon.id)
-                  ? 'EQUIPPED'
-                  : selectedWeapon.goldCost === 0
-                    ? 'FREE'
-                    : selectedWeapon.goldCost + ' GOLD'
-                }
-              </div>
-
-              {!isOwned(selectedWeapon.id) && selectedWeapon.goldCost > 0 && (
-                <Button
-                  variant="gold"
-                  onClick={() => buyWeapon(selectedWeapon.id)}
-                  disabled={isReady || gold < selectedWeapon.goldCost}
-                  style={{ fontSize: 13, padding: '8px 18px', marginTop: 4 }}
-                >
-                  {'BUY - ' + selectedWeapon.goldCost + 'G'}
-                </Button>
-              )}
-
-              {/* Prestige weapon — tier name, burn cost, and SHOT purchase */}
-              {selectedWeapon && (() => {
-                const prestigeMeta = PRESTIGE_WEAPON_META[selectedWeapon.id];
-                if (!prestigeMeta) return null;
-                return (
-                  <div style={{ marginTop: 8, textAlign: 'center' }}>
-                    <div style={{
-                      fontFamily: "'Black Ops One', cursive",
-                      fontSize: 12,
-                      color: prestigeMeta.color,
-                      letterSpacing: 2,
-                      marginBottom: 4,
-                    }}>
-                      {prestigeMeta.tierName.toUpperCase() + ' PRESTIGE'}
-                    </div>
-                    <div style={{
-                      fontFamily: "'Share Tech Mono', monospace",
-                      fontSize: 11,
-                      color: 'var(--sp)',
-                      letterSpacing: 1,
-                      marginBottom: 6,
-                    }}>
-                      {'REQUIRES ??? SHOT BURN'}
-                    </div>
+                {selectedWeapon.desc && (
+                  <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--olive)', letterSpacing: '0.05em', lineHeight: 1.5, marginTop: 10 }}>
+                    {selectedWeapon.desc}
                   </div>
-                );
-              })()}
-            </div>
-          ) : (
-            <div style={s.detailBox}>
-              <div style={s.emptyDetail}>SELECT A WEAPON</div>
-            </div>
-          )}
+                )}
+
+                <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {[
+                    ['DAMAGE', Math.min(100, (selectedWeapon.damageFactor / 3.75) * 100)],
+                    ['BLAST RADIUS', Math.min(100, (selectedWeapon.blastRadius / 90) * 100)],
+                  ].map(([k, pct]) => (
+                    <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--olive)', letterSpacing: '0.22em', width: 90, flexShrink: 0 }}>{k}</span>
+                      <div style={{ display: 'flex', gap: 3 }}>
+                        {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((i) => (
+                          <div key={i} style={{
+                            width: 12, height: 8,
+                            background: i < Math.ceil((pct / 100) * 10) ? getTierColor(selectedWeapon.tier) : 'var(--border)',
+                          }} />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{
+                  marginTop: 14, fontFamily: 'var(--f-mono)', fontSize: 14,
+                  color: 'var(--accent)', letterSpacing: '0.15em',
+                }}>
+                  {isOwned(selectedWeapon.id) ? 'EQUIPPED' : selectedWeapon.goldCost === 0 ? 'FREE' : selectedWeapon.goldCost + ' GOLD'}
+                </div>
+
+                {!isOwned(selectedWeapon.id) && selectedWeapon.goldCost > 0 && (
+                  <button
+                    onClick={() => buyWeapon(selectedWeapon.id)}
+                    disabled={isReady || gold < selectedWeapon.goldCost}
+                    style={{
+                      width: '100%', marginTop: 10, padding: 10,
+                      background: gold < selectedWeapon.goldCost || isReady ? 'var(--muted)' : 'var(--accent)',
+                      color: '#0e1209',
+                      border: '1px solid ' + (gold < selectedWeapon.goldCost || isReady ? 'var(--border)' : 'var(--accent-hot)'),
+                      clipPath: 'var(--clip-6)',
+                      fontFamily: 'var(--f-display)', fontSize: 13, letterSpacing: '0.18em',
+                      cursor: gold < selectedWeapon.goldCost || isReady ? 'not-allowed' : 'pointer',
+                      opacity: gold < selectedWeapon.goldCost || isReady ? 0.6 : 1,
+                    }}>BUY — {selectedWeapon.goldCost}G</button>
+                )}
+
+                {(() => {
+                  const pm = PRESTIGE_WEAPON_META[selectedWeapon.id];
+                  if (!pm) return null;
+                  return (
+                    <div style={{ marginTop: 10, textAlign: 'center', fontFamily: 'var(--f-mono)', fontSize: 10, color: pm.color, letterSpacing: '0.22em' }}>
+                      {pm.tierName.toUpperCase()} PRESTIGE · REQUIRES ??? SHOT BURN
+                    </div>
+                  );
+                })()}
+              </>
+            ) : (
+              <div style={{
+                height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--muted)', letterSpacing: '0.22em',
+              }}>SELECT A WEAPON</div>
+            )}
+          </div>
 
           {/* Loadout */}
           <div>
-            <div style={s.loadoutLabel}>LOADOUT</div>
-            <div style={s.loadoutRow}>
+            <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--accent)', letterSpacing: '0.22em', marginBottom: 6 }}>
+              LOADOUT
+            </div>
+            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', minHeight: 30 }}>
               {inventory.map((id) => {
                 const w = getWeaponById(id);
                 if (!w) return null;
+                const tc = getTierColor(w.tier);
                 return (
-                  <span key={id} style={s.loadoutChip(getTierColor(w.tier))}>
-                    {w.name}
-                  </span>
+                  <span key={id} style={{
+                    padding: '4px 10px', background: 'var(--bg-surface)',
+                    border: `1px solid ${tc}55`, color: tc,
+                    fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '0.12em',
+                  }}>{w.name}</span>
                 );
               })}
             </div>
           </div>
 
-          {/* Opponent Activity */}
           {opponentActivity && (
-            <div style={s.activityLine}>{opponentActivity}</div>
+            <div style={{
+              fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--accent)',
+              letterSpacing: '0.15em', textAlign: 'center', padding: '6px 0',
+            }}>{opponentActivity}</div>
           )}
 
-          {/* Ready Button */}
-          <div style={s.bottomBar}>
-            <Button
-              variant={isReady ? 'disabled' : 'primary'}
-              onClick={handleReady}
-              disabled={isReady}
-              style={{ fontSize: 15, padding: '12px 24px', width: '100%' }}
-            >
-              {isReady ? 'STANDING BY...' : 'READY'}
-            </Button>
-          </div>
+          <button
+            onClick={handleReady} disabled={isReady}
+            style={{
+              width: '100%', padding: 16,
+              background: isReady ? 'var(--muted)' : 'var(--accent)',
+              color: '#0e1209',
+              border: '1px solid ' + (isReady ? 'var(--border)' : 'var(--accent-hot)'),
+              clipPath: 'var(--clip-10)',
+              fontFamily: 'var(--f-display)', fontSize: 16, letterSpacing: '0.22em',
+              cursor: isReady ? 'default' : 'pointer',
+              opacity: isReady ? 0.6 : 1,
+              boxShadow: isReady ? 'none' : '0 0 18px rgba(218,138,40,0.22)',
+            }}>{isReady ? 'STANDING BY…' : 'READY'}</button>
         </div>
       </div>
 
-      {/* ═══ ERROR MODAL ═══ */}
-      {error && (
-        <Modal
-          title="ERROR"
-          message={error}
-          buttons={[
-            {
-              label: error === 'Opponent has left the match' ? 'RETURN TO LOBBY' : 'DISMISS',
-              variant: 'secondary',
-              onClick: () => {
-                if (error === 'Opponent has left the match') {
-                  navigate('lobby');
-                } else {
-                  setError(null);
-                }
-              },
-            },
-          ]}
-          onClose={() => {
-            if (error === 'Opponent has left the match') {
-              navigate('lobby');
-            } else {
-              setError(null);
-            }
-          }}
-        />
-      )}
-    </>
+      {ErrorModal}
+    </div>
   );
 }
 

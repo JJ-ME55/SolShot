@@ -56,13 +56,13 @@ const COSMETIC_ITEMS = [
 ];
 
 const TIER_COLORS = {
-  FREE: '#6b7b8d',
-  STANDARD: '#ffffff',
-  TACTICAL: '#00ccff',
-  RARE: '#9966ff',
-  EPIC: '#ff9900',
-  LEGENDARY: '#ffcc00',
-  PRESTIGE: '#ff3366',
+  FREE:      '#8a9a80',   /* muted sage */
+  STANDARD:  '#7a9060',   /* olive green */
+  TACTICAL:  '#4fc0b4',   /* teal */
+  RARE:      '#c8a84a',   /* amber */
+  EPIC:      '#9945FF',   /* sol purple */
+  LEGENDARY: '#d83030',   /* red */
+  PRESTIGE:  '#14F195',   /* sol green */
 };
 
 export { PRESTIGE_TIERS, COSMETIC_ITEMS, TIER_COLORS };

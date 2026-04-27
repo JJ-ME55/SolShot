@@ -202,6 +202,35 @@ export class MainScene extends Scene {
       }
     });
 
+    // ── Click-to-aim handler ──
+    // A single click on the game canvas snaps the turret toward the clicked point.
+    // No continuous tracking — the turret stays where it was set until the player
+    // clicks again or uses the keyboard/sliders.
+    // Clicks on React HUD elements (fire button, sliders, etc.) never reach here
+    // because those elements have pointerEvents: 'auto' and consume the event first.
+    this._clickAimHandler = (pointer) => {
+      if (pointer.button !== 0) return; // left click only
+      if (this._firePending) return;
+      const myTank = this.myPlayerIndex >= 0 ? this.tanks[this.myPlayerIndex] : null;
+      if (!myTank?.turret || !myTank.active) return;
+
+      // Compute angle from turret pivot to click point, convert to 0–180° game scale
+      const absoluteAngle = Phaser.Math.Angle.Between(
+        myTank.turret.x, myTank.turret.y,
+        pointer.worldX, pointer.worldY
+      );
+      const relativeAngle = absoluteAngle - myTank.rotation;
+      // Game scale: 0 = straight up, 90 = horizontal, 180 = straight down
+      // inverse of: radians = DegToRad(v) - PI/2  →  v = RadToDeg(radians + PI/2)
+      const degrees = Phaser.Math.RadToDeg(relativeAngle + Math.PI / 2);
+      const clamped = Math.max(0, Math.min(180, Math.round(degrees)));
+
+      // Route through the bridge so sliders + server both update
+      if (this._bridge) this._bridge.setAngle(clamped);
+    };
+
+    this.input.on('pointerdown', this._clickAimHandler);
+
     this._created = true;
   };
 
@@ -219,8 +248,6 @@ export class MainScene extends Scene {
       this._clearSpectatorAimLine();
     }
 
-    this.input.mousePointer.prev = { x: this.input.mousePointer.x, y: this.input.mousePointer.y };
-    this.input.activePointer.prev = { x: this.input.activePointer.x, y: this.input.activePointer.y };
   };
 
   // ── Physics / Rendering (unchanged from original) ──
@@ -784,6 +811,70 @@ export class MainScene extends Scene {
     }
   };
 
+  // ── Tactical Scope: trajectory preview dots (first 1/3 of arc) ──
+
+  _renderScopePreview = () => {
+    this._clearScopePreview();
+
+    if (!this._myConsumables?.includes('tactical_scope')) return;
+
+    // Check if any opponent has smoke_screen (blocks scope)
+    const myId = window.socket?.id;
+    const opponents = this._allConsumables || {};
+    const opponentHasSmoke = Object.entries(opponents).some(
+      ([id, cons]) => id !== myId && cons.includes('smoke_screen')
+    );
+    if (opponentHasSmoke) return;
+
+    const myTank = this.myPlayerIndex >= 0 ? this.tanks[this.myPlayerIndex] : null;
+    if (!myTank?.turret || !myTank.active) return;
+
+    const angle = myTank.turret.rotation;
+    const power = myTank.power || 60;
+    const wind = this.wind || 0;
+
+    // Simulate trajectory using same physics as server
+    const velocity = power * 8;
+    const rotation = angle - Math.PI / 2;
+    let vx = velocity * Math.cos(rotation);
+    let vy = velocity * Math.sin(rotation);
+    let x = myTank.turret.x;
+    let y = myTank.turret.y;
+    const gravity = 300;
+    const dt = 1 / 60;
+
+    const points = [];
+    for (let step = 0; step < 600; step++) {
+      vy += gravity * dt;
+      vx += wind * dt;
+      x += vx * dt;
+      y += vy * dt;
+      points.push({ x, y });
+      if (y > 800 || x < 0 || x > 1200) break;
+    }
+
+    // First 1/3 of trajectory
+    const thirdLen = Math.floor(points.length / 3);
+    if (thirdLen < 3) return;
+
+    // Place 3 dots evenly in the first third
+    this._scopeDots = [];
+    for (let i = 1; i <= 3; i++) {
+      const idx = Math.floor((thirdLen / 4) * i);
+      if (idx >= points.length) break;
+      const dot = this.add.circle(points[idx].x, points[idx].y, 3, 0x22ff22, 0.5);
+      dot.setDepth(10);
+      this._scopeDots.push(dot);
+    }
+  };
+
+  _clearScopePreview = () => {
+    if (this._scopeDots) {
+      this._scopeDots.forEach(d => { try { d.destroy(); } catch (_) {} });
+      this._scopeDots = [];
+    }
+  };
+
   // ── YOUR TURN flash overlay ──
 
   _flashYourTurn = () => {
@@ -836,6 +927,7 @@ export class MainScene extends Scene {
     });
   };
 
+
   // ── Type 3: Online multiplayer — SERVER IS GOD ──
   //
   // Server generates terrain, runs physics, manages turns.
@@ -876,7 +968,7 @@ export class MainScene extends Scene {
 
     // ── STEP 1: Server-generated terrain ──
     // Both clients listen for terrainGenerated. Host triggers requestTerrain.
-    this._socketHandlers.terrainGenerated = ({ path, heightmap, positions, tankPositions, seed, wind, backgroundIndex, firstTurn, seq }) => {
+    this._socketHandlers.terrainGenerated = ({ path, heightmap, positions, tankPositions, seed, wind, backgroundIndex, firstTurn, seq, consumables }) => {
       // Re-draw background with server-chosen theme so both clients match
       this._backgroundIndex = backgroundIndex ?? Math.floor(Math.random() * 6);
       this.createBackground();
@@ -925,6 +1017,16 @@ export class MainScene extends Scene {
       // Determine first turn from server — firstTurn is a socket.id
       const firstTurnIdx = resolvedPositions.findIndex(p => p.socketId === firstTurn);
       this.currentPlayerIndex = firstTurnIdx >= 0 ? firstTurnIdx : 0;
+
+      // Store consumable data for Tactical Scope + Overcharge
+      this._allConsumables = consumables || {};
+      this._myConsumables = consumables?.[socket.id] || [];
+
+      // Overcharge: raise power cap to 115
+      if (this._myConsumables.includes('overcharge')) {
+        const myTank = this.myPlayerIndex >= 0 ? this.tanks[this.myPlayerIndex] : null;
+        if (myTank) myTank.maxPower = 115;
+      }
 
       this._activateCurrentTank();
       this.showTurnPointer();
@@ -1000,6 +1102,18 @@ export class MainScene extends Scene {
     socket.on('turnResult', this._socketHandlers.turnResult);
     socket.on('fireRejected', this._socketHandlers.fireRejected);
     socket.on('turnTimeout', this._socketHandlers.turnTimeout);
+
+    // ── Wall decay: server reverted expired walls, redraw terrain ──
+    this._socketHandlers.wallDecay = ({ terrain, positions }) => {
+      if (terrain && this.terrain) {
+        this._serverHeightmap = terrain;
+        this.terrain.applyHeightmap(terrain);
+      }
+      if (positions) {
+        this._syncTankPositions(positions);
+      }
+    };
+    socket.on('wallDecay', this._socketHandlers.wallDecay);
 
     // ── STEP 4: Handle playerEliminated — tank wreckage, kill text, spectator mode ──
     this._socketHandlers.playerEliminated = ({ eliminatedId, killedById, survivingPlayers, reason }) => {
@@ -1622,6 +1736,9 @@ export class MainScene extends Scene {
   // keyboard handlers. They must emit the same socket events the originals did.
 
   handleFireFromReact = () => {
+    // Clear scope preview on fire
+    this._clearScopePreview();
+
     // Determine the active tank: in multiplayer use myPlayerIndex, in practice use activeTank
     const myTank = this.myPlayerIndex >= 0
       ? this.tanks[this.myPlayerIndex]
@@ -1675,6 +1792,7 @@ export class MainScene extends Scene {
       const socket = window.socket;
       if (socket) socket.emit('powerChange', { power: v });
     }
+    this._renderScopePreview();
   };
 
   handleAngleFromReact = (v) => {
@@ -1684,7 +1802,7 @@ export class MainScene extends Scene {
     if (!myTank || !myTank.turret || !myTank.active) return;
     const radians = Phaser.Math.DegToRad(v) - Math.PI / 2;
     myTank.turret.setRelativeRotation(radians - myTank.rotation);
-    // Angle emit is handled by Turret.emitRotation() on a 500ms timer
+    this._renderScopePreview();
   };
 
   handleWeaponSelectFromReact = (idx) => {
@@ -1743,7 +1861,7 @@ export class MainScene extends Scene {
       x: t.x,
       y: t.y,
       hp: t.scoreHandler ? t.scoreHandler.hp : 250,
-      angle: t.turret ? Phaser.Math.RadToDeg(t.turret.relativeRotation + t.rotation + Math.PI / 2) : 45,
+      angle: t.turret ? Math.max(0, Math.min(180, Math.round(Phaser.Math.RadToDeg(t.turret.relativeRotation + t.rotation + Math.PI / 2)))) : 45,
       power: t.power || 60,
       name: t.name || '',
       color: t.color || '#FF0000',
@@ -1813,6 +1931,12 @@ export class MainScene extends Scene {
     this.pendingTurnResult = null;
     this._turnResultCooldown = 0;
     this._firePending = false;
+
+    // Clean up click-to-aim handler
+    if (this._clickAimHandler) {
+      this.input.off('pointerdown', this._clickAimHandler);
+      this._clickAimHandler = null;
+    }
 
     // Clean up spectator graphics
     this._clearSpectatorAimLine();

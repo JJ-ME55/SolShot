@@ -1,395 +1,219 @@
-import React, { useState, useCallback } from 'react';
-import Button from '../components/Button';
-import WalletDisplay from '../components/WalletDisplay';
-import ResponsibleGaming from '../components/ResponsibleGaming';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useTelegram } from '../telegram/TelegramContext';
+import { useSolShotWallet } from '../wallet/WalletContext';
 import useIsMobile from '../hooks/useIsMobile';
+import ScanBtn from '../components/design/ScanBtn';
+import DesignTopBar from '../components/design/TopBar';
+import TerrainSilhouette from '../components/design/Terrain';
 
-
-const styles = {
-  container: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: '100%',
-    position: 'relative',
-    overflow: 'hidden',
-  },
-
-  // Background terrain silhouette
-  bgTerrain: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: '35%',
-    background: 'linear-gradient(180deg, transparent, #1a2010 40%, #2a3818)',
-    clipPath: 'polygon(0% 60%, 5% 55%, 12% 58%, 20% 45%, 28% 50%, 35% 38%, 42% 42%, 50% 35%, 58% 40%, 65% 32%, 72% 38%, 78% 30%, 85% 35%, 92% 28%, 100% 33%, 100% 100%, 0% 100%)',
-    zIndex: 0,
-  },
-
-  // Explosion glow
-  bgGlow: {
-    position: 'absolute',
-    bottom: '25%',
-    left: '50%',
-    transform: 'translateX(-50%)',
-    width: 200,
-    height: 200,
-    borderRadius: '50%',
-    background: 'radial-gradient(circle, rgba(255, 107, 26, 0.08) 0%, transparent 70%)',
-    zIndex: 0,
-  },
-
-  // Logo section
-  logoSection: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    marginBottom: 6,
-    zIndex: 1,
-  },
-
-  logoRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-  },
-
-  // Shell icon (CSS drawn, not emoji)
-  shellIcon: {
-    width: 32,
-    height: 44,
-    background: 'var(--sd)',
-    border: '2px solid var(--kh)',
-    borderRadius: '8px 8px 3px 3px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontFamily: "'Black Ops One', cursive",
-    fontSize: 16,
-    color: 'var(--bn)',
-  },
-
-  logoText: {
-    fontFamily: "'Black Ops One', cursive",
-    fontSize: 44,
-    letterSpacing: 2,
-    lineHeight: 1,
-  },
-
-  tagline: {
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 18,
-    color: 'var(--kh)',
-    opacity: 0.7,
-    letterSpacing: 4,
-    marginTop: 10,
-    textTransform: 'uppercase',
-  },
-
-  subTagline: {
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 14,
-    color: 'var(--kh)',
-    opacity: 0.5,
-    letterSpacing: 2,
-    marginTop: 6,
-    marginBottom: 20,
-    textTransform: 'uppercase',
-    textAlign: 'center',
-    zIndex: 1,
-  },
-
-  // Nav buttons
-  navButtons: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 10,
-    width: 300,
-    zIndex: 1,
-    marginBottom: 20,
-  },
-
-  navButton: {
-    width: '100%',
-    padding: '14px 24px',
-    position: 'relative',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  // Arrow indicator (replaces emoji)
-  arrow: {
-    position: 'absolute',
-    right: 14,
-    fontSize: 10,
-    color: 'var(--kh)',
-    opacity: 0,
-    transition: 'opacity 0.15s, transform 0.15s',
-  },
-
-  comingSoonBadge: {
-    position: 'absolute',
-    top: -8,
-    right: -8,
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 9,
-    letterSpacing: 1,
-    color: 'var(--bn)',
-    background: 'var(--sd)',
-    border: '1px solid var(--st)',
-    borderRadius: 3,
-    padding: '2px 6px',
-    textTransform: 'uppercase',
-    zIndex: 1,
-  },
-
-  // Wallet section
-  walletSection: {
-    zIndex: 1,
-    marginBottom: 12,
-  },
-
-  // Version tag
-  versionTag: {
-    position: 'absolute',
-    bottom: 10,
-    left: 14,
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 12,
-    color: 'var(--kh)',
-    opacity: 0.3,
-    zIndex: 1,
-  },
-
-};
+const TURRET = { x: -23, y: 80, rot: -3, w: 198 };
+const tankImg = { imageRendering: 'pixelated' };
 
 function MenuScreen({ navigate }) {
-  const [hoveredBtn, setHoveredBtn] = useState(null);
-  const [logoFailed, setLogoFailed] = useState(false);
   const { isTelegram, user: tgUser } = useTelegram();
   const isMobile = useIsMobile();
-  const onLogoError = useCallback(() => setLogoFailed(true), []);
+  const { shotBalance, balance: solBalance, walletAddress } = useSolShotWallet();
+  const [onlineCount, setOnlineCount] = useState(247);
 
-  const navItems = [
-    { id: 'deploy', label: 'PLAY FREE', variant: 'primary', screen: 'lobby' },
-    { id: 'ai-practice', label: 'VS SHOT BOT', variant: 'secondary', screen: 'ai-practice' },
-    { id: 'armory', label: 'ARMORY', variant: 'secondary', screen: 'armory', comingSoon: true },
-    { id: 'prestige', label: 'PRESTIGE', variant: 'secondary', screen: 'prestige', comingSoon: true },
-    { id: 'barracks', label: 'BARRACKS', variant: 'secondary', screen: 'barracks' },
+  const callsign = localStorage.getItem('solshot_handle') || 'OPERATIVE';
+
+  useEffect(() => {
+    const t = setInterval(() => setOnlineCount(c => Math.max(180, Math.min(320, c + Math.floor(Math.random() * 9) - 4))), 2400);
+    return () => clearInterval(t);
+  }, []);
+
+  const secondary = [
+    { id: 'armory',   label: 'ARMORY',   sub: 'GEAR · PRESTIGE · LOADOUT', screen: 'armory' },
+    { id: 'barracks', label: 'BARRACKS', sub: 'STATS · LEADERBOARD',       screen: 'barracks' },
   ];
 
+  if (isMobile) {
+    return <MobileMenu navigate={navigate} callsign={callsign} shotBalance={shotBalance || 0} solBalance={solBalance || 0} onlineCount={onlineCount} secondary={secondary} />;
+  }
+
   return (
-    <div style={{ ...styles.container, paddingBottom: isMobile ? 44 : 0, ...(isMobile ? { justifyContent: 'center', paddingTop: 0 } : {}) }}>
-      {/* Background elements */}
-      <div style={styles.bgTerrain} />
-      <div style={styles.bgGlow} />
+    <div style={{ position: 'relative', minHeight: '100vh', overflow: 'hidden', background: 'var(--bg-deep)' }}>
+      {/* Grid background */}
+      <div style={{
+        position: 'absolute', inset: 0, pointerEvents: 'none', opacity: 0.05,
+        backgroundImage: 'linear-gradient(to right, var(--olive) 1px, transparent 1px), linear-gradient(to bottom, var(--olive) 1px, transparent 1px)',
+        backgroundSize: '48px 48px',
+      }} />
 
-      {isMobile ? (
-        /* ═══ MOBILE LANDSCAPE LAYOUT ═══ */
-        <>
-          {/* Wallet — top right (crypto standard) */}
-          <div style={{ position: 'absolute', top: 8, right: 12, zIndex: 10 }}>
-            <WalletDisplay />
+      {/* Top bar */}
+      <DesignTopBar
+        callsign={callsign}
+        tier="UNRANKED"
+        level={1}
+        shotBalance={shotBalance || 0}
+        solBalance={solBalance || 0}
+        badgeSrc="/assets/images/badges/badge-bronze.png"
+      />
+
+      {/* Hero content */}
+      <div style={{ position: 'relative', zIndex: 3, maxWidth: 420, margin: '0 auto', padding: '24px 24px 60px', textAlign: 'center' }}>
+        {/* Tank preview */}
+        <div style={{ position: 'relative', height: 140, marginBottom: 16, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <div style={{ position: 'relative', width: 280, height: 140 }}>
+            <img src="/assets/images/tanks/tank-tinted.png" alt="tank"
+              style={{ ...tankImg, position: 'absolute', bottom: 8, left: '50%', transform: 'translateX(-50%)', width: 240, height: 'auto',
+                       filter: 'drop-shadow(0 2px 0 rgba(0,0,0,0.5))' }} />
+            <img src="/assets/images/tanks/tank-turret-tinted.png" alt="turret"
+              style={{ ...tankImg, position: 'absolute', bottom: TURRET.y, left: '50%',
+                       width: TURRET.w, height: 'auto',
+                       transform: `translateX(${TURRET.x}%) rotate(${TURRET.rot}deg)`,
+                       transformOrigin: '22% 70%',
+                       filter: 'drop-shadow(0 2px 0 rgba(0,0,0,0.5))' }} />
           </div>
+          <div style={{ position: 'absolute', bottom: 0, left: '18%', right: '18%', height: 2,
+                        background: 'repeating-linear-gradient(90deg, var(--muted) 0 8px, transparent 8px 14px)', opacity: 0.5 }} />
+        </div>
 
-          {/* Logo — bigger, centered */}
-          <div style={{ ...styles.logoSection, marginBottom: 4 }}>
-            {logoFailed ? (
-              <div style={styles.logoRow}>
-                <span style={{ ...styles.logoText, fontSize: 32, color: 'var(--bn)' }}>SOL</span>
-                <span style={{ ...styles.logoText, fontSize: 32, color: 'var(--rd)' }}>SHOT</span>
+        {/* PLAY button */}
+        <ScanBtn onClick={() => navigate('lobby')} height={80} fontSize={44}>
+          PLAY
+        </ScanBtn>
+
+        {/* Secondary buttons */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10, marginBottom: 18 }}>
+          {secondary.map(b => (
+            <button key={b.id} onClick={() => navigate(b.screen)} style={{
+              padding: '13px 18px',
+              background: 'var(--bg-raised)',
+              color: 'var(--bone)',
+              border: '1px solid var(--border)',
+              clipPath: 'var(--clip-6)',
+              cursor: 'pointer',
+              textAlign: 'left',
+              display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', gap: 10,
+            }}>
+              <div>
+                <div style={{ fontFamily: 'var(--f-display)', fontSize: 15, letterSpacing: '0.18em', color: 'var(--bone)', textTransform: 'uppercase' }}>{b.label}</div>
+                <div style={{ fontFamily: 'var(--f-mono)', fontSize: 9, color: 'var(--olive)', letterSpacing: '0.2em', marginTop: 3 }}>{b.sub}</div>
               </div>
-            ) : (
-              <img
-                src="/assets/images/branding/logo-transparent.png"
-                alt="SolShot"
-                onError={onLogoError}
-                style={{ width: 215, height: 'auto', objectFit: 'contain', marginBottom: 2 }}
-              />
-            )}
-            <div style={{ ...styles.tagline, fontSize: 10, marginTop: 2, letterSpacing: 2 }}>SKILL, NOT LUCK</div>
+              <span style={{ fontFamily: 'var(--f-mono)', fontSize: 14, color: 'var(--olive)' }}>▸</span>
+            </button>
+          ))}
+        </div>
+
+        {/* How to play */}
+        <div
+          onClick={() => navigate('howtoplay')}
+          style={{
+            display: 'inline-block', cursor: 'pointer',
+            fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--olive)',
+            letterSpacing: '0.25em', textDecoration: 'none',
+            borderBottom: '1px dotted var(--olive)', paddingBottom: 2,
+            marginBottom: 14,
+          }}
+        >
+          HOW TO PLAY →
+        </div>
+
+        {/* Online counter */}
+        <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--muted)', letterSpacing: '0.2em' }}>
+          <span style={{ color: '#7fd060' }}>●</span> {onlineCount} ONLINE · MAINNET BETA
+        </div>
+      </div>
+
+      <TerrainSilhouette />
+    </div>
+  );
+}
+
+/* ═══ MOBILE LANDSCAPE LAYOUT ═══ */
+function MobileMenu({ navigate, callsign, shotBalance, solBalance, onlineCount, secondary }) {
+  return (
+    <div style={{ position: 'relative', width: '100%', height: '100vh', overflow: 'hidden', background: 'var(--bg-deep)' }}>
+      {/* Grid bg */}
+      <div style={{
+        position: 'absolute', inset: 0, opacity: 0.08, zIndex: 0,
+        backgroundImage: 'linear-gradient(to right, var(--olive) 1px, transparent 1px), linear-gradient(to bottom, var(--olive) 1px, transparent 1px)',
+        backgroundSize: '40px 40px',
+      }} />
+
+      {/* Top bar */}
+      <div style={{
+        position: 'absolute', top: 8, left: 12, right: 12, zIndex: 10,
+        display: 'grid', gridTemplateColumns: '1fr auto 1fr',
+        alignItems: 'center', paddingBottom: 6,
+        borderBottom: '1px solid var(--border)',
+      }}>
+        <div style={{ justifySelf: 'start', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <img src="/assets/images/badges/badge-bronze.png" style={{ width: 22, height: 22, filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.5))' }} alt="rank" />
+          <div>
+            <div style={{ fontFamily: 'var(--f-sec)', fontSize: 11, color: 'var(--bone)', letterSpacing: '0.08em', lineHeight: 1 }}>{callsign}</div>
+            <div style={{ fontFamily: 'var(--f-mono)', fontSize: 7, color: 'var(--olive)', letterSpacing: '0.25em', marginTop: 3 }}>UNRANKED · LVL 1</div>
+          </div>
+        </div>
+        <div style={{ fontFamily: 'var(--f-display, "Black Ops One")', fontSize: 22, letterSpacing: '0.04em', lineHeight: 1, userSelect: 'none' }}>
+          <span style={{ color: 'var(--olive, #7a9060)' }}>SOL</span>
+          <span style={{ color: 'var(--accent, #c8a84a)' }}>SHOT</span>
+        </div>
+        <div style={{ justifySelf: 'end', display: 'flex', alignItems: 'center', gap: 14, fontFamily: 'var(--f-mono)', fontSize: 9, letterSpacing: '0.15em' }}>
+          <span style={{ color: 'var(--accent)' }}>◆ {(shotBalance || 0).toLocaleString()} SHOT</span>
+          <span style={{ color: 'var(--bone)' }}>◇ {(solBalance || 0).toFixed(2)} SOL</span>
+        </div>
+      </div>
+
+      {/* Body — two columns */}
+      <div style={{
+        position: 'absolute', top: 42, left: 12, right: 12, bottom: 8, zIndex: 3,
+        display: 'grid', gridTemplateColumns: '1fr 280px', gap: 16,
+        alignItems: 'center',
+      }}>
+        {/* LEFT — Tank */}
+        <div style={{ position: 'relative', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ position: 'relative', width: 180, height: 100 }}>
+            <img src="/assets/images/tanks/tank-tinted.png" alt="tank"
+              style={{ ...tankImg, position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)', width: 140,
+                       filter: 'drop-shadow(0 2px 0 rgba(0,0,0,0.5))' }} />
+            <img src="/assets/images/tanks/tank-turret-tinted.png" alt="turret"
+              style={{ ...tankImg, position: 'absolute', bottom: 44, left: '50%',
+                       width: 110, transform: 'translateX(-23%) rotate(-3deg)',
+                       transformOrigin: '22% 70%',
+                       filter: 'drop-shadow(0 2px 0 rgba(0,0,0,0.5))' }} />
+            <div style={{ position: 'absolute', bottom: 6, left: 15, right: 15, height: 2,
+                          background: 'repeating-linear-gradient(90deg, var(--muted) 0 8px, transparent 8px 14px)', opacity: 0.6 }} />
           </div>
 
-          {/* 2x2 button grid */}
+          {/* Online counter */}
           <div style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: 6,
-            width: 320,
-            justifyContent: 'center',
-            zIndex: 1,
-            marginBottom: 6,
+            position: 'absolute', bottom: 4, left: '50%', transform: 'translateX(-50%)',
+            fontFamily: 'var(--f-mono)', fontSize: 8, color: 'var(--muted)', letterSpacing: '0.2em', whiteSpace: 'nowrap',
           }}>
-            {navItems.map((item, idx) => (
-              <div
-                key={item.id}
-                style={{
-                  width: 'calc(50% - 3px)',
-                  animation: `si 0.3s ease-out ${idx * 0.06}s both`,
-                }}
-              >
-                <Button
-                  variant={item.comingSoon ? 'disabled' : item.variant}
-                  onClick={item.comingSoon ? undefined : () => navigate(item.screen)}
-                  disabled={item.comingSoon}
-                  style={{ ...styles.navButton, padding: '7px 10px', fontSize: 12, position: 'relative' }}
-                >
-                  {item.label}
-                  {item.comingSoon && (
-                    <span style={{ ...styles.comingSoonBadge, fontSize: 7, top: -6, right: -4, padding: '1px 4px' }}>SOON</span>
-                  )}
-                </Button>
-              </div>
-            ))}
+            <span style={{ color: '#7fd060' }}>●</span> {onlineCount} ONLINE
           </div>
+        </div>
 
-          {/* HOW TO PLAY link */}
-          <div
-            onClick={() => navigate('howtoplay')}
-            style={{
-              fontFamily: "'Share Tech Mono', monospace",
-              fontSize: 10,
-              color: 'var(--kh)',
-              letterSpacing: 2,
-              cursor: 'pointer',
-              opacity: 0.5,
-              zIndex: 1,
-            }}
-          >
-            HOW TO PLAY
-          </div>
+        {/* RIGHT — CTAs */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <ScanBtn onClick={() => navigate('lobby')} height={52} fontSize={26}>PLAY</ScanBtn>
 
-          {/* Telegram badge */}
-          {isTelegram && tgUser && (
-            <div style={{
-              fontFamily: "'Share Tech Mono', monospace",
-              fontSize: 11,
-              color: 'var(--kh)',
-              letterSpacing: 1,
-              padding: '2px 8px',
-              border: '1px solid var(--ol)',
-              borderRadius: 3,
-              marginTop: 4,
-              zIndex: 1,
-              opacity: 0.7,
+          {secondary.map(b => (
+            <button key={b.id} onClick={() => navigate(b.screen)} style={{
+              padding: '9px 14px',
+              background: 'var(--bg-raised)', color: 'var(--bone)',
+              border: '1px solid var(--border)', clipPath: 'var(--clip-6)',
+              cursor: 'pointer', textAlign: 'left',
+              display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', gap: 6,
             }}>
-              {'TG: @' + (tgUser.username || tgUser.first_name || 'UNKNOWN')}
-            </div>
-          )}
-        </>
-      ) : (
-        /* ═══ DESKTOP LAYOUT (unchanged) ═══ */
-        <>
-          {/* Logo */}
-          <div style={{ ...styles.logoSection, marginBottom: 6 }}>
-            {logoFailed ? (
-              <div style={styles.logoRow}>
-                <span style={{ ...styles.logoText, fontSize: 44, color: 'var(--bn)' }}>SOL</span>
-                <span style={{ ...styles.logoText, fontSize: 44, color: 'var(--rd)' }}>SHOT</span>
+              <div>
+                <div style={{ fontFamily: 'var(--f-display)', fontSize: 12, letterSpacing: '0.18em', color: 'var(--bone)', lineHeight: 1, textTransform: 'uppercase' }}>{b.label}</div>
+                <div style={{ fontFamily: 'var(--f-mono)', fontSize: 7, color: 'var(--olive)', letterSpacing: '0.22em', marginTop: 2 }}>{b.sub}</div>
               </div>
-            ) : (
-              <img
-                src="/assets/images/branding/logo-transparent.png"
-                alt="SolShot"
-                onError={onLogoError}
-                style={{ width: 340, height: 'auto', objectFit: 'contain', marginBottom: 8 }}
-              />
-            )}
-            <div style={{ ...styles.tagline, fontSize: 18, marginTop: 10, letterSpacing: 4 }}>SKILL, NOT LUCK</div>
-            <div style={{ ...styles.subTagline, fontSize: 14, marginTop: 6, marginBottom: 20 }}>SKILL-BASED ARTILLERY COMBAT</div>
-          </div>
+              <span style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--olive)' }}>▸</span>
+            </button>
+          ))}
 
-          {/* Navigation buttons */}
-          <div style={{ ...styles.navButtons, width: 300, gap: 10, marginBottom: 20 }}>
-            {navItems.map((item, idx) => (
-              <div
-                key={item.id}
-                style={{
-                  animation: `si 0.3s ease-out ${idx * 0.08}s both`,
-                }}
-                onMouseEnter={() => setHoveredBtn(item.id)}
-                onMouseLeave={() => setHoveredBtn(null)}
-              >
-                <Button
-                  variant={item.comingSoon ? 'disabled' : item.variant}
-                  onClick={item.comingSoon ? undefined : () => navigate(item.screen)}
-                  disabled={item.comingSoon}
-                  style={{ ...styles.navButton, padding: '14px 24px', position: 'relative' }}
-                >
-                  {item.label}
-                  {item.comingSoon && (
-                    <span style={styles.comingSoonBadge}>COMING SOON</span>
-                  )}
-                  {!item.comingSoon && (
-                    <span
-                      style={{
-                        ...styles.arrow,
-                        opacity: hoveredBtn === item.id ? 1 : 0,
-                        transform: hoveredBtn === item.id ? 'translateX(0)' : 'translateX(-4px)',
-                      }}
-                    >
-                      {'\u25B6'}
-                    </span>
-                  )}
-                </Button>
-              </div>
-            ))}
-          </div>
-
-          {/* How To Play link */}
-          <div
-            onClick={() => navigate('howtoplay')}
-            style={{
-              fontFamily: "'Share Tech Mono', monospace",
-              fontSize: 13,
-              color: 'var(--kh)',
-              letterSpacing: 2,
-              cursor: 'pointer',
-              opacity: 0.6,
-              marginBottom: 12,
-              zIndex: 1,
-              transition: 'opacity 0.15s, color 0.15s',
-            }}
-            onMouseEnter={(e) => { e.target.style.opacity = '1'; e.target.style.color = 'var(--rg)'; }}
-            onMouseLeave={(e) => { e.target.style.opacity = '0.6'; e.target.style.color = 'var(--kh)'; }}
-          >
-            HOW TO PLAY
-          </div>
-
-          {/* Telegram user badge (when in Telegram) */}
-          {isTelegram && tgUser && (
-            <div style={{
-              fontFamily: "'Share Tech Mono', monospace",
-              fontSize: 13,
-              color: 'var(--kh)',
-              letterSpacing: 1,
-              padding: '4px 12px',
-              border: '1px solid var(--ol)',
-              borderRadius: 3,
-              marginBottom: 8,
-              zIndex: 1,
-              opacity: 0.7,
-            }}>
-              {'TG: @' + (tgUser.username || tgUser.first_name || 'UNKNOWN')}
-            </div>
-          )}
-
-          {/* Wallet display */}
-          <div style={{ ...styles.walletSection, marginBottom: 12 }}>
-            <WalletDisplay />
-          </div>
-        </>
-      )}
-
-      {/* Version tag */}
-      <div style={styles.versionTag}>v0.5.0-alpha</div>
-
-      {/* Responsible gaming disclosure — hidden on mobile (declutter) */}
-      {!isMobile && <ResponsibleGaming navigate={navigate} />}
+          <div onClick={() => navigate('howtoplay')} style={{
+            alignSelf: 'center', marginTop: 2, cursor: 'pointer',
+            fontFamily: 'var(--f-mono)', fontSize: 8, color: 'var(--olive)',
+            letterSpacing: '0.28em', textDecoration: 'none',
+            borderBottom: '1px dotted var(--olive)', paddingBottom: 1,
+          }}>HOW TO PLAY →</div>
+        </div>
+      </div>
     </div>
   );
 }

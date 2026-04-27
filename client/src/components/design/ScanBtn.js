@@ -1,19 +1,24 @@
 import React from 'react';
 
-export default function ScanBtn({ children, onClick, width, height = 56, fontSize = 28, style = {}, disabled = false }) {
+export default function ScanBtn({ children, onClick, width, height, fontSize = 28, style = {}, disabled = false }) {
+  // When height is provided, use explicit height. Otherwise use padding (design spec: 28px 22px for PLAY).
+  const sizeStyle = height
+    ? { height }
+    : { padding: '28px 22px' };
+
   return (
     <button onClick={disabled ? undefined : onClick} style={{
       position: 'relative',
       width: width || '100%',
-      height,
-      background: disabled ? 'var(--muted)' : 'var(--accent, #c8781a)',
-      border: disabled ? '1px solid var(--border)' : '1px solid var(--accent-hot, #da8a28)',
+      ...sizeStyle,
+      background: disabled ? 'var(--muted)' : 'var(--accent)',
+      border: disabled ? '1px solid var(--border)' : '1px solid var(--accent-hot)',
       clipPath: 'var(--clip-10)',
       cursor: disabled ? 'default' : 'pointer',
-      padding: 0,
       overflow: 'hidden',
-      boxShadow: disabled ? 'none' : '0 0 18px rgba(232,164,48,0.22)',
+      boxShadow: disabled ? 'none' : '0 0 28px rgba(218,138,40,0.25)',
       opacity: disabled ? 0.5 : 1,
+      marginBottom: 10,
       ...style,
     }}>
       <div style={{

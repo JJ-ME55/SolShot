@@ -4,30 +4,133 @@
    ============================================ */
 
 /* --- Google Fonts --- */
-@import url('https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Share+Tech+Mono&family=Bebas+Neue&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Share+Tech+Mono&family=Bebas+Neue&family=Days+One&display=swap');
 
-/* --- CSS Variables (17 tokens from SOLSHOT_DESIGN_CONTROL.md) --- */
+/* ============================================
+   ROOT: Base design tokens
+   (Shared across all themes; overridden below)
+   ============================================ */
 :root {
-  --ol: #3d4a2f;   /* Olive Line — borders, dividers */
-  --od: #2a331f;   /* Olive Dark — card bg, input fields */
-  --kh: #b8a88a;   /* Khaki — secondary text, labels */
-  --ru: #c4510a;   /* Rust — primary button gradient base */
-  --rg: #ff6b1a;   /* Range Orange — accent, highlights, hover */
-  --am: #ffb627;   /* Amber — gold/currency, rare tier, warnings */
-  --ad: #a67b1a;   /* Amber Dark — gold gradients dark end */
-  --st: #6b7b8d;   /* Steel — tactical tier, inactive elements */
-  --sd: #3a4550;   /* Steel Dark — tank base, structural */
-  --bn: #e8dcc8;   /* Bone — primary text, headings */
-  --mu: #5c4a3a;   /* Mud — text shadows, deep accents */
-  --bk: #0a0c08;   /* Black Ops — page background */
-  --gg: #7fff44;   /* Go Green — victory, health, positive */
-  --rd: #cc2200;   /* Red Alert — defeat, damage, danger */
-  --sp: #9945FF;   /* Sol Purple — epic tier, prestige */
-  --sg: #14F195;   /* Sol Green — SOL balance, pot display */
-  --gd: #ffd700;   /* Gold — currency values, shop prices */
+  /* ── Legacy short-hand palette (kept for backward compat) ── */
+  --ol: #3d4a2f;   /* Olive Line — borders, dividers         */
+  --od: #2a331f;   /* Olive Dark — card bg, input fields     */
+  --kh: #b8a88a;   /* Khaki — secondary text, labels         */
+  --ru: #c4510a;   /* Rust — primary button gradient base    */
+  --rg: #ff6b1a;   /* Range Orange — accent hover            */
+  --am: #ffb627;   /* Amber — gold/currency, rare tier       */
+  --ad: #a67b1a;   /* Amber Dark — gold gradient dark end    */
+  --st: #6b7b8d;   /* Steel — tactical tier, inactive        */
+  --sd: #3a4550;   /* Steel Dark — tank base, structural     */
+  --bn: #e8dcc8;   /* Bone — primary text, headings          */
+  --mu: #5c4a3a;   /* Mud — text shadows, deep accents       */
+  --bk: #0a0c08;   /* Black Ops — page background            */
+  --gg: #7fff44;   /* Go Green — victory, health, positive   */
+  --rd: #cc2200;   /* Red Alert — defeat, damage, danger     */
+  --sp: #9945FF;   /* Sol Purple — epic tier, prestige       */
+  --sg: #14F195;   /* Sol Green — SOL balance, pot display   */
+  --gd: #ffd700;   /* Gold — currency values, shop prices    */
+
+  /* ── Design-system semantic tokens (matching design reference) ── */
+  --bg-deep:     #0e1209;
+  --bg-surface:  #111806;
+  --bg-raised:   #141c0d;
+  --border:      #1e2a14;
+  --border-hot:  #2e3e20;
+  --bone:        #c8b87a;
+  --olive:       #7a9060;
+  --muted:       #3a4e2a;
+  --orange:      #c8781a;
+  --orange-hot:  #da8a28;
+  --rust:        #8a4a12;
+  --red:         #a83a1a;
+
+  /* ── Accent (theme-overridden below) ── */
+  --accent:      #c8781a;
+  --accent-hot:  #da8a28;
+
+  /* ── Scanline / grain opacity (theme-overridden below) ── */
+  --scan-opacity:  0.06;
+  --grain-opacity: 0.12;
+
+  /* ── Typography tokens ── */
+  --f-display: 'Black Ops One', 'Arial Black', sans-serif;
+  --f-mono:    'Share Tech Mono', 'Courier New', monospace;
+  --f-sec:     'Days One', 'Verdana', sans-serif;
+
+  /* ── Clip-path tokens ── */
+  --clip-6:  polygon(0 0, calc(100% - 6px)  0, 100%  6px, 100% 100%,  6px 100%, 0 calc(100% -  6px));
+  --clip-10: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+  --clip-16: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px));
+  --clip-20: polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 20px 100%, 0 calc(100% - 20px));
+
+  /* ── Vignette ── */
+  --vignette: radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.55) 100%);
 }
 
-/* --- Global Reset & Base --- */
+/* ============================================
+   THEME: FIELD MANUAL (default — worn olive stencil)
+   ============================================ */
+[data-theme="field"] {
+  --bg-deep:     #0e1209;
+  --bg-surface:  #111806;
+  --bg-raised:   #141c0d;
+  --border:      #1e2a14;
+  --border-hot:  #2e3e20;
+  --accent:      #c8781a;
+  --accent-hot:  #da8a28;
+  --bone:        #c8b87a;
+  --olive:       #7a9060;
+  --muted:       #3a4e2a;
+  --scan-opacity:  0.06;
+  --grain-opacity: 0.12;
+}
+
+/* ============================================
+   THEME: CRT TERMINAL (phosphor scan-heavy)
+   ============================================ */
+[data-theme="crt"] {
+  --bg-deep:     #050a04;
+  --bg-surface:  #081006;
+  --bg-raised:   #0b1708;
+  --border:      #182810;
+  --border-hot:  #243c18;
+  --accent:      #e8a430;
+  --accent-hot:  #ffb840;
+  --bone:        #b8d0a0;
+  --olive:       #6a8850;
+  --muted:       #2a3e1c;
+  --scan-opacity:  0.22;
+  --grain-opacity: 0.05;
+
+  /* Legacy token sync for CRT */
+  --am:  #e8a430;
+  --ad:  #c07820;
+  --bn:  #b8d0a0;
+  --rg:  #ffb840;
+  --bk:  #050a04;
+}
+
+/* ============================================
+   THEME: STENCIL POSTER (bone propaganda)
+   ============================================ */
+[data-theme="poster"] {
+  --bg-deep:     #d8c88a;
+  --bg-surface:  #cbb97a;
+  --bg-raised:   #bfaa6c;
+  --border:      #a89858;
+  --border-hot:  #987c40;
+  --accent:      #b8400a;
+  --accent-hot:  #d04810;
+  --bone:        #2a1a0a;
+  --olive:       #4a3820;
+  --muted:       #7a6848;
+  --scan-opacity:  0.03;
+  --grain-opacity: 0.18;
+}
+
+/* ============================================
+   GLOBAL RESET & BASE
+   ============================================ */
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -37,28 +140,29 @@
 html, body {
   height: 100%;
   overflow: hidden;
-  background: var(--bk);
-  color: var(--bn);
-  font-family: 'Share Tech Mono', monospace;
+  background: var(--bg-deep);
+  color: var(--bone);
+  font-family: var(--f-mono);
   font-size: 10px;
   letter-spacing: 1px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* --- Noise + Scanline Overlays (on body) --- */
+/* ── Grain overlay (uses --grain-opacity, theme-aware) ── */
 body::before {
   content: '';
   position: fixed;
   inset: 0;
   z-index: 9999;
   pointer-events: none;
-  opacity: 0.03;
+  opacity: var(--grain-opacity, 0.12);
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
   background-repeat: repeat;
   background-size: 256px 256px;
 }
 
+/* ── Scanline overlay (uses --scan-opacity, theme-aware) ── */
 body::after {
   content: '';
   position: fixed;
@@ -69,8 +173,8 @@ body::after {
     0deg,
     transparent,
     transparent 2px,
-    rgba(0, 0, 0, 0.02) 2px,
-    rgba(0, 0, 0, 0.02) 4px
+    rgba(0, 0, 0, var(--scan-opacity, 0.06)) 2px,
+    rgba(0, 0, 0, var(--scan-opacity, 0.06)) 4px
   );
 }
 
@@ -79,24 +183,35 @@ body::after {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #0c1008, #1a2a12 40%, #0a0c08);
+  background: linear-gradient(135deg, var(--bg-deep), var(--bg-surface) 40%, var(--bg-deep));
 }
 
-/* --- Canvas (Phaser) --- */
+/* ── Canvas (Phaser) ── */
 canvas {
   image-rendering: -moz-crisp-edges;
   image-rendering: -webkit-crisp-edges;
   image-rendering: pixelated;
 }
 
-/* --- Typography Classes --- */
-.font-display {
-  font-family: 'Black Ops One', cursive;
+/* ============================================
+   TYPOGRAPHY CLASSES
+   ============================================ */
+.font-display, .stencil {
+  font-family: var(--f-display);
   font-weight: 400;
 }
 
-.font-mono {
-  font-family: 'Share Tech Mono', monospace;
+.font-mono, .label {
+  font-family: var(--f-mono);
+  font-weight: 400;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--olive);
+}
+
+.font-sec {
+  font-family: var(--f-sec);
   font-weight: 400;
 }
 
@@ -105,15 +220,84 @@ canvas {
   font-weight: 400;
 }
 
-/* --- Keyframe Animations --- */
+/* ── Briefing block — used on screen titles ── */
+.briefing {
+  border-left: 3px solid var(--accent);
+  padding-left: 14px;
+  margin-bottom: 6px;
+}
 
-/* si — slide-in from left (menu items) */
+/* ── Key/value row — used in spec panels ── */
+.kv {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--border);
+  font-family: var(--f-mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+}
+.kv .k { color: var(--olive); text-transform: uppercase; }
+.kv .v { color: var(--bone); }
+
+/* ============================================
+   RANGE INPUT — Square amber thumbs
+   ============================================ */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  background: var(--border);
+  border-radius: 0;          /* flat track */
+  outline: none;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  background: var(--accent);
+  border: 1px solid var(--accent-hot);
+  border-radius: 2px;        /* square thumb */
+  cursor: pointer;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  background: var(--accent);
+  border: 1px solid var(--accent-hot);
+  border-radius: 2px;        /* square thumb */
+  cursor: pointer;
+}
+
+input[type="range"]:disabled::-webkit-slider-thumb {
+  background: var(--muted);
+  border-color: var(--border);
+  cursor: default;
+}
+
+input[type="range"]:disabled::-moz-range-thumb {
+  background: var(--muted);
+  border-color: var(--border);
+  cursor: default;
+}
+
+/* ============================================
+   KEYFRAME ANIMATIONS
+   ============================================ */
+
+/* si — slide-in from left */
 @keyframes si {
   from { opacity: 0; transform: translateX(-20px); }
   to   { opacity: 1; transform: translateX(0); }
 }
 
-/* su — slide-up (stats/cards) */
+/* su — slide-up */
 @keyframes su {
   from { opacity: 0; transform: translateY(12px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -126,48 +310,54 @@ canvas {
   100% { opacity: 1; transform: scale(1); }
 }
 
-/* sc — scale pop (SOL earned reveal) */
+/* sc — scale pop */
 @keyframes sc {
   0%   { opacity: 0; transform: scale(0.3); }
   70%  { transform: scale(1.08); }
   100% { opacity: 1; transform: scale(1); }
 }
 
-/* vp — victory pulse (green glow) */
+/* vp — victory pulse */
 @keyframes vp {
-  0%, 100% { text-shadow: 0 0 20px rgba(127, 255, 68, 0.3); }
-  50%      { text-shadow: 0 0 40px rgba(127, 255, 68, 0.6), 0 0 80px rgba(127, 255, 68, 0.2); }
+  0%, 100% { text-shadow: 0 0 20px rgba(127,255,68,0.3); }
+  50%      { text-shadow: 0 0 40px rgba(127,255,68,0.6), 0 0 80px rgba(127,255,68,0.2); }
 }
 
-/* dp — defeat pulse (red glow) */
+/* dp — defeat pulse */
 @keyframes dp {
-  0%, 100% { text-shadow: 0 0 20px rgba(204, 34, 0, 0.3); }
-  50%      { text-shadow: 0 0 40px rgba(204, 34, 0, 0.5), 0 0 80px rgba(204, 34, 0, 0.15); }
+  0%, 100% { text-shadow: 0 0 20px rgba(204,34,0,0.3); }
+  50%      { text-shadow: 0 0 40px rgba(204,34,0,0.5), 0 0 80px rgba(204,34,0,0.15); }
 }
 
-/* wd — wind drift (arrow sway) */
+/* wd — wind drift */
 @keyframes wd {
   0%, 100% { transform: translateX(0); }
   50%      { transform: translateX(4px); }
 }
 
-/* ug — upgrade glow (prestige button ready) */
+/* ug — upgrade glow */
 @keyframes ug {
-  0%, 100% { box-shadow: 0 0 8px rgba(255, 182, 39, 0.2); }
-  50%      { box-shadow: 0 0 20px rgba(255, 182, 39, 0.5), 0 0 40px rgba(255, 182, 39, 0.15); }
+  0%, 100% { box-shadow: 0 0 8px rgba(255,182,39,0.2); }
+  50%      { box-shadow: 0 0 20px rgba(255,182,39,0.5), 0 0 40px rgba(255,182,39,0.15); }
 }
 
-/* fl — subtle container flicker */
+/* fl — subtle flicker */
 @keyframes fl {
   0%, 97%, 100% { opacity: 1; }
-  98%           { opacity: 0.97; }
+  98%           { opacity: 0.6; }
   99%           { opacity: 1; }
 }
 
-/* eg — entrance grow (badges, icons) */
+/* eg — entrance grow */
 @keyframes eg {
   from { opacity: 0; transform: scale(0.8); }
   to   { opacity: 1; transform: scale(1); }
+}
+
+/* blink — cursor blink */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0; }
 }
 
 /* Loading bar fill */
@@ -178,75 +368,43 @@ canvas {
 
 /* Pulse glow for active elements */
 @keyframes pulseGlow {
-  0%, 100% { box-shadow: 0 0 8px rgba(255, 107, 26, 0.2); }
-  50%      { box-shadow: 0 0 16px rgba(255, 107, 26, 0.4); }
+  0%, 100% { box-shadow: 0 0 8px rgba(232,164,48,0.2); }
+  50%      { box-shadow: 0 0 16px rgba(232,164,48,0.4); }
 }
 
-/* --- Scrollbar Styling --- */
-::-webkit-scrollbar {
-  width: 4px;
+/* dmgFlash — damage popup */
+@keyframes dmgFlash {
+  0%   { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-16px); }
 }
 
-::-webkit-scrollbar-track {
-  background: var(--bk);
-}
+/* ============================================
+   SCROLLBAR
+   ============================================ */
+::-webkit-scrollbar       { width: 4px; }
+::-webkit-scrollbar-track { background: var(--bg-deep); }
+::-webkit-scrollbar-thumb { background: var(--border-hot); border-radius: 0; }
+::-webkit-scrollbar-thumb:hover { background: var(--olive); }
 
-::-webkit-scrollbar-thumb {
-  background: var(--ol);
-  border-radius: 2px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--kh);
-}
-
-/* --- Range Input Styling --- */
-input[type="range"] {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 100%;
-  height: 4px;
-  background: var(--od);
-  border-radius: 2px;
-  outline: none;
-  cursor: pointer;
-}
-
-input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  background: var(--am);
-  border: 2px solid var(--ad);
-  border-radius: 50%;
-  cursor: pointer;
-}
-
-input[type="range"]::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  background: var(--am);
-  border: 2px solid var(--ad);
-  border-radius: 50%;
-  cursor: pointer;
-}
-
-/* --- Selection --- */
+/* ============================================
+   SELECTION
+   ============================================ */
 ::selection {
-  background: rgba(255, 107, 26, 0.3);
-  color: var(--bn);
+  background: rgba(232,164,48,0.25);
+  color: var(--bone);
 }
 
-/* --- Wallet Adapter Override (match SolShot theme) --- */
+/* ============================================
+   WALLET ADAPTER OVERRIDES
+   ============================================ */
 .wallet-adapter-button {
-  font-family: 'Black Ops One', cursive !important;
+  font-family: var(--f-display) !important;
   letter-spacing: 2px !important;
   font-size: 11px !important;
   background: linear-gradient(180deg, #cc3300, #881a00) !important;
-  border: 1px solid var(--rg) !important;
-  border-radius: 4px !important;
-  color: var(--bn) !important;
+  border: 1px solid var(--accent) !important;
+  border-radius: 0 !important;
+  color: var(--bone) !important;
 }
 
 .wallet-adapter-button:hover {
@@ -254,22 +412,22 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .wallet-adapter-modal-wrapper {
-  background: var(--od) !important;
-  border: 1px solid var(--ol) !important;
-  border-radius: 4px !important;
+  background: var(--bg-raised) !important;
+  border: 1px solid var(--border-hot) !important;
+  border-radius: 0 !important;
 }
 
 .wallet-adapter-modal-title {
-  font-family: 'Black Ops One', cursive !important;
-  color: var(--bn) !important;
+  font-family: var(--f-display) !important;
+  color: var(--bone) !important;
   letter-spacing: 2px !important;
 }
 
 .wallet-adapter-modal-list li {
-  border: 1px solid var(--od) !important;
+  border: 1px solid var(--border) !important;
 }
 
 .wallet-adapter-modal-list li:hover {
-  border-color: var(--ol) !important;
-  background: rgba(255, 107, 26, 0.05) !important;
+  border-color: var(--border-hot) !important;
+  background: rgba(232,164,48,0.05) !important;
 }

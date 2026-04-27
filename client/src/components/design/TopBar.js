@@ -15,7 +15,10 @@ export default function DesignTopBar({ callsign = 'OPERATIVE', tier = 'UNRANKED'
           <div style={{ fontFamily: 'var(--f-mono, "Share Tech Mono")', fontSize: 9, color: 'var(--olive, #7a9060)', letterSpacing: '0.2em' }}>{tier} · LVL {level}</div>
         </div>
       </div>
-      <img src="/assets/images/branding/solshot-logo-transparent.png" alt="SolShot" style={{ height: 30, width: 'auto' }} />
+      <div style={{ fontFamily: 'var(--f-display, "Black Ops One")', fontSize: 38, letterSpacing: '0.04em', lineHeight: 1, userSelect: 'none' }}>
+        <span style={{ color: 'var(--bone, #c8b87a)' }}>SOL</span>
+        <span style={{ color: 'var(--accent, #c8781a)' }}>SHOT</span>
+      </div>
       <div style={{ justifySelf: 'end', display: 'flex', alignItems: 'center', gap: 14, fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '0.15em' }}>
         <span style={{ color: 'var(--accent, #c8781a)' }}>&#9670; {shotBalance.toLocaleString()} SHOT</span>
         <span style={{ color: 'var(--bone, #c8b87a)' }}>&#9671; {solBalance.toFixed(2)} SOL</span>

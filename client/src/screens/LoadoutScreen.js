@@ -1,17 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import Button from '../components/Button';
-import useIsMobile from '../hooks/useIsMobile';
+import ScreenHeader from '../components/design/ScreenHeader';
+import TerrainSilhouette from '../components/design/Terrain';
 
 const CONSUMABLES = [
-  { id: 'extra_rations',    name: 'Extra Rations',    cost: 5,  desc: '+200G starting gold', icon: 'G' },
-  { id: 'smoke_screen',     name: 'Smoke Screen',     cost: 8,  desc: 'Blocks opponent Scope', icon: 'S' },
-  { id: 'tactical_scope',   name: 'Tactical Scope',   cost: 12, desc: 'Trajectory preview (1/3 arc)', icon: 'T' },
-  { id: 'reinforced_armor', name: 'Reinforced Armor', cost: 18, desc: '+25 HP (275 total)', icon: 'A' },
-  { id: 'overcharge',       name: 'Overcharge',       cost: 25, desc: 'Power max 115', icon: 'O' },
+  { id: 'extra_rations',    name: 'Extra Rations',    cost: 5,  desc: '+200G starting gold',          icon: 'G', tier: 'STD'  },
+  { id: 'smoke_screen',     name: 'Smoke Screen',     cost: 8,  desc: 'Blocks opponent Scope',         icon: 'S', tier: 'STD'  },
+  { id: 'tactical_scope',   name: 'Tactical Scope',   cost: 12, desc: 'Trajectory preview (1/3 arc)',  icon: 'T', tier: 'TAC'  },
+  { id: 'reinforced_armor', name: 'Reinforced Armor', cost: 18, desc: '+25 HP (275 total)',            icon: 'A', tier: 'TAC'  },
+  { id: 'overcharge',       name: 'Overcharge',       cost: 25, desc: 'Power max 115',                 icon: 'O', tier: 'RARE' },
 ];
+const TIER_COLOR = { STD: '#7a9060', TAC: '#4fc0b4', RARE: '#c8a84a' };
 
 export default function LoadoutScreen({ navigate }) {
-  const isMobile = useIsMobile();
   const [shotBalance, setShotBalance] = useState(0);
   const [activeConsumables, setActiveConsumables] = useState({});
   const [buying, setBuying] = useState(null);
@@ -31,12 +31,10 @@ export default function LoadoutScreen({ navigate }) {
 
   const buyConsumable = useCallback((consumableId) => {
     if (buying) return;
-    setBuying(consumableId);
     const sock = window.socket;
     if (!sock) return;
-
+    setBuying(consumableId);
     sock.emit('buyConsumable', { consumableId });
-
     const handler = (data) => {
       setBuying(null);
       if (data.success) {
@@ -53,117 +51,102 @@ export default function LoadoutScreen({ navigate }) {
   }, [buying]);
 
   return (
-    <div style={{
-      display: 'flex', flexDirection: 'column', alignItems: 'center',
-      justifyContent: 'flex-start', height: '100vh',
-      background: 'var(--bg, #0a0a1a)', color: '#fff',
-      padding: isMobile ? '12px 8px' : '20px', overflowY: 'auto',
-      position: 'relative',
-    }}>
+    <div style={{ position: 'relative', minHeight: '100vh', background: 'var(--bg-deep)', overflow: 'hidden' }}>
       <div style={{
-        position: 'absolute', bottom: 0, left: 0, right: 0, height: '30%',
-        background: 'linear-gradient(transparent, rgba(34,139,34,0.06))',
-        pointerEvents: 'none',
+        position: 'absolute', inset: 0, pointerEvents: 'none', opacity: 0.05,
+        backgroundImage: 'linear-gradient(to right, var(--olive) 1px, transparent 1px), linear-gradient(to bottom, var(--olive) 1px, transparent 1px)',
+        backgroundSize: '48px 48px',
       }} />
 
-      <div style={{ position: 'absolute', top: isMobile ? 8 : 16, left: isMobile ? 8 : 16, zIndex: 2 }}>
-        <Button variant="secondary" onClick={() => navigate('menu')}
-          style={{ padding: '6px 14px', fontSize: isMobile ? 11 : 13 }}>
-          {'< BACK'}
-        </Button>
-      </div>
-
-      <div style={{
-        fontFamily: "'Black Ops One', cursive", fontSize: isMobile ? 20 : 28,
-        letterSpacing: 3, marginTop: isMobile ? 30 : 16, marginBottom: 4, zIndex: 1,
-      }}>LOADOUT</div>
-
-      <div style={{
-        fontFamily: "'Share Tech Mono', monospace", fontSize: 14,
-        color: 'var(--am)', letterSpacing: 2, marginBottom: 16, zIndex: 1,
-      }}>
-        {shotBalance.toFixed(1)} SHOT
-      </div>
-
-      {feedback && (
-        <div style={{
-          fontFamily: "'Share Tech Mono', monospace", fontSize: 12,
-          color: feedback.type === 'success' ? 'var(--sg)' : '#ff4444',
-          letterSpacing: 2, marginBottom: 8, zIndex: 1,
-        }}>
-          {feedback.text}
-        </div>
-      )}
-
-      <div style={{
-        display: 'flex', flexDirection: 'column', gap: 8,
-        width: '100%', maxWidth: 420, zIndex: 1,
-      }}>
-        {CONSUMABLES.map(c => {
-          const remaining = activeConsumables[c.id] || 0;
-          const isActive = remaining > 0;
-          const canAfford = shotBalance >= c.cost;
-
-          return (
-            <div key={c.id} style={{
-              display: 'flex', alignItems: 'center', gap: 12,
-              padding: isMobile ? '10px 12px' : '12px 16px',
-              background: isActive ? 'rgba(34, 139, 34, 0.15)' : 'rgba(42, 51, 31, 0.3)',
-              border: isActive ? '1px solid rgba(34, 139, 34, 0.4)' : '1px solid var(--ol)',
-              borderRadius: 6,
-            }}>
-              <div style={{
-                width: 36, height: 36, borderRadius: 4,
-                background: isActive ? 'rgba(34, 139, 34, 0.3)' : 'rgba(255,255,255,0.05)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontFamily: "'Black Ops One', cursive", fontSize: 18,
-                color: isActive ? 'var(--sg)' : 'var(--kh)',
-                flexShrink: 0,
-              }}>
-                {c.icon}
-              </div>
-
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{
-                  fontFamily: "'Black Ops One', cursive", fontSize: 13,
-                  color: 'var(--bn)', letterSpacing: 1,
-                }}>{c.name}</div>
-                <div style={{
-                  fontFamily: "'Share Tech Mono', monospace", fontSize: 11,
-                  color: 'var(--kh)', letterSpacing: 1,
-                }}>{c.desc}</div>
-              </div>
-
-              {isActive ? (
-                <div style={{
-                  fontFamily: "'Share Tech Mono', monospace", fontSize: 11,
-                  color: 'var(--sg)', letterSpacing: 1, textAlign: 'right',
-                  flexShrink: 0,
-                }}>
-                  ACTIVE<br />{remaining} LEFT
-                </div>
-              ) : (
-                <Button
-                  variant={canAfford ? 'primary' : 'disabled'}
-                  onClick={canAfford ? () => buyConsumable(c.id) : undefined}
-                  disabled={!canAfford || buying === c.id}
-                  style={{ padding: '6px 12px', fontSize: 11, whiteSpace: 'nowrap', flexShrink: 0 }}
-                >
-                  {buying === c.id ? '...' : c.cost + ' SHOT'}
-                </Button>
-              )}
+      <div style={{ maxWidth: 720, margin: '0 auto', padding: '24px 24px 80px', position: 'relative', zIndex: 3 }}>
+        <ScreenHeader
+          title="LOADOUT"
+          subtitle="CONSUMABLES · PAID IN $SHOT · LAST 5 MATCHES"
+          onBack={() => navigate('menu')}
+          rightExtras={
+            <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--accent)', letterSpacing: '0.22em' }}>
+              ◆ {shotBalance.toFixed(1)} SHOT
             </div>
-          );
-        })}
+          }
+        />
+
+        {feedback && (
+          <div style={{
+            fontFamily: 'var(--f-mono)', fontSize: 12,
+            color: feedback.type === 'success' ? '#7fd060' : '#c86060',
+            letterSpacing: '0.22em', marginBottom: 12, textAlign: 'center',
+          }}>{feedback.text}</div>
+        )}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
+          {CONSUMABLES.map(c => {
+            const remaining = activeConsumables[c.id] || 0;
+            const isActive = remaining > 0;
+            const canAfford = shotBalance >= c.cost;
+            const tierColor = TIER_COLOR[c.tier];
+            return (
+              <div key={c.id} style={{
+                display: 'grid', gridTemplateColumns: '56px 1fr auto', gap: 14, alignItems: 'center',
+                padding: '14px 18px',
+                background: isActive ? 'var(--bg-raised)' : 'var(--bg-surface)',
+                border: '1px solid ' + (isActive ? '#7fd060' : 'var(--border)'),
+                clipPath: 'var(--clip-6)',
+              }}>
+                <div style={{
+                  width: 44, height: 44,
+                  background: 'var(--bg-deep)', border: '1px solid var(--border)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontFamily: 'var(--f-display)', fontSize: 22,
+                  color: isActive ? '#7fd060' : tierColor,
+                  clipPath: 'var(--clip-6)',
+                }}>{c.icon}</div>
+                <div>
+                  <div style={{ fontFamily: 'var(--f-sec)', fontSize: 15, color: 'var(--bone)', letterSpacing: '0.04em' }}>{c.name}</div>
+                  <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--olive)', letterSpacing: '0.1em', marginTop: 3 }}>
+                    <span style={{ color: tierColor, letterSpacing: '0.22em' }}>{c.tier}</span> · {c.desc}
+                  </div>
+                </div>
+                {isActive ? (
+                  <div style={{
+                    padding: '8px 14px', textAlign: 'center',
+                    color: '#7fd060', border: '1px solid #7fd060',
+                    clipPath: 'var(--clip-6)',
+                    fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '0.22em', lineHeight: 1.4,
+                  }}>
+                    ACTIVE<br />{remaining} LEFT
+                  </div>
+                ) : (
+                  <button
+                    disabled={!canAfford || buying === c.id}
+                    onClick={canAfford && !buying ? () => buyConsumable(c.id) : undefined}
+                    style={{
+                      padding: '10px 14px',
+                      background: canAfford ? 'var(--accent)' : 'var(--bg-deep)',
+                      color: canAfford ? '#0e1209' : 'var(--muted)',
+                      border: '1px solid ' + (canAfford ? 'var(--accent-hot)' : 'var(--border)'),
+                      fontFamily: 'var(--f-display)', fontSize: 12, letterSpacing: '0.15em',
+                      clipPath: 'var(--clip-6)',
+                      cursor: canAfford && !buying ? 'pointer' : 'not-allowed',
+                      opacity: canAfford && !buying ? 1 : 0.6,
+                      whiteSpace: 'nowrap',
+                    }}>
+                    {buying === c.id ? '…' : c.cost + ' SHOT'}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{
+          textAlign: 'center', fontFamily: 'var(--f-mono)', fontSize: 10,
+          color: 'var(--muted)', letterSpacing: '0.22em',
+        }}>
+          CONSUMABLES LAST 5 MATCHES — SHOT IS BURNED ON PURCHASE
+        </div>
       </div>
 
-      <div style={{
-        fontFamily: "'Share Tech Mono', monospace", fontSize: 10,
-        color: 'rgba(255,255,255,0.3)', marginTop: 16, textAlign: 'center',
-        letterSpacing: 1, zIndex: 1,
-      }}>
-        CONSUMABLES LAST 5 MATCHES — SHOT IS BURNED ON PURCHASE
-      </div>
+      <TerrainSilhouette />
     </div>
   );
 }

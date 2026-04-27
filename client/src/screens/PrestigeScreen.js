@@ -1,179 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import TopBar from '../components/TopBar';
-import Button from '../components/Button';
-
+import ScreenHeader from '../components/design/ScreenHeader';
+import TerrainSilhouette from '../components/design/Terrain';
 import { PRESTIGE_TIERS } from '../data/tiers';
 import { useSolShotWallet } from '../wallet/WalletContext';
-
-/* ── styles ── */
-const s = {
-  container: {
-    flex: 1,
-    display: 'flex',
-    overflow: 'hidden',
-  },
-
-  /* Left: Current rank */
-  leftPanel: {
-    width: '35%',
-    minWidth: 200,
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '24px 20px',
-    gap: 12,
-    borderRight: '1px solid var(--ol)',
-  },
-  badgeRing: () => ({
-    width: 160,
-    height: 160,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  }),
-  badgeTier: (color) => ({
-    fontFamily: "'Bebas Neue', sans-serif",
-    fontSize: 48,
-    color: color,
-    lineHeight: 1,
-  }),
-  rankName: {
-    fontFamily: "'Black Ops One', cursive",
-    fontSize: 26,
-    color: 'var(--bn)',
-    letterSpacing: 3,
-    textAlign: 'center',
-  },
-  rankSub: {
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 15,
-    color: 'var(--kh)',
-    letterSpacing: 2,
-    opacity: 0.7,
-    textAlign: 'center',
-  },
-  shotBalance: {
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 16,
-    color: 'var(--sp)',
-    letterSpacing: 1,
-    padding: '6px 14px',
-    border: '1px solid rgba(153, 69, 255, 0.2)',
-    borderRadius: 3,
-    background: 'rgba(153, 69, 255, 0.04)',
-    marginTop: 8,
-  },
-  comingSoon: {
-    fontFamily: "'Black Ops One', cursive",
-    fontSize: 13,
-    color: 'var(--am)',
-    letterSpacing: 3,
-    textAlign: 'center',
-    padding: '6px 14px',
-    border: '1px solid var(--am)',
-    borderRadius: 4,
-    background: 'rgba(255, 182, 39, 0.04)',
-    marginTop: 8,
-  },
-  nextTierInfo: {
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 14,
-    color: 'var(--kh)',
-    letterSpacing: 1,
-    opacity: 0.6,
-    textAlign: 'center',
-    marginTop: 6,
-  },
-  burnResult: {
-    fontFamily: "'Black Ops One', cursive",
-    fontSize: 14,
-    letterSpacing: 2,
-    textAlign: 'center',
-    padding: '8px 16px',
-    border: '1px solid',
-    borderRadius: 4,
-    marginTop: 8,
-  },
-
-  /* Right: Tier list */
-  rightPanel: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'hidden',
-  },
-  tierHeader: {
-    fontFamily: "'Black Ops One', cursive",
-    fontSize: 18,
-    color: 'var(--am)',
-    letterSpacing: 2,
-    padding: '14px 16px',
-    borderBottom: '1px solid var(--ol)',
-  },
-  tierList: {
-    flex: 1,
-    overflowY: 'auto',
-    padding: '6px 10px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 3,
-  },
-  tierRow: (color, isCurrent) => ({
-    display: 'flex',
-    alignItems: 'center',
-    gap: 14,
-    padding: '10px 12px',
-    borderRadius: 4,
-    border: isCurrent ? `1px solid ${color}` : '1px solid transparent',
-    background: isCurrent ? `rgba(${hexToRgb(color)}, 0.06)` : 'transparent',
-  }),
-  tierBadge: () => ({
-    width: 52,
-    height: 52,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  }),
-  tierInfo: {
-    flex: 1,
-    minWidth: 0,
-  },
-  tierName: (color) => ({
-    fontFamily: "'Black Ops One', cursive",
-    fontSize: 16,
-    color: color,
-    letterSpacing: 1,
-  }),
-  tierCost: {
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 13,
-    color: 'var(--kh)',
-    letterSpacing: 1,
-    opacity: 0.6,
-  },
-  tierReward: {
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 13,
-    color: 'var(--kh)',
-    letterSpacing: 1,
-    opacity: 0.5,
-    flexShrink: 0,
-    textAlign: 'right',
-    maxWidth: 180,
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-  },
-};
-
-function hexToRgb(hex) {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `${r}, ${g}, ${b}`;
-}
 
 const BADGE_IMAGES = {
   1: '/assets/images/badges/badge-bronze.png',
@@ -183,54 +12,36 @@ const BADGE_IMAGES = {
   5: '/assets/images/badges/badge-diamond.png',
 };
 
-
 function PrestigeScreen({ navigate }) {
   const [currentTier, setCurrentTier] = useState(0);
   const [shotBalance, setShotBalance] = useState(0);
   const [burning, setBurning] = useState(false);
-  const [burnResult, setBurnResult] = useState(null); // { success, message, tierName, color }
+  const [burnResult, setBurnResult] = useState(null);
+  const [selected, setSelected] = useState(null);
 
-  // CS-04: Use context hook instead of window.solWallet
   const { prestigeInfo, shotBalance: contextShotBalance, signAndBurnShot } = useSolShotWallet();
 
-  // Sync prestige info from context
   useEffect(() => {
-    if (prestigeInfo) {
-      setCurrentTier(prestigeInfo.tier || 0);
-    }
-    if (contextShotBalance !== undefined) {
-      setShotBalance(contextShotBalance);
-    }
+    if (prestigeInfo) setCurrentTier(prestigeInfo.tier || 0);
+    if (contextShotBalance !== undefined) setShotBalance(contextShotBalance);
   }, [prestigeInfo, contextShotBalance]);
 
-  // Listen for prestige result from server
   useEffect(() => {
     const socket = window.socket;
     if (!socket) return;
-
     const handleResult = (data) => {
       setBurning(false);
       if (data.success) {
         setCurrentTier(data.tier);
         setShotBalance(data.balance);
-        setBurnResult({
-          success: true,
-          message: `PROMOTED TO ${data.tierName.toUpperCase()}!`,
-          tierName: data.tierName,
-          color: data.color,
-        });
+        setBurnResult({ success: true, message: `PROMOTED TO ${data.tierName.toUpperCase()}!`, tierName: data.tierName, color: data.color });
       } else {
-        setBurnResult({
-          success: false,
-          message: data.reason || 'Burn failed',
-        });
+        setBurnResult({ success: false, message: data.reason || 'Burn failed' });
       }
-      // Auto-clear result after 4 seconds
       setTimeout(() => setBurnResult(null), 4000);
     };
-
     socket.on('prestigeResult', handleResult);
-    return () => { socket.off('prestigeResult', handleResult); };
+    return () => socket.off('prestigeResult', handleResult);
   }, []);
 
   const currentPrestige = PRESTIGE_TIERS[currentTier] || PRESTIGE_TIERS[0];
@@ -238,35 +49,27 @@ function PrestigeScreen({ navigate }) {
   const canBurn = nextTier && shotBalance >= nextTier.cost && !burning;
   const isMaxTier = !nextTier;
 
+  const sel = selected ? PRESTIGE_TIERS.find(t => t.tier === selected) : null;
+
   const handleBurn = async () => {
     if (!canBurn || !nextTier) return;
-
     if (!signAndBurnShot) {
       setBurnResult({ success: false, message: 'Wallet not connected' });
       setTimeout(() => setBurnResult(null), 3000);
       return;
     }
-
     setBurning(true);
     setBurnResult(null);
-
     try {
-      // Step 1: Burn SHOT tokens on-chain (player signs)
       const txSignature = await signAndBurnShot(nextTier.cost);
-
       if (!txSignature) {
         setBurning(false);
         setBurnResult({ success: false, message: 'Burn transaction cancelled' });
         setTimeout(() => setBurnResult(null), 3000);
         return;
       }
-
-      // Step 2: Send tx signature to server for verification + tier unlock
       const socket = window.socket;
-      if (socket) {
-        socket.emit('prestigeBurn', { txSignature, burnAmount: nextTier.cost });
-      }
-      // Server will respond via 'prestigeResult' event (handled in useEffect above)
+      if (socket) socket.emit('prestigeBurn', { txSignature, burnAmount: nextTier.cost });
     } catch (err) {
       setBurning(false);
       setBurnResult({ success: false, message: err.message || 'Burn failed' });
@@ -274,96 +77,196 @@ function PrestigeScreen({ navigate }) {
     }
   };
 
-  // Button label logic
-  let burnLabel = 'COMING SOON';
-  if (isMaxTier) burnLabel = 'MAX PRESTIGE';
-
   return (
-    <>
-      <TopBar title="PRESTIGE" onBack={() => navigate('menu')} />
+    <div style={{ position: 'relative', minHeight: '100vh', background: 'var(--bg-deep)', overflow: 'hidden' }}>
+      <div style={{
+        position: 'absolute', inset: 0, pointerEvents: 'none', opacity: 0.05,
+        backgroundImage: 'linear-gradient(to right, var(--olive) 1px, transparent 1px), linear-gradient(to bottom, var(--olive) 1px, transparent 1px)',
+        backgroundSize: '48px 48px',
+      }} />
 
-      <div style={s.container}>
-        {/* Left: Current Rank */}
-        <div style={s.leftPanel}>
-          <div style={s.badgeRing()}>
-            {BADGE_IMAGES[currentPrestige.tier] ? (
-              <img src={BADGE_IMAGES[currentPrestige.tier]} alt={currentPrestige.name} style={{ width: 160, height: 160, objectFit: 'contain', borderRadius: '50%' }} />
-            ) : (
-              <span style={s.badgeTier(currentPrestige.color)}>P{currentPrestige.tier}</span>
-            )}
-          </div>
-          <div style={s.rankName}>{currentPrestige.name.toUpperCase()}</div>
-          <div style={s.rankSub}>CURRENT RANK</div>
-
-          <div style={s.shotBalance}>
-            {'* ??? SHOT'}
-          </div>
-
-          {nextTier && (
-            <div style={s.nextTierInfo}>
-              NEXT: {nextTier.name.toUpperCase()} (??? SHOT)
+      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 24px 80px', position: 'relative', zIndex: 3 }}>
+        <ScreenHeader
+          title="PRESTIGE"
+          subtitle="BURN $SHOT · EARN RANK · UNLOCK SIGNATURE WEAPONS"
+          onBack={() => navigate('menu')}
+          rightExtras={
+            <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--accent)', letterSpacing: '0.2em' }}>
+              ◆ {shotBalance.toLocaleString(undefined, { maximumFractionDigits: 1 })} SHOT
             </div>
-          )}
+          }
+        />
 
-          <Button
-            variant="gold"
-            disabled
-            style={{ fontSize: 13, padding: '10px 20px', marginTop: 8 }}
-          >
-            {burnLabel}
-          </Button>
-
-          {burnResult && (
-            <div style={{
-              ...s.burnResult,
-              color: burnResult.success ? (burnResult.color || 'var(--sp)') : '#ff4444',
-              borderColor: burnResult.success ? (burnResult.color || 'var(--sp)') : '#ff4444',
-            }}>
-              {burnResult.message}
-            </div>
-          )}
-
-
-          {isMaxTier && (
-            <div style={s.comingSoon}>DIAMOND ACHIEVED</div>
-          )}
-        </div>
-
-        {/* Right: Tier List */}
-        <div style={s.rightPanel}>
-          <div style={s.tierHeader}>PRESTIGE TIERS</div>
-          <div style={s.tierList}>
-            {PRESTIGE_TIERS.map((tier) => {
-              const isCompleted = tier.tier > 0 && tier.tier <= currentTier;
-              const isNext = tier.tier === currentTier + 1;
-              return (
-                <div key={tier.tier} style={s.tierRow(tier.color, tier.tier === currentTier)}>
-                  <div style={s.tierBadge()}>
-                    {BADGE_IMAGES[tier.tier] ? (
-                      <img src={BADGE_IMAGES[tier.tier]} alt={tier.name} style={{ width: 52, height: 52, objectFit: 'contain', borderRadius: '50%', opacity: isCompleted ? 1 : 0.4 }} />
-                    ) : (
-                      <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: tier.color }}>{tier.tier === 0 ? '--' : 'P' + tier.tier}</span>
-                    )}
-                  </div>
-                  <div style={s.tierInfo}>
-                    <div style={s.tierName(tier.color)}>
-                      {tier.name.toUpperCase()}
-                      {isCompleted && ' \u2713'}
-                      {isNext && ' \u25C4'}
-                    </div>
-                    <div style={s.tierCost}>
-                      {tier.cost === 0 ? 'DEFAULT' : '??? SHOT'}
-                    </div>
-                  </div>
-                  <div style={s.tierReward}>{tier.reward}</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: 28 }}>
+          {/* LEFT: Current rank */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 20 }}>
+            <div style={{ position: 'relative', width: 220, height: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 18 }}>
+              {BADGE_IMAGES[currentPrestige.tier] ? (
+                <img src={BADGE_IMAGES[currentPrestige.tier]} style={{ width: 200, height: 200, filter: 'drop-shadow(0 4px 16px rgba(0,0,0,0.6))' }} alt={currentPrestige.name} />
+              ) : (
+                <div style={{
+                  width: 200, height: 200, border: '3px dashed var(--muted)', borderRadius: '50%',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <div style={{ fontFamily: 'var(--f-display)', fontSize: 60, color: 'var(--muted)', letterSpacing: '0.1em' }}>P0</div>
                 </div>
-              );
-            })}
+              )}
+            </div>
+
+            <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--olive)', letterSpacing: '0.25em', marginBottom: 4 }}>CURRENT RANK</div>
+            <div style={{
+              fontFamily: 'var(--f-display)', fontSize: 28, color: 'var(--bone)',
+              letterSpacing: '0.15em', marginBottom: 14, textTransform: 'uppercase',
+            }}>{currentPrestige.name}</div>
+
+            {nextTier && (
+              <>
+                <div style={{
+                  padding: '10px 18px',
+                  background: `rgba(${hexToRgb(nextTier.color)}, 0.12)`,
+                  border: `1px solid ${nextTier.color}`,
+                  clipPath: 'var(--clip-6)',
+                  fontFamily: 'var(--f-display)', fontSize: 13, letterSpacing: '0.18em',
+                  color: nextTier.color,
+                }}>◆ {nextTier.cost.toLocaleString()} SHOT</div>
+                <div style={{ fontFamily: 'var(--f-mono)', fontSize: 9, color: 'var(--muted)', letterSpacing: '0.22em', marginTop: 8 }}>
+                  NEXT: {nextTier.name.toUpperCase()}
+                </div>
+              </>
+            )}
+
+            <button
+              onClick={handleBurn}
+              disabled={!canBurn}
+              style={{
+                marginTop: 20,
+                padding: '12px 24px',
+                background: canBurn ? 'var(--accent)' : 'transparent',
+                color: canBurn ? '#0e1209' : 'var(--muted)',
+                border: '1px ' + (canBurn ? 'solid var(--accent-hot)' : 'dashed var(--muted)'),
+                clipPath: 'var(--clip-6)',
+                fontFamily: 'var(--f-display)', fontSize: 13, letterSpacing: '0.2em',
+                cursor: canBurn ? 'pointer' : 'not-allowed',
+                boxShadow: canBurn ? '0 0 18px rgba(218,138,40,0.22)' : 'none',
+              }}>
+              {burning ? 'BURNING…' : isMaxTier ? 'MAX PRESTIGE' : canBurn ? `BURN ${nextTier.cost.toLocaleString()} SHOT` : nextTier ? 'INSUFFICIENT SHOT' : 'LOCKED'}
+            </button>
+
+            {burnResult && (
+              <div style={{
+                marginTop: 14,
+                fontFamily: 'var(--f-display)', fontSize: 13, letterSpacing: '0.18em',
+                textAlign: 'center',
+                padding: '8px 16px',
+                color: burnResult.success ? (burnResult.color || 'var(--accent)') : '#c86060',
+                border: '1px solid ' + (burnResult.success ? (burnResult.color || 'var(--accent)') : '#c86060'),
+                clipPath: 'var(--clip-6)',
+              }}>{burnResult.message}</div>
+            )}
+
+            <div style={{
+              marginTop: 28, maxWidth: 260,
+              fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--olive)',
+              letterSpacing: '0.08em', lineHeight: 1.6, textAlign: 'center',
+            }}>
+              Prestige burns $SHOT for permanent rank, unlocks a signature weapon, and stamps your callsign across the leaderboards.
+            </div>
+          </div>
+
+          {/* RIGHT: Tier ladder */}
+          <div>
+            <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--accent)', letterSpacing: '0.22em', marginBottom: 14 }}>PRESTIGE TIERS</div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {PRESTIGE_TIERS.map(tier => {
+                const isSel = selected === tier.tier;
+                const isCur = tier.tier === currentTier;
+                const isCompleted = tier.tier > 0 && tier.tier <= currentTier;
+                return (
+                  <div key={tier.tier} onClick={() => setSelected(tier.tier)} style={{
+                    display: 'grid', gridTemplateColumns: '60px 1fr auto', gap: 16, alignItems: 'center',
+                    padding: '12px 18px',
+                    background: isSel ? 'var(--bg-raised)' : 'var(--bg-surface)',
+                    border: '1px solid ' + (isSel || isCur ? tier.color : 'var(--border)'),
+                    clipPath: 'var(--clip-6)',
+                    cursor: 'pointer',
+                    opacity: tier.tier === 0 ? 0.75 : 1,
+                  }}>
+                    <div style={{ width: 48, height: 48, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {BADGE_IMAGES[tier.tier] ? (
+                        <img src={BADGE_IMAGES[tier.tier]} alt={tier.name}
+                          style={{ width: 48, height: 48, filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.5))', opacity: isCompleted || isCur ? 1 : 0.5 }} />
+                      ) : (
+                        <div style={{
+                          width: 42, height: 42, border: '2px dashed var(--muted)', borderRadius: '50%',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          color: 'var(--muted)', fontFamily: 'var(--f-mono)', fontSize: 14,
+                        }}>—</div>
+                      )}
+                    </div>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span style={{ fontFamily: 'var(--f-display)', fontSize: 16, color: tier.color, letterSpacing: '0.15em', textTransform: 'uppercase' }}>{tier.name}</span>
+                        {isCur && <span style={{ fontFamily: 'var(--f-mono)', fontSize: 9, color: 'var(--accent)', letterSpacing: '0.25em' }}>◂ CURRENT</span>}
+                        {isCompleted && !isCur && <span style={{ fontFamily: 'var(--f-mono)', fontSize: 9, color: '#7fd060', letterSpacing: '0.25em' }}>✓</span>}
+                      </div>
+                      <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--olive)', letterSpacing: '0.2em', marginTop: 2 }}>
+                        {tier.cost > 0 ? `${tier.cost.toLocaleString()} SHOT` : 'DEFAULT'}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontFamily: 'var(--f-mono)', fontSize: 9, color: 'var(--muted)', letterSpacing: '0.22em' }}>UNLOCKS</div>
+                      <div style={{ fontFamily: 'var(--f-sec)', fontSize: 13, color: 'var(--bone)', letterSpacing: '0.05em', marginTop: 2 }}>
+                        {tier.reward || 'NONE'}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {sel && sel.tier > 0 && (
+              <div style={{
+                marginTop: 20, background: 'var(--bg-surface)', border: '1px solid var(--border)',
+                clipPath: 'var(--clip-10)', padding: '20px 24px',
+                display: 'grid', gridTemplateColumns: '120px 1fr', gap: 20, alignItems: 'center',
+              }}>
+                {BADGE_IMAGES[sel.tier] && (
+                  <img src={BADGE_IMAGES[sel.tier]} style={{ width: 110, height: 110, filter: 'drop-shadow(0 4px 10px rgba(0,0,0,0.5))' }} alt={sel.name} />
+                )}
+                <div>
+                  <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: sel.color, letterSpacing: '0.25em' }}>PRESTIGE TIER</div>
+                  <div style={{ fontFamily: 'var(--f-display)', fontSize: 28, color: sel.color, letterSpacing: '0.15em', marginTop: 2, marginBottom: 8, textTransform: 'uppercase' }}>
+                    {sel.name}
+                  </div>
+                  <div style={{ display: 'flex', gap: 22, fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '0.15em' }}>
+                    <span>
+                      <span style={{ color: 'var(--olive)' }}>COST</span>{' '}
+                      <span style={{ color: sel.color, marginLeft: 6 }}>◆ {sel.cost.toLocaleString()} SHOT</span>
+                    </span>
+                    <span>
+                      <span style={{ color: 'var(--olive)' }}>UNLOCK</span>{' '}
+                      <span style={{ color: 'var(--bone)', marginLeft: 6 }}>{sel.reward}</span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
-    </>
+
+      <TerrainSilhouette />
+    </div>
   );
+}
+
+function hexToRgb(hex) {
+  if (!hex || hex[0] !== '#') return '200, 120, 26';
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `${r}, ${g}, ${b}`;
 }
 
 export default PrestigeScreen;

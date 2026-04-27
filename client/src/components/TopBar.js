@@ -1,5 +1,4 @@
 import React from 'react';
-import WalletDisplay from './WalletDisplay';
 
 
 const styles = {
@@ -89,13 +88,9 @@ function TopBar({ title, onBack, showWallet = true }) {
           {title && <div style={styles.title}>{title}</div>}
         </div>
 
-        {/* Right: Handle or Wallet */}
+        {/* Right: Handle */}
         <div style={styles.right}>
-          {handle ? (
-            <span style={styles.handleText}>{handle}</span>
-          ) : (
-            showWallet && <WalletDisplay compact />
-          )}
+          {handle && <span style={styles.handleText}>{handle}</span>}
         </div>
       </div>
     </div>

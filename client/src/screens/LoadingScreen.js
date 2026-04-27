@@ -9,54 +9,39 @@ const styles = {
     height: '100%',
     gap: 16,
   },
-  shellIcon: {
-    width: 40,
-    height: 56,
-    background: 'var(--sd)',
-    border: '2px solid var(--kh)',
-    borderRadius: '10px 10px 4px 4px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontFamily: "'Black Ops One', cursive",
-    fontSize: 20,
-    color: 'var(--bn)',
-    marginBottom: 8,
-    animation: 'eg 0.5s ease-out both',
-  },
   logoText: {
-    fontFamily: "'Black Ops One', cursive",
+    fontFamily: 'var(--f-display)',
     fontSize: 36,
     letterSpacing: 2,
     animation: 'su 0.4s ease-out 0.2s both',
   },
   barContainer: {
     width: 340,
-    height: 8,
-    background: 'var(--od)',
-    borderRadius: 4,
+    height: 6,
+    background: 'var(--bg-raised)',
     overflow: 'hidden',
-    border: '1px solid var(--ol)',
+    border: '1px solid var(--border)',
+    clipPath: 'var(--clip-6)',
     animation: 'su 0.4s ease-out 0.4s both',
   },
   barFill: {
     height: '100%',
-    background: 'linear-gradient(90deg, var(--ad), var(--am))',
-    borderRadius: 2,
+    background: 'linear-gradient(90deg, var(--accent), var(--accent-hot))',
     transition: 'width 0.3s ease',
   },
   statusText: {
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 18,
-    color: 'var(--kh)',
-    letterSpacing: 4,
+    fontFamily: 'var(--f-mono)',
+    fontSize: 11,
+    color: 'var(--olive)',
+    letterSpacing: '0.22em',
     textTransform: 'uppercase',
     animation: 'su 0.4s ease-out 0.5s both',
   },
   percentText: {
-    fontFamily: "'Bebas Neue', sans-serif",
+    fontFamily: 'var(--f-display)',
     fontSize: 48,
-    color: 'var(--bn)',
+    color: 'var(--bone)',
+    letterSpacing: '0.06em',
     animation: 'su 0.4s ease-out 0.45s both',
   },
 };
@@ -189,8 +174,8 @@ function LoadingScreen({ navigate }) {
       {/* Logo */}
       {logoFailed ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, animation: 'eg 0.5s ease-out both' }}>
-          <span style={{ ...styles.logoText, color: 'var(--bn)' }}>SOL</span>
-          <span style={{ ...styles.logoText, color: 'var(--rd)' }}>SHOT</span>
+          <span style={{ ...styles.logoText, color: 'var(--bone)' }}>SOL</span>
+          <span style={{ ...styles.logoText, color: 'var(--accent)' }}>SHOT</span>
         </div>
       ) : (
         <img

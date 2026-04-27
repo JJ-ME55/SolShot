@@ -202,53 +202,34 @@ export class MainScene extends Scene {
       }
     });
 
-    // ── Mouse-aim input handlers ──
-    // Registered here so they work for both type3 (multiplayer) and type4 (practice).
-    this._mouseAimHandlers = {
-      move: (pointer) => {
-        if (!this._isMouseAimActive()) return;
-        const myTank = this.myPlayerIndex >= 0 ? this.tanks[this.myPlayerIndex] : null;
-        if (!myTank?.turret || !myTank.active) return;
+    // ── Click-to-aim handler ──
+    // A single click on the game canvas snaps the turret toward the clicked point.
+    // No continuous tracking — the turret stays where it was set until the player
+    // clicks again or uses the keyboard/sliders.
+    // Clicks on React HUD elements (fire button, sliders, etc.) never reach here
+    // because those elements have pointerEvents: 'auto' and consume the event first.
+    this._clickAimHandler = (pointer) => {
+      if (pointer.button !== 0) return; // left click only
+      if (this._firePending) return;
+      const myTank = this.myPlayerIndex >= 0 ? this.tanks[this.myPlayerIndex] : null;
+      if (!myTank?.turret || !myTank.active) return;
 
-        // Calculate absolute angle from turret to cursor
-        const absoluteAngle = Phaser.Math.Angle.Between(
-          myTank.turret.x, myTank.turret.y,
-          pointer.worldX, pointer.worldY
-        );
+      // Compute angle from turret pivot to click point, convert to 0–180° game scale
+      const absoluteAngle = Phaser.Math.Angle.Between(
+        myTank.turret.x, myTank.turret.y,
+        pointer.worldX, pointer.worldY
+      );
+      const relativeAngle = absoluteAngle - myTank.rotation;
+      // Game scale: 0 = straight up, 90 = horizontal, 180 = straight down
+      // inverse of: radians = DegToRad(v) - PI/2  →  v = RadToDeg(radians + PI/2)
+      const degrees = Phaser.Math.RadToDeg(relativeAngle + Math.PI / 2);
+      const clamped = Math.max(0, Math.min(180, Math.round(degrees)));
 
-        // Set turret rotation — relativeRotation is angle relative to tank body
-        myTank.turret.relativeRotation = absoluteAngle - myTank.rotation;
-        myTank.turret.setRotation(absoluteAngle);
-        myTank.turret.needEmitAngleChange = true;
-
-        // Map cursor distance from turret to power (5–100)
-        const dist = Phaser.Math.Distance.Between(
-          myTank.turret.x, myTank.turret.y,
-          pointer.worldX, pointer.worldY
-        );
-        const MAX_DIST = this.renderer ? this.renderer.width * 0.30 : 250;
-        const maxPower = this._myConsumables?.includes('overcharge') ? 115 : 100;
-        const power = Math.round(Phaser.Math.Clamp((dist / MAX_DIST) * maxPower, 5, maxPower));
-        myTank.setPower(power);
-
-        // Emit powerChange so opponent sees live power, and bridge shows updated HUD
-        if (this.sceneData?.gameType === 3) {
-          const socket = window.socket;
-          if (socket) socket.emit('powerChange', { power });
-        }
-
-        this._renderScopePreview();
-      },
-
-      down: (pointer) => {
-        if (pointer.button !== 0) return; // left click only
-        if (!this._isMouseAimActive()) return;
-        this.handleFireFromReact();
-      },
+      // Route through the bridge so sliders + server both update
+      if (this._bridge) this._bridge.setAngle(clamped);
     };
 
-    this.input.on('pointermove', this._mouseAimHandlers.move);
-    this.input.on('pointerdown', this._mouseAimHandlers.down);
+    this.input.on('pointerdown', this._clickAimHandler);
 
     this._created = true;
   };
@@ -267,8 +248,6 @@ export class MainScene extends Scene {
       this._clearSpectatorAimLine();
     }
 
-    this.input.mousePointer.prev = { x: this.input.mousePointer.x, y: this.input.mousePointer.y };
-    this.input.activePointer.prev = { x: this.input.activePointer.x, y: this.input.activePointer.y };
   };
 
   // ── Physics / Rendering (unchanged from original) ──
@@ -948,15 +927,6 @@ export class MainScene extends Scene {
     });
   };
 
-  // ── Mouse-aim guard ──
-  // Returns true when mouse-aim input should be processed.
-  _isMouseAimActive = () => {
-    if (window.controlScheme !== 'mouse') return false;
-    if (this._firePending) return false;
-    const myTank = this.myPlayerIndex >= 0 ? this.tanks[this.myPlayerIndex] : null;
-    if (!myTank || !myTank.active) return false;
-    return true;
-  };
 
   // ── Type 3: Online multiplayer — SERVER IS GOD ──
   //
@@ -1962,11 +1932,10 @@ export class MainScene extends Scene {
     this._turnResultCooldown = 0;
     this._firePending = false;
 
-    // Clean up mouse-aim pointer handlers
-    if (this._mouseAimHandlers) {
-      this.input.off('pointermove', this._mouseAimHandlers.move);
-      this.input.off('pointerdown', this._mouseAimHandlers.down);
-      this._mouseAimHandlers = null;
+    // Clean up click-to-aim handler
+    if (this._clickAimHandler) {
+      this.input.off('pointerdown', this._clickAimHandler);
+      this._clickAimHandler = null;
     }
 
     // Clean up spectator graphics

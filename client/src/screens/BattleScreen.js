@@ -4,7 +4,6 @@ import { startBattle, destroyBattle } from '../bridge/PhaserBootstrap';
 import useGameState from '../hooks/useGameState';
 import useSocket from '../hooks/useSocket';
 import useIsMobile from '../hooks/useIsMobile';
-import useControlScheme from '../hooks/useControlScheme';
 import BattleHUD from './battle/BattleHUD';
 import ExitMenu from './battle/ExitMenu';
 import Modal from '../components/Modal';
@@ -18,7 +17,7 @@ const s = {
     width: '100%',
     height: '100%',
     overflow: 'hidden',
-    background: '#0a1a0a',
+    background: 'var(--bg-deep)',
     cursor: 'url("/assets/images/crosshair.svg") 16 16, crosshair',
   },
   canvas: {
@@ -28,64 +27,63 @@ const s = {
   deployOverlay: {
     position: 'absolute',
     inset: 0,
-    background: 'rgba(10, 12, 8, 0.95)',
+    background: 'rgba(14, 18, 9, 0.95)',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 40,
-    gap: 10,
+    gap: 14,
   },
   deployTitle: {
-    fontFamily: "'Black Ops One', cursive",
-    fontSize: 18,
-    color: 'var(--am)',
-    letterSpacing: 4,
-    animation: 'fl 1.5s ease-in-out infinite',
+    fontFamily: 'var(--f-display)',
+    fontSize: 22,
+    color: 'var(--accent)',
+    letterSpacing: '0.22em',
+    textShadow: '0 0 18px rgba(218,138,40,0.35)',
   },
   deployBar: {
-    width: 200,
+    width: 220,
     height: 4,
-    borderRadius: 2,
-    background: 'var(--od)',
+    background: 'var(--bg-raised)',
+    border: '1px solid var(--border)',
     overflow: 'hidden',
   },
   deployFill: {
     height: '100%',
-    borderRadius: 2,
-    background: 'var(--am)',
+    background: 'var(--accent)',
     animation: 'loadFill 2s ease-out forwards',
   },
   deploySub: {
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 14,
-    color: 'var(--kh)',
-    letterSpacing: 2,
-    opacity: 0.6,
+    fontFamily: 'var(--f-mono)',
+    fontSize: 11,
+    color: 'var(--olive)',
+    letterSpacing: '0.22em',
   },
   disconnectOverlay: {
     position: 'absolute',
     top: 0,
     left: '50%',
     transform: 'translateX(-50%)',
-    background: 'rgba(10, 12, 8, 0.9)',
-    border: '1px solid var(--ol)',
+    background: 'var(--bg-surface)',
+    border: '1px solid var(--red)',
     borderTop: 'none',
-    borderRadius: '0 0 8px 8px',
+    clipPath: 'var(--clip-6)',
     padding: '12px 24px',
     zIndex: 45,
     textAlign: 'center',
   },
   disconnectText: {
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: 13,
-    color: '#ff6644',
-    letterSpacing: 1,
+    fontFamily: 'var(--f-mono)',
+    fontSize: 11,
+    color: 'var(--red)',
+    letterSpacing: '0.2em',
   },
   disconnectTimer: {
-    fontFamily: "'Black Ops One', cursive",
+    fontFamily: 'var(--f-display)',
     fontSize: 22,
-    color: '#ff6644',
+    color: 'var(--red)',
+    letterSpacing: '0.12em',
     marginTop: 4,
   },
 };
@@ -104,7 +102,6 @@ function BattleScreen({ navigate, screenData }) {
   const turnTimerRef = useRef(null);
 
   const isMobile = useIsMobile();
-  const [controlScheme] = useControlScheme(isMobile);
 
   // CS-04: Use context hook instead of window.solWallet
   const { signAndSendEscrowDeposit } = useSolShotWallet();
@@ -364,7 +361,6 @@ function BattleScreen({ navigate, screenData }) {
           turnTimer={turnTimer}
           onLeaveMatch={handleLeaveMatch}
           onForfeit={() => setShowExit(true)}
-          controlScheme={controlScheme}
         />
       )}
 

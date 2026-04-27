@@ -2600,6 +2600,7 @@ const mainsocket = (io) => {
                     totalDamage: stats.totalDamage || 0,
                     bestWinStreak: stats.bestWinStreak || 0,
                     signatureWeapon: sigWeapon,
+                    matchHistory: (user.matchHistory || []).slice(-6).reverse(),
                 })
             } catch (err) {
                 console.error('[Stats] getStats error:', err.message)

@@ -5,7 +5,6 @@ import useIsMobile from '../hooks/useIsMobile';
 import ScanBtn from '../components/design/ScanBtn';
 import DesignTopBar from '../components/design/TopBar';
 import TerrainSilhouette from '../components/design/Terrain';
-import WalletDisplay from '../components/WalletDisplay';
 
 const TURRET = { x: -23, y: 80, rot: -3, w: 198 };
 const tankImg = { imageRendering: 'pixelated' };
@@ -50,11 +49,6 @@ function MenuScreen({ navigate }) {
         solBalance={solBalance || 0}
         badgeSrc="/assets/images/badges/badge-bronze.png"
       />
-
-      {/* Wallet button — top right */}
-      <div style={{ position: 'absolute', top: 14, right: 28, zIndex: 5 }}>
-        <WalletDisplay />
-      </div>
 
       {/* Hero content */}
       <div style={{ position: 'relative', zIndex: 3, maxWidth: 420, margin: '0 auto', padding: '24px 24px 60px', textAlign: 'center' }}>
@@ -118,7 +112,7 @@ function MenuScreen({ navigate }) {
 
         {/* Online counter */}
         <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--muted)', letterSpacing: '0.2em' }}>
-          <span style={{ color: '#7fd060' }}>●</span> {onlineCount} ONLINE · PRACTICE MODE
+          <span style={{ color: '#7fd060' }}>●</span> {onlineCount} ONLINE · MAINNET BETA
         </div>
       </div>
 
@@ -152,7 +146,10 @@ function MobileMenu({ navigate, callsign, shotBalance, solBalance, onlineCount, 
             <div style={{ fontFamily: 'var(--f-mono)', fontSize: 7, color: 'var(--olive)', letterSpacing: '0.25em', marginTop: 3 }}>UNRANKED · LVL 1</div>
           </div>
         </div>
-        <img src="/assets/images/branding/solshot-logo-transparent.png" alt="SolShot" style={{ height: 22, width: 'auto' }} />
+        <div style={{ fontFamily: 'var(--f-display, "Black Ops One")', fontSize: 22, letterSpacing: '0.04em', lineHeight: 1, userSelect: 'none' }}>
+          <span style={{ color: 'var(--olive, #7a9060)' }}>SOL</span>
+          <span style={{ color: 'var(--accent, #c8a84a)' }}>SHOT</span>
+        </div>
         <div style={{ justifySelf: 'end', display: 'flex', alignItems: 'center', gap: 14, fontFamily: 'var(--f-mono)', fontSize: 9, letterSpacing: '0.15em' }}>
           <span style={{ color: 'var(--accent)' }}>◆ {(shotBalance || 0).toLocaleString()} SHOT</span>
           <span style={{ color: 'var(--bone)' }}>◇ {(solBalance || 0).toFixed(2)} SOL</span>

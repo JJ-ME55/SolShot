@@ -5,13 +5,13 @@
  */
 
 const TIER_COLORS = {
-  FREE: '#cccccc',
-  STANDARD: '#ffffff',
-  TACTICAL: '#00ccff',
-  RARE: '#9966ff',
-  EPIC: '#ff9900',
-  LEGENDARY: '#ffcc00',
-  PRESTIGE: '#ff3366',
+  FREE:      '#8a9a80',   /* muted sage — design ref */
+  STANDARD:  '#7a9060',   /* olive green */
+  TACTICAL:  '#4fc0b4',   /* teal */
+  RARE:      '#c8a84a',   /* amber */
+  EPIC:      '#9945FF',   /* sol purple */
+  LEGENDARY: '#d83030',   /* red */
+  PRESTIGE:  '#14F195',   /* sol green */
 };
 
 const WEAPONS = [

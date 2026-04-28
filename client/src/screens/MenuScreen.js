@@ -23,8 +23,9 @@ function MenuScreen({ navigate }) {
   }, []);
 
   const secondary = [
-    { id: 'armory',   label: 'ARMORY',   sub: 'GEAR · PRESTIGE · LOADOUT', screen: 'armory' },
-    { id: 'barracks', label: 'BARRACKS', sub: 'STATS · LEADERBOARD',       screen: 'barracks' },
+    { id: 'aibot',    label: 'VS BOT',   sub: 'PRACTICE · NO STAKES · OFFLINE',  screen: 'ai-practice' },
+    { id: 'armory',   label: 'ARMORY',   sub: 'GEAR · PRESTIGE · LOADOUT',       screen: 'armory' },
+    { id: 'barracks', label: 'BARRACKS', sub: 'STATS · LEADERBOARD',             screen: 'barracks' },
   ];
 
   if (isMobile) {

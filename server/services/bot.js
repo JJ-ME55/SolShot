@@ -22,7 +22,10 @@
 import { Telegraf } from 'telegraf';
 import { getChallenge, markAccepted } from './challenge/challenge.js';
 
-const MINI_APP_URL = process.env.MINI_APP_URL || 'https://t.me/SolShotGG_bot/solshot';
+// The path segment after the bot username is the Mini App `short_name` registered
+// in BotFather. Our Mini App is registered as `play` (not `solshot`). Set
+// MINI_APP_URL env to override if the short_name ever changes.
+const MINI_APP_URL = process.env.MINI_APP_URL || 'https://t.me/SolShotGG_bot/play';
 const WEBHOOK_PATH = '/api/telegram-webhook';
 const SERVER_BASE_URL = process.env.SERVER_BASE_URL || process.env.TELEGRAM_WEBHOOK_URL || '';
 

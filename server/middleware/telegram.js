@@ -1,4 +1,4 @@
-const crypto = require('crypto');
+import crypto from 'crypto';
 
 /**
  * Validate Telegram Mini App initData using HMAC-SHA256.
@@ -107,7 +107,7 @@ function telegramSocketMiddleware(socket, next) {
   return next();
 }
 
-module.exports = {
+export {
   validateTelegramInitData,
   telegramSocketMiddleware,
 };

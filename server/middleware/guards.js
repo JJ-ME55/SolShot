@@ -80,8 +80,9 @@ export function validateFireParams({ angle, power, weaponId }) {
     if (!Number.isFinite(angle)) {
         return { valid: false, reason: 'Invalid angle: must be a finite number' };
     }
-    if (!Number.isFinite(power) || power < 0 || power > 100) {
-        return { valid: false, reason: 'Invalid power: must be 0-100' };
+    // Allow up to 115 for Overcharge consumable (exact cap enforced in fire handler)
+    if (!Number.isFinite(power) || power < 0 || power > 115) {
+        return { valid: false, reason: 'Invalid power: must be 0-115' };
     }
     if (!Number.isInteger(weaponId) || weaponId < 0) {
         return { valid: false, reason: 'Invalid weaponId: must be a non-negative integer' };

@@ -955,6 +955,7 @@ function processFragmentShot(weapon, trajectory, terrain, tanks, shooterId) {
 function processWallShot(weapon, trajectory, terrain, tanks, shooterId) {
     const impact = calculateImpact(trajectory, terrain, tanks);
     let newTerrain = [...terrain];
+    let wallPlacement = null;
 
     if (impact.type !== 'outOfBounds') {
         // Raise terrain in a narrow vertical wall at impact X
@@ -962,22 +963,72 @@ function processWallShot(weapon, trajectory, terrain, tanks, shooterId) {
         const wallWidth = 8;
         const wallHeight = 140;
         const cx = Math.floor(impact.x);
+        const xMin = Math.max(0, cx - wallWidth / 2);
+        const xMax = Math.min(TERRAIN_WIDTH - 1, cx + wallWidth / 2);
 
-        for (let x = Math.max(0, cx - wallWidth / 2); x <= Math.min(TERRAIN_WIDTH - 1, cx + wallWidth / 2); x++) {
+        // Save original heights for decay/revert
+        const originalHeights = {};
+        for (let x = xMin; x <= xMax; x++) {
             const ix = Math.floor(x);
             if (newTerrain[ix] !== undefined) {
-                // Raise terrain surface up by wallHeight
+                originalHeights[ix] = newTerrain[ix];
                 newTerrain[ix] = Math.max(0, newTerrain[ix] - wallHeight);
             }
         }
+
+        wallPlacement = { cx, xMin, xMax, originalHeights };
     }
 
     return {
         trajectory: trimTrajectory(trajectory, impact.frameIndex),
         impact: { x: impact.x, y: impact.y, type: impact.type },
         damage: {},  // no damage
-        newTerrain
+        newTerrain,
+        wallPlacement,
     };
+}
+
+/**
+ * Decay expired walls — revert terrain to pre-wall heights.
+ * Called after each turn to check for walls that have exceeded their lifespan.
+ *
+ * @param {number[]} heightmap - Current terrain heightmap (mutated in place)
+ * @param {Array} walls - Room's wall tracking array
+ * @param {number} currentTurn - Current turn count
+ * @param {number} wallLifespan - Turns before a wall decays (default 6)
+ * @returns {{ decayed: boolean, decayedWalls: Array }} Whether any walls decayed
+ */
+export function decayWalls(heightmap, walls, currentTurn, wallLifespan = 6) {
+    if (!walls || walls.length === 0) return { decayed: false, decayedWalls: [] };
+
+    const decayedWalls = [];
+    const remaining = [];
+
+    for (const wall of walls) {
+        if (currentTurn - wall.turnPlaced >= wallLifespan) {
+            // Revert terrain to original heights (or close — other explosions may have altered it)
+            for (const [ix, origHeight] of Object.entries(wall.originalHeights)) {
+                const i = Number(ix);
+                if (heightmap[i] !== undefined) {
+                    // Only revert if terrain is still raised (wall hasn't been blasted away)
+                    // Original was higher (more toward ground), wall made it lower (raised surface)
+                    // If current is still below original, revert toward original
+                    if (heightmap[i] < origHeight) {
+                        heightmap[i] = origHeight;
+                    }
+                }
+            }
+            decayedWalls.push(wall);
+        } else {
+            remaining.push(wall);
+        }
+    }
+
+    // Replace walls array contents
+    walls.length = 0;
+    walls.push(...remaining);
+
+    return { decayed: decayedWalls.length > 0, decayedWalls };
 }
 
 /**

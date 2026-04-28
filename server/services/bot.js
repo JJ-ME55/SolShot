@@ -20,9 +20,11 @@
  */
 
 import { Telegraf } from 'telegraf';
+import { getChallenge, markAccepted } from './challenge/challenge.js';
 
 const MINI_APP_URL = process.env.MINI_APP_URL || 'https://t.me/SolShotGG_bot/solshot';
 const WEBHOOK_PATH = '/api/telegram-webhook';
+const SERVER_BASE_URL = process.env.SERVER_BASE_URL || process.env.TELEGRAM_WEBHOOK_URL || '';
 
 let bot = null;
 
@@ -85,8 +87,8 @@ function registerCommands(bot) {
 
   bot.command('challenge', async (ctx) => {
     await ctx.reply(
-      'Challenge a friend to a 1v1 duel.',
-      { reply_markup: launchKeyboard('Open Challenge Builder', 'challenge') }
+      'Create a 1v1 challenge — get a shareable link to send your opponent.',
+      { reply_markup: launchKeyboard('Create Challenge', 'challenge_new') }
     );
   });
 
@@ -154,6 +156,94 @@ function registerCommands(bot) {
       '• Discord: discord.gg/solshot\n' +
       '• Email: support@solshot.gg'
     );
+  });
+
+  // ─── Inline mode — `switchInlineQuery` from Mini App posts challenge cards ───
+  //
+  // When a user inside the Mini App taps "Challenge a friend" we call
+  // `Telegram.WebApp.switchInlineQuery('ch_<shortCode>', ['users'])`. Telegram
+  // opens the chat picker; once the user picks a chat, Telegram fires an
+  // `inline_query` event to this bot with `query = "ch_<shortCode>"`. We
+  // reply with a single InlineQueryResultPhoto pointing at our server-rendered
+  // card PNG (the public /api/challenge/:code/card.png endpoint).
+  bot.on('inline_query', async (ctx) => {
+    try {
+      const query = (ctx.inlineQuery?.query || '').trim();
+      if (!query.startsWith('ch_')) {
+        return ctx.answerInlineQuery([], { cache_time: 1 });
+      }
+      const shortCode = query.slice(3).toUpperCase();
+      const challenge = await getChallenge(shortCode);
+      if (!challenge) {
+        return ctx.answerInlineQuery([], { cache_time: 1 });
+      }
+
+      if (!SERVER_BASE_URL) {
+        console.warn('[bot] SERVER_BASE_URL not set — inline card url will be relative');
+      }
+      const cardUrl = `${SERVER_BASE_URL.replace(/\/$/, '')}/api/challenge/${shortCode}/card.png`;
+      const acceptDeepLink = `${MINI_APP_URL}?startapp=ch_${shortCode}`;
+
+      const challenger = challenge.challengerHandle || 'OPERATIVE';
+      const opp = challenge.opponentHandle || 'anyone brave enough';
+      const wagerStr = challenge.wager?.amount > 0
+        ? `${challenge.wager.amount} ${challenge.wager.token}`
+        : 'PRACTICE';
+
+      await ctx.answerInlineQuery([
+        {
+          type: 'photo',
+          id: shortCode,
+          photo_url: cardUrl,
+          thumbnail_url: cardUrl,
+          photo_width: 1080,
+          photo_height: 1080,
+          title: `${challenger} vs ${opp}`,
+          description: `${wagerStr} · ${challenge.format || 'BO1'}`,
+          caption: `${challenger} challenges ${opp} — ${wagerStr} · ${challenge.format || 'BO1'}`,
+          reply_markup: {
+            inline_keyboard: [[
+              { text: '⚔ ACCEPT', url: acceptDeepLink },
+            ]],
+          },
+        },
+      ], {
+        cache_time: 1,
+        is_personal: true,
+      });
+    } catch (err) {
+      console.error('[bot] inline_query error:', err);
+      try { await ctx.answerInlineQuery([], { cache_time: 1 }); } catch { /* ignore */ }
+    }
+  });
+
+  // ─── Callback queries — accept/decline buttons on inline cards ───
+  // Reserved for future callback_data buttons. Inline mode currently uses
+  // `url` buttons (deep link to Mini App) so this handler is a no-op fallback.
+  bot.on('callback_query', async (ctx) => {
+    try {
+      const data = ctx.callbackQuery?.data || '';
+      if (data.startsWith('decline:')) {
+        const shortCode = data.slice('decline:'.length);
+        await ctx.answerCbQuery('Challenge declined.');
+        // (could mark the challenge as cancelled — for v1 we just dismiss the prompt)
+        return;
+      }
+      if (data.startsWith('accept:')) {
+        const shortCode = data.slice('accept:'.length);
+        const tgId = ctx.from?.id;
+        const result = await markAccepted(shortCode, { acceptorTgUserId: tgId });
+        if (result.error) {
+          return ctx.answerCbQuery(`Couldn't accept: ${result.error}`, { show_alert: true });
+        }
+        await ctx.answerCbQuery('Challenge accepted — opening match...');
+        return;
+      }
+      await ctx.answerCbQuery();
+    } catch (err) {
+      console.error('[bot] callback_query error:', err);
+      try { await ctx.answerCbQuery('Something went wrong.', { show_alert: true }); } catch { /* */ }
+    }
   });
 }
 

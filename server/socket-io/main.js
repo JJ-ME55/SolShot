@@ -16,6 +16,7 @@ import { trackConnection, trackDisconnection, trackMatchCreated, trackMatchCompl
 import { requireAuth, validatePayload, validateFireParams, sanitizeName, withLock, safeHandler } from '../middleware/guards.js';
 import { initAI, cleanupAI, pickWeapon, calculateAim, autoBuyWeapons } from '../services/ai.js';
 import { CONSUMABLES, purchaseConsumable, decrementConsumables, getActiveConsumables, hasConsumable } from '../services/consumables.js';
+import { createChallenge as createChallengeRecord, getChallenge, attachRoomId, markAccepted } from '../services/challenge/challenge.js';
 
 // Cosmetic item costs (mirrors client/src/data/tiers.js COSMETIC_ITEMS)
 const COSMETIC_COSTS = {
@@ -1740,6 +1741,153 @@ const mainsocket = (io) => {
         })
 
 
+
+        // ═══ TELEGRAM CHALLENGE FLOW ═══
+        // Challenger taps "Challenge a friend" → creates a Challenge record AND
+        // a private room in one event. They get back { shortCode, roomId, deepLink }
+        // and stay in the lobby's waiting state with the share UI.
+        client.on('createChallengeRoom', async (data) => {
+            try {
+                if (!data || typeof data !== 'object') return
+                const { player, opponentHandle = null, format = 'BO1', wagerToken = 'SOL' } = data
+                if (!player) return
+
+                // Tear down any prior room
+                if (client.roomId !== null) {
+                    client.leave(client.roomId)
+                    await removeRoom(client.roomId)
+                }
+
+                const wagerAmount = Number.isFinite(player.wager) && player.wager > 0 ? player.wager : 0
+                if (wagerAmount > 0 && !requireAuth(client, 'createChallengeRoom')) return
+
+                const walletAddress = authenticatedWallets[client.id] || null
+                const creatorHandle = playerUids[client.id]?.handle || sanitizeName(player.name || 'Operative')
+
+                // Create the Challenge record first (so we have the shortCode)
+                const tgUser = client.tgUser || null
+                const { challenge, deepLink, shareUrl } = await createChallengeRecord({
+                    challengerWallet: walletAddress,
+                    challengerTgUserId: tgUser?.id || null,
+                    challengerHandle: creatorHandle,
+                    opponentHandle: opponentHandle ? String(opponentHandle).slice(0, 32) : null,
+                    wager: { amount: wagerAmount, token: String(wagerToken).toUpperCase().slice(0, 5) },
+                    format: ['BO1', 'BO3', 'BO5'].includes(format) ? format : 'BO1',
+                })
+
+                // Create the matching private 1v1 room
+                const rounds = format === 'BO5' ? 5 : format === 'BO3' ? 3 : 1
+                const roomId = crypto.randomBytes(4).toString('hex')
+                client.join(roomId)
+                client.roomId = roomId
+                client.isHost = true
+
+                const creatorSlot = {
+                    name: creatorHandle, color: player.color,
+                    socketId: client.id, isReady: false, playAgain: false, pos: null, isHost: true,
+                }
+                const roomData = {
+                    roomId,
+                    players: [creatorSlot],
+                    maxPlayers: 2,
+                    active: false,
+                    private: true,
+                    challengeShortCode: challenge.shortCode,
+                }
+
+                wagerStates[roomId] = {
+                    amount: wagerAmount,
+                    wallets: { [client.id]: walletAddress },
+                }
+                roomData.wager = wagerAmount
+                roomData.matchMode = 'challenge'
+                const roundType = rounds === 5 ? 'BO5' : rounds === 3 ? 'BO3' : '1'
+                matchStates[roomId] = createMatchState(roomId, roundType, 2)
+                roomData.totalRounds = rounds
+
+                rooms.set(roomId, roomData)
+                trackMatchCreated()
+
+                // Stamp the roomId onto the challenge so accepts can find it
+                await attachRoomId(challenge.shortCode, roomId).catch((err) => {
+                    console.warn('[challenge] attachRoomId failed:', err.message)
+                })
+
+                client.emit('challengeCreated', {
+                    shortCode: challenge.shortCode,
+                    roomId,
+                    deepLink,
+                    shareUrl,
+                    expiresAt: challenge.expiresAt,
+                })
+
+                // Standard waiting-room emit so the existing lobby UI shows correctly
+                client.emit('roomUpdate', {
+                    players: roomData.players.map(p => ({
+                        socketId: p.socketId,
+                        name: p.name,
+                        color: p.color,
+                        isReady: p.isReady || false,
+                        isHost: p.isHost || false,
+                    })),
+                    maxPlayers: roomData.maxPlayers,
+                    currentPlayers: roomData.players.length,
+                })
+            } catch (err) {
+                console.error('[createChallengeRoom] error:', err.message)
+                client.emit('challengeCreateError', { reason: 'Failed to create challenge' })
+            }
+        })
+
+        // Recipient accepts a challenge from the ChallengeAcceptScreen → joins
+        // the existing private room. Replies with `challengeAccepted { roomId }`,
+        // which the client uses to navigate to the lobby with autoJoinRoomId.
+        client.on('joinChallenge', async (data) => {
+            try {
+                if (!data || typeof data !== 'object') return
+                const { shortCode, handle } = data
+                if (!shortCode) {
+                    return client.emit('challengeAcceptError', { reason: 'no_short_code' })
+                }
+                const challenge = await getChallenge(shortCode)
+                if (!challenge) {
+                    return client.emit('challengeAcceptError', { reason: 'not_found' })
+                }
+                if (!challenge.roomId) {
+                    return client.emit('challengeAcceptError', { reason: 'no_room' })
+                }
+                if (challenge.expiresAt && new Date(challenge.expiresAt) <= new Date()) {
+                    return client.emit('challengeAcceptError', { reason: 'expired' })
+                }
+                if (['cancelled', 'expired'].includes(challenge.status)) {
+                    return client.emit('challengeAcceptError', { reason: challenge.status })
+                }
+
+                const room = findRoom(challenge.roomId)
+                if (!room) {
+                    return client.emit('challengeAcceptError', { reason: 'room_gone' })
+                }
+                if (room.players.length >= room.maxPlayers) {
+                    return client.emit('challengeAcceptError', { reason: 'room_full' })
+                }
+
+                // Mark accepted (best effort — failure here is not fatal)
+                const tgUser = client.tgUser || null
+                await markAccepted(shortCode, { acceptorTgUserId: tgUser?.id || null })
+                    .catch((err) => console.warn('[joinChallenge] markAccepted failed:', err.message))
+
+                // Reply to the client — they'll then issue the regular `joinRoom`
+                // event from the lobby with autoJoinRoomId, which handles wager
+                // verification, deposits, etc.
+                client.emit('challengeAccepted', {
+                    roomId: challenge.roomId,
+                    shortCode: challenge.shortCode,
+                })
+            } catch (err) {
+                console.error('[joinChallenge] error:', err.message)
+                client.emit('challengeAcceptError', { reason: 'server_error' })
+            }
+        })
 
         client.on('createRoom', async (data) => {
             // H015: Null payload guard

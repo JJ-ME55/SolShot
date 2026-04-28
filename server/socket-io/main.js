@@ -1762,13 +1762,18 @@ const mainsocket = (io) => {
                 if (wagerAmount > 0 && !requireAuth(client, 'createChallengeRoom')) return
 
                 const walletAddress = authenticatedWallets[client.id] || null
-                const creatorHandle = playerUids[client.id]?.handle || sanitizeName(player.name || 'Operative')
+                const creatorIdentity = playerUids[client.id] || {}
+                const creatorHandle = creatorIdentity.handle || sanitizeName(player.name || 'Operative')
+                const creatorUid    = creatorIdentity.uid || null
 
-                // Create the Challenge record first (so we have the shortCode)
+                // Create the Challenge record first (so we have the shortCode).
+                // Identity priority: wallet → TG user → uid (always present once
+                // the client emits registerIdentity on connect).
                 const tgUser = client.tgUser || null
                 const { challenge, deepLink, shareUrl } = await createChallengeRecord({
                     challengerWallet: walletAddress,
                     challengerTgUserId: tgUser?.id || null,
+                    challengerUid: creatorUid,
                     challengerHandle: creatorHandle,
                     opponentHandle: opponentHandle ? String(opponentHandle).slice(0, 32) : null,
                     wager: { amount: wagerAmount, token: String(wagerToken).toUpperCase().slice(0, 5) },

@@ -76,6 +76,7 @@ async function lookupChallengerStats({ wallet, tgUserId, handle }) {
 export async function createChallenge({
     challengerWallet = null,
     challengerTgUserId = null,
+    challengerUid = null,
     challengerHandle,
     opponentHandle = null,
     opponentTgUserId = null,
@@ -83,9 +84,11 @@ export async function createChallenge({
     format = 'BO1',
 }) {
     if (!challengerHandle) throw new Error('challengerHandle required');
-    if (!challengerWallet && !challengerTgUserId) {
-        throw new Error('challengerWallet or challengerTgUserId required');
-    }
+    // Identity is best-effort: wallet → TG user id → uid (any one is fine).
+    // For wagered challenges the socket handler validates wallet auth before
+    // calling this function; for practice challenges we just want *some*
+    // identifier so we can link future actions back. If none arrived,
+    // accept anyway — anonymous challenges are fine for v1.
 
     const shortCode = await generateUniqueShortCode();
     const expiresAt = new Date(Date.now() + DEFAULT_EXPIRES_HOURS * 60 * 60 * 1000);
@@ -94,6 +97,7 @@ export async function createChallenge({
         shortCode,
         challengerWallet,
         challengerTgUserId,
+        challengerUid,
         challengerHandle: challengerHandle.toUpperCase(),
         opponentHandle: opponentHandle || null,
         opponentTgUserId,

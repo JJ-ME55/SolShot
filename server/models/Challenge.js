@@ -25,9 +25,11 @@ const challengeSchema = new mongoose.Schema({
         match: /^[0-9A-F]{5}$/,
     },
 
-    // Challenger identity — at least one of wallet / tgUserId must be set
+    // Challenger identity — at least one of wallet / tgUserId / uid is set
+    // (uid is the anonymous browser-session id from playerUids on the server)
     challengerWallet: { type: String, default: null, index: true },
     challengerTgUserId: { type: Number, default: null, index: true },
+    challengerUid: { type: String, default: null, index: true },
     challengerHandle: { type: String, required: true },
 
     // Opponent — either a specific TG user (direct call-out) or null (open challenge)

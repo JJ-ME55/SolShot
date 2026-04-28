@@ -15,19 +15,20 @@ import HandleModal from './components/HandleModal';
 import { useTelegram } from './telegram/TelegramContext';
 
 // Lazy — split into separate chunks (huge Phaser deps live in BattleScreen/AIPracticeScreen)
-const LobbyScreen      = lazy(() => import('./screens/LobbyScreen'));
-const ShopScreen       = lazy(() => import('./screens/ShopScreen'));
-const BattleScreen     = lazy(() => import('./screens/BattleScreen'));
-const WinScreen        = lazy(() => import('./screens/WinScreen'));
-const LoseScreen       = lazy(() => import('./screens/LoseScreen'));
-const ArmoryScreen     = lazy(() => import('./screens/ArmoryScreen'));
-const PrestigeScreen   = lazy(() => import('./screens/PrestigeScreen'));
-const BarracksScreen   = lazy(() => import('./screens/BarracksScreen'));
-const AIPracticeScreen = lazy(() => import('./screens/AIPracticeScreen'));
-const LoadoutScreen    = lazy(() => import('./screens/LoadoutScreen'));
-const HowToPlayScreen  = lazy(() => import('./screens/HowToPlayScreen'));
-const TermsScreen      = lazy(() => import('./screens/TermsScreen'));
-const PrivacyScreen    = lazy(() => import('./screens/PrivacyScreen'));
+const LobbyScreen          = lazy(() => import('./screens/LobbyScreen'));
+const ShopScreen           = lazy(() => import('./screens/ShopScreen'));
+const BattleScreen         = lazy(() => import('./screens/BattleScreen'));
+const WinScreen            = lazy(() => import('./screens/WinScreen'));
+const LoseScreen           = lazy(() => import('./screens/LoseScreen'));
+const ArmoryScreen         = lazy(() => import('./screens/ArmoryScreen'));
+const PrestigeScreen       = lazy(() => import('./screens/PrestigeScreen'));
+const BarracksScreen       = lazy(() => import('./screens/BarracksScreen'));
+const AIPracticeScreen     = lazy(() => import('./screens/AIPracticeScreen'));
+const LoadoutScreen        = lazy(() => import('./screens/LoadoutScreen'));
+const HowToPlayScreen      = lazy(() => import('./screens/HowToPlayScreen'));
+const TermsScreen          = lazy(() => import('./screens/TermsScreen'));
+const PrivacyScreen        = lazy(() => import('./screens/PrivacyScreen'));
+const ChallengeAcceptScreen = lazy(() => import('./screens/ChallengeAcceptScreen'));
 
 /** Minimal fallback shown while a lazy-loaded screen chunk is fetching. */
 function ScreenFallback() {
@@ -136,6 +137,23 @@ function AppInner() {
       return;
     }
 
+    if (startParam.startsWith('ch_')) {
+      // Challenge accept deep link: ch_<5-char-shortCode>
+      const challengeCode = startParam.slice(3);
+      if (!challengeCode) return;
+      setScreenData({ challengeCode });
+      setScreen('challengeAccept');
+      return;
+    }
+
+    if (startParam === 'challenge_new') {
+      // Challenger landed via /challenge bot command — auto-fire challenge create
+      // in the lobby on mount.
+      setScreenData({ autoCreateChallenge: true });
+      setScreen('lobby');
+      return;
+    }
+
     // Direct screen routing — these are exact-match deep links from bot commands
     const routes = {
       play:        'lobby',
@@ -196,6 +214,7 @@ function AppInner() {
             case 'howtoplay':   return <HowToPlayScreen navigate={navigate} />;
             case 'terms':       return <TermsScreen navigate={navigate} />;
             case 'privacy':     return <PrivacyScreen navigate={navigate} />;
+            case 'challengeAccept': return <ChallengeAcceptScreen navigate={navigate} screenData={screenData} />;
             default:            return <MenuScreen navigate={navigate} />;
           }
         })()}

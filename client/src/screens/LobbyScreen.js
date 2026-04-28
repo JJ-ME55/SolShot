@@ -304,6 +304,11 @@ function LobbyScreen({ navigate }) {
   const [challengeSentTo, setChallengeSentTo] = useState(null);
   const [incomingChallenge, setIncomingChallenge] = useState(null); // { fromSocketId, fromCallsign }
   const [confirmJoin, setConfirmJoin] = useState(null); // { roomId, hostName, mode, format }
+  // Phase 3 — Telegram challenge sharing (Satori card + switchInlineQuery)
+  const [challengeShortCode, setChallengeShortCode] = useState(null);
+  const [challengeDeepLink, setChallengeDeepLink] = useState(null);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const challengeAutoFiredRef = useRef(false);
   const countdownRef = useRef(null);
 
   // CS-04: Use context hook instead of window.solWallet
@@ -375,6 +380,25 @@ function LobbyScreen({ navigate }) {
     }
   }, []);
 
+  /* ── Phase 3 — auto-create challenge if arrived via /challenge bot command ── */
+  useEffect(() => {
+    if (!screenData?.autoCreateChallenge) return;
+    if (challengeAutoFiredRef.current) return;
+    challengeAutoFiredRef.current = true;
+    const sock = window.socket;
+    if (!sock) return;
+    const handle = localStorage.getItem('solshot_handle') || 'OPERATIVE';
+    const fire = () => {
+      sock.emit('createChallengeRoom', {
+        player: { name: handle, color: 0, wager: 0 },
+        format: 'BO1',
+        wagerToken: 'SOL',
+      });
+    };
+    if (sock.connected) fire();
+    else sock.once('connect', fire);
+  }, [screenData]);
+
   /* ── socket: room list ── */
   useSocket('setRooms', (data) => {
     if (data && data.rooms) {
@@ -388,6 +412,16 @@ function LobbyScreen({ navigate }) {
       setWaitingRoomPlayers(data.players);
       setWaitingRoomMax(data.maxPlayers || 2);
     }
+  });
+
+  /* ── Phase 3 — challenge created (from /challenge bot flow) ── */
+  useSocket('challengeCreated', (data) => {
+    if (!data) return;
+    setChallengeShortCode(data.shortCode);
+    setChallengeDeepLink(data.deepLink);
+  });
+  useSocket('challengeCreateError', (data) => {
+    setError(data?.reason || 'Could not create challenge');
   });
 
   /* ── socket: escrow deposit (sign wager before match starts) ── */
@@ -1018,6 +1052,63 @@ function LobbyScreen({ navigate }) {
       </div>
 
       {/* ═══ WAITING OVERLAY (manual room / custom_challenge) ═══ */}
+      {/* Phase 3 — Telegram challenge share panel.
+          Shown when /challenge auto-create has produced a shortCode and the room
+          is still waiting for the opponent to accept. */}
+      {challengeShortCode && challengeDeepLink && waitingRoomPlayers.length < waitingRoomMax && (
+        <div style={{
+          background: 'var(--bg-surface)', border: '1px solid var(--accent)',
+          padding: '14px 16px', margin: '14px auto',
+          clipPath: 'var(--clip-10)',
+          maxWidth: 480,
+        }}>
+          <div style={{
+            fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--accent)',
+            letterSpacing: '0.22em', textAlign: 'center', marginBottom: 8,
+          }}>CHALLENGE · CH-#{challengeShortCode}</div>
+          <div style={{
+            fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--bone)',
+            letterSpacing: '0.05em', textAlign: 'center', marginBottom: 12,
+            wordBreak: 'break-all',
+          }}>{challengeDeepLink.replace('https://', '')}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <button
+              onClick={() => {
+                const tg = window.Telegram?.WebApp;
+                if (tg?.switchInlineQuery) {
+                  tg.switchInlineQuery('ch_' + challengeShortCode, ['users', 'groups']);
+                } else if (navigator.share) {
+                  navigator.share({ title: 'SolShot Challenge', url: challengeDeepLink }).catch(() => {});
+                } else {
+                  window.open('https://t.me/share/url?url=' + encodeURIComponent(challengeDeepLink), '_blank');
+                }
+              }}
+              style={{
+                padding: '10px', background: 'var(--accent)', color: '#0e1209',
+                border: '1px solid var(--accent-hot)', clipPath: 'var(--clip-6)',
+                fontFamily: 'var(--f-display)', fontSize: 11, letterSpacing: '0.18em',
+                cursor: 'pointer', boxShadow: '0 0 12px rgba(218,138,40,0.25)',
+              }}>SEND CARD</button>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(challengeDeepLink)
+                  .then(() => { setLinkCopied(true); setTimeout(() => setLinkCopied(false), 1800); })
+                  .catch(() => {});
+              }}
+              style={{
+                padding: '10px', background: 'transparent', color: 'var(--bone)',
+                border: '1px solid var(--border)', clipPath: 'var(--clip-6)',
+                fontFamily: 'var(--f-display)', fontSize: 11, letterSpacing: '0.18em',
+                cursor: 'pointer',
+              }}>{linkCopied ? '✓ COPIED' : 'COPY LINK'}</button>
+          </div>
+          <div style={{
+            fontFamily: 'var(--f-mono)', fontSize: 9, color: 'var(--olive)',
+            letterSpacing: '0.22em', textAlign: 'center', marginTop: 10,
+          }}>WAITING FOR OPPONENT</div>
+        </div>
+      )}
+
       {waiting && (
         <div style={s.waitingOverlay}>
           <div style={s.waitingText}>

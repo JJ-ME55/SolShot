@@ -14,6 +14,12 @@ import { initEscrow } from './services/escrow.js';
 import { requireAdminKey } from './middleware/guards.js';
 import { telegramSocketMiddleware } from './middleware/telegram.js';
 import { initBot, setupBotWebhook, stopBot } from './services/bot.js';
+import {
+    createChallenge,
+    getChallenge,
+    renderCardForChallenge,
+    cancelChallenge,
+} from './services/challenge/challenge.js';
 
 dotenv.config()
 
@@ -183,6 +189,103 @@ app.post('/api/csp-report', express.json({ type: 'application/csp-report' }), (r
         document: report['document-uri'],
     }));
     res.status(204).end();
+});
+
+// ─── Challenge endpoints (Phase 3 — Telegram Mini App) ───────────────────
+//
+// POST /api/challenge       — create a new challenge, returns { shortCode, deepLink, shareUrl }
+// GET  /api/challenge/:code — fetch challenge details (for Mini App accept screen)
+// GET  /api/challenge/:code/card.png — render the Satori card as PNG
+// POST /api/challenge/:code/cancel — challenger withdraws
+
+app.post('/api/challenge', async (req, res) => {
+    try {
+        const {
+            challengerWallet,
+            challengerTgUserId,
+            challengerHandle,
+            opponentHandle,
+            opponentTgUserId,
+            wager,
+            format,
+        } = req.body || {};
+
+        if (!challengerHandle) {
+            return res.status(400).json({ error: 'challengerHandle required' });
+        }
+        if (!challengerWallet && !challengerTgUserId) {
+            return res.status(400).json({ error: 'challengerWallet or challengerTgUserId required' });
+        }
+
+        const result = await createChallenge({
+            challengerWallet,
+            challengerTgUserId,
+            challengerHandle,
+            opponentHandle,
+            opponentTgUserId,
+            wager,
+            format,
+        });
+        res.status(201).json({
+            shortCode: result.challenge.shortCode,
+            deepLink: result.deepLink,
+            shareUrl: result.shareUrl,
+            expiresAt: result.challenge.expiresAt,
+        });
+    } catch (err) {
+        console.error('[POST /api/challenge]', err.message);
+        res.status(500).json({ error: 'failed to create challenge' });
+    }
+});
+
+app.get('/api/challenge/:code', async (req, res) => {
+    try {
+        const challenge = await getChallenge(req.params.code);
+        if (!challenge) return res.status(404).json({ error: 'not_found' });
+        // Hide internal IDs from public response
+        res.json({
+            shortCode: challenge.shortCode,
+            challengerHandle: challenge.challengerHandle,
+            opponentHandle: challenge.opponentHandle,
+            wager: challenge.wager,
+            format: challenge.format,
+            status: challenge.status,
+            roomId: challenge.roomId,
+            createdAt: challenge.createdAt,
+            expiresAt: challenge.expiresAt,
+        });
+    } catch (err) {
+        console.error('[GET /api/challenge/:code]', err.message);
+        res.status(500).json({ error: 'failed to fetch challenge' });
+    }
+});
+
+app.get('/api/challenge/:code/card.png', async (req, res) => {
+    try {
+        const challenge = await getChallenge(req.params.code);
+        if (!challenge) return res.status(404).end();
+        const png = await renderCardForChallenge(challenge);
+        res.set({
+            'Content-Type': 'image/png',
+            'Cache-Control': 'public, max-age=60',
+            'Content-Length': png.length,
+        });
+        res.send(png);
+    } catch (err) {
+        console.error('[GET /api/challenge/:code/card.png]', err.message);
+        res.status(500).end();
+    }
+});
+
+app.post('/api/challenge/:code/cancel', async (req, res) => {
+    try {
+        const challenge = await cancelChallenge(req.params.code);
+        if (!challenge) return res.status(404).json({ error: 'not_found_or_already_closed' });
+        res.json({ ok: true });
+    } catch (err) {
+        console.error('[POST /api/challenge/:code/cancel]', err.message);
+        res.status(500).json({ error: 'failed to cancel' });
+    }
 });
 
 // Connect to MongoDB then start server

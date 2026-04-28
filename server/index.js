@@ -13,6 +13,7 @@ import { initKeys } from './services/keys.js';
 import { initEscrow } from './services/escrow.js';
 import { requireAdminKey } from './middleware/guards.js';
 import { telegramSocketMiddleware } from './middleware/telegram.js';
+import { initBot, setupBotWebhook, stopBot } from './services/bot.js';
 
 dotenv.config()
 
@@ -187,6 +188,9 @@ app.post('/api/csp-report', express.json({ type: 'application/csp-report' }), (r
 // Connect to MongoDB then start server
 const MONGODB_URI = process.env.MONGODB_URI;
 
+// Initialise Telegram bot (no-op if TELEGRAM_BOT_TOKEN not set)
+initBot();
+
 if (MONGODB_URI) {
     mongoose.connect(MONGODB_URI)
         .then(async () => {
@@ -197,6 +201,7 @@ if (MONGODB_URI) {
                 console.error('[FATAL] initShotState failed — cannot start with unknown emission state:', err.message);
                 process.exit(1);
             }
+            await setupBotWebhook(app);
             server.listen(PORT, '0.0.0.0', function () {
                 console.log(`SolShot server listening on 0.0.0.0:${PORT}`);
             });
@@ -207,10 +212,16 @@ if (MONGODB_URI) {
         });
 } else {
     console.warn('MONGODB_URI not set — running without database');
-    server.listen(PORT, '0.0.0.0', function () {
-        console.log(`SolShot server listening on 0.0.0.0:${PORT} (no DB)`);
+    setupBotWebhook(app).then(() => {
+        server.listen(PORT, '0.0.0.0', function () {
+            console.log(`SolShot server listening on 0.0.0.0:${PORT} (no DB)`);
+        });
     });
 }
+
+// Graceful shutdown — stop bot polling/webhook before exit
+process.once('SIGINT', () => stopBot());
+process.once('SIGTERM', () => stopBot());
 
 // KM-05: SIGHUP-triggered credential reload
 process.on('SIGHUP', () => {

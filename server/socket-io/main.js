@@ -742,7 +742,7 @@ const mainsocket = (io) => {
         // Pick weapon and aim
         const inventory = weaponInventories[roomId]?.[AI_SOCKET_ID] || [0];
         const weaponId = pickWeapon(inventory, aiSlot.pos, humanSlot.pos, room.heightmap);
-        const { angle, power } = calculateAim(roomId, aiSlot.pos, humanSlot.pos, room.wind || 0, weaponId);
+        const { angle, power } = calculateAim(roomId, aiSlot.pos, humanSlot.pos, room.wind || 0, weaponId, room.heightmap);
 
         // Consume weapon (not Single Shot)
         if (weaponId !== 0) {
@@ -3550,12 +3550,15 @@ const mainsocket = (io) => {
                         }
 
                         // Delay matchEnd emit so client can animate the killing blow
-                        // Transform scores to client format: { [id]: { damageDealt, kills } }
+                        // Transform scores to client format: { [id]: { damageDealt, kills, weaponDamage, weaponShots, weaponHits } }
                         const formattedScores = {}
                         for (const pid of ms.players) {
                             formattedScores[pid] = {
                                 damageDealt: ms.scores[pid] || 0,
-                                kills: ms.kills[pid] || 0
+                                kills: ms.kills[pid] || 0,
+                                weaponDamage: ms.weaponDamage?.[pid] || {},
+                                weaponShots: ms.weaponShotsFired?.[pid] || {},
+                                weaponHits: ms.weaponHits?.[pid] || {},
                             }
                         }
                         const matchEndPayload = {

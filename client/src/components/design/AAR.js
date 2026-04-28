@@ -4,8 +4,31 @@ import Modal from '../Modal';
 import TrophyShareOverlay from '../TrophyShareOverlay';
 import TelegramShare from '../TelegramShare';
 import { useTelegram } from '../../telegram/TelegramContext';
+import { getWeaponById } from '../../data/weapons';
 
 const ordinal = (n) => n === 1 ? '1st' : n === 2 ? '2nd' : n === 3 ? '3rd' : n + 'th';
+
+/**
+ * Find the MVP weapon for a player from their per-match weaponDamage map.
+ * Returns the weapon name (uppercase) or 'CLASSIFIED' if no data.
+ */
+function computeMvpWeapon(weaponDamage) {
+  if (!weaponDamage || typeof weaponDamage !== 'object') return 'CLASSIFIED';
+  let bestId = null;
+  let bestDmg = 0;
+  for (const [id, dmg] of Object.entries(weaponDamage)) {
+    if (dmg > bestDmg) { bestDmg = dmg; bestId = id; }
+  }
+  if (!bestId) return 'CLASSIFIED';
+  const wep = getWeaponById(Number(bestId));
+  return (wep?.name || 'CLASSIFIED').toUpperCase();
+}
+
+/** Sum a weapon-keyed map of numbers. */
+function sumWeaponMap(map) {
+  if (!map || typeof map !== 'object') return 0;
+  return Object.values(map).reduce((a, b) => a + (Number(b) || 0), 0);
+}
 
 /*
   Shared After Action Report layout for Win and Lose screens.
@@ -297,36 +320,37 @@ export default function AARScreen({ navigate, screenData, isWin }) {
           onClose={handleLobby} />
       )}
 
-      {showCard && (
-        <TrophyShareOverlay
-          isWin={isWin}
-          winner={isWin
-            ? {
-                callsign: (myName || 'OPERATIVE').toUpperCase(),
-                damage: myDmg,
-                accuracy: 0,
-                shots: 0,
-                best: (playerStats?.signatureWeapon || 'CLASSIFIED').toUpperCase(),
-              }
-            : {
-                callsign: (oppName || 'UNKNOWN').toUpperCase(),
-                damage: oppDmg,
-                accuracy: 0,
-                shots: 0,
-                best: 'CLASSIFIED',
-              }
-          }
-          loser={isWin
-            ? { callsign: (oppName || 'UNKNOWN').toUpperCase() }
-            : { callsign: (myName || 'OPERATIVE').toUpperCase() }
-          }
-          score={`${myRoundWins} – ${oppRoundWins}`}
-          matchId={`M-#${(screenData?.matchId || 'UNKNOWN').toString().slice(0, 5).toUpperCase()}`}
-          terrain={(screenData?.terrain || 'CLASSIFIED').toUpperCase()}
-          duration={screenData?.duration || '00:00'}
-          onClose={() => setShowCard(false)}
-        />
-      )}
+      {showCard && (() => {
+        // Compute per-match MVP weapon + accuracy from weaponDamage / weaponShots / weaponHits
+        const myScore = myId && scores[myId] ? scores[myId] : {};
+        const oppScore = opponentId && scores[opponentId] ? scores[opponentId] : {};
+        const myShots = sumWeaponMap(myScore.weaponShots);
+        const myHits = sumWeaponMap(myScore.weaponHits);
+        const myAcc = myShots > 0 ? Math.round((myHits / myShots) * 100) : 0;
+        const oppShots = sumWeaponMap(oppScore.weaponShots);
+        const oppHits = sumWeaponMap(oppScore.weaponHits);
+        const oppAcc = oppShots > 0 ? Math.round((oppHits / oppShots) * 100) : 0;
+        const myMvp = computeMvpWeapon(myScore.weaponDamage);
+        const oppMvp = computeMvpWeapon(oppScore.weaponDamage);
+        return (
+          <TrophyShareOverlay
+            isWin={isWin}
+            winner={isWin
+              ? { callsign: (myName || 'OPERATIVE').toUpperCase(), damage: myDmg, accuracy: myAcc, shots: myShots, best: myMvp }
+              : { callsign: (oppName || 'UNKNOWN').toUpperCase(), damage: oppDmg, accuracy: oppAcc, shots: oppShots, best: oppMvp }
+            }
+            loser={isWin
+              ? { callsign: (oppName || 'UNKNOWN').toUpperCase() }
+              : { callsign: (myName || 'OPERATIVE').toUpperCase() }
+            }
+            score={`${myRoundWins} – ${oppRoundWins}`}
+            matchId={`M-#${(screenData?.matchId || 'UNKNOWN').toString().slice(0, 5).toUpperCase()}`}
+            terrain={(screenData?.terrain || 'CLASSIFIED').toUpperCase()}
+            duration={screenData?.duration || '00:00'}
+            onClose={() => setShowCard(false)}
+          />
+        );
+      })()}
     </div>
   );
 }

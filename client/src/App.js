@@ -182,6 +182,17 @@ function AppInner() {
     setScreen(nextScreen);
   }, []);
 
+  // Loading-screen-specific navigate. Functional setState reads the LATEST
+  // screen value, so if a deep-link useEffect (startParam) has already moved
+  // us off 'loading', we don't override it with 'menu'.
+  const navigateFromLoading = useCallback((nextScreen, data = {}) => {
+    setScreen((curr) => {
+      if (curr !== 'loading') return curr; // deep link already routed — preserve it
+      setScreenData({ ...data });
+      return nextScreen;
+    });
+  }, []);
+
   // Reconnect/rejoin disabled for P1 launch — causes more issues than it solves
 
   // Telegram native back button integration
@@ -193,7 +204,7 @@ function AppInner() {
 
   const renderScreen = () => {
     // Eager screens render directly (no Suspense overhead).
-    if (screen === 'loading') return <LoadingScreen navigate={navigate} />;
+    if (screen === 'loading') return <LoadingScreen navigate={navigateFromLoading} />;
     if (screen === 'menu')    return <MenuScreen navigate={navigate} />;
 
     // All other screens are code-split — wrap in Suspense.

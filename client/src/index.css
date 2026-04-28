@@ -184,6 +184,14 @@ body::after {
   align-items: center;
   justify-content: center;
   background: linear-gradient(135deg, var(--bg-deep), var(--bg-surface) 40%, var(--bg-deep));
+  /* iPhone Dynamic Island / notch / home indicator safe areas.
+     Requires viewport-fit=cover in the <meta viewport> tag in index.html. */
+  padding-top:    env(safe-area-inset-top, 0);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+  padding-left:   env(safe-area-inset-left, 0);
+  padding-right:  env(safe-area-inset-right, 0);
+  /* Solid bg behind the safe-area gutters so the gradient doesn't peek */
+  box-sizing: border-box;
 }
 
 /* ── Canvas (Phaser) ── */

@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+#
+# SolShot pre-push hook
+# ─────────────────────
+# Refuses pushes to `main` or `launch` from any local branch other than
+# itself. Designed to protect the live demo (main) and full-build branch
+# (launch) from accidental contamination during sandbox work.
+#
+# Install with:
+#   git config core.hooksPath .githooks
+#
+# To bypass intentionally (rare): `git push --no-verify`. Don't.
+
+PROTECTED_BRANCHES="main launch"
+
+remote="$1"
+url="$2"
+
+# Read the refs being pushed from stdin (one line per ref).
+# Format: <local-ref> <local-sha> <remote-ref> <remote-sha>
+while read -r local_ref local_sha remote_ref remote_sha; do
+    # Extract just the branch name from refs/heads/<name>
+    target_branch="${remote_ref#refs/heads/}"
+
+    for protected in $PROTECTED_BRANCHES; do
+        if [ "$target_branch" = "$protected" ]; then
+            echo ""
+            echo "🚫  pre-push: refusing to push to protected branch '$protected'"
+            echo ""
+            echo "    You are working on the sandbox/fishyboy branch (or another"
+            echo "    non-mainline branch). Pushes to 'main' or 'launch' are blocked"
+            echo "    to protect the live demo and full-build state."
+            echo ""
+            echo "    If you intentionally want to push there:"
+            echo "      1. Coordinate with John in Docs/CLAUDE_COMMS.md first"
+            echo "      2. Bypass with 'git push --no-verify' (only after agreement)"
+            echo ""
+            exit 1
+        fi
+    done
+done
+
+exit 0

@@ -1,5 +1,5 @@
 import './styles/tokens.css';
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, Suspense, lazy } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { socket } from './socket/index';
 import './utils/haptic';
@@ -8,23 +8,45 @@ import { SolShotWalletProvider } from './wallet/WalletContext';
 import { TelegramProvider } from './telegram/TelegramContext';
 import useTelegramBackButton from './telegram/useTelegramBackButton';
 import Layout from './components/Layout';
+// Eager — always reachable, no benefit to splitting
 import LoadingScreen from './screens/LoadingScreen';
 import MenuScreen from './screens/MenuScreen';
-import LobbyScreen from './screens/LobbyScreen';
-import ShopScreen from './screens/ShopScreen';
-import BattleScreen from './screens/BattleScreen';
-import WinScreen from './screens/WinScreen';
-import LoseScreen from './screens/LoseScreen';
-import ArmoryScreen from './screens/ArmoryScreen';
-import PrestigeScreen from './screens/PrestigeScreen';
-import BarracksScreen from './screens/BarracksScreen';
-import AIPracticeScreen from './screens/AIPracticeScreen';
-import LoadoutScreen from './screens/LoadoutScreen';
-import HowToPlayScreen from './screens/HowToPlayScreen';
-import TermsScreen from './screens/TermsScreen';
-import PrivacyScreen from './screens/PrivacyScreen';
 import HandleModal from './components/HandleModal';
 import { useTelegram } from './telegram/TelegramContext';
+
+// Lazy — split into separate chunks (huge Phaser deps live in BattleScreen/AIPracticeScreen)
+const LobbyScreen      = lazy(() => import('./screens/LobbyScreen'));
+const ShopScreen       = lazy(() => import('./screens/ShopScreen'));
+const BattleScreen     = lazy(() => import('./screens/BattleScreen'));
+const WinScreen        = lazy(() => import('./screens/WinScreen'));
+const LoseScreen       = lazy(() => import('./screens/LoseScreen'));
+const ArmoryScreen     = lazy(() => import('./screens/ArmoryScreen'));
+const PrestigeScreen   = lazy(() => import('./screens/PrestigeScreen'));
+const BarracksScreen   = lazy(() => import('./screens/BarracksScreen'));
+const AIPracticeScreen = lazy(() => import('./screens/AIPracticeScreen'));
+const LoadoutScreen    = lazy(() => import('./screens/LoadoutScreen'));
+const HowToPlayScreen  = lazy(() => import('./screens/HowToPlayScreen'));
+const TermsScreen      = lazy(() => import('./screens/TermsScreen'));
+const PrivacyScreen    = lazy(() => import('./screens/PrivacyScreen'));
+
+/** Minimal fallback shown while a lazy-loaded screen chunk is fetching. */
+function ScreenFallback() {
+  return (
+    <div style={{
+      minHeight: '100vh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: 'var(--bg-deep, #0e1209)',
+      fontFamily: 'var(--f-mono)',
+      fontSize: 11,
+      color: 'var(--olive, #7a9060)',
+      letterSpacing: '0.22em',
+    }}>
+      LOADING...
+    </div>
+  );
+}
 
 // A8: Socket bridge for Phaser scenes — non-enumerable to reduce XSS discovery surface
 Object.defineProperty(window, 'socket', {
@@ -119,40 +141,33 @@ function AppInner() {
   useTelegramBackButton(screen, handleTelegramBack);
 
   const renderScreen = () => {
-    switch (screen) {
-      case 'loading':
-        return <LoadingScreen navigate={navigate} />;
-      case 'menu':
-        return <MenuScreen navigate={navigate} />;
-      case 'lobby':
-        return <LobbyScreen navigate={navigate} screenData={screenData} />;
-      case 'shop':
-        return <ShopScreen navigate={navigate} screenData={screenData} />;
-      case 'battle':
-        return <BattleScreen navigate={navigate} screenData={screenData} />;
-      case 'win':
-        return <WinScreen navigate={navigate} screenData={screenData} />;
-      case 'lose':
-        return <LoseScreen navigate={navigate} screenData={screenData} />;
-      case 'armory':
-        return <ArmoryScreen navigate={navigate} />;
-      case 'prestige':
-        return <PrestigeScreen navigate={navigate} />;
-      case 'barracks':
-        return <BarracksScreen navigate={navigate} />;
-      case 'ai-practice':
-        return <AIPracticeScreen navigate={navigate} />;
-      case 'loadout':
-        return <LoadoutScreen navigate={navigate} />;
-      case 'howtoplay':
-        return <HowToPlayScreen navigate={navigate} />;
-      case 'terms':
-        return <TermsScreen navigate={navigate} />;
-      case 'privacy':
-        return <PrivacyScreen navigate={navigate} />;
-      default:
-        return <MenuScreen navigate={navigate} />;
-    }
+    // Eager screens render directly (no Suspense overhead).
+    if (screen === 'loading') return <LoadingScreen navigate={navigate} />;
+    if (screen === 'menu')    return <MenuScreen navigate={navigate} />;
+
+    // All other screens are code-split — wrap in Suspense.
+    return (
+      <Suspense fallback={<ScreenFallback />}>
+        {(() => {
+          switch (screen) {
+            case 'lobby':       return <LobbyScreen navigate={navigate} screenData={screenData} />;
+            case 'shop':        return <ShopScreen navigate={navigate} screenData={screenData} />;
+            case 'battle':      return <BattleScreen navigate={navigate} screenData={screenData} />;
+            case 'win':         return <WinScreen navigate={navigate} screenData={screenData} />;
+            case 'lose':        return <LoseScreen navigate={navigate} screenData={screenData} />;
+            case 'armory':      return <ArmoryScreen navigate={navigate} />;
+            case 'prestige':    return <PrestigeScreen navigate={navigate} />;
+            case 'barracks':    return <BarracksScreen navigate={navigate} />;
+            case 'ai-practice': return <AIPracticeScreen navigate={navigate} />;
+            case 'loadout':     return <LoadoutScreen navigate={navigate} />;
+            case 'howtoplay':   return <HowToPlayScreen navigate={navigate} />;
+            case 'terms':       return <TermsScreen navigate={navigate} />;
+            case 'privacy':     return <PrivacyScreen navigate={navigate} />;
+            default:            return <MenuScreen navigate={navigate} />;
+          }
+        })()}
+      </Suspense>
+    );
   };
 
   return (

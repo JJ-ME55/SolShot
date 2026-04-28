@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import useSocket from '../../hooks/useSocket';
 import Modal from '../Modal';
-import StatCard from '../StatCard';
+import TrophyShareOverlay from '../TrophyShareOverlay';
 import TelegramShare from '../TelegramShare';
 import { useTelegram } from '../../telegram/TelegramContext';
 
@@ -69,12 +69,17 @@ export default function AARScreen({ navigate, screenData, isWin }) {
   const stampText = isWin ? '★ CONFIRMED KILL ★' : '✕ MATCH LOST ✕';
   const verdict = isWin ? 'VICTOR' : 'DEFEATED';
 
+  const [copyOk, setCopyOk] = useState(false);
   const copyResult = () => {
-    const sig = playerStats?.signatureWeapon || 'CLASSIFIED';
+    const sig = (playerStats?.signatureWeapon || 'CLASSIFIED').toUpperCase();
+    const result = isWin ? 'VICTORY' : 'DEFEAT';
+    const score = `${myRoundWins}-${oppRoundWins}`;
     const text = isWin
-      ? `Just beat ${oppName} on SolShot 🎯\n${myDmg} damage dealt. ${sig} main.\nsolshot.gg`
-      : `Lost to ${oppName} on SolShot 💥\n${myDmg} damage dealt. ${sig} main.\nsolshot.gg`;
-    navigator.clipboard.writeText(text).catch(() => {});
+      ? `${result} · ${myName.toUpperCase()} ${score} ${oppName.toUpperCase()} · ${myDmg} DMG · ${sig} · solshot.gg`
+      : `${result} · ${myName.toUpperCase()} ${score} ${oppName.toUpperCase()} · ${myDmg} DMG · ${sig} · solshot.gg`;
+    navigator.clipboard.writeText(text)
+      .then(() => { setCopyOk(true); setTimeout(() => setCopyOk(false), 1800); })
+      .catch(() => {});
   };
 
   const totalRounds = screenData?.totalRounds || (myRoundWins + oppRoundWins);
@@ -260,12 +265,14 @@ export default function AARScreen({ navigate, screenData, isWin }) {
         )}
 
         {/* Actions */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 16 }}>
-          <button onClick={copyResult} style={aarBtnSecondary}>COPY RESULT</button>
-          <button onClick={() => setShowCard(true)} style={aarBtnSecondary}>EXPORT CARD</button>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginBottom: 12 }}>
+          <button onClick={copyResult} style={aarBtnSecondary}>
+            {copyOk ? '✓ COPIED' : 'COPY RESULT'}
+          </button>
+          <button onClick={() => setShowCard(true)} style={aarBtnAccent}>EXPORT CARD</button>
           <button onClick={() => navigate('barracks')} style={aarBtnSecondary}>BARRACKS</button>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginBottom: 16 }}>
           <button onClick={handlePlayAgain} style={aarBtnPrimary}>PLAY AGAIN</button>
           <button onClick={handleMenu} style={aarBtnSecondary}>EXIT</button>
         </div>
@@ -290,17 +297,33 @@ export default function AARScreen({ navigate, screenData, isWin }) {
           onClose={handleLobby} />
       )}
 
-      {showCard && playerStats && (
-        <StatCard
-          player={{
-            callsign: playerStats.handle || playerStats.callsign || 'OPERATIVE',
-            wins: playerStats.wins || 0,
-            losses: playerStats.losses || 0,
-            totalDamage: playerStats.totalDamage || 0,
-            bestWinStreak: playerStats.bestWinStreak || 0,
-            matchesPlayed: playerStats.matchesPlayed || 0,
-            signatureWeapon: playerStats.signatureWeapon || null,
-          }}
+      {showCard && (
+        <TrophyShareOverlay
+          isWin={isWin}
+          winner={isWin
+            ? {
+                callsign: (myName || 'OPERATIVE').toUpperCase(),
+                damage: myDmg,
+                accuracy: 0,
+                shots: 0,
+                best: (playerStats?.signatureWeapon || 'CLASSIFIED').toUpperCase(),
+              }
+            : {
+                callsign: (oppName || 'UNKNOWN').toUpperCase(),
+                damage: oppDmg,
+                accuracy: 0,
+                shots: 0,
+                best: 'CLASSIFIED',
+              }
+          }
+          loser={isWin
+            ? { callsign: (oppName || 'UNKNOWN').toUpperCase() }
+            : { callsign: (myName || 'OPERATIVE').toUpperCase() }
+          }
+          score={`${myRoundWins} – ${oppRoundWins}`}
+          matchId={`M-#${(screenData?.matchId || 'UNKNOWN').toString().slice(0, 5).toUpperCase()}`}
+          terrain={(screenData?.terrain || 'CLASSIFIED').toUpperCase()}
+          duration={screenData?.duration || '00:00'}
           onClose={() => setShowCard(false)}
         />
       )}
@@ -335,11 +358,17 @@ function StatBar({ label, a, b, max }) {
 }
 
 const aarBtnPrimary = {
-  padding: '14px', background: 'var(--accent)', color: '#0e1209',
+  padding: '14px 12px', background: 'var(--accent)', color: '#0e1209',
   border: '1px solid var(--accent-hot)', clipPath: 'var(--clip-6)',
   fontFamily: 'var(--f-display)', fontSize: 13, letterSpacing: '0.18em',
   cursor: 'pointer',
   boxShadow: '0 0 14px rgba(218,138,40,0.2)',
+};
+const aarBtnAccent = {
+  padding: '12px', background: 'rgba(218,138,40,0.10)', color: 'var(--accent)',
+  border: '1px solid var(--accent)', clipPath: 'var(--clip-6)',
+  fontFamily: 'var(--f-display)', fontSize: 12, letterSpacing: '0.18em',
+  cursor: 'pointer',
 };
 const aarBtnSecondary = {
   padding: '12px', background: 'transparent', color: 'var(--bone)',

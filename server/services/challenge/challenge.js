@@ -14,6 +14,10 @@ import { renderChallengeCardPng, shortInitials, formatCountdown } from './render
 const DEFAULT_EXPIRES_HOURS = 24;
 const SHORTCODE_BYTES = 3; // 6 hex chars; we slice to 5 for cleaner aesthetics
 
+// Mini App base URL — must match the BotFather-registered short_name (`play`).
+// Override via MINI_APP_URL env if the short_name ever changes.
+const MINI_APP_URL = process.env.MINI_APP_URL || 'https://t.me/SolShotGG_bot/play';
+
 /**
  * Generate a unique 5-char uppercase hex short code.
  * Retries up to 5 times on collision (extremely unlikely at our scale).
@@ -102,7 +106,7 @@ export async function createChallenge({
         expiresAt,
     });
 
-    const deepLink = `https://t.me/SolShotGG_bot/solshot?startapp=ch_${shortCode}`;
+    const deepLink = `${MINI_APP_URL}?startapp=ch_${shortCode}`;
     const shareUrl = `https://solshot.gg/c/${shortCode}`;
 
     return { challenge: challenge.toObject(), deepLink, shareUrl };

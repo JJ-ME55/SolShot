@@ -49,6 +49,8 @@ export function initAI(roomId) {
     errorFactor: 1.0,
     lastTargetX: null,
     lastTargetY: null,
+    lastSelfX: null,
+    lastSelfY: null,
     shotCount: 0,
   };
 }
@@ -152,11 +154,11 @@ export function pickWeapon(inventory, aiPos, targetPos, terrain) {
  * @param {number} weaponId
  * @returns {{ angle: number, power: number }}
  */
-export function calculateAim(roomId, aiPos, targetPos, wind, weaponId) {
+export function calculateAim(roomId, aiPos, targetPos, wind, weaponId, terrain) {
   const cal = calibration[roomId];
   if (!cal) {
     initAI(roomId);
-    return calculateAim(roomId, aiPos, targetPos, wind, weaponId);
+    return calculateAim(roomId, aiPos, targetPos, wind, weaponId, terrain);
   }
 
   const wep = WEAPON_DATA[weaponId] || WEAPON_DATA[0];
@@ -173,14 +175,46 @@ export function calculateAim(roomId, aiPos, targetPos, wind, weaponId) {
   cal.lastTargetX = targetPos.x;
   cal.lastTargetY = targetPos.y;
 
+  // --- Recalibration: if SELF moved significantly (took a hit, fell into a crater),
+  //     the previous shot's calibration is no longer valid. Reset more aggressively. ---
+  if (cal.lastSelfX !== null && cal.lastSelfY !== null) {
+    const selfMovedX = Math.abs(aiPos.x - cal.lastSelfX);
+    const selfMovedY = Math.abs(aiPos.y - cal.lastSelfY);
+    if (selfMovedX > 20 || selfMovedY > 15) {
+      // Bot was knocked around — need to re-aim from fresh.
+      cal.errorFactor = Math.min(1.0, cal.errorFactor + 0.4 + Math.random() * 0.2);
+      cal.shotCount = Math.max(0, cal.shotCount - 3);
+    }
+  }
+  cal.lastSelfX = aiPos.x;
+  cal.lastSelfY = aiPos.y;
+
   // --- Calculate "perfect" aim ---
   // Slider convention: 0° = flat LEFT, 90° = UP, 180° = flat RIGHT
+  // Coordinate system: lower Y = higher on screen (target above bot → dy < 0)
   const dx = targetPos.x - aiPos.x;
+  const dy = targetPos.y - aiPos.y;
   const horizontalDist = Math.abs(dx);
 
   // Loft angle from horizontal: 30-50° depending on distance
   // Closer targets need steeper arc, farther need flatter
-  const loftDeg = Math.max(30, Math.min(50, 45 - horizontalDist * 0.01));
+  let loftDeg = Math.max(30, Math.min(50, 45 - horizontalDist * 0.01));
+
+  // --- Terrain peak clearance ---
+  // Check if there's terrain higher than aiPos on the path to target.
+  // If so, the loft must be steep enough to clear it — bump up loft proportionally.
+  if (terrain && terrain.length > 0) {
+    const peakHeight = findPeakBetween(aiPos, targetPos, terrain);
+    if (peakHeight !== null) {
+      // peak above bot's position by this much (positive value = peak is higher)
+      const peakRise = aiPos.y - peakHeight;
+      if (peakRise > 30) {
+        // Need to clear the peak. Steeper loft (closer to 60-65°)
+        const extraLoft = Math.min(20, peakRise / 8);
+        loftDeg = Math.min(65, loftDeg + extraLoft);
+      }
+    }
+  }
 
   // Convert loft to slider degrees:
   // Shooting LEFT (dx < 0): slider angle = 90 - loft (toward 0° = flat left)
@@ -200,8 +234,20 @@ export function calculateAim(roomId, aiPos, targetPos, wind, weaponId) {
   const loftRad = loftDeg * Math.PI / 180;
   const sinFactor = Math.sin(2 * loftRad);
   // Use horizontal distance as range, add ~10% to overshoot slightly (gravity eats range)
-  const effectiveRange = horizontalDist * 1.1;
-  let perfectPower = Math.sqrt(effectiveRange * GRAVITY / Math.max(0.1, sinFactor)) / POWER_FACTOR;
+  let effectiveRange = horizontalDist * 1.1;
+
+  // Vertical compensation: if target is higher (dy < 0 in screen coords),
+  // we need MORE range to land short of overshooting, OR more power to climb.
+  // Simple heuristic: add range proportional to height differential.
+  // dy < 0 = target above us → fire farther (needs more power to gain altitude)
+  // dy > 0 = target below us → fire shorter (gravity helps)
+  if (dy < 0) {
+    effectiveRange += Math.abs(dy) * 1.5; // climbing — pump power
+  } else if (dy > 30) {
+    effectiveRange -= Math.min(horizontalDist * 0.2, dy * 0.6); // shooting downhill
+  }
+
+  let perfectPower = Math.sqrt(Math.max(50, effectiveRange) * GRAVITY / Math.max(0.1, sinFactor)) / POWER_FACTOR;
   perfectPower = Math.max(15, Math.min(95, perfectPower));
 
   // --- Wind compensation (~60%) ---
@@ -308,6 +354,34 @@ export function autoBuyWeapons(goldBudget) {
 // ============================================================
 // Private helpers
 // ============================================================
+
+/**
+ * Find the highest peak in the terrain between two x-positions.
+ * Returns the surface Y of the highest peak (smallest Y value), or null if no terrain.
+ * Skips the immediate vicinity of `from` and `to` so the bot's own footing
+ * doesn't trigger spurious peak-clearance.
+ *
+ * @param {{ x: number, y: number }} from
+ * @param {{ x: number, y: number }} to
+ * @param {number[]} terrain - Terrain height array (index = x, value = surface y)
+ * @returns {number|null} Peak Y (lowest value = highest on screen)
+ */
+function findPeakBetween(from, to, terrain) {
+  if (!terrain || terrain.length === 0) return null;
+  const startX = Math.max(0, Math.min(from.x, to.x));
+  const endX = Math.min(terrain.length - 1, Math.max(from.x, to.x));
+  if (endX - startX < 40) return null;
+  // Skip 30px around each endpoint so the bot's own ledge doesn't count.
+  const sampleStart = Math.floor(startX + 30);
+  const sampleEnd = Math.ceil(endX - 30);
+  if (sampleEnd <= sampleStart) return null;
+  let peak = Infinity; // smaller Y = higher peak
+  for (let x = sampleStart; x <= sampleEnd; x += 4) {
+    const y = terrain[x];
+    if (typeof y === 'number' && y < peak) peak = y;
+  }
+  return peak === Infinity ? null : peak;
+}
 
 /**
  * Rough line-of-sight check between two positions.

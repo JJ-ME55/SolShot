@@ -54,6 +54,26 @@ const F = {
 export const TROPHY_CARD_W = 1080;
 export const TROPHY_CARD_H = 608;
 
+/**
+ * Recommended callsign length: 1-15 chars.
+ * 16+ chars truncates with ellipsis. Anything over ~12 starts to look weak.
+ *
+ * Card layout: callsign block has 734px available width (1080 - 290 left - 56 right).
+ * Black Ops One is wide; each character is roughly 0.78× the font size at letter-spacing 0.02em.
+ * Scale font down so the text always fits without truncation up to 15 chars.
+ */
+function callsignFontSize(name) {
+  const len = (name || '').length;
+  if (len <= 7)  return 110; // full hero size — "VIPER-12", "GRIZZLY"
+  if (len <= 9)  return 92;  // "BANANAGUN", "GRIZZLY-7"
+  if (len <= 11) return 78;  // "GRIZZLY-07X"
+  if (len <= 13) return 66;
+  if (len <= 15) return 56;
+  return 48; // 16+ — falls back to ellipsis at this size
+}
+
+export const MAX_CALLSIGN_LENGTH = 15;
+
 export default function TrophyShareCard({
   winner,
   loser,
@@ -64,6 +84,7 @@ export default function TrophyShareCard({
 }) {
   const w = TROPHY_CARD_W;
   const h = TROPHY_CARD_H;
+  const callsignSize = callsignFontSize(winner?.callsign);
 
   return (
     <div style={{
@@ -147,10 +168,10 @@ export default function TrophyShareCard({
           color: 'rgba(255,255,255,0.7)', marginBottom: 8,
         }}>OPERATIVE</div>
         <div style={{
-          fontFamily: F.display, fontSize: 110, lineHeight: 0.9,
+          fontFamily: F.display, fontSize: callsignSize, lineHeight: 0.9,
           color: C.bone, letterSpacing: '0.02em',
           textShadow: '0 4px 0 rgba(0,0,0,0.4)',
-          // Truncate gracefully if a callsign is too long
+          // Truncate gracefully if a callsign is over MAX_CALLSIGN_LENGTH
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         }}>
           {winner.callsign}

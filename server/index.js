@@ -13,6 +13,7 @@ import { initKeys } from './services/keys.js';
 import { initEscrow } from './services/escrow.js';
 import { requireAdminKey } from './middleware/guards.js';
 import { telegramSocketMiddleware } from './middleware/telegram.js';
+import { initBot, setupBotWebhook, stopBot } from './services/bot.js';
 
 dotenv.config()
 
@@ -75,7 +76,26 @@ io.use((socket, next) => {
 // Telegram Mini App: validate initData and attach telegramUser to socket
 io.use(telegramSocketMiddleware);
 
+// 12B: www → non-www redirect (production only)
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+if (IS_PRODUCTION) {
+    app.use((req, res, next) => {
+        const host = req.headers.host || '';
+        if (host.startsWith('www.')) {
+            return res.redirect(301, `https://${host.slice(4)}${req.originalUrl}`);
+        }
+        next();
+    });
+}
+
 // CS-03: Enable Content Security Policy (DB: H031)
+// 12B: localhost removed from production CSP; only included in dev
+const devConnectSrc = IS_PRODUCTION ? [] : [
+    "http://localhost:5001",
+    "ws://localhost:5001",
+    "wss://localhost:5001",
+];
+
 app.use(helmet({
     contentSecurityPolicy: {
         directives: {
@@ -93,9 +113,6 @@ app.use(helmet({
                 "wss://solshot.onrender.com",
                 "https://solshot-server.onrender.com",
                 "wss://solshot-server.onrender.com",
-                "http://localhost:5001",
-                "ws://localhost:5001",
-                "wss://localhost:5001",
                 "https://api.jup.ag",
                 "https://plugin.jup.ag",
                 "https://tokens.jup.ag",
@@ -103,9 +120,13 @@ app.use(helmet({
                 "https://api.web3modal.org",
                 "https://pulse.walletconnect.org",
                 "https://explorer-api.walletconnect.com",
+                // Dynamic embedded wallet SDK
+                "https://app.dynamic.xyz",
+                "https://api.dynamic.xyz",
+                ...devConnectSrc,
             ],
             fontSrc: ["'self'", "https://fonts.gstatic.com", "https://fonts.googleapis.com"],
-            frameSrc: ["https://plugin.jup.ag"],
+            frameSrc: ["https://plugin.jup.ag", "https://app.dynamic.xyz"],
             objectSrc: ["'none'"],
             baseUri: ["'self'"],
             reportUri: ['/api/csp-report'],
@@ -167,6 +188,9 @@ app.post('/api/csp-report', express.json({ type: 'application/csp-report' }), (r
 // Connect to MongoDB then start server
 const MONGODB_URI = process.env.MONGODB_URI;
 
+// Initialise Telegram bot (no-op if TELEGRAM_BOT_TOKEN not set)
+initBot();
+
 if (MONGODB_URI) {
     mongoose.connect(MONGODB_URI)
         .then(async () => {
@@ -177,6 +201,7 @@ if (MONGODB_URI) {
                 console.error('[FATAL] initShotState failed — cannot start with unknown emission state:', err.message);
                 process.exit(1);
             }
+            await setupBotWebhook(app);
             server.listen(PORT, '0.0.0.0', function () {
                 console.log(`SolShot server listening on 0.0.0.0:${PORT}`);
             });
@@ -187,10 +212,16 @@ if (MONGODB_URI) {
         });
 } else {
     console.warn('MONGODB_URI not set — running without database');
-    server.listen(PORT, '0.0.0.0', function () {
-        console.log(`SolShot server listening on 0.0.0.0:${PORT} (no DB)`);
+    setupBotWebhook(app).then(() => {
+        server.listen(PORT, '0.0.0.0', function () {
+            console.log(`SolShot server listening on 0.0.0.0:${PORT} (no DB)`);
+        });
     });
 }
+
+// Graceful shutdown — stop bot polling/webhook before exit
+process.once('SIGINT', () => stopBot());
+process.once('SIGTERM', () => stopBot());
 
 // KM-05: SIGHUP-triggered credential reload
 process.on('SIGHUP', () => {

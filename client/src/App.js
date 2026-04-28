@@ -106,20 +106,53 @@ function AppInner() {
     return () => sock.off('connect', sendIdentity);
   }, []);
 
-  // Telegram deep link: auto-join room from startapp=join_{roomId}
+  // Telegram deep link routing.
+  // startapp=<param> arrives in start_param. Bot commands send these:
+  //   join_<roomId>     → auto-join an existing match
+  //   ch_<challengeId>  → accept a challenge (Phase 3 — not yet wired)
+  //   rf_<wallet>       → referral attribution (Phase 4 — not yet wired)
+  //   play              → menu / lobby
+  //   stats             → barracks (combat record)
+  //   leaderboard       → barracks (leaderboard tab)
+  //   wallet            → barracks (wallet info in top bar)
+  //   shop              → armory (cosmetic shop)
+  //   prestige          → prestige screen
+  //   weapons           → armory (browse arsenal)
+  //   challenge         → lobby (challenge builder; Phase 3 wires a dedicated screen)
   useEffect(() => {
-    if (!startParam || !startParam.startsWith('join_')) return;
-    const roomId = startParam.slice(5); // strip "join_"
-    if (!roomId) return;
-    // Wait for socket to connect, then navigate to lobby with join intent
+    if (!startParam) return;
     const sock = window.socket;
-    if (!sock) return;
-    const tryJoin = () => {
-      setScreenData({ autoJoinRoomId: roomId });
-      setScreen('lobby');
+
+    // Match the startapp prefix or exact value
+    if (startParam.startsWith('join_')) {
+      const roomId = startParam.slice(5);
+      if (!roomId || !sock) return;
+      const tryJoin = () => {
+        setScreenData({ autoJoinRoomId: roomId });
+        setScreen('lobby');
+      };
+      if (sock.connected) tryJoin();
+      else sock.once('connect', tryJoin);
+      return;
+    }
+
+    // Direct screen routing — these are exact-match deep links from bot commands
+    const routes = {
+      play:        'lobby',
+      challenge:   'lobby',
+      stats:       'barracks',
+      leaderboard: 'barracks',
+      wallet:      'barracks',
+      shop:        'armory',
+      weapons:     'armory',
+      prestige:    'prestige',
     };
-    if (sock.connected) tryJoin();
-    else sock.once('connect', tryJoin);
+    const target = routes[startParam];
+    if (target) {
+      setScreen(target);
+    }
+    // Unknown / unhandled startParams (ch_*, rf_*, etc.) fall through to default menu.
+    // Wire those when the corresponding feature lands.
   }, [startParam]);
 
   // CS-04: Use wallet adapter hook directly for rejoin logic (avoids window.solWallet)

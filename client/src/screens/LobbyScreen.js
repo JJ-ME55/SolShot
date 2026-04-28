@@ -277,7 +277,7 @@ const s = {
 };
 
 
-function LobbyScreen({ navigate }) {
+function LobbyScreen({ navigate, screenData }) {
   /* ── state ── */
   const [rooms, setRooms] = useState([]);
   const [matchMode, setMatchMode] = useState('practice');

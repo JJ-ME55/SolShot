@@ -191,7 +191,6 @@ function WeaponCard({ weapon, isSelected, onClick, disabled }) {
   const tier     = meta?.tier || 'FREE';
   const tColor   = getTierColor(tier);
   const tLabel   = getTierLabel(tier);
-  const isInfinite = weapon?.id === 0;
 
   return (
     <button
@@ -200,11 +199,11 @@ function WeaponCard({ weapon, isSelected, onClick, disabled }) {
         background: isSelected ? 'rgba(200,168,74,0.18)' : 'rgba(10,12,8,0.85)',
         color: isSelected ? '#e8dcc8' : '#8a9a80',
         border: '1px solid ' + (isSelected ? '#c8a84a' : '#3d4a2f'),
-        padding: '6px 8px',
+        padding: '8px 10px',
         cursor: disabled && !isSelected ? 'default' : 'pointer',
         textAlign: 'left',
-        minWidth: 100,
-        maxWidth: 140,
+        minWidth: 110,
+        maxWidth: 160,
         opacity: disabled && !isSelected ? 0.45 : 1,
         transition: 'border-color 0.15s, background 0.15s',
         flexShrink: 0,
@@ -214,16 +213,17 @@ function WeaponCard({ weapon, isSelected, onClick, disabled }) {
         display: 'flex',
         justifyContent: 'space-between',
         fontFamily: "'Share Tech Mono', monospace",
-        fontSize: 9,
+        fontSize: 11,
         letterSpacing: '0.15em',
-        marginBottom: 2,
+        marginBottom: 3,
       }}>
         <span style={{ color: tColor }}>{tLabel}</span>
-        <span style={{ color: 'var(--kh)' }}>×{isInfinite ? '∞' : '1'}</span>
+        {/* All purchased weapons have unlimited use within the match. */}
+        <span style={{ color: 'var(--kh)' }}>×∞</span>
       </div>
       <div style={{
         fontFamily: "'Black Ops One', cursive",
-        fontSize: 12,
+        fontSize: 14,
         letterSpacing: 0.5,
         color: isSelected ? '#e8dcc8' : '#b8a88a',
         whiteSpace: 'nowrap',
@@ -539,7 +539,7 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
           }}>
             <div style={{
               fontFamily: "'Share Tech Mono', monospace",
-              fontSize: 9,
+              fontSize: 11,
               color: 'var(--kh)',
               letterSpacing: '0.2em',
               marginBottom: 6,
@@ -575,9 +575,9 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
           }}>
             {/* Power */}
             <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: "'Share Tech Mono', monospace", fontSize: 9, color: 'var(--kh)', letterSpacing: '0.2em', marginBottom: 3 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: "'Share Tech Mono', monospace", fontSize: 11, color: 'var(--kh)', letterSpacing: '0.2em', marginBottom: 3 }}>
                 <span>POWER</span>
-                <span style={{ color: '#c8a84a' }}>{String(Math.round(power)).padStart(3, '0')} / 100</span>
+                <span style={{ color: '#c8a84a' }}>{Math.round(power)} / 100</span>
               </div>
               <input
                 type="range" min={5} max={100} step={1}
@@ -590,7 +590,7 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
 
             {/* Angle */}
             <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: "'Share Tech Mono', monospace", fontSize: 9, color: 'var(--kh)', letterSpacing: '0.2em', marginBottom: 3 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: "'Share Tech Mono', monospace", fontSize: 11, color: 'var(--kh)', letterSpacing: '0.2em', marginBottom: 3 }}>
                 <span>ANGLE</span>
                 <span style={{ color: '#c8a84a' }}>{Math.round(angle)}°</span>
               </div>

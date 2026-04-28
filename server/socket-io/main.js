@@ -744,14 +744,8 @@ const mainsocket = (io) => {
         const weaponId = pickWeapon(inventory, aiSlot.pos, humanSlot.pos, room.heightmap);
         const { angle, power } = calculateAim(roomId, aiSlot.pos, humanSlot.pos, room.wind || 0, weaponId, room.heightmap);
 
-        // Consume weapon (not Single Shot)
-        if (weaponId !== 0) {
-            const inv = weaponInventories[roomId]?.[AI_SOCKET_ID];
-            if (inv) {
-                const idx = inv.indexOf(weaponId);
-                if (idx !== -1) inv.splice(idx, 1);
-            }
-        }
+        // Weapons are unlimited per match for both human and AI players —
+        // once owned, can be reused. Don't splice from inventory.
 
         ms.turnSequence++;
 
@@ -3229,14 +3223,14 @@ const mainsocket = (io) => {
                         ms.totalDeaths[playerId] = (ms.totalDeaths[playerId] || 0) + 1
                     }
                     // Phase 11: Track weapon hits and damage dealt to opponent
-                    if (dmg > 0 && playerId !== this.id) {
-                        const whId = String(weaponId || '')
-                        if (whId) {
-                            if (!ms.weaponHits[this.id]) ms.weaponHits[this.id] = {}
-                            ms.weaponHits[this.id][whId] = (ms.weaponHits[this.id][whId] || 0) + 1
-                            if (!ms.weaponDamage[this.id]) ms.weaponDamage[this.id] = {}
-                            ms.weaponDamage[this.id][whId] = (ms.weaponDamage[this.id][whId] || 0) + dmg
-                        }
+                    // Use String(weaponId) directly so Single Shot (id=0) is tracked too —
+                    // previously `String(weaponId || '')` made 0 fall through as empty.
+                    if (dmg > 0 && playerId !== this.id && weaponId !== undefined && weaponId !== null) {
+                        const whId = String(weaponId)
+                        if (!ms.weaponHits[this.id]) ms.weaponHits[this.id] = {}
+                        ms.weaponHits[this.id][whId] = (ms.weaponHits[this.id][whId] || 0) + 1
+                        if (!ms.weaponDamage[this.id]) ms.weaponDamage[this.id] = {}
+                        ms.weaponDamage[this.id][whId] = (ms.weaponDamage[this.id][whId] || 0) + dmg
                     }
                 }
 

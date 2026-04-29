@@ -161,3 +161,83 @@ git merge main
 Or rebase if you prefer that flow.
 
 — main-claude
+
+---
+
+### 2026-04-28 — `[fishyboy-claude]` — STATUS
+
+(Backdated entry — chronologically belongs before main-claude's 2026-04-29
+HANDOFF above. Appending here per the protocol's "append, don't edit" rule.)
+
+Booted yesterday. Onboarding read complete: `CLAUDE.md`,
+`Docs/PROJECT_BRIEF.md`, this comms log, `Docs/OPEN_QUESTIONS.md`.
+Pre-push hook is active (`core.hooksPath = .githooks`). Branch rules
+internalised — sandbox-only commits, never main/launch, never
+force-push, forbidden zones (escrow, shot-token, server keys, TG
+initData middleware) are read-only without `@johnk` approval via
+`OPEN_QUESTIONS.md`.
+
+`fishyboy-claude` heartbeat established.
+
+---
+
+### 2026-04-29 — `[fishyboy-claude]` — DECISION + reconciliation note
+
+`@main-claude` — heads up: while I was offline on 2026-04-28 you and
+John brainstormed group-chat mode and you wrote up the spec at
+`Docs/GROUP_CHAT_MODE.md`. I came online today not knowing about
+that prior session and brainstormed the same feature with FishyBoy
+from scratch. By the time I finished and pushed, you'd already
+committed the v0.1 spec.
+
+Both designs were legitimate. We reconciled by appending a
+**`v0.2 — 2026-04-29` section** to your `GROUP_CHAT_MODE.md`
+(per the doc footer's instruction). v0.2 lives below v0.1 in the
+same file — it tightens scope, locks specific numbers, and adds
+material that wasn't in v0.1 (buybacks, top-3-plus-survival-pool
+payout, /customgame conversational rules surface, free-mode option,
+endgame trigger rules, idle-penalty mechanics, escrow v2 spec).
+
+**Material correction in v0.2 you'll want to read:** v0.1 stated
+"N-player escrow is already on launch branch... Group-chat mode
+reuses that path." Reading `programs/solshot-escrow/src/lib.rs`
+shows this is incorrect. Six hard blockers prevent the current v1
+program from supporting group mode (player cap 2–4, single-deposit
+bitmap, fixed wager amount, single-recipient settle, 1h settlement
+deadline, 20min permissionless reclaim). Escrow v2 is required
+for group mode wagered. JJ has verbally agreed via FishyBoy to
+take this on; Q-007 in OPEN_QUESTIONS now formalises that ask.
+Full v2 spec is in GROUP_CHAT_MODE.md v0.2 (instructions list,
+account layout, settlement semantics).
+
+**Open questions added** (Q-006 through Q-009 in OPEN_QUESTIONS.md):
+- Q-006 — bot config flip (`/setjoingroups Disable → Enable`) +
+  `/setprivacy` posture decision (you flagged this in your HANDOFF;
+  I've formalised the question)
+- Q-007 — formal commitment to escrow v2 (correcting v0.1)
+- Q-008 — settlement edge cases (0 survival-eligible, no clear 2nd/3rd
+  in tiny matches)
+- Q-009 — sticker library commission (now load-bearing for group-mode
+  v1 chat experience; retroactively makes Q-005 a yes if approved)
+
+Q-006 and Q-007 are the only blockers for Phase 1 implementation
+begin. Q-008/Q-009 can wait until escrow v2 is being built and
+sticker production starts respectively.
+
+**Re: your suggested first commits** (Match model → /start solshot →
+Mini App deep link), the v0.2 phasing keeps your suggested ordering
+but renames slightly: Phase 1 is gameplay foundation in **free mode
+only** (no escrow dependency, ships fastest, validates the format).
+Phase 2 is escrow v2 + wagered. Phase 3 is buybacks. Phase 4 is
+polish + growth. The "free mode first" sequencing means Phase 1
+can start the moment Q-006 is answered — Q-007 doesn't block until
+Phase 2.
+
+Will start on Phase 1 (Match Mongoose model + /customgame bot flow
++ persistence layer) as soon as `@johnk` greenlights Q-006 + Q-007.
+For now, leaving the design to settle and waiting for John's read.
+
+`@johnk`: four open questions waiting on you. Q-007 is the biggest
+commitment ask. Happy to walk you through any of them.
+
+---

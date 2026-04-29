@@ -170,7 +170,7 @@ function MobileMenu({ navigate, callsign, shotBalance, solBalance, onlineCount, 
               style={{ ...tankImg, position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)', width: 140,
                        filter: 'drop-shadow(0 2px 0 rgba(0,0,0,0.5))' }} />
             <img src="/assets/images/tanks/tank-turret-tinted.png" alt="turret"
-              style={{ ...tankImg, position: 'absolute', bottom: 44, left: '50%',
+              style={{ ...tankImg, position: 'absolute', bottom: 53, left: '50%',
                        width: 110, transform: 'translateX(-23%) rotate(-3deg)',
                        transformOrigin: '22% 70%',
                        filter: 'drop-shadow(0 2px 0 rgba(0,0,0,0.5))' }} />

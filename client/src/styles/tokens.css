@@ -79,7 +79,7 @@ body {
   font-family: var(--f-mono);
   font-size: 14px;
   line-height: 1.5;
-  min-height: 100vh;
+  min-height: 100dvh;
   overflow-x: hidden;
   letter-spacing: 0.02em;
 }

@@ -108,18 +108,20 @@ export default function AARScreen({ navigate, screenData, isWin }) {
   const totalRounds = screenData?.totalRounds || (myRoundWins + oppRoundWins);
 
   return (
-    <div style={{ position: 'relative', minHeight: '100vh', background: 'var(--bg-deep)', overflow: 'hidden' }}>
+    <div style={{ position: 'relative', minHeight: '100dvh', background: 'var(--bg-deep)', overflow: 'hidden' }}>
       <div style={{
         position: 'absolute', inset: 0, pointerEvents: 'none', opacity: 0.05,
         backgroundImage: 'linear-gradient(to right, var(--olive) 1px, transparent 1px), linear-gradient(to bottom, var(--olive) 1px, transparent 1px)',
         backgroundSize: '48px 48px',
       }} />
 
-      <div style={{ maxWidth: 860, margin: '0 auto', padding: '28px 24px 100px', position: 'relative', zIndex: 3 }}>
-        {/* Stamp header */}
+      <div style={{ maxWidth: 860, margin: '0 auto', padding: 'clamp(16px, 4vw, 28px) clamp(12px, 4vw, 24px) 100px', position: 'relative', zIndex: 3 }}>
+        {/* Stamp header — flex-wraps on phones so the stamp doesn't shove off-screen */}
         <div style={{
           display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16,
-          fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--olive)', letterSpacing: '0.22em',
+          flexWrap: 'wrap', gap: 8,
+          fontFamily: 'var(--f-mono)', fontSize: 'clamp(9px, 2.4vw, 10px)',
+          color: 'var(--olive)', letterSpacing: '0.18em',
         }}>
           <span>DOC 14-C · DECLASSIFIED</span>
           <span style={{
@@ -131,7 +133,7 @@ export default function AARScreen({ navigate, screenData, isWin }) {
         </div>
 
         <div style={{
-          fontFamily: 'var(--f-display)', fontSize: 40, color: 'var(--bone)',
+          fontFamily: 'var(--f-display)', fontSize: 'clamp(26px, 6.5vw, 40px)', color: 'var(--bone)',
           letterSpacing: '0.06em', borderLeft: '3px solid var(--accent)', paddingLeft: 14,
         }}>AFTER ACTION REPORT</div>
         <div style={{
@@ -154,30 +156,33 @@ export default function AARScreen({ navigate, screenData, isWin }) {
           </div>
         )}
 
-        {/* Victor strip */}
+        {/* Victor strip — clamps scale hero typography down on phones */}
         <div style={{
           background: bannerBg,
           clipPath: 'var(--clip-16)',
-          padding: '22px 24px',
+          padding: 'clamp(14px, 3.5vw, 22px) clamp(14px, 3.5vw, 24px)',
           marginBottom: 18,
-          display: 'flex', alignItems: 'center', gap: 22,
+          display: 'flex', alignItems: 'center', gap: 'clamp(12px, 3vw, 22px)',
         }}>
-          <div style={{ fontFamily: 'var(--f-display)', fontSize: 64, color: '#0e1209', lineHeight: 0.8 }}>
+          <div style={{ fontFamily: 'var(--f-display)', fontSize: 'clamp(40px, 11vw, 64px)', color: '#0e1209', lineHeight: 0.8 }}>
             {isWin ? 'W' : 'L'}
           </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: '#0e1209', opacity: 0.7, letterSpacing: '0.22em' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontFamily: 'var(--f-mono)', fontSize: 'clamp(9px, 2.2vw, 10px)', color: '#0e1209', opacity: 0.7, letterSpacing: '0.22em' }}>
               {verdict}
             </div>
-            <div style={{ fontFamily: 'var(--f-display)', fontSize: 32, color: '#0e1209', letterSpacing: '0.04em', lineHeight: 1 }}>
+            <div style={{
+              fontFamily: 'var(--f-display)', fontSize: 'clamp(20px, 5.5vw, 32px)', color: '#0e1209',
+              letterSpacing: '0.04em', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            }}>
               {(myName || 'YOU').toUpperCase()}
             </div>
           </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: '#0e1209', opacity: 0.7, letterSpacing: '0.22em' }}>
+          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+            <div style={{ fontFamily: 'var(--f-mono)', fontSize: 'clamp(9px, 2.2vw, 10px)', color: '#0e1209', opacity: 0.7, letterSpacing: '0.22em' }}>
               FINAL SCORE
             </div>
-            <div style={{ fontFamily: 'var(--f-display)', fontSize: 36, color: '#0e1209', lineHeight: 1 }}>
+            <div style={{ fontFamily: 'var(--f-display)', fontSize: 'clamp(24px, 6vw, 36px)', color: '#0e1209', lineHeight: 1 }}>
               {myRoundWins} – {oppRoundWins}
             </div>
           </div>
@@ -194,7 +199,7 @@ export default function AARScreen({ navigate, screenData, isWin }) {
               textAlign: 'center',
             }}>
               <div style={{
-                fontFamily: 'var(--f-display)', fontSize: 32,
+                fontFamily: 'var(--f-display)', fontSize: 'clamp(22px, 5.5vw, 32px)',
                 color: isWin ? '#7fd060' : 'var(--red)', lineHeight: 1, letterSpacing: '0.06em',
               }}>{isWin ? '+' : '−'}{solDelta.toFixed(3)}</div>
               <div style={{
@@ -211,7 +216,7 @@ export default function AARScreen({ navigate, screenData, isWin }) {
             textAlign: 'center',
           }}>
             <div style={{
-              fontFamily: 'var(--f-display)', fontSize: 32,
+              fontFamily: 'var(--f-display)', fontSize: 'clamp(22px, 5.5vw, 32px)',
               color: 'var(--accent)', lineHeight: 1, letterSpacing: '0.06em',
             }}>◆ {myGold}</div>
             <div style={{
@@ -221,13 +226,13 @@ export default function AARScreen({ navigate, screenData, isWin }) {
           </div>
         </div>
 
-        {/* Combatant comparison */}
+        {/* Combatant comparison — padding tightens on phones, columns stay 1fr 1fr (you vs them is the whole point) */}
         <div style={{
           background: 'var(--bg-surface)', border: '1px solid var(--border)',
-          clipPath: 'var(--clip-16)', padding: 24, marginBottom: 18,
+          clipPath: 'var(--clip-16)', padding: 'clamp(14px, 4vw, 24px)', marginBottom: 18,
         }}>
           <div style={{
-            display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20,
+            display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'clamp(10px, 3vw, 20px)',
             marginBottom: 20, paddingBottom: 16, borderBottom: '1px dashed var(--muted)',
           }}>
             {[
@@ -239,8 +244,9 @@ export default function AARScreen({ navigate, screenData, isWin }) {
                   COMBATANT · {p.label}
                 </div>
                 <div style={{
-                  fontFamily: 'var(--f-display)', fontSize: 24, color: p.color,
+                  fontFamily: 'var(--f-display)', fontSize: 'clamp(16px, 4.5vw, 24px)', color: p.color,
                   letterSpacing: '0.04em', marginTop: 4, textTransform: 'uppercase',
+                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                 }}>{p.name}</div>
               </div>
             ))}

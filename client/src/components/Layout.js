@@ -101,8 +101,8 @@ const styles = {
     // In browser: fill height, derive width from 16:9 aspect ratio,
     // cap at 100vw so it never overflows horizontally.
     ...(isTelegram
-      ? { width: '100%', height: tgHeight || '100vh' }
-      : { height: '90vh', aspectRatio: '16 / 9', maxWidth: '100vw' }
+      ? { width: '100%', height: tgHeight || '100dvh' }
+      : { height: '90dvh', aspectRatio: '16 / 9', maxWidth: '100vw' }
     ),
     background: 'var(--bg-deep)',
     border: isTelegram ? 'none' : '1px solid var(--border)',

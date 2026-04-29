@@ -244,7 +244,7 @@ function ShopScreen({ navigate, screenData }) {
   /* ══ MOBILE ══ */
   if (isMobile) {
     return (
-      <div style={{ position: 'relative', height: '100vh', background: 'var(--bg-deep)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ position: 'relative', height: '100dvh', background: 'var(--bg-deep)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {/* Header strip */}
         <div style={{
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -404,8 +404,8 @@ function ShopScreen({ navigate, screenData }) {
 
   /* ══ DESKTOP ══ */
   return (
-    <div style={{ position: 'relative', minHeight: '100vh', background: 'var(--bg-deep)', overflow: 'hidden' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', height: '100vh' }}>
+    <div style={{ position: 'relative', minHeight: '100dvh', background: 'var(--bg-deep)', overflow: 'hidden' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', height: '100dvh' }}>
         {/* LEFT: Catalog */}
         <div style={{ display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--border)', overflow: 'hidden' }}>
           <div style={{

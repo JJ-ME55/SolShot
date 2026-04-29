@@ -78,7 +78,7 @@ function PrestigeScreen({ navigate }) {
   };
 
   return (
-    <div style={{ position: 'relative', minHeight: '100vh', background: 'var(--bg-deep)', overflow: 'hidden' }}>
+    <div style={{ position: 'relative', minHeight: '100dvh', background: 'var(--bg-deep)', overflow: 'hidden' }}>
       <div style={{
         position: 'absolute', inset: 0, pointerEvents: 'none', opacity: 0.05,
         backgroundImage: 'linear-gradient(to right, var(--olive) 1px, transparent 1px), linear-gradient(to bottom, var(--olive) 1px, transparent 1px)',

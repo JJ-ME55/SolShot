@@ -48,7 +48,7 @@ export default function AIPracticeScreen({ navigate }) {
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
-      height: '100vh',
+      height: '100dvh',
       background: 'var(--bg, #0a0a1a)',
       color: '#fff',
       gap: isMobile ? 12 : 20,

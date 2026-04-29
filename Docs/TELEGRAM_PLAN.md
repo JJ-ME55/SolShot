@@ -69,6 +69,26 @@ Three mechanics, all small in scope:
 2. **Rematch share.** Post-match loser sees REMATCH button → `switchInlineQuery` pre-fills challenge back to winner. Highest-converting flow in any PvP TG game.
 3. **Weekly leaderboard share card.** Top 10 get a 1080×1920 portrait PNG showing rank + W/L + earnings + "Challenge Me" QR code. Manual at first, automate Sunday post later.
 
+### Phase 5 — Persistent group-chat match mode 🐟 **(FishyBoy owns this)**
+
+**Strategic feature, est. 1-2 weeks.** A match that lives in a Telegram group chat over hours/days. Async turns, server-persistent state, every move posted back to the source chat. Targets trench/whale chats specifically — the ones already wagering SOL on bullshit.
+
+This is the big differentiator on TG. No competitor has it. Tap-to-earns are dead, real-time PvP doesn't fit chat UX. Async PvP that lives in the chat does.
+
+**Full design spec:** `Docs/GROUP_CHAT_MODE.md` (sandbox/fishyboy branch)
+
+Top-level scope:
+1. **`Match` Mongoose model + persistence** — the hard architectural change (current matches are in-memory; persistent state needs MongoDB)
+2. **Group-chat bot commands** — `/start solshot`, `/join`, `/start_match`, `/abandon` (requires BotFather group permission tweaks)
+3. **Server-side turn scheduler** — node-cron or Redis-backed; survive server restart
+4. **Bot posts move summaries** to source chat ("`JJ — direct hit on FISH, 75 HP. FISH's turn.`")
+5. **Mini App "MY MATCHES" screen** — list of active group games, tap to play your turn
+6. **Match end → escrow settle to winner**
+
+Reuses existing physics, weapons, escrow program. Mostly new persistence + bot orchestration code.
+
+Fish to scope out a v1 cut, ship in small commits, end-to-end on `sandbox/fishyboy`. Merge to `launch` only when QA-clean.
+
 ---
 
 ## /setcommands payload

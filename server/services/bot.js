@@ -277,10 +277,12 @@ function registerCommands(bot) {
 
   bot.command('wallet', async (ctx) => {
     // Smart reply: show wallet address + balances + prestige progress.
-    // For TG-only users (no wallet connected yet), prompts them to open
-    // the Mini App and link a wallet. Once Dynamic embedded wallets ship,
-    // this same reply lights up with real on-chain balances — the surface
-    // area is ready, just the data source swaps.
+    // For TG users without a wallet yet, prompts them to open the Mini App
+    // where Dynamic generates an embedded Solana wallet automatically — no
+    // Phantom/Solflare connection step. Wording deliberately avoids "connect"
+    // because that implies linking an external wallet (which we don't do for
+    // TG users anymore). Once Dynamic ships on main, this same reply lights
+    // up with real on-chain balances — the surface area is ready.
     try {
       const user = await lookupUserByTelegramId(ctx.from?.id);
       const callsign = (user?.handle || ctx.from?.first_name || 'OPERATIVE').toUpperCase();
@@ -288,12 +290,14 @@ function registerCommands(bot) {
       // Case 1: no record yet — never played
       if (!user) {
         return ctx.reply(
-          `${callsign}\n\nNo wallet linked yet. Open the Mini App to connect — needed for wagered matches and SHOT.`,
-          { reply_markup: launchKeyboard('Connect Wallet', 'wallet') }
+          `${callsign}\n\nNo wallet yet. Open the Mini App and your Solana wallet is set up automatically — required for wagered matches and SHOT.`,
+          { reply_markup: launchKeyboard('Set Up Wallet', 'wallet') }
         );
       }
 
-      // Case 2: TG-only user, no wallet authenticated
+      // Case 2: TG-only user, wallet not yet provisioned (or provisioned but
+      // not yet linked to this User doc). The Mini App auto-creates one via
+      // Dynamic on first open — they don't bring an external wallet.
       if (!user.walletAddress) {
         const tierIdx = user.stats?.prestigeTier || 0;
         const tierName = (PRESTIGE_TIERS[tierIdx] || PRESTIGE_TIERS[0]).name.toUpperCase();
@@ -302,16 +306,16 @@ function registerCommands(bot) {
         const lines = [
           `${callsign} · ${tierName}`,
           '',
-          'WALLET: not connected',
+          'WALLET: not yet set up',
         ];
         if (inGameShot > 0) {
           lines.push(`In-game SHOT: ${inGameShot.toLocaleString()}`);
-          lines.push('Connect a wallet to convert and use on-chain.');
+          lines.push('Open the Mini App to set up your wallet — your SHOT and earnings will sync.');
         } else {
-          lines.push('Connect a wallet to receive SHOT and wager SOL.');
+          lines.push('Open the Mini App to set up your Solana wallet — needed to receive SHOT and wager SOL.');
         }
         return ctx.reply(lines.join('\n'), {
-          reply_markup: launchKeyboard('Connect Wallet', 'wallet'),
+          reply_markup: launchKeyboard('Set Up Wallet', 'wallet'),
         });
       }
 

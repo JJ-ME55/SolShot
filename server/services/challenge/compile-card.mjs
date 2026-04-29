@@ -24,6 +24,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SOURCES = [
     'DuelChallengeCard.js',
     'TrophyShareCard.js',
+    'CareerStatsCard.js',
 ];
 
 for (const filename of SOURCES) {

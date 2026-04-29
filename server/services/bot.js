@@ -24,6 +24,8 @@ import { lookupUserByTelegramId, getTopPlayers, getPlayerRank } from './users.js
 import { PRESTIGE_TIERS } from './shot-token.js';
 import { getOrCreateReferralCode, buildInviteLink, REFERRAL_REWARD_SHOT } from './referrals.js';
 import { getChallenge, markAccepted } from './challenge/challenge.js';
+import { renderCareerCardPng } from './challenge/renderCareerCard.js';
+import { buildCareerProps } from './challenge/careerCardProps.js';
 
 // The path segment after the bot username is the Mini App `short_name` registered
 // in BotFather. Our Mini App is registered as `play` (not `solshot`). Set
@@ -108,30 +110,35 @@ function registerCommands(bot) {
         );
       }
 
-      const s = user.stats;
-      const callsign = (user.handle || ctx.from?.first_name || 'OPERATIVE').toUpperCase();
-      const matches  = s.matchesPlayed || 0;
-      const wins     = s.wins || 0;
-      const losses   = s.losses || 0;
-      const winRate  = matches > 0 ? Math.round((wins / matches) * 100) : 0;
-      const dmg      = s.totalDamage || 0;
-      const kills    = s.kills || 0;
-      const deaths   = s.deaths || 0;
-      const kd       = deaths > 0 ? (kills / deaths).toFixed(2) : (kills > 0 ? kills.toFixed(2) : '—');
-      const streak   = s.bestWinStreak || 0;
-      const tierIdx  = s.prestigeTier || 0;
-      const tierName = (PRESTIGE_TIERS[tierIdx] || PRESTIGE_TIERS[0]).name.toUpperCase();
-      const rank     = await getPlayerRank(ctx.from?.id);
+      // Build career card props from the User doc + leaderboard rank
+      const rank = await getPlayerRank(ctx.from?.id);
+      const props = buildCareerProps(user, { rank, telegramUserId: ctx.from?.id });
 
+      // Render the image. Best-effort — fall back to text if Satori chokes.
+      let png = null;
+      try {
+        png = await renderCareerCardPng(props);
+      } catch (renderErr) {
+        console.warn('[bot:/stats] career card render failed:', renderErr.message);
+      }
+
+      if (png) {
+        const tierName = (PRESTIGE_TIERS[user.stats.prestigeTier || 0] || PRESTIGE_TIERS[0]).name.toUpperCase();
+        const caption = `${props.callsign} · ${tierName}${rank ? ` · #${rank}` : ''}`;
+        return ctx.replyWithPhoto({ source: png }, {
+          caption,
+          reply_markup: launchKeyboard('Full Record', 'stats'),
+        });
+      }
+
+      // Fallback: text reply (same shape as before, less the formatting fluff)
       const fmtDmg = (n) => n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n);
       const lines = [
-        `${callsign} · ${tierName}${rank ? ` · #${rank}` : ''}`,
+        `${props.callsign}${rank ? ` · #${rank}` : ''}`,
         '',
-        `${wins}W · ${losses}L · ${winRate}% win rate`,
-        `${fmtDmg(dmg)} damage · ${kills} kills · ${kd} K/D`,
-        streak > 0 ? `Best streak: ${streak}W` : null,
-      ].filter(Boolean);
-
+        `${props.record.wins}W · ${props.record.losses}L · ${props.record.winRate}% win rate`,
+        `${fmtDmg(props.totalDamage)} damage · ${props.kills} kills`,
+      ];
       await ctx.reply(lines.join('\n'), {
         reply_markup: launchKeyboard('Full Record', 'stats'),
       });

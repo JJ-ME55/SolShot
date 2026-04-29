@@ -146,6 +146,21 @@ function AppInner() {
       return;
     }
 
+    if (startParam.startsWith('rf_')) {
+      // Referral attribution: rf_<6-hex-referralCode>
+      // Fire-and-forget — server attributes silently on first match completion.
+      // We don't gate any UI on this; the referee just plays normally and gets
+      // their reward + the inviter gets theirs once they complete a wagered match.
+      const code = startParam.slice(3).toUpperCase();
+      if (!code || !sock) return;
+      const fire = () => sock.emit('attributeReferrer', { code });
+      if (sock.connected) fire();
+      else sock.once('connect', fire);
+      // Don't return — fall through so a following routes match still works
+      //   (e.g. someone could deep-link a referral straight into the lobby).
+      // For now no second prefix is handled, but leaving the architecture open.
+    }
+
     if (startParam === 'challenge_new') {
       // Challenger landed via /challenge bot command — auto-fire challenge create
       // in the lobby on mount.

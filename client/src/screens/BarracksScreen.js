@@ -138,6 +138,34 @@ function BarracksScreen({ navigate }) {
   const [leaderboard, setLeaderboard] = useState(null);
   const [tab, setTab] = useState('stats');
   const [showCard, setShowCard] = useState(false);
+  const [inviteUrl, setInviteUrl] = useState(null);
+  const [inviteCopied, setInviteCopied] = useState(false);
+
+  // Phase 4 — fetch personal invite link on mount
+  useEffect(() => {
+    const sock = window.socket;
+    if (!sock) return;
+    sock.emit('getInviteLink');
+    const handler = (data) => { if (data?.ok && data.url) setInviteUrl(data.url); };
+    sock.on('inviteLink', handler);
+    return () => sock.off('inviteLink', handler);
+  }, []);
+
+  const handleInvite = () => {
+    if (!inviteUrl) return;
+    const tg = window.Telegram?.WebApp;
+    if (tg?.switchInlineQuery) {
+      // Best UX: pop the chat picker, send via inline mode (when implemented)
+      const code = inviteUrl.split('rf_')[1] || '';
+      tg.switchInlineQuery('rf_' + code, ['users', 'groups']);
+    } else if (navigator.share) {
+      navigator.share({ title: 'SolShot', text: 'Come play SolShot — both of us earn 25 SHOT', url: inviteUrl }).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(inviteUrl)
+        .then(() => { setInviteCopied(true); setTimeout(() => setInviteCopied(false), 1800); })
+        .catch(() => {});
+    }
+  };
 
   useEffect(() => {
     const sock = window.socket;
@@ -230,6 +258,44 @@ function BarracksScreen({ navigate }) {
                 fontFamily: 'var(--f-display)', fontSize: 13, letterSpacing: '0.18em', cursor: 'pointer',
               }}>FIND A MATCH</button>
             </div>
+
+            {/* Phase 4 — referral / invite panel */}
+            {inviteUrl && (
+              <div style={{
+                marginTop: 14, padding: '14px 16px',
+                background: 'var(--bg-surface)', border: '1px solid var(--border)',
+                clipPath: 'var(--clip-10)',
+              }}>
+                <div style={{
+                  fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--accent)',
+                  letterSpacing: '0.22em', marginBottom: 6,
+                }}>RECRUIT — EARN 25 SHOT</div>
+                <div style={{
+                  fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--olive)',
+                  letterSpacing: '0.06em', marginBottom: 10, lineHeight: 1.5,
+                }}>
+                  Both you and your friend get 25 SHOT when they finish their first wagered match.
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <button onClick={handleInvite} style={{
+                    padding: '10px', background: 'var(--accent)', color: '#0e1209',
+                    border: '1px solid var(--accent-hot)', clipPath: 'var(--clip-6)',
+                    fontFamily: 'var(--f-display)', fontSize: 11, letterSpacing: '0.18em', cursor: 'pointer',
+                  }}>SEND INVITE</button>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(inviteUrl)
+                        .then(() => { setInviteCopied(true); setTimeout(() => setInviteCopied(false), 1800); })
+                        .catch(() => {});
+                    }}
+                    style={{
+                      padding: '10px', background: 'transparent', color: 'var(--bone)',
+                      border: '1px solid var(--border)', clipPath: 'var(--clip-6)',
+                      fontFamily: 'var(--f-display)', fontSize: 11, letterSpacing: '0.18em', cursor: 'pointer',
+                    }}>{inviteCopied ? '✓ COPIED' : 'COPY LINK'}</button>
+                </div>
+              </div>
+            )}
 
             {matchHistory.length > 0 && (
               <>

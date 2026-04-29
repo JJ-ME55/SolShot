@@ -22,6 +22,7 @@
 import { Telegraf } from 'telegraf';
 import { lookupUserByTelegramId } from './users.js';
 import { PRESTIGE_TIERS } from './shot-token.js';
+import { getOrCreateReferralCode, buildInviteLink, REFERRAL_REWARD_SHOT } from './referrals.js';
 import { getChallenge, markAccepted } from './challenge/challenge.js';
 
 // The path segment after the bot username is the Mini App `short_name` registered
@@ -192,6 +193,42 @@ function registerCommands(bot) {
       '• Discord: discord.gg/solshot\n' +
       '• Email: support@solshot.gg'
     );
+  });
+
+  // /refer — get your personal invite link. Both you and the friend you
+  // invite earn 25 SHOT each when they finish their first wagered match.
+  bot.command('refer', async (ctx) => {
+    try {
+      const tgId = ctx.from?.id;
+      if (!tgId) {
+        return ctx.reply('Could not identify your account. Open the Mini App once and try again.');
+      }
+      const code = await getOrCreateReferralCode({ telegramUserId: tgId });
+      if (!code) {
+        return ctx.reply(
+          'Open SolShot once to start tracking your account, then try /refer again.',
+          { reply_markup: launchKeyboard('Open SolShot', '') }
+        );
+      }
+      const url = buildInviteLink(code);
+      const reply =
+        `Your personal invite link:\n\n` +
+        `${url}\n\n` +
+        `When a friend taps it AND finishes their first wagered match, you both ` +
+        `earn ${REFERRAL_REWARD_SHOT} SHOT.\n\n` +
+        `Code: ${code}`;
+      await ctx.reply(reply, {
+        reply_markup: {
+          inline_keyboard: [[
+            { text: '⚔ Send Invite', switch_inline_query: `rf_${code}` },
+            { text: 'Open SolShot', url: `${MINI_APP_URL}` },
+          ]],
+        },
+      });
+    } catch (err) {
+      console.warn('[bot:/refer] error:', err.message);
+      await ctx.reply('Could not fetch your invite link right now. Try again in a moment.');
+    }
   });
 
   // /settings — preferences (alert mute, notification cadence, etc.)

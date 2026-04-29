@@ -22,6 +22,30 @@ const userSchema = new mongoose.Schema({
         sparse: true,
         index: true,
     },
+
+    // ── Phase 4: Referrals ──
+    // referralCode: stable short id (6 hex chars) identifying this user when
+    // they invite others. Lazily generated on first /refer or first invite share.
+    referralCode: {
+        type: String,
+        unique: true,
+        sparse: true,
+        index: true,
+        match: /^[0-9A-F]{6}$/,
+    },
+    // referredByCode: the referralCode of whoever invited this user. Set once
+    // on first Mini App open with `?startapp=rf_<code>`. Immutable after that.
+    referredByCode: {
+        type: String,
+        default: null,
+        index: true,
+    },
+    // referralRewardedAt: timestamp when the referral reward was dispensed
+    // (after the referee finishes their first wagered match). One-shot.
+    referralRewardedAt: {
+        type: Date,
+        default: null,
+    },
     handle: {
         type: String,
         default: '',
@@ -63,6 +87,10 @@ const userSchema = new mongoose.Schema({
         shotBalance: { type: Number, default: 0 },
         totalBurned: { type: Number, default: 0 },
         claimedMatchIds: { type: [String], default: [] },
+
+        // Phase 4 referral metrics
+        referralsMade:           { type: Number, default: 0 }, // # of friends I've referred who completed first wagered match
+        totalReferralShotEarned: { type: Number, default: 0 }, // running total of SHOT earned from referrals
     },
     matchHistory: [{
         opponent: { type: String, default: '' },

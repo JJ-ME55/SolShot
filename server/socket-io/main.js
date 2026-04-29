@@ -18,6 +18,7 @@ import { initAI, cleanupAI, pickWeapon, calculateAim, autoBuyWeapons } from '../
 import { CONSUMABLES, purchaseConsumable, decrementConsumables, getActiveConsumables, hasConsumable } from '../services/consumables.js';
 import { createChallenge as createChallengeRecord, getChallenge, attachRoomId, markAccepted, markMatched } from '../services/challenge/challenge.js';
 import { linkTelegramIdentity } from '../services/users.js';
+import { attributeReferrer, processReferralReward, getOrCreateReferralCode, buildInviteLink } from '../services/referrals.js';
 
 // Cosmetic item costs (mirrors client/src/data/tiers.js COSMETIC_ITEMS)
 const COSMETIC_COSTS = {
@@ -948,6 +949,18 @@ const mainsocket = (io) => {
         client.walletAddress = null
         client.isAuthenticated = false
 
+        // Helper: build a Mongoose query identifying this client's User document.
+        // Priority: walletAddress > telegramUserId > uid. Returns null if no
+        // identity is established yet.
+        function buildUserQueryForClient(c) {
+            const wallet = authenticatedWallets[c.id]
+            if (wallet) return { walletAddress: wallet }
+            if (c.telegramUser?.id) return { telegramUserId: c.telegramUser.id }
+            const uid = playerUids[c.id]?.uid
+            if (uid) return { uid }
+            return null
+        }
+
         // H074: Per-socket rate limiter using ring buffers (O7: O(1) per check, zero GC)
         // Escalates from drop → disconnect for sustained abuse
         const RL_MAX_EVENTS = 30          // max events per second
@@ -1102,6 +1115,53 @@ const mainsocket = (io) => {
                         username: client.telegramUser.username || null,
                     }).catch((err) => console.warn('[Identity] linkTelegramIdentity failed:', err.message));
                 }
+            }
+        })
+
+        // === Phase 4: Referral attribution + invite link ===
+        //
+        // attributeReferrer: client emits this when arriving with ?startapp=rf_<code>
+        //   First-attribution-wins. Self-referral and invalid codes silently ignored.
+        // getInviteLink: client requests their personal invite link (used by Barracks UI)
+        //   Lazily generates a referralCode on the User doc if one doesn't exist yet.
+        client.on('attributeReferrer', async (data) => {
+            try {
+                if (!data || typeof data !== 'object') return
+                const referrerCode = String(data.code || '').toUpperCase()
+                if (!referrerCode) return
+
+                // Build a query identifying the referee (current client)
+                const refereeQuery = buildUserQueryForClient(client)
+                if (!refereeQuery) return // no identity yet — let App.js retry on next connect
+
+                const result = await attributeReferrer({ refereeQuery, referrerCode })
+                if (result?.ok) {
+                    logger?.info?.({ socketId: client.id, code: referrerCode }, '[Referral] Attributed')
+                }
+                // Silent on failure — don't tell the user "you were invited" before they earn the reward
+            } catch (err) {
+                console.warn('[attributeReferrer] error:', err.message)
+            }
+        })
+
+        client.on('getInviteLink', async () => {
+            try {
+                const userQuery = buildUserQueryForClient(client)
+                if (!userQuery) {
+                    return client.emit('inviteLink', { ok: false, reason: 'no_identity' })
+                }
+                const code = await getOrCreateReferralCode(userQuery)
+                if (!code) {
+                    return client.emit('inviteLink', { ok: false, reason: 'no_user' })
+                }
+                client.emit('inviteLink', {
+                    ok: true,
+                    code,
+                    url: buildInviteLink(code),
+                })
+            } catch (err) {
+                console.warn('[getInviteLink] error:', err.message)
+                client.emit('inviteLink', { ok: false, reason: 'server_error' })
             }
         })
 
@@ -3836,6 +3896,23 @@ const mainsocket = (io) => {
                                             if (user && (user.stats?.consecutiveWins || 0) > (user.stats?.bestWinStreak || 0)) {
                                                 user.stats.bestWinStreak = user.stats.consecutiveWins
                                                 await user.save()
+                                            }
+                                        }
+
+                                        // Phase 4: Dispense referral reward if this was the player's
+                                        // first wagered match AND they have a referrer attached.
+                                        // Idempotent — guarded by referralRewardedAt in the service.
+                                        if (wagerAmt > 0) {
+                                            try {
+                                                const reward = await processReferralReward(query, { wagered: true })
+                                                if (reward) {
+                                                    logger.info(
+                                                        { socketId: pid, refereeReward: reward.refereeReward, inviterCode: reward.inviterCode },
+                                                        '[Referral] Reward dispensed'
+                                                    )
+                                                }
+                                            } catch (err) {
+                                                console.warn('[Referral] processReferralReward failed:', err.message)
                                             }
                                         }
                                     }

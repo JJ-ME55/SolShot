@@ -5,6 +5,7 @@ import Modal from '../components/Modal';
 import useSocket from '../hooks/useSocket';
 import TANK_COLORS from '../data/colors';
 import { useSolShotWallet } from '../wallet/WalletContext';
+import { haptic } from '../telegram/haptic';
 
 /* ── match modes (mirrors server MATCH_MODES — Litepaper v2.1) ── */
 const MATCH_MODES = {
@@ -619,6 +620,8 @@ function LobbyScreen({ navigate, screenData }) {
   const createRoom = useCallback(() => {
     if (!window.socket) return;
 
+    haptic.medium(); // primary CTA: room/challenge create
+
     const name = getPlayerName();
     const color = TANK_COLORS[selectedColor].phaserHex;
     const wagerToSend = isCustomMode ? customWager : wager;
@@ -688,6 +691,7 @@ function LobbyScreen({ navigate, screenData }) {
 
   const joinQueue = useCallback(() => {
     if (!window.socket) return;
+    haptic.medium(); // primary CTA: queue join
     const name = getPlayerName();
     const color = TANK_COLORS[selectedColor].phaserHex;
     const wagerToSend = isCustomMode ? customWager : wager;

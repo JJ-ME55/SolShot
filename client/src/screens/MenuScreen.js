@@ -5,6 +5,7 @@ import useIsMobile from '../hooks/useIsMobile';
 import ScanBtn from '../components/design/ScanBtn';
 import DesignTopBar from '../components/design/TopBar';
 import TerrainSilhouette from '../components/design/Terrain';
+import { haptic } from '../telegram/haptic';
 
 const TURRET = { x: -23, y: 80, rot: -3, w: 198 };
 const tankImg = { imageRendering: 'pixelated' };
@@ -71,14 +72,14 @@ function MenuScreen({ navigate }) {
         </div>
 
         {/* PLAY button */}
-        <ScanBtn onClick={() => navigate('lobby')} height={80} fontSize={44}>
+        <ScanBtn onClick={() => { haptic.medium(); navigate('lobby'); }} height={80} fontSize={44}>
           PLAY
         </ScanBtn>
 
         {/* Secondary buttons */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10, marginBottom: 18 }}>
           {secondary.map(b => (
-            <button key={b.id} onClick={() => navigate(b.screen)} style={{
+            <button key={b.id} onClick={() => { haptic.tap(); navigate(b.screen); }} style={{
               padding: '13px 18px',
               background: 'var(--bg-raised)',
               color: 'var(--bone)',
@@ -189,10 +190,10 @@ function MobileMenu({ navigate, callsign, shotBalance, solBalance, onlineCount, 
 
         {/* RIGHT — CTAs */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <ScanBtn onClick={() => navigate('lobby')} height={52} fontSize={26}>PLAY</ScanBtn>
+          <ScanBtn onClick={() => { haptic.medium(); navigate('lobby'); }} height={52} fontSize={26}>PLAY</ScanBtn>
 
           {secondary.map(b => (
-            <button key={b.id} onClick={() => navigate(b.screen)} style={{
+            <button key={b.id} onClick={() => { haptic.tap(); navigate(b.screen); }} style={{
               padding: '9px 14px',
               background: 'var(--bg-raised)', color: 'var(--bone)',
               border: '1px solid var(--border)', clipPath: 'var(--clip-6)',

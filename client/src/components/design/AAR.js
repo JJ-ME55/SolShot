@@ -5,6 +5,7 @@ import TrophyShareOverlay from '../TrophyShareOverlay';
 import TelegramShare from '../TelegramShare';
 import { useTelegram } from '../../telegram/TelegramContext';
 import { getWeaponById } from '../../data/weapons';
+import { haptic } from '../../telegram/haptic';
 
 const ordinal = (n) => n === 1 ? '1st' : n === 2 ? '2nd' : n === 3 ? '3rd' : n + 'th';
 
@@ -39,6 +40,15 @@ export default function AARScreen({ navigate, screenData, isWin }) {
   const [showCard, setShowCard] = useState(false);
   const [playerStats, setPlayerStats] = useState(null);
   const { isTelegram } = useTelegram();
+
+  // Haptic notification on AAR mount — fires once per screen entry.
+  // Win → success buzz, Loss → error buzz. No-op outside Telegram.
+  useEffect(() => {
+    if (isWin) haptic.win();
+    else haptic.lose();
+    // intentional: empty deps = fire once per AAR mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const isAIMatch = screenData?.isAIMatch || false;
   const wager = screenData?.wager || 0;

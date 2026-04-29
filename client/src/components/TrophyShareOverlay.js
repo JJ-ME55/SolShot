@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import html2canvas from 'html2canvas';
 import TrophyShareCard, { TROPHY_CARD_W, TROPHY_CARD_H } from './TrophyShareCard';
+import { haptic } from '../telegram/haptic';
 
 /**
  * TrophyShareOverlay
@@ -193,13 +194,13 @@ export default function TrophyShareOverlay({
 
         {/* Action buttons — 2x2 grid on narrow screens, 4-across on wide */}
         <div style={s.btnRow}>
-          <button style={s.btnPrimary} onClick={downloadPNG}>DOWNLOAD PNG</button>
-          <button style={s.btnSecondary} onClick={copyImage}>COPY IMAGE</button>
-          <button style={s.btnSecondary} onClick={postToX}>POST TO X</button>
-          <button style={s.btnSecondary} onClick={shareLink}>SHARE LINK</button>
+          <button style={s.btnPrimary}   onClick={() => { haptic.tap(); downloadPNG(); }}>DOWNLOAD PNG</button>
+          <button style={s.btnSecondary} onClick={() => { haptic.tap(); copyImage(); }}>COPY IMAGE</button>
+          <button style={s.btnSecondary} onClick={() => { haptic.tap(); postToX(); }}>POST TO X</button>
+          <button style={s.btnSecondary} onClick={() => { haptic.tap(); shareLink(); }}>SHARE LINK</button>
         </div>
 
-        <button style={s.closeBtn} onClick={onClose}>CLOSE</button>
+        <button style={s.closeBtn} onClick={() => { haptic.tap(); onClose(); }}>CLOSE</button>
 
         <div style={feedbackOk ? s.feedbackOk : s.feedback}>
           {feedback && (feedbackOk ? '✓ ' : '') + feedback}
@@ -214,12 +215,13 @@ const s = {
     position: 'fixed', inset: 0,
     background: 'rgba(10, 12, 8, 0.94)',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    zIndex: 9000, padding: 16,
+    zIndex: 9000,
+    padding: 'clamp(8px, 2.5vw, 16px)',
     overflowY: 'auto', WebkitOverflowScrolling: 'touch',
   },
   frame: {
     width: '100%', maxWidth: 1080,
-    display: 'flex', flexDirection: 'column', gap: 12,
+    display: 'flex', flexDirection: 'column', gap: 'clamp(8px, 2vw, 12px)',
   },
   stage: {
     width: '100%', maxWidth: TROPHY_CARD_W,
@@ -230,28 +232,29 @@ const s = {
   },
   btnRow: {
     display: 'grid',
+    // 2-up on phones (140px min ensures readable label), 4-up on wider screens
     gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
     gap: 8,
   },
   btnPrimary: {
-    padding: '13px 12px',
+    padding: 'clamp(11px, 2.8vw, 13px) 12px',
     background: 'var(--accent, #c8781a)',
     color: '#0e1209',
     border: '1px solid var(--accent-hot, #da8a28)',
     clipPath: 'var(--clip-6)',
     fontFamily: 'var(--f-display)',
-    fontSize: 12, letterSpacing: '0.18em',
+    fontSize: 'clamp(11px, 2.6vw, 12px)', letterSpacing: '0.18em',
     cursor: 'pointer',
     boxShadow: '0 0 12px rgba(218,138,40,0.25)',
   },
   btnSecondary: {
-    padding: '13px 12px',
+    padding: 'clamp(11px, 2.8vw, 13px) 12px',
     background: 'transparent',
     color: 'var(--bone, #c8b87a)',
     border: '1px solid var(--border, #1e2a14)',
     clipPath: 'var(--clip-6)',
     fontFamily: 'var(--f-display)',
-    fontSize: 12, letterSpacing: '0.18em',
+    fontSize: 'clamp(11px, 2.6vw, 12px)', letterSpacing: '0.18em',
     cursor: 'pointer',
   },
   closeBtn: {

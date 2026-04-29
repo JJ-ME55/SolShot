@@ -3,6 +3,7 @@ import ScreenHeader from '../components/design/ScreenHeader';
 import TerrainSilhouette from '../components/design/Terrain';
 import StatCardOverlay from '../components/StatCard';
 import { useTelegram } from '../telegram/TelegramContext';
+import { haptic } from '../telegram/haptic';
 
 function fmtDmg(val) {
   if (!val || val <= 0) return '—';
@@ -165,6 +166,7 @@ function BarracksScreen({ navigate }) {
    * Outside of TG, falls back to copying a public link to the card PNG.
    */
   const handleShareStats = () => {
+    haptic.tap();
     setShareError(null);
     const tg = window.Telegram?.WebApp;
     if (tg?.switchInlineQuery) {
@@ -189,6 +191,7 @@ function BarracksScreen({ navigate }) {
 
   const handleInvite = () => {
     if (!inviteUrl) return;
+    haptic.tap();
     const tg = window.Telegram?.WebApp;
     if (tg?.switchInlineQuery) {
       // Best UX: pop the chat picker, send via inline mode (when implemented)

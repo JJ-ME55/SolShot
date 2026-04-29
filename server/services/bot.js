@@ -20,7 +20,7 @@
  */
 
 import { Telegraf } from 'telegraf';
-import { lookupUserByTelegramId } from './users.js';
+import { lookupUserByTelegramId, getTopPlayers, getPlayerRank } from './users.js';
 import { PRESTIGE_TIERS } from './shot-token.js';
 import { getOrCreateReferralCode, buildInviteLink, REFERRAL_REWARD_SHOT } from './referrals.js';
 import { getChallenge, markAccepted } from './challenge/challenge.js';
@@ -99,17 +99,95 @@ function registerCommands(bot) {
   });
 
   bot.command('stats', async (ctx) => {
-    await ctx.reply(
-      'Your record, rank, and signature weapon.',
-      { reply_markup: launchKeyboard('Open Barracks', 'stats') }
-    );
+    try {
+      const user = await lookupUserByTelegramId(ctx.from?.id);
+      if (!user || !user.stats || (user.stats.matchesPlayed || 0) === 0) {
+        return ctx.reply(
+          'No record yet — play your first match to start tracking stats.',
+          { reply_markup: launchKeyboard('Find a Match', 'play') }
+        );
+      }
+
+      const s = user.stats;
+      const callsign = (user.handle || ctx.from?.first_name || 'OPERATIVE').toUpperCase();
+      const matches  = s.matchesPlayed || 0;
+      const wins     = s.wins || 0;
+      const losses   = s.losses || 0;
+      const winRate  = matches > 0 ? Math.round((wins / matches) * 100) : 0;
+      const dmg      = s.totalDamage || 0;
+      const kills    = s.kills || 0;
+      const deaths   = s.deaths || 0;
+      const kd       = deaths > 0 ? (kills / deaths).toFixed(2) : (kills > 0 ? kills.toFixed(2) : '—');
+      const streak   = s.bestWinStreak || 0;
+      const tierIdx  = s.prestigeTier || 0;
+      const tierName = (PRESTIGE_TIERS[tierIdx] || PRESTIGE_TIERS[0]).name.toUpperCase();
+      const rank     = await getPlayerRank(ctx.from?.id);
+
+      const fmtDmg = (n) => n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n);
+      const lines = [
+        `${callsign} · ${tierName}${rank ? ` · #${rank}` : ''}`,
+        '',
+        `${wins}W · ${losses}L · ${winRate}% win rate`,
+        `${fmtDmg(dmg)} damage · ${kills} kills · ${kd} K/D`,
+        streak > 0 ? `Best streak: ${streak}W` : null,
+      ].filter(Boolean);
+
+      await ctx.reply(lines.join('\n'), {
+        reply_markup: launchKeyboard('Full Record', 'stats'),
+      });
+    } catch (err) {
+      console.warn('[bot:/stats] error, falling back:', err.message);
+      await ctx.reply(
+        'Your record, rank, and signature weapon.',
+        { reply_markup: launchKeyboard('Open Barracks', 'stats') }
+      );
+    }
   });
 
   bot.command('leaderboard', async (ctx) => {
-    await ctx.reply(
-      'Top players this season.',
-      { reply_markup: launchKeyboard('Open Leaderboard', 'leaderboard') }
-    );
+    try {
+      const top = await getTopPlayers(10);
+      if (!top.length) {
+        return ctx.reply(
+          'No players ranked yet — be the first.',
+          { reply_markup: launchKeyboard('Find a Match', 'play') }
+        );
+      }
+
+      const myRank = await getPlayerRank(ctx.from?.id);
+      const lines = ['🏆 SOLSHOT LEADERBOARD', ''];
+      top.forEach((p, i) => {
+        const handle = (p.handle || 'OPERATIVE').toUpperCase().padEnd(12, ' ').slice(0, 12);
+        const wins   = p.stats?.wins || 0;
+        const losses = p.stats?.losses || 0;
+        const matches = p.stats?.matchesPlayed || 0;
+        const wr = matches > 0 ? Math.round((wins / matches) * 100) : 0;
+        lines.push(`${String(i + 1).padStart(2, ' ')}. ${handle}  ${wins}W·${losses}L · ${wr}%`);
+      });
+
+      // If the asker isn't in the top 10, show their rank below
+      if (myRank && myRank > 10) {
+        const me = await lookupUserByTelegramId(ctx.from?.id);
+        if (me?.stats) {
+          const wins   = me.stats.wins || 0;
+          const losses = me.stats.losses || 0;
+          const matches = me.stats.matchesPlayed || 0;
+          const wr = matches > 0 ? Math.round((wins / matches) * 100) : 0;
+          lines.push('');
+          lines.push(`→ You · #${myRank} · ${wins}W·${losses}L · ${wr}%`);
+        }
+      }
+
+      await ctx.reply(lines.join('\n'), {
+        reply_markup: launchKeyboard('Full Leaderboard', 'leaderboard'),
+      });
+    } catch (err) {
+      console.warn('[bot:/leaderboard] error, falling back:', err.message);
+      await ctx.reply(
+        'Top players this season.',
+        { reply_markup: launchKeyboard('Open Leaderboard', 'leaderboard') }
+      );
+    }
   });
 
   bot.command('wallet', async (ctx) => {

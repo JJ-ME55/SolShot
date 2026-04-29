@@ -97,3 +97,59 @@ export async function lookupUserByTelegramId(telegramUserId) {
         return null;
     }
 }
+
+/**
+ * Get the top N players by wins for in-chat leaderboard display.
+ * Excludes players with zero matches. Tiebreaker: fewer matches played
+ * (higher win rate ranks better).
+ *
+ * @param {number} [limit=10]
+ * @returns {Promise<Array<{ handle, stats: { wins, losses, matchesPlayed, totalDamage } }>>}
+ */
+export async function getTopPlayers(limit = 10) {
+    try {
+        return await User.find(
+            { 'stats.matchesPlayed': { $gte: 1 } },
+            { handle: 1, 'stats.wins': 1, 'stats.losses': 1, 'stats.matchesPlayed': 1, 'stats.totalDamage': 1 }
+        )
+            .sort({ 'stats.wins': -1, 'stats.matchesPlayed': 1 })
+            .limit(limit)
+            .lean();
+    } catch (err) {
+        console.warn('[users] getTopPlayers failed:', err.message);
+        return [];
+    }
+}
+
+/**
+ * Compute a player's leaderboard rank (1-indexed). Same sort order as
+ * getTopPlayers (wins desc, matchesPlayed asc).
+ *
+ * @param {number} telegramUserId
+ * @returns {Promise<number|null>} Rank (1-based) or null if no matches played
+ */
+export async function getPlayerRank(telegramUserId) {
+    if (!telegramUserId) return null;
+    try {
+        const me = await User.findOne(
+            { telegramUserId },
+            { 'stats.wins': 1, 'stats.matchesPlayed': 1 }
+        ).lean();
+        if (!me?.stats || (me.stats.matchesPlayed || 0) === 0) return null;
+
+        const myWins = me.stats.wins || 0;
+        const myMatches = me.stats.matchesPlayed || 0;
+
+        const ahead = await User.countDocuments({
+            'stats.matchesPlayed': { $gte: 1 },
+            $or: [
+                { 'stats.wins': { $gt: myWins } },
+                { 'stats.wins': myWins, 'stats.matchesPlayed': { $lt: myMatches } },
+            ],
+        });
+        return ahead + 1;
+    } catch (err) {
+        console.warn('[users] getPlayerRank failed:', err.message);
+        return null;
+    }
+}

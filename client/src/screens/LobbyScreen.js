@@ -12,7 +12,7 @@ const MATCH_MODES = {
   quick_match:      { label: 'QUICK MATCH',       wagerRange: [0.1, 0.1],      formats: [1, 3],    color: 'var(--sg)' },
   duel:             { label: 'DUEL',              wagerRange: [0.25, 0.5],     formats: [3, 5],    color: '#00ccff' },
   high_roller:      { label: 'HIGH ROLLER',       wagerRange: [1.0, 1.0],      formats: [3, 5],    color: '#ffcc00' },
-  custom_challenge: { label: 'CUSTOM CHALLENGE',  wagerRange: [0.1, Infinity], formats: [1, 3, 5], color: '#ff6600' },
+  custom_challenge: { label: 'CUSTOM CHALLENGE',  wagerRange: [0, Infinity],   formats: [1, 3, 5], color: '#ff6600' },
 };
 const MODE_KEYS = Object.keys(MATCH_MODES);
 
@@ -380,23 +380,17 @@ function LobbyScreen({ navigate, screenData }) {
     }
   }, []);
 
-  /* ── Phase 3 — auto-create challenge if arrived via /challenge bot command ── */
+  /* ── Phase 3 — arriving via /challenge bot command or "challenge_new" deep link.
+      Switch to CUSTOM CHALLENGE mode with sensible defaults so the user picks
+      their wager + format BEFORE creating a Challenge doc. The actual create
+      fires when they hit "CREATE CHALLENGE" via createWageredChallenge(). */
   useEffect(() => {
     if (!screenData?.autoCreateChallenge) return;
     if (challengeAutoFiredRef.current) return;
     challengeAutoFiredRef.current = true;
-    const sock = window.socket;
-    if (!sock) return;
-    const handle = localStorage.getItem('solshot_handle') || 'OPERATIVE';
-    const fire = () => {
-      sock.emit('createChallengeRoom', {
-        player: { name: handle, color: 0, wager: 0 },
-        format: 'BO1',
-        wagerToken: 'SOL',
-      });
-    };
-    if (sock.connected) fire();
-    else sock.once('connect', fire);
+    setMatchMode('custom_challenge');
+    setCustomWager(0.1);
+    setMatchLength(1); // BO1 default
   }, [screenData]);
 
   /* ── socket: room list ── */
@@ -629,6 +623,27 @@ function LobbyScreen({ navigate, screenData }) {
     const color = TANK_COLORS[selectedColor].phaserHex;
     const wagerToSend = isCustomMode ? customWager : wager;
 
+    // Custom Challenge → emit createChallengeRoom (creates a Challenge document
+    // + shortCode + shareable deep link). The lobby's challenge share panel
+    // renders automatically once the server responds with `challengeCreated`.
+    // Anything else → emit createRoom (standard private/quick room).
+    if (isCustomMode) {
+      const formatStr = matchLength === 5 ? 'BO5' : matchLength === 3 ? 'BO3' : 'BO1';
+      window.socket.emit('createChallengeRoom', {
+        player: {
+          name,
+          color,
+          walletAddress: walletAddress || null,
+          wager: wagerToSend,
+        },
+        format: formatStr,
+        wagerToken: 'SOL',
+      });
+      setWaitingRoomMax(2); // challenges are always 1v1
+      setWaiting(true);
+      return;
+    }
+
     window.socket.emit('createRoom', {
       player: {
         name,
@@ -799,34 +814,58 @@ function LobbyScreen({ navigate, screenData }) {
 
           {/* Player Count — hidden for practice-only launch */}
 
-          {/* Wager */}
+          {/* Wager — custom mode uses preset tier buttons + a CUSTOM option that reveals
+              a numeric input. Picking FREE creates a no-wager practice challenge (no
+              wallet auth required). 0.1+ tiers require wallet auth on createChallengeRoom. */}
           {isCustomMode ? (
             <div>
-              <div style={s.sectionLabel}>WAGER (SOL)</div>
-              <div style={s.sublabel}>MINIMUM 0.1 SOL</div>
-              <input
-                type="number"
-                min="0.1"
-                step="0.1"
-                value={customWager}
-                onChange={(e) => {
-                  const val = parseFloat(e.target.value);
-                  if (!isNaN(val) && val >= 0.1) setCustomWager(Math.round(val * 100) / 100);
-                }}
-                style={{
-                  width: '100%',
-                  padding: '8px 10px',
-                  fontFamily: "'Share Tech Mono', monospace",
-                  fontSize: 14,
-                  letterSpacing: 1,
-                  background: 'rgba(255, 102, 0, 0.08)',
-                  border: '1px solid #ff6600',
-                  borderRadius: 3,
-                  color: '#ff6600',
-                  outline: 'none',
-                  boxSizing: 'border-box',
-                }}
-              />
+              <div style={s.sectionLabel}>WAGER</div>
+              <div style={s.sublabel}>FREE OR PICK A TIER · CUSTOM FOR ANY AMOUNT</div>
+              <div style={{ ...s.wagerRow, flexWrap: 'wrap', gap: 4 }}>
+                {[0, 0.1, 0.25, 0.5, 1.0].map((tier) => (
+                  <div
+                    key={tier}
+                    style={s.wagerBtn(customWager === tier)}
+                    onClick={() => setCustomWager(tier)}
+                  >
+                    {tier === 0 ? 'FREE' : tier + ' SOL'}
+                  </div>
+                ))}
+                <div
+                  style={s.wagerBtn(![0, 0.1, 0.25, 0.5, 1.0].includes(customWager))}
+                  onClick={() => {
+                    if ([0, 0.1, 0.25, 0.5, 1.0].includes(customWager)) setCustomWager(0.2);
+                  }}
+                >
+                  CUSTOM
+                </div>
+              </div>
+              {![0, 0.1, 0.25, 0.5, 1.0].includes(customWager) && (
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={customWager}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    if (!isNaN(val) && val >= 0) setCustomWager(Math.round(val * 100) / 100);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '8px 10px',
+                    marginTop: 8,
+                    fontFamily: "'Share Tech Mono', monospace",
+                    fontSize: 14,
+                    letterSpacing: 1,
+                    background: 'rgba(255, 102, 0, 0.08)',
+                    border: '1px solid #ff6600',
+                    borderRadius: 3,
+                    color: '#ff6600',
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              )}
             </div>
           ) : availableWagers.length > 1 ? (
             <div>
@@ -877,7 +916,7 @@ function LobbyScreen({ navigate, screenData }) {
           <div style={s.quickBtns}>
             {isCustomMode ? (
               <Button variant="primary" onClick={createRoom} style={{ fontSize: 15, padding: '12px 20px', borderColor: '#ff6600', color: '#ff6600' }}>
-                CREATE CHALLENGE
+                {customWager > 0 ? `CREATE CHALLENGE · ${customWager} SOL` : 'CREATE FREE CHALLENGE'}
               </Button>
             ) : matchMode === 'practice' ? (
               <Button variant="primary" onClick={createRoom} style={{ fontSize: 15, padding: '12px 20px' }}>

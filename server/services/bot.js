@@ -275,10 +275,88 @@ function registerCommands(bot) {
   });
 
   bot.command('wallet', async (ctx) => {
-    await ctx.reply(
-      'Your wallet — balance, deposit, withdraw.',
-      { reply_markup: launchKeyboard('Open Wallet', 'wallet') }
-    );
+    // Smart reply: show wallet address + balances + prestige progress.
+    // For TG-only users (no wallet connected yet), prompts them to open
+    // the Mini App and link a wallet. Once Dynamic embedded wallets ship,
+    // this same reply lights up with real on-chain balances — the surface
+    // area is ready, just the data source swaps.
+    try {
+      const user = await lookupUserByTelegramId(ctx.from?.id);
+      const callsign = (user?.handle || ctx.from?.first_name || 'OPERATIVE').toUpperCase();
+
+      // Case 1: no record yet — never played
+      if (!user) {
+        return ctx.reply(
+          `${callsign}\n\nNo wallet linked yet. Open the Mini App to connect — needed for wagered matches and SHOT.`,
+          { reply_markup: launchKeyboard('Connect Wallet', 'wallet') }
+        );
+      }
+
+      // Case 2: TG-only user, no wallet authenticated
+      if (!user.walletAddress) {
+        const tierIdx = user.stats?.prestigeTier || 0;
+        const tierName = (PRESTIGE_TIERS[tierIdx] || PRESTIGE_TIERS[0]).name.toUpperCase();
+        const inGameShot = user.stats?.shotBalance || 0;
+
+        const lines = [
+          `${callsign} · ${tierName}`,
+          '',
+          'WALLET: not connected',
+        ];
+        if (inGameShot > 0) {
+          lines.push(`In-game SHOT: ${inGameShot.toLocaleString()}`);
+          lines.push('Connect a wallet to convert and use on-chain.');
+        } else {
+          lines.push('Connect a wallet to receive SHOT and wager SOL.');
+        }
+        return ctx.reply(lines.join('\n'), {
+          reply_markup: launchKeyboard('Connect Wallet', 'wallet'),
+        });
+      }
+
+      // Case 3: wallet connected — show full ledger
+      const tierIdx = user.stats?.prestigeTier || 0;
+      const current = PRESTIGE_TIERS[tierIdx] || PRESTIGE_TIERS[0];
+      const next    = PRESTIGE_TIERS[tierIdx + 1] || null;
+      const tierName = current.name.toUpperCase();
+
+      const wAddr = user.walletAddress;
+      const wShort = `${wAddr.slice(0, 4)}...${wAddr.slice(-4)}`;
+      const shot = user.stats?.shotBalance || 0;
+      const burned = user.stats?.totalBurned || user.stats?.shotBurned || 0;
+      const solWon = user.stats?.totalSolWon || 0;
+      const solLost = user.stats?.totalSolLost || 0;
+      const solNet = solWon - solLost;
+      const solSign = solNet >= 0 ? '+' : '−';
+
+      const lines = [
+        `${callsign} · ${tierName}`,
+        '',
+        `WALLET: ${wShort}`,
+        `SHOT: ${shot.toLocaleString()}`,
+      ];
+      if (solWon > 0 || solLost > 0) {
+        lines.push(`SOL TRACKED: ${solSign}${Math.abs(solNet).toFixed(3)} (won ${solWon.toFixed(3)} / lost ${solLost.toFixed(3)})`);
+      }
+      if (burned > 0) {
+        lines.push(`PRESTIGE BURNED: ${burned.toLocaleString()} SHOT`);
+      }
+      if (next) {
+        const remaining = Math.max(0, next.burnCost - burned);
+        lines.push('');
+        lines.push(`Next tier: ${next.name.toUpperCase()} · ${remaining.toLocaleString()} SHOT to go`);
+      }
+
+      await ctx.reply(lines.join('\n'), {
+        reply_markup: launchKeyboard('Open Wallet', 'wallet'),
+      });
+    } catch (err) {
+      console.warn('[bot:/wallet] lookup failed, falling back:', err.message);
+      await ctx.reply(
+        'Your wallet — balance, deposit, withdraw.',
+        { reply_markup: launchKeyboard('Open Wallet', 'wallet') }
+      );
+    }
   });
 
   bot.command('shop', async (ctx) => {

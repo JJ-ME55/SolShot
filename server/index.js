@@ -183,6 +183,41 @@ app.post('/api/admin/reload-keys', requireAdminKey, (req, res) => {
     res.json({ ok, message: ok ? 'Keys reloaded directly' : 'Key reload failed' });
 });
 
+// One-shot migration — truncate legacy handles longer than 12 chars to 12.
+// Why: HandleModal cap was tightened from 16 → 12 to fit the trophy/career
+// cards' callsign budget. Existing 13-16 char handles in DB are grandfathered
+// but still clip on those cards. Run this once to align them.
+//
+// Usage:
+//   curl -X POST -H "x-admin-key: $ADMIN_KEY" https://<server>/api/admin/truncate-handles
+// Response: { matched, modified, samples: [{ before, after }] }
+//
+// Idempotent — re-running after a clean run finds zero matches.
+app.post('/api/admin/truncate-handles', requireAdminKey, async (req, res) => {
+    try {
+        const User = (await import('./models/User.js')).default;
+        // Find all User docs with handles longer than 12 chars
+        const longHandled = await User.find(
+            { handle: { $regex: /^.{13,}$/ } },
+            { _id: 1, handle: 1 }
+        ).lean();
+
+        const samples = [];
+        let modified = 0;
+        for (const u of longHandled) {
+            const before = u.handle;
+            const after = before.slice(0, 12);
+            await User.updateOne({ _id: u._id }, { $set: { handle: after } });
+            modified++;
+            if (samples.length < 5) samples.push({ before, after });
+        }
+        res.json({ ok: true, matched: longHandled.length, modified, samples });
+    } catch (err) {
+        console.error('[/api/admin/truncate-handles]', err.message);
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
 // SEC-02: CSP violation reporting endpoint
 app.post('/api/csp-report', express.json({ type: 'application/csp-report' }), (req, res) => {
     const report = req.body['csp-report'] || req.body;

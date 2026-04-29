@@ -26,6 +26,7 @@ import { getOrCreateReferralCode, buildInviteLink, REFERRAL_REWARD_SHOT } from '
 import { getChallenge, markAccepted } from './challenge/challenge.js';
 import { renderCareerCardPng } from './challenge/renderCareerCard.js';
 import { buildCareerProps } from './challenge/careerCardProps.js';
+import { WEAPON_DATA } from './physics.js';
 
 // The path segment after the bot username is the Mini App `short_name` registered
 // in BotFather. Our Mini App is registered as `play` (not `solshot`). Set
@@ -360,10 +361,46 @@ function registerCommands(bot) {
   });
 
   bot.command('shop', async (ctx) => {
-    await ctx.reply(
-      'Cosmetics, camos, and projectile trails — paid in SHOT.',
-      { reply_markup: launchKeyboard('Open Armory', 'shop') }
-    );
+    // Smart reply: shows user's SHOT balance + cosmetics owned + total available.
+    // The full catalog (28 items) lives client-side in data/tiers.js — we don't
+    // mirror it server-side to avoid drift. The 28 figure is hardcoded here as
+    // the only "duplicated" knowledge — keep in sync with COSMETIC_ITEMS.length.
+    const TOTAL_COSMETICS = 28;
+    try {
+      const user = await lookupUserByTelegramId(ctx.from?.id);
+      if (!user) {
+        return ctx.reply(
+          `Cosmetics, camos, and projectile trails — paid in SHOT.\n\n${TOTAL_COSMETICS} items in the Armory. Open the Mini App to browse.`,
+          { reply_markup: launchKeyboard('Open Armory', 'shop') }
+        );
+      }
+
+      const callsign = (user.handle || ctx.from?.first_name || 'OPERATIVE').toUpperCase();
+      const shotBalance = user.stats?.shotBalance || 0;
+      const owned = Array.isArray(user.cosmetics?.owned) ? user.cosmetics.owned.length : 0;
+
+      const lines = [`${callsign} · ARMORY`];
+      lines.push('');
+      lines.push(`SHOT BALANCE: ${shotBalance.toLocaleString()}`);
+      lines.push(`COSMETICS OWNED: ${owned} / ${TOTAL_COSMETICS}`);
+      if (shotBalance >= 50 && owned < TOTAL_COSMETICS) {
+        lines.push('');
+        lines.push('Patterns from 50 SHOT, trails from 75 SHOT, kill effects from 100 SHOT.');
+      } else if (owned === 0) {
+        lines.push('');
+        lines.push('Earn SHOT in matches to unlock your first cosmetic.');
+      }
+
+      await ctx.reply(lines.join('\n'), {
+        reply_markup: launchKeyboard('Open Armory', 'shop'),
+      });
+    } catch (err) {
+      console.warn('[bot:/shop] lookup failed, falling back:', err.message);
+      await ctx.reply(
+        'Cosmetics, camos, and projectile trails — paid in SHOT.',
+        { reply_markup: launchKeyboard('Open Armory', 'shop') }
+      );
+    }
   });
 
   bot.command('prestige', async (ctx) => {
@@ -405,10 +442,75 @@ function registerCommands(bot) {
   });
 
   bot.command('weapons', async (ctx) => {
-    await ctx.reply(
-      '20 weapons across 6 tiers — single shot to nuclear pineapple. Browse the arsenal.',
-      { reply_markup: launchKeyboard('Open Arsenal', 'weapons') }
-    );
+    // Smart reply: shows the user's MVP weapon, total shots fired, prestige
+    // weapons they've unlocked, and a teaser for the next prestige unlock.
+    // Falls back to a generic launcher if no record exists yet.
+    try {
+      const user = await lookupUserByTelegramId(ctx.from?.id);
+      if (!user || !user.stats || (user.stats.matchesPlayed || 0) === 0) {
+        return ctx.reply(
+          '20 weapons across 6 tiers — single shot to nuclear pineapple. Play your first match to start tracking.',
+          { reply_markup: launchKeyboard('Open Arsenal', 'weapons') }
+        );
+      }
+
+      const s = user.stats;
+      const callsign = (user.handle || ctx.from?.first_name || 'OPERATIVE').toUpperCase();
+      const tierIdx = s.prestigeTier || 0;
+      const current = PRESTIGE_TIERS[tierIdx] || PRESTIGE_TIERS[0];
+      const next    = PRESTIGE_TIERS[tierIdx + 1] || null;
+
+      // Compute MVP weapon from per-weapon damage map
+      let mvpName = null;
+      let mvpDmg = 0;
+      let totalShots = 0;
+      const weaponStats = s.weaponStats;
+      if (weaponStats && typeof weaponStats === 'object') {
+        for (const [id, st] of Object.entries(weaponStats)) {
+          const dmg = Number(st?.damageDealt) || 0;
+          totalShots += Number(st?.shotsFired) || 0;
+          if (dmg > mvpDmg) {
+            mvpDmg = dmg;
+            const wep = WEAPON_DATA[Number(id)];
+            mvpName = wep?.name || null;
+          }
+        }
+      }
+
+      // Resolve prestige weapon names from PRESTIGE_TIERS
+      const unlockedPrestigeWeapons = PRESTIGE_TIERS
+        .filter(t => t.tier > 0 && t.tier <= tierIdx)
+        .flatMap(t => t.weapons.map(wid => WEAPON_DATA[wid]?.name).filter(Boolean));
+
+      const lines = [`${callsign} · ${current.name.toUpperCase()}`];
+      lines.push('');
+      if (mvpName) {
+        const fmtDmg = mvpDmg >= 1000 ? `${(mvpDmg / 1000).toFixed(1)}K` : String(mvpDmg);
+        lines.push(`MVP: ${mvpName.toUpperCase()} · ${fmtDmg} HP`);
+      }
+      if (totalShots > 0) {
+        lines.push(`Total shots fired: ${totalShots.toLocaleString()}`);
+      }
+      if (unlockedPrestigeWeapons.length > 0) {
+        lines.push('');
+        lines.push(`Prestige unlocked: ${unlockedPrestigeWeapons.join(', ').toUpperCase()}`);
+      }
+      if (next && next.weapons.length > 0) {
+        const nextWepNames = next.weapons.map(wid => WEAPON_DATA[wid]?.name).filter(Boolean);
+        lines.push('');
+        lines.push(`Next unlock: ${nextWepNames.join(', ').toUpperCase()} at ${next.name.toUpperCase()}`);
+      }
+
+      await ctx.reply(lines.join('\n'), {
+        reply_markup: launchKeyboard('Open Arsenal', 'weapons'),
+      });
+    } catch (err) {
+      console.warn('[bot:/weapons] lookup failed, falling back:', err.message);
+      await ctx.reply(
+        '20 weapons across 6 tiers — single shot to nuclear pineapple. Browse the arsenal.',
+        { reply_markup: launchKeyboard('Open Arsenal', 'weapons') }
+      );
+    }
   });
 
   bot.command('help', async (ctx) => {

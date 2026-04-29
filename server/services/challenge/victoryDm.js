@@ -63,6 +63,20 @@ async function findWinnerTelegramId(winnerSocketId, getAuthenticatedWallet) {
  * Build TrophyShareCardProps from in-memory match state.
  * @param {object} args - { ms, room, winnerId, opponentId, winnerHandle, opponentHandle }
  */
+/**
+ * Format ms.matchStartedAt → "MM:SS" using wall-clock delta.
+ * Falls back to "—:—" if start time is missing or implausible.
+ */
+function formatMatchDuration(matchStartedAt) {
+    if (!matchStartedAt || typeof matchStartedAt !== 'number') return '—:—';
+    const elapsedMs = Date.now() - matchStartedAt;
+    if (elapsedMs <= 0 || elapsedMs > 24 * 60 * 60 * 1000) return '—:—';
+    const totalSec = Math.floor(elapsedMs / 1000);
+    const mm = Math.floor(totalSec / 60).toString().padStart(2, '0');
+    const ss = (totalSec % 60).toString().padStart(2, '0');
+    return `${mm}:${ss}`;
+}
+
 function buildTrophyProps({ ms, room, winnerId, opponentId, winnerHandle, opponentHandle, matchId }) {
     const scores = ms.scores || {};
     const wDamage = ms.weaponDamage?.[winnerId] || {};
@@ -91,7 +105,7 @@ function buildTrophyProps({ ms, room, winnerId, opponentId, winnerHandle, oppone
         score: `${winnerRounds} – ${opponentRounds}`,
         matchId: `M-#${(matchId || 'UNKNOWN').toString().slice(0, 8).toUpperCase()}`,
         terrain: (room?.matchMode || 'BATTLEFIELD').toUpperCase().slice(0, 10),
-        duration: '—:—', // TODO: track match start time on matchState; placeholder for v1
+        duration: formatMatchDuration(ms?.matchStartedAt),
     };
 }
 

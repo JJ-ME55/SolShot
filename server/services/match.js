@@ -118,6 +118,7 @@ export function createMatchState(roomId, roundType = '1', maxPlayers = 2) {
         terrain: null,
         tankPositions: null,
         stateChangedAt: Date.now(),
+        matchStartedAt: Date.now(),  // wall-clock match-create time — used for share-card duration
         // Phase 11: Per-weapon stats tracking
         weaponShotsFired: {}, // { [playerId]: { [weaponId]: count } }
         weaponHits: {},       // { [playerId]: { [weaponId]: count } }

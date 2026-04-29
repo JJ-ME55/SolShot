@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import ScreenHeader from '../components/design/ScreenHeader';
 import TerrainSilhouette from '../components/design/Terrain';
 import StatCardOverlay from '../components/StatCard';
+import { useTelegram } from '../telegram/TelegramContext';
 
 function fmtDmg(val) {
   if (!val || val <= 0) return '—';
@@ -140,6 +141,10 @@ function BarracksScreen({ navigate }) {
   const [showCard, setShowCard] = useState(false);
   const [inviteUrl, setInviteUrl] = useState(null);
   const [inviteCopied, setInviteCopied] = useState(false);
+  const [shareError, setShareError] = useState(null);
+
+  // Telegram context — needed for switchInlineQuery share
+  const { isTelegram } = useTelegram();
 
   // Phase 4 — fetch personal invite link on mount
   useEffect(() => {
@@ -150,6 +155,37 @@ function BarracksScreen({ navigate }) {
     sock.on('inviteLink', handler);
     return () => sock.off('inviteLink', handler);
   }, []);
+
+  /**
+   * Share My Stats — pop the TG chat picker, drop the career card image
+   * into whichever chat the user picks. Server's inline_query handler
+   * uses ctx.from.id to render the SENDER's card (not whatever's in the
+   * query payload), so users can only share their own stats.
+   *
+   * Outside of TG, falls back to copying a public link to the card PNG.
+   */
+  const handleShareStats = () => {
+    setShareError(null);
+    const tg = window.Telegram?.WebApp;
+    if (tg?.switchInlineQuery) {
+      try {
+        tg.switchInlineQuery('stats', ['users', 'groups']);
+      } catch (err) {
+        setShareError('Share unavailable in this client.');
+      }
+      return;
+    }
+    // Web fallback — copy /api/stats/<id>/card.png if we can resolve TG id;
+    // otherwise just copy the Mini App URL so they can view in TG.
+    const fallbackUrl = 'https://t.me/SolShotGG_bot/play?startapp=stats';
+    if (navigator.share) {
+      navigator.share({ title: 'SolShot — my stats', url: fallbackUrl }).catch(() => {});
+    } else if (navigator.clipboard) {
+      navigator.clipboard.writeText(fallbackUrl).catch(() => {});
+      setShareError('Link copied — open in Telegram to share the card.');
+      setTimeout(() => setShareError(null), 2500);
+    }
+  };
 
   const handleInvite = () => {
     if (!inviteUrl) return;
@@ -258,6 +294,37 @@ function BarracksScreen({ navigate }) {
                 fontFamily: 'var(--f-display)', fontSize: 13, letterSpacing: '0.18em', cursor: 'pointer',
               }}>FIND A MATCH</button>
             </div>
+
+            {/* Share My Stats — pop chat picker, drop career card into any TG chat */}
+            {isTelegram && stats && (stats.matchesPlayed || 0) > 0 && (
+              <div style={{
+                marginTop: 14, padding: '14px 16px',
+                background: 'var(--bg-surface)', border: '1px solid var(--border)',
+                clipPath: 'var(--clip-10)',
+              }}>
+                <div style={{
+                  fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--accent)',
+                  letterSpacing: '0.22em', marginBottom: 6,
+                }}>SHARE MY OPERATIVE FILE</div>
+                <div style={{
+                  fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--olive)',
+                  letterSpacing: '0.06em', marginBottom: 10, lineHeight: 1.5,
+                }}>
+                  Drop your career card into any chat — let them see what you've earned.
+                </div>
+                <button onClick={handleShareStats} style={{
+                  width: '100%', padding: '10px', background: 'var(--accent)', color: '#0e1209',
+                  border: '1px solid var(--accent-hot)', clipPath: 'var(--clip-6)',
+                  fontFamily: 'var(--f-display)', fontSize: 11, letterSpacing: '0.18em', cursor: 'pointer',
+                }}>SHARE MY STATS</button>
+                {shareError && (
+                  <div style={{
+                    marginTop: 8, fontFamily: 'var(--f-mono)', fontSize: 10,
+                    color: 'var(--olive)', letterSpacing: '0.1em', textAlign: 'center',
+                  }}>{shareError}</div>
+                )}
+              </div>
+            )}
 
             {/* Phase 4 — referral / invite panel */}
             {inviteUrl && (

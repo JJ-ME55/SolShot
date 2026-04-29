@@ -4004,6 +4004,8 @@ const mainsocket = (io) => {
             room.heightmap = heightmap
             room.terrainSeed = fullSeed
             room.wind = wind
+            // Persist for post-match trophy card biome name
+            room.backgroundIndex = backgroundIndex
             // N-player: generate positions for all players and assign to room.players[i].pos
             const positions = generateTankPositions(heightmap, room.players.length, 1200)
             room.players.forEach((p, i) => {

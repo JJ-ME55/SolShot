@@ -418,6 +418,54 @@ function registerCommands(bot) {
   bot.on('inline_query', async (ctx) => {
     try {
       const query = (ctx.inlineQuery?.query || '').trim();
+
+      // Stats share — sender's own career card. We use ctx.from.id as the
+      // source of truth (NOT the query payload), so users can only share
+      // their own stats, never someone else's.
+      if (query.startsWith('stats')) {
+        const tgId = ctx.from?.id;
+        if (!tgId) return ctx.answerInlineQuery([], { cache_time: 1 });
+
+        const user = await lookupUserByTelegramId(tgId);
+        if (!user) {
+          // No record yet — show a single result that pushes them to play
+          return ctx.answerInlineQuery([{
+            type: 'article',
+            id: `stats-noop-${tgId}`,
+            title: 'No stats yet',
+            description: 'Play your first match to unlock your operative file.',
+            input_message_content: { message_text: `Just discovered SolShot — going to play my first match. ${MINI_APP_URL}?startapp=play` },
+          }], { cache_time: 1, is_personal: true });
+        }
+
+        const cardUrl = `${SERVER_BASE_URL.replace(/\/$/, '')}/api/stats/${tgId}/card.png`;
+        const playDeepLink = `${MINI_APP_URL}?startapp=play`;
+        const callsign = (user.handle || 'OPERATIVE').toUpperCase().slice(0, 12);
+        const tierIdx  = user.stats?.prestigeTier || 0;
+        const tierName = (PRESTIGE_TIERS[tierIdx] || PRESTIGE_TIERS[0]).name.toUpperCase();
+        const wins   = user.stats?.wins || 0;
+        const losses = user.stats?.losses || 0;
+
+        return ctx.answerInlineQuery([{
+          type: 'photo',
+          id: `stats-${tgId}`,
+          photo_url: cardUrl,
+          thumbnail_url: cardUrl,
+          photo_width: 1080,
+          photo_height: 608,
+          title: `${callsign} · ${tierName}`,
+          description: `${wins}W – ${losses}L · operative file`,
+          caption: `${callsign} · ${tierName} · ${wins}W – ${losses}L`,
+          reply_markup: {
+            inline_keyboard: [[
+              { text: '⚔ Challenge me', url: `${MINI_APP_URL}?startapp=challenge_new` },
+              { text: 'Find a Match',   url: playDeepLink },
+            ]],
+          },
+        }], { cache_time: 1, is_personal: true });
+      }
+
+      // Challenge share — original flow
       if (!query.startsWith('ch_')) {
         return ctx.answerInlineQuery([], { cache_time: 1 });
       }

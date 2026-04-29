@@ -12,8 +12,8 @@ export function validateHandle(raw) {
   if (sanitized.length < 3) {
     return { valid: false, sanitized, error: 'Min 3 characters' };
   }
-  if (sanitized.length > 16) {
-    return { valid: false, sanitized, error: 'Max 16 characters' };
+  if (sanitized.length > 12) {
+    return { valid: false, sanitized, error: 'Max 12 characters' };
   }
   if (!/^[a-zA-Z0-9_]+$/.test(sanitized)) {
     return { valid: false, sanitized, error: 'Letters, numbers, and underscores only' };

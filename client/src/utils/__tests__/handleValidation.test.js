@@ -30,8 +30,8 @@ describe('validateHandle', () => {
     expect(r.error).toBeNull();
   });
 
-  test('accepts valid 16-char handle', () => {
-    const r = validateHandle('abcdefghijklmnop');
+  test('accepts valid 12-char handle', () => {
+    const r = validateHandle('abcdefghijkl');
     expect(r.valid).toBe(true);
   });
 
@@ -46,10 +46,10 @@ describe('validateHandle', () => {
     expect(r.valid).toBe(false);
   });
 
-  test('rejects handle longer than 16 characters', () => {
-    const r = validateHandle('abcdefghijklmnopq');
+  test('rejects handle longer than 12 characters', () => {
+    const r = validateHandle('abcdefghijklm');
     expect(r.valid).toBe(false);
-    expect(r.error).toMatch(/16/);
+    expect(r.error).toMatch(/12/);
   });
 
   test('rejects handle with spaces', () => {

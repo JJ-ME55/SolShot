@@ -122,9 +122,10 @@ function HandleModal({ onComplete }) {
   const result = validateHandle(input);
 
   const handleChange = useCallback((e) => {
-    // Strip invalid chars as user types, enforce max 16
+    // Strip invalid chars as user types, enforce max 12
+    // (12 = card budget on Trophy/Career — keeps callsigns from clipping)
     const val = e.target.value.replace(/[^a-zA-Z0-9_]/g, '');
-    if (val.length > 16) return;
+    if (val.length > 12) return;
     setInput(val);
     setError(null);
   }, []);
@@ -185,7 +186,7 @@ function HandleModal({ onComplete }) {
                 onKeyDown={handleKeyDown}
                 placeholder="Enter handle..."
                 autoFocus
-                maxLength={16}
+                maxLength={12}
                 style={{
                   ...s.input,
                   borderColor: error
@@ -202,7 +203,7 @@ function HandleModal({ onComplete }) {
                   opacity: 0.5,
                 }}
               >
-                {input.length}/16
+                {input.length}/12
               </div>
             </div>
 

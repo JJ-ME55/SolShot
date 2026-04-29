@@ -77,6 +77,23 @@ function formatMatchDuration(matchStartedAt) {
     return `${mm}:${ss}`;
 }
 
+// Background-index → biome label. Mirrors client/src/scenes/main/index.js
+// `_bgThemes` order — keep in sync if themes are reordered.
+const BIOME_NAMES = ['JUNGLE', 'ARCTIC', 'DESERT', 'MOON', 'VOLCANIC', 'JUNGLE'];
+
+/**
+ * Resolve the biome label for the trophy card. Falls back to a generic
+ * label if the index is out of range or the room never picked one (e.g.
+ * very-old rooms before the persist landed).
+ */
+function resolveBiomeLabel(room) {
+    const idx = room?.backgroundIndex;
+    if (typeof idx !== 'number' || idx < 0 || idx >= BIOME_NAMES.length) {
+        return (room?.matchMode || 'BATTLEFIELD').toUpperCase().slice(0, 10);
+    }
+    return BIOME_NAMES[idx];
+}
+
 function buildTrophyProps({ ms, room, winnerId, opponentId, winnerHandle, opponentHandle, matchId }) {
     const scores = ms.scores || {};
     const wDamage = ms.weaponDamage?.[winnerId] || {};
@@ -104,7 +121,7 @@ function buildTrophyProps({ ms, room, winnerId, opponentId, winnerHandle, oppone
         loser: { callsign: oppCall },
         score: `${winnerRounds} – ${opponentRounds}`,
         matchId: `M-#${(matchId || 'UNKNOWN').toString().slice(0, 8).toUpperCase()}`,
-        terrain: (room?.matchMode || 'BATTLEFIELD').toUpperCase().slice(0, 10),
+        terrain: resolveBiomeLabel(room),
         duration: formatMatchDuration(ms?.matchStartedAt),
     };
 }

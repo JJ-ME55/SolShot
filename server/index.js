@@ -20,6 +20,9 @@ import {
     renderCardForChallenge,
     cancelChallenge,
 } from './services/challenge/challenge.js';
+import { lookupUserByTelegramId, getPlayerRank } from './services/users.js';
+import { renderCareerCardPng } from './services/challenge/renderCareerCard.js';
+import { buildCareerProps } from './services/challenge/careerCardProps.js';
 
 dotenv.config()
 
@@ -273,6 +276,33 @@ app.get('/api/challenge/:code/card.png', async (req, res) => {
         res.send(png);
     } catch (err) {
         console.error('[GET /api/challenge/:code/card.png]', err.message);
+        res.status(500).end();
+    }
+});
+
+// GET /api/stats/:tgUserId/card.png — render a player's career card as PNG.
+// Public endpoint backing the /stats inline-share flow. Cached 60s — careers
+// don't change between refreshes within a single share session.
+app.get('/api/stats/:tgUserId/card.png', async (req, res) => {
+    try {
+        const tgUserId = Number(req.params.tgUserId);
+        if (!Number.isFinite(tgUserId)) return res.status(400).end();
+
+        const user = await lookupUserByTelegramId(tgUserId);
+        if (!user) return res.status(404).end();
+
+        const rank = await getPlayerRank(tgUserId);
+        const props = buildCareerProps(user, { rank, telegramUserId: tgUserId });
+        const png = await renderCareerCardPng(props);
+
+        res.set({
+            'Content-Type': 'image/png',
+            'Cache-Control': 'public, max-age=60',
+            'Content-Length': png.length,
+        });
+        res.send(png);
+    } catch (err) {
+        console.error('[GET /api/stats/:tgUserId/card.png]', err.message);
         res.status(500).end();
     }
 });

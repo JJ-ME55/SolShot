@@ -103,6 +103,19 @@ function BattleScreen({ navigate, screenData }) {
 
   const isMobile = useIsMobile();
 
+  // Phase 2 polish — enable Telegram closing confirmation while a match is
+  // active. Without this, swiping down on the Mini App in TG closes it
+  // instantly, which on a wagered match means losing the wager to the 30s
+  // reconnect-then-forfeit logic. We toggle it on at mount, off at unmount.
+  useEffect(() => {
+    const tg = window.Telegram?.WebApp;
+    if (!tg?.enableClosingConfirmation) return;
+    try { tg.enableClosingConfirmation(); } catch (_) { /* older client */ }
+    return () => {
+      try { tg.disableClosingConfirmation?.(); } catch (_) { /* ignore */ }
+    };
+  }, []);
+
   // CS-04: Use context hook instead of window.solWallet
   const { signAndSendEscrowDeposit } = useSolShotWallet();
 

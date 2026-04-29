@@ -57,6 +57,20 @@ export function TelegramProvider({ children }) {
       try { tg.requestFullscreen(); } catch (_) { /* ignore */ }
     }
 
+    // Force TG's own chrome (header bar, status bar background) to match our
+    // dark CRT theme, regardless of whether the user has TG in light or dark
+    // mode. We INTENTIONALLY don't sync to themeParams — the amber-on-dark
+    // CRT aesthetic is part of the brand identity, and a white TG header
+    // above our dark game looks broken. setHeaderColor + setBackgroundColor
+    // require Bot API 6.1+ (2022), universally supported.
+    const BG_DEEP = '#0e1209'; // matches --bg-deep CSS token
+    if (tg.setHeaderColor) {
+      try { tg.setHeaderColor(BG_DEEP); } catch (_) { /* ignore — older client */ }
+    }
+    if (tg.setBackgroundColor) {
+      try { tg.setBackgroundColor(BG_DEEP); } catch (_) { /* ignore */ }
+    }
+
     const user = tg.initDataUnsafe?.user || null;
     const initData = tg.initData || null;
     const startParam = resolveStartParam(tg);

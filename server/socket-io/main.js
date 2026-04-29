@@ -17,6 +17,7 @@ import { requireAuth, validatePayload, validateFireParams, sanitizeName, withLoc
 import { initAI, cleanupAI, pickWeapon, calculateAim, autoBuyWeapons } from '../services/ai.js';
 import { CONSUMABLES, purchaseConsumable, decrementConsumables, getActiveConsumables, hasConsumable } from '../services/consumables.js';
 import { createChallenge as createChallengeRecord, getChallenge, attachRoomId, markAccepted, markMatched } from '../services/challenge/challenge.js';
+import { dispatchVictoryDm } from '../services/challenge/victoryDm.js';
 import { linkTelegramIdentity } from '../services/users.js';
 import { attributeReferrer, processReferralReward, getOrCreateReferralCode, buildInviteLink } from '../services/referrals.js';
 
@@ -3915,8 +3916,24 @@ const mainsocket = (io) => {
                                                 console.warn('[Referral] processReferralReward failed:', err.message)
                                             }
                                         }
+
                                     }
                                     logger.info('[Stats] Persisted match stats')
+
+                                    // Phase 4 — render + DM the trophy card to the winner (best-effort).
+                                    // Fires once per match end. Looks up winner's telegramUserId from DB
+                                    // via their authenticated wallet. Silently skips non-TG users.
+                                    try {
+                                        await dispatchVictoryDm({
+                                            ms,
+                                            room,
+                                            winnerId: matchResult.winner,
+                                            roomId,
+                                            getAuthenticatedWallet: (sid) => authenticatedWallets[sid] || null,
+                                        })
+                                    } catch (err) {
+                                        console.warn('[Trophy] dispatchVictoryDm failed:', err.message)
+                                    }
                                 } catch (err) {
                                     console.error('[Stats] Failed to persist:', err.message)
                                 }

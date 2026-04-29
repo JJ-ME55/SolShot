@@ -27,8 +27,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FONT_DIR = path.join(__dirname, 'fonts');
 
 // Fonts loaded once at module scope. If files are missing, render will throw at first call.
-let fontBlackOps = null;
-let fontShareTech = null;
+// Exported so sibling renderers (e.g. renderTrophyCard) can reuse the same buffers
+// without double-loading.
+export let fontBlackOps = null;
+export let fontShareTech = null;
 try {
     fontBlackOps  = fs.readFileSync(path.join(FONT_DIR, 'BlackOpsOne-Regular.ttf'));
     fontShareTech = fs.readFileSync(path.join(FONT_DIR, 'ShareTechMono-Regular.ttf'));

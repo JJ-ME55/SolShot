@@ -449,3 +449,12 @@ export function stopBot() {
     bot.stop('SIGTERM');
   } catch { /* ignore */ }
 }
+
+/**
+ * Direct access to the Telegraf instance for callers that need to send
+ * unsolicited messages (e.g. post-match victory DM). Returns null if the
+ * bot isn't initialised (TELEGRAM_BOT_TOKEN missing).
+ */
+export function getBot() {
+  return bot;
+}

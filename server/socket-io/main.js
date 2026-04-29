@@ -16,7 +16,7 @@ import { trackConnection, trackDisconnection, trackMatchCreated, trackMatchCompl
 import { requireAuth, validatePayload, validateFireParams, sanitizeName, withLock, safeHandler } from '../middleware/guards.js';
 import { initAI, cleanupAI, pickWeapon, calculateAim, autoBuyWeapons } from '../services/ai.js';
 import { CONSUMABLES, purchaseConsumable, decrementConsumables, getActiveConsumables, hasConsumable } from '../services/consumables.js';
-import { createChallenge as createChallengeRecord, getChallenge, attachRoomId, markAccepted } from '../services/challenge/challenge.js';
+import { createChallenge as createChallengeRecord, getChallenge, attachRoomId, markAccepted, markMatched } from '../services/challenge/challenge.js';
 
 // Cosmetic item costs (mirrors client/src/data/tiers.js COSMETIC_ITEMS)
 const COSMETIC_COSTS = {
@@ -1880,6 +1880,9 @@ const mainsocket = (io) => {
                 const tgUser = client.tgUser || null
                 await markAccepted(shortCode, { acceptorTgUserId: tgUser?.id || null })
                     .catch((err) => console.warn('[joinChallenge] markAccepted failed:', err.message))
+                // Once accepted AND room exists, both players are pairing up — transition to matched
+                await markMatched(shortCode)
+                    .catch((err) => console.warn('[joinChallenge] markMatched failed:', err.message))
 
                 // Reply to the client — they'll then issue the regular `joinRoom`
                 // event from the lobby with autoJoinRoomId, which handles wager

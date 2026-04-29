@@ -198,13 +198,42 @@ export async function markAccepted(shortCode, { acceptorTgUserId = null, accepto
 }
 
 /**
- * Stamp roomId on a challenge once the room is created.
+ * Stamp roomId on a challenge.
+ *
+ * NOTE: this used to also flip status to 'matched' but that was wrong —
+ * the challenger creating their own room is not the same as a recipient
+ * accepting. Status stays 'open' here. It transitions:
+ *   open → accepted (markAccepted, when recipient taps Accept)
+ *   accepted → matched (markMatched, when both players are confirmed in room)
+ *
+ * @param {string} shortCode
+ * @param {string} roomId
+ * @param {object} [opts]
+ * @param {string} [opts.status] — optional status override (e.g. 'matched')
  */
-export async function attachRoomId(shortCode, roomId) {
+export async function attachRoomId(shortCode, roomId, opts = {}) {
+    const code = String(shortCode).toUpperCase();
+    const update = { roomId };
+    if (opts.status) {
+        update.status = opts.status;
+        if (opts.status === 'matched') update.matchedAt = new Date();
+    }
+    return Challenge.findOneAndUpdate(
+        { shortCode: code },
+        { $set: update },
+        { new: true }
+    ).lean();
+}
+
+/**
+ * Flip a challenge to 'matched' once both players are confirmed in the room.
+ * Called from the socket handler when joinChallenge succeeds.
+ */
+export async function markMatched(shortCode) {
     const code = String(shortCode).toUpperCase();
     return Challenge.findOneAndUpdate(
         { shortCode: code },
-        { $set: { roomId, status: 'matched', matchedAt: new Date() } },
+        { $set: { status: 'matched', matchedAt: new Date() } },
         { new: true }
     ).lean();
 }

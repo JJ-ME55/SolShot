@@ -151,6 +151,61 @@ function registerCommands(bot) {
     }
   });
 
+  /**
+   * Debug command — preview the career card without needing a played match.
+   * Uses sample stats but the asker's real callsign + tg id so the registry
+   * id and "joined" fields look plausible. Three presets via the suffix:
+   *   /teststats           → strong (Platinum, 89W-22L)
+   *   /teststats mid       → mid (Bronze, 14W-11L)
+   *   /teststats fresh     → fresh (Unranked, [CLASSIFIED] plate)
+   * Safe to leave in prod — it never reads or writes the DB.
+   */
+  bot.command('teststats', async (ctx) => {
+    const PRESETS = {
+      strong: {
+        tierName: 'PLATINUM', rank: 7,
+        record: { wins: 89, losses: 22, winRate: 80 },
+        totalDamage: 187400, kills: 312, deaths: 178,
+        streak: { current: 11, best: 14 },
+        mvpWeapon: { name: 'CRAZY IVAN', damage: 38400 },
+        matchesPlayed: 111, joinedLabel: 'JOINED FEB 2026',
+      },
+      mid: {
+        tierName: 'BRONZE', rank: 47,
+        record: { wins: 14, losses: 11, winRate: 56 },
+        totalDamage: 22300, kills: 38, deaths: 41,
+        streak: { current: 0, best: 5 },
+        mvpWeapon: { name: 'HEATSEEKER', damage: 6800 },
+        matchesPlayed: 25, joinedLabel: 'JOINED MAR 2026',
+      },
+      fresh: {
+        tierName: 'NONE', rank: null,
+        record: { wins: 1, losses: 2, winRate: 33 },
+        totalDamage: 412, kills: 2, deaths: 4,
+        streak: { current: 0, best: 1 },
+        mvpWeapon: { name: 'STANDARD', damage: 412 },
+        matchesPlayed: 3, joinedLabel: 'JOINED THIS WEEK',
+      },
+    };
+    try {
+      const arg = (ctx.message?.text || '').split(/\s+/)[1]?.toLowerCase();
+      const preset = PRESETS[arg] || PRESETS.strong;
+
+      const callsign = (ctx.from?.first_name || ctx.from?.username || 'OPERATIVE')
+        .toUpperCase().slice(0, 14);
+      const registryId = String(ctx.from?.id || '0000').slice(-4).padStart(4, '0').toUpperCase();
+
+      const props = { callsign, registryId, ...preset };
+      const png = await renderCareerCardPng(props);
+      await ctx.replyWithPhoto({ source: png }, {
+        caption: `[PREVIEW] ${callsign} · ${preset.tierName === 'NONE' ? 'UNRANKED' : preset.tierName}`,
+      });
+    } catch (err) {
+      console.warn('[bot:/teststats] error:', err.message);
+      await ctx.reply(`Preview failed: ${err.message}`);
+    }
+  });
+
   bot.command('leaderboard', async (ctx) => {
     try {
       const top = await getTopPlayers(10);

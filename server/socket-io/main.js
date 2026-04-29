@@ -17,6 +17,7 @@ import { requireAuth, validatePayload, validateFireParams, sanitizeName, withLoc
 import { initAI, cleanupAI, pickWeapon, calculateAim, autoBuyWeapons } from '../services/ai.js';
 import { CONSUMABLES, purchaseConsumable, decrementConsumables, getActiveConsumables, hasConsumable } from '../services/consumables.js';
 import { createChallenge as createChallengeRecord, getChallenge, attachRoomId, markAccepted, markMatched } from '../services/challenge/challenge.js';
+import { linkTelegramIdentity } from '../services/users.js';
 
 // Cosmetic item costs (mirrors client/src/data/tiers.js COSMETIC_ITEMS)
 const COSMETIC_COSTS = {
@@ -1056,6 +1057,19 @@ const mainsocket = (io) => {
                     console.warn(`[Auth] Failed to load milestone state:`, err.message)
                     // Continue — in-memory defaults are fine, milestones just won't be restored
                 }
+                // Link Telegram identity if this socket has validated initData.
+                // Bot commands (/stats, /prestige, etc.) can then look up the
+                // User by ctx.from.id without forcing the user into the Mini App.
+                if (client.telegramUser?.id && isDbConnected()) {
+                    const tgHandle = playerUids[client.id]?.handle || client.telegramUser.first_name || null;
+                    linkTelegramIdentity({
+                        telegramUserId: client.telegramUser.id,
+                        walletAddress: result.walletAddress,
+                        uid: playerUids[client.id]?.uid || null,
+                        handle: tgHandle,
+                        username: client.telegramUser.username || null,
+                    }).catch((err) => console.warn('[Auth] linkTelegramIdentity failed:', err.message));
+                }
             }
             client.emit('authResult', result)
         })
@@ -1075,6 +1089,19 @@ const mainsocket = (io) => {
                     { $set: { handle: clean, lastActive: new Date() } },
                     { upsert: true }
                 ).catch(err => console.error('[Identity] upsert error:', err.message))
+
+                // Link Telegram identity if this is a TG-validated socket and no wallet
+                // is connected yet (bot commands can still look this user up by
+                // ctx.from.id even before they ever connect a wallet).
+                if (client.telegramUser?.id) {
+                    linkTelegramIdentity({
+                        telegramUserId: client.telegramUser.id,
+                        walletAddress: authenticatedWallets[client.id] || null,
+                        uid,
+                        handle: clean,
+                        username: client.telegramUser.username || null,
+                    }).catch((err) => console.warn('[Identity] linkTelegramIdentity failed:', err.message));
+                }
             }
         })
 

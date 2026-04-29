@@ -12,6 +12,16 @@ const userSchema = new mongoose.Schema({
         unique: true,
         sparse: true,
     },
+    // Telegram user id (from validated initData). Sparse + unique so the
+    // bot can look up a User by ctx.from.id for /stats, /prestige, etc.
+    // Populated when a socket has BOTH validated initData and a wallet
+    // signature in the same session (linkTelegramIdentity service helper).
+    telegramUserId: {
+        type: Number,
+        unique: true,
+        sparse: true,
+        index: true,
+    },
     handle: {
         type: String,
         default: '',

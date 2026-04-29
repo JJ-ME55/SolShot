@@ -20,6 +20,8 @@
  */
 
 import { Telegraf } from 'telegraf';
+import { lookupUserByTelegramId } from './users.js';
+import { PRESTIGE_TIERS } from './shot-token.js';
 import { getChallenge, markAccepted } from './challenge/challenge.js';
 
 // The path segment after the bot username is the Mini App `short_name` registered
@@ -124,10 +126,41 @@ function registerCommands(bot) {
   });
 
   bot.command('prestige', async (ctx) => {
-    await ctx.reply(
-      'Climb the prestige tiers — Bronze through Diamond. Burn SHOT to advance.',
-      { reply_markup: launchKeyboard('Open Prestige', 'prestige') }
-    );
+    // Smart reply: look up the user's current tier from DB and show
+    // their position + next milestone. Falls back to generic launcher
+    // if no User record exists yet (i.e. they've never played).
+    try {
+      const user = await lookupUserByTelegramId(ctx.from?.id);
+      const currentTier = user?.stats?.prestigeTier ?? 0;
+      const burnedTotal = user?.stats?.totalBurned ?? user?.stats?.shotBurned ?? 0;
+      const callsign    = user?.handle || ctx.from?.first_name || 'OPERATIVE';
+      const current     = PRESTIGE_TIERS[currentTier] || PRESTIGE_TIERS[0];
+      const next        = PRESTIGE_TIERS[currentTier + 1] || null;
+
+      let body;
+      if (!user) {
+        body =
+          'Prestige tiers — Bronze → Diamond. Burn SHOT to climb.\n\n' +
+          'Play your first match to start tracking — open the Mini App below.';
+      } else if (next) {
+        body =
+          `${callsign} · current tier: ${current.name.toUpperCase()}\n\n` +
+          `Next: ${next.name.toUpperCase()} — burn ${next.burnCost.toLocaleString()} SHOT\n` +
+          `Total burned to date: ${burnedTotal.toLocaleString()} SHOT`;
+      } else {
+        body =
+          `${callsign} · current tier: ${current.name.toUpperCase()} ✦\n\n` +
+          'You have reached the maximum prestige tier. Honoured.\n' +
+          `Total burned: ${burnedTotal.toLocaleString()} SHOT`;
+      }
+      await ctx.reply(body, { reply_markup: launchKeyboard('Open Prestige', 'prestige') });
+    } catch (err) {
+      console.warn('[bot:/prestige] lookup failed, falling back:', err.message);
+      await ctx.reply(
+        'Climb the prestige tiers — Bronze through Diamond. Burn SHOT to advance.',
+        { reply_markup: launchKeyboard('Open Prestige', 'prestige') }
+      );
+    }
   });
 
   bot.command('weapons', async (ctx) => {

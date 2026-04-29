@@ -169,6 +169,7 @@ function registerCommands(bot) {
         streak: { current: 11, best: 14 },
         mvpWeapon: { name: 'CRAZY IVAN', damage: 38400 },
         matchesPlayed: 111, joinedLabel: 'JOINED FEB 2026',
+        recentForm: ['W','W','L','W','W','W','W','L','W','W'],
       },
       mid: {
         tierName: 'BRONZE', rank: 47,
@@ -177,6 +178,7 @@ function registerCommands(bot) {
         streak: { current: 0, best: 5 },
         mvpWeapon: { name: 'HEATSEEKER', damage: 6800 },
         matchesPlayed: 25, joinedLabel: 'JOINED MAR 2026',
+        recentForm: ['L','W','W','L','W','L','L','W','W','L'],
       },
       fresh: {
         tierName: 'NONE', rank: null,
@@ -185,6 +187,26 @@ function registerCommands(bot) {
         streak: { current: 0, best: 1 },
         mvpWeapon: { name: 'STANDARD', damage: 412 },
         matchesPlayed: 3, joinedLabel: 'JOINED THIS WEEK',
+        recentForm: ['W','L','L'],
+      },
+      // v2 stress tests — exercise the auto-fit ladders end-to-end
+      longname: {
+        tierName: 'GOLD', rank: 12,
+        record: { wins: 56, losses: 31, winRate: 64 },
+        totalDamage: 89200, kills: 178, deaths: 142,
+        streak: { current: 3, best: 9 },
+        mvpWeapon: { name: 'HOMING MISSILE', damage: 24800 }, // 14 chars — prestige reward
+        matchesPlayed: 87, joinedLabel: 'JOINED FEB 2026',
+        recentForm: ['W','L','W','W','W','L','W','L','W','W'],
+      },
+      maxlen: {
+        tierName: 'DIAMOND', rank: 1,
+        record: { wins: 999, losses: 999, winRate: 50 },
+        totalDamage: 1234567, kills: 9999, deaths: 9999, // worst-case K/D widths
+        streak: { current: 25, best: 25 },
+        mvpWeapon: { name: 'CHAIN REACTION', damage: 999999 }, // 14 chars
+        matchesPlayed: 1998, joinedLabel: 'JOINED JAN 2026',
+        recentForm: ['W','W','W','W','W','W','W','W','W','W'],
       },
     };
     try {

@@ -55,6 +55,24 @@ function buildRegistryId(user, telegramUserId) {
 }
 
 /**
+ * Derive the last-10 W/L sequence from a User's matchHistory array.
+ * matchHistory entries: { result: 'win'|'loss'|'draw', playedAt: Date, ... }
+ * Returns ['W','L',...] up to 10, most-recent-last (matches the card's
+ * recentForm contract). Draws are skipped — the card is W vs L only.
+ * Returns null if there's no history (component falls back gracefully).
+ */
+function buildRecentForm(matchHistory) {
+    if (!Array.isArray(matchHistory) || matchHistory.length === 0) return null;
+    // Sort by playedAt asc, take last 10, map win→W / loss→L.
+    const sorted = [...matchHistory]
+        .filter((m) => m && (m.result === 'win' || m.result === 'loss'))
+        .sort((a, b) => new Date(a.playedAt || 0).getTime() - new Date(b.playedAt || 0).getTime())
+        .slice(-10);
+    if (sorted.length === 0) return null;
+    return sorted.map((m) => (m.result === 'win' ? 'W' : 'L'));
+}
+
+/**
  * Format a Date into 'JOINED MMM YYYY', or 'JOINED THIS WEEK' if <7d.
  */
 function formatJoinedLabel(createdAt) {
@@ -104,5 +122,6 @@ export function buildCareerProps(user, opts = {}) {
         mvpWeapon: pickMvpWeapon(s.weaponStats),
         matchesPlayed,
         joinedLabel: formatJoinedLabel(user?.createdAt),
+        recentForm: buildRecentForm(user?.matchHistory),
     };
 }

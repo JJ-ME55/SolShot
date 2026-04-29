@@ -161,6 +161,20 @@ function registerCommands(bot) {
     );
   });
 
+  // /settings — preferences (alert mute, notification cadence, etc.)
+  // V1: text + Mini App launcher. Full preferences UI lands with Phase 5
+  // group-chat mode where mute toggles actually matter for chat-broadcast cadence.
+  bot.command('settings', async (ctx) => {
+    await ctx.reply(
+      'Preferences (more options coming with group-chat mode):\n\n' +
+      '• Move alert mute / unmute\n' +
+      '• Turn-deadline reminders\n' +
+      '• Daily digest opt-in\n\n' +
+      'For now, manage your callsign + wallet in the Mini App.',
+      { reply_markup: launchKeyboard('Open Settings', 'settings') }
+    );
+  });
+
   // ─── Inline mode — `switchInlineQuery` from Mini App posts challenge cards ───
   //
   // When a user inside the Mini App taps "Challenge a friend" we call

@@ -164,6 +164,7 @@ function AppInner() {
       shop:        'armory',
       weapons:     'armory',
       prestige:    'prestige',
+      settings:    'barracks',  // No dedicated settings screen yet — barracks has callsign + wallet info
     };
     const target = routes[startParam];
     if (target) {

@@ -109,3 +109,55 @@ _(Append new entries below this line. Don't edit anything above.)_
 Good hunting. Leave a STATUS entry below when you've onboarded so John gets the heartbeat.
 
 — main-claude
+
+---
+
+### 2026-04-29 (later) — `[main-claude]` — STATUS / FYI
+
+@fishyboy-claude — heads up, two big things shipped on `main` today after my last entry. Both directly affect your group-chat mode work:
+
+**1. TG user id ↔ wallet identity linking is DONE.**
+
+You no longer have to build this yourself. Use it:
+
+- `User.telegramUserId` field added (sparse unique index).
+- `server/services/users.js` exports two helpers:
+  - `linkTelegramIdentity({ telegramUserId, walletAddress?, uid?, handle?, username? })` — upserts the link. Already auto-fires from the `authenticate` and `registerIdentity` socket handlers when `client.telegramUser` is set. You probably don't need to call it directly.
+  - `lookupUserByTelegramId(tgId)` — returns the User document by Telegram id. **This is what your group-chat bot commands need** for `/join`, `/status`, etc. — the ctx.from.id in any bot handler now maps to a real User.
+- Inside socket handlers there's a helper `buildUserQueryForClient(c)` that returns a Mongoose query for the current client (priority: wallet → tgId → uid). Use this when you need to find/update the User from a socket context. It's defined inside the `io.on('connection')` block (~line 943).
+- First consumer: `/prestige` bot command. Look at `server/services/bot.js` for the pattern — fetch user by tgId, format reply with their actual prestige tier + next milestone, fall back to launcher copy if no User exists. Copy this for your `/status` command.
+
+**2. Phase 4 referrals shipped.**
+
+Two-sided invites: 25 SHOT each side when invitee finishes their first wagered match. This affects your group-chat work because:
+
+- The `?startapp=rf_<code>` deep link is now claimed in App.js. Don't reuse the `rf_` prefix for anything else.
+- `services/referrals.js` is the cleanest reference for how to structure a service that hooks into match-end. `processReferralReward(refereeQuery, { wagered: true })` is called from the stats persistence block in `socket-io/main.js` after a wagered match settles. **Your group-chat match settlement should also call this** so referrals work for group games.
+- New User schema fields: `referralCode`, `referredByCode`, `referralRewardedAt`, plus `stats.referralsMade` and `stats.totalReferralShotEarned`.
+- Pattern to copy: lazy code generation via `getOrCreateReferralCode(query)`. Your `Match.shortCode` should follow this same idempotent pattern.
+
+**Net impact on your work:** Two whole pieces are pre-built — you don't need to figure out identity linking OR design the reward path. Group-chat match end can just call `processReferralReward` like 1v1 does. The Match model focus stays on game state + persistence.
+
+**File map of changes (read for reference):**
+
+- `server/models/User.js` — telegramUserId + referral fields
+- `server/services/users.js` — identity helpers (NEW)
+- `server/services/referrals.js` — referral logic (NEW)
+- `server/services/bot.js` — /prestige smart reply + /refer command (good reference for any new bot commands you add)
+- `server/socket-io/main.js` — `attributeReferrer`, `getInviteLink` socket handlers, `buildUserQueryForClient` helper, match-end referral reward dispense
+- `client/src/App.js` — `?startapp=rf_<code>` parsing
+- `client/src/screens/BarracksScreen.js` — RECRUIT panel with SEND INVITE button (reference for any group-chat UI you add)
+
+**Updated `/setcommands` payload** for BotFather (now includes `/refer` and `/settings`) — already documented in `Docs/TELEGRAM_PLAN.md`. Group-chat will add `/start solshot`, `/join`, `/start_match`, `/abandon`, `/status` to that list. No conflicts.
+
+**You'll want to merge `main` into `sandbox/fishyboy` before starting** so you have these helpers locally. Run:
+
+```bash
+git checkout sandbox/fishyboy
+git merge main
+# resolve any conflicts (unlikely — sandbox hasn't touched these files)
+```
+
+Or rebase if you prefer that flow.
+
+— main-claude

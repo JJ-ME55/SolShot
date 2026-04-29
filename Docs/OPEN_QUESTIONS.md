@@ -99,6 +99,38 @@
 
 ---
 
+### Q-006 — Bot config flip: `/setjoingroups Enable` for group-chat mode
+- **Asked**: 2026-04-29 by [fishyboy-claude]
+- **Tagged**: @johnk
+- **Context**: Phase 1 of [TELEGRAM_PLAN.md](TELEGRAM_PLAN.md) sets `/setjoingroups Disable` and `/setprivacy Enable` on `@SolShotGG_bot`. Group-chat mode (see [GROUP_CHAT_MODE.md](GROUP_CHAT_MODE.md) v0.2 for refined design) requires `/setjoingroups Enable` so the bot can be added to TG groups. Main-claude flagged this in their 2026-04-29 HANDOFF note as well. There's also a `/setprivacy` posture decision: keep Enabled (force `@SolShotGG_bot` mention on commands, lower spam risk) or Disable (cleaner UX in groups, bot sees all messages).
+- **Question**: (1) Confirm sign-off to flip `/setjoingroups` to Enable. (2) Decide on `/setprivacy` posture.
+- **Status**: Open — needs answer before group-chat mode bot implementation begins.
+
+### Q-007 — Escrow v2 commitment for group-chat mode
+- **Asked**: 2026-04-29 by [fishyboy-claude]
+- **Tagged**: @johnk
+- **Context**: GROUP_CHAT_MODE.md v0.1 stated "N-player escrow is already on launch branch (Phase 9A core). Group-chat mode reuses that path." Reading `programs/solshot-escrow/src/lib.rs` shows this is incorrect — six hard blockers prevent the v1 program from supporting group mode: (1) `players: [Pubkey; 4]` capped at 2–4, (2) `deposits_mask: u8` blocks re-deposits, (3) single fixed `wager_lamports`, (4) single-recipient `settle_match(winner)`, (5) 1h `SETTLEMENT_TIMEOUT_SECONDS`, (6) 20min permissionless reclaim. v2 needs: variable player count, multiple deposits per player, variable amounts, multi-recipient settlement, settlement deadlines up to 7d + buffer. Spec is in [GROUP_CHAT_MODE.md](GROUP_CHAT_MODE.md) v0.2. FishyBoy has confirmed verbally via Jacob that John is willing to undertake this; this question formalises the commitment + scope.
+- **Question**: Confirm in writing the commitment to design + ship escrow v2 alongside group-chat mode. v1 program continues to handle 1v1/3P/4P matches; v2 is group-mode-only initially.
+- **Status**: Open — verbally confirmed, formal sign-off pending.
+
+### Q-008 — Group-chat mode settlement edge cases
+- **Asked**: 2026-04-29 by [fishyboy-claude]
+- **Tagged**: @johnk
+- **Context**: Two settlement edge cases need a deterministic rule before escrow v2 is implemented.
+- **Question**:
+  1. **Survival pool with 0 eligible** (every player got eliminated past the 50% match-duration mark, so nobody qualifies for the survival bonus). Where does the unallocated 18% go? Options: (a) roll into 1st place's allocation, (b) roll to treasury.
+  2. **No clear 2nd / 3rd place** (tiny match — 4 players, only 1 alive at end, others all eliminated before fully populating top-3). Where do the unallocated 14.4% (2nd) and 7.2% (3rd) go? Options: (a) roll into 1st place's allocation, (b) roll to treasury.
+- **Status**: Open
+
+### Q-009 — Sticker library commission for group-chat mode
+- **Asked**: 2026-04-29 by [fishyboy-claude]
+- **Tagged**: @johnk
+- **Context**: Group-chat mode v0.2 chat experience uses pre-made stickers/GIFs for "big moment" chat events (massive hits, multi-kills, eliminations, buybacks, match-end). [Q-005](#q-005--sticker-pack-ship-or-skip-for-v1) was previously tagged as optional growth asset; group-chat mode now provides a real product reason to commission the set. Estimated set: 15–20 reaction stickers (BOOM, GG, KO, BOUGHT BACK, LEADER, ELIMINATED, NICE SHOT, tank-explosion GIF, etc.).
+- **Question**: Greenlight the sticker library commission as part of the group-chat mode v1 deliverable, or defer and use existing emoji/text-only treatment for big moments in v1?
+- **Status**: Open
+
+---
+
 ## Resolved
 
 _(Move resolved items here with the answer + date. Or extract to

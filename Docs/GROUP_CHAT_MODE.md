@@ -372,3 +372,258 @@ ship the whole feature in one PR — that's how big features die.
 
 _Last updated: 2026-04-29. Author: main-claude (transcribing John ↔ Fish brief).
 Future updates: append "## v0.2 — <date>" sections, don't edit history._
+
+---
+
+## v0.2 — 2026-04-29 — FishyBoy ↔ fishyboy-claude refinement
+
+> Brainstorming session locked specific design decisions on top of v0.1.
+> v0.1 above stands as the strategic framing + initial architecture.
+> v0.2 below tightens scope, names the numbers, and corrects one
+> material claim about the existing escrow program.
+>
+> Authored by `[fishyboy-claude]` with FishyBoy. Where v0.2 differs
+> from v0.1, v0.2 takes precedence.
+
+### What v0.2 changes vs v0.1
+
+- **Player count narrowed:** 4–10 (8 default), capped at 10 for v1. v0.1 said 3–8. JJ's mobile-rendering concerns drove the revision; 16+ creates HUD problems we don't want to solve in v1.
+- **Match duration model added:** host-set, max 7 days. Three presets (Sprint 12h / Weekend 3d / Marathon 7d). v0.1 had only a per-turn timer; v0.2 has both per-turn timer *and* match-level cap.
+- **Match end conditions formalised:** 1-alive triggers an instant win at any time; 100%-time triggers HP-ranked finish.
+- **Payout restructured:** v0.1 was winner-take-all (90/7/3). v0.2 splits the 90% player share as top-3 (60/20/10 of 80%) + survival pool (20%, split among never-eliminated players past 50% mark). Reasoning: 16-player winner-take-all is a lottery feel; top-3 keeps engagement up. Treasury 7% / ops 3% unchanged.
+- **Buybacks added:** host-toggleable, escalating cost (2/3/5/8/13× original wager), 50% HP on re-entry, random respawn position, inventory preserved. Ranking penalty: buybacks rank below first-buy-in survivors. Survival bonus: forfeited permanently on first elimination.
+- **Endgame trigger added:** buyback window closes at first of `75% match time` OR `≤3 players alive`. Once endgame fires, no new buybacks; remaining players fight to last-alive or 100% time cap.
+- **/customgame host knobs:** 8 conversational settings — match type, wager, max players, duration, turn timer, idle penalty HP, buybacks on/off, buyback cap.
+- **Free mode added:** wagered is the default but hosts can create free matches. Critical for adoption in non-crypto-native group chats. Sidesteps the escrow dependency for free matches.
+- **Cross-chat rule:** one match per `(wallet, chatId)` — a player in three different TG groups can be in three matches simultaneously, one per chat.
+- **Idle handling refined:** lose `idle_penalty` HP + skip turn (configurable, default 20 HP). 3 consecutive misses = auto-forfeit (always-on, fixed at 3, not a host knob). HP→0 from idle damage = full elimination.
+- **Chat-event tiers:** v0.1 broadcasts every shot. v0.2 introduces a 4-tier filter — silent / text / flair / big-moment-with-sticker — to prevent the notification fatigue v0.1 flagged as a v2 risk. Per-shot text recap deferred to a `verbose: true` host toggle in Phase 2.
+- **Mini App UX:** turn-start camera sequence (full-map zoomed-out → smooth zoom-in to active player), always-visible mini-map, eliminated-player spectator mode. Multi-match home screen (player can have N concurrent matches across chats).
+- **MAJOR CORRECTION — escrow:** v0.1 stated "N-player escrow is already on launch branch (Phase 9A core). Group-chat mode reuses that path." This is **incorrect** based on a read of `programs/solshot-escrow/src/lib.rs`. The current program has six hard blockers for group mode (see "Escrow v2 required" section below). Escrow v2 is required and JJ has verbally agreed to undertake it.
+
+### Locked decisions table
+
+| Dimension | v0.2 lock |
+|---|---|
+| Player count | 4–10 (8 default), v1 cap at 10, one match per chat × wallet |
+| Match duration | Host-picked: Sprint (12h) / Weekend (3d) / Marathon (7d), max 7 days |
+| Format | Single-life elimination, no rounds |
+| Match end | 1-alive instant **OR** 100%-time HP rank |
+| Endgame trigger | First of: 75% match time **OR** ≤3 alive — closes buyback window |
+| Payout (player 90%) | Top-3 split: 60/20/10 of 80% (43.2% / 14.4% / 7.2% of total pot) + Survival pool: 20% of player share split equally among never-eliminated players past 50% mark |
+| Treasury / Ops | 7% / 3% (unchanged from existing modes) |
+| Buyback cost | Escalating: 2× / 3× / 5× / 8× / 13× of original wager |
+| Buyback HP / spawn / inventory | 50% HP, random open position, weapons + Gold preserved |
+| Buyback window | Open until first of: 75% time, ≤3 alive |
+| Buyback cap | Host-set: 1 / 3 / Unlimited |
+| Buyback survival impact | Forfeits survival pool eligibility permanently |
+| Idle penalty | Configurable HP loss + turn skip (default 20 HP) |
+| Idle auto-forfeit | 3 consecutive misses = elimination (always-on, fixed at 3) |
+| Free mode | Supported in v1 |
+| Late join | Not allowed in v1 |
+| Lobby start triggers | Full / host `/startmatch` (with min ≥4) / 24h auto-expire |
+| Chat experience | 4-tier event filter + sticker library (v1) |
+| Server-rendered cards | Deferred to Phase 4 polish |
+| Per-shot text recap | Deferred — `verbose: true` host toggle in Phase 2 |
+
+### Tiebreaker rules (for 100%-time end + 2nd/3rd determination)
+
+In order:
+1. Alive players above eliminated players (always)
+2. HP descending (alive players)
+3. Buyback count ascending (fewer = better — first-buy-in survivors rank above buybacks)
+4. Elimination order (later = better — alive treated as "not yet eliminated" = top)
+5. Damage dealt descending (final tiebreaker)
+
+### `/customgame` rules surface
+
+8 conversational knobs prompted in sequence by the bot. Defaults shown.
+
+| # | Knob | Options | Default |
+|---|---|---|---|
+| 1 | Match type | Free / Wagered | Wagered |
+| 2 | Wager amount (if wagered) | 0.01 / 0.05 / 0.1 / 0.5 / custom | 0.05 SOL |
+| 3 | Max players | 4 / 6 / 8 / 10 | 8 |
+| 4 | Duration | Sprint / Weekend / Marathon | Weekend |
+| 5 | Turn timer | 4h / 12h / 24h | 12h |
+| 6 | Idle penalty HP | 10 / 20 / 30 | 20 |
+| 7 | Buybacks | Enabled / Disabled | Enabled |
+| 8 | Buyback cap (if enabled) | 1 / 3 / Unlimited | 3 |
+
+Fixed (not host-exposed in v1): `min_players_to_start = 4`, lobby auto-expire at 24h, buyback cost schedule, 3-miss forfeit threshold, endgame triggers, map biome (random), public lobby.
+
+### Bot UX additions to v0.1
+
+**Lobby card** — single self-updating message in the group chat:
+
+```
+🎮 Match #5G7K — open
+Wager: 0.05 SOL  |  Max: 8 players  |  Weekend (3d)
+Turn timer: 12h  |  Idle penalty: 20 HP  |  Buybacks: enabled (max 3)
+
+Players (1/8): @alice
+                                        ⏱ Lobby closes in 23h 47m
+
+[ Join ]    [ Cancel — host only ]
+```
+
+- **Free match join** → 1-tap, uses TG username as callsign. No Mini App detour.
+- **Wagered match join** → opens Mini App at `?startapp=lobby_<matchId>` for the deposit signing flow.
+- **Self-leave** button per-player (refund + opens slot).
+- **24h auto-expire** — starts if min_players reached, otherwise auto-cancels and refunds all.
+
+**Buyback DM** to eliminated player (private, not in group):
+
+```
+💀 You've been eliminated in Match #5G7K (Bonk Squad)
+Want back in?
+
+Cost: 0.10 SOL (2× wager) | HP on respawn: 50/100
+Window closes: 75% match progress OR ≤3 alive (currently 6 alive, day 1 of 3)
+
+[ Buy back — 0.10 SOL ]   [ No thanks ]
+```
+
+**Chat event tiers:**
+
+| Tier | Trigger | Posts to chat |
+|---|---|---|
+| Silent | Miss / glancing hit (<10 HP), wall placement, utility weapon | Nothing |
+| Text | Solid hit (10–35 HP), turn ping, daily heartbeat | One-liner |
+| Flair | Big hit (35–60 HP), comeback shot (firer <30 HP), opponent KO'd | One-liner + emoji |
+| Big moment | Massive hit (60+ HP), multi-kill, final blow, buyback re-entry, leader eliminated, match-end | Sticker / GIF + caption |
+
+Sticker library — pre-made set of ~15–20 reaction stickers/GIFs commissioned as part of group mode rollout. Bot picks based on event type. **This retroactively gives Q-005 (sticker pack) a real product reason; Q-009 formalises the commission ask.**
+
+### Mini App additions to v0.1
+
+- **Multi-match home screen** — list of all active group matches (across chats) for the current wallet. Per-row: chat name, match ID, status (your turn / waiting / eliminated), pot, time left.
+- **Turn-start camera sequence** — Mini App opens to full-map zoomed-out view, smooth zoom-in to active player's tank over ~1.5s, then turn UI fades in. Pinch / scroll to pan freely. Mini-map widget always visible (top-right corner).
+- **Spectator mode** — eliminated players can open the match, view the live battlefield, mini-map, standings panel, last-shot replay. No fire button, no input.
+
+### Server architecture refinements
+
+**Match state schema** (Mongoose model, extends v0.1's schema):
+
+```js
+{
+  matchId, chatId, hostWallet,
+  state: "lobby" | "active" | "settled" | "cancelled",
+  config: {
+    type: "wagered" | "free",
+    wagerLamports, maxPlayers, minPlayers,
+    durationMs, turnTimerMs, idlePenaltyHp,
+    buybacksEnabled, buybackCap,
+  },
+  createdAt, startedAt, lobbyExpiresAt, endsAt,
+  players: [
+    {
+      wallet, tgUsername, callsign, tankColor,
+      hp, eliminated, eliminatedAt,
+      buybackCount, missedTurns, damageDealt,
+      depositTx, buybackTxs, survivalEligible,
+    },
+    ...
+  ],
+  currentPlayerIndex, turnNumber, turnStartedAt,
+  terrainSnapshot, walls, wind,
+  lobbyMessageId,                  // for in-place lobby card editing
+}
+```
+
+**Persistence pattern:** checkpoint to MongoDB after every state-mutating event (deposit, fire, elimination, buyback, idle penalty, turn pass). On server boot, load all matches in `lobby` or `active` state, re-instantiate turn timers from `turnStartedAt + turnTimerMs`. Handle "server was down longer than a turn timer" by retroactively applying missed-turn penalties on boot.
+
+**Scheduler:** v0.1 suggested BullMQ on Redis. v0.2 endorses this if Redis is already in stack — otherwise `node-cron` polling MongoDB for `turnDeadline < now` is acceptable for v1 scale. Decision depends on existing infra (`@johnk` to confirm).
+
+**Cross-mode rules:** match state keyed by `(wallet, chatId)`. A wallet can be in N concurrent group matches (one per chatId) plus N concurrent standard 1v1/3P/4P matches (in-memory, independent).
+
+### Escrow v2 — required new program
+
+The current escrow program (`programs/solshot-escrow/src/lib.rs`) cannot support group mode. Six hard blockers:
+
+| # | Current constraint | Group mode needs |
+|---|---|---|
+| 1 | `players: [Pubkey; 4]`, `max_players` capped at 2–4 | Variable up to 10 |
+| 2 | `deposits_mask: u8` bitmap, `AlreadyDeposited` error blocks re-deposits | Multiple deposits per player (buybacks) |
+| 3 | Single `wager_lamports` field | Variable amounts (escalating buybacks) |
+| 4 | `settle_match(winner: Pubkey)` is single-recipient | Top-3 + survival pool = multi-recipient |
+| 5 | `SETTLEMENT_TIMEOUT_SECONDS = 3600` (1h after activation) | Up to 7d + buffer |
+| 6 | `PERMISSIONLESS_RECLAIM_TIMEOUT = 1200` (20min) | At least 7d + 48h |
+
+**v2 required capabilities (proposed for JJ):**
+
+- Variable player count via `Vec<Pubkey>` or per-player PDAs
+- Deposit history per player (`Vec<Deposit { amount, type: Initial | Buyback(n), timestamp }>`)
+- Total pot tracked on-chain (summed)
+- Configurable settlement deadline at match-creation time (`activation + duration + buffer`)
+
+**Required instructions:**
+
+| Instruction | Purpose |
+|---|---|
+| `create_match` | Server creates escrow PDA. Accepts `match_id`, `wager_lamports`, `players`, `duration_seconds`, `buyback_enabled`, `buyback_cap`. |
+| `deposit_initial` | Player deposits initial wager. Match activates when full or host-triggered with min met. |
+| `deposit_buyback` | Player deposits escalating-cost buyback. Validates schedule (2/3/5/8/13× × wager) against `buyback_count`. Validates window not closed. |
+| `settle_match` | Authority distributes pot: 1st (43.2%), 2nd (14.4%), 3rd (7.2%), survival pool (18% / N_eligible each), 7% treasury, 3% ops. Server provides ranking; program validates math against pot. |
+| `cancel_match` | Authority cancels in `Lobby` state. Refunds initial deposits. |
+| `permissionless_reclaim` | Anyone can trigger refund after `endsAt + 48h`. Caller earns rent. |
+| `start_with_depositors` | Authority starts match with partial roster after lobby expires. |
+
+**v1 program fate:** Existing 1v1/3P/4P matches continue on v1. v2 is group-mode-only initially. Future migration is a separate effort.
+
+**Settlement edge cases needing `@johnk` rulings (Q-008):**
+- Survival pool with 0 eligible (everyone eliminated past 50% mark) — roll to 1st place or to treasury?
+- Tiny match with no clear 2nd/3rd (4 players, only 1 alive at end) — roll unallocated shares to 1st or to treasury?
+
+### Phased rollout
+
+**Phase 1 — gameplay foundation (free mode only, no escrow dependency)**
+- Server: persist match state in MongoDB, restart resilience
+- Server: extend N-player engine to 10 players (terrain, HP bars, turn rotation already scaffolded for 4P)
+- Client: camera-pan + mini-map widget on BattleScreen, turn-start zoom sequence
+- Client: multi-match home screen
+- Bot: `/customgame` flow, lobby card, turn pings, chat tiers (sticker library or text-only fallback)
+- Test in real TG groups with **free mode only**
+
+Definition of done: 8-player free Weekend match runs to completion in a real TG group with idle penalties, eliminations, no buybacks, determined winner.
+
+**Phase 2 — escrow v2 + wagered mode**
+- JJ designs and ships escrow v2 (separate Anchor program, new program ID)
+- Server: wire wagered match creation → v2 program
+- Client: deposit flow in lobby join
+- Server: settlement on match end (multi-recipient payout)
+- Devnet testing with real wagers
+
+**Phase 3 — buybacks**
+- Server: buyback eligibility tracking, window enforcement, cost escalation
+- Bot: buyback DM flow with inline button
+- Client: buyback deposit signing in Mini App, re-spawn handling
+
+**Phase 4 — polish & growth**
+- Server-rendered cards (match-start lineup, match-end summary, daily heartbeat)
+- `verbose: true` host toggle for per-shot text recap
+- Match-summary share card for winners
+- Cross-chat referral hooks
+
+### Circle-back items (deferred from v1)
+
+- Server-rendered cards for match-bookend events
+- `verbose: true` per-shot text recap host toggle
+- 12+ player support (HUD redesign required)
+- Late-join feature
+- Tournament integration (Phase 11 territory)
+- AI player fill for under-min lobbies (reuse `server/services/ai.js`)
+
+### Open questions added (Q-006 through Q-009)
+
+See `Docs/OPEN_QUESTIONS.md`:
+- **Q-006** — bot config flip (`/setjoingroups Disable → Enable`) and `/setprivacy` posture decision
+- **Q-007** — formal commitment to escrow v2 design + ship
+- **Q-008** — settlement edge cases (0 survival-eligible, no 2nd/3rd in tiny matches)
+- **Q-009** — sticker library commission (now load-bearing for group mode v1)
+
+Q-006 and Q-007 are blocking for Phase 1 implementation begin.
+
+---
+
+_v0.2 last updated: 2026-04-29. Author: fishyboy-claude (transcribing FishyBoy ↔ fishyboy-claude design lock)._

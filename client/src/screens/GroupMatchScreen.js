@@ -237,23 +237,26 @@ function ActivePlayerBar({ match, myTgId, onMenu }) {
                     return (
                         <div key={p.telegramUserId} style={{
                             ...styles.topBarPlayerCard,
-                            border: `1px solid ${isCurrent && !elim ? color : 'var(--border)'}`,
+                            border: `2px solid ${isCurrent && !elim ? color : 'var(--border)'}`,
                             opacity: elim ? 0.35 : 1,
-                            background: isCurrent ? 'var(--bg-raised)' : 'transparent',
+                            background: isCurrent ? 'rgba(255,255,255,0.04)' : 'transparent',
+                            boxShadow: isCurrent && !elim ? `0 0 8px ${color}66` : 'none',
                         }}>
-                            <div style={{
-                                ...styles.topBarPlayerName,
-                                color: isMe ? color : 'var(--bone)',
-                            }}>
-                                {(p.callsign || p.tgUsername || '?').slice(0, 8).toUpperCase()}
-                                {isMe && <span style={styles.topBarYouTag}> YOU</span>}
-                                {isCurrent && !elim && <span style={{ ...styles.topBarTurnTag, color }}> ▸</span>}
+                            <div style={styles.topBarRow}>
+                                <span style={{
+                                    ...styles.topBarPlayerName,
+                                    color: isMe ? color : 'var(--bone)',
+                                }}>
+                                    {isCurrent && !elim && <span style={{ color }}>▸ </span>}
+                                    {(p.callsign || p.tgUsername || '?').slice(0, 10).toUpperCase()}
+                                    {isMe && <span style={styles.topBarYouTag}> · YOU</span>}
+                                </span>
+                                <span style={styles.topBarHpLabel}>
+                                    {elim ? 'KO' : `${p.hp ?? 100}/${100}`}
+                                </span>
                             </div>
                             <div style={styles.topBarHpBar}>
                                 <div style={{ ...styles.topBarHpFill, width: `${hpPct}%`, background: color }} />
-                            </div>
-                            <div style={styles.topBarHpLabel}>
-                                {elim ? 'KO' : `${p.hp ?? 100} HP`}
                             </div>
                         </div>
                     );
@@ -588,48 +591,56 @@ const styles = {
     },
     topBarPlayerCard: {
         flex: '1 1 0',
-        minWidth: 70,
-        padding: '4px 6px',
+        minWidth: 90,
+        padding: '6px 8px',
         clipPath: 'polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px)',
         display: 'flex',
         flexDirection: 'column',
+        justifyContent: 'center',
+        gap: 4,
+    },
+    topBarRow: {
+        display: 'flex',
         justifyContent: 'space-between',
+        alignItems: 'baseline',
+        gap: 6,
     },
     topBarPlayerName: {
         fontFamily: "'Black Ops One', cursive",
-        fontSize: 10,
+        fontSize: 11,
         letterSpacing: '0.06em',
         whiteSpace: 'nowrap',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
+        flex: 1,
+        minWidth: 0,
     },
     topBarYouTag: {
         fontFamily: "'Share Tech Mono', monospace",
         fontSize: 8,
         color: 'var(--muted)',
-        marginLeft: 2,
     },
     topBarTurnTag: {
         fontFamily: "'Share Tech Mono', monospace",
         fontSize: 10,
     },
     topBarHpBar: {
-        height: 3,
-        background: 'var(--bg-deep)',
+        height: 6,
+        background: 'rgba(0,0,0,0.5)',
         border: '1px solid var(--border)',
-        marginTop: 3,
         position: 'relative',
         overflow: 'hidden',
     },
     topBarHpFill: {
         height: '100%',
+        transition: 'width 220ms ease-out',
     },
     topBarHpLabel: {
         fontFamily: "'Share Tech Mono', monospace",
-        fontSize: 8,
+        fontSize: 9,
         color: 'var(--olive)',
         letterSpacing: '0.15em',
-        marginTop: 2,
+        flexShrink: 0,
     },
     // Bottom status strip — compact, fixed-height
     statusStrip: {

@@ -209,8 +209,11 @@ async function onConfigConfirmed(ctx, config) {
         state: 'lobby',
         config,
         players: [
-            // Host auto-joins their own match
-            buildPlayerSlot(ctx.from, /*tankColor*/ 0),
+            // Host auto-joins their own match. First color from the palette
+            // (Red) — pickAvailableTankColor would return the same since
+            // the player array is empty at this point, but we hard-pick to
+            // make the contract explicit.
+            buildPlayerSlot(ctx.from, /*tankColor*/ TANK_PHASER_COLORS[0]),
         ],
         createdAt: now,
         lobbyExpiresAt,
@@ -361,12 +364,34 @@ function buildPlayerSlot(tgUser, tankColor) {
     };
 }
 
+// Mirrors client/src/data/colors.js TANK_COLORS phaserHex values. Group-chat
+// stores phaserHex (e.g. 0xFF0000) on each player so the same Phaser scene
+// rendering path used in 1v1 (tank.create(int2rgba(player.color), ...))
+// works without mode-specific transformation.
+const TANK_PHASER_COLORS = [
+    0xFF0000, // RED
+    0xFF9900, // ORANGE
+    0xFFFF00, // YELLOW
+    0x00FF00, // GREEN
+    0x00FFFF, // CYAN
+    0x0066FF, // BLUE
+    0x9900FF, // PURPLE
+    0xFF00FF, // PINK
+    0xFFFFFF, // WHITE
+    0x666666, // GREY (10th slot for max-player matches)
+];
+
+/**
+ * Pick the first phaserHex color value not yet claimed by another player
+ * in this match. Returns a number suitable for `int2rgba()` in the Phaser
+ * scene — same convention 1v1 uses.
+ */
 function pickAvailableTankColor(players) {
     const taken = new Set(players.map(p => p.tankColor));
-    for (let i = 0; i < 10; i++) {
-        if (!taken.has(i)) return i;
+    for (const hex of TANK_PHASER_COLORS) {
+        if (!taken.has(hex)) return hex;
     }
-    return 0;
+    return TANK_PHASER_COLORS[0]; // fallback — should never hit with maxPlayers ≤ 10
 }
 
 async function findOpenLobby(chatId) {

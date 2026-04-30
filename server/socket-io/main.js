@@ -16,6 +16,7 @@ import { trackConnection, trackDisconnection, trackMatchCreated, trackMatchCompl
 import { requireAuth, validatePayload, validateFireParams, sanitizeName, withLock, safeHandler } from '../middleware/guards.js';
 import { initAI, cleanupAI, pickWeapon, calculateAim, autoBuyWeapons } from '../services/ai.js';
 import { CONSUMABLES, purchaseConsumable, decrementConsumables, getActiveConsumables, hasConsumable } from '../services/consumables.js';
+import { registerGroupChatSocketHandlers } from './groupchat.js';
 import { createChallenge as createChallengeRecord, getChallenge, attachRoomId, markAccepted, markMatched } from '../services/challenge/challenge.js';
 import { dispatchVictoryDm } from '../services/challenge/victoryDm.js';
 import { linkTelegramIdentity } from '../services/users.js';
@@ -1087,6 +1088,9 @@ const mainsocket = (io) => {
             }
             client.emit('authResult', result)
         })
+
+        // Group-chat per-socket handlers (Phase 1c — getGroupMatch, getMyGroupMatches, fireGroupShot).
+        registerGroupChatSocketHandlers(client);
 
         // === PRACTICE IDENTITY (Phase 28) ===
         client.on('registerIdentity', ({ uid, handle }) => {

@@ -27,6 +27,7 @@ import { getChallenge, markAccepted } from './challenge/challenge.js';
 import { renderCareerCardPng } from './challenge/renderCareerCard.js';
 import { buildCareerProps } from './challenge/careerCardProps.js';
 import { WEAPON_DATA } from './physics.js';
+import { registerGroupChatCommands } from './groupchat/index.js';
 
 // The path segment after the bot username is the Mini App `short_name` registered
 // in BotFather. Our Mini App is registered as `play` (not `solshot`). Set
@@ -726,6 +727,10 @@ function registerCommands(bot) {
       try { await ctx.answerCbQuery('Something went wrong.', { show_alert: true }); } catch { /* */ }
     }
   });
+
+  // Group-chat mode commands (/customgame, /startmatch, /cancelmatch + their callbacks).
+  // Registers commands + callback_query handlers on the same bot instance.
+  registerGroupChatCommands(bot);
 }
 
 /**

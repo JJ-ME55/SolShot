@@ -29,6 +29,7 @@ const HowToPlayScreen      = lazy(() => import('./screens/HowToPlayScreen'));
 const TermsScreen          = lazy(() => import('./screens/TermsScreen'));
 const PrivacyScreen        = lazy(() => import('./screens/PrivacyScreen'));
 const ChallengeAcceptScreen = lazy(() => import('./screens/ChallengeAcceptScreen'));
+const GroupMatchScreen     = lazy(() => import('./screens/GroupMatchScreen'));
 
 /** Minimal fallback shown while a lazy-loaded screen chunk is fetching. */
 function ScreenFallback() {
@@ -169,6 +170,18 @@ function AppInner() {
       return;
     }
 
+    // Group-chat match deep links (Phase 1c).
+    //   lobby_<matchId>  — wagered-mode join after deposit; routes to detail view
+    //   match_<matchId>  — active-or-settled match; same screen, renders by state
+    if (startParam.startsWith('lobby_') || startParam.startsWith('match_')) {
+      const matchId = startParam.slice(startParam.indexOf('_') + 1);
+      if (matchId) {
+        setScreenData({ groupMatchId: matchId });
+        setScreen('group-match');
+      }
+      return;
+    }
+
     // Direct screen routing — these are exact-match deep links from bot commands
     const routes = {
       play:        'lobby',
@@ -242,6 +255,7 @@ function AppInner() {
             case 'terms':       return <TermsScreen navigate={navigate} />;
             case 'privacy':     return <PrivacyScreen navigate={navigate} />;
             case 'challengeAccept': return <ChallengeAcceptScreen navigate={navigate} screenData={screenData} />;
+            case 'group-match': return <GroupMatchScreen navigate={navigate} screenData={screenData} />;
             default:            return <MenuScreen navigate={navigate} />;
           }
         })()}

@@ -154,6 +154,7 @@ const groupMatchSchema = new mongoose.Schema({
     terrainSnapshot: { type: [Number], default: [] },              // heightmap (existing format from physics.js)
     walls: { type: [wallSchema], default: [] },
     wind: { type: Number, default: 0 },                            // px/s² horizontal accel, regenerated per ... (per turn? per round? — group has no rounds; per turn)
+    backgroundIndex: { type: Number, default: 0 },                 // 0–5 — picked once at startMatch, mirrors client _bgThemes order (jungle/arctic/desert/moon/volcanic/default)
 
     // Settlement
     settledAt: { type: Date, default: null },

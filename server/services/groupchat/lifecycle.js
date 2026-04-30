@@ -157,6 +157,9 @@ export async function startMatch(matchId) {
     match.terrainSnapshot = heightmap;
     match.walls = [];
     match.wind = generateWind();
+    // Pick a random background theme (0-5) — client mirrors this order
+    // in scenes/main/index.js _bgThemes (jungle/arctic/desert/moon/volcanic/default).
+    match.backgroundIndex = Math.floor(Math.random() * 6);
 
     await match.save();
 

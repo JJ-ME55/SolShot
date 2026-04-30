@@ -133,9 +133,10 @@ function promptForStep(step, partial) {
             };
         case 'maxPlayers':
             return {
-                text: `${summary}${stepHeader('Max players')}\n\nMatch starts when full, or when host runs /startmatch with at least 4 players.`,
+                text: `${summary}${stepHeader('Max players')}\n\nMatch starts when full, or when host runs /startmatch with the minimum joined.\n\n<i>2-player matches are async duels (great for testing or 1v1 with a friend across multiple days).</i>`,
                 keyboard: kb([
-                    [btn('4', 'gc_cfg_max_4'), btn('6', 'gc_cfg_max_6'), btn('8', 'gc_cfg_max_8'), btn('10', 'gc_cfg_max_10')],
+                    [btn('2 (duel)', 'gc_cfg_max_2'), btn('3', 'gc_cfg_max_3'), btn('4', 'gc_cfg_max_4')],
+                    [btn('6', 'gc_cfg_max_6'), btn('8', 'gc_cfg_max_8'), btn('10', 'gc_cfg_max_10')],
                     [btn('« Back', 'gc_cfg_back'), btn('✖ Cancel', 'gc_cfg_cancel')],
                 ]),
             };
@@ -378,11 +379,15 @@ function finalize(partial) {
     const isFree = partial.type === 'free';
     // Free matches: no wager, buybacks force-off (escalating cost on 0 wager makes no sense)
     const buybacksEnabled = isFree ? false : (partial.buybacksEnabled ?? DEFAULTS.buybacksEnabled);
+    const maxPlayers = partial.maxPlayers ?? DEFAULTS.maxPlayers;
+    // minPlayers scales with maxPlayers — small matches (2/3) need full attendance,
+    // bigger matches (4+) keep the original 4-player floor for a real group feel.
+    const minPlayers = maxPlayers <= 3 ? maxPlayers : 4;
     return {
         type: partial.type ?? DEFAULTS.type,
         wagerLamports: isFree ? 0 : (partial.wagerLamports ?? 0),
-        maxPlayers: partial.maxPlayers ?? DEFAULTS.maxPlayers,
-        minPlayers: 4,                          // fixed v1
+        maxPlayers,
+        minPlayers,
         durationMs: partial.durationMs ?? DEFAULTS.durationMs,
         turnTimerMs: partial.turnTimerMs ?? DEFAULTS.turnTimerMs,
         idlePenaltyHp: partial.idlePenaltyHp ?? DEFAULTS.idlePenaltyHp,

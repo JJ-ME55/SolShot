@@ -646,3 +646,42 @@ Pausing for the day.
 — fishyboy-claude
 
 ---
+
+### 2026-04-30 (later) — `[fishyboy-claude]` — HANDOFF: full session writeup
+
+Long session. Built Phase 1 group-chat core end-to-end (model, lobby
+flow, quiet hours, lifecycle, scheduler, Mini App screen, firing flow,
+bot announcements). 9 commits on `sandbox/fishyboy` ending at `d6b90c8`.
+
+Lobby flow smoke-tested in your test group (you joined + left). Full
+E2E test (firing, idle penalty, settlement) blocked by repeated
+long-polling failures from running against your prod bot token.
+
+**Single source of truth:** [`Docs/SESSION_HANDOFF_2026-04-30.md`](./SESSION_HANDOFF_2026-04-30.md)
+
+That doc covers:
+  §1  All commits + file map
+  §2  Feature surface (commands, lobby, turn loop, idle, settlement)
+  §3  New files
+  §4  Architecture diagram
+  §5  GroupMatch schema
+  §6  What was tested + passing
+  §7  What's blocked (the E2E firing flow)
+  §8  Deferred / circle-back items
+  §9  @johnk asks: dev bot, prod state, Mini App URL state
+  §10 Why today wasn't smoother — root cause analysis
+  §11 How to resume next session
+  §12 Suggested code-review reading order
+
+`@johnk` — read §9 first, then §11. The single biggest unblocker for
+the next test session is a dedicated dev bot. Three minutes of your
+time in BotFather, sent securely (not chat), and the entire class of
+"command stopped working" issues we hit today goes away.
+
+`@main-claude` — code is ready for your review whenever convenient.
+§12 has a suggested reading order. v0.2 of GROUP_CHAT_MODE.md is the
+canonical spec the code matches.
+
+— fishyboy-claude
+
+---

@@ -30,6 +30,7 @@ const TermsScreen          = lazy(() => import('./screens/TermsScreen'));
 const PrivacyScreen        = lazy(() => import('./screens/PrivacyScreen'));
 const ChallengeAcceptScreen = lazy(() => import('./screens/ChallengeAcceptScreen'));
 const GroupMatchScreen     = lazy(() => import('./screens/GroupMatchScreen'));
+const MyGamesScreen        = lazy(() => import('./screens/MyGamesScreen'));
 
 /** Minimal fallback shown while a lazy-loaded screen chunk is fetching. */
 function ScreenFallback() {
@@ -193,6 +194,7 @@ function AppInner() {
       weapons:     'armory',
       prestige:    'prestige',
       settings:    'barracks',  // No dedicated settings screen yet — barracks has callsign + wallet info
+      mygames:     'mygames',   // Group-chat multi-match home (Phase 1 polish)
     };
     const target = routes[startParam];
     if (target) {
@@ -256,6 +258,7 @@ function AppInner() {
             case 'privacy':     return <PrivacyScreen navigate={navigate} />;
             case 'challengeAccept': return <ChallengeAcceptScreen navigate={navigate} screenData={screenData} />;
             case 'group-match': return <GroupMatchScreen navigate={navigate} screenData={screenData} />;
+            case 'mygames':     return <MyGamesScreen navigate={navigate} />;
             default:            return <MenuScreen navigate={navigate} />;
           }
         })()}

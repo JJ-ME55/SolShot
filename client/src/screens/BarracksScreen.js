@@ -4,6 +4,15 @@ import TerrainSilhouette from '../components/design/Terrain';
 import StatCardOverlay from '../components/StatCard';
 import { useTelegram } from '../telegram/TelegramContext';
 import { haptic } from '../telegram/haptic';
+import PRESTIGE_TIERS, { TIER_COLORS } from '../data/tiers';
+
+const TIER_BADGE_FILES = {
+  Bronze:   '/assets/images/badges/badge-bronze.png',
+  Silver:   '/assets/images/badges/badge-silver.png',
+  Gold:     '/assets/images/badges/badge-gold.png',
+  Platinum: '/assets/images/badges/badge-platinum.png',
+  Diamond:  '/assets/images/badges/badge-diamond.png',
+};
 
 function fmtDmg(val) {
   if (!val || val <= 0) return '—';
@@ -297,6 +306,97 @@ function BarracksScreen({ navigate }) {
                 fontFamily: 'var(--f-display)', fontSize: 13, letterSpacing: '0.18em', cursor: 'pointer',
               }}>FIND A MATCH</button>
             </div>
+
+            {/* Prestige progression — current tier + burn-to-next visual.
+                Renders for every authenticated user (matches > 0 OR not),
+                because it's also a teaser for new players to see what's
+                ahead of them. */}
+            {stats && (() => {
+              const tierIdx = stats.prestigeTier || 0;
+              const cur = PRESTIGE_TIERS[tierIdx] || PRESTIGE_TIERS[0];
+              const next = PRESTIGE_TIERS[tierIdx + 1] || null;
+              const shotBalance = stats.shotBalance || 0;
+              const totalBurned = stats.totalBurned || stats.shotBurned || 0;
+              const isMaxed = !next;
+              // For unranked players showing teaser → cost is for Bronze
+              const targetCost = next?.cost || 0;
+              const pct = isMaxed ? 100 : Math.min(100, Math.round((shotBalance / targetCost) * 100));
+              const tierColor = TIER_COLORS[(cur.name || 'STANDARD').toUpperCase()] || cur.color || 'var(--accent)';
+              const badge = TIER_BADGE_FILES[cur.name];
+              return (
+                <div style={{
+                  marginTop: 14, padding: '14px 16px',
+                  background: 'var(--bg-surface)', border: '1px solid var(--border)',
+                  clipPath: 'var(--clip-10)',
+                }}>
+                  <div style={{
+                    fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--accent)',
+                    letterSpacing: '0.22em', marginBottom: 8,
+                  }}>PRESTIGE PROGRESSION</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
+                    {badge ? (
+                      <img src={badge} alt="" style={{
+                        width: 56, height: 56, objectFit: 'contain', flexShrink: 0,
+                        filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.4))',
+                      }} />
+                    ) : (
+                      <div style={{
+                        width: 56, height: 56, flexShrink: 0,
+                        border: '2px dashed var(--olive)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontFamily: 'var(--f-mono)', fontSize: 8, letterSpacing: '0.18em',
+                        color: 'var(--olive)', textAlign: 'center', lineHeight: 1.1,
+                      }}>UN<br/>RANKED</div>
+                    )}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        fontFamily: 'var(--f-display)', fontSize: 16, color: tierColor,
+                        letterSpacing: '0.12em', textTransform: 'uppercase', lineHeight: 1,
+                      }}>{(cur.name || 'UNRANKED').toUpperCase()} TIER</div>
+                      <div style={{
+                        fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--olive)',
+                        letterSpacing: '0.18em', marginTop: 6, lineHeight: 1.3,
+                      }}>
+                        {isMaxed
+                          ? `MAX TIER · ${totalBurned.toLocaleString()} SHOT BURNED`
+                          : `${shotBalance.toLocaleString()} / ${targetCost.toLocaleString()} SHOT TO ${next.name.toUpperCase()}`}
+                      </div>
+                    </div>
+                  </div>
+                  {/* Progress bar */}
+                  <div style={{
+                    width: '100%', height: 8, background: 'rgba(255,255,255,0.06)',
+                    border: '1px solid var(--border)', clipPath: 'var(--clip-3)',
+                    overflow: 'hidden', position: 'relative', marginBottom: 12,
+                  }}>
+                    <div style={{
+                      width: `${pct}%`, height: '100%',
+                      background: isMaxed
+                        ? 'linear-gradient(90deg, #64c8ff, #b4a0ff)'
+                        : tierColor,
+                      transition: 'width 280ms ease-out',
+                      boxShadow: pct > 0 ? `0 0 8px ${tierColor}` : 'none',
+                    }} />
+                  </div>
+                  {!isMaxed && (
+                    <div style={{
+                      fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--olive)',
+                      letterSpacing: '0.06em', lineHeight: 1.4, marginBottom: 10,
+                    }}>
+                      {shotBalance >= targetCost
+                        ? `Ready to burn — unlocks ${next.reward} weapon`
+                        : `Earn ${(targetCost - shotBalance).toLocaleString()} more SHOT to unlock ${next.reward}`}
+                    </div>
+                  )}
+                  <button onClick={() => { haptic.tap(); navigate('prestige'); }} style={{
+                    width: '100%', padding: '10px',
+                    background: 'transparent', color: 'var(--bone)',
+                    border: '1px solid var(--border)', clipPath: 'var(--clip-6)',
+                    fontFamily: 'var(--f-display)', fontSize: 11, letterSpacing: '0.18em', cursor: 'pointer',
+                  }}>{isMaxed ? 'OPEN PRESTIGE' : 'OPEN PRESTIGE — BURN SHOT'}</button>
+                </div>
+              );
+            })()}
 
             {/* Share My Stats — pop chat picker, drop career card into any TG chat */}
             {isTelegram && stats && (stats.matchesPlayed || 0) > 0 && (

@@ -519,18 +519,83 @@ function registerCommands(bot) {
   });
 
   bot.command('help', async (ctx) => {
-    await ctx.replyWithMarkdownV2(
-      '*SolShot* — artillery duels on Solana\\.\n\n' +
-      '*Quick start:*\n' +
-      '1\\. Tap Play to find a match\n' +
-      '2\\. Pick weapons in the shop\n' +
-      '3\\. Take turns shooting — winner takes the pot\n\n' +
-      '*Practice mode is free*\\. Wagered modes pay out in SOL\\.\n' +
-      '*Prestige* unlocks tiers from Bronze → Diamond\\.\n' +
-      '*SHOT token* powers cosmetics and prestige burns\\.\n\n' +
-      'Web: solshot\\.gg \\| X: @SolShotGG',
-      { reply_markup: launchKeyboard('🎯 Launch SolShot') }
-    );
+    // Smart reply: stitches the user's current state onto the canned help
+    // text — current tier + suggested next action. New users see the full
+    // intro; returning users get a personalised next-step nudge.
+    let next = null;
+    let tierLine = null;
+    let cta = '🎯 Launch SolShot';
+    let ctaParam = '';
+
+    try {
+      const user = await lookupUserByTelegramId(ctx.from?.id);
+      if (user) {
+        const tierIdx = user.stats?.prestigeTier || 0;
+        const tier = (PRESTIGE_TIERS[tierIdx] || PRESTIGE_TIERS[0]).name.toUpperCase();
+        const callsign = (user.handle || ctx.from?.first_name || 'OPERATIVE').toUpperCase();
+        const matches = user.stats?.matchesPlayed || 0;
+        const wins = user.stats?.wins || 0;
+        tierLine = `You: *${callsign}* · ${tier} · ${wins}W / ${matches}M`;
+
+        // Suggest a next action based on state
+        if (matches === 0) {
+          next = 'Tap Play below to start your first match';
+          cta = '▶ Play first match';
+          ctaParam = 'play';
+        } else if ((user.stats?.shotBalance || 0) >= 200 && tierIdx === 0) {
+          next = `You have enough SHOT to unlock *BRONZE*. Open Prestige to burn`;
+          cta = '🏆 Open Prestige';
+          ctaParam = 'prestige';
+        } else if (matches > 0 && wins === 0) {
+          next = 'Try /weapons to see your loadout — pick a weapon you haven\\\'t used yet';
+          cta = '▶ Find a Match';
+          ctaParam = 'play';
+        } else if (matches >= 5 && (user.referralsMade || 0) === 0) {
+          next = 'Try /refer — both you and your friend earn 25 SHOT on their first wagered match';
+          cta = '🤝 Get invite link';
+          ctaParam = 'refer';
+        } else {
+          next = 'Try /stats for your career card or /leaderboard for the top 10';
+          cta = '🎯 Launch SolShot';
+        }
+      }
+    } catch (err) {
+      console.warn('[bot:/help] state lookup failed, falling back to generic:', err.message);
+    }
+
+    // MarkdownV2 needs `.` and `-` and `!` escaped. Building parts cleanly.
+    const lines = ['*SolShot* — artillery duels on Solana\\.', ''];
+    if (tierLine) lines.push(tierLine, '');
+    lines.push('*Quick start:*');
+    lines.push('1\\. Tap Play to find a match');
+    lines.push('2\\. Pick weapons in the shop');
+    lines.push('3\\. Take turns shooting — winner takes the pot');
+    lines.push('');
+    if (next) {
+      lines.push('*Next:* ' + next + '\\.', '');
+    }
+    lines.push('*Practice mode is free*\\. Wagered modes pay out in SOL\\.');
+    lines.push('*Prestige* unlocks tiers from Bronze → Diamond\\.');
+    lines.push('*SHOT token* powers cosmetics and prestige burns\\.');
+    lines.push('');
+    lines.push('Commands: /play /stats /wallet /weapons /shop /prestige /leaderboard /refer /challenge /customgame');
+    lines.push('');
+    lines.push('Web: solshot\\.gg \\| X: @SolShotGG');
+
+    try {
+      await ctx.replyWithMarkdownV2(lines.join('\n'), {
+        reply_markup: launchKeyboard(cta, ctaParam),
+      });
+    } catch (err) {
+      // MarkdownV2 escaping bug? Fall back to plain.
+      console.warn('[bot:/help] markdown send failed, plain fallback:', err.message);
+      await ctx.reply(
+        'SolShot — artillery duels on Solana.\n\n' +
+        'Practice mode is free. Wagered modes pay out in SOL.\n' +
+        'Web: solshot.gg | X: @SolShotGG',
+        { reply_markup: launchKeyboard('Launch SolShot') }
+      );
+    }
   });
 
   bot.command('support', async (ctx) => {
@@ -589,6 +654,16 @@ function registerCommands(bot) {
       '• Daily digest opt-in\n\n' +
       'For now, manage your callsign + wallet in the Mini App.',
       { reply_markup: launchKeyboard('Open Settings', 'settings') }
+    );
+  });
+
+  // /mygames — open the multi-match home screen showing every group-chat
+  // match the user is currently in across all chats. Useful when a user
+  // is in 3+ groups and wants a single place to check who's waiting on them.
+  bot.command('mygames', async (ctx) => {
+    await ctx.reply(
+      'See every group match you\'re in — across every chat. Tap below to open.',
+      { reply_markup: launchKeyboard('Open My Games', 'mygames') }
     );
   });
 

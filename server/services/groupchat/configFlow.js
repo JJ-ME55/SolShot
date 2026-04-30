@@ -76,17 +76,32 @@ const DEFAULTS = Object.freeze({
 
 const STEPS = ['type', 'wager', 'maxPlayers', 'duration', 'turnTimer', 'quietHours', 'idlePenalty', 'buybacks', 'buybackCap', 'review'];
 
-/** Returns the index of the next step from the current step.
- *  Skips `wager` when type === 'free' and `buybackCap` when buybacks disabled. */
+/** Returns true if the given step should be skipped for the partial config. */
+function shouldSkip(step, partial) {
+    // Free matches: no wager, no buybacks (escalating cost on 0 makes no sense)
+    if (step === 'wager' && partial.type === 'free') return true;
+    if (step === 'buybacks' && partial.type === 'free') return true;
+    if (step === 'buybackCap' && partial.type === 'free') return true;
+    // Wagered with buybacks off: no cap step
+    if (step === 'buybackCap' && !partial.buybacksEnabled) return true;
+    return false;
+}
+
+/** Returns the index of the next step from the current step. */
 function nextStep(currentStepIndex, partial) {
     let idx = currentStepIndex + 1;
-    while (idx < STEPS.length) {
-        const step = STEPS[idx];
-        if (step === 'wager' && partial.type === 'free') { idx++; continue; }
-        if (step === 'buybackCap' && !partial.buybacksEnabled) { idx++; continue; }
-        break;
+    while (idx < STEPS.length && shouldSkip(STEPS[idx], partial)) {
+        idx++;
     }
     return idx;
+}
+
+/** {current, total} for the "Step X of Y" header.
+ *  Total counts non-review, non-skipped steps; current is 1-indexed. */
+function stepInfo(step, partial) {
+    const visible = STEPS.filter(s => s !== 'review' && !shouldSkip(s, partial));
+    const idx = visible.indexOf(step);
+    return { current: idx + 1, total: visible.length };
 }
 
 // ─── Per-step prompts + keyboards ───────────────────────────────────────
@@ -94,11 +109,13 @@ function nextStep(currentStepIndex, partial) {
 /** Returns { text, keyboard } for the current step of a partial config. */
 function promptForStep(step, partial) {
     const summary = renderSummary(partial);
+    const { current, total } = stepInfo(step, partial);
+    const stepHeader = (label) => `<b>Step ${current} of ${total} — ${label}</b>`;
 
     switch (step) {
         case 'type':
             return {
-                text: `${summary}<b>Step 1 of 9 — Match type</b>\n\nFree matches don't require a wallet. Wagered matches lock SOL in escrow on each player's deposit.`,
+                text: `${summary}${stepHeader('Match type')}\n\nFree matches don't require a wallet. Wagered matches lock SOL in escrow on each player's deposit.`,
                 keyboard: kb([
                     [btn('💸 Free', 'gc_cfg_type_free'), btn('💰 Wagered', 'gc_cfg_type_wagered')],
                     [btn('✖ Cancel', 'gc_cfg_cancel')],
@@ -106,7 +123,7 @@ function promptForStep(step, partial) {
             };
         case 'wager':
             return {
-                text: `${summary}<b>Step 2 of 9 — Wager amount</b>\n\nEach player deposits this. Total pot = wager × player count, distributed top-3 + survival bonus at match end.`,
+                text: `${summary}${stepHeader('Wager amount')}\n\nEach player deposits this. Total pot = wager × player count, distributed top-3 + survival bonus at match end.`,
                 keyboard: kb([
                     [btn('0.01 SOL', 'gc_cfg_wager_10000000'), btn('0.05 SOL', 'gc_cfg_wager_50000000')],
                     [btn('0.1 SOL', 'gc_cfg_wager_100000000'), btn('0.25 SOL', 'gc_cfg_wager_250000000')],
@@ -116,7 +133,7 @@ function promptForStep(step, partial) {
             };
         case 'maxPlayers':
             return {
-                text: `${summary}<b>Step 3 of 9 — Max players</b>\n\nMatch starts when full, or when host runs /startmatch with at least 4 players.`,
+                text: `${summary}${stepHeader('Max players')}\n\nMatch starts when full, or when host runs /startmatch with at least 4 players.`,
                 keyboard: kb([
                     [btn('4', 'gc_cfg_max_4'), btn('6', 'gc_cfg_max_6'), btn('8', 'gc_cfg_max_8'), btn('10', 'gc_cfg_max_10')],
                     [btn('« Back', 'gc_cfg_back'), btn('✖ Cancel', 'gc_cfg_cancel')],
@@ -124,7 +141,7 @@ function promptForStep(step, partial) {
             };
         case 'duration':
             return {
-                text: `${summary}<b>Step 4 of 9 — Match duration</b>\n\nHard cap. If no winner by then, top finishers ranked by HP.`,
+                text: `${summary}${stepHeader('Match duration')}\n\nHard cap. If no winner by then, top finishers ranked by HP.`,
                 keyboard: kb([
                     [btn('Sprint (12h)', 'gc_cfg_dur_43200000'), btn('Weekend (3d)', 'gc_cfg_dur_259200000'), btn('Marathon (7d)', 'gc_cfg_dur_604800000')],
                     [btn('« Back', 'gc_cfg_back'), btn('✖ Cancel', 'gc_cfg_cancel')],
@@ -132,7 +149,7 @@ function promptForStep(step, partial) {
             };
         case 'turnTimer':
             return {
-                text: `${summary}<b>Step 5 of 9 — Turn timer</b>\n\nHow long (waking time) before idle penalty kicks in. Players are pinged in chat when it's their move.`,
+                text: `${summary}${stepHeader('Turn timer')}\n\nHow long (waking time) before idle penalty kicks in. Players are pinged in chat when it's their move.`,
                 keyboard: kb([
                     [btn('4h', 'gc_cfg_turn_14400000'), btn('12h', 'gc_cfg_turn_43200000'), btn('24h', 'gc_cfg_turn_86400000')],
                     [btn('« Back', 'gc_cfg_back'), btn('✖ Cancel', 'gc_cfg_cancel')],
@@ -140,7 +157,7 @@ function promptForStep(step, partial) {
             };
         case 'quietHours':
             return {
-                text: `${summary}<b>Step 6 of 9 — Quiet hours</b>\n\nPause the turn timer overnight so async matches don't punish sleepers. Reference timezone is UTC. Civilised window (11pm–7am) is default — works well for UK / European groups; US groups may prefer the lighter window or 24/7.`,
+                text: `${summary}${stepHeader('Quiet hours')}\n\nPause the turn timer overnight so async matches don't punish sleepers. Reference timezone is UTC. Civilised window (11pm–7am) is default — works well for UK / European groups; US groups may prefer the lighter window or 24/7.`,
                 keyboard: kb([
                     [btn('🌙 Civilised (11pm–7am UTC)', 'gc_cfg_quiet_civilised')],
                     [btn('🌙 Light (1am–6am UTC)', 'gc_cfg_quiet_light')],
@@ -150,7 +167,7 @@ function promptForStep(step, partial) {
             };
         case 'idlePenalty':
             return {
-                text: `${summary}<b>Step 7 of 9 — Idle penalty</b>\n\nHP a player loses each missed turn. After 3 consecutive missed turns, they auto-forfeit.`,
+                text: `${summary}${stepHeader('Idle penalty')}\n\nHP a player loses each missed turn. After 3 consecutive missed turns, they auto-forfeit.`,
                 keyboard: kb([
                     [btn('10 HP', 'gc_cfg_idle_10'), btn('20 HP', 'gc_cfg_idle_20'), btn('30 HP', 'gc_cfg_idle_30')],
                     [btn('« Back', 'gc_cfg_back'), btn('✖ Cancel', 'gc_cfg_cancel')],
@@ -158,7 +175,7 @@ function promptForStep(step, partial) {
             };
         case 'buybacks':
             return {
-                text: `${summary}<b>Step 8 of 9 — Buybacks</b>\n\nLet eliminated players pay an escalating cost (2/3/5/8/13× wager) to re-enter at 50% HP. Forfeits survival-pool eligibility.`,
+                text: `${summary}${stepHeader('Buybacks')}\n\nLet eliminated players pay an escalating cost (2/3/5/8/13× wager) to re-enter at 50% HP. Forfeits survival-pool eligibility.`,
                 keyboard: kb([
                     [btn('✓ Enabled', 'gc_cfg_buybacks_on'), btn('✖ Disabled', 'gc_cfg_buybacks_off')],
                     [btn('« Back', 'gc_cfg_back'), btn('✖ Cancel', 'gc_cfg_cancel')],
@@ -166,7 +183,7 @@ function promptForStep(step, partial) {
             };
         case 'buybackCap':
             return {
-                text: `${summary}<b>Step 9 of 9 — Buyback cap</b>\n\nMax buybacks per player.`,
+                text: `${summary}${stepHeader('Buyback cap')}\n\nMax buybacks per player.`,
                 keyboard: kb([
                     [btn('1', 'gc_cfg_bbcap_1'), btn('3', 'gc_cfg_bbcap_3'), btn('Unlimited', 'gc_cfg_bbcap_-1')],
                     [btn('« Back', 'gc_cfg_back'), btn('✖ Cancel', 'gc_cfg_cancel')],
@@ -278,12 +295,8 @@ export function applyAction(chatId, userId, callbackData) {
     // Back
     if (callbackData === 'gc_cfg_back') {
         let newIdx = partial._stepIndex - 1;
-        // Skip over auto-skipped steps (wager when free, buybackCap when buybacks off)
-        while (newIdx > 0) {
-            const step = STEPS[newIdx];
-            if (step === 'wager' && partial.type === 'free') { newIdx--; continue; }
-            if (step === 'buybackCap' && !partial.buybacksEnabled) { newIdx--; continue; }
-            break;
+        while (newIdx > 0 && shouldSkip(STEPS[newIdx], partial)) {
+            newIdx--;
         }
         if (newIdx < 0) newIdx = 0;
         partial._stepIndex = newIdx;
@@ -362,21 +375,23 @@ function applyValue(partial, callbackData) {
  * is 0 for free) with defaults.
  */
 function finalize(partial) {
-    const config = {
+    const isFree = partial.type === 'free';
+    // Free matches: no wager, buybacks force-off (escalating cost on 0 wager makes no sense)
+    const buybacksEnabled = isFree ? false : (partial.buybacksEnabled ?? DEFAULTS.buybacksEnabled);
+    return {
         type: partial.type ?? DEFAULTS.type,
-        wagerLamports: partial.wagerLamports ?? 0,
+        wagerLamports: isFree ? 0 : (partial.wagerLamports ?? 0),
         maxPlayers: partial.maxPlayers ?? DEFAULTS.maxPlayers,
         minPlayers: 4,                          // fixed v1
         durationMs: partial.durationMs ?? DEFAULTS.durationMs,
         turnTimerMs: partial.turnTimerMs ?? DEFAULTS.turnTimerMs,
         idlePenaltyHp: partial.idlePenaltyHp ?? DEFAULTS.idlePenaltyHp,
-        buybacksEnabled: partial.buybacksEnabled ?? DEFAULTS.buybacksEnabled,
-        buybackCap: partial.buybacksEnabled ? (partial.buybackCap ?? DEFAULTS.buybackCap) : 0,
+        buybacksEnabled,
+        buybackCap: buybacksEnabled ? (partial.buybackCap ?? DEFAULTS.buybackCap) : 0,
         quietHoursEnabled: partial.quietHoursEnabled ?? DEFAULTS.quietHoursEnabled,
         quietHoursStart: partial.quietHoursStart ?? DEFAULTS.quietHoursStart,
         quietHoursEnd: partial.quietHoursEnd ?? DEFAULTS.quietHoursEnd,
     };
-    return config;
 }
 
 /** "11pm" / "7am" / "1am" — pretty hour label. */

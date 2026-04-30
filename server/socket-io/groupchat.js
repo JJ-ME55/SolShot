@@ -21,6 +21,7 @@
 
 import GroupMatch from '../models/GroupMatch.js';
 import * as lifecycle from '../services/groupchat/lifecycle.js';
+import { getWeapon, getWeaponCost } from '../models/Weapon.js';
 
 /**
  * Strip internal-only fields from a match doc before sending to the client.
@@ -122,6 +123,95 @@ export function registerGroupChatSocketHandlers(client) {
         } catch (err) {
             console.error('[group-chat] fireGroupShot error:', err);
             client.emit('shotResult', { ok: false, error: 'server_error' });
+        }
+    });
+
+    /**
+     * Purchase a weapon for the requesting player in an active match.
+     * Mirrors 1v1's `buyWeapon` handler but operates on GroupMatch fields.
+     * Validates: match active, requester is a player, weapon known, not
+     * already owned, gold sufficient. Persists to player.gold + player.weapons.
+     */
+    client.on('purchaseGroupWeapon', async (payload = {}) => {
+        const tgId = tgIdFor(client, payload);
+        if (!tgId) {
+            client.emit('purchaseGroupWeaponResult', { success: false, reason: 'no_identity' });
+            return;
+        }
+        const { matchId, weaponId } = payload;
+        if (!matchId || weaponId === undefined) {
+            client.emit('purchaseGroupWeaponResult', { success: false, reason: 'missing_args' });
+            return;
+        }
+        try {
+            const match = await GroupMatch.findOne({ matchId });
+            if (!match || match.state !== 'active') {
+                client.emit('purchaseGroupWeaponResult', { success: false, reason: 'match_not_active' });
+                return;
+            }
+            const playerIdx = match.players.findIndex(p => p.telegramUserId === tgId);
+            if (playerIdx < 0) {
+                client.emit('purchaseGroupWeaponResult', { success: false, reason: 'not_a_player' });
+                return;
+            }
+            const player = match.players[playerIdx];
+            const weapon = getWeapon(weaponId);
+            if (!weapon) {
+                client.emit('purchaseGroupWeaponResult', { success: false, reason: 'unknown_weapon' });
+                return;
+            }
+            if (player.weapons?.includes(weaponId)) {
+                client.emit('purchaseGroupWeaponResult', { success: false, reason: 'already_owned', balance: player.gold });
+                return;
+            }
+            const cost = getWeaponCost(weaponId);
+            if ((player.gold || 0) < cost) {
+                client.emit('purchaseGroupWeaponResult', { success: false, reason: 'insufficient_gold', balance: player.gold });
+                return;
+            }
+
+            // Deduct + add. Mongoose tracks modification on the subdocument.
+            player.gold = (player.gold || 0) - cost;
+            player.weapons = [...(player.weapons || [0]), weaponId];
+            await match.save();
+
+            client.emit('purchaseGroupWeaponResult', {
+                success: true,
+                weaponId,
+                cost,
+                balance: player.gold,
+                inventory: player.weapons,
+            });
+        } catch (err) {
+            console.error('[group-chat] purchaseGroupWeapon error:', err);
+            client.emit('purchaseGroupWeaponResult', { success: false, reason: 'server_error' });
+        }
+    });
+
+    /**
+     * Mark the player's pre-battle shop visit as complete. Idempotent.
+     * Once flipped true, the Mini App routes them directly to the battle
+     * UI instead of the shop on subsequent opens. Players can still buy
+     * weapons mid-match if they have gold (matches 1v1 behaviour where
+     * the shop is per-round but inventory persists).
+     */
+    client.on('groupShopComplete', async (payload = {}) => {
+        const tgId = tgIdFor(client, payload);
+        if (!tgId) return;
+        const { matchId } = payload;
+        if (!matchId) return;
+        try {
+            const match = await GroupMatch.findOne({ matchId });
+            if (!match) return;
+            const playerIdx = match.players.findIndex(p => p.telegramUserId === tgId);
+            if (playerIdx < 0) return;
+            if (!match.players[playerIdx].shopComplete) {
+                match.players[playerIdx].shopComplete = true;
+                await match.save();
+            }
+            client.emit('groupShopCompleteAck', { ok: true });
+        } catch (err) {
+            console.error('[group-chat] groupShopComplete error:', err);
         }
     });
 

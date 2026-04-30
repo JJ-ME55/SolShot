@@ -34,8 +34,24 @@ const playerSchema = new mongoose.Schema({
     tgUsername: { type: String, default: null },                  // TG @handle, e.g. "alice" (no @)
     callsign: { type: String, default: null },                    // in-game display name; defaults to tgUsername
 
-    // Tank / cosmetics
-    tankColor: { type: Number, default: 0 },                      // 0–7 (existing palette indices)
+    // Tank / cosmetics — stored as Phaser hex (e.g. 0xFF0000) so the same
+    // tank.create(int2rgba(player.color), ...) path used in 1v1 works
+    // unchanged for group-chat. See pickAvailableTankColor().
+    tankColor: { type: Number, default: 0xFF0000 },
+
+    // Gold + weapon inventory (mirrors 1v1 server-authoritative model).
+    // Players start with 1000G, earn +15G per HP damage dealt + 200G kill
+    // bonus. Spend on weapons in the pre-battle shop. Inventory is the
+    // weapon IDs they own (0 = Single Shot is auto-included). Same shape
+    // as 1v1's goldStates[roomId][playerId] / weaponInventories[roomId][playerId].
+    gold: { type: Number, default: 1000 },
+    weapons: { type: [Number], default: [0] },                    // weapon IDs owned this match
+
+    // Has the player visited the pre-battle shop yet? Drives whether the
+    // Mini App routes them to ShopScreen or directly to BattleScreen on
+    // first open. Persists across re-opens — once they "Lock In" (or
+    // skip), it stays true.
+    shopComplete: { type: Boolean, default: false },
 
     // Match state
     hp: { type: Number, default: 100 },

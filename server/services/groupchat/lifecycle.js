@@ -25,6 +25,7 @@ import * as botMessages from './botMessages.js';
 import { nextResumeTime } from './quietHours.js';
 import { getBot } from '../bot.js';
 import { dispatchGroupVictoryDm } from '../challenge/victoryDm.js';
+import { earnGold, awardKillBonus } from '../gold.js';
 import { generateTerrain, generateTankPositions, generateWind, processShot, WEAPON_DATA } from '../physics.js';
 
 // NB: short_name is `play` on prod BotFather (per commit 910f88b — `solshot`
@@ -161,6 +162,17 @@ export async function startMatch(matchId) {
     // Pick a random background theme (0-5) — client mirrors this order
     // in scenes/main/index.js _bgThemes (jungle/arctic/desert/moon/volcanic/default).
     match.backgroundIndex = Math.floor(Math.random() * 6);
+
+    // Initialise gold + weapon inventory for every player. Mirrors 1v1's
+    // initGold + weapon shop bootstrap. Each player starts with 1000G,
+    // owns Single Shot (id=0) by default. They visit the pre-battle shop
+    // (asynchronously, on first Mini App open) before they can fire —
+    // shopComplete flag gates the transition to battle UI.
+    for (const p of match.players) {
+        p.gold = 1000;
+        p.weapons = [0]; // Single Shot
+        p.shopComplete = false;
+    }
 
     await match.save();
 
@@ -386,6 +398,18 @@ export async function handleShot(matchId, firerTgId, shot) {
     // A successful shot resets the consecutive-miss counter
     firer.consecutiveMissedTurns = 0;
 
+    // Award gold — mirrors 1v1's earnGold + kill-bonus pattern.
+    // earnGold/awardKillBonus take a goldState object keyed by playerId, so
+    // we adapt by treating firer.gold as a single-key state.
+    const goldState = { [String(firer.telegramUserId)]: firer.gold || 0 };
+    const goldEarnedFromDamage = earnGold(goldState, String(firer.telegramUserId), totalDamage);
+    let killBonusGold = 0;
+    for (const _killed of eliminatedThisShot) {
+        killBonusGold += awardKillBonus(goldState, String(firer.telegramUserId));
+    }
+    firer.gold = goldState[String(firer.telegramUserId)];
+    const goldEarnedThisShot = goldEarnedFromDamage + killBonusGold;
+
     // Persist updated terrain
     const terrainChanged = !!result.newTerrain;
     if (terrainChanged) match.terrainSnapshot = result.newTerrain;
@@ -400,6 +424,8 @@ export async function handleShot(matchId, firerTgId, shot) {
     const buildHpMap = () => Object.fromEntries(match.players.map(p => [String(p.telegramUserId), p.hp]));
     const buildAliveMap = () => Object.fromEntries(match.players.map(p => [String(p.telegramUserId), !p.eliminated]));
 
+    const buildGoldMap = () => Object.fromEntries(match.players.map(p => [String(p.telegramUserId), p.gold || 0]));
+
     const shotDataBase = {
         playerId: String(firerTgId),
         weaponId: shot.weaponId,
@@ -412,6 +438,11 @@ export async function handleShot(matchId, firerTgId, shot) {
         eliminations: eliminatedThisShot.map(p => String(p.telegramUserId)),
         hp: buildHpMap(),
         alive: buildAliveMap(),
+        // Gold awarded for THIS shot (matches 1v1 turnResult.goldEarned shape)
+        goldEarned: goldEarnedThisShot,
+        // Full gold balances after this shot — keyed by tgId string, matches
+        // turnResult.goldBalance shape so the existing 1v1 HUD path works.
+        goldBalance: buildGoldMap(),
     };
 
     // Check win condition before advancing

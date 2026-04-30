@@ -16,6 +16,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useTelegram } from '../telegram/TelegramContext';
+import BattlefieldPreview from '../components/BattlefieldPreview';
 
 const SOL_PER_LAMPORT = 1_000_000_000;
 
@@ -53,6 +54,9 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
     const [loading, setLoading] = useState(true);
     const [firing, setFiring] = useState(false);
     const [fireError, setFireError] = useState(null);
+    // Aim state lifted from FireControls so BattlefieldPreview can render
+    // a live trajectory predictor on every slider change.
+    const [aim, setAim] = useState({ angle: 45, power: 60 });
 
     const matchId = screenData.groupMatchId;
 
@@ -147,6 +151,11 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
     return (
         <div style={styles.fullPage}>
             <Header match={match} onMenu={() => navigate('menu')} onRefresh={refresh} />
+            {/* Battlefield visual — terrain + tanks + wind. Phase 1 visual context.
+                Full Phaser scene integration tracked as Phase 2 follow-up. */}
+            {(match.state === 'active' || match.state === 'settled') && (
+                <BattlefieldPreview match={match} myTgId={myTgId} aim={aim} />
+            )}
             <ConfigSummary match={match} />
             <RosterSection match={match} myTgId={myTgId} />
             {match.state === 'lobby' && <LobbyFooter match={match} myPlayer={myPlayer} />}
@@ -157,6 +166,7 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
                     onFire={fireShot}
                     firing={firing}
                     fireError={fireError}
+                    onAimChange={setAim}
                 />
             )}
             {match.state === 'settled' && <SettledFooter match={match} />}
@@ -280,7 +290,7 @@ function LobbyFooter({ match, myPlayer }) {
     );
 }
 
-function ActiveFooter({ match, isMyTurn, onFire, firing, fireError }) {
+function ActiveFooter({ match, isMyTurn, onFire, firing, fireError, onAimChange }) {
     if (!isMyTurn) {
         const current = match.players?.[match.currentPlayerIndex];
         const currentName = current?.tgUsername ? `@${current.tgUsername}` : (current?.callsign || 'a player');
@@ -295,14 +305,25 @@ function ActiveFooter({ match, isMyTurn, onFire, firing, fireError }) {
             </div>
         );
     }
-    return <FireControls onFire={onFire} firing={firing} fireError={fireError} match={match} />;
+    return <FireControls onFire={onFire} firing={firing} fireError={fireError} match={match} onAimChange={onAimChange} />;
 }
 
-function FireControls({ onFire, firing, fireError, match }) {
-    const [angle, setAngle] = useState(45);
-    const [power, setPower] = useState(60);
+function FireControls({ onFire, firing, fireError, match, onAimChange }) {
+    const [angle, setAngleLocal] = useState(45);
+    const [power, setPowerLocal] = useState(60);
     // v1: only Single Shot weapon (id 0). Phase 2 will add the shop.
     const weaponId = 0;
+
+    // Keep parent's aim state in sync so BattlefieldPreview can render
+    // a live trajectory arc from the firer's tank.
+    const setAngle = (v) => {
+        setAngleLocal(v);
+        onAimChange?.({ angle: Number(v), power: Number(power) });
+    };
+    const setPower = (v) => {
+        setPowerLocal(v);
+        onAimChange?.({ angle: Number(angle), power: Number(v) });
+    };
 
     const submit = () => {
         if (firing) return;

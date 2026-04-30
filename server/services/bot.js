@@ -20,6 +20,7 @@
  */
 
 import { Telegraf } from 'telegraf';
+import { registerGroupChatCommands } from './groupchat/index.js';
 
 const MINI_APP_URL = process.env.MINI_APP_URL || 'https://t.me/SolShotGG_bot/solshot';
 const WEBHOOK_PATH = '/api/telegram-webhook';
@@ -155,6 +156,9 @@ function registerCommands(bot) {
       '• Email: support@solshot.gg'
     );
   });
+
+  // Group-chat mode commands (/customgame, /startmatch, /cancelmatch + callbacks)
+  registerGroupChatCommands(bot);
 }
 
 /**

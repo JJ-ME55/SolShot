@@ -526,3 +526,123 @@ slice rather than per commit to keep the log readable.
 — fishyboy-claude
 
 ---
+
+### 2026-04-30 — `[fishyboy-claude]` — STATUS: Phase 1 core loop shipped
+
+Long session today. Phase 1 of group-chat mode is feature-complete
+for the core loop and pushed to `sandbox/fishyboy`. FishyBoy smoke-
+tested the lobby flow end-to-end in a real TG group with JJ joining
+and leaving. The firing flow is wired but not yet E2E-tested (needs
+a Mini App preview URL — see ask below).
+
+**What's landed (commits since last comms):**
+
+| Commit | Slice |
+|---|---|
+| `d6d423b` | Phase 1a — `GroupMatch` Mongoose model |
+| `b8645a6` | Phase 1b — `/customgame` wizard + lobby card + Join/Leave/Start/Cancel |
+| `6c6d99b` | Quiet hours feature (host knob + math + display) |
+| `3faf5c2` | Bug fix — skip buybacks/wager steps for free matches |
+| `0562230` | Phase 1d-core — lifecycle + scheduler + idle penalty + boot recovery |
+| `a0c867b` | Phase 1c — Mini App match-detail screen + getGroupMatch socket |
+| `312ef62` | Phase 1d-real — terrain gen + Mini App fire UI + handleShot + bot post-shot recap |
+
+**Architecture as it stands:**
+
+- Match state lives in MongoDB (new `groupmatches` collection, model
+  in `server/models/GroupMatch.js`). Distinct from the existing 1v1
+  `Match` collection.
+- Bot integration in `server/services/groupchat/` — `index.js` for
+  command/callback registration, `configFlow.js` for the wizard
+  state machine (in-memory, 10-min TTL), `lobbyCard.js` formatters,
+  `botMessages.js` active-match formatters, `quietHours.js` pause
+  math, `scheduler.js` setTimeout management, `lifecycle.js` state
+  transitions (startMatch / handleShot / handleIdleTimeout /
+  advanceTurn / settleMatch).
+- Socket integration in `server/socket-io/groupchat.js` — three
+  handlers: `getGroupMatch`, `getMyGroupMatches`, `fireGroupShot`.
+  Wired into `socket-io/main.js` per-connection alongside other
+  handlers.
+- Client side: `client/src/screens/GroupMatchScreen.js` — read +
+  fire UI. Deep-link routing for `lobby_<id>` and `match_<id>` in
+  `App.js`.
+- Server boot resumes any in-flight active matches via
+  `restoreActiveTimers()` after Mongo connects, before `server.listen`.
+
+**Known v1 caveats / explicit deferrals:**
+
+- Only one weapon (Single Shot, weaponId=0). No shop yet — Phase 2.
+- No Phaser scene for group matches — simple sliders for angle/power
+  in the Mini App. Phase 2 polish to integrate Phaser.
+- No real-time push to other players' open Mini Apps when state
+  changes; other players re-fetch on the next "Take your shot" tap
+  (which is fine because the bot's chat ping is the trigger anyway).
+- Multi-match home screen, quiet-hours announcements, and lobby
+  auto-expiry scheduler are deferred polish.
+- Sticker library hooks not yet wired (Phase 1e). Chat events are
+  text-only, with damage-tier filtering already in
+  `lifecycle.postShotSummary`.
+
+**Smoke test status:**
+
+- ✅ `/customgame` wizard renders, advances, back/cancel work,
+  step counter adjusts dynamically (free=6 steps, wagered=8 or 9)
+- ✅ Lobby card creates, join/leave self-updates in place
+- ✅ Quiet hours wizard step + lobby-card display
+- ⚠ /startmatch + idle-penalty + firing have NOT been smoke-tested
+  end-to-end yet — pending Mini App preview URL (see ask below).
+
+---
+
+**`@johnk` — three things needed to run the full E2E test:**
+
+1. **A new Mini App short name pointing at the Vercel preview build.**
+   Path:
+   - BotFather → `/myapps` → `@SolShotGG_bot` → New App
+   - Short name: `solshotdev` (or whatever — permanent, pick once)
+   - URL: the Vercel preview URL for `sandbox/fishyboy` branch
+     (something like `https://sol-shot-git-sandbox-fishyboy-jj-me55s-projects.vercel.app`)
+   - Once registered, FishyBoy sets `MINI_APP_URL=https://t.me/SolShotGG_bot/solshotdev`
+     in his local `server/.env` and restarts.
+
+   We considered repointing the existing `solshot` short name to the
+   preview while testing, but that breaks production for any concurrent
+   users. Dedicated dev short name is cleaner.
+
+2. **A separate dev bot.** FishyBoy has been using your prod bot token
+   locally, which kills the prod webhook every time he runs the local
+   server. Pre-launch this is fine, but as we get closer to public
+   testing it's worth creating `@SolShotDevBot` (or similar) so prod
+   stays untouched. Requires: BotFather `/newbot`, then send the new
+   token to FishyBoy via 1Password share or encrypted DM (NOT chat —
+   we've burned two prod tokens already today by accidentally surfacing
+   them in the conversation transcript).
+
+3. **Render token rotation.** The current prod bot token has been
+   exposed in this conversation transcript. Prod is currently down
+   anyway (long-polling locally), but when we're ready to bring prod
+   back online, you'll want to rotate the token in BotFather and
+   update Render's env. Not urgent.
+
+**`@main-claude` —**
+
+- Phase 1 group-chat core is functionally there and matches the
+  v0.2 spec. When you have time, a once-over on:
+  - `server/services/groupchat/lifecycle.js` (startMatch terrain gen,
+    handleShot damage map application, settleMatch ranking)
+  - `server/socket-io/groupchat.js` (getGroupMatch / fireGroupShot)
+  - `client/src/screens/GroupMatchScreen.js` (FireControls component)
+- The `setMyCommands` autocomplete sync experiment was reverted in
+  `279b295` after it triggered consistent ECONNRESET errors against
+  Telegram. Hypothesis: rapid nodemon restarts during dev caused
+  connection state issues. Future: do command sync via a one-shot
+  script (`scripts/sync-bot-commands.js`) rather than on every
+  server boot. Not urgent — autocomplete works fine without it,
+  group-mode commands just need to be typed manually or via the
+  `@SolShotGG_bot` mention in groups.
+
+Pausing for the day.
+
+— fishyboy-claude
+
+---

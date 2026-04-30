@@ -742,3 +742,226 @@ While you were signed off and I'm waiting on this Render deploy, I'll likely kno
 If you'd rather pick those up yourself, drop a CLAIMING entry below before starting and I'll back off.
 
 — main-claude, 2026-04-30
+
+---
+
+### 2026-04-30 (live session) — `[main-claude]` — SESSION LOG: workflow consolidation, group-chat ship, Phaser parity, "same game" principle
+
+**Note for fishyboy-claude:** this is a long entry covering everything that landed on `main` in the post-handoff push window. If you're back on cycle, treat the **§ Same-game principle** + **§ Architecture invariants** sections as foundational — they constrain everything we do from here.
+
+---
+
+## § Workflow consolidation (sandbox/fishyboy archived)
+
+@johnk and I agreed to retire the sandbox-vs-main split. Reasons:
+
+1. **Time-bomb.** You'd hit 10+ conflicts on a `git merge main` attempt because sandbox forked from `launch` not `main`. Every additional sandbox commit made it worse.
+2. **Two-Claude coordination is harder on parallel branches** than on one branch with feature subtrees.
+
+**Migration:**
+- Phase 1 group-chat work (your 14 commits, ~3000 lines) **cherry-picked to `main` cleanly** as commit `9ad3939`. All 10 new files copied verbatim. The 4 edited files (`bot.js`, `socket-io/main.js`, `server/index.js`, `App.js`) had your additions surgically applied on top of main's current state. No conflicts. Syntax + import resolution all clean on first compile.
+- All sandbox docs (CLAUDE_COMMS, OPEN_QUESTIONS, GROUP_CHAT_MODE, MASTER_LAUNCH_PLAN, SESSION_HANDOFF_2026-04-30, DECISIONS, etc.) **mirrored to main** as commit `437c793`.
+- `sandbox/fishyboy` **tagged** `sandbox-fishyboy-final-2026-04-30` for archive. Branch still exists on origin; final commit on it is a notice pointing at main.
+
+**New workflow for you:**
+```bash
+git checkout main && git pull
+git checkout -b feat/groupchat-phase1e
+# work, commit, push
+# Vercel auto-builds preview per branch
+# merge to main when feature is tested + ready
+```
+
+Render only deploys main, so feature branches hold WIP safely. Same isolation sandbox gave you, cleaner integration story.
+
+---
+
+## § What landed on main this session (after the cherry-pick)
+
+Chronological — each commit is a complete unit, can be cherry-picked or reverted independently.
+
+| Commit | Subject |
+|---|---|
+| `9ad3939` | Cherry-pick Phase 1 group-chat from sandbox → main |
+| `437c793` | Bring sandbox docs to main + workflow comms entry |
+| `3ac4f1c` | **Hotfix:** callback_query handler swallowing group-chat callbacks |
+| `f936923` | Phase 1 polish bundle (matchHistory + lobby watchdog + quiet-hours) |
+| `040d728` | **Hotfix:** Mini App URL fallback was `solshot` not `play` |
+| `c4507de` | **Security fix:** tgIdFor wire-spoof + Phase 2 wagered gate |
+| `e322111` | Green bundle (`/help` smart reply + prestige bar + `/mygames` + multi-match home) |
+| `e29a52c` | **Hotfix:** GroupMatchScreen scroll inside Layout's overflow:hidden |
+| `60bbd5f` | **Critical fix:** identity merge — TG-only stats now carry forward when Dynamic ships |
+| `a5ba266` | 2-player support in `/customgame` + `backgroundIndex` on GroupMatch |
+| `aea684d` | SVG battlefield preview + live trajectory predictor (interim) |
+| `a00e977` | **Server prep:** `shotResult` carries trajectory/impact/damage in turnResult shape |
+| `0101bd4` | **REAL Phaser integration:** mount existing 1v1 MainScene with `gameMode='group-chat'` |
+| `b18fd89` | Unified trophy DM + `/play` mode-picker (same-game principle) |
+
+That's 14 commits since the cherry-pick. Every push went to main. Render auto-deployed each one. Production has been continuously updated with @metallegbob's group as the test bed (Match #MH2S earlier today, Match #JKKP on the second test run).
+
+---
+
+## § Live testing surface produced these bugs (caught + fixed)
+
+For posterity — every prod bug from this session, in the order they were found:
+
+1. **`/customgame` wizard rendered but Free/Wagered buttons did nothing.**
+   Cause: main's existing `bot.on('callback_query')` for accept/decline was swallowing the chain by calling `answerCbQuery()` and returning without `next()`. Telegraf middleware order means your `bot.action(/^gc_cfg_/, ...)` registered after never fired.
+   Fix: handler signature `async (ctx, next)` + `return next()` for non-matching data. → `3ac4f1c`
+
+2. **"Take your shot" inline button → "bot application not found".**
+   Cause: lifecycle.js MINI_APP_URL fallback was `https://t.me/SolShotGG_bot/solshot`. The Mini App short_name on prod BotFather is `play`, not `solshot` (per `910f88b` from before your branch). All other URL builders on main already used `play`; group-chat was the outlier. → `040d728`
+
+3. **`tgIdFor()` accepted client-supplied `telegramUserId` from wire payload.**
+   Cause: your `tgIdFor()` had a fallback to `payload.telegramUserId` for "local browser testing." In prod this means any client can send `{ telegramUserId: <victim>, matchId, angle, power, weaponId }` to fireGroupShot and fire as another player.
+   Fix: gated the payload fallback behind `NODE_ENV !== 'production'`. → `c4507de`
+
+4. **Wagered match-type advanced through wizard despite Escrow v2 being unbuilt.**
+   Cause: `/customgame` step 1 offered "Wagered" → wizard advances → match created with `type: 'wagered'` and a wager amount → Phase 1 has no escrow → players "join" without depositing → confusion.
+   Fix: re-labeled to "💰 Wagered (soon)" with `gc_cfg_type_wagered_soon` callback that shows an alert "coming in Phase 2 (Escrow v2)" and doesn't advance. → `c4507de`
+
+5. **GroupMatchScreen unscrollable.**
+   Cause: `minHeight: 100vh` on outer div. Inside Layout's `overflow: hidden` flex viewport, content longer than viewport gets clipped. @metallegbob's 4-player roster + config + header pushed past the viewport, fire UI unreachable.
+   Fix: `flex: 1, overflowY: auto, WebkitOverflowScrolling: touch` (the same pattern LobbyScreen uses). → `e29a52c`
+
+6. **`linkTelegramIdentity` would silently fail when Dynamic ships, orphaning all current testers' stats.**
+   Cause: priority-1 lookup was `walletAddress`. When Dynamic provisions a wallet for an existing TG-only user → upsert by walletAddress not found → tries to insert `{ walletAddress, telegramUserId }` → `telegramUserId` unique-sparse index conflict → catch block → silent null return.
+   Fix: telegramUserId is now the canonical merge target. Search by tg id first; if found, attach wallet to existing doc (with conflict-detection on the new wallet). Fallback to walletAddress search → uid search → fresh insert. → `60bbd5f`
+
+   **Critical to flag this one in particular** — without the fix, every match @metallegbob's group plays today produces orphaned stats post-Dynamic-launch.
+
+---
+
+## § Same-game principle (architectural invariant)
+
+**@johnk explicitly framed this in the live session and it's now non-negotiable:**
+
+> They are not different games. They are the same game in different modes.
+> They feel identical. One is just longer-form than the other.
+
+Three pacings of one game:
+
+| Pacing | Mode | Where |
+|---|---|---|
+| Fast | 1v1 vs Shot Bot (offline AI) | Web + Mini App today |
+| Fast | 1v1 live (real-time wagered or practice) | Web + Mini App today |
+| Long-form async | Group-chat (2–10 players, multi-day) | Mini App via TG group |
+
+**What's the same across all three:**
+- Phaser scene (MainScene, after the integration in `0101bd4`)
+- Physics — gravity, wind, trajectory, blast effects, terrain dig
+- Tank / Weapon / Blast / Terrain / Turret classes
+- Career stats — wins, damage, kills, MVP weapon all aggregate across modes
+- Leaderboard
+- Prestige burns / SHOT economy
+- Trophy share card (now wired for group-chat too in `b18fd89`)
+- Career card
+- Referrals (when a wagered match settles, doesn't matter which mode)
+- Haptics, OG meta, all the polish work
+
+**What differs:**
+- Pacing — turn timer (60s for 1v1, 4h–24h for group)
+- Player count — fixed 2 for 1v1, 2–10 for group
+- Lifecycle — single match for 1v1, multi-day for group
+- Win condition wording — "Defeated VIPER 2-1" vs "1st of 6 in match M-#5G7K"
+- I/O envelope — `fire`/`turnResult` socket pair for 1v1, `fireGroupShot`/`shotResult` for group-chat. Same SHAPES (per `a00e977`), different events.
+
+**Anything that violates this principle is a bug.** When in doubt, ask "would a 1v1 player want this differently than a group-chat player?" — if the answer's no, the feature should treat them identically.
+
+---
+
+## § Architecture invariants (locking these in)
+
+### A1. MainScene is the canonical game scene
+
+All match types render through `client/src/scenes/main/index.js`. Group-chat additions are gated on `sceneData.gameMode === 'group-chat'` — four narrow branch points:
+
+1. **Terrain bootstrap** (~line 1042): if group-chat, skip the `requestTerrain` socket emit and bootstrap inline from `sceneData.terrainSnapshot` using `terrain.applyHeightmap`.
+2. **Fire emit** (handleFireFromReact, ~line 1810): if group-chat, emit `fireGroupShot` with `{ matchId, angle, power, weaponId }` instead of `fire`.
+3. **shotResult listener registration** (handleType3, ~line 1106): if group-chat, register `shotResult` socket handler that translates the payload into turnResult shape and dispatches through the existing handler. Synthesize `playerEliminated` events from `shotResult.eliminations`.
+4. **Live-broadcast emit gates** (positionUpdate, powerChange, stepLeft/Right, leaveRoom): all gated to no-op when group-chat. None are needed in async pacing.
+
+**Don't write a parallel `GroupBattleScene`.** Don't fork. Branch the existing scene.
+
+### A2. Socket events have shape-compatible siblings
+
+`fire` ↔ `fireGroupShot` (req shape: `{ angle, power, weaponId, ... }`)
+`turnResult` ↔ `shotResult` (response shape: turnResult is canonical; shotResult adds `match` snapshot)
+
+The server's `shotData` payload (built in `lifecycle.handleShot`) is **deliberately a superset of turnResult**. New fields can be added; existing fields can't be removed without breaking 1v1 too.
+
+### A3. Identity merge — `telegramUserId` is the canonical key
+
+`linkTelegramIdentity` priority order:
+1. Find existing User by `telegramUserId` → augment with wallet/uid as picked up.
+2. Else find by `walletAddress` → stamp TG identity on existing wallet User.
+3. Else find by `uid` → stamp TG identity on existing browser-session User.
+4. Else create fresh.
+
+Wallet conflict (a wallet already claimed by a different User doc) → log + skip the assignment, don't corrupt. Manual reconciliation via admin tooling later.
+
+### A4. Stats schema is mode-agnostic
+
+`User.stats` aggregates across modes. `User.matchHistory[].mode` distinguishes for filtering, but no display UI gates on it. Career card RECENT FORM strip mixes 1v1 wins and group-chat wins indifferently.
+
+### A5. Trophy DM fires for every win regardless of mode
+
+1v1 wagered → `dispatchVictoryDm(...)` from `socket-io/main.js` stats-persist hook.
+Group-chat → `dispatchGroupVictoryDm(match)` from `lifecycle.settleMatch`.
+Same Satori trophy card, same caption shape, same inline button posture. Different prop builders because the source data shapes differ, but the output is one card.
+
+### A6. The Mini App's `/play` shows ALL modes
+
+Don't add a new bot command for a new mode. Add it to the `/play` picker. One front door, four (eventually more) options.
+
+---
+
+## § Where we are vs the master plan
+
+`Docs/MASTER_LAUNCH_PLAN.md` defined Phase A (public practice launch) → F (multi-player wagered + Seeker). Today's work pushed solidly into Phase A territory:
+
+- ✅ Group-chat Phase 1 (free) — code complete, E2E-tested in two real groups
+- ✅ Phase 1 polish — matchHistory push, lobby auto-expiry, quiet-hours announcements, multi-match home, 2-player support
+- ✅ **Phaser parity — group-chat now uses the same scene as 1v1** (this is the big architectural win)
+- ✅ Trophy DM unified
+- ✅ `/play` mode picker
+- ✅ Identity-merge fix (Dynamic-ship-readiness)
+
+**Still open in Phase A scope:**
+- E2E test of Phaser-mounted group-chat match (next test session — code shipped but not yet exercised end-to-end with real players)
+- Real-time spectator updates in group-chat (server only emits shotResult to firer; spectators refresh on next chat-ping deep-link tap)
+- Mid-turn movement (stepLeft/stepRight) for group-chat — gated off in v1, single fire per turn
+- Weapon shop in group-chat — v1 only Single Shot, Phase 2 adds the shop
+
+**Phase B (promo run)** is starting to be unblocked too:
+- Demo video / GIF (@johnk task — capture clean group-chat match across multiple devices?)
+- /tokenomics page
+- Sticker library — still pending designer commission
+
+**Phase C (devnet wagering test)** unchanged: still gated on Dynamic port to main.
+
+---
+
+## § For your next session
+
+**Recommended starting point if you're back on cycle:**
+
+1. **Sync your local:** `git checkout main && git pull && git status`
+2. **Read these files in order** to catch up on architecture:
+   - `Docs/CLAUDE_COMMS.md` (this entry + previous)
+   - `client/src/scenes/main/index.js` — the four `gameMode === 'group-chat'` branches
+   - `client/src/screens/GroupBattleWrapper.js` — the new mount layer
+   - `server/services/groupchat/lifecycle.js` — the trophy DM hook
+   - `server/services/challenge/victoryDm.js` — `dispatchGroupVictoryDm`
+3. **Pick from open Phase A work** in §"Still open" above
+4. **Or pick from MASTER_LAUNCH_PLAN.md §4** — most §4.7 group-chat items are still yours
+
+**If you spot something that violates the same-game principle**, flag it. The whole codebase should be ruthless about this — modes are pacing variations, not separate products.
+
+**Don't take main-claude items** without flagging in this comms log first. I've been moving fast on bot UX, mobile UX, identity, render pipeline. We'd duplicate.
+
+**Render auto-deploys main on every push.** Be conservative about WIP. Use feature branches.
+
+---
+
+— main-claude, 2026-04-30 (continuing live session)

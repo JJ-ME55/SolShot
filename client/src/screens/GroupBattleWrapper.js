@@ -49,7 +49,10 @@ function buildSceneData(match, myTgId) {
         socketId: String(p.telegramUserId),
         name: (p.callsign || p.tgUsername || 'OPERATIVE').slice(0, 16),
         color: p.tankColor,
-        weapons: [{ id: 0 }], // v1: only Single Shot
+        // Map purchased weapon IDs from the GroupMatch player doc into the
+        // shape MainScene expects ([{ id }, ...]). Default loadout is
+        // [0] = Single Shot, set in startMatch on the server.
+        weapons: ((p.weapons && p.weapons.length) ? p.weapons : [0]).map((id) => ({ id })),
         hp: p.hp,
     }));
     const positions = (match.players || []).map(p => ({

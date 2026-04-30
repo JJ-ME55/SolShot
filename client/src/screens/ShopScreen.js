@@ -95,6 +95,17 @@ function WeaponRow({ weapon, selected, owned, iconUrl, onClick }) {
 function ShopScreen({ navigate, screenData }) {
   const isMobile = useIsMobile();
 
+  // ─── Group-chat mode ──────────────────────────────────────────────────
+  // When invoked from GroupMatchScreen for an active group-chat match,
+  // we run a stripped-down async flow: no countdown, no opponent activity,
+  // no 'ready' lobby coordination. Initial state is read from the match
+  // doc, purchases use the `purchaseGroupWeapon` server handler, and
+  // lock-in emits `groupShopComplete` then calls back to the parent.
+  // See server/socket-io/groupchat.js + lifecycle.startMatch initialization.
+  const isGroupChat = screenData?.gameMode === 'group-chat';
+  const groupMatchId = screenData?.groupMatchId || screenData?.match?.matchId;
+  const myTgId = screenData?.myTgId;
+
   const hostInfo = screenData?.host || {
     socketId: screenData?.hostId,
     name: screenData?.player1?.name,
@@ -106,17 +117,27 @@ function ShopScreen({ navigate, screenData }) {
     color: screenData?.player2?.color,
   };
 
+  // For group-chat, pull initial gold/inventory from the match doc.
+  const myGroupPlayer = isGroupChat
+    ? screenData?.match?.players?.find(p => p.telegramUserId === myTgId)
+    : null;
+
   const [weapons, setWeapons] = useState(WEAPONS);
   const [gold, setGold] = useState(() => {
+    if (isGroupChat) return myGroupPlayer?.gold ?? 1000;
     if (screenData?.goldBalance && window.socket) {
       const myGold = screenData.goldBalance[window.socket.id];
       if (myGold !== undefined) return myGold;
     }
     return 1000;
   });
-  const [inventory, setInventory] = useState([0]);
+  const [inventory, setInventory] = useState(() => {
+    if (isGroupChat && myGroupPlayer?.weapons?.length) return [...myGroupPlayer.weapons];
+    return [0];
+  });
   const [selectedWeaponId, setSelectedWeaponId] = useState(null);
-  const [timeRemaining, setTimeRemaining] = useState(30);
+  // Group-chat shop has no timer pressure — it's an async multi-day match.
+  const [timeRemaining, setTimeRemaining] = useState(isGroupChat ? null : 30);
   const [isReady, setIsReady] = useState(false);
   const [opponentActivity, setOpponentActivity] = useState(null);
   const [error, setError] = useState(null);
@@ -128,6 +149,7 @@ function ShopScreen({ navigate, screenData }) {
   const activityTimerRef = useRef(null);
 
   useSocket('shopPhase', (data) => {
+    if (isGroupChat) return; // group-chat doesn't push shopPhase
     if (data.weapons) setWeapons(data.weapons);
     if (data.totalRounds != null) setTotalRounds(data.totalRounds);
     if (data.round != null) setCurrentRound(data.round);
@@ -143,6 +165,7 @@ function ShopScreen({ navigate, screenData }) {
   });
 
   useSocket('buyWeaponResult', (data) => {
+    if (isGroupChat) return;
     if (data.success) {
       setGold(data.balance);
       if (data.inventory) setInventory(data.inventory);
@@ -152,13 +175,44 @@ function ShopScreen({ navigate, screenData }) {
     }
   });
 
+  // Group-chat purchase result — same shape semantics, sibling event.
+  useSocket('purchaseGroupWeaponResult', (data) => {
+    if (!isGroupChat) return;
+    if (data.success) {
+      setGold(data.balance);
+      if (data.inventory) setInventory(data.inventory);
+      if (isMobile) setSelectedWeaponId(null);
+    } else {
+      const reasonMap = {
+        insufficient_gold: 'Not enough gold.',
+        already_owned: 'Already in your loadout.',
+        unknown_weapon: 'Unknown weapon.',
+        match_not_active: 'Match is no longer active.',
+        not_a_player: 'You\'re not a player in this match.',
+        no_identity: 'No Telegram identity. Reopen via the bot link.',
+      };
+      setError(reasonMap[data.reason] || data.reason || 'Purchase failed');
+    }
+  });
+
+  // Group-chat lock-in ack — fired after server flips player.shopComplete=true.
+  useSocket('groupShopCompleteAck', () => {
+    if (!isGroupChat) return;
+    setIsReady(true);
+    if (typeof screenData?.onShopComplete === 'function') {
+      screenData.onShopComplete({ inventory, gold });
+    }
+  });
+
   useSocket('opponentBoughtWeapon', (data) => {
+    if (isGroupChat) return;
     setOpponentActivity('OPPONENT ACQUIRED: ' + (data.weaponName || 'UNKNOWN'));
     if (activityTimerRef.current) clearTimeout(activityTimerRef.current);
     activityTimerRef.current = setTimeout(() => setOpponentActivity(null), 3000);
   });
 
   useSocket('shopEnd', (data) => {
+    if (isGroupChat) return; // group-chat uses groupShopCompleteAck instead
     const allPlayers = screenData?.players || [];
     const playersArray = allPlayers.map(p => ({
       socketId: p.socketId,
@@ -183,11 +237,13 @@ function ShopScreen({ navigate, screenData }) {
   });
 
   useSocket('opponentLeft', () => {
+    if (isGroupChat) return; // not applicable in async multi-day matches
     if (timerRef.current) clearInterval(timerRef.current);
     setError('Opponent has left the match');
   });
 
   useEffect(() => {
+    if (isGroupChat) return; // no auto-ready countdown in group-chat
     if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = setInterval(() => {
       setTimeRemaining((prev) => {
@@ -203,21 +259,33 @@ function ShopScreen({ navigate, screenData }) {
       });
     }, 1000);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isGroupChat]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => () => { if (activityTimerRef.current) clearTimeout(activityTimerRef.current); }, []);
-  useEffect(() => { if (window.socket) window.socket.emit('ready'); }, []);
+  useEffect(() => {
+    if (isGroupChat) return; // 'ready' is 1v1 lobby coordination
+    if (window.socket) window.socket.emit('ready');
+  }, [isGroupChat]);
 
   const buyWeapon = useCallback((weaponId) => {
     if (!window.socket || isReady) return;
+    if (isGroupChat) {
+      window.socket.emit('purchaseGroupWeapon', { matchId: groupMatchId, weaponId });
+      return;
+    }
     window.socket.emit('buyWeapon', { weaponId });
-  }, [isReady]);
+  }, [isReady, isGroupChat, groupMatchId]);
 
   const handleReady = useCallback(() => {
     if (!window.socket || isReady) return;
+    if (isGroupChat) {
+      // Server ack fires `groupShopCompleteAck` which flips isReady + calls onComplete
+      window.socket.emit('groupShopComplete', { matchId: groupMatchId });
+      return;
+    }
     window.socket.emit('shopDone');
     setIsReady(true);
-  }, [isReady]);
+  }, [isReady, isGroupChat, groupMatchId]);
 
   const selectedWeapon = selectedWeaponId !== null ? getWeaponById(selectedWeaponId) : null;
   const isOwned = (id) => inventory.includes(id);
@@ -281,11 +349,13 @@ function ShopScreen({ navigate, screenData }) {
           borderTop: '1px solid var(--border)',
           background: 'var(--bg-surface)', flexShrink: 0,
         }}>
-          <span style={{
-            fontFamily: 'var(--f-display)', fontSize: 22,
-            color: timeRemaining <= 5 ? '#c86060' : 'var(--accent)',
-            letterSpacing: '0.12em', minWidth: 34, textAlign: 'center',
-          }}>{String(timeRemaining).padStart(2, '0')}</span>
+          {!isGroupChat && (
+            <span style={{
+              fontFamily: 'var(--f-display)', fontSize: 22,
+              color: timeRemaining <= 5 ? '#c86060' : 'var(--accent)',
+              letterSpacing: '0.12em', minWidth: 34, textAlign: 'center',
+            }}>{String(timeRemaining).padStart(2, '0')}</span>
+          )}
           <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap', gap: 3, overflow: 'hidden' }}>
             {inventory.map((id) => {
               const w = getWeaponById(id);
@@ -415,7 +485,9 @@ function ShopScreen({ navigate, screenData }) {
             <div>
               <div style={{ fontFamily: 'var(--f-display)', fontSize: 22, color: 'var(--bone)', letterSpacing: '0.12em' }}>WEAPON SHOP</div>
               <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--olive)', letterSpacing: '0.22em', marginTop: 4 }}>
-                ROUND {currentRound} / {totalRounds} · SPEND YOUR GOLD
+                {isGroupChat
+                  ? 'PRE-BATTLE LOADOUT · SPEND YOUR GOLD'
+                  : `ROUND ${currentRound} / ${totalRounds} · SPEND YOUR GOLD`}
               </div>
             </div>
             <div style={{ fontFamily: 'var(--f-mono)', fontSize: 14, color: 'var(--accent)', letterSpacing: '0.15em' }}>
@@ -437,21 +509,40 @@ function ShopScreen({ navigate, screenData }) {
 
         {/* RIGHT: Timer, Detail, Loadout, Ready */}
         <div style={{ display: 'flex', flexDirection: 'column', padding: 18, gap: 14, overflowY: 'auto' }}>
-          {/* Timer */}
-          <div style={{
-            background: 'var(--bg-surface)', border: '1px solid var(--border)',
-            clipPath: 'var(--clip-6)', padding: 18, textAlign: 'center',
-          }}>
+          {/* Timer (1v1 only — group-chat is async, no countdown) */}
+          {!isGroupChat && (
             <div style={{
-              fontFamily: 'var(--f-display)', fontSize: 48,
-              color: timeRemaining < 10 ? '#c86060' : 'var(--accent)',
-              lineHeight: 1, letterSpacing: '0.08em',
-              textShadow: timeRemaining < 10 ? 'none' : '0 0 20px rgba(218,138,40,0.3)',
-            }}>{String(timeRemaining).padStart(2, '0')}</div>
-            <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--olive)', letterSpacing: '0.22em', marginTop: 6 }}>
-              SECONDS REMAINING
+              background: 'var(--bg-surface)', border: '1px solid var(--border)',
+              clipPath: 'var(--clip-6)', padding: 18, textAlign: 'center',
+            }}>
+              <div style={{
+                fontFamily: 'var(--f-display)', fontSize: 48,
+                color: timeRemaining < 10 ? '#c86060' : 'var(--accent)',
+                lineHeight: 1, letterSpacing: '0.08em',
+                textShadow: timeRemaining < 10 ? 'none' : '0 0 20px rgba(218,138,40,0.3)',
+              }}>{String(timeRemaining).padStart(2, '0')}</div>
+              <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--olive)', letterSpacing: '0.22em', marginTop: 6 }}>
+                SECONDS REMAINING
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* Group-chat mode banner — replaces the timer card */}
+          {isGroupChat && (
+            <div style={{
+              background: 'var(--bg-surface)', border: '1px solid var(--border)',
+              clipPath: 'var(--clip-6)', padding: 16, textAlign: 'center',
+            }}>
+              <div style={{
+                fontFamily: 'var(--f-display)', fontSize: 16, color: 'var(--bone)',
+                letterSpacing: '0.18em',
+              }}>NO RUSH</div>
+              <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--olive)', letterSpacing: '0.18em', marginTop: 6, lineHeight: 1.5 }}>
+                ASYNC MATCH · BUY WHAT YOU WANT
+                <br/>LOCK IN WHEN READY
+              </div>
+            </div>
+          )}
 
           {/* Pot */}
           {wager > 0 && (

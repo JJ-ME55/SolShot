@@ -17,6 +17,7 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { useTelegram } from '../telegram/TelegramContext';
 import BattlefieldPreview from '../components/BattlefieldPreview';
+import ShopScreen from './ShopScreen';
 
 // Lazy-load the Phaser wrapper — pulls in MainScene + Phaser, ~1MB bundle.
 // Only loaded when a player has an active match they're watching.
@@ -111,6 +112,7 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
                     not_a_player: 'You\'re not a player in this match.',
                     bad_angle: 'Invalid angle.',
                     unknown_weapon: 'Unknown weapon.',
+                    weapon_not_owned: 'You don\'t own that weapon.',
                     no_identity: 'No Telegram identity. Reopen via the bot link.',
                 };
                 setFireError(errMap[payload?.error] || 'Shot failed.');
@@ -159,6 +161,31 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
     // ACTIVE + spectator → SVG preview + slider UI in the scrollable layout.
     // LOBBY/SETTLED/CANCELLED → scrollable layout with full config + roster.
     const useFullScene = match.state === 'active' && !!myPlayer;
+
+    // Pre-battle shop gate: active match + viewer is a player + hasn't
+    // locked in their loadout yet → show the weapon shop. Mirrors the
+    // 1v1 pre-battle flow: spend gold on weapons, lock in, then enter
+    // the battle UI. After locking in, server flips player.shopComplete=true
+    // and we re-render into the Phaser HUD below.
+    const needsShop = useFullScene && !myPlayer.shopComplete;
+
+    if (needsShop) {
+        return (
+            <ShopScreen
+                navigate={navigate}
+                screenData={{
+                    gameMode: 'group-chat',
+                    groupMatchId: matchId,
+                    myTgId,
+                    match,
+                    onShopComplete: () => {
+                        // Server has flipped shopComplete; refetch to re-render into HUD.
+                        refresh();
+                    },
+                }}
+            />
+        );
+    }
 
     if (useFullScene) {
         return (

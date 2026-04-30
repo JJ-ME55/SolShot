@@ -342,6 +342,14 @@ export async function handleShot(matchId, firerTgId, shot) {
 
     const weapon = WEAPON_DATA[shot.weaponId];
     if (!weapon) return { ok: false, error: 'unknown_weapon' };
+    // SECURITY: enforce inventory ownership. Without this a client could
+    // skip the shop and fire any weapon by sending its id. The shop
+    // (purchaseGroupWeapon handler) is the only path that mutates
+    // player.weapons — bought weapons + the default [0] = Single Shot.
+    const ownedWeapons = Array.isArray(firer.weapons) ? firer.weapons : [0];
+    if (!ownedWeapons.includes(Number(shot.weaponId))) {
+        return { ok: false, error: 'weapon_not_owned' };
+    }
     const angle = Number(shot.angle);
     const power = Math.max(1, Math.min(100, Number(shot.power) || 0));
     if (!Number.isFinite(angle)) return { ok: false, error: 'bad_angle' };

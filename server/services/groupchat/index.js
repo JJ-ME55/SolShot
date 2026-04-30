@@ -21,6 +21,7 @@
 import GroupMatch from '../../models/GroupMatch.js';
 import * as configFlow from './configFlow.js';
 import * as lobbyCard from './lobbyCard.js';
+import * as lifecycle from './lifecycle.js';
 
 // ─── Match ID generation ────────────────────────────────────────────────
 
@@ -99,13 +100,13 @@ async function handleStartMatch(ctx) {
         return ctx.reply(`Need at least ${match.config.minPlayers} players to start. Currently ${match.players.length}/${match.config.maxPlayers}.`);
     }
 
-    // Phase 1d will replace this stub with real game-start (terrain gen,
-    // first turn assignment, scheduler).
-    await ctx.reply(
-        `🎯 <b>Match #${match.matchId}</b> — start logic ships in Phase 1d.\n\n` +
-        `Lobby has ${match.players.length} confirmed players. Run /cancelmatch to clear.`,
-        { parse_mode: 'HTML' }
-    );
+    await lifecycle.startMatch(match.matchId);
+    // Edit the lobby card to show "match started" state — prevents stale joins.
+    if (match.lobbyMessageId) {
+        await safeEdit(ctx, match.lobbyMessageId,
+            `🎯 <b>Match #${match.matchId}</b> — match active. See chat for turn pings.`,
+            { parse_mode: 'HTML' });
+    }
 }
 
 async function handleCancelMatch(ctx) {
@@ -243,12 +244,14 @@ async function handleJoinCallback(ctx) {
     await refreshLobbyCard(ctx, match);
     await ctx.answerCbQuery('You\'re in!');
 
-    // Auto-start when full (Phase 1d will replace this with real start logic)
+    // Auto-start when lobby is full
     if (match.players.length >= match.config.maxPlayers) {
-        await ctx.reply(
-            `🎯 <b>Match #${match.matchId}</b> — full lobby. Auto-start ships in Phase 1d; for now run /startmatch (or wait for it to be wired).`,
-            { parse_mode: 'HTML' }
-        );
+        await lifecycle.startMatch(match.matchId);
+        if (match.lobbyMessageId) {
+            await safeEdit(ctx, match.lobbyMessageId,
+                `🎯 <b>Match #${match.matchId}</b> — match active. See chat for turn pings.`,
+                { parse_mode: 'HTML' });
+        }
     }
 }
 
@@ -288,12 +291,13 @@ async function handleStartCallback(ctx) {
         );
     }
 
-    // Phase 1d stub
-    await ctx.answerCbQuery('Game start logic ships in Phase 1d.');
-    await ctx.reply(
-        `🎯 <b>Match #${match.matchId}</b> — host triggered start. Phase 1d will wire terrain gen, turn rotation, and the scheduler from here.`,
-        { parse_mode: 'HTML' }
-    );
+    await ctx.answerCbQuery('Starting match…');
+    await lifecycle.startMatch(matchId);
+    if (match.lobbyMessageId) {
+        await safeEdit(ctx, match.lobbyMessageId,
+            `🎯 <b>Match #${match.matchId}</b> — match active. See chat for turn pings.`,
+            { parse_mode: 'HTML' });
+    }
 }
 
 async function handleCancelCallback(ctx) {

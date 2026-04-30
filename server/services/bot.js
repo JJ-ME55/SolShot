@@ -29,6 +29,16 @@ const WEBHOOK_PATH = '/api/telegram-webhook';
 let bot = null;
 
 /**
+ * Returns the initialised Telegraf bot instance, or null if not yet
+ * initialised. Used by services that need to send messages from
+ * outside a request context (e.g. the group-chat scheduler firing
+ * idle-penalty announcements).
+ */
+export function getBot() {
+  return bot;
+}
+
+/**
  * Initialise the Telegraf bot instance and register commands.
  * Returns the bot instance, or null if TELEGRAM_BOT_TOKEN isn't set.
  */

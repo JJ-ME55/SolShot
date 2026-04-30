@@ -14,6 +14,9 @@ import { initEscrow } from './services/escrow.js';
 import { requireAdminKey } from './middleware/guards.js';
 import { telegramSocketMiddleware } from './middleware/telegram.js';
 import { initBot, setupBotWebhook, stopBot } from './services/bot.js';
+import { restoreActiveTimers } from './services/groupchat/scheduler.js';
+// Importing lifecycle registers its onTimeout callback with the scheduler.
+import './services/groupchat/lifecycle.js';
 
 dotenv.config()
 
@@ -202,6 +205,8 @@ if (MONGODB_URI) {
                 process.exit(1);
             }
             await setupBotWebhook(app);
+            // Resume any group-chat matches that were active when the server last stopped.
+            await restoreActiveTimers();
             server.listen(PORT, '0.0.0.0', function () {
                 console.log(`SolShot server listening on 0.0.0.0:${PORT}`);
             });

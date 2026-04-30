@@ -1039,10 +1039,55 @@ export class MainScene extends Scene {
     };
     socket.on('terrainGenerated', this._socketHandlers.terrainGenerated);
 
-    // Both host and non-host request terrain from server.
-    // Server generates on first request, re-sends cached data on subsequent.
-    // This fixes round 2 race condition where non-host misses terrainGenerated.
-    socket.emit('requestTerrain');
+    // Group-chat: server doesn't fire `terrainGenerated` socket events. We
+    // already have terrainSnapshot + positions + wind on sceneData (read
+    // from the GroupMatch doc). Bootstrap inline using the same primitives
+    // the handler uses, but applyHeightmap (dense form) instead of setPath
+    // (sparse path) since the GroupMatch doc stores the heightmap directly.
+    if (this.sceneData.gameMode === 'group-chat') {
+      this._backgroundIndex = this.sceneData.backgroundIndex || 0;
+      this.createBackground();
+      this._serverHeightmap = this.sceneData.terrainSnapshot;
+      this._turnSeq = 0;
+      this.wind = this.sceneData.wind || 0;
+      if (this.sceneData.terrainSnapshot) {
+        this.terrain.applyHeightmap(this.sceneData.terrainSnapshot);
+      }
+
+      const positions = this.sceneData.positions || [];
+      this.myPlayerIndex = positions.findIndex(p => p.socketId === socket.id);
+      this._lastPositions = positions;
+
+      positions.forEach((pos, i) => {
+        const tank = this.tanks[i];
+        if (!tank) return;
+        const px = pos.x ?? pos.pos?.x;
+        const py = pos.y ?? pos.pos?.y;
+        if (px === undefined || py === undefined) return;
+        tank.setPosition(px, py);
+        const rotation = this.terrain.getSlope(px, py);
+        if (rotation !== undefined) tank.setRotation(rotation);
+        tank.enablePhysics();
+      });
+
+      const firstTurnIdx = positions.findIndex(p => p.socketId === this.sceneData.firstTurn);
+      this.currentPlayerIndex = firstTurnIdx >= 0 ? firstTurnIdx : 0;
+      this._allConsumables = {};
+      this._myConsumables = [];
+      this._activateCurrentTank();
+      this.showTurnPointer();
+      this._createNameLabels();
+      this._pushStateToBridge();
+      if (this._bridge) {
+        this._bridge._readyFired = true;
+        this._bridge.notifyReady();
+      }
+    } else {
+      // 1v1: both host and non-host request terrain from server.
+      // Server generates on first request, re-sends cached data on subsequent.
+      // This fixes round 2 race condition where non-host misses terrainGenerated.
+      socket.emit('requestTerrain');
+    }
 
     // ── STEP 3: Handle turnResult — full server response ──
     this._socketHandlers.turnResult = (data) => {
@@ -1102,6 +1147,74 @@ export class MainScene extends Scene {
     socket.on('turnResult', this._socketHandlers.turnResult);
     socket.on('fireRejected', this._socketHandlers.fireRejected);
     socket.on('turnTimeout', this._socketHandlers.turnTimeout);
+
+    // Group-chat: server emits `shotResult` which is a SUPERSET of turnResult
+    // shape. Translate to turnResult-compatible payload + dispatch through the
+    // existing handler so the trajectory animation, terrain dig, blast effects,
+    // and damage application all run unchanged. Also synthesize playerEliminated
+    // events for any tanks killed this shot — group-chat server doesn't emit
+    // playerEliminated separately; the elimination data is in shotResult.
+    if (this.sceneData.gameMode === 'group-chat') {
+      this._socketHandlers.shotResult = (data) => {
+        if (!data?.ok) {
+          // Treat errors like fireRejected
+          this._socketHandlers.fireRejected({ reason: data?.error || 'shot_failed' });
+          return;
+        }
+        // Build turnResult-shaped payload from shotResult fields. The server's
+        // shotData object is an explicit superset (see lifecycle.handleShot
+        // return contract), so this translation is mostly a 1:1 alias map.
+        // Build positions[] from the match.players array (currentX/currentY
+        // post-shot, kept stable across the trajectory animation).
+        const positions = (data.match?.players || []).map(p => ({
+          socketId: String(p.telegramUserId),
+          pos: { x: p.currentX, y: p.currentY },
+          x: p.currentX,
+          y: p.currentY,
+          hp: p.hp,
+          alive: !p.eliminated,
+        }));
+        const adapted = {
+          playerId: data.playerId,
+          weaponId: data.weaponId,
+          trajectory: data.trajectory || [],
+          impact: data.impact,
+          damage: data.damage || {},
+          terrainUpdate: data.terrainUpdate,
+          scores: {}, // group-chat doesn't track scores per-shot
+          hp: data.hp || {},
+          nextTurn: data.nextTurn,
+          seq: 0,
+          goldEarned: 0,
+          goldBalance: {},
+          players: positions.map(p => ({ socketId: p.socketId, pos: p.pos, hp: p.hp, alive: p.alive })),
+          alive: data.alive || {},
+          currentPlayerIndex: data.currentPlayerIndex,
+          positions,
+          tankPositions: null,
+        };
+        this._socketHandlers.turnResult(adapted);
+
+        // Fire synthetic playerEliminated for each tank killed this shot.
+        // 1v1 server emits these as separate events; group-chat server bundles
+        // the kill list into shotResult.eliminations. Fan-out here so the
+        // existing wreckage / spectator-mode handlers run identically.
+        const elims = data.eliminations || [];
+        const aliveCount = positions.filter(p => p.alive).length;
+        for (const elimId of elims) {
+          this._socketHandlers.playerEliminated({
+            eliminatedId: elimId,
+            killedById: data.playerId,
+            survivingPlayers: positions.filter(p => p.alive).map(p => p.socketId),
+            reason: 'damage',
+          });
+        }
+        // Match settlement notification — group-chat marks settled when
+        // aliveCount <= 1 OR time cap. The Mini App refetches on next view.
+        // The scene itself stays mounted; React parent decides when to unmount.
+      };
+      socket.on('shotResult', this._socketHandlers.shotResult);
+    }
 
     // ── Wall decay: server reverted expired walls, redraw terrain ──
     this._socketHandlers.wallDecay = ({ terrain, positions }) => {
@@ -1304,8 +1417,10 @@ export class MainScene extends Scene {
       });
     }
 
-    // Report updated local player position back to server
-    if (this.myPlayerIndex >= 0 && this.tanks[this.myPlayerIndex]) {
+    // Report updated local player position back to server (1v1 only —
+    // group-chat doesn't track live positions; tank positions are
+    // authoritative from match.players.currentX/Y on each fetch).
+    if (this.myPlayerIndex >= 0 && this.tanks[this.myPlayerIndex] && this.sceneData.gameMode !== 'group-chat') {
       const myTank = this.tanks[this.myPlayerIndex];
       window.socket && window.socket.emit('positionUpdate', {
         x: myTank.x,
@@ -1762,18 +1877,32 @@ export class MainScene extends Scene {
         // SERVER IS GOD: Send only angle/power/weaponId to server.
         const angle = myTank.turret ? myTank.turret.rotation : 0;
 
-        socket.emit('fire', {
-          angle: angle,
-          power: myTank.power,
-          weaponId: weaponObj.id,
-          seq: this._turnSeq,
-          position: { x: myTank.x, y: myTank.y },
-        });
+        if (this.sceneData.gameMode === 'group-chat') {
+          // Group-chat fire: server expects fireGroupShot { matchId, angle,
+          // power, weaponId }. Server emits a turnResult-shaped shotResult
+          // back which our shotResult adapter (registered below) translates
+          // and feeds to the existing turnResult handler — same animation
+          // path as 1v1.
+          socket.emit('fireGroupShot', {
+            matchId: this.sceneData.matchId,
+            angle: angle,
+            power: myTank.power,
+            weaponId: weaponObj.id,
+          });
+        } else {
+          socket.emit('fire', {
+            angle: angle,
+            power: myTank.power,
+            weaponId: weaponObj.id,
+            seq: this._turnSeq,
+            position: { x: myTank.x, y: myTank.y },
+          });
+        }
 
         // Haptic feedback: medium pulse when shot is fired (MOB-01)
         window.haptic && window.haptic.medium();
 
-        // DON'T fire locally — wait for server turnResult.
+        // DON'T fire locally — wait for server turnResult / shotResult.
         // Server trajectory is authoritative; both players see the same projectile.
       }
     } else {
@@ -1788,7 +1917,10 @@ export class MainScene extends Scene {
       : this.tanks[this.activeTank - 1];
     if (!myTank || !myTank.active) return;
     myTank.setPower(v);
-    if (this.sceneData.gameType === 3) {
+    // Live opponent-aim broadcasts are 1v1 only — async group-chat doesn't
+    // need them (each player aims privately, only the final shot result
+    // ships back).
+    if (this.sceneData.gameType === 3 && this.sceneData.gameMode !== 'group-chat') {
       const socket = window.socket;
       if (socket) socket.emit('powerChange', { power: v });
     }
@@ -1814,6 +1946,8 @@ export class MainScene extends Scene {
   };
 
   handleMoveLeftFromReact = () => {
+    // Group-chat v1: no movement between turns — fire only.
+    if (this.sceneData.gameMode === 'group-chat') return;
     const myTank = this.myPlayerIndex >= 0
       ? this.tanks[this.myPlayerIndex]
       : this.tanks[this.activeTank - 1];
@@ -1826,6 +1960,7 @@ export class MainScene extends Scene {
   };
 
   handleMoveRightFromReact = () => {
+    if (this.sceneData.gameMode === 'group-chat') return;
     const myTank = this.myPlayerIndex >= 0
       ? this.tanks[this.myPlayerIndex]
       : this.tanks[this.activeTank - 1];
@@ -1838,6 +1973,10 @@ export class MainScene extends Scene {
   };
 
   handleExitFromReact = () => {
+    // Group-chat: leaving the screen doesn't leave the match — the match
+    // continues async in the chat. React parent (GroupBattleWrapper)
+    // navigates away on its own.
+    if (this.sceneData.gameMode === 'group-chat') return;
     if (window.socket) {
       window.socket.emit('leaveRoom', {});
     }

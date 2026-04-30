@@ -14,9 +14,13 @@
  * the viewer's turn. Will hook into the existing Phaser scene.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { useTelegram } from '../telegram/TelegramContext';
 import BattlefieldPreview from '../components/BattlefieldPreview';
+
+// Lazy-load the Phaser wrapper — pulls in MainScene + Phaser, ~1MB bundle.
+// Only loaded when a player has an active match they're watching.
+const GroupBattleWrapper = lazy(() => import('./GroupBattleWrapper'));
 
 const SOL_PER_LAMPORT = 1_000_000_000;
 
@@ -148,18 +152,39 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
     const isMyTurn = match.state === 'active'
         && match.players?.[match.currentPlayerIndex]?.telegramUserId === myTgId;
 
+    // For ACTIVE matches with the viewer as a player, mount the full Phaser
+    // scene (same one that powers 1v1) — preserves all the painstakingly
+    // tuned trajectory + blast + gravity quality. The slider FireControls
+    // become unnecessary because Phaser's native turret aiming + power
+    // controls take over.
+    //
+    // For SETTLED matches, lobbies, or spectators (chat members not in the
+    // match), keep the lighter SVG preview — no need for a full Phaser
+    // scene + 1MB bundle just to look at the final state.
+    const useFullScene = match.state === 'active' && !!myPlayer;
+
     return (
         <div style={styles.fullPage}>
             <Header match={match} onMenu={() => navigate('menu')} onRefresh={refresh} />
-            {/* Battlefield visual — terrain + tanks + wind. Phase 1 visual context.
-                Full Phaser scene integration tracked as Phase 2 follow-up. */}
-            {(match.state === 'active' || match.state === 'settled') && (
-                <BattlefieldPreview match={match} myTgId={myTgId} aim={aim} />
+
+            {useFullScene ? (
+                <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: 'var(--olive)', fontFamily: 'var(--f-mono)', letterSpacing: '0.3em', fontSize: 11 }}>LOADING BATTLEFIELD…</div>}>
+                    <GroupBattleWrapper match={match} onMatchUpdate={setMatch} />
+                </Suspense>
+            ) : (
+                (match.state === 'active' || match.state === 'settled') && (
+                    <BattlefieldPreview match={match} myTgId={myTgId} aim={aim} />
+                )
             )}
+
             <ConfigSummary match={match} />
             <RosterSection match={match} myTgId={myTgId} />
             {match.state === 'lobby' && <LobbyFooter match={match} myPlayer={myPlayer} />}
-            {match.state === 'active' && (
+
+            {/* In active mode: only show slider FireControls when NOT using the full
+                Phaser scene (i.e. spectator without a tank). Players using Phaser
+                aim + fire from the canvas itself. */}
+            {match.state === 'active' && !useFullScene && (
                 <ActiveFooter
                     match={match}
                     isMyTurn={isMyTurn}

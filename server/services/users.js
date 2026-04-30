@@ -44,41 +44,107 @@ export async function linkTelegramIdentity({
 }) {
     if (!telegramUserId || typeof telegramUserId !== 'number') return null;
 
-    const set = { telegramUserId, lastActive: new Date() };
-    if (handle)   set.handle = handle;
-    if (username) set.username = username;
+    const baseSet = { telegramUserId, lastActive: new Date() };
+    if (handle)   baseSet.handle = handle;
+    if (username) baseSet.username = username;
 
     try {
-        // Priority 1: link to existing wallet-keyed user
+        // ─── Step 1: Telegram ID is the canonical merge target ─────────
+        // Once a User doc has a telegramUserId, that's the most stable
+        // identity for that human. Wallet addresses can rotate (Dynamic
+        // can re-provision); browser uid resets when localStorage clears;
+        // but the TG account id is set by Telegram and persists forever.
+        //
+        // CRITICAL: search by telegramUserId FIRST. If found, augment
+        // with wallet/uid as the user picks them up over time. This is
+        // what allows TG-only testers (today, pre-Dynamic) to seamlessly
+        // gain a wallet later without orphaning stats.
+        const existingByTg = await User.findOne({ telegramUserId });
+        if (existingByTg) {
+            const update = { ...baseSet };
+
+            // Attach wallet only if (a) doc has none yet, (b) the new
+            // wallet isn't already claimed by a different User doc.
+            if (walletAddress && !existingByTg.walletAddress) {
+                const conflict = await User.findOne({
+                    walletAddress,
+                    _id: { $ne: existingByTg._id },
+                }).lean();
+                if (!conflict) {
+                    update.walletAddress = walletAddress;
+                    console.log(`[users] linked wallet ${walletAddress.slice(0, 8)}… to tg ${telegramUserId}`);
+                } else {
+                    // Wallet belongs to another User. v1: log + skip the
+                    // assignment. Manual merge tooling can reconcile later.
+                    console.warn(`[users] cannot link wallet to tg ${telegramUserId} — wallet already on User ${conflict._id}`);
+                }
+            }
+
+            // Same defensive check for uid (browser session id).
+            if (uid && !existingByTg.uid) {
+                const conflict = await User.findOne({
+                    uid,
+                    _id: { $ne: existingByTg._id },
+                }).lean();
+                if (!conflict) {
+                    update.uid = uid;
+                }
+            }
+
+            return await User.findOneAndUpdate(
+                { telegramUserId },
+                { $set: update },
+                { new: true }
+            ).lean();
+        }
+
+        // ─── Step 2: No TG-keyed doc — fall through to wallet ──────────
+        // User exists by wallet (e.g. they played on web first), now
+        // opening Mini App for the first time and adding the TG link.
         if (walletAddress) {
-            const byWallet = await User.findOneAndUpdate(
-                { walletAddress },
-                { $set: set, $setOnInsert: { walletAddress } },
-                { new: true, upsert: true }
-            ).lean();
-            return byWallet;
+            const existingByWallet = await User.findOne({ walletAddress });
+            if (existingByWallet) {
+                console.log(`[users] linked tg ${telegramUserId} to existing wallet User ${existingByWallet._id}`);
+                return await User.findOneAndUpdate(
+                    { walletAddress },
+                    { $set: baseSet },
+                    { new: true }
+                ).lean();
+            }
         }
 
-        // Priority 2: link to existing uid-keyed user
+        // ─── Step 3: Try uid (browser-session-keyed doc) ───────────────
         if (uid) {
-            const byUid = await User.findOneAndUpdate(
-                { uid },
-                { $set: set, $setOnInsert: { uid } },
-                { new: true, upsert: true }
-            ).lean();
-            return byUid;
+            const existingByUid = await User.findOne({ uid });
+            if (existingByUid) {
+                const update = { ...baseSet };
+                // Opportunistically attach wallet if doc has none + no
+                // conflict elsewhere (same logic as Step 1).
+                if (walletAddress && !existingByUid.walletAddress) {
+                    const conflict = await User.findOne({
+                        walletAddress,
+                        _id: { $ne: existingByUid._id },
+                    }).lean();
+                    if (!conflict) update.walletAddress = walletAddress;
+                }
+                return await User.findOneAndUpdate(
+                    { uid },
+                    { $set: update },
+                    { new: true }
+                ).lean();
+            }
         }
 
-        // Priority 3: TG-only user (no wallet, no browser session)
-        return await User.findOneAndUpdate(
-            { telegramUserId },
-            { $set: set, $setOnInsert: { telegramUserId } },
-            { new: true, upsert: true }
-        ).lean();
+        // ─── Step 4: Brand-new identity — create the User doc ──────────
+        // No prior record exists for any of telegramUserId, walletAddress,
+        // or uid. Insert a fresh User keyed on whatever we know.
+        const insert = { ...baseSet };
+        if (walletAddress) insert.walletAddress = walletAddress;
+        if (uid)           insert.uid = uid;
+        const newUser = new User(insert);
+        await newUser.save();
+        return newUser.toObject();
     } catch (err) {
-        // Most likely: duplicate-key error if two User docs both claim the same
-        // telegramUserId (multi-identity edge case). Log and bail; merge flow is
-        // a separate v2 problem.
         console.warn('[users] linkTelegramIdentity failed:', err.message);
         return null;
     }

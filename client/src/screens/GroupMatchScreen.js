@@ -373,11 +373,17 @@ function SettledFooter({ match }) {
 
 const styles = {
     fullPage: {
-        minHeight: '100vh',
+        // flex:1 + overflowY:auto inside Layout's overflow:hidden viewport.
+        // Without this, content longer than the viewport gets clipped and
+        // the page becomes unscrollable inside the TG WebApp.
+        flex: 1,
+        overflowY: 'auto',
+        WebkitOverflowScrolling: 'touch',
         background: 'var(--bg-deep, #0e1209)',
         color: 'var(--bone-pale, #f4e7c8)',
         fontFamily: "'Space Grotesk', system-ui, sans-serif",
         padding: 20,
+        paddingBottom: 80, // breathing room below the FIRE controls / ranked list
         boxSizing: 'border-box',
     },
     loading: {

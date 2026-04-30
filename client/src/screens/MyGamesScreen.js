@@ -175,10 +175,15 @@ function MatchCard({ match, myTgId, onOpen }) {
 
 const styles = {
     fullPage: {
-        minHeight: '100dvh',
+        // flex:1 + overflowY:auto inside Layout's overflow:hidden viewport.
+        // Match list can grow long; need internal scroll, not viewport scroll.
+        flex: 1,
+        overflowY: 'auto',
+        WebkitOverflowScrolling: 'touch',
         background: 'var(--bg-deep)',
         display: 'flex', flexDirection: 'column',
         padding: 'clamp(12px, 3vw, 18px)',
+        paddingBottom: 60,
     },
     header: {
         display: 'flex', alignItems: 'center', gap: 12,

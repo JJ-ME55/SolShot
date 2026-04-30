@@ -36,13 +36,25 @@ function sanitizeMatch(match) {
 
 /**
  * Resolve the requesting player's telegramUserId from the socket
- * context. Falls back to an explicit field on the payload for clients
- * outside the Mini App (rare — but useful for local browser testing).
+ * context.
+ *
+ * SECURITY: only trusts socket.telegramUser.id, which is set by
+ * telegramSocketMiddleware AFTER HMAC-SHA256 validation of the TG
+ * initData on connection. Never trusts a client-supplied identity
+ * over the wire — that would let any client impersonate any user
+ * by sending { telegramUserId: <victim-id>, ... } in the payload
+ * and fire shots / list matches as them.
+ *
+ * The dev fallback to payload.telegramUserId is gated behind
+ * NODE_ENV !== 'production' so local testing without a TG-validated
+ * connection still works.
  */
 function tgIdFor(socket, payload) {
-    return socket?.telegramUser?.id
-        || payload?.telegramUserId
-        || null;
+    if (socket?.telegramUser?.id) return socket.telegramUser.id;
+    if (process.env.NODE_ENV !== 'production' && payload?.telegramUserId) {
+        return payload.telegramUserId;
+    }
+    return null;
 }
 
 export function registerGroupChatSocketHandlers(client) {

@@ -149,6 +149,15 @@ async function handleCancelMatch(ctx) {
 // ─── Configuration callback handler ─────────────────────────────────────
 
 async function handleConfigCallback(ctx) {
+    // Wagered group-chat is gated until Escrow v2 (Phase 2). Surface this
+    // intent as a feature peek rather than a broken flow.
+    if (ctx.callbackQuery.data === 'gc_cfg_type_wagered_soon') {
+        return ctx.answerCbQuery(
+            'Wagered group matches are coming in Phase 2 (Escrow v2). Free matches are live now — pick Free to continue.',
+            { show_alert: true },
+        );
+    }
+
     const result = configFlow.applyAction(ctx.chat.id, ctx.from.id, ctx.callbackQuery.data);
 
     try {

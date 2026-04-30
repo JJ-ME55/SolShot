@@ -115,9 +115,9 @@ function promptForStep(step, partial) {
     switch (step) {
         case 'type':
             return {
-                text: `${summary}${stepHeader('Match type')}\n\nFree matches don't require a wallet. Wagered matches lock SOL in escrow on each player's deposit.`,
+                text: `${summary}${stepHeader('Match type')}\n\nFree matches are live now. Wagered group matches need Escrow v2 (Phase 2 — coming soon).`,
                 keyboard: kb([
-                    [btn('💸 Free', 'gc_cfg_type_free'), btn('💰 Wagered', 'gc_cfg_type_wagered')],
+                    [btn('💸 Free', 'gc_cfg_type_free'), btn('💰 Wagered (soon)', 'gc_cfg_type_wagered_soon')],
                     [btn('✖ Cancel', 'gc_cfg_cancel')],
                 ]),
             };

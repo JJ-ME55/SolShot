@@ -26,7 +26,9 @@ import { nextResumeTime } from './quietHours.js';
 import { getBot } from '../bot.js';
 import { generateTerrain, generateTankPositions, generateWind, processShot, WEAPON_DATA } from '../physics.js';
 
-const MINI_APP_URL = process.env.MINI_APP_URL || 'https://t.me/SolShotGG_bot/solshot';
+// NB: short_name is `play` on prod BotFather (per commit 910f88b — `solshot`
+// short name was never registered). Set MINI_APP_URL env to override.
+const MINI_APP_URL = process.env.MINI_APP_URL || 'https://t.me/SolShotGG_bot/play';
 
 /** Inline keyboard with a single "Take your shot" button deep-linking
  *  the player back to the Mini App for this match. */

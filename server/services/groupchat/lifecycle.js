@@ -19,8 +19,10 @@
  */
 
 import GroupMatch from '../../models/GroupMatch.js';
+import User from '../../models/User.js';
 import * as scheduler from './scheduler.js';
 import * as botMessages from './botMessages.js';
+import { nextResumeTime } from './quietHours.js';
 import { getBot } from '../bot.js';
 import { generateTerrain, generateTankPositions, generateWind, processShot, WEAPON_DATA } from '../physics.js';
 
@@ -40,6 +42,72 @@ function takeShotKeyboard(matchId) {
 // ─── Module wiring ──────────────────────────────────────────────────────
 
 scheduler.setOnTimeout(handleIdleTimeout);
+
+// In-memory map of one-shot timers that fire when a quiet-hours window
+// ENDS, so the bot can post a "resumed" announcement + re-ping the player.
+// Keyed by matchId. Cleared on match state change (settle/cancel) and
+// overwritten when advanceTurn re-pings.
+const resumeTimers = new Map();
+
+/**
+ * Clear the quiet-hours resume timer for a match. Exported so cancel
+ * handlers (in groupchat/index.js) can clean up alongside the scheduler's
+ * deadline timer when a match transitions out of 'active'.
+ */
+export function clearResumeTimer(matchId) {
+    const t = resumeTimers.get(matchId);
+    if (t) {
+        clearTimeout(t);
+        resumeTimers.delete(matchId);
+    }
+}
+
+/**
+ * Post a turn ping. Quiet-hours-aware:
+ *   - If the current UTC hour is inside the match's configured quiet
+ *     window, post a "match paused, resumes at HH:MM UTC" notice and
+ *     schedule a one-shot timer that posts the resume notice + the
+ *     usual Take-your-shot button when the window ends.
+ *   - Otherwise post the standard turn ping immediately.
+ *
+ * Idempotent re: resume timer — clears any existing one first.
+ */
+async function postTurnPing(match) {
+    clearResumeTimer(match.matchId);
+    const now = new Date();
+    const resumeAt = nextResumeTime(now, match.config);
+
+    if (resumeAt) {
+        // We're inside a quiet window — pause notice now, resume notice later.
+        await postToChat(match.chatId, botMessages.formatQuietHoursStart(match, resumeAt));
+        const ms = resumeAt.getTime() - Date.now();
+        // Sanity bounds: > 0 and < 30 days. Outside these, skip the timer.
+        if (ms > 0 && ms < 30 * 24 * 60 * 60 * 1000) {
+            const t = setTimeout(async () => {
+                resumeTimers.delete(match.matchId);
+                // Re-fetch — match state may have changed (settled/cancelled)
+                // while we were sleeping.
+                try {
+                    const fresh = await GroupMatch.findOne({ matchId: match.matchId });
+                    if (!fresh || fresh.state !== 'active') return;
+                    await postToChat(fresh.chatId, botMessages.formatQuietHoursEnd(fresh), {
+                        reply_markup: takeShotKeyboard(fresh.matchId),
+                    });
+                } catch (err) {
+                    console.warn(`[group-chat] quiet-hours resume post failed for ${match.matchId}:`, err.message);
+                }
+            }, ms);
+            if (typeof t.unref === 'function') t.unref();
+            resumeTimers.set(match.matchId, t);
+        }
+        return;
+    }
+
+    // Normal flow — post the turn ping with Take-your-shot button.
+    await postToChat(match.chatId, botMessages.formatTurnPing(match), {
+        reply_markup: takeShotKeyboard(match.matchId),
+    });
+}
 
 // ─── Lifecycle entry points ─────────────────────────────────────────────
 
@@ -95,10 +163,8 @@ export async function startMatch(matchId) {
 
     // Post match-start announcement
     await postToChat(match.chatId, botMessages.formatMatchStart(match));
-    // Post the first turn ping with deep-link button
-    await postToChat(match.chatId, botMessages.formatTurnPing(match), {
-        reply_markup: takeShotKeyboard(match.matchId),
-    });
+    // Post the first turn ping (quiet-hours-aware — see postTurnPing)
+    await postTurnPing(match);
 
     return match;
 }
@@ -208,9 +274,7 @@ export async function advanceTurn(match) {
 
     scheduler.scheduleTurnDeadline(match);
 
-    await postToChat(match.chatId, botMessages.formatTurnPing(match), {
-        reply_markup: takeShotKeyboard(match.matchId),
-    });
+    await postTurnPing(match);
 }
 
 /**
@@ -334,6 +398,7 @@ export async function settleMatch(match, reason) {
     if (match.state !== 'active') return;
 
     scheduler.clearMatchTimer(match.matchId);
+    clearResumeTimer(match.matchId);
 
     match.state = 'settled';
     match.settledAt = new Date();
@@ -343,8 +408,95 @@ export async function settleMatch(match, reason) {
 
     await postToChat(match.chatId, botMessages.formatMatchEnd(match, reason));
 
+    // Career-card pipeline hook — push to each player's matchHistory + lifetime
+    // stats so /stats and the trophy/career cards reflect group-match results.
+    // Best-effort, errors logged but never propagated.
+    try {
+        await pushMatchHistory(match);
+    } catch (err) {
+        console.warn('[group-chat] pushMatchHistory failed:', err.message);
+    }
+
     // Phase 2 hook: settlement tx for wagered matches goes here (escrow v2).
-    // Phase 4 hook: career-card pipeline (push matchHistory entries).
+}
+
+/**
+ * Push group-match results to each linked-User's matchHistory + lifetime
+ * stats. Mirrors the 1v1 settlement pattern in socket-io/main.js but
+ * keyed on telegramUserId (since group-mode v1 is free, many players
+ * have no wallet). Players without a User doc (truly anonymous) are
+ * silently skipped.
+ *
+ * Group-match stat semantics:
+ *   - matchesPlayed +1 for every player
+ *   - wins +1 only for rank 0 (the survivor / top of HP-rank tiebreaker)
+ *   - losses +1 for everyone else
+ *   - totalDamage += player.damageDealt
+ *   - kills += player.kills
+ *   - deaths += 1 if eliminated, else 0
+ *   - consecutiveWins streak: incremented for rank 0, reset for others
+ *   - matchHistory: pushed with mode='group-chat', opponent=chat title,
+ *     capped at last 50
+ *
+ * v1 only allows Single Shot (weaponId=0); per-weapon stats are not
+ * updated to keep this surgical. When weapon shop lands in Phase 2 we
+ * extend with weaponStats increments.
+ */
+async function pushMatchHistory(match) {
+    const totalRanked = match.rankedFinishers?.length || 0;
+    const winnerTgId = totalRanked > 0 ? match.rankedFinishers[0] : null;
+    const opponent = match.chatTitle ? String(match.chatTitle).slice(0, 32) : 'GROUP';
+    const mode = match.config?.type === 'wagered' ? 'group-chat-wagered' : 'group-chat';
+
+    for (const p of match.players) {
+        if (!p.telegramUserId) continue; // truly anonymous slot — shouldn't happen but defend
+        const isWinner = p.telegramUserId === winnerTgId;
+        const eliminated = !!p.eliminated;
+
+        const historyEntry = {
+            opponent,
+            result: isWinner ? 'win' : 'loss',
+            mode,
+            damageDealt: p.damageDealt || 0,
+            kills: p.kills || 0,
+            deaths: eliminated ? 1 : 0,
+            goldEarned: 0, // group-mode v1 has no gold economy
+            playedAt: match.settledAt || new Date(),
+        };
+
+        try {
+            await User.findOneAndUpdate(
+                { telegramUserId: p.telegramUserId },
+                {
+                    $inc: {
+                        'stats.matchesPlayed': 1,
+                        'stats.totalDamage': p.damageDealt || 0,
+                        'stats.kills': p.kills || 0,
+                        'stats.deaths': eliminated ? 1 : 0,
+                        ...(isWinner
+                            ? { 'stats.wins': 1, 'stats.consecutiveWins': 1 }
+                            : { 'stats.losses': 1 }),
+                    },
+                    ...(!isWinner
+                        ? { $set: { 'stats.consecutiveWins': 0, lastActive: new Date() } }
+                        : { $set: { lastActive: new Date() } }),
+                    $push: { matchHistory: { $each: [historyEntry], $slice: -50 } },
+                },
+                { upsert: false } // do not create User docs from settlement — only update existing
+            );
+
+            // Bump bestWinStreak if current exceeds it (matches 1v1 pattern)
+            if (isWinner) {
+                const user = await User.findOne({ telegramUserId: p.telegramUserId });
+                if (user?.stats && (user.stats.consecutiveWins || 0) > (user.stats.bestWinStreak || 0)) {
+                    user.stats.bestWinStreak = user.stats.consecutiveWins;
+                    await user.save();
+                }
+            }
+        } catch (err) {
+            console.warn(`[group-chat] matchHistory push failed for tgId ${p.telegramUserId}:`, err.message);
+        }
+    }
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────

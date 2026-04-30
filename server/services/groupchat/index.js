@@ -128,7 +128,9 @@ async function handleCancelMatch(ctx) {
     // doesn't try to fire idle penalties on a cancelled match.
     if (wasActive) {
         const { clearMatchTimer } = await import('./scheduler.js');
+        const { clearResumeTimer } = await import('./lifecycle.js');
         clearMatchTimer(match.matchId);
+        clearResumeTimer(match.matchId);
     }
 
     match.state = 'cancelled';

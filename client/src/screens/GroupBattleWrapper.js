@@ -81,7 +81,7 @@ function buildSceneData(match, myTgId) {
     };
 }
 
-export default function GroupBattleWrapper({ match, onMatchUpdate }) {
+export default function GroupBattleWrapper({ match, onMatchUpdate, fillMode = false }) {
     const { user: tgUser } = useTelegram();
     const canvasRef = useRef(null);
     const bridgeRef = useRef(null);
@@ -165,8 +165,17 @@ export default function GroupBattleWrapper({ match, onMatchUpdate }) {
         return () => window.socket.off('shotResult', handler);
     }, [onMatchUpdate]);
 
+    // fillMode: parent (active-mode HUD) provides flex:1 sizing; we just
+    // fill 100%/100% with no aspect-ratio constraint. Phaser's Scale.FIT
+    // mode handles the aspect ratio internally, with letterboxing if the
+    // container's aspect doesn't match 1200:800.
+    //
+    // !fillMode (legacy): wrapper enforces aspect ratio + maxHeight cap,
+    // sized inside a scrollable parent.
+    const wrapperStyle = fillMode ? styles.fillWrapper : styles.wrapper;
+
     return (
-        <div style={styles.wrapper}>
+        <div style={wrapperStyle}>
             <div ref={canvasRef} style={styles.canvas} />
             {!phaserReady && (
                 <div style={styles.loadingOverlay}>
@@ -190,6 +199,15 @@ const styles = {
         cursor: 'url("/assets/images/crosshair.svg") 16 16, crosshair',
         marginBottom: 14,
         border: '1px solid var(--border, rgba(196,166,93,0.2))',
+    },
+    fillWrapper: {
+        position: 'relative',
+        flex: 1,
+        width: '100%',
+        height: '100%',
+        background: 'var(--bg-deep, #0e1209)',
+        overflow: 'hidden',
+        cursor: 'url("/assets/images/crosshair.svg") 16 16, crosshair',
     },
     canvas: {
         width: '100%',

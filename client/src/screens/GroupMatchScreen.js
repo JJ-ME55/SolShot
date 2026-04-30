@@ -152,38 +152,50 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
     const isMyTurn = match.state === 'active'
         && match.players?.[match.currentPlayerIndex]?.telegramUserId === myTgId;
 
-    // For ACTIVE matches with the viewer as a player, mount the full Phaser
-    // scene (same one that powers 1v1) — preserves all the painstakingly
-    // tuned trajectory + blast + gravity quality. The slider FireControls
-    // become unnecessary because Phaser's native turret aiming + power
-    // controls take over.
+    // ACTIVE + viewer is a player → InGameHUD pattern from the redesign:
+    // fixed-height top player bar, flex battlefield, compact bottom strip.
+    // No scrolling — the whole HUD fits within the viewport.
     //
-    // For SETTLED matches, lobbies, or spectators (chat members not in the
-    // match), keep the lighter SVG preview — no need for a full Phaser
-    // scene + 1MB bundle just to look at the final state.
+    // ACTIVE + spectator → SVG preview + slider UI in the scrollable layout.
+    // LOBBY/SETTLED/CANCELLED → scrollable layout with full config + roster.
     const useFullScene = match.state === 'active' && !!myPlayer;
+
+    if (useFullScene) {
+        return (
+            <div style={styles.activePage}>
+                {/* Top: compact player bar — single row of HP cards.
+                    Replaces the verbose ROSTER section during active gameplay. */}
+                <ActivePlayerBar match={match} myTgId={myTgId} onMenu={() => navigate('menu')} />
+
+                {/* Middle: Phaser scene, flexes to fill available space. */}
+                <div style={styles.battlefieldFill}>
+                    <Suspense fallback={
+                        <div style={styles.loadingFill}>LOADING BATTLEFIELD…</div>
+                    }>
+                        <GroupBattleWrapper match={match} onMatchUpdate={setMatch} fillMode />
+                    </Suspense>
+                </div>
+
+                {/* Bottom: compact status strip — turn, wind, match clock. */}
+                <ActiveStatusStrip match={match} myTgId={myTgId} />
+            </div>
+        );
+    }
 
     return (
         <div style={styles.fullPage}>
             <Header match={match} onMenu={() => navigate('menu')} onRefresh={refresh} />
 
-            {useFullScene ? (
-                <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: 'var(--olive)', fontFamily: 'var(--f-mono)', letterSpacing: '0.3em', fontSize: 11 }}>LOADING BATTLEFIELD…</div>}>
-                    <GroupBattleWrapper match={match} onMatchUpdate={setMatch} />
-                </Suspense>
-            ) : (
-                (match.state === 'active' || match.state === 'settled') && (
-                    <BattlefieldPreview match={match} myTgId={myTgId} aim={aim} />
-                )
+            {(match.state === 'active' || match.state === 'settled') && (
+                <BattlefieldPreview match={match} myTgId={myTgId} aim={aim} />
             )}
 
             <ConfigSummary match={match} />
             <RosterSection match={match} myTgId={myTgId} />
             {match.state === 'lobby' && <LobbyFooter match={match} myPlayer={myPlayer} />}
 
-            {/* In active mode: only show slider FireControls when NOT using the full
-                Phaser scene (i.e. spectator without a tank). Players using Phaser
-                aim + fire from the canvas itself. */}
+            {/* Spectator view (active match but viewer not a player): slider UI
+                so they can at least follow along. Players see the Phaser HUD. */}
             {match.state === 'active' && !useFullScene && (
                 <ActiveFooter
                     match={match}
@@ -197,6 +209,83 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
             {match.state === 'settled' && <SettledFooter match={match} />}
         </div>
     );
+}
+
+// ─── Active-match HUD components (InGameHUD pattern from redesign) ──────
+
+/** Compact horizontal player bar, one row across the top. */
+function ActivePlayerBar({ match, myTgId, onMenu }) {
+    const players = match.players || [];
+    const currentIdx = match.currentPlayerIndex;
+    const aliveCount = players.filter(p => !p.eliminated).length;
+    return (
+        <div style={styles.topBar}>
+            <button onClick={onMenu} style={styles.topBarBack}>‹</button>
+            <div style={styles.topBarMatchInfo}>
+                <div style={styles.topBarMatchId}>MATCH #{match.matchId}</div>
+                <div style={styles.topBarMeta}>
+                    {aliveCount}/{players.length} ALIVE · WIND {match.wind > 0 ? '→' : '←'}{Math.abs(match.wind || 0).toFixed(0)}
+                </div>
+            </div>
+            <div style={styles.topBarPlayers}>
+                {players.map((p, i) => {
+                    const isMe = p.telegramUserId === myTgId;
+                    const isCurrent = i === currentIdx;
+                    const elim = !!p.eliminated;
+                    const hpPct = Math.max(0, Math.min(100, (p.hp || 0)));
+                    const color = tankColorHex(p.tankColor);
+                    return (
+                        <div key={p.telegramUserId} style={{
+                            ...styles.topBarPlayerCard,
+                            border: `1px solid ${isCurrent && !elim ? color : 'var(--border)'}`,
+                            opacity: elim ? 0.35 : 1,
+                            background: isCurrent ? 'var(--bg-raised)' : 'transparent',
+                        }}>
+                            <div style={{
+                                ...styles.topBarPlayerName,
+                                color: isMe ? color : 'var(--bone)',
+                            }}>
+                                {(p.callsign || p.tgUsername || '?').slice(0, 8).toUpperCase()}
+                                {isMe && <span style={styles.topBarYouTag}> YOU</span>}
+                                {isCurrent && !elim && <span style={{ ...styles.topBarTurnTag, color }}> ▸</span>}
+                            </div>
+                            <div style={styles.topBarHpBar}>
+                                <div style={{ ...styles.topBarHpFill, width: `${hpPct}%`, background: color }} />
+                            </div>
+                            <div style={styles.topBarHpLabel}>
+                                {elim ? 'KO' : `${p.hp ?? 100} HP`}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
+/** Compact status strip at the bottom — turn ping + match clock. */
+function ActiveStatusStrip({ match, myTgId }) {
+    const current = match.players?.[match.currentPlayerIndex];
+    const isMyTurn = current?.telegramUserId === myTgId;
+    return (
+        <div style={styles.statusStrip}>
+            <span style={styles.statusItem}>
+                {isMyTurn ? (
+                    <span style={{ color: 'var(--accent)' }}>▸ YOUR TURN</span>
+                ) : (
+                    <span>WAITING ON <b>{(current?.callsign || current?.tgUsername || '?').toUpperCase()}</b></span>
+                )}
+            </span>
+            <span style={styles.statusItemSecondary}>
+                ENDS IN {formatTimeLeft(match.endsAt)}
+            </span>
+        </div>
+    );
+}
+
+function tankColorHex(phaserHex) {
+    if (typeof phaserHex !== 'number') return '#c8a84a';
+    return '#' + phaserHex.toString(16).padStart(6, '0');
 }
 
 // ─── Sub-components ─────────────────────────────────────────────────────
@@ -418,10 +507,155 @@ function SettledFooter({ match }) {
 // ─── Inline styles (matching the project's CRT-terminal aesthetic) ──────
 
 const styles = {
+    // Active-mode HUD — three fixed sections, fills viewport, NO scroll.
+    // Mirrors the redesign's InGameHUD pattern (top player bar / battlefield /
+    // bottom status strip).
+    activePage: {
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        background: 'var(--bg-deep, #0e1209)',
+        color: 'var(--bone-pale, #f4e7c8)',
+        fontFamily: "'Space Grotesk', system-ui, sans-serif",
+        overflow: 'hidden',
+        minHeight: 0,
+    },
+    battlefieldFill: {
+        flex: 1,
+        minHeight: 0,
+        position: 'relative',
+        overflow: 'hidden',
+        display: 'flex',
+    },
+    loadingFill: {
+        flex: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontFamily: "'Share Tech Mono', monospace",
+        letterSpacing: '0.3em',
+        color: 'var(--olive, #c4a65d)',
+        fontSize: 11,
+    },
+    // Top player bar — compact, fixed-height, single row.
+    topBar: {
+        flexShrink: 0,
+        display: 'flex',
+        alignItems: 'stretch',
+        gap: 8,
+        padding: '6px 8px',
+        background: 'var(--bg-surface, #141c0d)',
+        borderBottom: '1px solid var(--border, rgba(196,166,93,0.2))',
+        minHeight: 56,
+    },
+    topBarBack: {
+        background: 'transparent',
+        border: '1px solid var(--border)',
+        color: 'var(--bone)',
+        padding: '0 12px',
+        fontSize: 18,
+        fontFamily: "'Share Tech Mono', monospace",
+        cursor: 'pointer',
+        flexShrink: 0,
+    },
+    topBarMatchInfo: {
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        flexShrink: 0,
+        paddingRight: 8,
+        borderRight: '1px solid var(--border)',
+    },
+    topBarMatchId: {
+        fontFamily: "'Black Ops One', cursive",
+        fontSize: 12,
+        letterSpacing: '0.08em',
+        color: 'var(--bone)',
+    },
+    topBarMeta: {
+        fontFamily: "'Share Tech Mono', monospace",
+        fontSize: 9,
+        letterSpacing: '0.2em',
+        color: 'var(--olive)',
+        marginTop: 2,
+    },
+    topBarPlayers: {
+        flex: 1,
+        display: 'flex',
+        gap: 4,
+        overflowX: 'auto',
+        WebkitOverflowScrolling: 'touch',
+    },
+    topBarPlayerCard: {
+        flex: '1 1 0',
+        minWidth: 70,
+        padding: '4px 6px',
+        clipPath: 'polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px)',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'space-between',
+    },
+    topBarPlayerName: {
+        fontFamily: "'Black Ops One', cursive",
+        fontSize: 10,
+        letterSpacing: '0.06em',
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+    },
+    topBarYouTag: {
+        fontFamily: "'Share Tech Mono', monospace",
+        fontSize: 8,
+        color: 'var(--muted)',
+        marginLeft: 2,
+    },
+    topBarTurnTag: {
+        fontFamily: "'Share Tech Mono', monospace",
+        fontSize: 10,
+    },
+    topBarHpBar: {
+        height: 3,
+        background: 'var(--bg-deep)',
+        border: '1px solid var(--border)',
+        marginTop: 3,
+        position: 'relative',
+        overflow: 'hidden',
+    },
+    topBarHpFill: {
+        height: '100%',
+    },
+    topBarHpLabel: {
+        fontFamily: "'Share Tech Mono', monospace",
+        fontSize: 8,
+        color: 'var(--olive)',
+        letterSpacing: '0.15em',
+        marginTop: 2,
+    },
+    // Bottom status strip — compact, fixed-height
+    statusStrip: {
+        flexShrink: 0,
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: '8px 14px',
+        background: 'var(--bg-surface)',
+        borderTop: '1px solid var(--border)',
+        fontFamily: "'Share Tech Mono', monospace",
+        fontSize: 10,
+        letterSpacing: '0.18em',
+        color: 'var(--bone)',
+        minHeight: 36,
+    },
+    statusItem: {
+        flex: 1,
+    },
+    statusItemSecondary: {
+        color: 'var(--olive)',
+    },
     fullPage: {
         // flex:1 + overflowY:auto inside Layout's overflow:hidden viewport.
-        // Without this, content longer than the viewport gets clipped and
-        // the page becomes unscrollable inside the TG WebApp.
+        // Used for lobby/settled states (long content, scrollable). Active
+        // gameplay uses activePage (fixed layout, no scroll) instead.
         flex: 1,
         overflowY: 'auto',
         WebkitOverflowScrolling: 'touch',

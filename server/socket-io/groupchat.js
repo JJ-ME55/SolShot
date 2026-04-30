@@ -20,6 +20,7 @@
  */
 
 import GroupMatch from '../models/GroupMatch.js';
+import * as lifecycle from '../services/groupchat/lifecycle.js';
 
 /**
  * Strip internal-only fields from a match doc before sending to the client.
@@ -64,6 +65,33 @@ export function registerGroupChatSocketHandlers(client) {
         } catch (err) {
             console.error('[group-chat] getGroupMatch error:', err);
             client.emit('groupMatchData', { error: 'server_error', matchId });
+        }
+    });
+
+    /**
+     * Fire a shot in an active group-chat match.
+     * Validates it's the firer's turn, runs physics, applies damage,
+     * advances the turn. Emits the updated match snapshot back so the
+     * Mini App can re-render.
+     */
+    client.on('fireGroupShot', async (payload = {}) => {
+        const tgId = tgIdFor(client, payload);
+        if (!tgId) {
+            client.emit('shotResult', { ok: false, error: 'no_identity' });
+            return;
+        }
+        if (!payload.matchId) {
+            client.emit('shotResult', { ok: false, error: 'missing_matchId' });
+            return;
+        }
+        try {
+            const result = await lifecycle.handleShot(payload.matchId, tgId, payload);
+            // Send the result + a fresh snapshot so the firer's UI updates immediately.
+            const match = await GroupMatch.findOne({ matchId: payload.matchId }).lean();
+            client.emit('shotResult', { ...result, match: sanitizeMatch(match) });
+        } catch (err) {
+            console.error('[group-chat] fireGroupShot error:', err);
+            client.emit('shotResult', { ok: false, error: 'server_error' });
         }
     });
 

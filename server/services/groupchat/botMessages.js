@@ -130,6 +130,33 @@ export function formatMatchEnd(match, reason = 'last_alive') {
     return lines.join('\n');
 }
 
+// ─── Shot result ────────────────────────────────────────────────────────
+
+/**
+ * Posted after a successful shot. Tier-aware text:
+ *   - Eliminated 1+ players → headline + standings
+ *   - Massive hit (60+ HP)  → headline
+ *   - Standard hit          → one-liner
+ *
+ * Phase 1e will add sticker selection on top of this for big-moment events.
+ */
+export function formatShotResult(match, firer, weapon, totalDamage, eliminatedThisShot) {
+    const weaponName = weapon?.name || `Weapon ${weapon?.weaponId ?? '?'}`;
+    if (eliminatedThisShot.length > 0) {
+        const targets = eliminatedThisShot.map(p => mention(p)).join(', ');
+        const lines = [
+            `💥 ${mention(firer)} fires <b>${escapeHtml(weaponName)}</b>`,
+            `${eliminatedThisShot.length === 1 ? 'KO' : `${eliminatedThisShot.length}× KO`}: ${targets}`,
+            `${aliveLine(match)}`,
+        ];
+        return lines.join('\n');
+    }
+    if (totalDamage >= 60) {
+        return `💥 ${mention(firer)} fires <b>${escapeHtml(weaponName)}</b> — <b>${totalDamage} HP</b> damage`;
+    }
+    return `🎯 ${mention(firer)} fires ${escapeHtml(weaponName)} — ${totalDamage} HP`;
+}
+
 // ─── Quiet hours announcements ──────────────────────────────────────────
 
 /** Posted when the match's current turn enters a quiet-hours window. */

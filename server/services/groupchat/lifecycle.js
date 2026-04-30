@@ -22,6 +22,20 @@ import GroupMatch from '../../models/GroupMatch.js';
 import * as scheduler from './scheduler.js';
 import * as botMessages from './botMessages.js';
 import { getBot } from '../bot.js';
+import { generateTerrain, generateTankPositions, generateWind, processShot, WEAPON_DATA } from '../physics.js';
+
+const MINI_APP_URL = process.env.MINI_APP_URL || 'https://t.me/SolShotGG_bot/solshot';
+
+/** Inline keyboard with a single "Take your shot" button deep-linking
+ *  the player back to the Mini App for this match. */
+function takeShotKeyboard(matchId) {
+    return {
+        inline_keyboard: [[{
+            text: '🎯 Take your shot',
+            url: `${MINI_APP_URL}?startapp=match_${matchId}`,
+        }]],
+    };
+}
 
 // ─── Module wiring ──────────────────────────────────────────────────────
 
@@ -61,12 +75,18 @@ export async function startMatch(matchId) {
     match.turnNumber = 0;
     match.turnStartedAt = now;
 
-    // Phase 1d-core: terrain stays empty. Real gen + tank spawn comes when
-    // we wire shot firing in 1c. For now, the match runs purely on
-    // turn rotation and idle penalties.
-    match.terrainSnapshot = [];
+    // Generate terrain + tank spawn positions + initial wind.
+    const { heightmap } = generateTerrain();
+    const positions = generateTankPositions(heightmap, match.players.length);
+    for (let i = 0; i < match.players.length; i++) {
+        match.players[i].spawnX = positions[i].x;
+        match.players[i].spawnY = positions[i].y;
+        match.players[i].currentX = positions[i].x;
+        match.players[i].currentY = positions[i].y;
+    }
+    match.terrainSnapshot = heightmap;
     match.walls = [];
-    match.wind = 0;
+    match.wind = generateWind();
 
     await match.save();
 
@@ -75,8 +95,10 @@ export async function startMatch(matchId) {
 
     // Post match-start announcement
     await postToChat(match.chatId, botMessages.formatMatchStart(match));
-    // Post the first turn ping
-    await postToChat(match.chatId, botMessages.formatTurnPing(match));
+    // Post the first turn ping with deep-link button
+    await postToChat(match.chatId, botMessages.formatTurnPing(match), {
+        reply_markup: takeShotKeyboard(match.matchId),
+    });
 
     return match;
 }
@@ -186,7 +208,120 @@ export async function advanceTurn(match) {
 
     scheduler.scheduleTurnDeadline(match);
 
-    await postToChat(match.chatId, botMessages.formatTurnPing(match));
+    await postToChat(match.chatId, botMessages.formatTurnPing(match), {
+        reply_markup: takeShotKeyboard(match.matchId),
+    });
+}
+
+/**
+ * Process a shot from the Mini App.
+ *
+ * @param {string} matchId
+ * @param {number} firerTgId - Telegram user id of the firer
+ * @param {object} shot - { angle, power, weaponId }
+ * @returns {object} - { ok: bool, error?: string, summary?: string }
+ */
+export async function handleShot(matchId, firerTgId, shot) {
+    const match = await GroupMatch.findOne({ matchId });
+    if (!match || match.state !== 'active') {
+        return { ok: false, error: 'match_not_active' };
+    }
+    const firerIdx = match.players.findIndex(p => p.telegramUserId === firerTgId);
+    if (firerIdx === -1) return { ok: false, error: 'not_a_player' };
+    if (firerIdx !== match.currentPlayerIndex) return { ok: false, error: 'not_your_turn' };
+    const firer = match.players[firerIdx];
+    if (firer.eliminated) return { ok: false, error: 'eliminated' };
+
+    const weapon = WEAPON_DATA[shot.weaponId];
+    if (!weapon) return { ok: false, error: 'unknown_weapon' };
+    const angle = Number(shot.angle);
+    const power = Math.max(1, Math.min(100, Number(shot.power) || 0));
+    if (!Number.isFinite(angle)) return { ok: false, error: 'bad_angle' };
+
+    // Build tanks array for physics — exclude eliminated players (no body to hit)
+    const tanks = match.players
+        .filter(p => !p.eliminated)
+        .map(p => ({
+            id: String(p.telegramUserId),
+            x: p.currentX,
+            y: p.currentY,
+        }));
+
+    const result = processShot({
+        angle,
+        power,
+        weaponId: shot.weaponId,
+        startX: firer.currentX,
+        startY: firer.currentY,
+        shooterId: String(firerTgId),
+        terrain: match.terrainSnapshot,
+        tanks,
+        wind: match.wind || 0,
+    });
+
+    // Apply damage map
+    let totalDamage = 0;
+    const eliminatedThisShot = [];
+    for (const [targetId, dmg] of Object.entries(result.damage || {})) {
+        if (!dmg || dmg <= 0) continue;
+        const targetIdx = match.players.findIndex(p => String(p.telegramUserId) === targetId);
+        if (targetIdx === -1) continue;
+        const target = match.players[targetIdx];
+        if (target.eliminated) continue;
+
+        const prevHp = target.hp;
+        target.hp = Math.max(0, target.hp - dmg);
+        const applied = prevHp - target.hp;
+        totalDamage += applied;
+
+        if (target.hp <= 0) {
+            target.eliminated = true;
+            target.eliminatedAt = new Date();
+            target.eliminationOrder = nextEliminationOrder(match);
+            if (isPastHalfwayMark(match)) target.survivalEligible = false;
+            eliminatedThisShot.push(target);
+            // Award the kill to the firer (unless self-damage)
+            if (targetIdx !== firerIdx) {
+                firer.kills = (firer.kills || 0) + 1;
+            }
+        }
+    }
+    firer.damageDealt = (firer.damageDealt || 0) + totalDamage;
+    // A successful shot resets the consecutive-miss counter
+    firer.consecutiveMissedTurns = 0;
+
+    // Persist updated terrain
+    if (result.newTerrain) match.terrainSnapshot = result.newTerrain;
+
+    await match.save();
+
+    // Post shot summary to chat
+    await postShotSummary(match, firer, weapon, totalDamage, eliminatedThisShot);
+
+    // Check win condition before advancing
+    if (await checkAndSettle(match)) return { ok: true };
+
+    // Advance to next alive player + new wind
+    match.wind = generateWind();
+    await advanceTurn(match);
+
+    return { ok: true };
+}
+
+/**
+ * Post a chat message describing the shot outcome.
+ * Tier-aware (text-only for now — sticker library lands in Phase 1e):
+ *   - Massive hit (60+) / multi-kill / final blow → bigger message
+ *   - Standard hit → one-liner
+ *   - Miss / glancing → silent (returns early)
+ */
+async function postShotSummary(match, firer, weapon, totalDamage, eliminatedThisShot) {
+    if (totalDamage < 10 && eliminatedThisShot.length === 0) {
+        // Silent tier — no chat post
+        return;
+    }
+    const text = botMessages.formatShotResult(match, firer, weapon, totalDamage, eliminatedThisShot);
+    await postToChat(match.chatId, text);
 }
 
 /**

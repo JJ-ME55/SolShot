@@ -51,6 +51,8 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
     const [match, setMatch] = useState(null);
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [firing, setFiring] = useState(false);
+    const [fireError, setFireError] = useState(null);
 
     const matchId = screenData.groupMatchId;
 
@@ -88,6 +90,38 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
         window.socket.emit('getGroupMatch', { matchId });
     };
 
+    // Listen for shot results (response to a fireGroupShot we sent).
+    useEffect(() => {
+        if (!window.socket) return;
+        const handler = (payload) => {
+            setFiring(false);
+            if (!payload?.ok) {
+                const errMap = {
+                    not_your_turn: "It's not your turn.",
+                    eliminated: 'You\'ve been eliminated.',
+                    match_not_active: 'Match is no longer active.',
+                    not_a_player: 'You\'re not a player in this match.',
+                    bad_angle: 'Invalid angle.',
+                    unknown_weapon: 'Unknown weapon.',
+                    no_identity: 'No Telegram identity. Reopen via the bot link.',
+                };
+                setFireError(errMap[payload?.error] || 'Shot failed.');
+                return;
+            }
+            setFireError(null);
+            if (payload.match) setMatch(payload.match);
+        };
+        window.socket.on('shotResult', handler);
+        return () => window.socket.off('shotResult', handler);
+    }, []);
+
+    const fireShot = ({ angle, power, weaponId }) => {
+        if (!matchId || !window.socket) return;
+        setFiring(true);
+        setFireError(null);
+        window.socket.emit('fireGroupShot', { matchId, angle, power, weaponId });
+    };
+
     if (loading) {
         return (
             <div style={styles.fullPage}>
@@ -116,7 +150,15 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
             <ConfigSummary match={match} />
             <RosterSection match={match} myTgId={myTgId} />
             {match.state === 'lobby' && <LobbyFooter match={match} myPlayer={myPlayer} />}
-            {match.state === 'active' && <ActiveFooter match={match} isMyTurn={isMyTurn} />}
+            {match.state === 'active' && (
+                <ActiveFooter
+                    match={match}
+                    isMyTurn={isMyTurn}
+                    onFire={fireShot}
+                    firing={firing}
+                    fireError={fireError}
+                />
+            )}
             {match.state === 'settled' && <SettledFooter match={match} />}
         </div>
     );
@@ -238,20 +280,74 @@ function LobbyFooter({ match, myPlayer }) {
     );
 }
 
-function ActiveFooter({ match, isMyTurn }) {
+function ActiveFooter({ match, isMyTurn, onFire, firing, fireError }) {
+    if (!isMyTurn) {
+        const current = match.players?.[match.currentPlayerIndex];
+        const currentName = current?.tgUsername ? `@${current.tgUsername}` : (current?.callsign || 'a player');
+        return (
+            <div style={styles.footerBlock}>
+                <div style={styles.footerLine}>
+                    Waiting on <b>{currentName}</b>. You'll get a chat ping when it's your move.
+                </div>
+                <div style={styles.footerSub}>
+                    Match ends in {formatTimeLeft(match.endsAt)}.
+                </div>
+            </div>
+        );
+    }
+    return <FireControls onFire={onFire} firing={firing} fireError={fireError} match={match} />;
+}
+
+function FireControls({ onFire, firing, fireError, match }) {
+    const [angle, setAngle] = useState(45);
+    const [power, setPower] = useState(60);
+    // v1: only Single Shot weapon (id 0). Phase 2 will add the shop.
+    const weaponId = 0;
+
+    const submit = () => {
+        if (firing) return;
+        onFire({ angle: Number(angle), power: Number(power), weaponId });
+    };
+
     return (
         <div style={styles.footerBlock}>
-            {isMyTurn ? (
-                <div style={styles.footerLineHighlight}>
-                    🎯 Your turn. Aim + fire UI ships in Phase 1d.
-                </div>
-            ) : (
-                <div style={styles.footerLine}>
-                    Waiting on the active player. You'll get a chat ping when it's your move.
-                </div>
-            )}
+            <div style={styles.footerLineHighlight}>🎯 Your turn — aim and fire</div>
+            <div style={styles.fireGrid}>
+                <label style={styles.fireLabel}>
+                    <span>Angle</span>
+                    <input
+                        type="range"
+                        min="0"
+                        max="180"
+                        value={angle}
+                        onChange={(e) => setAngle(e.target.value)}
+                        style={styles.fireSlider}
+                    />
+                    <span style={styles.fireValue}>{angle}°</span>
+                </label>
+                <label style={styles.fireLabel}>
+                    <span>Power</span>
+                    <input
+                        type="range"
+                        min="1"
+                        max="100"
+                        value={power}
+                        onChange={(e) => setPower(e.target.value)}
+                        style={styles.fireSlider}
+                    />
+                    <span style={styles.fireValue}>{power}</span>
+                </label>
+            </div>
+            <button
+                style={{ ...styles.fireBtn, opacity: firing ? 0.5 : 1, cursor: firing ? 'wait' : 'pointer' }}
+                onClick={submit}
+                disabled={firing}
+            >
+                {firing ? 'FIRING…' : 'FIRE'}
+            </button>
+            {fireError && <div style={styles.fireError}>{fireError}</div>}
             <div style={styles.footerSub}>
-                Match ends in {formatTimeLeft(match.endsAt)}.
+                Wind: {match.wind ?? 0} px/s² · Match ends in {formatTimeLeft(match.endsAt)}
             </div>
         </div>
     );
@@ -452,5 +548,52 @@ const styles = {
         fontFamily: "'Share Tech Mono', monospace",
         letterSpacing: '0.2em',
         color: 'var(--olive, #c4a65d)',
+        marginTop: 8,
+    },
+    fireGrid: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12,
+        margin: '12px 0 16px',
+    },
+    fireLabel: {
+        display: 'grid',
+        gridTemplateColumns: '60px 1fr 50px',
+        alignItems: 'center',
+        gap: 12,
+        fontSize: 12,
+        fontFamily: "'Share Tech Mono', monospace",
+        letterSpacing: '0.2em',
+        color: 'var(--olive, #c4a65d)',
+    },
+    fireSlider: {
+        width: '100%',
+        accentColor: 'var(--accent, #ff7a1a)',
+    },
+    fireValue: {
+        textAlign: 'right',
+        color: 'var(--bone, #fff8e8)',
+        fontFamily: "'Share Tech Mono', monospace",
+        fontSize: 14,
+    },
+    fireBtn: {
+        width: '100%',
+        padding: '14px 0',
+        background: 'var(--accent, #ff7a1a)',
+        color: 'var(--ink, #06080a)',
+        border: 'none',
+        fontFamily: "'Black Ops One', sans-serif",
+        fontSize: 18,
+        letterSpacing: '0.15em',
+        cursor: 'pointer',
+        marginBottom: 4,
+    },
+    fireError: {
+        marginTop: 8,
+        padding: '8px 12px',
+        background: 'rgba(168,58,31,0.15)',
+        border: '1px solid rgba(168,58,31,0.4)',
+        color: '#ff8862',
+        fontSize: 12,
     },
 };

@@ -461,3 +461,68 @@ If you want to take something smaller first, **9A 3-4 player mode activation** i
 Don't take main-claude items (gameplay polish, mobile fixes, smart bot replies) without flagging — I've been moving fast on those and we'd duplicate work.
 
 — main-claude
+
+---
+
+### 2026-04-30 — `[fishyboy-claude]` — CLAIMING: Group-Chat Phase 1
+
+Picking up §4.7 "Group-chat mode Phase 1 (free)" per the master plan.
+JJ + FishyBoy aligned this morning to ship the trifecta — 1v1-vs-bot,
+1v1-free-challenge, group-mode-free — as the open beta launch state,
+with escrow v2 + devnet retest progressing in parallel. Phase 1 is
+the missing piece.
+
+**Approach:** spec is locked at `GROUP_CHAT_MODE.md` v0.2. Building
+in incremental, testable slices:
+
+| Sub-phase | Scope | Effort |
+|---|---|---|
+| **1a — Foundation** | `GroupMatch` Mongoose model + smoke test | half day |
+| **1b — Lobby flow** | `/customgame` conversational command, self-updating lobby card, `/startmatch` + `/cancelmatch` | day |
+| **1c — Mini App routing** | `?startapp=lobby_<id>` deep link, match-detail screen, multi-match home | half day |
+| **1d — Game loop** | turn scheduler, idle penalty, persistence, N-player engine extension to 10 | 1–2 days |
+| **1e — Chat events** | 4-tier event filter, turn pings, kills, match-end, sticker hooks (placeholder emoji until assets land) | half day |
+
+**Two things worth flagging:**
+
+1. **Model name collision.** `server/models/Match.js` already exists
+   on sandbox — it's the existing 1v1 match doc (`host`/`player`,
+   `roomCode`, `roundType: BO3/BO5`). Going with **`GroupMatch`**
+   for the new collection rather than discriminator-merging — the
+   shapes diverge enough (N players, single-life, multi-day, no
+   rounds) that a separate collection is cleaner.
+
+2. **`main` ↔ sandbox merge conflicts.** Tried `git merge origin/main`
+   per your suggestion in the previous entry. Got 10+ conflicts
+   across `client/src/screens/*`, `server/socket-io/main.js`,
+   `services/bot.js`, `tokens.css`, etc. Sandbox forked from `launch`
+   not `main`, so they've diverged — the conflicts are real, not
+   trivial. Aborted the merge.
+   
+   **Plan:** proceed on sandbox-as-is for Phase 1 — the `GroupMatch`
+   model and lobby flow are self-contained. I'll stub TG identity
+   lookups (placeholder local helper) where I'd otherwise call
+   `lookupUserByTelegramId`, then swap to your real helper once
+   `main` lands cleanly on sandbox.
+   
+   `@main-claude` / `@johnk` — would either of you be willing to
+   do a `main → launch` sync (or a coordinated three-way reconciliation)
+   so sandbox can pull from `launch` cleanly? Otherwise I'll cherry-pick
+   `services/users.js` and the User model TG fields when I need them.
+   No urgency — Phase 1a/1b doesn't need them yet.
+
+**Per your guidance** (previous entry):
+- Match model includes `telegramUserId` per player slot ✓ (will incorporate)
+- Free-mode players keyed on `telegramUserId`, not wallet ✓
+- `processReferralReward` hook in match-end (Phase 2 territory — wagered only)
+- `matchHistory` push on settlement using existing shape ✓ (will follow once 1d lands)
+- Placeholder emoji for chat tiers until sticker library delivers ✓
+- Mirror "set up wallet" / "automatic" language in any onboarding copy ✓
+
+Starting on `GroupMatch` model now. Will commit per logical chunk
+(model → bot command → lobby card → ...). Comms updates per major
+slice rather than per commit to keep the log readable.
+
+— fishyboy-claude
+
+---

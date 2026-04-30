@@ -63,6 +63,18 @@ export function formatBuybacks(config) {
     return `enabled (max ${config.buybackCap})`;
 }
 
+/** "11pm–7am UTC" / "1am–6am UTC" / "24/7" */
+export function formatQuietHours(config) {
+    if (!config.quietHoursEnabled) return '24/7';
+    const fmt = (h) => {
+        if (h === 0) return '12am';
+        if (h === 12) return '12pm';
+        if (h < 12) return `${h}am`;
+        return `${h - 12}pm`;
+    };
+    return `${fmt(config.quietHoursStart)}–${fmt(config.quietHoursEnd)} UTC`;
+}
+
 /** "23h 47m" / "8m" / "1h 0m" — countdown to a future Date. Returns "expired"
  *  if the date is in the past. */
 export function formatTimeLeft(futureDate) {
@@ -115,6 +127,7 @@ export function lobbyCardText(match) {
         `Idle penalty: <b>${config.idlePenaltyHp} HP</b>`,
         `Buybacks: <b>${formatBuybacks(config)}</b>`,
     ].join('  |  ');
+    const ruleLine3 = `Quiet hours: <b>${formatQuietHours(config)}</b>`;
 
     const rosterLine = `Players (${players.length}/${config.maxPlayers}): ${formatPlayerList(players)}`;
     const expiresLine = lobbyExpiresAt
@@ -125,6 +138,7 @@ export function lobbyCardText(match) {
         headLine,
         ruleLine1,
         ruleLine2,
+        ruleLine3,
         '',
         rosterLine,
         '',

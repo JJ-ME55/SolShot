@@ -89,6 +89,13 @@ const configSchema = new mongoose.Schema({
     // Buybacks
     buybacksEnabled: { type: Boolean, default: true },
     buybackCap: { type: Number, default: 3 },                       // 1, 3, or -1 for unlimited
+
+    // Quiet hours — pause turn timer overnight so async multi-day matches
+    // don't punish sleepers. v1: UTC reference, host picks one of three
+    // preset windows. See server/services/groupchat/quietHours.js for math.
+    quietHoursEnabled: { type: Boolean, default: true },
+    quietHoursStart: { type: Number, default: 23 },                 // 0–23 hour, UTC
+    quietHoursEnd: { type: Number, default: 7 },                    // 0–23 hour, UTC (wraparound supported: 23→7 = 11pm to 7am)
 }, { _id: false });
 
 const wallSchema = new mongoose.Schema({

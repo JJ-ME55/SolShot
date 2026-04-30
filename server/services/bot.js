@@ -700,15 +700,20 @@ function registerCommands(bot) {
   });
 
   // ─── Callback queries — accept/decline buttons on inline cards ───
-  // Reserved for future callback_data buttons. Inline mode currently uses
-  // `url` buttons (deep link to Mini App) so this handler is a no-op fallback.
-  bot.on('callback_query', async (ctx) => {
+  // Inline mode currently uses `url` buttons (deep link to Mini App) so
+  // accept/decline are placeholder for future callback_data buttons.
+  //
+  // CRITICAL: only handles accept:/decline: prefixes. Anything else falls
+  // through to `next()` so downstream `bot.action(/^gc_/)` handlers
+  // registered by registerGroupChatCommands() can fire. Without this,
+  // every group-chat callback (Free/Wagered, Join/Leave, Start/Cancel,
+  // wizard step buttons) gets swallowed silently.
+  bot.on('callback_query', async (ctx, next) => {
     try {
       const data = ctx.callbackQuery?.data || '';
       if (data.startsWith('decline:')) {
         const shortCode = data.slice('decline:'.length);
         await ctx.answerCbQuery('Challenge declined.');
-        // (could mark the challenge as cancelled — for v1 we just dismiss the prompt)
         return;
       }
       if (data.startsWith('accept:')) {
@@ -721,7 +726,8 @@ function registerCommands(bot) {
         await ctx.answerCbQuery('Challenge accepted — opening match...');
         return;
       }
-      await ctx.answerCbQuery();
+      // Not ours — pass to next middleware (group-chat actions etc.)
+      return next();
     } catch (err) {
       console.error('[bot] callback_query error:', err);
       try { await ctx.answerCbQuery('Something went wrong.', { show_alert: true }); } catch { /* */ }

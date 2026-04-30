@@ -1,0 +1,456 @@
+/**
+ * GroupMatchScreen — view a single group-chat match.
+ *
+ * Reachable via deep link:
+ *   ?startapp=lobby_<matchId>  → match in lobby state (used after wagered Join tap)
+ *   ?startapp=match_<matchId>  → match active or settled
+ *
+ * Phase 1c scope: read-only display.
+ *   - Lobby state:  show roster, host, config, "waiting for host to start"
+ *   - Active state: show roster with HP bars, current player, time remaining
+ *   - Settled:      show ranked finishers
+ *
+ * Phase 1d-real (TODO): aim + fire UI when state==='active' and it's
+ * the viewer's turn. Will hook into the existing Phaser scene.
+ */
+
+import React, { useState, useEffect } from 'react';
+import { useTelegram } from '../telegram/TelegramContext';
+
+const SOL_PER_LAMPORT = 1_000_000_000;
+
+function formatWager(config) {
+    if (!config || config.type === 'free' || !config.wagerLamports) return 'FREE';
+    const sol = config.wagerLamports / SOL_PER_LAMPORT;
+    const str = sol.toFixed(4).replace(/\.?0+$/, '');
+    return `${str || '0'} SOL`;
+}
+
+function formatDuration(ms) {
+    if (!ms) return '?';
+    const hours = ms / (60 * 60 * 1000);
+    if (hours < 24) return `${hours}h`;
+    return `${hours / 24}d`;
+}
+
+function formatTimeLeft(date) {
+    if (!date) return '—';
+    const ms = new Date(date).getTime() - Date.now();
+    if (ms <= 0) return 'expired';
+    const totalMin = Math.floor(ms / 60000);
+    const days = Math.floor(totalMin / (60 * 24));
+    const hours = Math.floor((totalMin % (60 * 24)) / 60);
+    const mins = totalMin % 60;
+    if (days > 0) return `${days}d ${hours}h`;
+    if (hours > 0) return `${hours}h ${mins}m`;
+    return `${mins}m`;
+}
+
+export default function GroupMatchScreen({ navigate, screenData = {} }) {
+    const { user: tgUser } = useTelegram();
+    const [match, setMatch] = useState(null);
+    const [error, setError] = useState(null);
+    const [loading, setLoading] = useState(true);
+
+    const matchId = screenData.groupMatchId;
+
+    // Fetch match on mount + when matchId changes
+    useEffect(() => {
+        if (!matchId || !window.socket) {
+            setError('No match ID. Open this screen from a group-chat link.');
+            setLoading(false);
+            return;
+        }
+
+        const handler = (payload) => {
+            setLoading(false);
+            if (payload?.error) {
+                setError(payload.error === 'not_found'
+                    ? `Match ${matchId} no longer exists.`
+                    : 'Couldn\'t load match.');
+                return;
+            }
+            if (payload?.match?.matchId === matchId) {
+                setMatch(payload.match);
+                setError(null);
+            }
+        };
+        window.socket.on('groupMatchData', handler);
+        window.socket.emit('getGroupMatch', { matchId });
+        return () => {
+            window.socket.off('groupMatchData', handler);
+        };
+    }, [matchId]);
+
+    const refresh = () => {
+        if (!matchId || !window.socket) return;
+        setLoading(true);
+        window.socket.emit('getGroupMatch', { matchId });
+    };
+
+    if (loading) {
+        return (
+            <div style={styles.fullPage}>
+                <div style={styles.loading}>LOADING MATCH…</div>
+            </div>
+        );
+    }
+    if (error) {
+        return (
+            <div style={styles.fullPage}>
+                <div style={styles.error}>{error}</div>
+                <button style={styles.backBtn} onClick={() => navigate('menu')}>← Menu</button>
+            </div>
+        );
+    }
+    if (!match) return null;
+
+    const myTgId = tgUser?.id;
+    const myPlayer = match.players?.find(p => p.telegramUserId === myTgId);
+    const isMyTurn = match.state === 'active'
+        && match.players?.[match.currentPlayerIndex]?.telegramUserId === myTgId;
+
+    return (
+        <div style={styles.fullPage}>
+            <Header match={match} onMenu={() => navigate('menu')} onRefresh={refresh} />
+            <ConfigSummary match={match} />
+            <RosterSection match={match} myTgId={myTgId} />
+            {match.state === 'lobby' && <LobbyFooter match={match} myPlayer={myPlayer} />}
+            {match.state === 'active' && <ActiveFooter match={match} isMyTurn={isMyTurn} />}
+            {match.state === 'settled' && <SettledFooter match={match} />}
+        </div>
+    );
+}
+
+// ─── Sub-components ─────────────────────────────────────────────────────
+
+function Header({ match, onMenu, onRefresh }) {
+    const stateLabel = {
+        lobby: 'OPEN — WAITING FOR PLAYERS',
+        active: 'IN PROGRESS',
+        settled: 'COMPLETE',
+        cancelled: 'CANCELLED',
+    }[match.state] || match.state.toUpperCase();
+    return (
+        <div style={styles.header}>
+            <button style={styles.backBtn} onClick={onMenu}>←</button>
+            <div style={styles.headerCenter}>
+                <div style={styles.matchId}>MATCH #{match.matchId}</div>
+                <div style={styles.stateLabel}>{stateLabel}</div>
+            </div>
+            <button style={styles.backBtn} onClick={onRefresh}>↻</button>
+        </div>
+    );
+}
+
+function ConfigSummary({ match }) {
+    const c = match.config || {};
+    return (
+        <div style={styles.configBlock}>
+            <div style={styles.configRow}>
+                <span style={styles.configLabel}>Wager</span>
+                <span style={styles.configValue}>{formatWager(c)}</span>
+            </div>
+            <div style={styles.configRow}>
+                <span style={styles.configLabel}>Players</span>
+                <span style={styles.configValue}>{match.players?.length ?? 0} / {c.maxPlayers}</span>
+            </div>
+            <div style={styles.configRow}>
+                <span style={styles.configLabel}>Duration</span>
+                <span style={styles.configValue}>{formatDuration(c.durationMs)}</span>
+            </div>
+            <div style={styles.configRow}>
+                <span style={styles.configLabel}>Turn timer</span>
+                <span style={styles.configValue}>{formatDuration(c.turnTimerMs)}</span>
+            </div>
+            {c.buybacksEnabled && (
+                <div style={styles.configRow}>
+                    <span style={styles.configLabel}>Buybacks</span>
+                    <span style={styles.configValue}>
+                        {c.buybackCap === -1 ? 'unlimited' : `max ${c.buybackCap}`}
+                    </span>
+                </div>
+            )}
+        </div>
+    );
+}
+
+function RosterSection({ match, myTgId }) {
+    return (
+        <div style={styles.rosterBlock}>
+            <div style={styles.sectionTitle}>ROSTER</div>
+            {match.players?.map((p, idx) => (
+                <PlayerRow
+                    key={p.telegramUserId || idx}
+                    player={p}
+                    index={idx}
+                    isCurrent={match.state === 'active' && idx === match.currentPlayerIndex}
+                    isMe={p.telegramUserId === myTgId}
+                    matchState={match.state}
+                />
+            ))}
+        </div>
+    );
+}
+
+function PlayerRow({ player, index, isCurrent, isMe, matchState }) {
+    const name = player.tgUsername ? `@${player.tgUsername}` : (player.callsign || 'unknown');
+    const hpPct = Math.max(0, Math.min(100, (player.hp / 100) * 100));
+    const hpColor = player.eliminated ? '#5a1e0a'
+        : player.hp <= 30 ? '#a83a1f'
+        : player.hp <= 60 ? '#c4a65d'
+        : '#7a9060';
+    return (
+        <div style={{
+            ...styles.playerRow,
+            border: isCurrent ? '1px solid #ff7a1a' : '1px solid rgba(196,166,93,0.2)',
+            opacity: player.eliminated ? 0.45 : 1,
+        }}>
+            <div style={styles.playerLeft}>
+                <span style={styles.playerName}>
+                    {name} {isMe && <span style={styles.youBadge}>YOU</span>}
+                </span>
+                {isCurrent && <span style={styles.turnBadge}>TURN</span>}
+                {player.eliminated && <span style={styles.elimBadge}>OUT</span>}
+            </div>
+            {matchState !== 'lobby' && (
+                <div style={styles.hpBar}>
+                    <div style={{ ...styles.hpFill, width: `${hpPct}%`, background: hpColor }} />
+                    <span style={styles.hpText}>{player.hp} HP</span>
+                </div>
+            )}
+        </div>
+    );
+}
+
+function LobbyFooter({ match, myPlayer }) {
+    return (
+        <div style={styles.footerBlock}>
+            <div style={styles.footerLine}>
+                {myPlayer
+                    ? "You're in — host will start the match shortly."
+                    : "Open the lobby card in chat to join."}
+            </div>
+            <div style={styles.footerSub}>
+                Lobby closes in {formatTimeLeft(match.lobbyExpiresAt)}.
+            </div>
+        </div>
+    );
+}
+
+function ActiveFooter({ match, isMyTurn }) {
+    return (
+        <div style={styles.footerBlock}>
+            {isMyTurn ? (
+                <div style={styles.footerLineHighlight}>
+                    🎯 Your turn. Aim + fire UI ships in Phase 1d.
+                </div>
+            ) : (
+                <div style={styles.footerLine}>
+                    Waiting on the active player. You'll get a chat ping when it's your move.
+                </div>
+            )}
+            <div style={styles.footerSub}>
+                Match ends in {formatTimeLeft(match.endsAt)}.
+            </div>
+        </div>
+    );
+}
+
+function SettledFooter({ match }) {
+    const ranked = match.rankedFinishers || [];
+    const firstId = ranked[0];
+    const winner = match.players?.find(p => p.telegramUserId === firstId);
+    return (
+        <div style={styles.footerBlock}>
+            <div style={styles.footerLineHighlight}>
+                🏆 Winner: {winner?.tgUsername ? `@${winner.tgUsername}` : (winner?.callsign || 'unknown')}
+            </div>
+            <div style={styles.footerSub}>
+                Settled {formatTimeLeft(match.settledAt)} ago.
+            </div>
+        </div>
+    );
+}
+
+// ─── Inline styles (matching the project's CRT-terminal aesthetic) ──────
+
+const styles = {
+    fullPage: {
+        minHeight: '100vh',
+        background: 'var(--bg-deep, #0e1209)',
+        color: 'var(--bone-pale, #f4e7c8)',
+        fontFamily: "'Space Grotesk', system-ui, sans-serif",
+        padding: 20,
+        boxSizing: 'border-box',
+    },
+    loading: {
+        textAlign: 'center',
+        padding: 80,
+        fontFamily: "'Share Tech Mono', monospace",
+        letterSpacing: '0.3em',
+        color: 'var(--olive, #c4a65d)',
+        fontSize: 12,
+    },
+    error: {
+        textAlign: 'center',
+        padding: 60,
+        color: '#ff8862',
+        fontSize: 14,
+    },
+    header: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 24,
+        paddingBottom: 14,
+        borderBottom: '1px solid rgba(196,166,93,0.2)',
+    },
+    headerCenter: {
+        textAlign: 'center',
+        flex: 1,
+    },
+    matchId: {
+        fontFamily: "'Black Ops One', sans-serif",
+        fontSize: 22,
+        letterSpacing: '0.04em',
+        color: 'var(--bone, #fff8e8)',
+    },
+    stateLabel: {
+        fontFamily: "'Share Tech Mono', monospace",
+        fontSize: 10,
+        letterSpacing: '0.3em',
+        color: 'var(--accent, #ff7a1a)',
+        marginTop: 4,
+    },
+    backBtn: {
+        background: 'transparent',
+        border: '1px solid rgba(196,166,93,0.4)',
+        color: 'var(--bone-pale, #f4e7c8)',
+        padding: '6px 12px',
+        fontFamily: "'Share Tech Mono', monospace",
+        fontSize: 14,
+        cursor: 'pointer',
+        minWidth: 36,
+    },
+    configBlock: {
+        background: 'var(--bg-deeper, #0a0d07)',
+        border: '1px solid rgba(196,166,93,0.2)',
+        padding: '12px 16px',
+        marginBottom: 20,
+    },
+    configRow: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        padding: '4px 0',
+        fontSize: 13,
+    },
+    configLabel: {
+        color: 'var(--olive, #c4a65d)',
+        fontFamily: "'Share Tech Mono', monospace",
+        fontSize: 11,
+        letterSpacing: '0.2em',
+    },
+    configValue: {
+        color: 'var(--bone, #fff8e8)',
+        fontFamily: "'Share Tech Mono', monospace",
+        fontSize: 13,
+    },
+    rosterBlock: {
+        marginBottom: 20,
+    },
+    sectionTitle: {
+        fontFamily: "'Share Tech Mono', monospace",
+        fontSize: 11,
+        letterSpacing: '0.4em',
+        color: 'var(--accent, #ff7a1a)',
+        marginBottom: 10,
+    },
+    playerRow: {
+        background: 'var(--bg-deeper, #0a0d07)',
+        padding: '10px 14px',
+        marginBottom: 8,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
+    },
+    playerLeft: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        flexWrap: 'wrap',
+    },
+    playerName: {
+        fontSize: 14,
+        color: 'var(--bone, #fff8e8)',
+    },
+    youBadge: {
+        fontSize: 9,
+        letterSpacing: '0.2em',
+        color: 'var(--accent, #ff7a1a)',
+        background: 'rgba(255,122,26,0.1)',
+        padding: '1px 6px',
+        marginLeft: 4,
+    },
+    turnBadge: {
+        fontSize: 9,
+        letterSpacing: '0.25em',
+        color: 'var(--accent, #ff7a1a)',
+        background: 'rgba(255,122,26,0.15)',
+        padding: '2px 8px',
+    },
+    elimBadge: {
+        fontSize: 9,
+        letterSpacing: '0.25em',
+        color: '#ff8862',
+        background: 'rgba(168,58,31,0.15)',
+        padding: '2px 8px',
+    },
+    hpBar: {
+        position: 'relative',
+        height: 18,
+        background: 'rgba(0,0,0,0.4)',
+        border: '1px solid rgba(196,166,93,0.2)',
+    },
+    hpFill: {
+        height: '100%',
+        transition: 'width 0.3s ease',
+    },
+    hpText: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        textAlign: 'center',
+        lineHeight: '18px',
+        fontSize: 11,
+        fontFamily: "'Share Tech Mono', monospace",
+        letterSpacing: '0.1em',
+        color: 'var(--bone, #fff8e8)',
+        textShadow: '0 1px 2px rgba(0,0,0,0.6)',
+    },
+    footerBlock: {
+        marginTop: 20,
+        padding: 16,
+        background: 'rgba(255,122,26,0.05)',
+        border: '1px dashed rgba(255,122,26,0.3)',
+    },
+    footerLine: {
+        fontSize: 13,
+        color: 'var(--bone-pale, #f4e7c8)',
+        marginBottom: 6,
+    },
+    footerLineHighlight: {
+        fontFamily: "'Black Ops One', sans-serif",
+        fontSize: 16,
+        letterSpacing: '0.04em',
+        color: 'var(--accent, #ff7a1a)',
+        marginBottom: 6,
+    },
+    footerSub: {
+        fontSize: 11,
+        fontFamily: "'Share Tech Mono', monospace",
+        letterSpacing: '0.2em',
+        color: 'var(--olive, #c4a65d)',
+    },
+};

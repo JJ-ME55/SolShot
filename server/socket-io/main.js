@@ -16,6 +16,7 @@ import { trackConnection, trackDisconnection, trackMatchCreated, trackMatchCompl
 import { requireAuth, validatePayload, validateFireParams, sanitizeName, withLock, safeHandler } from '../middleware/guards.js';
 import { initAI, cleanupAI, pickWeapon, calculateAim, autoBuyWeapons } from '../services/ai.js';
 import { CONSUMABLES, purchaseConsumable, decrementConsumables, getActiveConsumables, hasConsumable } from '../services/consumables.js';
+import { registerGroupChatSocketHandlers } from './groupchat.js';
 
 // Cosmetic item costs (mirrors client/src/data/tiers.js COSMETIC_ITEMS)
 const COSMETIC_COSTS = {
@@ -1058,6 +1059,11 @@ const mainsocket = (io) => {
             }
             client.emit('authResult', result)
         })
+
+        // === GROUP-CHAT MODE (Phase 1c) ===
+        // Per-socket handlers for getGroupMatch / getMyGroupMatches.
+        // Read-only for now; firing flow lands in Phase 1d-real.
+        registerGroupChatSocketHandlers(client);
 
         // === PRACTICE IDENTITY (Phase 28) ===
         client.on('registerIdentity', ({ uid, handle }) => {

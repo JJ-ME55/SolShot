@@ -82,9 +82,18 @@ export function registerGroupChatSocketHandlers(client) {
 
     /**
      * Fire a shot in an active group-chat match.
-     * Validates it's the firer's turn, runs physics, applies damage,
-     * advances the turn. Emits the updated match snapshot back so the
-     * Mini App can re-render.
+     *
+     * Server runs the same `processShot()` physics as 1v1, applies damage,
+     * advances the turn. Emits a `shotResult` payload that's a SUPERSET of
+     * 1v1's `turnResult` shape — the existing Phaser MainScene's animation
+     * code can consume it directly when wrapped in a thin client adapter
+     * (see GroupMatchScreen / GroupBattleWrapper). This preserves 100%
+     * of the painstakingly-tuned 1v1 trajectory + blast + gravity quality
+     * for group-chat — same scene, same physics, same animations.
+     *
+     * v1 emits to the firer only. Spectators (other group-chat players
+     * with the Mini App open) refetch on their next chat ping. v2 could
+     * use socket.io rooms keyed on matchId to broadcast in real time.
      */
     client.on('fireGroupShot', async (payload = {}) => {
         const tgId = tgIdFor(client, payload);
@@ -98,9 +107,18 @@ export function registerGroupChatSocketHandlers(client) {
         }
         try {
             const result = await lifecycle.handleShot(payload.matchId, tgId, payload);
-            // Send the result + a fresh snapshot so the firer's UI updates immediately.
             const match = await GroupMatch.findOne({ matchId: payload.matchId }).lean();
-            client.emit('shotResult', { ...result, match: sanitizeMatch(match) });
+            // Build the turnResult-shaped payload from result.shotData (when present
+            // — only on ok=true). Errors are passed through unchanged.
+            if (!result.ok) {
+                client.emit('shotResult', { ok: false, error: result.error, match: sanitizeMatch(match) });
+                return;
+            }
+            client.emit('shotResult', {
+                ok: true,
+                ...result.shotData,
+                match: sanitizeMatch(match),
+            });
         } catch (err) {
             console.error('[group-chat] fireGroupShot error:', err);
             client.emit('shotResult', { ok: false, error: 'server_error' });

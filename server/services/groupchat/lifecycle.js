@@ -285,10 +285,36 @@ export async function advanceTurn(match) {
 /**
  * Process a shot from the Mini App.
  *
+ * Return shape (when ok):
+ *   {
+ *     ok: true,
+ *     shotData: {
+ *       playerId,                    // String(firerTgId)
+ *       weaponId,
+ *       trajectory,                  // [{x,y,vx,vy}, ...] from physics
+ *       impact,                      // { type, x, y, tankId? } from physics
+ *       damage,                      // { tgIdString: hpLoss } map
+ *       terrainUpdate,               // newTerrain heightmap (or null if unchanged)
+ *       totalDamage,                 // sum of damage applied
+ *       eliminations,                // [tgIdString, ...] eliminated this shot
+ *       nextTurn,                    // String(next current player tgId) or null if settled
+ *       hp,                          // { tgIdString: hp } full map after this shot
+ *       alive,                       // { tgIdString: bool } full map after this shot
+ *       currentPlayerIndex,
+ *       windAfter,                   // wind regenerated for the next turn
+ *       matchState,                  // 'active' | 'settled' (if settled, no nextTurn)
+ *     }
+ *   }
+ *
+ * This shape is a deliberate superset of the 1v1 `turnResult` payload —
+ * the same fields the existing Phaser MainScene uses to animate
+ * trajectory + apply damage + update terrain. Group-chat's socket
+ * adapter (socket-io/groupchat.js fireGroupShot) translates it into
+ * a turnResult-compatible shape so MainScene can run unchanged.
+ *
  * @param {string} matchId
  * @param {number} firerTgId - Telegram user id of the firer
  * @param {object} shot - { angle, power, weaponId }
- * @returns {object} - { ok: bool, error?: string, summary?: string }
  */
 export async function handleShot(matchId, firerTgId, shot) {
     const match = await GroupMatch.findOne({ matchId });
@@ -360,21 +386,62 @@ export async function handleShot(matchId, firerTgId, shot) {
     firer.consecutiveMissedTurns = 0;
 
     // Persist updated terrain
-    if (result.newTerrain) match.terrainSnapshot = result.newTerrain;
+    const terrainChanged = !!result.newTerrain;
+    if (terrainChanged) match.terrainSnapshot = result.newTerrain;
 
     await match.save();
 
     // Post shot summary to chat
     await postShotSummary(match, firer, weapon, totalDamage, eliminatedThisShot);
 
+    // Build the partial shotData payload — common to settled + active outcomes.
+    // Damage map keys are already String(tgId) per physics.processShot input.
+    const buildHpMap = () => Object.fromEntries(match.players.map(p => [String(p.telegramUserId), p.hp]));
+    const buildAliveMap = () => Object.fromEntries(match.players.map(p => [String(p.telegramUserId), !p.eliminated]));
+
+    const shotDataBase = {
+        playerId: String(firerTgId),
+        weaponId: shot.weaponId,
+        trajectory: result.trajectory || [],
+        impact: result.impact || null,
+        damage: result.damage || {},
+        // Echo the new terrain only if it changed — saves bandwidth on misses
+        terrainUpdate: terrainChanged ? match.terrainSnapshot : null,
+        totalDamage,
+        eliminations: eliminatedThisShot.map(p => String(p.telegramUserId)),
+        hp: buildHpMap(),
+        alive: buildAliveMap(),
+    };
+
     // Check win condition before advancing
-    if (await checkAndSettle(match)) return { ok: true };
+    if (await checkAndSettle(match)) {
+        return {
+            ok: true,
+            shotData: {
+                ...shotDataBase,
+                nextTurn: null,
+                currentPlayerIndex: match.currentPlayerIndex,
+                windAfter: match.wind,
+                matchState: 'settled',
+            },
+        };
+    }
 
     // Advance to next alive player + new wind
     match.wind = generateWind();
     await advanceTurn(match);
 
-    return { ok: true };
+    const nextPlayer = match.players[match.currentPlayerIndex];
+    return {
+        ok: true,
+        shotData: {
+            ...shotDataBase,
+            nextTurn: nextPlayer ? String(nextPlayer.telegramUserId) : null,
+            currentPlayerIndex: match.currentPlayerIndex,
+            windAfter: match.wind,
+            matchState: 'active',
+        },
+    };
 }
 
 /**

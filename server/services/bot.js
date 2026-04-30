@@ -88,11 +88,76 @@ function registerCommands(bot) {
     );
   });
 
+  // Unified /play mode-picker — surfaces all match types in one place,
+  // honoring the "same game, different pacing" principle. Each option is
+  // the SAME core game (same Phaser scene, same physics, same career
+  // stats) — players just pick the pacing that fits their moment.
   bot.command('play', async (ctx) => {
+    const isGroup = ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
+
+    if (isGroup) {
+      // In a group chat → pitch group-chat mode + show the standalone options
+      await ctx.reply(
+        '🎯 SolShot — pick your pacing:\n\n' +
+        '• Group chat (this group): /customgame to set up an async multi-day match. Up to 10 players, single life, fire one shot per turn.\n' +
+        '• 1v1 fast (DM the bot): tap below to open the Mini App lobby — practice or wagered.',
+        {
+          reply_markup: {
+            inline_keyboard: [[
+              { text: '🤝 Set up group match', callback_data: 'play_pick_group' },
+              { text: '🎯 1v1 fast', url: `${MINI_APP_URL}?startapp=play` },
+            ]],
+          },
+        }
+      );
+      return;
+    }
+
+    // DM context → full mode picker. Same buttons regardless of user state.
     await ctx.reply(
-      'Find a match in the lobby — practice mode is free.',
-      { reply_markup: launchKeyboard('Find Match', 'play') }
+      '🎯 SolShot — pick your pacing:\n\n' +
+      '• 1v1 Quick: real-time match in the lobby (practice or wagered).\n' +
+      '• vs Shot Bot: solo offline practice — no opponent needed.\n' +
+      '• Challenge a friend: create a shareable 1v1 link with your terms.\n' +
+      '• Group chat: async multi-day match in any TG group with @SolShotGG_bot — up to 10 players.',
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '⚡ 1v1 Quick',          url: `${MINI_APP_URL}?startapp=play` }],
+            [{ text: '🤖 vs Shot Bot',        url: `${MINI_APP_URL}?startapp=ai-practice` }],
+            [{ text: '⚔ Challenge a Friend', url: `${MINI_APP_URL}?startapp=challenge_new` }],
+            [{ text: '👥 Group chat (info)',  callback_data: 'play_pick_group' }],
+          ],
+        },
+      }
     );
+  });
+
+  // Callback for when a user taps "Group chat" in the /play mode picker.
+  // Show a short explainer; group-chat is set up via /customgame in a TG
+  // group, so we can't directly start one from a DM.
+  bot.action('play_pick_group', async (ctx) => {
+    try {
+      await ctx.answerCbQuery();
+      const isGroup = ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
+      if (isGroup) {
+        await ctx.reply(
+          '👥 Group chat mode — type /customgame here. Host configures match (free or wagered, 2-10 players, duration), card posts to chat, players join, host starts. Take turns over the next 12h–7d depending on settings.',
+          { parse_mode: undefined }
+        );
+      } else {
+        await ctx.reply(
+          '👥 Group chat mode runs inside a Telegram group, not in DMs:\n\n' +
+          '1. Add @SolShotGG_bot to a group with friends\n' +
+          '2. In the group, type /customgame\n' +
+          '3. Host configures match settings, friends tap Join\n' +
+          '4. Take turns over 12h to 7 days — fire from the Mini App\n\n' +
+          'Same game as 1v1, just a longer-form pacing.'
+        );
+      }
+    } catch (err) {
+      console.warn('[bot:/play group picker] error:', err.message);
+    }
   });
 
   bot.command('challenge', async (ctx) => {

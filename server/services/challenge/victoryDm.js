@@ -187,3 +187,121 @@ export async function dispatchVictoryDm({ ms, room, winnerId, roomId, getAuthent
         console.warn('[Trophy] sendPhoto failed:', err.message);
     }
 }
+
+// ─── Group-chat winner DM ───────────────────────────────────────────────
+
+/**
+ * Build trophy card props from a GroupMatch document.
+ *
+ * Group-chat tracks fewer per-player stats than 1v1 (no shotsFired count,
+ * no per-weapon damage breakdown in v1). Mappings:
+ *   - winner.callsign  → match winner's callsign
+ *   - winner.damage    → match winner's damageDealt (lifetime in this match)
+ *   - winner.accuracy  → 0 (group-chat doesn't track shot count v1)
+ *   - winner.shots     → match winner's kills (proxy until shot tracking lands)
+ *   - winner.best      → STANDARD (group-chat v1 only allows Single Shot)
+ *   - loser.callsign   → 2nd-place finisher's callsign (or "FIELD" if N>2)
+ *   - score            → "1ST OF N" placement string
+ *   - terrain          → biome name from match.backgroundIndex
+ *   - duration         → match.endsAt - match.startedAt (real wall-clock)
+ */
+function buildGroupTrophyProps(match) {
+    const ranked = match.rankedFinishers || [];
+    const winnerTgId = ranked[0];
+    const winner = match.players?.find(p => p.telegramUserId === winnerTgId);
+    const runnerUpTgId = ranked[1] || null;
+    const runnerUp = runnerUpTgId ? match.players?.find(p => p.telegramUserId === runnerUpTgId) : null;
+
+    const winnerCallsign = (winner?.callsign || winner?.tgUsername || 'OPERATIVE').toUpperCase().slice(0, 12);
+    const loserCallsign = match.players?.length > 2
+        ? `${match.players.length - 1} OTHERS`.slice(0, 12)
+        : (runnerUp?.callsign || runnerUp?.tgUsername || 'UNKNOWN').toUpperCase().slice(0, 12);
+
+    // Use the existing biome map. Group-chat stores the index on the match
+    // doc directly (added in a5ba266), no `room` indirection.
+    const biomeIdx = match.backgroundIndex ?? 0;
+    const BIOME_NAMES = ['JUNGLE', 'ARCTIC', 'DESERT', 'MOON', 'VOLCANIC', 'JUNGLE'];
+    const terrain = BIOME_NAMES[biomeIdx] || 'BATTLEFIELD';
+
+    // Duration: from started→settled
+    let duration = '—:—';
+    if (match.startedAt && match.settledAt) {
+        const elapsedMs = new Date(match.settledAt).getTime() - new Date(match.startedAt).getTime();
+        if (elapsedMs > 0) {
+            const totalMin = Math.floor(elapsedMs / 60000);
+            const days = Math.floor(totalMin / (24 * 60));
+            const hours = Math.floor((totalMin % (24 * 60)) / 60);
+            const mins = totalMin % 60;
+            if (days > 0) duration = `${days}D ${hours}H`;
+            else if (hours > 0) duration = `${hours}H ${mins}M`;
+            else duration = `${mins}M`;
+        }
+    }
+
+    return {
+        winner: {
+            callsign: winnerCallsign,
+            damage: winner?.damageDealt || 0,
+            accuracy: 0,
+            shots: winner?.kills || 0, // proxy: kills until shot count is tracked
+            best: 'STANDARD', // v1 only allows Single Shot
+        },
+        loser: { callsign: loserCallsign },
+        score: `1ST OF ${match.players?.length || 0}`,
+        matchId: `M-#${(match.matchId || 'UNKNOWN').toString().slice(0, 8).toUpperCase()}`,
+        terrain,
+        duration,
+    };
+}
+
+/**
+ * Render + DM the trophy card to the group-chat match's winner.
+ *
+ * Same trophy card pipeline as 1v1 (same Satori render, same caption
+ * shape, same buttons) — the principle is "same game, different pacing,"
+ * so the win celebration is identical regardless of mode.
+ *
+ * Best-effort, fire-and-forget. Skipped silently if:
+ *   - bot not configured (no TELEGRAM_BOT_TOKEN)
+ *   - match has no ranked finishers (shouldn't happen post-settle)
+ *   - winner blocked the bot or never started a DM with it
+ *
+ * @param {object} match - The settled GroupMatch document
+ */
+export async function dispatchGroupVictoryDm(match) {
+    const bot = getBot();
+    if (!bot) return;
+    if (!match || match.state !== 'settled') return;
+
+    const winnerTgId = match.rankedFinishers?.[0];
+    if (!winnerTgId) return;
+
+    const props = buildGroupTrophyProps(match);
+
+    let png;
+    try {
+        png = await renderTrophyCardPng(props);
+    } catch (err) {
+        console.warn('[Trophy:group] render failed:', err.message);
+        return;
+    }
+
+    const playerCount = match.players?.length || 0;
+    const caption = playerCount > 2
+        ? `🏆 ${props.winner.callsign} — Victory locked in.\n1st of ${playerCount} in match ${props.matchId}.`
+        : `🏆 ${props.winner.callsign} — Victory locked in.\n${props.winner.callsign} defeated ${props.loser.callsign} in match ${props.matchId}.`;
+
+    try {
+        await bot.telegram.sendPhoto(winnerTgId, { source: png }, {
+            caption,
+            reply_markup: {
+                inline_keyboard: [[
+                    { text: '🎯 Play Again',     url: `${MINI_APP_URL}?startapp=play` },
+                    { text: 'My Games',          url: `${MINI_APP_URL}?startapp=mygames` },
+                ]],
+            },
+        });
+    } catch (err) {
+        console.warn('[Trophy:group] sendPhoto failed:', err.message);
+    }
+}

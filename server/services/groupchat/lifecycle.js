@@ -24,6 +24,7 @@ import * as scheduler from './scheduler.js';
 import * as botMessages from './botMessages.js';
 import { nextResumeTime } from './quietHours.js';
 import { getBot } from '../bot.js';
+import { dispatchGroupVictoryDm } from '../challenge/victoryDm.js';
 import { generateTerrain, generateTankPositions, generateWind, processShot, WEAPON_DATA } from '../physics.js';
 
 // NB: short_name is `play` on prod BotFather (per commit 910f88b — `solshot`
@@ -487,6 +488,15 @@ export async function settleMatch(match, reason) {
         await pushMatchHistory(match);
     } catch (err) {
         console.warn('[group-chat] pushMatchHistory failed:', err.message);
+    }
+
+    // Trophy DM to winner — same celebration as 1v1. The "same game, different
+    // pacing" principle: winning a group-chat match earns the same trophy
+    // card a 1v1 win does. Best-effort, fire-and-forget.
+    try {
+        await dispatchGroupVictoryDm(match);
+    } catch (err) {
+        console.warn('[group-chat] dispatchGroupVictoryDm failed:', err.message);
     }
 
     // Phase 2 hook: settlement tx for wagered matches goes here (escrow v2).

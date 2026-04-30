@@ -111,18 +111,32 @@ async function handleStartMatch(ctx) {
 
 async function handleCancelMatch(ctx) {
     if (!isGroupChat(ctx)) return;
-    const match = await findOpenLobby(ctx.chat.id);
-    if (!match) return ctx.reply('No open match in this chat.');
+    // Find any open (lobby OR active) match — host should be able to
+    // abandon a running match without waiting for it to settle naturally.
+    const match = await GroupMatch.findOne({
+        chatId: ctx.chat.id,
+        state: { $in: ['lobby', 'active'] },
+    });
+    if (!match) return ctx.reply('No open or active match in this chat.');
     if (match.hostTelegramId !== ctx.from.id) {
         return ctx.reply('Only the host can cancel the match.');
     }
 
+    const wasActive = match.state === 'active';
+
+    // If it was active, clear its scheduled turn timer so the scheduler
+    // doesn't try to fire idle penalties on a cancelled match.
+    if (wasActive) {
+        const { clearMatchTimer } = await import('./scheduler.js');
+        clearMatchTimer(match.matchId);
+    }
+
     match.state = 'cancelled';
     match.cancelledAt = new Date();
-    match.cancelReason = 'host_cancel';
+    match.cancelReason = wasActive ? 'host_cancel_active' : 'host_cancel';
     await match.save();
 
-    await ctx.reply(`🚫 Match #${match.matchId} cancelled by host.`);
+    await ctx.reply(`🚫 Match #${match.matchId} cancelled by host${wasActive ? ' (was in progress)' : ''}.`);
     if (match.lobbyMessageId) {
         await safeEdit(ctx, match.lobbyMessageId,
             `🚫 <b>Match #${match.matchId}</b> — cancelled by host.`,

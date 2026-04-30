@@ -25,6 +25,31 @@ import { registerGroupChatCommands } from './groupchat/index.js';
 const MINI_APP_URL = process.env.MINI_APP_URL || 'https://t.me/SolShotGG_bot/solshot';
 const WEBHOOK_PATH = '/api/telegram-webhook';
 
+/**
+ * Slash-command lists shown in Telegram's `/` autocomplete.
+ * Scoped so 1:1 chats see Mini-App-launching commands and groups
+ * see only the group-chat-mode commands (which don't work in 1:1
+ * anyway).
+ */
+const PRIVATE_COMMANDS = [
+  { command: 'play', description: 'Find a match' },
+  { command: 'challenge', description: 'Challenge a friend to a 1v1' },
+  { command: 'stats', description: 'Your record, rank, and earnings' },
+  { command: 'leaderboard', description: 'Top players this season' },
+  { command: 'wallet', description: 'Deposit, withdraw, balance' },
+  { command: 'shop', description: 'Buy cosmetics with SHOT' },
+  { command: 'prestige', description: 'Burn SHOT to climb tiers' },
+  { command: 'weapons', description: 'Browse the arsenal' },
+  { command: 'help', description: 'How SolShot works' },
+  { command: 'support', description: 'Contact the team' },
+];
+
+const GROUP_COMMANDS = [
+  { command: 'customgame', description: 'Create a group match' },
+  { command: 'startmatch', description: 'Start the open match (host only)' },
+  { command: 'cancelmatch', description: 'Cancel the open match (host only)' },
+];
+
 let bot = null;
 
 /**
@@ -47,7 +72,26 @@ export function initBot() {
     console.error(`[bot] error handling ${ctx?.updateType}:`, err);
   });
 
+  // Fire-and-forget: sync the command list to Telegram so they appear
+  // in the `/` autocomplete. Failures here are non-fatal.
+  syncCommands(bot).catch((err) => {
+    console.warn('[bot] failed to sync command list:', err.description || err.message);
+  });
+
   return bot;
+}
+
+/**
+ * Push the command lists to Telegram. Scoped: private chats see the
+ * Mini-App-launching commands, groups see the group-chat-mode commands.
+ *
+ * Safe to call multiple times (server restarts, code changes). Telegram
+ * deduplicates server-side.
+ */
+async function syncCommands(bot) {
+  await bot.telegram.setMyCommands(PRIVATE_COMMANDS, { scope: { type: 'all_private_chats' } });
+  await bot.telegram.setMyCommands(GROUP_COMMANDS, { scope: { type: 'all_group_chats' } });
+  console.log(`[bot] command list synced (${PRIVATE_COMMANDS.length} private, ${GROUP_COMMANDS.length} group)`);
 }
 
 /**

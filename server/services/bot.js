@@ -25,29 +25,6 @@ import { registerGroupChatCommands } from './groupchat/index.js';
 const MINI_APP_URL = process.env.MINI_APP_URL || 'https://t.me/SolShotGG_bot/solshot';
 const WEBHOOK_PATH = '/api/telegram-webhook';
 
-/**
- * Slash-command list shown in Telegram's `/` autocomplete.
- * Single combined list — shown in both 1:1 and group chats. Bot handlers
- * politely reject misuse (e.g. /customgame in 1:1 says "groups only").
- *
- * Group-mode commands at the top because they're the new, less-discovered
- * surface; existing Mini-App-launchers below.
- */
-const ALL_COMMANDS = [
-  { command: 'customgame', description: 'Create a group match (groups only)' },
-  { command: 'startmatch', description: 'Start the open match (host only, groups only)' },
-  { command: 'cancelmatch', description: 'Cancel the open match (host only, groups only)' },
-  { command: 'play', description: 'Find a match' },
-  { command: 'challenge', description: 'Challenge a friend to a 1v1' },
-  { command: 'stats', description: 'Your record, rank, and earnings' },
-  { command: 'leaderboard', description: 'Top players this season' },
-  { command: 'wallet', description: 'Deposit, withdraw, balance' },
-  { command: 'shop', description: 'Buy cosmetics with SHOT' },
-  { command: 'prestige', description: 'Burn SHOT to climb tiers' },
-  { command: 'weapons', description: 'Browse the arsenal' },
-  { command: 'help', description: 'How SolShot works' },
-  { command: 'support', description: 'Contact the team' },
-];
 
 let bot = null;
 
@@ -71,32 +48,7 @@ export function initBot() {
     console.error(`[bot] error handling ${ctx?.updateType}:`, err);
   });
 
-  // Fire-and-forget: sync the command list to Telegram so they appear
-  // in the `/` autocomplete. Failures here are non-fatal.
-  syncCommands(bot).catch((err) => {
-    console.warn('[bot] failed to sync command list:', err.description || err.message);
-  });
-
   return bot;
-}
-
-/**
- * Push the command list to Telegram. Single global list shown in all
- * chat types. Also explicitly clears any previous scoped lists so the
- * default list takes precedence (Telegram resolves commands in scope
- * priority: chat > all_groups > all_private > default).
- *
- * Safe to call multiple times (server restarts, code changes). Telegram
- * deduplicates server-side.
- */
-async function syncCommands(bot) {
-  // Set the global default — this is what shows in all chats unless overridden.
-  await bot.telegram.setMyCommands(ALL_COMMANDS);
-  // Clear any per-scope overrides from previous deploys (e.g. an earlier
-  // version that scoped commands per chat type).
-  await bot.telegram.deleteMyCommands({ scope: { type: 'all_private_chats' } }).catch(() => {});
-  await bot.telegram.deleteMyCommands({ scope: { type: 'all_group_chats' } }).catch(() => {});
-  console.log(`[bot] command list synced (${ALL_COMMANDS.length} commands, all scopes)`);
 }
 
 /**

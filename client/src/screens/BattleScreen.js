@@ -7,6 +7,7 @@ import useIsMobile from '../hooks/useIsMobile';
 import BattleHUD from './battle/BattleHUD';
 import ExitMenu from './battle/ExitMenu';
 import Modal from '../components/Modal';
+import TutorialOverlay from '../components/TutorialOverlay';
 import { useSolShotWallet } from '../wallet/WalletContext';
 import { haptic } from '../utils/haptic';
 
@@ -376,6 +377,10 @@ function BattleScreen({ navigate, screenData }) {
           onForfeit={() => setShowExit(true)}
         />
       )}
+
+      {/* First-match tutorial briefing — auto-dismisses after seen once,
+          persisted in localStorage. No-op on subsequent matches. */}
+      {phaserReady && <TutorialOverlay storageKey="solshot.tutorial.battle" />}
 
       {/* Exit Menu */}
       {showExit && (

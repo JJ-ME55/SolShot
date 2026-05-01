@@ -43,6 +43,7 @@ import { startBattle, destroyBattle } from '../bridge/PhaserBootstrap';
 import useGameState from '../hooks/useGameState';
 import { useTelegram } from '../telegram/TelegramContext';
 import BattleHUD from './battle/BattleHUD';
+import TutorialOverlay from '../components/TutorialOverlay';
 
 /** Build the sceneData payload MainScene expects, from a GroupMatch. */
 function buildSceneData(match, myTgId) {
@@ -257,6 +258,10 @@ export default function GroupBattleWrapper({ match, onMatchUpdate, fillMode = fa
                     gameMode="group-chat"
                 />
             )}
+            {/* First-match tutorial — group-chat shares the same battle
+                vocabulary, so we use the same tutorial briefing. Once
+                seen on either entry point, never shown again. */}
+            {phaserReady && <TutorialOverlay storageKey="solshot.tutorial.battle" />}
         </div>
     );
 }

@@ -19,6 +19,7 @@ import { useTelegram } from '../telegram/TelegramContext';
 import BattlefieldPreview from '../components/BattlefieldPreview';
 import ShopScreen from './ShopScreen';
 import { EmptyState, ErrorState, SkeletonRow } from '../components/EmptyStates';
+import TrophyShareOverlay from '../components/TrophyShareOverlay';
 
 // Lazy-load the Phaser wrapper — pulls in MainScene + Phaser, ~1MB bundle.
 // Only loaded when a player has an active match they're watching.
@@ -275,7 +276,7 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
                     onAimChange={setAim}
                 />
             )}
-            {match.state === 'settled' && <SettledFooter match={match} />}
+            {match.state === 'settled' && <SettledFooter match={match} myTgId={myTgId} />}
         </div>
     );
 }
@@ -497,7 +498,8 @@ function FireControls({ onFire, firing, fireError, match, onAimChange }) {
  * trajectory snapshot (which always showed the LAST shot — often a miss —
  * making it read as if that were the winning strike).
  */
-function SettledFooter({ match }) {
+function SettledFooter({ match, myTgId }) {
+    const [showShare, setShowShare] = useState(false);
     const ranked = match.rankedFinishers || [];
     const players = match.players || [];
     // Resolve in finishing order. Anyone not in rankedFinishers (shouldn't
@@ -588,6 +590,71 @@ function SettledFooter({ match }) {
                     );
                 })}
             </div>
+
+            {/* Share Result button — opens TrophyShareOverlay with the
+                trophy card snapshot. Works for any viewer (winner gets
+                their own celebration; non-winners get a "I survived to
+                Nth" share). */}
+            <button
+                onClick={() => setShowShare(true)}
+                style={{
+                    marginTop: 16,
+                    width: '100%',
+                    padding: '14px',
+                    background: 'var(--accent)',
+                    color: 'var(--bg-deep)',
+                    border: '1px solid var(--accent-hot)',
+                    clipPath: 'var(--clip-10)',
+                    fontFamily: 'var(--f-display)',
+                    fontSize: 13,
+                    letterSpacing: '0.2em',
+                    cursor: 'pointer',
+                    textTransform: 'uppercase',
+                    boxShadow: '0 0 18px rgba(218,138,40,0.22)',
+                }}
+            >
+                ◆ SHARE RESULT
+            </button>
+
+            {showShare && (() => {
+                // Build TrophyShareOverlay props from the match. Viewer's
+                // result determines the win/lose framing.
+                const me = players.find(p => p.telegramUserId === myTgId);
+                const myPlacement = me ? podium.findIndex(p => p === me) + 1 : 0;
+                const isMyWin = myPlacement === 1;
+                const opponentLabel = players.length > 2
+                    ? `${players.length - 1} OTHERS`.slice(0, 12)
+                    : (callsignOf(podium[1]) || 'UNKNOWN').toUpperCase().slice(0, 12);
+                const winnerProps = winner ? {
+                    callsign: callsignOf(winner).toUpperCase().slice(0, 12),
+                    damage: winner.damageDealt || 0,
+                    accuracy: winner.shotsFired > 0
+                        ? Math.round(((winner.shotsHit || 0) / winner.shotsFired) * 100)
+                        : 0,
+                    shots: winner.shotsFired || 0,
+                    best: 'ARSENAL',
+                } : null;
+                const BIOMES = ['JUNGLE', 'ARCTIC', 'DESERT', 'MOON', 'VOLCANIC', 'JUNGLE'];
+                const terrain = BIOMES[match.backgroundIndex ?? 0] || 'BATTLEFIELD';
+                const duration = realDurationMin
+                    ? (realDurationMin >= 60
+                        ? `${Math.floor(realDurationMin / 60)}H ${realDurationMin % 60}M`
+                        : `${realDurationMin}M`)
+                    : '—:—';
+
+                return (
+                    <TrophyShareOverlay
+                        isWin={isMyWin}
+                        winner={winnerProps}
+                        loser={{ callsign: opponentLabel }}
+                        score={`${myPlacement || '?'} OF ${players.length}`}
+                        matchId={match.matchId}
+                        terrain={terrain}
+                        duration={duration}
+                        onClose={() => setShowShare(false)}
+                    />
+                );
+            })()}
         </div>
     );
 }

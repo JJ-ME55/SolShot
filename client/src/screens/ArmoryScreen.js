@@ -185,12 +185,56 @@ function ArmoryScreen({ navigate }) {
                   <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color, letterSpacing: '0.22em' }}>{sel.tier} · {sel.type}</div>
                   <div style={{ fontFamily: 'var(--f-display)', fontSize: 22, color: 'var(--bone)', lineHeight: 1, marginTop: 4, letterSpacing: '0.06em' }}>{sel.name}</div>
 
-                  <div style={{ height: 140, margin: '16px 0', background: 'var(--bg-deep)', border: '1px dashed var(--muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {/* Cosmetic preview — subtle idle animation: turret
+                      sweeps slowly L↔R (tank-feel), accent scanline sweeps
+                      across the chassis (tactical-readout feel). Both
+                      respect prefers-reduced-motion. */}
+                  <div style={{
+                    height: 140, margin: '16px 0',
+                    background: 'var(--bg-deep)',
+                    border: '1px dashed var(--muted)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    position: 'relative', overflow: 'hidden',
+                  }}>
+                    <style>{`
+                      @keyframes armory-sweep {
+                        0%   { transform: translateX(-100%); opacity: 0; }
+                        50%  { opacity: 0.6; }
+                        100% { transform: translateX(220%); opacity: 0; }
+                      }
+                      @keyframes armory-turret {
+                        0%, 100% { transform: rotate(-6deg); }
+                        50%      { transform: rotate(6deg); }
+                      }
+                      @media (prefers-reduced-motion: reduce) {
+                        .armory-sweep, .armory-turret { animation: none !important; }
+                      }
+                    `}</style>
+                    {/* Scanline */}
+                    <div className="armory-sweep" style={{
+                      position: 'absolute',
+                      top: 0, bottom: 0, left: 0,
+                      width: '40%',
+                      background: `linear-gradient(90deg, transparent, ${color}33, transparent)`,
+                      animation: 'armory-sweep 4s ease-in-out infinite',
+                      pointerEvents: 'none',
+                    }} />
                     <svg width="120" height="70" viewBox="0 0 120 70">
                       <rect x="20" y="34" width="70" height="14" fill={color} />
-                      <rect x="38" y="24" width="24" height="12" fill={color} />
-                      <rect x="62" y="28" width="30" height="4" fill={color} />
-                      <rect x="15" y="48" width="80" height="4" fill="#0e1209" />
+                      {/* Turret + barrel as a transformable group — sweeps idly.
+                          transform-origin ~at the turret pivot point. */}
+                      <g
+                        className="armory-turret"
+                        style={{
+                          transformOrigin: '50px 36px',
+                          transformBox: 'fill-box',
+                          animation: 'armory-turret 3.6s ease-in-out infinite',
+                        }}
+                      >
+                        <rect x="38" y="24" width="24" height="12" fill={color} />
+                        <rect x="62" y="28" width="30" height="4" fill={color} />
+                      </g>
+                      <rect x="15" y="48" width="80" height="4" fill="var(--bg-deep)" />
                     </svg>
                   </div>
 

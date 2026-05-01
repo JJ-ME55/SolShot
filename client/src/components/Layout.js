@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTelegram } from '../telegram/TelegramContext';
+import { TxToastHost } from './TxToast';
 
 /* dApp browser detection banner — shown when wallet-injected mobile browser locks portrait */
 function DAppBrowserBanner() {
@@ -157,6 +158,9 @@ function Layout({ children }) {
           {children}
         </div>
       </div>
+      {/* Global toast host — listens for `solshot:toast` window events
+          so any screen can fire showToast(...) without prop drilling. */}
+      <TxToastHost />
     </>
   );
 }

@@ -11,24 +11,36 @@
    (Shared across all themes; overridden below)
    ============================================ */
 :root {
-  /* ── Legacy short-hand palette (kept for backward compat) ── */
-  --ol: #3d4a2f;   /* Olive Line — borders, dividers         */
-  --od: #2a331f;   /* Olive Dark — card bg, input fields     */
-  --kh: #b8a88a;   /* Khaki — secondary text, labels         */
-  --ru: #c4510a;   /* Rust — primary button gradient base    */
-  --rg: #ff6b1a;   /* Range Orange — accent hover            */
-  --am: #ffb627;   /* Amber — gold/currency, rare tier       */
-  --ad: #a67b1a;   /* Amber Dark — gold gradient dark end    */
-  --st: #6b7b8d;   /* Steel — tactical tier, inactive        */
-  --sd: #3a4550;   /* Steel Dark — tank base, structural     */
-  --bn: #e8dcc8;   /* Bone — primary text, headings          */
-  --mu: #5c4a3a;   /* Mud — text shadows, deep accents       */
-  --bk: #0a0c08;   /* Black Ops — page background            */
-  --gg: #7fff44;   /* Go Green — victory, health, positive   */
-  --rd: #cc2200;   /* Red Alert — defeat, damage, danger     */
-  --sp: #9945FF;   /* Sol Purple — epic tier, prestige       */
-  --sg: #14F195;   /* Sol Green — SOL balance, pot display   */
-  --gd: #ffd700;   /* Gold — currency values, shop prices    */
+  /* ── Legacy short-hand palette ──
+     Aliased to design-system tokens below so screens still using
+     `var(--rg)` / `var(--kh)` / `var(--od)` etc. (LobbyScreen, TopBar,
+     HowToPlayScreen, AIPracticeScreen, PrivacyScreen, TermsScreen) snap
+     to the field-manual aesthetic without per-screen rewrites. The
+     comments preserve the original-intent mapping for future cleanup.
+
+     Aliasing happens AFTER design-system tokens are defined so the
+     var() chain resolves correctly.
+
+     Originally hard-coded values:
+       --ol: #3d4a2f  (Olive Line)        → --border
+       --od: #2a331f  (Olive Dark)        → --bg-raised
+       --kh: #b8a88a  (Khaki)             → --olive
+       --ru: #c4510a  (Rust)              → --rust
+       --rg: #ff6b1a  (Range Orange)      → --accent-hot
+       --am: #ffb627  (Amber)             → --accent
+       --ad: #a67b1a  (Amber Dark)        → --rust
+       --st: #6b7b8d  (Steel)             → --olive
+       --sd: #3a4550  (Steel Dark)        → --bg-raised
+       --bn: #e8dcc8  (Bone)              → --bone
+       --mu: #5c4a3a  (Mud)               → --muted
+       --bk: #0a0c08  (Black Ops)         → --bg-deep
+       --rd: #cc2200  (Red Alert)         → --red
+
+     Kept as-is (no design-system equivalent — semantic colors): */
+  --gg: #7fff44;   /* Go Green — victory, health positive   */
+  --sp: #9945FF;   /* Sol Purple — prestige tier accent     */
+  --sg: #14F195;   /* Sol Green — SOL token brand color     */
+  --gd: #ffd700;   /* Gold — currency value highlight       */
 
   /* ── Design-system semantic tokens (matching design reference) ── */
   --bg-deep:     #0e1209;
@@ -65,6 +77,53 @@
 
   /* ── Vignette ── */
   --vignette: radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.55) 100%);
+
+  /* ── Legacy palette aliases (point at design tokens) ──
+     Defined AFTER design tokens so var() resolves through the chain.
+     Override any of these in a theme block to retune. */
+  --ol: var(--border);          /* Olive Line → border */
+  --od: var(--bg-raised);       /* Olive Dark → raised surface */
+  --kh: var(--olive);           /* Khaki → secondary text */
+  --ru: var(--rust);            /* Rust passthrough */
+  --rg: var(--accent-hot);      /* Range Orange → hover accent */
+  --am: var(--accent);          /* Amber → primary accent */
+  --ad: var(--rust);            /* Amber Dark → rust */
+  --st: var(--olive);           /* Steel → olive */
+  --sd: var(--bg-raised);       /* Steel Dark → raised surface */
+  --bn: var(--bone);            /* Bone passthrough */
+  --mu: var(--muted);           /* Mud → muted */
+  --bk: var(--bg-deep);         /* Black Ops → deep bg */
+  --rd: var(--red);             /* Red Alert → red */
+
+  /* ── Telegram Mini App chrome buffers ──
+     The TG webview overlays liquid-glass back/X buttons at the top
+     corners of the viewport. Their hit areas + visual weight are
+     ~44px wide × ~36px tall on each side. These tokens give every
+     screen a consistent "don't put critical UI here" reserve.
+
+     Usage:
+       padding: var(--tg-chrome-top) var(--tg-chrome-side) 0;
+     Or for absolute-positioned top bars:
+       top:   max(8px, var(--tg-chrome-top));
+       left:  var(--tg-chrome-side);
+       right: var(--tg-chrome-side);
+
+     Combined with iPhone safe-area-inset-* via max() so a notch on
+     the side adds to the chrome reserve, not replaces it. Mobile gets
+     a slightly tighter reserve since the chrome buttons themselves
+     scale down. */
+  --tg-chrome-top:     max(10px, env(safe-area-inset-top, 0px));
+  --tg-chrome-bottom:  max(10px, env(safe-area-inset-bottom, 0px));
+  --tg-chrome-side:    max(56px, calc(env(safe-area-inset-left, 0px) + 56px));
+  --tg-chrome-side-mb: max(48px, calc(env(safe-area-inset-left, 0px) + 48px));
+}
+
+/* Mobile narrows the chrome side reserve since TG's back/X buttons
+   themselves render slightly smaller on phones. */
+@media (max-width: 600px) {
+  :root {
+    --tg-chrome-side:    var(--tg-chrome-side-mb);
+  }
 }
 
 /* ============================================
@@ -101,13 +160,8 @@
   --muted:       #2a3e1c;
   --scan-opacity:  0.22;
   --grain-opacity: 0.05;
-
-  /* Legacy token sync for CRT */
-  --am:  #e8a430;
-  --ad:  #c07820;
-  --bn:  #b8d0a0;
-  --rg:  #ffb840;
-  --bk:  #050a04;
+  /* Legacy token aliases inherit from :root via design tokens above —
+     no need to redefine --am/--ad/--bn/--rg/--bk per theme any more. */
 }
 
 /* ============================================

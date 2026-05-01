@@ -339,14 +339,16 @@ function PlayerRow({ player, index, isCurrent, isMe, matchState }) {
     // 250 max HP matches the 1v1 rebalance and the GroupMatch schema default.
     const HP_MAX = 250;
     const hpPct = Math.max(0, Math.min(100, (player.hp / HP_MAX) * 100));
-    const hpColor = player.eliminated ? '#5a1e0a'
-        : hpPct <= 30 ? '#a83a1f'
-        : hpPct <= 60 ? '#c4a65d'
-        : '#7a9060';
+    // Map HP-band colors to design tokens. var(--rust) for KIA, var(--red)
+    // for critical, var(--bone) for caution band, var(--olive) for healthy.
+    const hpColor = player.eliminated ? 'var(--rust)'
+        : hpPct <= 30 ? 'var(--red)'
+        : hpPct <= 60 ? 'var(--bone)'
+        : 'var(--olive)';
     return (
         <div style={{
             ...styles.playerRow,
-            border: isCurrent ? '1px solid #ff7a1a' : '1px solid rgba(196,166,93,0.2)',
+            border: isCurrent ? '1px solid var(--accent)' : '1px solid var(--border)',
             opacity: player.eliminated ? 0.45 : 1,
         }}>
             <div style={styles.playerLeft}>
@@ -495,10 +497,16 @@ function SettledFooter({ match }) {
 
     const callsignOf = (p) =>
         p?.tgUsername ? `@${p.tgUsername}` : (p?.callsign || 'unknown');
+    // Falls back to a token-resolved bone color when tank hasn't been
+    // assigned a phaserHex. Computed via getComputedStyle so the value
+    // tracks the active theme.
+    const fallbackTankColor = (typeof window !== 'undefined'
+        ? getComputedStyle(document.documentElement).getPropertyValue('--bone').trim()
+        : '') || '#c8b87a';
     const colorOf = (p) =>
         typeof p?.tankColor === 'number'
             ? '#' + p.tankColor.toString(16).padStart(6, '0')
-            : '#c8a84a';
+            : fallbackTankColor;
 
     return (
         <div style={aar.wrap}>
@@ -607,12 +615,12 @@ const aar = {
     },
     winnerW: {
         fontFamily: "'Black Ops One', cursive",
-        fontSize: 56, color: '#0e1209', lineHeight: 0.8, flexShrink: 0,
+        fontSize: 56, color: 'var(--bg-deep)', lineHeight: 0.8, flexShrink: 0,
     },
     winnerInner: { flex: 1, minWidth: 0 },
     winnerLabel: {
         fontFamily: "'Share Tech Mono', monospace",
-        fontSize: 9, color: '#0e1209', letterSpacing: '0.3em', opacity: 0.7,
+        fontSize: 9, color: 'var(--bg-deep)', letterSpacing: '0.3em', opacity: 0.7,
     },
     winnerCallsign: {
         fontFamily: "'Black Ops One', cursive",
@@ -624,7 +632,7 @@ const aar = {
     },
     winnerStats: {
         fontFamily: "'Share Tech Mono', monospace",
-        fontSize: 10, color: '#0e1209', letterSpacing: '0.18em',
+        fontSize: 10, color: 'var(--bg-deep)', letterSpacing: '0.18em',
         marginTop: 4, opacity: 0.85,
     },
     podiumLabel: {
@@ -853,7 +861,7 @@ const styles = {
     error: {
         textAlign: 'center',
         padding: 60,
-        color: '#ff8862',
+        color: 'var(--red)',
         fontSize: 14,
     },
     header: {
@@ -960,7 +968,7 @@ const styles = {
     elimBadge: {
         fontSize: 9,
         letterSpacing: '0.25em',
-        color: '#ff8862',
+        color: 'var(--red)',
         background: 'rgba(168,58,31,0.15)',
         padding: '2px 8px',
     },
@@ -1055,7 +1063,7 @@ const styles = {
         padding: '8px 12px',
         background: 'rgba(168,58,31,0.15)',
         border: '1px solid rgba(168,58,31,0.4)',
-        color: '#ff8862',
+        color: 'var(--red)',
         fontSize: 12,
     },
 };

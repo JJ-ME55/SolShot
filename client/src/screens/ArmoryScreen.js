@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import ScreenHeader from '../components/design/ScreenHeader';
 import TerrainSilhouette from '../components/design/Terrain';
 import { COSMETIC_ITEMS, TIER_COLORS } from '../data/tiers';
+import { EmptyState } from '../components/EmptyStates';
 
 const ICON_MAP = { PATTERN: '#', TRAIL: '~', BLAST: '*', SKIN: '^', KILL: '!' };
 
@@ -112,8 +113,23 @@ function ArmoryScreen({ navigate }) {
           {/* Item list */}
           <div>
             {items.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: 40, fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--muted)', letterSpacing: '0.22em' }}>
-                {tab === 'SOL' ? 'SOL COSMETICS — COMING SOON' : 'NO ITEMS'}
+              /* Empty: SOL tab is genuinely 'coming soon', SHOT tab
+                 should never be empty in production but defensive. */
+              <div style={{ position: 'relative', minHeight: 280 }}>
+                {tab === 'SOL' ? (
+                  <EmptyState
+                    icon="lock"
+                    title="SOL SHOP — COMING SOON"
+                    body="DIRECT SOL COSMETIC PURCHASES OPEN AFTER PHASE 2. UNTIL THEN: $SHOT BURNS UNLOCK COSMETICS VIA PRESTIGE."
+                    primaryCTA={{ label: 'OPEN $SHOT TAB', onClick: () => setTab('SHOT') }}
+                  />
+                ) : (
+                  <EmptyState
+                    icon="crate"
+                    title="LOCKER EMPTY"
+                    body="NO COSMETICS AVAILABLE. CATALOG MAY BE LOADING."
+                  />
+                )}
               </div>
             ) : items.map(it => {
               const color = TIER_COLORS[it.tier] || 'var(--olive)';

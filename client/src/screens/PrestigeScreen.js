@@ -128,21 +128,63 @@ function PrestigeScreen({ navigate }) {
               letterSpacing: '0.15em', marginBottom: 14, textTransform: 'uppercase',
             }}>{currentPrestige.name}</div>
 
-            {nextTier && (
-              <>
-                <div style={{
-                  padding: '10px 18px',
-                  background: `rgba(${hexToRgb(nextTier.color)}, 0.12)`,
-                  border: `1px solid ${nextTier.color}`,
-                  clipPath: 'var(--clip-6)',
-                  fontFamily: 'var(--f-display)', fontSize: 13, letterSpacing: '0.18em',
-                  color: nextTier.color,
-                }}>◆ {nextTier.cost.toLocaleString()} SHOT</div>
-                <div style={{ fontFamily: 'var(--f-mono)', fontSize: 9, color: 'var(--muted)', letterSpacing: '0.22em', marginTop: 8 }}>
-                  NEXT: {nextTier.name.toUpperCase()}
-                </div>
-              </>
-            )}
+            {nextTier && (() => {
+              // Progress visual: how close are they to the burn cost?
+              // Caps at 100% even if balance > cost (so the bar pegs
+              // when canBurn is true).
+              const progressPct = Math.max(0, Math.min(100, (shotBalance / nextTier.cost) * 100));
+              const insufficient = shotBalance < nextTier.cost;
+              const remaining = Math.max(0, nextTier.cost - shotBalance);
+              return (
+                <>
+                  <div style={{
+                    padding: '10px 18px',
+                    background: `rgba(${hexToRgb(nextTier.color)}, 0.12)`,
+                    border: `1px solid ${nextTier.color}`,
+                    clipPath: 'var(--clip-6)',
+                    fontFamily: 'var(--f-display)', fontSize: 13, letterSpacing: '0.18em',
+                    color: nextTier.color,
+                  }}>◆ {nextTier.cost.toLocaleString()} SHOT</div>
+                  <div style={{ fontFamily: 'var(--f-mono)', fontSize: 9, color: 'var(--muted)', letterSpacing: '0.22em', marginTop: 8 }}>
+                    NEXT: {nextTier.name.toUpperCase()}
+                  </div>
+
+                  {/* Progress bar — visualizes shotBalance / nextTier.cost.
+                      Pegs at 100% when burnable. Helps players see how
+                      close they are to the next burn instead of a flat
+                      'insufficient' message. */}
+                  <div style={{
+                    marginTop: 12,
+                    width: 180,
+                    height: 6,
+                    background: 'var(--bg-deep)',
+                    border: '1px solid var(--border)',
+                    position: 'relative',
+                    overflow: 'hidden',
+                  }}>
+                    <div style={{
+                      position: 'absolute',
+                      left: 0, top: 0, bottom: 0,
+                      width: `${progressPct}%`,
+                      background: nextTier.color,
+                      transition: 'width 0.3s ease-out',
+                    }} />
+                  </div>
+                  <div style={{
+                    fontFamily: 'var(--f-mono)',
+                    fontSize: 9,
+                    color: insufficient ? 'var(--muted)' : nextTier.color,
+                    letterSpacing: '0.18em',
+                    marginTop: 4,
+                    textTransform: 'uppercase',
+                  }}>
+                    {insufficient
+                      ? `${shotBalance.toLocaleString()} / ${nextTier.cost.toLocaleString()} · ${remaining.toLocaleString()} TO GO`
+                      : 'READY TO BURN'}
+                  </div>
+                </>
+              );
+            })()}
 
             <button
               onClick={handleBurn}
@@ -180,6 +222,17 @@ function PrestigeScreen({ navigate }) {
             }}>
               Prestige burns $SHOT for permanent rank, unlocks a signature weapon, and stamps your callsign across the leaderboards.
             </div>
+
+            {/* Earn-more hint when insufficient — field-manual comment style. */}
+            {nextTier && shotBalance < nextTier.cost && !burning && (
+              <div style={{
+                marginTop: 14, maxWidth: 260,
+                fontFamily: 'var(--f-mono)', fontSize: 9, color: 'var(--muted)',
+                letterSpacing: '0.18em', textAlign: 'center', textTransform: 'uppercase',
+              }}>
+                // EARN $SHOT BY WINNING WAGERED MATCHES OR DAILY OPS
+              </div>
+            )}
           </div>
 
           {/* RIGHT: Tier ladder */}

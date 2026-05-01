@@ -87,6 +87,79 @@ export default function LoadoutScreen({ navigate }) {
           }}>{feedback.text}</div>
         )}
 
+        {/* Active loadout indicator — 3 inline tiles showing currently-
+            assigned consumables. Dashed when empty per design brief.
+            Comment-style footer line in mono / olive (//-prefix) keeps
+            the field-manual tone. */}
+        {(() => {
+          const activeIds = CONSUMABLES.filter(c => (activeConsumables[c.id] || 0) > 0);
+          const slots = 3;
+          const tiles = [];
+          for (let i = 0; i < slots; i++) {
+            const c = activeIds[i];
+            const filled = !!c;
+            tiles.push(
+              <div key={i} style={{
+                width: 64, height: 64,
+                background: filled ? 'var(--bg-raised)' : 'transparent',
+                border: filled ? '1px solid ' + (TIER_COLOR[c.tier] || 'var(--olive)') : '1px dashed var(--muted)',
+                clipPath: 'var(--clip-6)',
+                display: 'flex', flexDirection: 'column',
+                alignItems: 'center', justifyContent: 'center',
+                gap: 4,
+                opacity: filled ? 1 : 0.7,
+              }}>
+                <div style={{
+                  fontFamily: 'var(--f-display)',
+                  fontSize: 18,
+                  color: filled ? (TIER_COLOR[c.tier] || 'var(--bone)') : 'var(--muted)',
+                  lineHeight: 1,
+                }}>{filled ? c.icon : '—'}</div>
+                <div style={{
+                  fontFamily: 'var(--f-mono)',
+                  fontSize: 7,
+                  color: filled ? 'var(--olive)' : 'var(--muted)',
+                  letterSpacing: '0.2em',
+                  textTransform: 'uppercase',
+                }}>{filled ? c.name.split(' ')[0] : 'EMPTY'}</div>
+              </div>
+            );
+          }
+          const overflow = Math.max(0, activeIds.length - slots);
+          return (
+            <div style={{
+              marginBottom: 18,
+              padding: '14px 16px',
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border)',
+              clipPath: 'var(--clip-10)',
+            }}>
+              <div style={{
+                fontFamily: 'var(--f-mono)',
+                fontSize: 10,
+                color: 'var(--olive)',
+                letterSpacing: '0.22em',
+                marginBottom: 10,
+              }}>
+                ACTIVE LOADOUT &middot; {activeIds.length}/{slots}{overflow > 0 ? ` +${overflow}` : ''}
+              </div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                {tiles}
+              </div>
+              <div style={{
+                fontFamily: 'var(--f-mono)',
+                fontSize: 9,
+                color: 'var(--muted)',
+                letterSpacing: '0.18em',
+                marginTop: 12,
+                textTransform: 'uppercase',
+              }}>
+                // CONSUMABLES BURN ON USE &middot; EARN $SHOT TO STOCK UP
+              </div>
+            </div>
+          );
+        })()}
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
           {CONSUMABLES.map(c => {
             const remaining = activeConsumables[c.id] || 0;

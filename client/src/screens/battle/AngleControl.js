@@ -1,5 +1,11 @@
 import React, { useCallback, useState, useRef } from 'react';
 
+// Track height bumped 6px → 12px for thumb-friendliness on phones
+// (the actual draggable thumb is 12×12 per index.css; matching the
+// track to that size makes the hit area visually obvious + easier to
+// tap accurately during a turn).
+const TRACK_H = 12;
+
 const s = {
   container: (compact, vertical) => ({
     display: 'flex',
@@ -8,22 +14,22 @@ const s = {
     gap: vertical ? 2 : compact ? 4 : 6,
     padding: vertical ? '4px 3px' : compact ? '3px 6px' : '4px 10px',
     background: 'rgba(10, 12, 8, 0.7)',
-    borderRadius: 3,
-    border: '1px solid var(--ol)',
+    clipPath: 'var(--clip-6)',
+    border: '1px solid var(--border)',
   }),
   label: (compact) => ({
-    fontFamily: "'Share Tech Mono', monospace",
+    fontFamily: 'var(--f-mono)',
     fontSize: compact ? 9 : 11,
-    color: 'var(--kh)',
-    letterSpacing: 1,
-    opacity: 0.7,
+    color: 'var(--olive)',
+    letterSpacing: '0.15em',
+    opacity: 0.85,
     minWidth: compact ? 24 : 32,
   }),
   valueInput: (compact) => ({
     fontFamily: "'Bebas Neue', sans-serif",
     fontSize: compact ? 16 : 20,
-    color: 'var(--bn)',
-    letterSpacing: 1,
+    color: 'var(--bone)',
+    letterSpacing: '0.05em',
     lineHeight: 1,
     minWidth: compact ? 26 : 32,
     width: compact ? 34 : 42,
@@ -37,28 +43,28 @@ const s = {
   }),
   slider: (disabled, compact) => ({
     width: compact ? 70 : 120,
-    height: 6,
+    height: TRACK_H,
     appearance: 'none',
     WebkitAppearance: 'none',
-    background: 'var(--od)',
-    borderRadius: 2,
+    background: 'var(--bg-raised)',
+    borderRadius: 0,
     outline: 'none',
     cursor: disabled ? 'default' : 'pointer',
     opacity: disabled ? 0.4 : 1,
   }),
   sliderVerticalWrap: {
-    width: 6,
+    width: TRACK_H,
     height: 120,
     position: 'relative',
     overflow: 'visible',
   },
   sliderVertical: (disabled) => ({
     width: 120,
-    height: 6,
+    height: TRACK_H,
     appearance: 'none',
     WebkitAppearance: 'none',
-    background: 'var(--od)',
-    borderRadius: 2,
+    background: 'var(--bg-raised)',
+    borderRadius: 0,
     outline: 'none',
     cursor: disabled ? 'default' : 'pointer',
     opacity: disabled ? 0.4 : 1,
@@ -67,14 +73,14 @@ const s = {
     position: 'absolute',
     top: '50%',
     left: '50%',
-    marginTop: -3,
+    marginTop: -(TRACK_H / 2),
     marginLeft: -60,
   }),
   unit: {
-    fontFamily: "'Share Tech Mono', monospace",
+    fontFamily: 'var(--f-mono)',
     fontSize: 11,
-    color: 'var(--kh)',
-    opacity: 0.5,
+    color: 'var(--olive)',
+    opacity: 0.6,
   },
 };
 

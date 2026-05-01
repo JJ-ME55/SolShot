@@ -6,6 +6,7 @@ import useSocket from '../hooks/useSocket';
 import TANK_COLORS from '../data/colors';
 import { useSolShotWallet } from '../wallet/WalletContext';
 import { haptic } from '../telegram/haptic';
+import { EmptyState } from '../components/EmptyStates';
 
 /* ── match modes (mirrors server MATCH_MODES — Litepaper v2.1) ── */
 const MATCH_MODES = {
@@ -1017,8 +1018,18 @@ function LobbyScreen({ navigate, screenData }) {
 
           <div style={s.roomList}>
             {rooms.length === 0 ? (
-              <div style={s.emptyState}>
-                NO OPEN LOBBIES -- CREATE A MATCH
+              /* Empty state: search icon, NO LOBBIES MATCH copy, dual
+                 CTAs (CREATE LOBBY = host this match, CLEAR FILTERS =
+                 reset mode/wager/format selectors). Wrapped in a
+                 position:relative parent so EmptyState's inset:0
+                 fill works inside the existing roomList layout. */
+              <div style={{ position: 'relative', flex: 1, minHeight: 240 }}>
+                <EmptyState
+                  icon="search"
+                  title="NO LOBBIES MATCH"
+                  body="NO OPEN LOBBIES FIT YOUR FILTERS. CREATE ONE OR LOOSEN THE CRITERIA."
+                  density="compact"
+                />
               </div>
             ) : (
               rooms.map((room) => {

@@ -20,6 +20,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTelegram } from '../telegram/TelegramContext';
 import { haptic } from '../telegram/haptic';
+import { EmptyState, ErrorState, SkeletonRow } from '../components/EmptyStates';
 
 function formatTimeLeft(date) {
     if (!date) return '—';
@@ -106,23 +107,40 @@ export default function MyGamesScreen({ navigate }) {
                 <button style={styles.backBtn} onClick={refresh}>↻</button>
             </div>
 
-            {loading && <div style={styles.empty}>LOADING…</div>}
-
-            {!loading && error && (
-                <div style={styles.empty}>
-                    <div style={styles.errorMsg}>{error}</div>
-                    {!isTelegram && (
-                        <div style={styles.errorHint}>Group matches only work via Telegram Mini App.</div>
-                    )}
+            {/* Loading: skeleton rows match real card footprint so layout
+                doesn't pop when data lands */}
+            {loading && (
+                <div style={styles.list}>
+                    {Array.from({ length: 5 }).map((_, i) => (
+                        <SkeletonRow key={i} height={70} lines={2} leftAccent />
+                    ))}
                 </div>
             )}
 
+            {/* Error: TRANSMISSION FAILURE chassis with RETRY default */}
+            {!loading && error && (
+                <div style={styles.stateContainer}>
+                    <ErrorState
+                        icon="txfail"
+                        title="LINK SEVERED"
+                        body={isTelegram
+                            ? 'MATCH FEED UNAVAILABLE. CHECK YOUR CONNECTION.'
+                            : 'GROUP MATCHES ONLY WORK VIA TELEGRAM MINI APP.'}
+                        primaryCTA={{ label: 'RETRY', onClick: refresh }}
+                        secondaryCTA={{ label: 'BACK TO MENU', onClick: () => navigate('menu') }}
+                    />
+                </div>
+            )}
+
+            {/* Empty: no active matches → pitch /customgame */}
             {!loading && !error && matches && matches.length === 0 && (
-                <div style={styles.empty}>
-                    <div style={styles.emptyTitle}>NO ACTIVE MATCHES</div>
-                    <div style={styles.emptyHint}>
-                        Add @SolShotGG_bot to a group chat and run <strong>/customgame</strong> to start one.
-                    </div>
+                <div style={styles.stateContainer}>
+                    <EmptyState
+                        icon="radar"
+                        title="NO CONTACT ON RADAR"
+                        body="NO ACTIVE GROUP-CHAT MATCHES. RUN /CUSTOMGAME IN A TG GROUP TO START ONE."
+                        primaryCTA={{ label: 'FIND MATCH', onClick: () => navigate('menu') }}
+                    />
                 </div>
             )}
 
@@ -206,6 +224,14 @@ const styles = {
     },
     list: {
         display: 'flex', flexDirection: 'column', gap: 10,
+    },
+    // Container for EmptyState / ErrorState — they self-position via
+    // `position: absolute, inset: 0` so we need a relative parent with
+    // a real height. flex:1 on the parent fullPage takes care of height.
+    stateContainer: {
+        position: 'relative',
+        flex: 1,
+        minHeight: 320,
     },
     card: {
         padding: '14px 16px',

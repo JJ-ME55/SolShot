@@ -5,6 +5,7 @@ import StatCardOverlay from '../components/StatCard';
 import { useTelegram } from '../telegram/TelegramContext';
 import { haptic } from '../telegram/haptic';
 import PRESTIGE_TIERS, { TIER_COLORS } from '../data/tiers';
+import { EmptyState, SkeletonCard, SkeletonRow } from '../components/EmptyStates';
 
 const TIER_BADGE_FILES = {
   Bronze:   '/assets/images/badges/badge-bronze.png',
@@ -293,8 +294,12 @@ function BarracksScreen({ navigate }) {
         {tab === 'stats' && (
           <>
             {stats === null ? (
-              <div style={{ textAlign: 'center', padding: 40, fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--muted)', letterSpacing: '0.22em' }}>
-                LOADING STATS…
+              /* Skeleton: 6-stat grid placeholder so layout doesn't pop
+                 when stats land. Mirrors the DossierCard's stat row. */
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 8 }}>
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <SkeletonCard key={i} variant="stat" height={64} />
+                ))}
               </div>
             ) : (
               <DossierCard
@@ -544,10 +549,22 @@ function BarracksScreen({ navigate }) {
               <span style={{ textAlign: 'right' }}>RATE</span>
             </div>
             {leaderboard === null ? (
-              <div style={{ padding: 24, textAlign: 'center', fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--muted)', letterSpacing: '0.22em' }}>LOADING…</div>
+              /* Loading: 7 skeleton rows matching the leaderboard grid */
+              <div style={{ padding: '8px 0', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {Array.from({ length: 7 }).map((_, i) => (
+                  <SkeletonRow key={i} height={36} lines={2} leftAccent />
+                ))}
+              </div>
             ) : leaderboard.length === 0 ? (
-              <div style={{ padding: 24, textAlign: 'center', fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--muted)', letterSpacing: '0.22em' }}>
-                NO PLAYERS YET — BE THE FIRST
+              /* Empty: genuinely-empty ecosystem (early days) — pitch it
+                 as a recruitment moment, not a sad state. */
+              <div style={{ position: 'relative', minHeight: 280 }}>
+                <EmptyState
+                  icon="target"
+                  title="NO RANKED OPERATIVES"
+                  body="SEASON 0 IS LIVE. WIN A MATCH TO BE THE FIRST ON THE BOARD."
+                  primaryCTA={{ label: 'DEPLOY NOW', onClick: () => navigate('lobby') }}
+                />
               </div>
             ) : (
               leaderboard.map((p, i) => {

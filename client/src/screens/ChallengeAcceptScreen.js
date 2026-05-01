@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import ScreenHeader from '../components/design/ScreenHeader';
 import TerrainSilhouette from '../components/design/Terrain';
+import { ErrorState, EmptyState, SkeletonRow } from '../components/EmptyStates';
 
 /**
  * ChallengeAcceptScreen
@@ -96,42 +97,49 @@ export default function ChallengeAcceptScreen({ navigate, screenData }) {
                     onBack={() => navigate('menu')}
                 />
 
+                {/* Loading: 3 stacked skeleton rows shaped roughly like
+                    challenger card / hero / footer */}
                 {loading && (
-                    <div style={{
-                        textAlign: 'center', padding: 40,
-                        fontFamily: 'var(--f-mono)', fontSize: 12,
-                        color: 'var(--muted)', letterSpacing: '0.22em',
-                    }}>
-                        LOADING CHALLENGE...
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '24px 0' }}>
+                        <SkeletonRow height={48} lines={2} leftAccent />
+                        <SkeletonRow height={70} lines={2} />
+                        <SkeletonRow height={36} lines={1} />
                     </div>
                 )}
 
-                {!loading && error && (
-                    <div style={{
-                        background: 'var(--bg-surface)', border: '1px solid var(--border)',
-                        clipPath: 'var(--clip-10)', padding: '24px 20px', marginBottom: 16,
-                        textAlign: 'center',
-                    }}>
-                        <div style={{
-                            fontFamily: 'var(--f-display)', fontSize: 18, color: 'var(--red)',
-                            letterSpacing: '0.18em', marginBottom: 8,
-                        }}>UNAVAILABLE</div>
-                        <div style={{
-                            fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--olive)',
-                            letterSpacing: '0.15em',
-                        }}>
-                            {error === 'NO_CHALLENGE_CODE' ? 'No challenge code in deep link.'
-                              : error === 'NO_CONNECTION' ? 'Server connection lost.'
-                              : error === 'NO_ROOM' ? 'The match room could not be created.'
-                              : `Could not load challenge — ${error.replace(/_/g, ' ').toLowerCase()}.`}
-                        </div>
-                        <button onClick={() => navigate('menu')} style={{
-                            marginTop: 18, padding: '12px 24px',
-                            background: 'transparent', color: 'var(--bone)',
-                            border: '1px solid var(--border)', clipPath: 'var(--clip-6)',
-                            fontFamily: 'var(--f-display)', fontSize: 12,
-                            letterSpacing: '0.18em', cursor: 'pointer',
-                        }}>BACK TO MENU</button>
+                {/* Error: distinct empty-state per failure type so the
+                    user knows what they're recovering from. Expired and
+                    not-found are EmptyState (informational); transport
+                    failures are ErrorState (RETRY-able). */}
+                {!loading && error === 'NO_CHALLENGE_CODE' && (
+                    <div style={{ position: 'relative', minHeight: 320 }}>
+                        <EmptyState
+                            icon="search"
+                            title="CHALLENGE NOT FOUND"
+                            body="NO LIVE MATCH FOR THIS CODE. CHECK SPELLING OR REQUEST A NEW LINK."
+                            primaryCTA={{ label: 'FIND MATCH', onClick: () => navigate('menu') }}
+                        />
+                    </div>
+                )}
+                {!loading && (error === 'NOT_FOUND' || error === 'expired' || error === 'EXPIRED' || error === 'CANCELLED' || error === 'cancelled') && (
+                    <div style={{ position: 'relative', minHeight: 320 }}>
+                        <EmptyState
+                            icon="skull"
+                            title="CHALLENGE EXPIRED"
+                            body="THIS LINK NO LONGER POINTS TO A LIVE MATCH. THE WINDOW HAS CLOSED."
+                            primaryCTA={{ label: 'FIND MATCH', onClick: () => navigate('menu') }}
+                            secondaryCTA={{ label: 'ISSUE NEW CHALLENGE', onClick: () => navigate('menu') }}
+                        />
+                    </div>
+                )}
+                {!loading && error && !['NO_CHALLENGE_CODE', 'NOT_FOUND', 'expired', 'EXPIRED', 'CANCELLED', 'cancelled'].includes(error) && (
+                    <div style={{ position: 'relative', minHeight: 320 }}>
+                        <ErrorState
+                            title="LOOKUP FAILED"
+                            body="COULDN'T VERIFY CHALLENGE CODE."
+                            primaryCTA={{ label: 'RETRY', onClick: () => window.location.reload() }}
+                            secondaryCTA={{ label: 'BACK TO MENU', onClick: () => navigate('menu') }}
+                        />
                     </div>
                 )}
 

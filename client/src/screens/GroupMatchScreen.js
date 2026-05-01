@@ -18,6 +18,7 @@ import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { useTelegram } from '../telegram/TelegramContext';
 import BattlefieldPreview from '../components/BattlefieldPreview';
 import ShopScreen from './ShopScreen';
+import { EmptyState, ErrorState, SkeletonRow } from '../components/EmptyStates';
 
 // Lazy-load the Phaser wrapper — pulls in MainScene + Phaser, ~1MB bundle.
 // Only loaded when a player has an active match they're watching.
@@ -148,17 +149,39 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
     };
 
     if (loading) {
+        // Skeleton: header bar + a few stacked rows roughly shaped like
+        // the lobby/active/settled content. Reserves the layout slot so
+        // there's no jump when the match doc lands.
         return (
             <div style={styles.fullPage}>
-                <div style={styles.loading}>LOADING MATCH…</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '16px 12px' }}>
+                    <SkeletonRow height={50} lines={2} leftAccent />
+                    <SkeletonRow height={80} lines={2} />
+                    <SkeletonRow height={36} lines={2} />
+                    <SkeletonRow height={36} lines={2} />
+                </div>
             </div>
         );
     }
     if (error) {
+        const isNotFound = /no longer exists|not found/i.test(error);
         return (
-            <div style={styles.fullPage}>
-                <div style={styles.error}>{error}</div>
-                <button style={styles.backBtn} onClick={() => navigate('menu')}>← Menu</button>
+            <div style={{ ...styles.fullPage, position: 'relative' }}>
+                {isNotFound ? (
+                    <EmptyState
+                        icon="search"
+                        title="MATCH NOT FOUND"
+                        body="THIS MATCH NO LONGER EXISTS OR HAS BEEN CANCELLED."
+                        primaryCTA={{ label: 'BACK TO MENU', onClick: () => navigate('menu') }}
+                    />
+                ) : (
+                    <ErrorState
+                        title="MATCH STATE UNREACHABLE"
+                        body="COULDN'T LOAD MATCH. CHECK YOUR CONNECTION."
+                        primaryCTA={{ label: 'RETRY', onClick: refresh }}
+                        secondaryCTA={{ label: 'BACK TO MENU', onClick: () => navigate('menu') }}
+                    />
+                )}
             </div>
         );
     }

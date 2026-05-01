@@ -175,14 +175,32 @@ function ShopScreen({ navigate, screenData }) {
     }
   });
 
+  // Pending optimistic purchases — keyed by weaponId. Each entry stores
+  // the rollback values (gold + inventory) so a server rejection can
+  // restore the pre-click state. Most purchases will server-confirm
+  // before the player notices, so the rollback path is rare.
+  const pendingPurchasesRef = useRef({});
+
   // Group-chat purchase result — same shape semantics, sibling event.
+  // The client already optimistically deducted gold + appended weapon
+  // when buyWeapon was called below. On success we just sync to the
+  // server's authoritative balance (may be off by 1 if there's a
+  // rounding race). On failure we roll back to the pre-click snapshot.
   useSocket('purchaseGroupWeaponResult', (data) => {
     if (!isGroupChat) return;
     if (data.success) {
+      // Reconcile against server-authoritative values
       setGold(data.balance);
       if (data.inventory) setInventory(data.inventory);
-      if (isMobile) setSelectedWeaponId(null);
+      delete pendingPurchasesRef.current[data.weaponId];
     } else {
+      // Roll back the optimistic update for this weapon (if any)
+      const pending = pendingPurchasesRef.current[data.weaponId];
+      if (pending) {
+        setGold(pending.gold);
+        setInventory(pending.inventory);
+        delete pendingPurchasesRef.current[data.weaponId];
+      }
       const reasonMap = {
         insufficient_gold: 'Not enough gold.',
         already_owned: 'Already in your loadout.',
@@ -196,12 +214,15 @@ function ShopScreen({ navigate, screenData }) {
   });
 
   // Group-chat lock-in ack — fired after server flips player.shopComplete=true.
+  // Optimistic flow: ShopScreen already exited to the battle UI when the
+  // user pressed READY (see handleReady). This handler is now a no-op
+  // confirmation; if it never arrives, the server-side shopComplete flag
+  // didn't flip and the player will be routed back to the shop on their
+  // next refresh. Still call onShopComplete defensively for the case
+  // where the optimistic exit didn't happen (no `onShopComplete` prop).
   useSocket('groupShopCompleteAck', () => {
     if (!isGroupChat) return;
     setIsReady(true);
-    if (typeof screenData?.onShopComplete === 'function') {
-      screenData.onShopComplete({ inventory, gold });
-    }
   });
 
   useSocket('opponentBoughtWeapon', (data) => {
@@ -270,22 +291,44 @@ function ShopScreen({ navigate, screenData }) {
   const buyWeapon = useCallback((weaponId) => {
     if (!window.socket || isReady) return;
     if (isGroupChat) {
+      // OPTIMISTIC: deduct gold + append weapon immediately so the UI
+      // responds the instant the player taps. Server reconciles via
+      // purchaseGroupWeaponResult; on rejection we roll back to the
+      // snapshot stored in pendingPurchasesRef.
+      const meta = getWeaponById(weaponId);
+      const cost = meta?.goldCost ?? 0;
+      // Don't optimistically apply if we'd go negative (client-side guard
+      // mirrors the server's insufficient_gold check)
+      if (gold < cost) return;
+      // Don't optimistically apply if already owned (server would reject)
+      if (inventory.includes(weaponId)) return;
+      pendingPurchasesRef.current[weaponId] = { gold, inventory: [...inventory] };
+      setGold(gold - cost);
+      setInventory([...inventory, weaponId]);
+      if (isMobile) setSelectedWeaponId(null);
       window.socket.emit('purchaseGroupWeapon', { matchId: groupMatchId, weaponId });
       return;
     }
     window.socket.emit('buyWeapon', { weaponId });
-  }, [isReady, isGroupChat, groupMatchId]);
+  }, [isReady, isGroupChat, groupMatchId, gold, inventory, isMobile]);
 
   const handleReady = useCallback(() => {
     if (!window.socket || isReady) return;
     if (isGroupChat) {
-      // Server ack fires `groupShopCompleteAck` which flips isReady + calls onComplete
+      // OPTIMISTIC: flip ready + exit to battle immediately, don't wait
+      // for the server ack. Server side groupShopComplete is idempotent
+      // (just sets shopComplete=true). If it fails, the player gets
+      // routed back to the shop on their next refresh — recoverable.
+      setIsReady(true);
       window.socket.emit('groupShopComplete', { matchId: groupMatchId });
+      if (typeof screenData?.onShopComplete === 'function') {
+        screenData.onShopComplete({ inventory, gold });
+      }
       return;
     }
     window.socket.emit('shopDone');
     setIsReady(true);
-  }, [isReady, isGroupChat, groupMatchId]);
+  }, [isReady, isGroupChat, groupMatchId, inventory, gold, screenData]);
 
   const selectedWeapon = selectedWeaponId !== null ? getWeaponById(selectedWeaponId) : null;
   const isOwned = (id) => inventory.includes(id);

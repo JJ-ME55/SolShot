@@ -180,45 +180,70 @@ export function registerGroupChatSocketHandlers(client, io) {
             client.emit('purchaseGroupWeaponResult', { success: false, reason: 'missing_args' });
             return;
         }
+        // Catalog validation is in-memory — no DB hit needed for unknown weapons.
+        const weapon = getWeapon(weaponId);
+        if (!weapon) {
+            client.emit('purchaseGroupWeaponResult', { success: false, reason: 'unknown_weapon' });
+            return;
+        }
+        const cost = getWeaponCost(weaponId);
         try {
-            const match = await GroupMatch.findOne({ matchId });
+            // Atomic conditional update — single DB round trip, with all
+            // server-side checks (state, membership, ownership, gold)
+            // expressed as MongoDB query conditions. If any check fails
+            // the update returns null and we fall through to a follow-up
+            // diagnostic read to report the right error code. This avoids
+            // the load-modify-save race that the previous code had under
+            // concurrent purchase requests from the same player.
+            const updated = await GroupMatch.findOneAndUpdate(
+                {
+                    matchId,
+                    state: 'active',
+                    players: {
+                        $elemMatch: {
+                            telegramUserId: tgId,
+                            weapons: { $ne: weaponId },        // not already owned
+                            gold: { $gte: cost },              // can afford
+                        },
+                    },
+                },
+                {
+                    $inc: { 'players.$.gold': -cost },
+                    $push: { 'players.$.weapons': weaponId },
+                },
+                { new: true, projection: { players: 1 } }
+            );
+            if (updated) {
+                const player = updated.players.find(p => p.telegramUserId === tgId);
+                client.emit('purchaseGroupWeaponResult', {
+                    success: true,
+                    weaponId,
+                    cost,
+                    balance: player?.gold ?? 0,
+                    inventory: player?.weapons ?? [0],
+                });
+                return;
+            }
+            // Update returned null — diagnose why with a single targeted read.
+            const match = await GroupMatch.findOne({ matchId }, { state: 1, players: 1 }).lean();
             if (!match || match.state !== 'active') {
                 client.emit('purchaseGroupWeaponResult', { success: false, reason: 'match_not_active' });
                 return;
             }
-            const playerIdx = match.players.findIndex(p => p.telegramUserId === tgId);
-            if (playerIdx < 0) {
+            const player = match.players.find(p => p.telegramUserId === tgId);
+            if (!player) {
                 client.emit('purchaseGroupWeaponResult', { success: false, reason: 'not_a_player' });
-                return;
-            }
-            const player = match.players[playerIdx];
-            const weapon = getWeapon(weaponId);
-            if (!weapon) {
-                client.emit('purchaseGroupWeaponResult', { success: false, reason: 'unknown_weapon' });
                 return;
             }
             if (player.weapons?.includes(weaponId)) {
                 client.emit('purchaseGroupWeaponResult', { success: false, reason: 'already_owned', balance: player.gold });
                 return;
             }
-            const cost = getWeaponCost(weaponId);
             if ((player.gold || 0) < cost) {
                 client.emit('purchaseGroupWeaponResult', { success: false, reason: 'insufficient_gold', balance: player.gold });
                 return;
             }
-
-            // Deduct + add. Mongoose tracks modification on the subdocument.
-            player.gold = (player.gold || 0) - cost;
-            player.weapons = [...(player.weapons || [0]), weaponId];
-            await match.save();
-
-            client.emit('purchaseGroupWeaponResult', {
-                success: true,
-                weaponId,
-                cost,
-                balance: player.gold,
-                inventory: player.weapons,
-            });
+            client.emit('purchaseGroupWeaponResult', { success: false, reason: 'unknown' });
         } catch (err) {
             console.error('[group-chat] purchaseGroupWeapon error:', err);
             client.emit('purchaseGroupWeaponResult', { success: false, reason: 'server_error' });
@@ -238,14 +263,13 @@ export function registerGroupChatSocketHandlers(client, io) {
         const { matchId } = payload;
         if (!matchId) return;
         try {
-            const match = await GroupMatch.findOne({ matchId });
-            if (!match) return;
-            const playerIdx = match.players.findIndex(p => p.telegramUserId === tgId);
-            if (playerIdx < 0) return;
-            if (!match.players[playerIdx].shopComplete) {
-                match.players[playerIdx].shopComplete = true;
-                await match.save();
-            }
+            // Atomic single-shot update; idempotent (no-op when already
+            // shopComplete=true). One DB round trip vs the previous
+            // findOne + save sequence.
+            await GroupMatch.findOneAndUpdate(
+                { matchId, 'players.telegramUserId': tgId },
+                { $set: { 'players.$.shopComplete': true } }
+            );
             client.emit('groupShopCompleteAck', { ok: true });
         } catch (err) {
             console.error('[group-chat] groupShopComplete error:', err);
@@ -263,10 +287,24 @@ export function registerGroupChatSocketHandlers(client, io) {
             return;
         }
         try {
-            const matches = await GroupMatch.find({
-                'players.telegramUserId': tgId,
-                state: { $in: ['lobby', 'active'] },
-            })
+            // Projection: skip the heavy fields the home-screen card list
+            // doesn't render (terrainSnapshot is the biggest — heightmap
+            // arrays can be 3-5KB per match × N matches). We keep config,
+            // players, and lifecycle timestamps; everything else stays
+            // server-side until the player opens a specific match.
+            const matches = await GroupMatch.find(
+                {
+                    'players.telegramUserId': tgId,
+                    state: { $in: ['lobby', 'active'] },
+                },
+                {
+                    matchId: 1, chatId: 1, chatTitle: 1, hostTelegramId: 1,
+                    state: 1, config: 1, players: 1, currentPlayerIndex: 1,
+                    turnNumber: 1, turnStartedAt: 1,
+                    createdAt: 1, startedAt: 1, lobbyExpiresAt: 1, endsAt: 1,
+                    updatedAt: 1,
+                }
+            )
                 .sort({ updatedAt: -1 })
                 .lean();
             client.emit('myGroupMatches', {

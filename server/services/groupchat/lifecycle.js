@@ -453,10 +453,21 @@ export async function handleShot(matchId, firerTgId, shot) {
         goldMap[id] = p.gold || 0;
     }
 
+    // Thin trajectory helper — same as 1v1's emit path. Halves the wire
+    // size of the trajectory point list, which can be 100+ frames for
+    // long shots. Client interpolates between thinned points smoothly.
+    const thinTrajectory = (pts) => {
+        if (!pts || pts.length <= 2) return pts;
+        const out = [];
+        for (let i = 0; i < pts.length; i += 2) out.push(pts[i]);
+        if (out[out.length - 1] !== pts[pts.length - 1]) out.push(pts[pts.length - 1]);
+        return out;
+    };
+
     const shotDataBase = {
         playerId: String(firerTgId),
         weaponId: shot.weaponId,
-        trajectory: result.trajectory || [],
+        trajectory: thinTrajectory(result.trajectory || []),
         impact: result.impact || null,
         damage: result.damage || {},
         // Echo the new terrain only if it changed — saves bandwidth on misses
@@ -470,6 +481,19 @@ export async function handleShot(matchId, firerTgId, shot) {
         // Full gold balances after this shot — keyed by tgId string, matches
         // turnResult.goldBalance shape so the existing 1v1 HUD path works.
         goldBalance: goldMap,
+        // Special-weapon visual effect data — mirrors the fields 1v1's
+        // turnResult emit ships. Without these the client only animates
+        // the primary trajectory, so 3 Shot showed 1 projectile, Crazy
+        // Ivan never scattered, Spider had no legs, Ground Hog never
+        // tunneled. Thinning subTrajectories matches the 1v1 thinning
+        // pass to keep payload small.
+        subTrajectories: result.subTrajectories
+            ? result.subTrajectories.map(thinTrajectory)
+            : null,
+        scatterPoints: result.scatterPoints || null,
+        spiderLegs: result.spiderLegs || null,
+        tunnelEntry: result.tunnelEntry || null,
+        tunnelExit: result.tunnelExit || null,
     };
 
     // Check win condition before advancing

@@ -1202,6 +1202,15 @@ export class MainScene extends Scene {
           currentPlayerIndex: data.currentPlayerIndex,
           positions,
           tankPositions: null,
+          // Special-weapon visual effect data — passed through so 3 Shot
+          // (subTrajectories), Crazy Ivan / Hail Storm (scatterPoints),
+          // Spider (spiderLegs), and Ground Hog (tunnelEntry/Exit) all
+          // render their full effect, not just the primary trajectory.
+          subTrajectories: data.subTrajectories || null,
+          scatterPoints: data.scatterPoints || null,
+          spiderLegs: data.spiderLegs || null,
+          tunnelEntry: data.tunnelEntry || null,
+          tunnelExit: data.tunnelExit || null,
         };
         this._socketHandlers.turnResult(adapted);
 

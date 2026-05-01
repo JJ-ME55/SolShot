@@ -306,30 +306,50 @@ function registerCommands(bot) {
       }
 
       const myRank = await getPlayerRank(ctx.from?.id);
-      const lines = ['🏆 SOLSHOT LEADERBOARD', ''];
-      top.forEach((p, i) => {
-        const handle = (p.handle || 'OPERATIVE').toUpperCase().padEnd(12, ' ').slice(0, 12);
-        const wins   = p.stats?.wins || 0;
+
+      // Format a row inside an HTML <pre> block so Telegram renders it
+      // monospace and columns line up. Width budget targets a phone
+      // screen comfortably:
+      //   rank(3) + handle(14) + W(3) + L(3) + WR(4) ≈ 27 chars.
+      // Long handles are softly truncated with an ellipsis ("…") so the
+      // column never wraps mid-name. Top 3 get medals in place of the
+      // numeric rank for a bit of celebration.
+      const HANDLE_W = 14;
+      const fmtHandle = (h) => {
+        const upper = (h || 'OPERATIVE').toUpperCase();
+        if (upper.length <= HANDLE_W) return upper.padEnd(HANDLE_W, ' ');
+        return upper.slice(0, HANDLE_W - 1) + '…';
+      };
+      const fmtRank = (i) => {
+        if (i === 0) return '🥇';
+        if (i === 1) return '🥈';
+        if (i === 2) return '🥉';
+        return String(i + 1).padStart(2, ' ') + '.';
+      };
+      const fmtRow = (rank, p) => {
+        const wins = p.stats?.wins || 0;
         const losses = p.stats?.losses || 0;
         const matches = p.stats?.matchesPlayed || 0;
         const wr = matches > 0 ? Math.round((wins / matches) * 100) : 0;
-        lines.push(`${String(i + 1).padStart(2, ' ')}. ${handle}  ${wins}W·${losses}L · ${wr}%`);
-      });
+        return `${rank} ${fmtHandle(p.handle)} ${String(wins).padStart(2, ' ')}W ${String(losses).padStart(2, ' ')}L  ${String(wr).padStart(3, ' ')}%`;
+      };
 
+      const lines = [];
+      lines.push('🏆 <b>SOLSHOT LEADERBOARD</b>');
+      lines.push('<pre>');
+      top.forEach((p, i) => lines.push(fmtRow(fmtRank(i), p)));
       // If the asker isn't in the top 10, show their rank below
       if (myRank && myRank > 10) {
         const me = await lookupUserByTelegramId(ctx.from?.id);
         if (me?.stats) {
-          const wins   = me.stats.wins || 0;
-          const losses = me.stats.losses || 0;
-          const matches = me.stats.matchesPlayed || 0;
-          const wr = matches > 0 ? Math.round((wins / matches) * 100) : 0;
-          lines.push('');
-          lines.push(`→ You · #${myRank} · ${wins}W·${losses}L · ${wr}%`);
+          lines.push(''); // visual gutter inside the pre
+          lines.push(fmtRow(`#${String(myRank).padStart(2, ' ')}`, me));
         }
       }
+      lines.push('</pre>');
 
       await ctx.reply(lines.join('\n'), {
+        parse_mode: 'HTML',
         reply_markup: launchKeyboard('Full Leaderboard', 'leaderboard'),
       });
     } catch (err) {

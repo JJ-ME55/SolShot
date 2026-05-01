@@ -251,7 +251,18 @@ function BarracksScreen({ navigate }) {
   const playerData = { callsign, wins, losses, totalDamage, bestWinStreak, matchesPlayed: matches, signatureWeapon };
 
   return (
-    <div style={{ position: 'relative', minHeight: '100dvh', background: 'var(--bg-deep)', overflow: 'hidden' }}>
+    // flex:1 + overflowY:auto inside Layout's overflow:hidden flex viewport.
+    // Previous `minHeight: 100dvh + overflow: hidden` collapsed scroll on
+    // phones — the leaderboard tab content overflowed but couldn't be
+    // scrolled. Same fix pattern that resolved GroupMatchScreen.
+    <div style={{
+      position: 'relative',
+      flex: 1,
+      overflowY: 'auto',
+      WebkitOverflowScrolling: 'touch',
+      background: 'var(--bg-deep)',
+      minHeight: 0,
+    }}>
       <div style={{
         position: 'absolute', inset: 0, pointerEvents: 'none', opacity: 0.05,
         backgroundImage: 'linear-gradient(to right, var(--olive) 1px, transparent 1px), linear-gradient(to bottom, var(--olive) 1px, transparent 1px)',

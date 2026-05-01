@@ -129,10 +129,12 @@ export function registerGroupChatSocketHandlers(client, io) {
         }
         try {
             const result = await lifecycle.handleShot(payload.matchId, tgId, payload);
-            const match = await GroupMatch.findOne({ matchId: payload.matchId }).lean();
             // Errors stay private to the firer (e.g. weapon_not_owned, not_your_turn).
+            // We don't bother fetching the match doc on the error path — the
+            // firer already has a match snapshot client-side and only needs
+            // to know the error.
             if (!result.ok) {
-                client.emit('shotResult', { ok: false, error: result.error, match: sanitizeMatch(match) });
+                client.emit('shotResult', { ok: false, error: result.error });
                 return;
             }
             // Successful shot: broadcast to EVERY player in the match room
@@ -140,10 +142,14 @@ export function registerGroupChatSocketHandlers(client, io) {
             // HP-sync animation as the firer's. Without this, observers'
             // local hp stays at 250 until they reopen the Mini App, which
             // explains the "HP not the same across screens" report.
+            //
+            // PERF: handleShot now returns the in-memory match doc, so we
+            // skip the redundant DB re-fetch + .lean() that previously
+            // added ~50-200ms of round-trip latency on every shot.
             const broadcast = {
                 ok: true,
                 ...result.shotData,
-                match: sanitizeMatch(match),
+                match: sanitizeMatch(result.match),
             };
             if (io) {
                 io.to(roomForMatch(payload.matchId)).emit('shotResult', broadcast);

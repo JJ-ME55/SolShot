@@ -469,6 +469,10 @@ export async function handleShot(matchId, firerTgId, shot) {
     if (await checkAndSettle(match)) {
         return {
             ok: true,
+            // Return the in-memory match doc so the socket handler can
+            // sanitize + broadcast without a redundant DB re-fetch (saves
+            // ~50-200ms per shot on Atlas). checkAndSettle already saved.
+            match,
             shotData: {
                 ...shotDataBase,
                 nextTurn: null,
@@ -489,6 +493,7 @@ export async function handleShot(matchId, firerTgId, shot) {
     const nextPlayer = match.players[match.currentPlayerIndex];
     return {
         ok: true,
+        match,
         shotData: {
             ...shotDataBase,
             nextTurn: nextPlayer ? String(nextPlayer.telegramUserId) : null,

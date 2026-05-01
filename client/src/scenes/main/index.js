@@ -2054,7 +2054,11 @@ export class MainScene extends Scene {
       moveSteps: myTank ? myTank.movesRemaining : 0,
       currentWeaponIndex: myTank ? myTank.selectedWeapon : 0,
       weapons: myTank ? myTank.weapons : [],
-      isFiring: myTank && myTank.turret ? myTank.turret.activeWeapon !== null : false,
+      // True from the moment FIRE is pressed (covers the network roundtrip)
+      // until the trajectory animation finishes. Without _firePending here,
+      // the button stays bright between click and server response and the
+      // press feels delayed/unresponsive.
+      isFiring: this._firePending || (myTank && myTank.turret ? myTank.turret.activeWeapon !== null : false),
       gameOver: this.gameOver,
     });
   };

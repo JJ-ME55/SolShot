@@ -55,6 +55,12 @@ function buildSceneData(match, myTgId) {
         // [0] = Single Shot, set in startMatch on the server.
         weapons: ((p.weapons && p.weapons.length) ? p.weapons : [0]).map((id) => ({ id })),
         hp: p.hp,
+        // Persisted aim state from the player's last shot — MainScene
+        // applies these on tank init so the turret + power bar pick up
+        // where they left off (group-chat is async multi-day; without
+        // this each Mini App reopen would reset back to defaults).
+        lastAngle: p.lastAngle,
+        lastPower: p.lastPower,
     }));
     const positions = (match.players || []).map(p => ({
         socketId: String(p.telegramUserId),

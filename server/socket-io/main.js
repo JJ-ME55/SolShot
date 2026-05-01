@@ -1090,7 +1090,9 @@ const mainsocket = (io) => {
         })
 
         // Group-chat per-socket handlers (Phase 1c — getGroupMatch, getMyGroupMatches, fireGroupShot).
-        registerGroupChatSocketHandlers(client);
+        // Pass `io` so handlers can broadcast shotResult to all players in the
+        // match via socket.io rooms (room key: `groupmatch:<matchId>`).
+        registerGroupChatSocketHandlers(client, io);
 
         // === PRACTICE IDENTITY (Phase 28) ===
         client.on('registerIdentity', ({ uid, handle }) => {

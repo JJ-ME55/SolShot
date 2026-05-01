@@ -58,10 +58,22 @@ function tgIdFor(socket, payload) {
     return null;
 }
 
-export function registerGroupChatSocketHandlers(client) {
+/** Socket.IO room key for a given match — used to broadcast shotResult
+ *  to every connected player so HP / terrain / turn state stay in sync
+ *  without each client having to poll. */
+function roomForMatch(matchId) {
+    return `groupmatch:${matchId}`;
+}
+
+export function registerGroupChatSocketHandlers(client, io) {
     /**
      * Fetch a single group match by matchId. Returns the full sanitized
      * snapshot if found, or { error: 'not_found' }.
+     *
+     * Side effect: if the requesting socket belongs to a player in the
+     * match, it joins the `groupmatch:<matchId>` room so the server can
+     * push shotResult / state updates to every active viewer in real time.
+     * (Opening the Mini App is the canonical "I'm watching this match" cue.)
      */
     client.on('getGroupMatch', async ({ matchId } = {}) => {
         if (!matchId) {
@@ -73,6 +85,15 @@ export function registerGroupChatSocketHandlers(client) {
             if (!match) {
                 client.emit('groupMatchData', { error: 'not_found', matchId });
                 return;
+            }
+            // Auto-join the match room so this client receives broadcast
+            // shotResult events for every fire (including others'). Cheap —
+            // leaves on disconnect automatically.
+            const tgId = tgIdFor(client, {});
+            const isMember = tgId != null
+                && match.players?.some(p => p.telegramUserId === tgId);
+            if (isMember) {
+                client.join(roomForMatch(matchId));
             }
             client.emit('groupMatchData', { match: sanitizeMatch(match) });
         } catch (err) {
@@ -109,17 +130,27 @@ export function registerGroupChatSocketHandlers(client) {
         try {
             const result = await lifecycle.handleShot(payload.matchId, tgId, payload);
             const match = await GroupMatch.findOne({ matchId: payload.matchId }).lean();
-            // Build the turnResult-shaped payload from result.shotData (when present
-            // — only on ok=true). Errors are passed through unchanged.
+            // Errors stay private to the firer (e.g. weapon_not_owned, not_your_turn).
             if (!result.ok) {
                 client.emit('shotResult', { ok: false, error: result.error, match: sanitizeMatch(match) });
                 return;
             }
-            client.emit('shotResult', {
+            // Successful shot: broadcast to EVERY player in the match room
+            // so observers' MainScene runs the same trajectory + blast +
+            // HP-sync animation as the firer's. Without this, observers'
+            // local hp stays at 250 until they reopen the Mini App, which
+            // explains the "HP not the same across screens" report.
+            const broadcast = {
                 ok: true,
                 ...result.shotData,
                 match: sanitizeMatch(match),
-            });
+            };
+            if (io) {
+                io.to(roomForMatch(payload.matchId)).emit('shotResult', broadcast);
+            } else {
+                // Fallback if io wasn't wired through (shouldn't happen in prod)
+                client.emit('shotResult', broadcast);
+            }
         } catch (err) {
             console.error('[group-chat] fireGroupShot error:', err);
             client.emit('shotResult', { ok: false, error: 'server_error' });

@@ -405,6 +405,10 @@ export async function handleShot(matchId, firerTgId, shot) {
     firer.damageDealt = (firer.damageDealt || 0) + totalDamage;
     // A successful shot resets the consecutive-miss counter
     firer.consecutiveMissedTurns = 0;
+    // Persist aim state so the next time this player opens the Mini App
+    // their turret + power bar are pre-set to where they last fired.
+    firer.lastAngle = angle;
+    firer.lastPower = power;
 
     // Award gold — mirrors 1v1's earnGold + kill-bonus pattern.
     // earnGold/awardKillBonus take a goldState object keyed by playerId, so
@@ -424,8 +428,16 @@ export async function handleShot(matchId, firerTgId, shot) {
 
     await match.save();
 
-    // Post shot summary to chat
-    await postShotSummary(match, firer, weapon, totalDamage, eliminatedThisShot);
+    // Post shot summary to chat — but delay it ~3s so it lands AFTER the
+    // viewers' Phaser animation (trajectory + blast + HP flash) has played
+    // out. The chat ping was previously arriving as a spoiler — players
+    // with the Mini App open would read "JJ_ME hit Elder for 50" in chat
+    // before the shell visually impacted on screen. Fire-and-forget; we
+    // don't gate the socket return on chat post completion.
+    setTimeout(() => {
+        postShotSummary(match, firer, weapon, totalDamage, eliminatedThisShot)
+            .catch(err => console.error('[group-chat] delayed postShotSummary error:', err));
+    }, 3000);
 
     // Build the partial shotData payload — common to settled + active outcomes.
     // Damage map keys are already String(tgId) per physics.processShot input.
@@ -467,8 +479,11 @@ export async function handleShot(matchId, firerTgId, shot) {
         };
     }
 
-    // Advance to next alive player + new wind
-    match.wind = generateWind();
+    // Advance to next alive player. Wind is generated ONCE at startMatch
+    // and persists for the duration of the group-chat match — players have
+    // hours-to-days between turns and changing wind every shot would feel
+    // arbitrary and disconnected from how the chat narrative flows. (1v1
+    // regenerates wind per round; group-chat is single-life with no rounds.)
     await advanceTurn(match);
 
     const nextPlayer = match.players[match.currentPlayerIndex];

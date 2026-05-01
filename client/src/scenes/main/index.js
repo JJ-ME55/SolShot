@@ -954,6 +954,16 @@ export class MainScene extends Scene {
       if (this.tanks[i]) {
         this.tanks[i].weapons = player.weapons || [];
         this.tanks[i].create(int2rgba(player.color), player.name);
+        // Group-chat: restore the player's last fired angle + power so
+        // turret/power bar default to where they last aimed. tank.create()
+        // sets rotation from terrain slope; we override AFTER, only if the
+        // server gave us a persisted value (null for never-fired players).
+        if (typeof player.lastAngle === 'number' && this.tanks[i].turret) {
+          try { this.tanks[i].turret.setRotation(player.lastAngle); } catch (_) {}
+        }
+        if (typeof player.lastPower === 'number' && this.tanks[i].setPower) {
+          try { this.tanks[i].setPower(player.lastPower); } catch (_) {}
+        }
       }
     });
 

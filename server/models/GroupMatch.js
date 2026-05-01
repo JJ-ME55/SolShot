@@ -88,6 +88,14 @@ const playerSchema = new mongoose.Schema({
     spawnY: { type: Number, default: null },
     currentX: { type: Number, default: null },
     currentY: { type: Number, default: null },
+
+    // Last fired angle (radians) + power (0-100). Persisted so when the
+    // player reopens the Mini App for their next turn, the turret + power
+    // bar default to where they last left them — same QoL pattern as
+    // Pocket Tanks. Null means "never fired" — Tank.js falls back to
+    // terrain-slope-derived rotation + default power 60.
+    lastAngle: { type: Number, default: null },
+    lastPower: { type: Number, default: null },
 }, { _id: false });
 
 const configSchema = new mongoose.Schema({

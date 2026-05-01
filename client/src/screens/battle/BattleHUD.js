@@ -346,6 +346,19 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
                 {turnTimer}s
               </div>
             )}
+            {/* Wind readout — critical for aiming. Live in the top bar so
+                mobile players don't have to scan for it. Arrow indicates
+                direction (▸ = east push, ◂ = west push). */}
+            <div style={{
+              fontFamily: "'Share Tech Mono', monospace",
+              fontSize: 10,
+              color: 'var(--kh)',
+              letterSpacing: '0.18em',
+              marginTop: 2,
+              opacity: 0.85,
+            }}>
+              WIND {wind >= 0 ? '▸' : '◂'} {Math.abs(wind).toFixed(0)}
+            </div>
           </div>
         </div>
 

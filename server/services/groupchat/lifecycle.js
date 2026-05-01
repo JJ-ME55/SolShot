@@ -403,6 +403,12 @@ export async function handleShot(matchId, firerTgId, shot) {
         }
     }
     firer.damageDealt = (firer.damageDealt || 0) + totalDamage;
+    // Shot accounting drives accuracy% on the trophy + AAR cards.
+    // Every server-validated fire is a "shot fired"; a "hit" is any shot
+    // that landed > 0 damage on an opponent (excludes self-damage and
+    // pure terrain misses).
+    firer.shotsFired = (firer.shotsFired || 0) + 1;
+    if (totalDamage > 0) firer.shotsHit = (firer.shotsHit || 0) + 1;
     // A successful shot resets the consecutive-miss counter
     firer.consecutiveMissedTurns = 0;
     // Persist aim state so the next time this player opens the Mini App

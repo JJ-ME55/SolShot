@@ -79,6 +79,8 @@ const playerSchema = new mongoose.Schema({
     // Stats this match
     damageDealt: { type: Number, default: 0 },                    // for tiebreaker
     kills: { type: Number, default: 0 },                          // direct KOs (own shot reduced opponent to 0 HP)
+    shotsFired: { type: Number, default: 0 },                     // every successful fire (server-validated)
+    shotsHit: { type: Number, default: 0 },                       // shots that dealt > 0 damage to any opponent
 
     // Wagering (Phase 2 — null on free)
     initialDepositTx: { type: String, default: null },

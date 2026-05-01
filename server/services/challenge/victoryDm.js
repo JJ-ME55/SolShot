@@ -193,17 +193,16 @@ export async function dispatchVictoryDm({ ms, room, winnerId, roomId, getAuthent
 /**
  * Build trophy card props from a GroupMatch document.
  *
- * Group-chat tracks fewer per-player stats than 1v1 (no shotsFired count,
- * no per-weapon damage breakdown in v1). Mappings:
+ * Mappings:
  *   - winner.callsign  → match winner's callsign
- *   - winner.damage    → match winner's damageDealt (lifetime in this match)
- *   - winner.accuracy  → 0 (group-chat doesn't track shot count v1)
- *   - winner.shots     → match winner's kills (proxy until shot tracking lands)
- *   - winner.best      → STANDARD (group-chat v1 only allows Single Shot)
+ *   - winner.damage    → match winner's damageDealt
+ *   - winner.accuracy  → shotsHit / shotsFired (rounded %)
+ *   - winner.shots     → shotsFired count (was kills proxy in v1)
+ *   - winner.best      → "ARSENAL" (full weapon shop is in play)
  *   - loser.callsign   → 2nd-place finisher's callsign (or "FIELD" if N>2)
  *   - score            → "1ST OF N" placement string
  *   - terrain          → biome name from match.backgroundIndex
- *   - duration         → match.endsAt - match.startedAt (real wall-clock)
+ *   - duration         → match.settledAt - match.startedAt (real wall-clock)
  */
 function buildGroupTrophyProps(match) {
     const ranked = match.rankedFinishers || [];
@@ -238,13 +237,20 @@ function buildGroupTrophyProps(match) {
         }
     }
 
+    // Accuracy = (shots that dealt damage) / (shots fired). Defaults to
+    // 0% when no shots fired (winner survived without firing — possible
+    // if everyone else timed out on idle penalty).
+    const shotsFired = winner?.shotsFired || 0;
+    const shotsHit = winner?.shotsHit || 0;
+    const accuracy = shotsFired > 0 ? Math.round((shotsHit / shotsFired) * 100) : 0;
+
     return {
         winner: {
             callsign: winnerCallsign,
             damage: winner?.damageDealt || 0,
-            accuracy: 0,
-            shots: winner?.kills || 0, // proxy: kills until shot count is tracked
-            best: 'STANDARD', // v1 only allows Single Shot
+            accuracy,
+            shots: shotsFired,
+            best: 'ARSENAL', // Full weapon shop is in play
         },
         loser: { callsign: loserCallsign },
         score: `1ST OF ${match.players?.length || 0}`,

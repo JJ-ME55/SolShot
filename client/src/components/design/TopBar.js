@@ -3,10 +3,11 @@ import React from 'react';
 /**
  * DesignTopBar — header used on Menu + similar hero screens.
  *
- * When `walletAddress` is missing, the right-side currency readout is
- * replaced with a CONNECT WALLET chip so new players see a clear
- * affordance instead of '◆ 0 SHOT  ◇ 0.00 SOL' which reads as broken.
- * Pass `onConnectWallet` to wire the chip into your wallet flow.
+ * SolShot uses Dynamic embedded wallets — every user has a wallet
+ * provisioned automatically on Telegram identity, so there is no
+ * "Connect Wallet" affordance anywhere in the UI. Currency readouts
+ * always render; new users will simply show 0 balances until they
+ * earn or buy in.
  */
 export default function DesignTopBar({
   callsign = 'OPERATIVE',
@@ -15,10 +16,7 @@ export default function DesignTopBar({
   shotBalance = 0,
   solBalance = 0,
   badgeSrc,
-  walletAddress,
-  onConnectWallet,
 }) {
-  const connected = !!walletAddress;
   return (
     <div style={{
       position: 'relative', zIndex: 3,
@@ -38,30 +36,8 @@ export default function DesignTopBar({
         <span style={{ color: 'var(--accent)' }}>SHOT</span>
       </div>
       <div style={{ justifySelf: 'end', display: 'flex', alignItems: 'center', gap: 14, fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '0.15em' }}>
-        {connected ? (
-          <>
-            <span style={{ color: 'var(--accent)' }}>&#9670; {shotBalance.toLocaleString()} SHOT</span>
-            <span style={{ color: 'var(--bone)' }}>&#9671; {solBalance.toFixed(2)} SOL</span>
-          </>
-        ) : (
-          <button
-            onClick={onConnectWallet}
-            style={{
-              fontFamily: 'var(--f-display)',
-              fontSize: 11,
-              letterSpacing: '0.22em',
-              padding: '8px 14px',
-              background: 'var(--accent)',
-              color: 'var(--bg-deep)',
-              border: 'none',
-              clipPath: 'var(--clip-6)',
-              cursor: 'pointer',
-              textTransform: 'uppercase',
-            }}
-          >
-            ◇ CONNECT WALLET
-          </button>
-        )}
+        <span style={{ color: 'var(--accent)' }}>&#9670; {shotBalance.toLocaleString()} SHOT</span>
+        <span style={{ color: 'var(--bone)' }}>&#9671; {solBalance.toFixed(2)} SOL</span>
       </div>
     </div>
   );

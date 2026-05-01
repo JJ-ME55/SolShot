@@ -13,7 +13,7 @@ const tankImg = { imageRendering: 'pixelated' };
 function MenuScreen({ navigate }) {
   const { isTelegram, user: tgUser } = useTelegram();
   const isMobile = useIsMobile();
-  const { shotBalance, balance: solBalance, walletAddress } = useSolShotWallet();
+  const { shotBalance, balance: solBalance } = useSolShotWallet();
   const [onlineCount, setOnlineCount] = useState(247);
 
   const callsign = localStorage.getItem('solshot_handle') || 'OPERATIVE';
@@ -29,21 +29,8 @@ function MenuScreen({ navigate }) {
     { id: 'barracks', label: 'BARRACKS', sub: 'STATS · LEADERBOARD',             screen: 'barracks' },
   ];
 
-  // Trigger the wallet adapter modal. WalletContext exposes setVisible
-  // for explicit show — but as a fallback we just route to the barracks
-  // screen which has the full wallet flow.
-  const handleConnectWallet = () => {
-    try {
-      if (typeof window !== 'undefined' && window.walletModalSetVisible) {
-        window.walletModalSetVisible(true);
-        return;
-      }
-    } catch (_) {}
-    navigate('barracks');
-  };
-
   if (isMobile) {
-    return <MobileMenu navigate={navigate} callsign={callsign} shotBalance={shotBalance || 0} solBalance={solBalance || 0} walletAddress={walletAddress} onConnectWallet={handleConnectWallet} onlineCount={onlineCount} secondary={secondary} />;
+    return <MobileMenu navigate={navigate} callsign={callsign} shotBalance={shotBalance || 0} solBalance={solBalance || 0} onlineCount={onlineCount} secondary={secondary} />;
   }
 
   return (
@@ -55,15 +42,13 @@ function MenuScreen({ navigate }) {
         backgroundSize: '48px 48px',
       }} />
 
-      {/* Top bar */}
+      {/* Top bar — Dynamic wallet provisions automatically, no connect step */}
       <DesignTopBar
         callsign={callsign}
         tier="UNRANKED"
         level={1}
         shotBalance={shotBalance || 0}
         solBalance={solBalance || 0}
-        walletAddress={walletAddress}
-        onConnectWallet={handleConnectWallet}
         badgeSrc="/assets/images/badges/badge-bronze.png"
       />
 
@@ -139,8 +124,7 @@ function MenuScreen({ navigate }) {
 }
 
 /* ═══ MOBILE LANDSCAPE LAYOUT ═══ */
-function MobileMenu({ navigate, callsign, shotBalance, solBalance, walletAddress, onConnectWallet, onlineCount, secondary }) {
-  const connected = !!walletAddress;
+function MobileMenu({ navigate, callsign, shotBalance, solBalance, onlineCount, secondary }) {
   return (
     <div style={{ position: 'relative', width: '100%', height: '100dvh', overflow: 'hidden', background: 'var(--bg-deep)' }}>
       {/* Grid bg */}
@@ -169,30 +153,8 @@ function MobileMenu({ navigate, callsign, shotBalance, solBalance, walletAddress
           <span style={{ color: 'var(--accent, #c8a84a)' }}>SHOT</span>
         </div>
         <div style={{ justifySelf: 'end', display: 'flex', alignItems: 'center', gap: 14, fontFamily: 'var(--f-mono)', fontSize: 9, letterSpacing: '0.15em' }}>
-          {connected ? (
-            <>
-              <span style={{ color: 'var(--accent)' }}>◆ {(shotBalance || 0).toLocaleString()} SHOT</span>
-              <span style={{ color: 'var(--bone)' }}>◇ {(solBalance || 0).toFixed(2)} SOL</span>
-            </>
-          ) : (
-            <button
-              onClick={onConnectWallet}
-              style={{
-                fontFamily: 'var(--f-display)',
-                fontSize: 9,
-                letterSpacing: '0.22em',
-                padding: '6px 10px',
-                background: 'var(--accent)',
-                color: 'var(--bg-deep)',
-                border: 'none',
-                clipPath: 'var(--clip-6)',
-                cursor: 'pointer',
-                textTransform: 'uppercase',
-              }}
-            >
-              ◇ CONNECT
-            </button>
-          )}
+          <span style={{ color: 'var(--accent)' }}>◆ {(shotBalance || 0).toLocaleString()} SHOT</span>
+          <span style={{ color: 'var(--bone)' }}>◇ {(solBalance || 0).toFixed(2)} SOL</span>
         </div>
       </div>
 

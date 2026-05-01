@@ -616,6 +616,162 @@ export class MainScene extends Scene {
     }
   };
 
+  // ── Tactile pass — impact juice (damage popup + hit-stop + extra shake) ──
+  //
+  // Called from the turnResult HP-update loop for every tank that took
+  // damage this shot. Layers four kinds of feedback that compound to
+  // make every connect *feel* satisfying:
+  //
+  //   1. Damage number popup that scale-pops in and floats up
+  //   2. Hit-stop: brief 60ms scene freeze on tank-direct-hit (the
+  //      AAA "frame freeze" that emphasises connection)
+  //   3. Extra camera shake on top of the radius-based shake from Blast.js
+  //   4. Damage-band-aware haptic (.light / .medium / .heavy)
+  //
+  // Damage bands (relative to 250 max HP):
+  //   ≤10  glancing    → grey, small text, .light haptic
+  //   ≤50  solid       → bone,  medium text, .medium haptic
+  //   ≤100 critical    → accent, large text, .heavy haptic + 60ms hit-stop
+  //   >100 devastating → red,    huge text,   .heavy haptic + 80ms hit-stop + extra shake
+
+  _playImpactJuice = (tankIndex, damage, isLocalPlayerHit) => {
+    if (!damage || damage <= 0) return;
+    if (!this.sys?.isActive()) return;
+    const tank = this.tanks[tankIndex];
+    if (!tank) return;
+
+    // Damage band classification
+    let band, color, fontSize, hapticLevel, hitStopMs, extraShake;
+    if (damage <= 10) {
+      band = 'glancing';
+      color = '#7a9060'; // var(--olive)
+      fontSize = 18;
+      hapticLevel = 'light';
+      hitStopMs = 0;
+      extraShake = 0;
+    } else if (damage <= 50) {
+      band = 'solid';
+      color = '#c8b87a'; // var(--bone)
+      fontSize = 24;
+      hapticLevel = 'medium';
+      hitStopMs = 0;
+      extraShake = 0;
+    } else if (damage <= 100) {
+      band = 'critical';
+      color = '#c8781a'; // var(--accent)
+      fontSize = 32;
+      hapticLevel = 'heavy';
+      hitStopMs = 60;
+      extraShake = 0.005;
+    } else {
+      band = 'devastating';
+      color = '#a83a1a'; // var(--red)
+      fontSize = 40;
+      hapticLevel = 'heavy';
+      hitStopMs = 80;
+      extraShake = 0.012;
+    }
+
+    // 1. DAMAGE POPUP — Phaser text that scale-pops + floats up + fades
+    this._spawnDamagePopup(tank.x, tank.y - 24, `-${damage}`, color, fontSize);
+
+    // 2. HIT-STOP — pause Phaser physics + tweens for ~60-80ms on
+    //    critical/devastating hits. Creates the "the world pauses for
+    //    a beat" feel of a real connection. Skip on glancing/solid
+    //    so chained shots stay snappy.
+    if (hitStopMs > 0) this._hitStop(hitStopMs);
+
+    // 3. EXTRA SHAKE — adds on top of the radius-based shake from
+    //    Blast.js. Only fires on critical+ so glancing hits don't feel
+    //    overweighted.
+    if (extraShake > 0 && this.cameras?.main) {
+      this.cameras.main.shake(120, extraShake);
+    }
+
+    // 4. HAPTIC — only the local player feels it, only if they're the
+    //    one taking damage. Map damage band to TG WebApp haptic level.
+    if (isLocalPlayerHit && window.haptic) {
+      try { window.haptic[hapticLevel](); } catch (_) {}
+    }
+  };
+
+  /**
+   * Damage-number popup. Scales from 0.4 → 1.15 → 1.0 in 200ms
+   * (overshoot bounce), then floats up 36px + fades over 900ms.
+   * Total visible time ~1.1s. Designed to read at a glance during
+   * fast shots without lingering through the next turn.
+   */
+  _spawnDamagePopup = (x, y, text, color, fontSize) => {
+    if (!this.add) return;
+    const popup = this.add.text(x, y, text, {
+      fontFamily: "'Black Ops One', 'Arial Black', sans-serif",
+      fontSize: `${fontSize}px`,
+      color,
+      stroke: '#000',
+      strokeThickness: Math.max(2, fontSize / 12),
+      shadow: {
+        offsetX: 0,
+        offsetY: 1,
+        color: '#000',
+        blur: 4,
+        stroke: false,
+        fill: true,
+      },
+    });
+    popup.setOrigin(0.5, 0.5);
+    popup.setDepth(900);
+    popup.setScale(0.4);
+
+    // Phase 1: bouncy scale-in (200ms)
+    this.tweens.add({
+      targets: popup,
+      scale: 1.15,
+      duration: 120,
+      ease: 'Back.easeOut',
+      onComplete: () => {
+        // Phase 2: settle to 1.0
+        this.tweens.add({
+          targets: popup,
+          scale: 1.0,
+          duration: 80,
+          ease: 'Quad.easeOut',
+        });
+      },
+    });
+
+    // Phase 3: float up + fade (runs in parallel with scale phases)
+    this.tweens.add({
+      targets: popup,
+      y: y - 36,
+      alpha: 0,
+      duration: 900,
+      delay: 200,
+      ease: 'Quad.easeIn',
+      onComplete: () => { try { popup.destroy(); } catch (_) {} },
+    });
+  };
+
+  /**
+   * Brief hit-stop: pause Phaser physics + tween manager for `ms`
+   * milliseconds, then resume. The "AAA freeze frame" that emphasises
+   * impact connection. Tween targets that were mid-animation resume
+   * cleanly.
+   */
+  _hitStop = (ms) => {
+    if (!this.physics?.world || !this.tweens) return;
+    try {
+      this.physics.world.pause();
+      this.tweens.pauseAll();
+    } catch (_) { return; }
+    setTimeout(() => {
+      if (!this.sys?.isActive()) return;
+      try {
+        this.physics.world.resume();
+        this.tweens.resumeAll();
+      } catch (_) {}
+    }, ms);
+  };
+
   // ── Elimination: wreckage, kill text, spectator mode ──
 
   _playEliminationEffect = (tankIndex, eliminatedId, killedById, reason) => {
@@ -1360,17 +1516,19 @@ export class MainScene extends Scene {
       }
     }
 
-    // 2. Update HP from server — use authoritative HP values
-    // N-player: iterate data.players[] for per-player HP
+    // 2. Update HP from server — use authoritative HP values + play
+    //    impact juice (damage popup, hit-stop, haptic, extra shake) for
+    //    every tank that took damage this shot. The juice methods are
+    //    band-aware and no-op on zero-damage misses.
     if (data.players && Array.isArray(data.players)) {
       data.players.forEach((playerData, i) => {
         const tank = this.tanks[i];
         if (tank && tank.scoreHandler && playerData.hp !== undefined) {
           const oldHp = tank.scoreHandler.hp;
           tank.scoreHandler.hp = Math.max(0, playerData.hp);
-          // Haptic feedback: heavy pulse when local player takes damage (MOB-01)
-          if (i === this.myPlayerIndex && playerData.hp < oldHp) {
-            window.haptic && window.haptic.heavy();
+          const dmg = oldHp - playerData.hp;
+          if (dmg > 0) {
+            this._playImpactJuice(i, dmg, i === this.myPlayerIndex);
           }
         }
       });
@@ -1382,27 +1540,36 @@ export class MainScene extends Scene {
         if (tank && tank.scoreHandler) {
           const oldHp = tank.scoreHandler.hp;
           tank.scoreHandler.hp = Math.max(0, serverHp);
-          if (posIdx === this.myPlayerIndex && serverHp < oldHp) {
-            window.haptic && window.haptic.heavy();
+          const dmg = oldHp - serverHp;
+          if (dmg > 0) {
+            this._playImpactJuice(posIdx, dmg, posIdx === this.myPlayerIndex);
           }
         }
       }
     } else if (data.damage) {
-      // Fallback: calculate from damage if server doesn't send HP
+      // Fallback: calculate from damage map if server doesn't send HP
       for (const [targetId, dmg] of Object.entries(data.damage)) {
         const posIdx = this._lastPositions.findIndex(p => p.socketId === targetId);
         const tank = posIdx >= 0 ? this.tanks[posIdx] : null;
         if (tank && tank.scoreHandler) {
           const absDmg = Math.abs(dmg);
           if (absDmg > 0) {
-            const oldHp = tank.scoreHandler.hp;
-            tank.scoreHandler.hp = Math.max(0, oldHp - absDmg);
-            if (posIdx === this.myPlayerIndex) {
-              window.haptic && window.haptic.heavy();
-            }
+            tank.scoreHandler.hp = Math.max(0, tank.scoreHandler.hp - absDmg);
+            this._playImpactJuice(posIdx, absDmg, posIdx === this.myPlayerIndex);
           }
         }
       }
+    }
+
+    // 2b. Connect-feedback haptic for the firer — when YOU hit someone,
+    //     a small success-bump on your phone confirms the hit landed.
+    //     Distinct from the .heavy() the target player feels (handled
+    //     above via _playImpactJuice's isLocalPlayerHit branch).
+    const firedByMe = this._lastPositions?.find(
+      p => p.socketId === data.playerId
+    ) && this._lastPositions.findIndex(p => p.socketId === data.playerId) === this.myPlayerIndex;
+    if (firedByMe && data.totalDamage && data.totalDamage > 0 && window.haptic) {
+      try { window.haptic.light(); } catch (_) {}
     }
 
     // 3. Sync tank positions to server-authoritative values.

@@ -310,32 +310,41 @@ export class MainScene extends Scene {
     this._currentTheme = theme; // Store for terrain layer colors
     ctx.fillStyle = theme.fill;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    // Sky: draw background image, vertically centered in the upper portion
+    // Sky: draw background image, showing more of the horizon detail.
+    // Previous offsetY = -25% cropped the bottom of the BG image hard,
+    // killing the mountains+horizon (user reported: "fades too black
+    // too quickly, strange effect"). Reduced to -10% so ~90% of the
+    // image's bottom is preserved into the visible viewport.
     var bgTex = this.textures.exists(theme.key) ? this.textures.get(theme.key) : null;
     if (bgTex && bgTex.source && bgTex.source[0]) {
       var img = bgTex.source[0].image;
-      // Scale image to fill canvas width, position sky in upper half
       var scale = canvas.width / img.width;
       var drawW = img.width * scale;
       var drawH = img.height * scale;
-      // Offset: pull image up so the sky portion fills the visible area above terrain
-      // Terrain starts at ~55% down, so show sky from top to ~55%
-      var offsetY = -(drawH * 0.25);
+      // -10% offset (was -25%) — keep the horizon line visible
+      var offsetY = -(drawH * 0.10);
       ctx.drawImage(img, 0, 0, img.width, img.height, 0, offsetY, drawW, drawH);
     }
-    // Gradient fade from sky into dark terrain area (smooth transition)
-    // Parse theme fill hex → RGB for gradient stops
+    // Gradient fade from sky into dark terrain area.
+    // Previous gradient at 40-55% slammed into the bottom of the BG image
+    // because the image only filled 0-55%. Pushed down to 55-72% so the
+    // fade now lives BELOW the image's natural bottom edge, smoothing the
+    // transition into the dark terrain band rather than chopping mountains
+    // mid-silhouette. Final alpha 0.92 (was 1.0) so a faint horizon hint
+    // bleeds into the terrain band instead of a hard cutoff.
     const r = parseInt(theme.fill.slice(1,3), 16);
     const g = parseInt(theme.fill.slice(3,5), 16);
     const b = parseInt(theme.fill.slice(5,7), 16);
-    var fadeGrad = ctx.createLinearGradient(0, canvas.height * 0.4, 0, canvas.height * 0.55);
+    var fadeGrad = ctx.createLinearGradient(0, canvas.height * 0.55, 0, canvas.height * 0.72);
     fadeGrad.addColorStop(0, `rgba(${r},${g},${b},0)`);
-    fadeGrad.addColorStop(1, `rgba(${r},${g},${b},1)`);
+    fadeGrad.addColorStop(0.5, `rgba(${r},${g},${b},0.55)`);
+    fadeGrad.addColorStop(1, `rgba(${r},${g},${b},0.92)`);
     ctx.fillStyle = fadeGrad;
-    ctx.fillRect(0, Math.floor(canvas.height * 0.4), canvas.width, Math.ceil(canvas.height * 0.15));
-    // Solid dark fill below the gradient for terrain area
+    ctx.fillRect(0, Math.floor(canvas.height * 0.55), canvas.width, Math.ceil(canvas.height * 0.17));
+    // Solid dark fill below the fade for terrain area (terrain renders
+    // on top — this is just background color where heightmap reaches)
     ctx.fillStyle = theme.fill;
-    ctx.fillRect(0, Math.floor(canvas.height * 0.55), canvas.width, Math.ceil(canvas.height * 0.45));
+    ctx.fillRect(0, Math.floor(canvas.height * 0.72), canvas.width, Math.ceil(canvas.height * 0.28));
     if (this.textures.exists('background')) this.textures.remove('background');
     this.background = this.textures.addCanvas('background', canvas);
     this._bgImage = this.add.image(canvas.width / 2, canvas.height / 2, 'background').setDepth(-10);

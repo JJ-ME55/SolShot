@@ -124,6 +124,131 @@ function PlayerCard({ player, isMe, isActive, flipped, compact }) {
 
 
 /* ════════════════════════════════════════════
+   FFA PLAYER STRIP — 3-10 player layout
+   ════════════════════════════════════════════
+   Shows:
+     - "X/Y ALIVE" alive count badge
+     - The CURRENT FIRER's card (who's about to shoot — most important)
+     - MY card (so I always see my own HP)
+     - A thin row of color-pips for everyone else (tank-coloured + HP%)
+   No horizontal scroll, no full-roster crush. Designed to fit a phone
+   top-bar in landscape and portrait. The pip row gives ambient awareness
+   of the rest of the field without occluding the playfield.
+*/
+function FFAPlayerStrip({ players, myIdx, currentIdx }) {
+  const aliveCount = players.filter(p => p.alive !== false).length;
+  const me = players[myIdx];
+  const current = players[currentIdx];
+  const meIsCurrent = myIdx === currentIdx;
+  // Anyone NOT the current firer and NOT me — these become pips
+  const others = players
+    .map((p, i) => ({ p, i }))
+    .filter(({ i }) => i !== currentIdx && i !== myIdx);
+
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      flex: 1,
+      minWidth: 0,
+    }}>
+      {/* Alive count badge */}
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        padding: '3px 8px',
+        background: 'var(--bg-raised)',
+        border: '1px solid var(--border)',
+        clipPath: 'var(--clip-6)',
+        flexShrink: 0,
+      }}>
+        <span style={{
+          fontFamily: 'var(--f-display)',
+          fontSize: 12,
+          color: 'var(--bone)',
+          letterSpacing: '0.08em',
+          lineHeight: 1,
+        }}>{aliveCount}/{players.length}</span>
+        <span style={{
+          fontFamily: 'var(--f-mono)',
+          fontSize: 7,
+          color: 'var(--olive)',
+          letterSpacing: '0.2em',
+          marginTop: 2,
+        }}>ALIVE</span>
+      </div>
+
+      {/* CURRENT firer card */}
+      <PlayerCard
+        player={current}
+        isMe={meIsCurrent}
+        isActive
+        compact
+      />
+
+      {/* MY card (only if I'm not the current firer) */}
+      {!meIsCurrent && me && (
+        <PlayerCard
+          player={me}
+          isMe
+          isActive={false}
+          compact
+        />
+      )}
+
+      {/* Other players → pips */}
+      {others.length > 0 && (
+        <div style={{
+          display: 'flex',
+          gap: 3,
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          minWidth: 0,
+          flex: 1,
+          maxWidth: 140,
+        }}>
+          {others.map(({ p, i }) => {
+            const dead = p.alive === false;
+            const hp = p.hp ?? 250;
+            const hpPct = Math.max(0, Math.min(100, (hp / 250) * 100));
+            const tint = p.color || 'var(--olive)';
+            return (
+              <div
+                key={i}
+                title={`${p.name || `P${i + 1}`} · ${dead ? 'KIA' : `${hp}/250`}`}
+                style={{
+                  width: 14,
+                  height: 18,
+                  background: 'var(--bg-deep)',
+                  border: `1px solid ${dead ? 'var(--rust)' : tint}`,
+                  position: 'relative',
+                  opacity: dead ? 0.35 : 1,
+                  flexShrink: 0,
+                }}
+              >
+                {/* Inner fill = HP% (vertical bar bottom-up) */}
+                {!dead && (
+                  <div style={{
+                    position: 'absolute',
+                    left: 0, right: 0, bottom: 0,
+                    height: `${hpPct}%`,
+                    background: tint,
+                    opacity: 0.6,
+                  }} />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+/* ════════════════════════════════════════════
    TURN / ROUND INFO (center of top bar, 1v1)
 ════════════════════════════════════════════ */
 function TurnInfo({ round, totalRounds, turnTimer, isPlayerTurn, wind, players, currentPlayerIndex, gameMode }) {
@@ -334,24 +459,27 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
           borderBottom: '1px solid rgba(61,74,47,0.5)',
           gap: 6,
         }}>
-          {/* Player strip — horizontally scrollable so 4-10 player FFAs
-              don't squish each card to nothing. The active firer's card
-              is highlighted (PlayerCard handles that internally). On
-              mobile we hide scrollbars but keep momentum scroll for thumb.
-              Webkit/Safari hides via ::-webkit-scrollbar (in index.css)
-              but here we also clip-mask the edges to suggest more content. */}
-          <div style={{
-            display: 'flex',
-            gap: 4,
-            flex: 1,
-            overflowX: players.length > 4 ? 'auto' : 'visible',
-            WebkitOverflowScrolling: 'touch',
-            scrollbarWidth: 'none',
-          }}>
-            {players.map((p, i) => (
-              <PlayerCard key={i} player={p} isMe={i === myPlayerIndex} isActive={i === currentPlayerIndex} compact />
-            ))}
-          </div>
+          {/* Player display — adaptive to roster size.
+                1-2 players (1v1):  show both player cards full-width.
+                3+ players (FFA):   show the CURRENT FIRER's card + MY card
+                                    + a row of color pips for everyone else.
+                                    Each pip is tank-coloured, dims when
+                                    eliminated, and shrinks its inner bar to
+                                    its HP%. Gives at-a-glance multiplayer
+                                    awareness without horizontal scroll. */}
+          {players.length <= 2 ? (
+            <div style={{ display: 'flex', gap: 4, flex: 1 }}>
+              {players.map((p, i) => (
+                <PlayerCard key={i} player={p} isMe={i === myPlayerIndex} isActive={i === currentPlayerIndex} compact />
+              ))}
+            </div>
+          ) : (
+            <FFAPlayerStrip
+              players={players}
+              myIdx={myPlayerIndex}
+              currentIdx={currentPlayerIndex}
+            />
+          )}
           <div style={{ textAlign: 'right', flexShrink: 0 }}>
             <div style={{
               fontFamily: 'var(--f-display)',

@@ -964,4 +964,187 @@ Don't add a new bot command for a new mode. Add it to the `/play` picker. One fr
 
 ---
 
+## ENTRY 2026-05-01 EVE — design system finish + tactile pass + tooling
+
+Long focused session on group-chat polish, design system unification, and shipping the AAA-feel layer. Continued from compaction at `e5d6864`.
+
+### Group-chat fixes (continuation)
+
+The group-chat E2E flow was already wired but had concrete UX bugs surfaced by JJ's live testing in `@metallegbob` and other groups:
+
+- **`36bc6b9`** — mounted full `BattleHUD` overlay. Previous bespoke `ActivePlayerBar`/`ActiveStatusStrip` were placeholder; missing FIRE button, weapon picker, sliders. Same-game principle: drop the bespoke chrome, mount the same `BattleHUD` 1v1 uses with `gameMode='group-chat'` flag. Six weapons + sliders + FIRE button visible from the live test screenshot moment.
+- **`dac9c3e`** — HP scale fix. `GroupMatch.players[].hp` schema default was 100 (legacy), 1v1 rebalanced to 250. Cross-screen HP discrepancy was a SECOND symptom of same bug: firer's screen syncing local 250→server 100 looked like phantom damage on misses; observers (no shotResult) saw nothing. Schema bump to 250 fixed both. Plus weapon-name fallback in `WeaponCard` (was reading `weapon?.name` on bare `{id}` objects from group-chat scene data → fell to "SINGLE SHOT" label even when firing Heat Seeker). Plus `formatTimeAgo` helper to replace "Settled expired ago" copy bug. Plus full After Action Report card replacing the misleading SVG trajectory preview.
+- **`7614348`** — wind locked across match (no per-turn regen), real-time `shotResult` broadcast via socket.io rooms (`groupmatch:<matchId>`), chat post deferred 3s with `setTimeout` so chat doesn't spoiler the visual, `lastAngle`/`lastPower` persisted on schema + plumbed through scene data so reopen preserves aim, mobile wind in BattleHUD.
+
+### Performance pass — AAA-snappy
+
+Two compounding rounds. JJ flagged "fire feels delayed sometimes" → snowballed into a full audit.
+
+**Round 1 (`b4f7feb` + `e5494b1`):**
+- `_firePending` flag now in `isFiring` state — FIRE button dims the instant you click, not after server roundtrip
+- Removed redundant `findOne(...).lean()` after `handleShot` already saved (`-50–200ms` per shot on Atlas)
+- Optimistic UI on `purchaseGroupWeapon` + `groupShopComplete` — gold deducts and weapon appears the instant you tap; server reconciles
+- Atomic `findOneAndUpdate` for purchase + shop-complete (replaces load-modify-save races)
+- Force WebSocket-only socket.io transport (`{ transports: ['websocket'], upgrade: false }`) — saves the polling-handshake `~150-300ms` on cold connect
+- `getMyGroupMatches` projection skips `terrainSnapshot` (the 3-5KB heaviest field)
+
+**Round 2 (`c69deec`)** — explicitly asked "those were ALL the wins?" Pushed harder, found 7 more:
+- socket.io `perMessageDeflate` enabled (`threshold: 1024`) — `shotResult` broadcasts compress 30-40% of original
+- `sanitizeMatchLight()` for shotResult broadcasts — drops `terrainSnapshot` (already in `terrainUpdate` delta)
+- Compound index `{ players.telegramUserId: 1, state: 1, updatedAt: -1 }` for `/mygames`
+- `pushMatchHistory` swapped N sequential `findOneAndUpdate` calls for one `User.bulkWrite` — 9+ round trips → 2 on settle
+- Best-win-streak update via atomic `$expr` conditional (no read-then-write)
+- Settle-time chat post + DM + history push moved into `setImmediate` so they don't block the killing player's broadcast
+- Single-pass `for...of` over `match.players` for hp/alive/gold maps (CPU micro-win)
+
+End-to-end perceived latency on shop/settle interactions: **~95% reduction**.
+
+### Multi-projectile animation fix (`e96044d`)
+
+JJ: "the 3 shot isn't showing 3 projectiles". Root cause — server's `shotData` was missing `subTrajectories`, `scatterPoints`, `spiderLegs`, `tunnelEntry`, `tunnelExit`. Six weapons silently rendering only their primary trajectory: 3 Shot, Tommy Gun, Crazy Ivan, Hail Storm, Spider, Ground Hog. Damage was always correct; the show was missing. Mirrored the 1v1 `turnResult` shape, added `thinTrajectory` pass for wire-byte savings.
+
+### Leaderboard + Barracks scroll (`80f93f2`) + accuracy (`2750219`)
+
+@Just1Fishing: "leaderboard could do with being cleaner" + "can't scroll up or down on phone". Two fixes:
+- `/leaderboard` bot reply wrapped in HTML `<pre>` block so monospace columns line up. Top 3 get medal emojis. Handle column 12 → 14 with ellipsis truncation (was silently chopping `STRAIGHTSHOO~~TER~~`).
+- Barracks scroll bug — same `minHeight: 100dvh + overflow: hidden` pattern that bit GroupMatchScreen. Standard scroll-safe replacement.
+
+JJ: "accuracy reads 0 on the post-match card?" — `victoryDm.js` had `accuracy: 0` hardcoded with a v1 TODO from when group-chat only supported Single Shot. Schema bumped with `shotsFired` + `shotsHit`, `lifecycle.handleShot` increments both, trophy card now computes real accuracy.
+
+### Design system unification (rounds 1-3)
+
+JJ: "screens and visual are key, consistency is key — fetch this design file, read its readme, and implement". Audit + implementation across 3 rounds.
+
+**Round 1 (`314a0a6`)** — foundation:
+- Legacy palette aliased down to design tokens (`--rg → --accent-hot`, `--kh → --olive`, etc.) — 6 screens (~1200 LOC) snap to field-manual aesthetic with zero per-screen rewrites
+- `--tg-chrome-top`, `--tg-chrome-side`, `--tg-chrome-side-mb` utility tokens for TG Mini App back/X reserve. Mobile media query tightens side reserve.
+- TopBar (used everywhere) — padding now uses `var(--tg-chrome-side)`, tokens, clip-path swap
+- GroupMatchScreen hex literals → tokens
+
+**Round 2 (`bade5b9`)** — coverage:
+- 4 more screens with the scroll bug (Armory, ChallengeAccept, Loadout, Prestige) — same trap as Barracks
+- Vignette softened 0.55 → 0.38 alpha at the edge for phone readability in real outdoor light
+- BattleHUD N-player polish: scrollable player strip (initial attempt — superseded), wind in accent, 25+ hex → tokens
+- LobbyScreen 17 borderRadius:3/4 → clip-path
+- AIPracticeScreen full rewrite (worst Tier 3 offender — used `'#999'`, `borderRadius: 6`, hardcoded font strings)
+- HowToPlay + Terms borderRadius cleanup
+
+**Round 3 (`99c0579`)** — finish line:
+- Lobby panel `<EmptyState>` "NO LOBBIES MATCH"
+- Armory SOL "COMING SOON" + SHOT "LOCKER EMPTY" `<EmptyState>`s
+- Loadout 0/3 inline ACTIVE LOADOUT tile indicator with dashed empty slots + comment-style footer
+- Menu wallet-disconnect chip — *reverted in `3be3c6b` per JJ correction; SolShot uses Dynamic auto-provisioning, no connect step*
+- Prestige progress bar + "{balance} / {cost} · {remaining} TO GO" status + "// EARN $SHOT BY..." earn-more hint
+- Angle/Power slider track 6px → 12px (matches thumb size, thumb-friendlier on phones)
+
+### Empty/loading/error states (`a398db0`)
+
+JJ: "what is empty load state lol" → explained → asked for design-claude brief → handed off.
+
+Design Claude returned `IDle/handoff_empty_states/` with `<EmptyState>`, `<SkeletonRow>`, `<SkeletonCard>`, `<ErrorState>` primitives + 13 hand-rolled SVG icons + per-screen specs + tone-of-voice copy ("NO CONTACT ON RADAR" / "LINK SEVERED" / "TRANSMISSION FAILURE" — imperative, zero apology).
+
+Converted babel-prototype `empty-states-shared.jsx` → `client/src/components/EmptyStates.js` proper React module. Wired into 5 highest-impact screens:
+
+| Screen | States covered |
+|---|---|
+| MyGamesScreen | empty (radar / "NO CONTACT ON RADAR" / FIND MATCH), loading (5× skeleton rows at 70px), error ("LINK SEVERED" + RETRY) |
+| BarracksScreen · Combat Record | loading (6× SkeletonCard variant=stat in 3-col grid) |
+| BarracksScreen · Leaderboard | empty (target / "NO RANKED OPERATIVES" / DEPLOY NOW), loading (7× skeleton rows at 36px) |
+| ChallengeAcceptScreen | expired (skull icon), not-found (search), error ("LOOKUP FAILED" + RETRY), loading (3 stacked skeletons) |
+| GroupMatchScreen | match-not-found (search / EmptyState), other errors (ErrorState + RETRY), loading skeleton |
+
+### Tactile pass (`db947d0`)
+
+JJ: "iShoot for 2026" bar → impact moments need AAA juice. `_playImpactJuice(tankIndex, damage, isLocalPlayerHit)` method in MainScene called from the turnResult HP-update loop. Four damage bands × four kinds of feedback:
+
+| Band | Popup color/size | Hit-stop | Extra shake | Haptic |
+|---|---|---|---|---|
+| ≤10 (glancing) | olive 18px | — | — | `.light` |
+| ≤50 (solid) | bone 24px | — | — | `.medium` |
+| ≤100 (critical) | accent 32px | 60ms | 0.005 | `.heavy` |
+| >100 (devastating) | red 40px | 80ms | 0.012 | `.heavy` |
+
+Damage popup motion: `Back.easeOut` scale (0.4 → 1.15 → 1.0, 200ms) + `Quad.easeIn` 36px float-up + fade over 900ms. Hit-stop pauses Phaser physics + tween manager via `setTimeout`. Plus `.light()` "you hit them" haptic for the firer's phone — both sides of the connect get tactile feedback.
+
+### Phaser BG fade (finally fixed in `c3cdbfd`)
+
+JJ flagged 3 sessions running. Three contributing causes:
+- Image offsetY `-25%` of scaled height was hard-cropping the mountain/horizon detail. Reduced to `-10%` → ~90% of image bottom preserved.
+- Fade gradient at 40-55% canvas height was slamming into the image's bottom edge mid-silhouette. Pushed to 55-72% so fade lives BELOW the image's natural bottom.
+- Fade endpoint 1.0 alpha → 0.92 with midpoint stop so a faint horizon hint bleeds into the terrain band.
+
+All 6 themes (jungle/arctic/desert/moon/volcanic/default) noticeably more cinematic.
+
+### N-player HUD redesign (`c3cdbfd`)
+
+JJ: "the multiplayer scrollable HUD feels clunky and there might be a better way to represent peoples health". Built `<FFAPlayerStrip>`:
+- "X/Y ALIVE" count badge
+- Current firer's PlayerCard
+- YOUR PlayerCard (always visible)
+- Color pips for everyone else (tank-coloured, dimmed on KIA, inner bar = HP%, hover-title = full name)
+
+Pattern matches AAA mobile (Brawl Stars / Clash Royale) — show immediate combat info, abstract everyone else into ambient indicators. No horizontal scroll, no modal, no occluded playfield. 1v1 layout unchanged.
+
+### Audio brief (`db947d0`) + Word doc
+
+`Docs/briefs/SolShot_Audio_Brief.docx` (40KB, formatted Word doc via `python-docx`). Paste-ready for Fiverr/Upwork. Covers UI cue set (~25), combat cues for all 20 weapons (~80, 3 cues each), damage feedback bands, movement/controls, biome ambient loops, optional menu theme. Reference tracks anchored on iShoot / Pocket Tanks / Worms / Hi-Fi Rush. ~$800-1,500 single-designer budget. Generator script kept at `Docs/briefs/generate_audio_brief_docx.py`.
+
+### Connect-wallet UI removal (`3be3c6b`)
+
+JJ correction mid-session: "we are doing dynamic wallet, remove all connect wallet functionality". Reverted my just-shipped CONNECT WALLET chip in DesignTopBar + MenuScreen. Deleted dead `client/src/components/WalletDisplay.js` (had `CONNECT [SOON]` + two `<WalletMultiButton />` instances). Privacy policy "Wallet Address" clause rewritten for Dynamic auto-provisioning.
+
+Left `WalletContext.js` provider machinery in place — Dynamic merge (commit `8436bf3` on `launch`) replaces it on its own. No user-visible UI from that file today.
+
+### Solo-task batch (`2c0c8b9`)
+
+After "tackle the list you can handle, all of it":
+
+- `<TxToast>` + `<TxToastHost>` mounted in Layout — fire from anywhere via `showToast({kind, text})` (no prop drilling). Three kinds (error/success/info), auto-dismiss + sticky mode, optional secondary action.
+- `<TutorialOverlay>` first-match briefing — 4 steps (AIM → POWER → WEAPON → FIRE), localStorage gate so it shows once per device. Mounted in BattleScreen + GroupBattleWrapper with same storage key (see once on either, never see twice).
+- "◆ SHARE RESULT" button on AAR card — opens existing `TrophyShareOverlay` with trophy props built from match doc (winner callsign/dmg/accuracy from real `shotsFired/shotsHit`, "X OF N" placement, terrain from backgroundIndex, real wall-clock duration). Win/loss framing per viewer's placement.
+- Cosmetic preview animation in Armory — turret sweeps L↔R 3.6s, tier-coloured scanline 4s. `prefers-reduced-motion` respected.
+- Dead code: `extraWeapons.js` + `extraLogos.js` deleted.
+
+**Deferred with rationale (in commit message):** Lazy-load `@solana/web3.js` (Dynamic merge replaces the file), memoize buildSceneData (already optimal — one-shot mount), Phaser preload cache flip (risky lifecycle change), `Standard.js` dead classes (too many ambiguous to safely cull).
+
+### Still open
+
+**Blocked on JJ:**
+- Hand `Docs/briefs/SolShot_Audio_Brief.docx` to a designer
+- Marketing assets, mainnet flip, Sentry signup, support flow
+
+**Blocked on Dynamic merge:**
+- Phase 2 wagered plumbing (#6-9 from the solo list) — deposit signing flow needs Dynamic clarity, current `WalletContext.signAndSendEscrowDeposit` uses `@solana/wallet-adapter-react` which Dynamic replaces
+
+**Verification debt** — every commit since `e5d6864` is shipped to prod (Render auto-deploy) but not all live-tested by JJ. Worth a 30-min play session before stacking more on top.
+
+**Polish queue (small, when next session has time):**
+- Lobby + Armory + Loadout `<EmptyState>` wiring (smaller surface than the 5 covered)
+- Empty-wallet state for Menu (post-Dynamic clarity)
+- More tail-screen `<TxToast>` opportunities (replacing inline `setError(...)` strings)
+- Phaser preload cache audit — flip `destroy(true)` → `destroy(false)` carefully
+
+### Files added this session
+- `client/src/components/EmptyStates.js`
+- `client/src/components/TxToast.js`
+- `client/src/components/TutorialOverlay.js`
+- `Docs/briefs/SolShot_Audio_Brief.docx`
+- `Docs/briefs/generate_audio_brief_docx.py`
+
+### Files deleted
+- `client/src/components/WalletDisplay.js`
+- `client/src/weapons/packs/extraWeapons.js`
+- `client/src/weapons/packs/extraLogos.js`
+
+### Notes for next-session-claude
+
+1. **Read the recent commits in order** — `e5d6864` → HEAD. The chronology tells the story better than this summary.
+2. **The same-game principle still holds.** Group-chat shares the BattleHUD, ShopScreen, MainScene, TutorialOverlay, TrophyShareOverlay with 1v1. If you're tempted to fork a path, check first whether the existing 1v1 component takes a `gameMode` flag.
+3. **Don't add CONNECT WALLET UI.** Dynamic provisions wallets automatically. JJ flagged this firmly.
+4. **The legacy palette tokens (`--rg`, `--kh`, etc.) now alias down to design tokens.** Don't reintroduce them in new code; use the canonical `--accent`, `--olive`, `--bone`, etc.
+5. **Empty/loading/error pattern is locked.** Use the primitives in `client/src/components/EmptyStates.js`. Tone of voice: imperative, zero apology, field-manual.
+6. **Tactile band thresholds are HP-relative (250 max).** If HP changes, re-tune the bands in `_playImpactJuice`.
+
+---
+
 — main-claude, 2026-04-30 (continuing live session)

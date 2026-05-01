@@ -42,6 +42,7 @@ import GameBridge from '../bridge/GameBridge';
 import { startBattle, destroyBattle } from '../bridge/PhaserBootstrap';
 import useGameState from '../hooks/useGameState';
 import { useTelegram } from '../telegram/TelegramContext';
+import BattleHUD from './battle/BattleHUD';
 
 /** Build the sceneData payload MainScene expects, from a GroupMatch. */
 function buildSceneData(match, myTgId) {
@@ -84,7 +85,7 @@ function buildSceneData(match, myTgId) {
     };
 }
 
-export default function GroupBattleWrapper({ match, onMatchUpdate, fillMode = false }) {
+export default function GroupBattleWrapper({ match, onMatchUpdate, fillMode = false, onLeaveMatch }) {
     const { user: tgUser } = useTelegram();
     const canvasRef = useRef(null);
     const bridgeRef = useRef(null);
@@ -96,6 +97,54 @@ export default function GroupBattleWrapper({ match, onMatchUpdate, fillMode = fa
     const gameState = useGameState(bridge);
 
     const myTgId = tgUser?.id;
+
+    // Seed bridge with per-match state so BattleHUD has the right gold,
+    // round (=1), and wager (free=0) before MainScene's first updateState.
+    // Mirrors BattleScreen's bridge.updateState() seed.
+    useEffect(() => {
+        if (!match) return;
+        const me = match.players?.find(p => p.telegramUserId === myTgId);
+        bridge.updateState({
+            wager: 0,
+            potDisplay: 0,
+            round: 1,
+            totalRounds: 1,
+            gold: me?.gold ?? 1000,
+        });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [match?.matchId]);
+
+    // Global keyboard controls — Space=fire, 1-9=weapon select. The Tank
+    // class binds QEAD/WS internally for angle/power, so those work via
+    // Phaser's input system and don't need a React-level listener.
+    // Mirrors BattleScreen's handler verbatim minus Escape (group-chat
+    // doesn't have an exit menu).
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            const b = bridgeRef.current;
+            if (!b) return;
+            switch (e.key) {
+                case ' ':
+                    e.preventDefault();
+                    b.fire();
+                    break;
+                case '1': case '2': case '3': case '4': case '5':
+                case '6': case '7': case '8': case '9': {
+                    const idx = parseInt(e.key, 10) - 1;
+                    const ws = b.state.weapons || [];
+                    if (idx < ws.length) b.selectWeapon(idx);
+                    break;
+                }
+                // Q/E/W/S/A/D fall through — handled by Phaser's Tank/Turret
+                // input bindings directly.
+                default:
+                    break;
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
 
     // Mount Phaser with sceneData built from match. Only runs once on mount;
     // match updates flow in via groupMatchData socket events that MainScene
@@ -184,6 +233,23 @@ export default function GroupBattleWrapper({ match, onMatchUpdate, fillMode = fa
                 <div style={styles.loadingOverlay}>
                     <div style={styles.loadingText}>DEPLOYING…</div>
                 </div>
+            )}
+            {/* React HUD overlay — same component the 1v1 BattleScreen uses.
+                Renders top player bar, weapon picker, angle/power sliders,
+                FIRE button. Reads gameState from the bridge that MainScene
+                writes to in its update() loop. The `gameMode` prop tells
+                BattleHUD to hide round counter / forfeit / turn timer that
+                don't apply to async multi-day group-chat matches. */}
+            {phaserReady && (
+                <BattleHUD
+                    bridge={bridge}
+                    gameState={gameState}
+                    wager={0}
+                    turnTimer={null}
+                    onLeaveMatch={onLeaveMatch}
+                    onForfeit={onLeaveMatch}
+                    gameMode="group-chat"
+                />
             )}
         </div>
     );

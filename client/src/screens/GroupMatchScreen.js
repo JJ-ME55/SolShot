@@ -188,23 +188,22 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
     }
 
     if (useFullScene) {
+        // Full-bleed Phaser canvas + BattleHUD overlay. The HUD (mounted
+        // inside GroupBattleWrapper) owns the top player bar, weapon picker,
+        // angle/power sliders, FIRE button, gold display, wind readout —
+        // same component the 1v1 BattleScreen uses, so identical UX.
         return (
-            <div style={styles.activePage}>
-                {/* Top: compact player bar — single row of HP cards.
-                    Replaces the verbose ROSTER section during active gameplay. */}
-                <ActivePlayerBar match={match} myTgId={myTgId} onMenu={() => navigate('menu')} />
-
-                {/* Middle: Phaser scene, flexes to fill available space. */}
-                <div style={styles.battlefieldFill}>
-                    <Suspense fallback={
-                        <div style={styles.loadingFill}>LOADING BATTLEFIELD…</div>
-                    }>
-                        <GroupBattleWrapper match={match} onMatchUpdate={setMatch} fillMode />
-                    </Suspense>
-                </div>
-
-                {/* Bottom: compact status strip — turn, wind, match clock. */}
-                <ActiveStatusStrip match={match} myTgId={myTgId} />
+            <div style={styles.fullBleed}>
+                <Suspense fallback={
+                    <div style={styles.loadingFill}>LOADING BATTLEFIELD…</div>
+                }>
+                    <GroupBattleWrapper
+                        match={match}
+                        onMatchUpdate={setMatch}
+                        fillMode
+                        onLeaveMatch={() => navigate('menu')}
+                    />
+                </Suspense>
             </div>
         );
     }
@@ -238,87 +237,13 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
     );
 }
 
-// ─── Active-match HUD components (InGameHUD pattern from redesign) ──────
-
-/** Compact horizontal player bar, one row across the top. */
-function ActivePlayerBar({ match, myTgId, onMenu }) {
-    const players = match.players || [];
-    const currentIdx = match.currentPlayerIndex;
-    const aliveCount = players.filter(p => !p.eliminated).length;
-    return (
-        <div style={styles.topBar}>
-            <button onClick={onMenu} style={styles.topBarBack}>‹</button>
-            <div style={styles.topBarMatchInfo}>
-                <div style={styles.topBarMatchId}>MATCH #{match.matchId}</div>
-                <div style={styles.topBarMeta}>
-                    {aliveCount}/{players.length} ALIVE · WIND {match.wind > 0 ? '→' : '←'}{Math.abs(match.wind || 0).toFixed(0)}
-                </div>
-            </div>
-            <div style={styles.topBarPlayers}>
-                {players.map((p, i) => {
-                    const isMe = p.telegramUserId === myTgId;
-                    const isCurrent = i === currentIdx;
-                    const elim = !!p.eliminated;
-                    const hpPct = Math.max(0, Math.min(100, (p.hp || 0)));
-                    const color = tankColorHex(p.tankColor);
-                    return (
-                        <div key={p.telegramUserId} style={{
-                            ...styles.topBarPlayerCard,
-                            border: `2px solid ${isCurrent && !elim ? color : 'var(--border)'}`,
-                            opacity: elim ? 0.35 : 1,
-                            background: isCurrent ? 'rgba(255,255,255,0.04)' : 'transparent',
-                            boxShadow: isCurrent && !elim ? `0 0 8px ${color}66` : 'none',
-                        }}>
-                            <div style={styles.topBarRow}>
-                                <span style={{
-                                    ...styles.topBarPlayerName,
-                                    color: isMe ? color : 'var(--bone)',
-                                }}>
-                                    {isCurrent && !elim && <span style={{ color }}>▸ </span>}
-                                    {(p.callsign || p.tgUsername || '?').slice(0, 10).toUpperCase()}
-                                    {isMe && <span style={styles.topBarYouTag}> · YOU</span>}
-                                </span>
-                                <span style={styles.topBarHpLabel}>
-                                    {elim ? 'KO' : `${p.hp ?? 100}/${100}`}
-                                </span>
-                            </div>
-                            <div style={styles.topBarHpBar}>
-                                <div style={{ ...styles.topBarHpFill, width: `${hpPct}%`, background: color }} />
-                            </div>
-                        </div>
-                    );
-                })}
-            </div>
-        </div>
-    );
-}
-
-/** Compact status strip at the bottom — turn ping + match clock. */
-function ActiveStatusStrip({ match, myTgId }) {
-    const current = match.players?.[match.currentPlayerIndex];
-    const isMyTurn = current?.telegramUserId === myTgId;
-    return (
-        <div style={styles.statusStrip}>
-            <span style={styles.statusItem}>
-                {isMyTurn ? (
-                    <span style={{ color: 'var(--accent)' }}>▸ YOUR TURN</span>
-                ) : (
-                    <span>WAITING ON <b>{(current?.callsign || current?.tgUsername || '?').toUpperCase()}</b></span>
-                )}
-            </span>
-            <span style={styles.statusItemSecondary}>
-                ENDS IN {formatTimeLeft(match.endsAt)}
-            </span>
-        </div>
-    );
-}
-
-function tankColorHex(phaserHex) {
-    if (typeof phaserHex !== 'number') return '#c8a84a';
-    return '#' + phaserHex.toString(16).padStart(6, '0');
-}
-
 // ─── Sub-components ─────────────────────────────────────────────────────
+// Note: the in-match top player bar / status strip used to live here
+// (ActivePlayerBar, ActiveStatusStrip, tankColorHex). They were retired
+// when active-mode rendering moved to the full BattleHUD overlay
+// (see GroupBattleWrapper) — same component the 1v1 BattleScreen uses,
+// so the in-game UX is parity-matched. Spectator + lobby/settled views
+// below are unchanged.
 
 function Header({ match, onMenu, onRefresh }) {
     const stateLabel = {
@@ -547,6 +472,18 @@ const styles = {
         background: 'var(--bg-deep, #0e1209)',
         color: 'var(--bone-pale, #f4e7c8)',
         fontFamily: "'Space Grotesk', system-ui, sans-serif",
+        overflow: 'hidden',
+        minHeight: 0,
+    },
+    // Full-bleed Phaser canvas + BattleHUD overlay. The HUD itself
+    // (mounted by GroupBattleWrapper) handles top player bar / weapon
+    // picker / FIRE button / status strip — same component the 1v1
+    // BattleScreen uses for parity.
+    fullBleed: {
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        background: 'var(--bg-deep, #0e1209)',
         overflow: 'hidden',
         minHeight: 0,
     },

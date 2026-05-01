@@ -124,10 +124,11 @@ function PlayerCard({ player, isMe, isActive, flipped, compact }) {
 /* ════════════════════════════════════════════
    TURN / ROUND INFO (center of top bar, 1v1)
 ════════════════════════════════════════════ */
-function TurnInfo({ round, totalRounds, turnTimer, isPlayerTurn, wind, players, currentPlayerIndex }) {
+function TurnInfo({ round, totalRounds, turnTimer, isPlayerTurn, wind, players, currentPlayerIndex, gameMode }) {
   const activePlayer = players[currentPlayerIndex];
   const warn = turnTimer != null && turnTimer <= 10;
   const windDir = wind >= 0 ? '▸' : '◂';
+  const isGroupChat = gameMode === 'group-chat';
 
   return (
     <div style={{ textAlign: 'center', flexShrink: 0, minWidth: 130, padding: '0 8px' }}>
@@ -138,7 +139,9 @@ function TurnInfo({ round, totalRounds, turnTimer, isPlayerTurn, wind, players, 
         letterSpacing: '0.2em',
         marginBottom: 3,
       }}>
-        ROUND {round} / {totalRounds}
+        {isGroupChat
+          ? `${players.filter(p => p.alive !== false).length}/${players.length} ALIVE`
+          : `ROUND ${round} / ${totalRounds}`}
       </div>
 
       <div style={{
@@ -272,7 +275,7 @@ function MoveButtons({ bridge, disabled, moveSteps, compact }) {
 /* ════════════════════════════════════════════
    MAIN BATTLEHUD
 ════════════════════════════════════════════ */
-function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfeit }) {
+function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfeit, gameMode }) {
   const {
     players = [],
     myPlayerIndex = -1,
@@ -293,6 +296,10 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
 
   const disabled = !isPlayerTurn || isFiring;
   const isMobile = useIsMobile();
+  // Group-chat is async multi-day single-life — no rounds, no per-second
+  // turn timer (server uses 12h windows), no forfeit (idle penalty
+  // handles abandonment). HUD hides those affordances.
+  const isGroupChat = gameMode === 'group-chat';
 
   const myPlayer   = players[myPlayerIndex] || null;
   const angle      = myPlayer?.angle ?? 45;
@@ -314,7 +321,10 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '6px 10px',
+          // Reserve room for TG Mini App back/X chrome on group-chat (mobile).
+          padding: isGroupChat
+            ? 'max(6px, env(safe-area-inset-top, 6px)) max(48px, calc(env(safe-area-inset-right, 0px) + 48px)) 6px max(48px, calc(env(safe-area-inset-left, 0px) + 48px))'
+            : '6px 10px',
           background: 'rgba(14,18,9,0.88)',
           borderBottom: '1px solid rgba(61,74,47,0.5)',
           gap: 6,
@@ -408,22 +418,24 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
             FIRE
           </button>
 
-          {/* Forfeit */}
-          <button
-            onClick={onForfeit}
-            style={{
-              fontFamily: "'Share Tech Mono', monospace",
-              fontSize: 9,
-              letterSpacing: 1,
-              padding: '5px 8px',
-              border: '1px solid rgba(204,34,0,0.3)',
-              background: 'rgba(204,34,0,0.12)',
-              color: '#cc2200',
-              cursor: 'pointer',
-            }}
-          >
-            FORFEIT
-          </button>
+          {/* Forfeit (1v1 only — group-chat uses idle penalty for abandonment) */}
+          {!isGroupChat && (
+            <button
+              onClick={onForfeit}
+              style={{
+                fontFamily: "'Share Tech Mono', monospace",
+                fontSize: 9,
+                letterSpacing: 1,
+                padding: '5px 8px',
+                border: '1px solid rgba(204,34,0,0.3)',
+                background: 'rgba(204,34,0,0.12)',
+                color: '#cc2200',
+                cursor: 'pointer',
+              }}
+            >
+              FORFEIT
+            </button>
+          )}
         </div>
 
         {/* ELIMINATION OVERLAY */}
@@ -445,7 +457,13 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
       <div style={{
         background: 'rgba(14,18,9,0.92)',
         borderBottom: '1px solid rgba(61,74,47,0.6)',
-        padding: '10px 16px',
+        // In TG Mini App the chrome (back ‹ + X) overlays the top
+        // corners. Reserve ~44px each side so player cards don't sit
+        // under those liquid-glass buttons. Also respect any system
+        // safe-area inset (notch, status bar).
+        padding: isGroupChat
+          ? 'max(10px, env(safe-area-inset-top, 10px)) max(56px, calc(env(safe-area-inset-right, 0px) + 56px)) 10px max(56px, calc(env(safe-area-inset-left, 0px) + 56px))'
+          : '10px 16px',
         flexShrink: 0,
       }}>
         {is1v1 ? (
@@ -456,6 +474,7 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
               round={round} totalRounds={totalRounds}
               turnTimer={turnTimer} isPlayerTurn={isPlayerTurn}
               wind={wind} players={players} currentPlayerIndex={currentPlayerIndex}
+              gameMode={gameMode}
             />
             <PlayerCard player={players[1]} isMe={myPlayerIndex === 1} isActive={currentPlayerIndex === 1} flipped />
           </div>
@@ -463,7 +482,9 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
           /* FFA: row of player cards + turn ticker below */
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontFamily: "'Share Tech Mono', monospace", fontSize: 9, color: 'var(--kh)', letterSpacing: '0.2em' }}>
-              <span>ROUND {round} / {totalRounds} · {players.length}P FFA</span>
+              <span>{isGroupChat
+                ? `${players.filter(p => p.alive !== false).length}/${players.length} ALIVE · GROUP CHAT`
+                : `ROUND ${round} / ${totalRounds} · ${players.length}P FFA`}</span>
               <span style={{ color: isPlayerTurn ? '#14F195' : '#cc2200', fontFamily: "'Black Ops One', cursive", fontSize: 13 }}>
                 {isPlayerTurn ? 'YOUR TURN' : ((players[currentPlayerIndex]?.name || 'ENEMY') + "'S TURN")}
                 {turnTimer != null && (
@@ -607,24 +628,26 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <MoveButtons bridge={bridge} disabled={disabled} moveSteps={moveSteps} />
               <MoveCounter moves={moveSteps} />
-              {/* Forfeit (small) */}
-              <button
-                onClick={onForfeit}
-                style={{
-                  marginLeft: 'auto',
-                  fontFamily: "'Share Tech Mono', monospace",
-                  fontSize: 9, letterSpacing: 1,
-                  padding: '4px 8px',
-                  border: '1px solid rgba(204,34,0,0.3)',
-                  background: 'rgba(204,34,0,0.12)',
-                  color: '#cc2200',
-                  cursor: 'pointer',
-                  pointerEvents: 'auto',
-                  opacity: 0.75,
-                }}
-              >
-                FORFEIT
-              </button>
+              {/* Forfeit (1v1 only — group-chat uses idle penalty for abandonment) */}
+              {!isGroupChat && (
+                <button
+                  onClick={onForfeit}
+                  style={{
+                    marginLeft: 'auto',
+                    fontFamily: "'Share Tech Mono', monospace",
+                    fontSize: 9, letterSpacing: 1,
+                    padding: '4px 8px',
+                    border: '1px solid rgba(204,34,0,0.3)',
+                    background: 'rgba(204,34,0,0.12)',
+                    color: '#cc2200',
+                    cursor: 'pointer',
+                    pointerEvents: 'auto',
+                    opacity: 0.75,
+                  }}
+                >
+                  FORFEIT
+                </button>
+              )}
             </div>
           </div>
 

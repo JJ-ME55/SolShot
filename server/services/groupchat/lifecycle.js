@@ -441,10 +441,17 @@ export async function handleShot(matchId, firerTgId, shot) {
 
     // Build the partial shotData payload — common to settled + active outcomes.
     // Damage map keys are already String(tgId) per physics.processShot input.
-    const buildHpMap = () => Object.fromEntries(match.players.map(p => [String(p.telegramUserId), p.hp]));
-    const buildAliveMap = () => Object.fromEntries(match.players.map(p => [String(p.telegramUserId), !p.eliminated]));
-
-    const buildGoldMap = () => Object.fromEntries(match.players.map(p => [String(p.telegramUserId), p.gold || 0]));
+    // Single pass over match.players collects hp + alive + gold maps in one
+    // iteration; previously three separate .map calls walked the same array.
+    const hpMap = {};
+    const aliveMap = {};
+    const goldMap = {};
+    for (const p of match.players) {
+        const id = String(p.telegramUserId);
+        hpMap[id] = p.hp;
+        aliveMap[id] = !p.eliminated;
+        goldMap[id] = p.gold || 0;
+    }
 
     const shotDataBase = {
         playerId: String(firerTgId),
@@ -456,13 +463,13 @@ export async function handleShot(matchId, firerTgId, shot) {
         terrainUpdate: terrainChanged ? match.terrainSnapshot : null,
         totalDamage,
         eliminations: eliminatedThisShot.map(p => String(p.telegramUserId)),
-        hp: buildHpMap(),
-        alive: buildAliveMap(),
+        hp: hpMap,
+        alive: aliveMap,
         // Gold awarded for THIS shot (matches 1v1 turnResult.goldEarned shape)
         goldEarned: goldEarnedThisShot,
         // Full gold balances after this shot — keyed by tgId string, matches
         // turnResult.goldBalance shape so the existing 1v1 HUD path works.
-        goldBalance: buildGoldMap(),
+        goldBalance: goldMap,
     };
 
     // Check win condition before advancing
@@ -538,27 +545,34 @@ export async function settleMatch(match, reason) {
 
     await match.save();
 
-    await postToChat(match.chatId, botMessages.formatMatchEnd(match, reason));
-
-    // Career-card pipeline hook — push to each player's matchHistory + lifetime
-    // stats so /stats and the trophy/career cards reflect group-match results.
-    // Best-effort, errors logged but never propagated.
-    try {
-        await pushMatchHistory(match);
-    } catch (err) {
-        console.warn('[group-chat] pushMatchHistory failed:', err.message);
-    }
-
-    // Trophy DM to winner — same celebration as 1v1. The "same game, different
-    // pacing" principle: winning a group-chat match earns the same trophy
-    // card a 1v1 win does. Best-effort, fire-and-forget.
-    try {
-        await dispatchGroupVictoryDm(match);
-    } catch (err) {
-        console.warn('[group-chat] dispatchGroupVictoryDm failed:', err.message);
-    }
-
-    // Phase 2 hook: settlement tx for wagered matches goes here (escrow v2).
+    // PERF: chat post + history push + winner DM are best-effort follow-ups
+    // that historically blocked settleMatch's return. handleShot awaits
+    // checkAndSettle → settleMatch, so anything awaited here adds latency
+    // to the final shotResult broadcast that the killing player sees.
+    // Schedule them to run after the broadcast lands. Each is independently
+    // try/catch'd so one failure doesn't abort the others.
+    setImmediate(async () => {
+        try {
+            await postToChat(match.chatId, botMessages.formatMatchEnd(match, reason));
+        } catch (err) {
+            console.warn('[group-chat] settle postToChat failed:', err.message);
+        }
+        // Career-card pipeline — push to each player's matchHistory + lifetime
+        // stats so /stats and the trophy/career cards reflect group-match results.
+        try {
+            await pushMatchHistory(match);
+        } catch (err) {
+            console.warn('[group-chat] pushMatchHistory failed:', err.message);
+        }
+        // Trophy DM to winner — same celebration as 1v1. The "same game,
+        // different pacing" principle.
+        try {
+            await dispatchGroupVictoryDm(match);
+        } catch (err) {
+            console.warn('[group-chat] dispatchGroupVictoryDm failed:', err.message);
+        }
+        // Phase 2 hook: settlement tx for wagered matches goes here (escrow v2).
+    });
 }
 
 /**
@@ -588,12 +602,20 @@ async function pushMatchHistory(match) {
     const winnerTgId = totalRanked > 0 ? match.rankedFinishers[0] : null;
     const opponent = match.chatTitle ? String(match.chatTitle).slice(0, 32) : 'GROUP';
     const mode = match.config?.type === 'wagered' ? 'group-chat-wagered' : 'group-chat';
+    const settledAt = match.settledAt || new Date();
 
-    for (const p of match.players) {
-        if (!p.telegramUserId) continue; // truly anonymous slot — shouldn't happen but defend
+    // PERF: previous implementation did `await User.findOneAndUpdate` per
+    // player + a redundant `findOne + save` for the winner's bestWinStreak.
+    // For an 8-player match that's ~9 sequential round trips × 50-100ms.
+    // Replaced with a single User.bulkWrite that pushes ALL stat updates
+    // in one server hop, then a follow-up bulkWrite for any winners whose
+    // post-update consecutiveWins exceeds bestWinStreak.
+    const validPlayers = match.players.filter(p => p.telegramUserId);
+    const winners = validPlayers.filter(p => p.telegramUserId === winnerTgId);
+
+    const ops = validPlayers.map(p => {
         const isWinner = p.telegramUserId === winnerTgId;
         const eliminated = !!p.eliminated;
-
         const historyEntry = {
             opponent,
             result: isWinner ? 'win' : 'loss',
@@ -601,14 +623,13 @@ async function pushMatchHistory(match) {
             damageDealt: p.damageDealt || 0,
             kills: p.kills || 0,
             deaths: eliminated ? 1 : 0,
-            goldEarned: 0, // group-mode v1 has no gold economy
-            playedAt: match.settledAt || new Date(),
+            goldEarned: 0,
+            playedAt: settledAt,
         };
-
-        try {
-            await User.findOneAndUpdate(
-                { telegramUserId: p.telegramUserId },
-                {
+        return {
+            updateOne: {
+                filter: { telegramUserId: p.telegramUserId },
+                update: {
                     $inc: {
                         'stats.matchesPlayed': 1,
                         'stats.totalDamage': p.damageDealt || 0,
@@ -618,24 +639,45 @@ async function pushMatchHistory(match) {
                             ? { 'stats.wins': 1, 'stats.consecutiveWins': 1 }
                             : { 'stats.losses': 1 }),
                     },
-                    ...(!isWinner
-                        ? { $set: { 'stats.consecutiveWins': 0, lastActive: new Date() } }
-                        : { $set: { lastActive: new Date() } }),
+                    $set: {
+                        lastActive: settledAt,
+                        ...(!isWinner ? { 'stats.consecutiveWins': 0 } : {}),
+                    },
                     $push: { matchHistory: { $each: [historyEntry], $slice: -50 } },
                 },
-                { upsert: false } // do not create User docs from settlement — only update existing
-            );
+                // Don't upsert — settlement only updates existing User docs
+            },
+        };
+    });
 
-            // Bump bestWinStreak if current exceeds it (matches 1v1 pattern)
-            if (isWinner) {
-                const user = await User.findOne({ telegramUserId: p.telegramUserId });
-                if (user?.stats && (user.stats.consecutiveWins || 0) > (user.stats.bestWinStreak || 0)) {
-                    user.stats.bestWinStreak = user.stats.consecutiveWins;
-                    await user.save();
-                }
-            }
+    if (ops.length === 0) return;
+
+    try {
+        await User.bulkWrite(ops, { ordered: false });
+    } catch (err) {
+        console.warn('[group-chat] matchHistory bulkWrite failed:', err.message);
+        return;
+    }
+
+    // Best-win-streak update for winners. Atomic update with $expr lets us
+    // compare two fields on the same doc inside a single round trip — the
+    // previous code re-fetched the User doc just to read consecutiveWins.
+    if (winners.length > 0) {
+        try {
+            const streakOps = winners.map(p => ({
+                updateOne: {
+                    filter: {
+                        telegramUserId: p.telegramUserId,
+                        $expr: { $gt: ['$stats.consecutiveWins', '$stats.bestWinStreak'] },
+                    },
+                    update: [
+                        { $set: { 'stats.bestWinStreak': '$stats.consecutiveWins' } },
+                    ],
+                },
+            }));
+            await User.bulkWrite(streakOps, { ordered: false });
         } catch (err) {
-            console.warn(`[group-chat] matchHistory push failed for tgId ${p.telegramUserId}:`, err.message);
+            console.warn('[group-chat] bestWinStreak bulkWrite failed:', err.message);
         }
     }
 }

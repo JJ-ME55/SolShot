@@ -53,6 +53,14 @@ const io = new socket.Server(server, {
     },
     // E10: Cap inbound socket messages at 64KB to prevent memory abuse
     maxHttpBufferSize: 64 * 1024,
+    // PERF: per-message-deflate compression. shotResult broadcasts (full
+    // match doc + trajectory + damage map) easily hit 15-25KB on 8-player
+    // matches. Deflate compresses these to ~30-40% of original. threshold
+    // skips small frames where compression overhead exceeds the savings.
+    // Both server + client (socket.io v4) handle this transparently.
+    perMessageDeflate: {
+        threshold: 1024,
+    },
 })
 
 // IM-03: Per-IP connection limiting (DB: H024)

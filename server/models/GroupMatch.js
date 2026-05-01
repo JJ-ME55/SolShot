@@ -282,6 +282,14 @@ groupMatchSchema.methods.nextBuybackCost = function (playerIndex) {
 groupMatchSchema.index({ chatId: 1, state: 1 });
 groupMatchSchema.index({ 'players.telegramUserId': 1, state: 1 });
 
+// /mygames home-screen query: players in active matches sorted by recency.
+// `getMyGroupMatches` does:
+//   .find({ 'players.telegramUserId': tgId, state: { $in: [...] } })
+//   .sort({ updatedAt: -1 })
+// Without this compound index Mongo does an in-memory sort on the result
+// set, which is 50-150ms slower for players in 30+ active group chats.
+groupMatchSchema.index({ 'players.telegramUserId': 1, state: 1, updatedAt: -1 });
+
 // Restart-resume query — on server boot, find all in-flight matches:
 // GroupMatch.find({ state: { $in: ['lobby', 'active'] } })
 

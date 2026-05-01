@@ -36,6 +36,23 @@ function sanitizeMatch(match) {
 }
 
 /**
+ * Lightweight sanitize for shotResult broadcasts — drops terrainSnapshot
+ * (the heaviest field, ~3-5KB per match). The `terrainUpdate` sibling field
+ * on shotResult carries the new heightmap when terrain changed; otherwise
+ * the client keeps its existing copy. Initial scene boot still receives
+ * the full snapshot via getGroupMatch on Mini App open.
+ *
+ * For an 8-player match this trims ~25-40KB per broadcast (full snapshot ×
+ * recipients), compounding with the deflate compression server-side.
+ */
+function sanitizeMatchLight(match) {
+    const obj = sanitizeMatch(match);
+    if (!obj) return null;
+    delete obj.terrainSnapshot;
+    return obj;
+}
+
+/**
  * Resolve the requesting player's telegramUserId from the socket
  * context.
  *
@@ -149,7 +166,10 @@ export function registerGroupChatSocketHandlers(client, io) {
             const broadcast = {
                 ok: true,
                 ...result.shotData,
-                match: sanitizeMatch(result.match),
+                // Light sanitize drops terrainSnapshot — the per-shot
+                // `terrainUpdate` field on shotData already carries the
+                // new heightmap when it changed.
+                match: sanitizeMatchLight(result.match),
             };
             if (io) {
                 io.to(roomForMatch(payload.matchId)).emit('shotResult', broadcast);

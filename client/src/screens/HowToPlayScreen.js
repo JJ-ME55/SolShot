@@ -45,7 +45,7 @@ const s = {
     padding: '4px 10px',
     background: 'rgba(42, 51, 31, 0.5)',
     border: '1px solid var(--ol)',
-    borderRadius: 3,
+    clipPath: 'var(--clip-6)',
     textAlign: 'center',
     whiteSpace: 'nowrap',
   },

@@ -22,10 +22,10 @@ const s = {
     lineHeight: 1.7, letterSpacing: 0.5, marginBottom: 8, opacity: 0.9,
   },
   warn: {
-    fontFamily: "'Share Tech Mono', monospace", fontSize: 12, color: 'var(--am)',
-    lineHeight: 1.6, letterSpacing: 0.5, marginBottom: 12,
-    padding: '8px 12px', background: 'rgba(255,182,39,0.06)',
-    border: '1px solid rgba(255,182,39,0.15)', borderRadius: 4,
+    fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--accent)',
+    lineHeight: 1.6, letterSpacing: '0.05em', marginBottom: 12,
+    padding: '8px 12px', background: 'rgba(200,120,26,0.06)',
+    border: '1px solid rgba(200,120,26,0.15)', clipPath: 'var(--clip-6)',
   },
 };
 

@@ -51,7 +51,16 @@ export default function LoadoutScreen({ navigate }) {
   }, [buying]);
 
   return (
-    <div style={{ position: 'relative', minHeight: '100dvh', background: 'var(--bg-deep)', overflow: 'hidden' }}>
+    // Scroll-safe pattern: flex:1 + overflowY:auto + minHeight:0 inside
+    // Layout's flex viewport. See BarracksScreen for root-cause notes.
+    <div style={{
+      position: 'relative',
+      flex: 1,
+      overflowY: 'auto',
+      WebkitOverflowScrolling: 'touch',
+      background: 'var(--bg-deep)',
+      minHeight: 0,
+    }}>
       <div style={{
         position: 'absolute', inset: 0, pointerEvents: 'none', opacity: 0.05,
         backgroundImage: 'linear-gradient(to right, var(--olive) 1px, transparent 1px), linear-gradient(to bottom, var(--olive) 1px, transparent 1px)',

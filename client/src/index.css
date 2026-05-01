@@ -75,8 +75,13 @@
   --clip-16: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px));
   --clip-20: polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 20px 100%, 0 calc(100% - 20px));
 
-  /* ── Vignette ── */
-  --vignette: radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.55) 100%);
+  /* ── Vignette ──
+     Softened 0.55 → 0.38 alpha at the edge so screens stay readable on
+     phones in bright outdoor light. The field-manual aesthetic still
+     reads with subtle edge darkening; the previous 0.55 stacked on top
+     of grain (0.12) + scanlines (0.06) compounded to a noticeable
+     brightness loss vs the reference design. */
+  --vignette: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.38) 100%);
 
   /* ── Legacy palette aliases (point at design tokens) ──
      Defined AFTER design tokens so var() resolves through the chain.

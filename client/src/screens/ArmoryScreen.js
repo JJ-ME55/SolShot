@@ -64,7 +64,18 @@ function ArmoryScreen({ navigate }) {
   const sel = items.find(i => i.id === selectedId) || null;
 
   return (
-    <div style={{ position: 'relative', minHeight: '100dvh', background: 'var(--bg-deep)', overflow: 'hidden' }}>
+    // Scroll-safe pattern (see GroupMatchScreen / BarracksScreen): flex:1
+    // + overflowY:auto + minHeight:0 inside Layout's overflow:hidden flex
+    // viewport. `minHeight: 100dvh + overflow: hidden` would trap scroll
+    // on phones — the cosmetics list overflows the fold.
+    <div style={{
+      position: 'relative',
+      flex: 1,
+      overflowY: 'auto',
+      WebkitOverflowScrolling: 'touch',
+      background: 'var(--bg-deep)',
+      minHeight: 0,
+    }}>
       <div style={{
         position: 'absolute', inset: 0, pointerEvents: 'none', opacity: 0.05,
         backgroundImage: 'linear-gradient(to right, var(--olive) 1px, transparent 1px), linear-gradient(to bottom, var(--olive) 1px, transparent 1px)',

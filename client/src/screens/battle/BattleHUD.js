@@ -20,9 +20,11 @@ function PlayerCard({ player, isMe, isActive, flipped, compact }) {
   const hp    = player.hp ?? 250;
   const maxHp = 250;
   const hpPct = Math.max(0, Math.min(100, (hp / maxHp) * 100));
-  const hpColor = hpPct > 50 ? '#4CAF50' : hpPct > 25 ? '#FF9800' : '#f44336';
+  // HP-band semantic colors. --gg (go green) for healthy, --accent-hot
+  // for warning band (caution orange), --red for critical.
+  const hpColor = hpPct > 50 ? 'var(--gg)' : hpPct > 25 ? 'var(--accent-hot)' : 'var(--red)';
   const dead  = player.alive === false;
-  const pColor = player.color || '#b8a88a';
+  const pColor = player.color || 'var(--bone)';
 
   return (
     <div style={{
@@ -44,7 +46,7 @@ function PlayerCard({ player, isMe, isActive, flipped, compact }) {
           top: -9,
           left: flipped ? 'auto' : 8,
           right: flipped ? 8 : 'auto',
-          background: '#0a0c08',
+          background: 'var(--bg-deep)',
           color: pColor,
           fontFamily: "'Share Tech Mono', monospace",
           fontSize: 8,
@@ -148,7 +150,7 @@ function TurnInfo({ round, totalRounds, turnTimer, isPlayerTurn, wind, players, 
         fontFamily: "'Black Ops One', cursive",
         fontSize: 14,
         letterSpacing: '0.08em',
-        color: isPlayerTurn ? '#14F195' : '#cc2200',
+        color: isPlayerTurn ? 'var(--gg, #14F195)' : 'var(--red)',
         lineHeight: 1.2,
       }}>
         {isPlayerTurn
@@ -161,7 +163,7 @@ function TurnInfo({ round, totalRounds, turnTimer, isPlayerTurn, wind, players, 
         <div style={{
           fontFamily: "'Bebas Neue', sans-serif",
           fontSize: warn ? 22 : 18,
-          color: warn ? '#d83030' : 'var(--kh)',
+          color: warn ? 'var(--red)' : 'var(--kh)',
           letterSpacing: 1,
           lineHeight: 1,
           animation: warn ? 'fl 1s ease-in-out infinite' : 'none',
@@ -200,8 +202,8 @@ function WeaponCard({ weapon, isSelected, onClick, disabled }) {
       onClick={onClick}
       style={{
         background: isSelected ? 'rgba(200,168,74,0.18)' : 'rgba(10,12,8,0.85)',
-        color: isSelected ? '#e8dcc8' : '#8a9a80',
-        border: '1px solid ' + (isSelected ? '#c8a84a' : '#3d4a2f'),
+        color: isSelected ? 'var(--bone)' : 'var(--olive)',
+        border: '1px solid ' + (isSelected ? 'var(--accent)' : 'var(--border)'),
         padding: '8px 10px',
         cursor: disabled && !isSelected ? 'default' : 'pointer',
         textAlign: 'left',
@@ -228,7 +230,7 @@ function WeaponCard({ weapon, isSelected, onClick, disabled }) {
         fontFamily: "'Black Ops One', cursive",
         fontSize: 14,
         letterSpacing: 0.5,
-        color: isSelected ? '#e8dcc8' : '#b8a88a',
+        color: isSelected ? 'var(--bone)' : 'var(--bone)',
         whiteSpace: 'nowrap',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
@@ -255,7 +257,7 @@ function MoveButtons({ bridge, disabled, moveSteps, compact }) {
     padding: compact ? '5px 10px' : '7px 14px',
     border: 'none',
     cursor: active ? 'pointer' : 'default',
-    color: active ? '#e8dcc8' : '#5c4a3a',
+    color: active ? 'var(--bone)' : 'var(--muted)',
     background: active ? 'rgba(184,168,138,0.12)' : 'rgba(42,51,31,0.5)',
     opacity: active ? 1 : 0.4,
     userSelect: 'none',
@@ -332,30 +334,55 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
           borderBottom: '1px solid rgba(61,74,47,0.5)',
           gap: 6,
         }}>
-          <div style={{ display: 'flex', gap: 4, flex: 1 }}>
+          {/* Player strip — horizontally scrollable so 4-10 player FFAs
+              don't squish each card to nothing. The active firer's card
+              is highlighted (PlayerCard handles that internally). On
+              mobile we hide scrollbars but keep momentum scroll for thumb.
+              Webkit/Safari hides via ::-webkit-scrollbar (in index.css)
+              but here we also clip-mask the edges to suggest more content. */}
+          <div style={{
+            display: 'flex',
+            gap: 4,
+            flex: 1,
+            overflowX: players.length > 4 ? 'auto' : 'visible',
+            WebkitOverflowScrolling: 'touch',
+            scrollbarWidth: 'none',
+          }}>
             {players.map((p, i) => (
               <PlayerCard key={i} player={p} isMe={i === myPlayerIndex} isActive={i === currentPlayerIndex} compact />
             ))}
           </div>
           <div style={{ textAlign: 'right', flexShrink: 0 }}>
-            <div style={{ fontFamily: "'Black Ops One', cursive", fontSize: 11, color: isPlayerTurn ? '#14F195' : '#cc2200', letterSpacing: 1 }}>
+            <div style={{
+              fontFamily: 'var(--f-display)',
+              fontSize: 11,
+              // Tokenize: was hex literals — now resolves through theme
+              color: isPlayerTurn ? 'var(--gg, #14F195)' : 'var(--red)',
+              letterSpacing: '0.1em',
+            }}>
               {isPlayerTurn ? 'YOUR TURN' : 'WAIT'}
             </div>
             {turnTimer != null && (
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: turnTimer <= 10 ? '#d83030' : 'var(--kh)', letterSpacing: 1 }}>
+              <div style={{
+                fontFamily: "'Bebas Neue', sans-serif",
+                fontSize: 16,
+                color: turnTimer <= 10 ? 'var(--red)' : 'var(--bone)',
+                letterSpacing: '0.08em',
+              }}>
                 {turnTimer}s
               </div>
             )}
-            {/* Wind readout — critical for aiming. Live in the top bar so
-                mobile players don't have to scan for it. Arrow indicates
-                direction (▸ = east push, ◂ = west push). */}
+            {/* Wind readout — critical for aiming. Lives in the top bar
+                so mobile players don't have to scan for it. Bumped to
+                accent color + bolder weight so it reads at a glance even
+                during a multi-player FFA where the player strip is busy. */}
             <div style={{
-              fontFamily: "'Share Tech Mono', monospace",
-              fontSize: 10,
-              color: 'var(--kh)',
+              fontFamily: 'var(--f-mono)',
+              fontSize: 11,
+              color: 'var(--accent)',
               letterSpacing: '0.18em',
               marginTop: 2,
-              opacity: 0.85,
+              fontWeight: 600,
             }}>
               WIND {wind >= 0 ? '▸' : '◂'} {Math.abs(wind).toFixed(0)}
             </div>
@@ -420,8 +447,8 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
           <button
             onClick={disabled ? undefined : () => bridge.fire()}
             style={{
-              background: disabled ? '#2a331f' : '#c8a84a',
-              color: disabled ? '#5c4a3a' : '#0a0c08',
+              background: disabled ? 'var(--bg-raised)' : 'var(--accent)',
+              color: disabled ? 'var(--muted)' : 'var(--bg-deep)',
               border: 'none',
               padding: '8px 20px',
               fontFamily: "'Black Ops One', cursive",
@@ -445,7 +472,7 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
                 padding: '5px 8px',
                 border: '1px solid rgba(204,34,0,0.3)',
                 background: 'rgba(204,34,0,0.12)',
-                color: '#cc2200',
+                color: 'var(--red)',
                 cursor: 'pointer',
               }}
             >
@@ -501,10 +528,10 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
               <span>{isGroupChat
                 ? `${players.filter(p => p.alive !== false).length}/${players.length} ALIVE · GROUP CHAT`
                 : `ROUND ${round} / ${totalRounds} · ${players.length}P FFA`}</span>
-              <span style={{ color: isPlayerTurn ? '#14F195' : '#cc2200', fontFamily: "'Black Ops One', cursive", fontSize: 13 }}>
+              <span style={{ color: isPlayerTurn ? 'var(--gg, #14F195)' : 'var(--red)', fontFamily: "'Black Ops One', cursive", fontSize: 13 }}>
                 {isPlayerTurn ? 'YOUR TURN' : ((players[currentPlayerIndex]?.name || 'ENEMY') + "'S TURN")}
                 {turnTimer != null && (
-                  <span style={{ color: turnTimer <= 10 ? '#d83030' : 'var(--kh)', fontSize: 14, marginLeft: 8 }}>
+                  <span style={{ color: turnTimer <= 10 ? 'var(--red)' : 'var(--kh)', fontSize: 14, marginLeft: 8 }}>
                     {String(turnTimer).padStart(2, '0')}s
                   </span>
                 )}
@@ -523,7 +550,7 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
               <span>TURN ORDER ▸</span>
               {players.map((p, i) => (
                 <span key={i} style={{
-                  color: i === currentPlayerIndex ? (p.color || 'var(--am)') : (p.alive === false ? '#3a1a0a' : 'var(--kh)'),
+                  color: i === currentPlayerIndex ? (p.color || 'var(--am)') : (p.alive === false ? 'var(--rust)' : 'var(--kh)'),
                   textDecoration: p.alive === false ? 'line-through' : 'none',
                   fontFamily: i === currentPlayerIndex ? "'Black Ops One', cursive" : "'Share Tech Mono', monospace",
                   fontSize: i === currentPlayerIndex ? 11 : 9,
@@ -541,7 +568,7 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
         {wager > 0 && (
           <div style={{
             position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)',
-            fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: '#14F195',
+            fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: 'var(--gg, #14F195)',
             letterSpacing: '0.2em', opacity: 0.8,
           }}>
             POT ◆ {potDisplay} SOL
@@ -614,14 +641,14 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: "'Share Tech Mono', monospace", fontSize: 11, color: 'var(--kh)', letterSpacing: '0.2em', marginBottom: 3 }}>
                 <span>POWER</span>
-                <span style={{ color: '#c8a84a' }}>{Math.round(power)} / 100</span>
+                <span style={{ color: 'var(--accent)' }}>{Math.round(power)} / 100</span>
               </div>
               <input
                 type="range" min={5} max={100} step={1}
                 value={power}
                 onChange={(e) => !disabled && bridge.setPower(Number(e.target.value))}
                 disabled={disabled}
-                style={{ width: '100%', accentColor: '#c8a84a', cursor: disabled ? 'default' : 'pointer' }}
+                style={{ width: '100%', accentColor: 'var(--accent)', cursor: disabled ? 'default' : 'pointer' }}
               />
             </div>
 
@@ -629,14 +656,14 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: "'Share Tech Mono', monospace", fontSize: 11, color: 'var(--kh)', letterSpacing: '0.2em', marginBottom: 3 }}>
                 <span>ANGLE</span>
-                <span style={{ color: '#c8a84a' }}>{Math.round(angle)}°</span>
+                <span style={{ color: 'var(--accent)' }}>{Math.round(angle)}°</span>
               </div>
               <input
                 type="range" min={0} max={180} step={1}
                 value={angle}
                 onChange={(e) => !disabled && bridge.setAngle(Number(e.target.value))}
                 disabled={disabled}
-                style={{ width: '100%', accentColor: '#c8a84a', cursor: disabled ? 'default' : 'pointer' }}
+                style={{ width: '100%', accentColor: 'var(--accent)', cursor: disabled ? 'default' : 'pointer' }}
               />
             </div>
 
@@ -655,7 +682,7 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
                     padding: '4px 8px',
                     border: '1px solid rgba(204,34,0,0.3)',
                     background: 'rgba(204,34,0,0.12)',
-                    color: '#cc2200',
+                    color: 'var(--red)',
                     cursor: 'pointer',
                     pointerEvents: 'auto',
                     opacity: 0.75,
@@ -671,8 +698,8 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
           <button
             onClick={disabled ? undefined : () => bridge.fire()}
             style={{
-              background: disabled ? '#1c2410' : '#c8a84a',
-              color: disabled ? '#3a4a2f' : '#0a0c08',
+              background: disabled ? 'var(--bg-raised)' : 'var(--accent)',
+              color: disabled ? 'var(--muted)' : 'var(--bg-deep)',
               border: 'none',
               clipPath: fireClip,
               padding: '0 36px',
@@ -731,7 +758,7 @@ function EliminationOverlay({ placement, onLeave }) {
       zIndex: 20,
       display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center',
     }}>
-      <div style={{ fontFamily: "'Black Ops One', cursive", fontSize: 20, color: '#b8a88a', letterSpacing: 3 }}>
+      <div style={{ fontFamily: "'Black Ops One', cursive", fontSize: 20, color: 'var(--bone)', letterSpacing: 3 }}>
         YOU PLACED {ordinal(placement)}
       </div>
       <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 11, color: 'var(--kh)', letterSpacing: 2, opacity: 0.6 }}>
@@ -742,7 +769,7 @@ function EliminationOverlay({ placement, onLeave }) {
         style={{
           fontFamily: "'Black Ops One', cursive", fontSize: 13, letterSpacing: 2,
           padding: '8px 20px', border: '1px solid rgba(61,74,47,0.8)',
-          background: 'rgba(184,168,138,0.12)', color: '#e8dcc8', cursor: 'pointer',
+          background: 'rgba(184,168,138,0.12)', color: 'var(--bone)', cursor: 'pointer',
         }}
       >
         LEAVE MATCH

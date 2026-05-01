@@ -54,7 +54,12 @@ const playerSchema = new mongoose.Schema({
     shopComplete: { type: Boolean, default: false },
 
     // Match state
-    hp: { type: Number, default: 100 },
+    // 250 max HP matches the 1v1 rebalance (HP 100→250). Group-chat must
+    // feel identical to 1v1 in damage scaling — same weapons, same TTK
+    // arcs. The idle-penalty (config.idlePenaltyHp, default 20) and
+    // damage map from physics are absolute HP values, so this only
+    // changes the starting / displayed maximum.
+    hp: { type: Number, default: 250 },
     eliminated: { type: Boolean, default: false },
     eliminatedAt: { type: Date, default: null },
     eliminationOrder: { type: Number, default: null },            // 1 = first eliminated, 2 = second, ... (alive = null)

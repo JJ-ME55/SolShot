@@ -233,7 +233,10 @@ function WeaponCard({ weapon, isSelected, onClick, disabled }) {
         overflow: 'hidden',
         textOverflow: 'ellipsis',
       }}>
-        {(weapon?.name || 'SINGLE SHOT').toUpperCase()}
+        {/* Group-chat passes weapons as bare { id } objects (server is the
+            inventory authority). Resolve the name from the catalog meta
+            first, fall back to weapon.name (1v1 path), then placeholder. */}
+        {(meta?.name || weapon?.name || 'SINGLE SHOT').toUpperCase()}
       </div>
     </button>
   );

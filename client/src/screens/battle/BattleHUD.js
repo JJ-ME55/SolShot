@@ -545,13 +545,19 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
           />
         </div>
 
-        {/* BOTTOM CONTROLS */}
+        {/* BOTTOM CONTROLS — semi-transparent so the playfield (and
+            specifically the tank when terrain has been chewed away
+            beneath it) stays visible through the strip. JJ feedback:
+            tank disappearing behind opaque bottom bar was disorienting.
+            Top-edge gradient blends the strip into the scene rather
+            than hard-cutting, while a subtle solid scrim under the
+            controls keeps the buttons themselves legible. */}
         <div style={{
           marginTop: 'auto',
           padding: '8px 10px',
           paddingBottom: 'max(8px, env(safe-area-inset-bottom))',
-          background: 'rgba(14,18,9,0.92)',
-          borderTop: '1px solid rgba(61,74,47,0.5)',
+          background: 'linear-gradient(to top, rgba(14,18,9,0.78) 60%, rgba(14,18,9,0.0) 100%)',
+          borderTop: '1px solid rgba(61,74,47,0.35)',
           pointerEvents: 'auto',
           opacity: isPlayerTurn ? 1 : 0.08,
           transition: 'opacity 0.3s',
@@ -711,10 +717,12 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
         </div>
       </div>
 
-      {/* ── CONTROL BAR ── */}
+      {/* ── CONTROL BAR ── (desktop)
+          Same scrim treatment as mobile bottom — gradient top so the
+          playfield bleeds in rather than hard-cutting. */}
       <div style={{
-        background: 'rgba(14,18,9,0.95)',
-        borderTop: '1px solid rgba(61,74,47,0.7)',
+        background: 'linear-gradient(to top, rgba(14,18,9,0.82) 60%, rgba(14,18,9,0.0) 100%)',
+        borderTop: '1px solid rgba(61,74,47,0.45)',
         padding: '10px 14px',
         flexShrink: 0,
         pointerEvents: 'auto',

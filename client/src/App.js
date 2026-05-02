@@ -66,25 +66,33 @@ function AppInner() {
 
   const { isTelegram, user: tgUser, startParam } = useTelegram();
 
-  // Phase 24: Persistent handle identity — blocks menu until set
-  // For Telegram users, auto-populate from TG username (skip HandleModal)
+  // Identity policy A — TG username is canonical.
+  //
+  // Browser-only users still use the HandleModal-driven `solshot_handle`
+  // localStorage value (no TG identity available). Telegram users have
+  // their handle force-synced from `tgUser.username || tgUser.first_name`
+  // on every connect, OVERWRITING any previously-saved value. Mirrors the
+  // server-side rule in linkTelegramIdentity. Per JJ: "few users so few
+  // problems" — losing a custom callsign was acceptable trade for a
+  // single source of truth across leaderboard, in-game labels, AAR, bot.
   const [handle, setHandle] = useState(() => {
     const stored = localStorage.getItem('solshot_handle');
     if (stored) return stored;
     return null;
   });
 
-  // Auto-set handle from Telegram username (skips HandleModal for TG users)
   useEffect(() => {
-    if (isTelegram && tgUser && !handle) {
-      const tgHandle = tgUser.username || tgUser.first_name || 'TG_Player';
-      const uid = 'tg_' + (tgUser.id || Date.now());
+    if (!isTelegram || !tgUser) return;
+    const tgHandle = tgUser.username || tgUser.first_name || 'TG_Player';
+    const uid = 'tg_' + (tgUser.id || Date.now());
+    // Always overwrite — TG username wins. Any saved override is dropped.
+    if (handle !== tgHandle) {
       localStorage.setItem('solshot_handle', tgHandle);
       localStorage.setItem('solshot_uid', uid);
       setHandle(tgHandle);
-      if (window.socket?.connected) {
-        window.socket.emit('registerIdentity', { uid, handle: tgHandle });
-      }
+    }
+    if (window.socket?.connected) {
+      window.socket.emit('registerIdentity', { uid, handle: tgHandle });
     }
   }, [isTelegram, tgUser, handle]);
 

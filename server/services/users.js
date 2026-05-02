@@ -41,12 +41,24 @@ export async function linkTelegramIdentity({
     uid = null,
     handle = null,
     username = null,
+    firstName = null,
 }) {
     if (!telegramUserId || typeof telegramUserId !== 'number') return null;
 
+    // Identity-policy A: TG username is the canonical display name. If a
+    // user has a TG @handle, that's their SolShot display name everywhere
+    // (leaderboard, in-game labels, AAR, bot replies). first_name fallback
+    // for users with no @handle. The caller-supplied `handle` only
+    // matters for browser-only users who never had TG identity.
+    //
+    // This explicitly OVERWRITES previously-set callsigns. Per JJ:
+    // "we just run it with whatever I want, I think A". Few users today,
+    // so the migration cost is near-zero.
+    const canonicalHandle = username || firstName || handle || null;
+
     const baseSet = { telegramUserId, lastActive: new Date() };
-    if (handle)   baseSet.handle = handle;
-    if (username) baseSet.username = username;
+    if (canonicalHandle) baseSet.handle = canonicalHandle;
+    if (username)        baseSet.username = username;
 
     try {
         // ─── Step 1: Telegram ID is the canonical merge target ─────────

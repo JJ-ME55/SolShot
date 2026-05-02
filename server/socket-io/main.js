@@ -1075,14 +1075,19 @@ const mainsocket = (io) => {
                 // Link Telegram identity if this socket has validated initData.
                 // Bot commands (/stats, /prestige, etc.) can then look up the
                 // User by ctx.from.id without forcing the user into the Mini App.
+                //
+                // Identity policy A: TG username is canonical — linkTelegramIdentity
+                // resolves canonicalHandle = username || firstName || handle and
+                // overwrites User.handle on every connect. So if a player's TG @
+                // changes, their SolShot display name follows.
                 if (client.telegramUser?.id && isDbConnected()) {
-                    const tgHandle = playerUids[client.id]?.handle || client.telegramUser.first_name || null;
                     linkTelegramIdentity({
                         telegramUserId: client.telegramUser.id,
                         walletAddress: result.walletAddress,
                         uid: playerUids[client.id]?.uid || null,
-                        handle: tgHandle,
                         username: client.telegramUser.username || null,
+                        firstName: client.telegramUser.first_name || null,
+                        handle: playerUids[client.id]?.handle || null, // legacy fallback
                     }).catch((err) => console.warn('[Auth] linkTelegramIdentity failed:', err.message));
                 }
             }

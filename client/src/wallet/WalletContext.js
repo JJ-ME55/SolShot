@@ -399,32 +399,83 @@ function SolShotWalletInner({ children }) {
  * Main wallet provider — wrap your app with this.
  * Detects Telegram and uses Dynamic embedded wallet instead of Phantom/Solflare.
  */
+/**
+ * DynamicWalletBridge — listens to DynamicWalletInner's onWalletReady
+ * callback and exposes the values via SolShotWalletContext so the rest
+ * of the app can read them through useSolShotWallet() unchanged.
+ *
+ * Same shape as the legacy SolShotWalletInner — same hook works for
+ * both wallet stacks, no consumer-side branching.
+ */
+function DynamicWalletBridge({ children }) {
+    const { DynamicWalletInner } = require('./DynamicTelegramWallet');
+    const [walletState, setWalletState] = useState({
+        balance: 0,
+        refreshBalance: () => {},
+        walletAddress: null,
+        connected: false,
+        isAuthenticated: false,
+        authenticate: () => {},
+        shotBalance: 0,
+        prestigeInfo: { tier: 0, tierName: 'Unranked' },
+        signAndSendEscrowDeposit: async () => null,
+        signAndBurnShot: async () => null,
+    });
+    const [shotBalance, setShotBalance] = useState(0);
+    const [prestigeInfo, setPrestigeInfo] = useState({ tier: 0, tierName: 'Unranked' });
+
+    // Mirror the legacy SolShotWalletInner's shotInfo listener so SHOT
+    // balance + prestige tier flow into Dynamic-mode consumers too.
+    // DynamicWalletInner's onWalletReady provides everything except
+    // these (its comment says "managed by server via socket"), so we
+    // own that wiring here.
+    useEffect(() => {
+        const socket = window.socket;
+        if (!socket) return;
+        const handleShotInfo = (data) => {
+            if (typeof data?.balance === 'number') setShotBalance(data.balance);
+            if (data?.prestige) setPrestigeInfo(data.prestige);
+        };
+        socket.on('shotInfo', handleShotInfo);
+        socket.emit('getShotInfo');
+        return () => { socket.off('shotInfo', handleShotInfo); };
+    }, []);
+
+    // Merge Dynamic-provided values with our own SHOT/prestige state.
+    const merged = useMemo(
+        () => ({ ...walletState, shotBalance, prestigeInfo }),
+        [walletState, shotBalance, prestigeInfo]
+    );
+
+    return (
+        <DynamicWalletInner onWalletReady={setWalletState}>
+            <SolShotWalletContext.Provider value={merged}>
+                {children}
+            </SolShotWalletContext.Provider>
+        </DynamicWalletInner>
+    );
+}
+
 export function SolShotWalletProvider({ children }) {
     const isTelegram = !!window.Telegram?.WebApp?.initData;
     const hasDynamicEnv = !!process.env.REACT_APP_DYNAMIC_ENV_ID;
 
-    // Telegram Mini App: use Dynamic embedded wallet
+    // Telegram Mini App: use Dynamic embedded wallet.
+    //
+    // <DynamicTelegramProvider> initialises Dynamic SDK + Solana connector.
+    // <DynamicWalletBridge> (defined below) wraps <DynamicWalletInner> so
+    // its onWalletReady callback flows into SolShotWalletContext — without
+    // that bridge, useSolShotWallet() returns the hardcoded zero values
+    // the original 8436bf3 commit left in place. The bridge fix closes
+    // the gap so balance / walletAddress / signAndSendEscrowDeposit etc.
+    // are live on the Telegram Mini App surface.
     if (isTelegram && hasDynamicEnv) {
-        // Lazy import to avoid loading Dynamic in non-TG contexts
-        const { DynamicTelegramProvider, DynamicWalletInner } = require('./DynamicTelegramWallet');
+        const { DynamicTelegramProvider } = require('./DynamicTelegramWallet');
         return (
             <DynamicTelegramProvider>
-                <DynamicWalletInner>
-                    <SolShotWalletContext.Provider value={{
-                        balance: 0,
-                        refreshBalance: () => {},
-                        walletAddress: null,
-                        connected: false,
-                        isAuthenticated: false,
-                        authenticate: () => {},
-                        shotBalance: 0,
-                        prestigeInfo: { tier: 0, tierName: 'Unranked' },
-                        signAndSendEscrowDeposit: async () => null,
-                        signAndBurnShot: async () => null,
-                    }}>
-                        {children}
-                    </SolShotWalletContext.Provider>
-                </DynamicWalletInner>
+                <DynamicWalletBridge>
+                    {children}
+                </DynamicWalletBridge>
             </DynamicTelegramProvider>
         );
     }

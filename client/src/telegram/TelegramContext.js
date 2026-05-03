@@ -1,17 +1,22 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
 /**
- * Resolve the Mini App start parameter from BOTH sources Telegram exposes it on:
- *   1. window.Telegram.WebApp.initDataUnsafe.start_param  ← canonical for app code
+ * Resolve the Mini App start parameter from the three sources it can arrive on:
+ *   1. window.Telegram.WebApp.initDataUnsafe.start_param  ← canonical for t.me/?startapp= links
  *   2. ?tgWebAppStartParam= query param on the URL itself ← fallback if SDK init lagged
- * Telegram delivers the same value in both places (per Mini Apps spec).
+ *   3. ?startapp= query param ← when bot uses `web_app:` buttons with a direct URL
+ *      (we control the URL there, so we use our own param name)
+ *
+ * Source 3 is needed for Dynamic silent-auth: bot.js mints a JWT and sends a
+ * `web_app:` button with `?telegramAuthToken=<jwt>&startapp=<deeplink>`. Without
+ * checking this URL param, deep links break in the silent-auth path.
  */
 function resolveStartParam(tg) {
   const fromSdk = tg?.initDataUnsafe?.start_param || '';
   if (fromSdk) return fromSdk;
   try {
     const qs = new URLSearchParams(window.location.search);
-    return qs.get('tgWebAppStartParam') || '';
+    return qs.get('tgWebAppStartParam') || qs.get('startapp') || '';
   } catch (_) {
     return '';
   }

@@ -10,7 +10,7 @@
  */
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { DynamicContextProvider, useDynamicContext } from '@dynamic-labs/sdk-react-core';
+import { DynamicContextProvider, useDynamicContext, useTelegramLogin } from '@dynamic-labs/sdk-react-core';
 import { SolanaWalletConnectors } from '@dynamic-labs/solana';
 import { isSolanaWallet } from '@dynamic-labs/solana';
 import { GlobalWalletExtension } from '@dynamic-labs/global-wallet';
@@ -30,33 +30,45 @@ const SHOT_TOKEN_MINT = process.env.REACT_APP_SHOT_TOKEN_MINT
  */
 export function DynamicWalletInner({ children, onWalletReady }) {
   const { primaryWallet, sdkHasLoaded, user, setShowAuthFlow } = useDynamicContext();
+  const { telegramSignIn } = useTelegramLogin();
   const [balance, setBalance] = useState(0);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [autoLoginAttempted, setAutoLoginAttempted] = useState(false);
 
-  // Trigger Dynamic auth flow on first load when no session exists.
+  // Silent TMA auth on first load.
   //
-  // Dynamic SDK does NOT auto-trigger login from TG WebApp context alone —
-  // even with the dashboard configured for the Telegram identity provider,
-  // the SDK needs an imperative setShowAuthFlow(true) to start the flow.
-  // Without it the SDK boots and sits idle, primaryWallet stays null,
-  // and the rest of the app sees a wallet-less state.
+  // The bot mints a JWT (server/services/dynamicAuthToken.js) containing
+  // the Telegram user identity + an HMAC hash, signed with the bot token.
+  // It appends that JWT as `?telegramAuthToken=<jwt>` to the Mini App URL
+  // when sending a `web_app:` button. useTelegramLogin().telegramSignIn()
+  // reads the token from the URL, exchanges it server-side with Dynamic
+  // for a session, and provisions a Solana embedded wallet — all without
+  // a popup, phone-number step, or Safari "URL can't be shown" error.
   //
-  // When the dashboard is correctly wired for TG, the auth modal that
-  // appears auto-detects window.Telegram.WebApp.initData and offers a
-  // one-tap "Continue as @<username>" button. If the dashboard is
-  // misconfigured, you'll see the generic Dynamic auth UI (email/socials).
+  // Fallback: if the Mini App was opened via a path that didn't carry the
+  // token (group-chat t.me link, deep-link from another app, etc.) we
+  // call setShowAuthFlow(true) so the user can still authenticate via the
+  // dashboard-trimmed modal (currently just "Continue with Telegram").
   useEffect(() => {
     if (!sdkHasLoaded || autoLoginAttempted) return;
     if (user || primaryWallet) {
-      // Already authenticated from a previous visit — Dynamic restored the session
+      // Already authenticated — Dynamic restored a session from local storage
       setAutoLoginAttempted(true);
       return;
     }
     setAutoLoginAttempted(true);
-    console.log('[Dynamic] No user/wallet on load — triggering auth flow');
-    setShowAuthFlow(true);
-  }, [sdkHasLoaded, autoLoginAttempted, user, primaryWallet, setShowAuthFlow]);
+    const hasAuthToken = new URLSearchParams(window.location.search).has('telegramAuthToken');
+    if (hasAuthToken) {
+      console.log('[Dynamic] telegramAuthToken found — silent TMA sign-in');
+      telegramSignIn({ forceCreateUser: true }).catch((err) => {
+        console.error('[Dynamic] telegramSignIn failed:', err);
+        setShowAuthFlow(true);
+      });
+    } else {
+      console.log('[Dynamic] No auth token in URL — falling back to modal');
+      setShowAuthFlow(true);
+    }
+  }, [sdkHasLoaded, autoLoginAttempted, user, primaryWallet, telegramSignIn, setShowAuthFlow]);
 
   const walletAddress = useMemo(() => {
     if (!primaryWallet) return null;

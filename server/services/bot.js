@@ -28,11 +28,17 @@ import { renderCareerCardPng } from './challenge/renderCareerCard.js';
 import { buildCareerProps } from './challenge/careerCardProps.js';
 import { WEAPON_DATA } from './physics.js';
 import { registerGroupChatCommands } from './groupchat/index.js';
+import { mintAuthToken } from './dynamicAuthToken.js';
 
 // The path segment after the bot username is the Mini App `short_name` registered
 // in BotFather. Our Mini App is registered as `play` (not `solshot`). Set
 // MINI_APP_URL env to override if the short_name ever changes.
 const MINI_APP_URL = process.env.MINI_APP_URL || 'https://t.me/SolShotGG_bot/play';
+// Direct https URL for the Mini App — used by `web_app:` buttons so we can
+// pass `?telegramAuthToken=<jwt>` for Dynamic silent-auth. Group-chat
+// inline buttons fall back to MINI_APP_URL (t.me link) because `web_app:`
+// only renders in private chats.
+const MINI_APP_HTTPS_URL = process.env.MINI_APP_HTTPS_URL || 'https://www.solshot.gg';
 const WEBHOOK_PATH = '/api/telegram-webhook';
 const SERVER_BASE_URL = process.env.SERVER_BASE_URL || process.env.TELEGRAM_WEBHOOK_URL || '';
 
@@ -63,16 +69,35 @@ export function initBot() {
 
 /**
  * Build an inline keyboard with a single "Open Mini App" button.
- * Uses a Telegram-native t.me link so the preview renders the Mini App card,
- * not a generic web link.
+ *
+ * In private DMs we emit a `web_app:` button with a direct https URL that
+ * carries the Dynamic auth-token JWT as `?telegramAuthToken=<jwt>`. The
+ * Mini App's `useTelegramLogin` hook reads that param on first load and
+ * provisions a Solana embedded wallet silently — no popup, no phone-number
+ * verification, no Safari-can't-open-page errors.
+ *
+ * In groups (or when ctx is missing) we fall back to the `url:` t.me link.
+ * `web_app:` buttons only render in private chats per Telegram's rules,
+ * and group users hit the modal-based fallback inside the Mini App.
  */
-function launchKeyboard(label, startapp = '') {
+function launchKeyboard(label, startapp = '', ctx = null) {
+  const isPrivate = ctx?.chat?.type === 'private';
+  const tgUser = ctx?.from;
+  const authToken = isPrivate && tgUser ? mintAuthToken(tgUser) : null;
+
+  if (authToken) {
+    const params = new URLSearchParams();
+    params.set('telegramAuthToken', authToken);
+    if (startapp) params.set('startapp', startapp);
+    const url = `${MINI_APP_HTTPS_URL}/?${params.toString()}`;
+    return { inline_keyboard: [[{ text: label, web_app: { url } }]] };
+  }
+
+  // Fallback: t.me link (groups, missing ctx, or token mint disabled)
   const url = startapp
     ? `${MINI_APP_URL}?startapp=${encodeURIComponent(startapp)}`
     : MINI_APP_URL;
-  return {
-    inline_keyboard: [[{ text: label, url }]],
-  };
+  return { inline_keyboard: [[{ text: label, url }]] };
 }
 
 function registerCommands(bot) {
@@ -84,7 +109,7 @@ function registerCommands(bot) {
       'Welcome to SolShot — artillery duels on Solana.\n\n' +
       'Real money 1v1 matches. 20 weapons. Skill-based wagering.\n\n' +
       'Tap below to launch.',
-      { reply_markup: launchKeyboard('🎯 Launch SolShot', payload) }
+      { reply_markup: launchKeyboard('🎯 Launch SolShot', payload, ctx) }
     );
   });
 
@@ -163,7 +188,7 @@ function registerCommands(bot) {
   bot.command('challenge', async (ctx) => {
     await ctx.reply(
       'Create a 1v1 challenge — get a shareable link to send your opponent.',
-      { reply_markup: launchKeyboard('Create Challenge', 'challenge_new') }
+      { reply_markup: launchKeyboard('Create Challenge', 'challenge_new', ctx) }
     );
   });
 
@@ -173,7 +198,7 @@ function registerCommands(bot) {
       if (!user || !user.stats || (user.stats.matchesPlayed || 0) === 0) {
         return ctx.reply(
           'No record yet — play your first match to start tracking stats.',
-          { reply_markup: launchKeyboard('Find a Match', 'play') }
+          { reply_markup: launchKeyboard('Find a Match', 'play', ctx) }
         );
       }
 
@@ -194,7 +219,7 @@ function registerCommands(bot) {
         const caption = `${props.callsign} · ${tierName}${rank ? ` · #${rank}` : ''}`;
         return ctx.replyWithPhoto({ source: png }, {
           caption,
-          reply_markup: launchKeyboard('Full Record', 'stats'),
+          reply_markup: launchKeyboard('Full Record', 'stats', ctx),
         });
       }
 
@@ -207,13 +232,13 @@ function registerCommands(bot) {
         `${fmtDmg(props.totalDamage)} damage · ${props.kills} kills`,
       ];
       await ctx.reply(lines.join('\n'), {
-        reply_markup: launchKeyboard('Full Record', 'stats'),
+        reply_markup: launchKeyboard('Full Record', 'stats', ctx),
       });
     } catch (err) {
       console.warn('[bot:/stats] error, falling back:', err.message);
       await ctx.reply(
         'Your record, rank, and signature weapon.',
-        { reply_markup: launchKeyboard('Open Barracks', 'stats') }
+        { reply_markup: launchKeyboard('Open Barracks', 'stats', ctx) }
       );
     }
   });
@@ -301,7 +326,7 @@ function registerCommands(bot) {
       if (!top.length) {
         return ctx.reply(
           'No players ranked yet — be the first.',
-          { reply_markup: launchKeyboard('Find a Match', 'play') }
+          { reply_markup: launchKeyboard('Find a Match', 'play', ctx) }
         );
       }
 
@@ -350,13 +375,13 @@ function registerCommands(bot) {
 
       await ctx.reply(lines.join('\n'), {
         parse_mode: 'HTML',
-        reply_markup: launchKeyboard('Full Leaderboard', 'leaderboard'),
+        reply_markup: launchKeyboard('Full Leaderboard', 'leaderboard', ctx),
       });
     } catch (err) {
       console.warn('[bot:/leaderboard] error, falling back:', err.message);
       await ctx.reply(
         'Top players this season.',
-        { reply_markup: launchKeyboard('Open Leaderboard', 'leaderboard') }
+        { reply_markup: launchKeyboard('Open Leaderboard', 'leaderboard', ctx) }
       );
     }
   });
@@ -377,7 +402,7 @@ function registerCommands(bot) {
       if (!user) {
         return ctx.reply(
           `${callsign}\n\nNo wallet yet. Open the Mini App and your Solana wallet is set up automatically — required for wagered matches and SHOT.`,
-          { reply_markup: launchKeyboard('Set Up Wallet', 'wallet') }
+          { reply_markup: launchKeyboard('Set Up Wallet', 'wallet', ctx) }
         );
       }
 
@@ -401,7 +426,7 @@ function registerCommands(bot) {
           lines.push('Open the Mini App to set up your Solana wallet — needed to receive SHOT and wager SOL.');
         }
         return ctx.reply(lines.join('\n'), {
-          reply_markup: launchKeyboard('Set Up Wallet', 'wallet'),
+          reply_markup: launchKeyboard('Set Up Wallet', 'wallet', ctx),
         });
       }
 
@@ -439,13 +464,13 @@ function registerCommands(bot) {
       }
 
       await ctx.reply(lines.join('\n'), {
-        reply_markup: launchKeyboard('Open Wallet', 'wallet'),
+        reply_markup: launchKeyboard('Open Wallet', 'wallet', ctx),
       });
     } catch (err) {
       console.warn('[bot:/wallet] lookup failed, falling back:', err.message);
       await ctx.reply(
         'Your wallet — balance, deposit, withdraw.',
-        { reply_markup: launchKeyboard('Open Wallet', 'wallet') }
+        { reply_markup: launchKeyboard('Open Wallet', 'wallet', ctx) }
       );
     }
   });
@@ -461,7 +486,7 @@ function registerCommands(bot) {
       if (!user) {
         return ctx.reply(
           `Cosmetics, camos, and projectile trails — paid in SHOT.\n\n${TOTAL_COSMETICS} items in the Armory. Open the Mini App to browse.`,
-          { reply_markup: launchKeyboard('Open Armory', 'shop') }
+          { reply_markup: launchKeyboard('Open Armory', 'shop', ctx) }
         );
       }
 
@@ -482,13 +507,13 @@ function registerCommands(bot) {
       }
 
       await ctx.reply(lines.join('\n'), {
-        reply_markup: launchKeyboard('Open Armory', 'shop'),
+        reply_markup: launchKeyboard('Open Armory', 'shop', ctx),
       });
     } catch (err) {
       console.warn('[bot:/shop] lookup failed, falling back:', err.message);
       await ctx.reply(
         'Cosmetics, camos, and projectile trails — paid in SHOT.',
-        { reply_markup: launchKeyboard('Open Armory', 'shop') }
+        { reply_markup: launchKeyboard('Open Armory', 'shop', ctx) }
       );
     }
   });
@@ -521,12 +546,12 @@ function registerCommands(bot) {
           'You have reached the maximum prestige tier. Honoured.\n' +
           `Total burned: ${burnedTotal.toLocaleString()} SHOT`;
       }
-      await ctx.reply(body, { reply_markup: launchKeyboard('Open Prestige', 'prestige') });
+      await ctx.reply(body, { reply_markup: launchKeyboard('Open Prestige', 'prestige', ctx) });
     } catch (err) {
       console.warn('[bot:/prestige] lookup failed, falling back:', err.message);
       await ctx.reply(
         'Climb the prestige tiers — Bronze through Diamond. Burn SHOT to advance.',
-        { reply_markup: launchKeyboard('Open Prestige', 'prestige') }
+        { reply_markup: launchKeyboard('Open Prestige', 'prestige', ctx) }
       );
     }
   });
@@ -540,7 +565,7 @@ function registerCommands(bot) {
       if (!user || !user.stats || (user.stats.matchesPlayed || 0) === 0) {
         return ctx.reply(
           '20 weapons across 6 tiers — single shot to nuclear pineapple. Play your first match to start tracking.',
-          { reply_markup: launchKeyboard('Open Arsenal', 'weapons') }
+          { reply_markup: launchKeyboard('Open Arsenal', 'weapons', ctx) }
         );
       }
 
@@ -592,13 +617,13 @@ function registerCommands(bot) {
       }
 
       await ctx.reply(lines.join('\n'), {
-        reply_markup: launchKeyboard('Open Arsenal', 'weapons'),
+        reply_markup: launchKeyboard('Open Arsenal', 'weapons', ctx),
       });
     } catch (err) {
       console.warn('[bot:/weapons] lookup failed, falling back:', err.message);
       await ctx.reply(
         '20 weapons across 6 tiers — single shot to nuclear pineapple. Browse the arsenal.',
-        { reply_markup: launchKeyboard('Open Arsenal', 'weapons') }
+        { reply_markup: launchKeyboard('Open Arsenal', 'weapons', ctx) }
       );
     }
   });
@@ -669,7 +694,7 @@ function registerCommands(bot) {
 
     try {
       await ctx.replyWithMarkdownV2(lines.join('\n'), {
-        reply_markup: launchKeyboard(cta, ctaParam),
+        reply_markup: launchKeyboard(cta, ctaParam, ctx),
       });
     } catch (err) {
       // MarkdownV2 escaping bug? Fall back to plain.
@@ -678,7 +703,7 @@ function registerCommands(bot) {
         'SolShot — artillery duels on Solana.\n\n' +
         'Practice mode is free. Wagered modes pay out in SOL.\n' +
         'Web: solshot.gg | X: @SolShotGG',
-        { reply_markup: launchKeyboard('Launch SolShot') }
+        { reply_markup: launchKeyboard('Launch SolShot', '', ctx) }
       );
     }
   });
@@ -704,7 +729,7 @@ function registerCommands(bot) {
       if (!code) {
         return ctx.reply(
           'Open SolShot once to start tracking your account, then try /refer again.',
-          { reply_markup: launchKeyboard('Open SolShot', '') }
+          { reply_markup: launchKeyboard('Open SolShot', '', ctx) }
         );
       }
       const url = buildInviteLink(code);
@@ -738,7 +763,7 @@ function registerCommands(bot) {
       '• Turn-deadline reminders\n' +
       '• Daily digest opt-in\n\n' +
       'For now, manage your callsign + wallet in the Mini App.',
-      { reply_markup: launchKeyboard('Open Settings', 'settings') }
+      { reply_markup: launchKeyboard('Open Settings', 'settings', ctx) }
     );
   });
 
@@ -748,7 +773,7 @@ function registerCommands(bot) {
   bot.command('mygames', async (ctx) => {
     await ctx.reply(
       'See every group match you\'re in — across every chat. Tap below to open.',
-      { reply_markup: launchKeyboard('Open My Games', 'mygames') }
+      { reply_markup: launchKeyboard('Open My Games', 'mygames', ctx) }
     );
   });
 

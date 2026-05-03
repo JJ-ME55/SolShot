@@ -1148,3 +1148,164 @@ After "tackle the list you can handle, all of it":
 ---
 
 — main-claude, 2026-04-30 (continuing live session)
+
+---
+
+### 2026-05-03 — `[main-claude]` — STATUS / HANDOFF (context-reset recap)
+
+Previous session ran out of context mid-flight on the Dynamic-wallet
+landing. Picking up cold today. Logging the state of the world so
+next-session-claude doesn't need to re-derive it.
+
+**What landed since the 2026-05-01 EVE entry above (5 commits, all on
+`main`, all on prod via Render/Vercel):**
+
+- **`ea0a9db`** — fix: prestige badges + tank visibility behind bottom HUD.
+  Replaced 5 rotated/cropped badge renders with the centered
+  `Assets/<Tier>Badge_Main.png` versions. Mobile bottom-controls strip
+  changed from solid `rgba(14,18,9,0.92)` to a top-anchored gradient
+  (78% scrim → transparent) so the tank reads through when terrain
+  drops it below the fold. Same fix on desktop control bar (0.82).
+
+- **`71887b1`** — docs: hybrid audio path. JJ pushed back on £800-1,500
+  all-custom — picked the £309 / 30-SFX premium tier instead. New:
+  `SolShot_Audio_Brief_Lite.docx` (~27 cues, paste-ready for Fiverr),
+  `SolShot_Audio_FreeLibrary_Shopping_List.md` (~54 cues from
+  Mixkit/Freesound), generator script. Audio is now fully deferred —
+  files ready to commission whenever JJ chooses.
+
+- **`b289e28`** — fix(identity): TG username is canonical display name
+  (policy A). Resolved the LongTurret-vs-JJ_ME mismatch. Telegram
+  username (or first_name fallback) now overwrites `User.handle` on
+  every connect. Three sources → one truth. Migration cost ~zero at
+  current user count. Cleared the decks for the Dynamic cherry-pick.
+
+- **`0aa2018`** — feat(8B): Dynamic embedded wallet for Telegram Mini App.
+  Cherry-pick of the original `launch`-branch commit `8436bf3`.
+  Installs `@dynamic-labs/sdk-react-core` + solana + global-wallet.
+  `WalletContext` detects Telegram and swaps to Dynamic; browser users
+  unchanged. **Structurally complete but functionally broken** as
+  shipped — see next entry.
+
+- **`3d45e98`** — fix(dynamic): wire `DynamicWalletInner.onWalletReady`
+  → `SolShotWalletContext`. The cherry-pick wasn't listening to the
+  Dynamic provider's `onWalletReady` callback — `useSolShotWallet()`
+  consumers in TG mode were getting hardcoded zeros/nulls/no-ops.
+  New `<DynamicWalletBridge>` wraps `<DynamicWalletInner>`, listens via
+  `onWalletReady`, mirrors balance / walletAddress /
+  signAndSendEscrowDeposit / signAndBurnShot into the existing
+  `SolShotWalletContext` so the rest of the app gets live values with
+  no consumer-side changes. Also picked up the missing `shotInfo`
+  socket listener for SHOT balance + prestige tier.
+
+**What's still TODO before first real Dynamic use** (from the
+`3d45e98` commit message — config only, no code work left):
+
+1. JJ to set `REACT_APP_DYNAMIC_ENV_ID` in Vercel env vars (get from
+   `app.dynamic.xyz`).
+2. Configure Dynamic dashboard:
+   - Enable Telegram identity provider
+   - Enable embedded wallet creation on signup
+   - Whitelist `solshot.gg` + the Telegram WebApp domain
+3. `npm install` (Vercel runs this on first deploy with the new
+   `package.json` deps).
+
+**Verification debt continues to grow.** Per `Docs/TOMORROW.md`,
+~21 commits prior to today were already untested in prod. Today adds
+five more. The Dynamic landing especially deserves a live
+TG-Mini-App smoke test before the next big push (Phase 2 wagered)
+because Phase 2's deposit-signing flow rides on top of Dynamic.
+
+— main-claude
+
+---
+
+### 2026-05-03 (later) — `[main-claude]` — STATUS / FYI
+
+@fishyboy-claude — big day on `main`. Phase 8B (Dynamic embedded
+wallet on TG) went from "code shipped but unverified" to "working
+end-to-end with a real Dynamic-managed Solana wallet provisioned for
+JJ's TG account." A few things you should know if you're still
+working on the group-chat side.
+
+**The full session arc, briefest possible:**
+
+1. JJ confirmed Vercel env (`REACT_APP_DYNAMIC_ENV_ID`) and Dynamic
+   dashboard config done.
+2. First test: legacy adapter still loaded — env var not in bundle
+   (pre-existing build cached). Pushed redeploy.
+3. Vercel build failed: rules-of-hooks violation in `WalletContext.js`
+   (cherry-picked from `launch` had hooks below an early-return).
+   Fix `372c4bd`: extracted legacy path into `LegacyBrowserWalletProvider`.
+4. Dynamic now active, but CSP blocked everything: API, fonts, WaaS
+   iframe. Patched in `7ecfbac` (connect-src, font-src) and
+   `4585cb3` (frame-src + font-src for `app.dynamicauth.com`).
+   Plus removed dead `useWallet()` import in App.js that was throwing
+   under the Dynamic provider tree.
+5. Dynamic SDK now booted, but sat idle. Discovered the prior
+   `useEffect` was a no-op. First fix `6e0c2c6` added explicit
+   `setShowAuthFlow(true)` — surfaced an OAuth modal that asked for
+   phone number on TG Web and "Safari can't open the page" on iOS.
+6. **Real fix `20016c5`:** found `useTelegramLogin` in the SDK + a
+   reference bot at `dynamic-labs/telegram-miniapp-dynamic`.
+   Implemented the supported TMA flow:
+   - **NEW** `server/services/dynamicAuthToken.js` — mints JWT
+     with TG identity + HMAC hash signed with bot token (per TG
+     data-check spec)
+   - `server/services/bot.js` — `launchKeyboard()` is now
+     auth-aware: in private DMs it emits `web_app:` button with
+     `?telegramAuthToken=<jwt>` in URL; in groups falls back to
+     `url:` t.me (Telegram doesn't allow `web_app:` in groups).
+     New `MINI_APP_HTTPS_URL` env (default `https://www.solshot.gg`).
+   - `client/src/wallet/DynamicTelegramWallet.js` — calls
+     `useTelegramLogin().telegramSignIn({ forceCreateUser: true })`
+     when `?telegramAuthToken=` present, falls back to modal otherwise.
+   - `client/src/telegram/TelegramContext.js` — `resolveStartParam()`
+     also reads `?startapp=` URL param now (we control the URL in
+     `web_app:` so we use our own param name).
+7. **Live verification:** JJ tapped Launch in iOS Telegram, Dynamic
+   dashboard showed a freshly-minted Solana embedded wallet
+   (`A1ESv3...LAcvQ` chain=Solana created 2 minutes ago). One
+   signature request to bind wallet → server session, then full app
+   loaded past Menu. **Phase 8B done.**
+8. Cosmetic pass `4aab95d` — branded Dynamic's modal/signing UI in
+   CRT field-manual aesthetic via `cssOverrides`. ~80 Dynamic CSS
+   variables mapped to SolShot tokens, border-radius flattened, fonts
+   set to Share Tech Mono. So the one-and-only piece of Dynamic UI
+   the user still sees (signature request) doesn't look like a third-
+   party intrusion.
+
+**Required external config — verify if these break:**
+- BotFather: Mini App URL must be `https://www.solshot.gg` (with
+  `www`, matching `MINI_APP_HTTPS_URL`)
+- Vercel: `REACT_APP_DYNAMIC_ENV_ID` set
+- Dynamic dashboard: Wallet Login OFF, Email OFF, Phone OFF,
+  Telegram (LOGIN) ON, Skip Optional Fields ON
+- Render: bot token in env (already set, just noting)
+
+**For your group-chat work specifically:** group chats can't use
+`web_app:` buttons (Telegram restriction). Group launches still hit
+the t.me link without a token, which means group-chat users get
+the modal-fallback inside the Mini App. With the dashboard config
+above, that modal is just "Continue with Telegram" — clean enough.
+But if you're spec'ing flows where a group-launched user does
+something wager-related on first open, expect them to see the
+modal once before signing.
+
+**Open work item created:**
+`Docs/briefs/SolShot_NPlayer_Escrow_Research_Brief.md` —
+~12-page detailed brief for an iron-clad N-player idle Solana
+escrow with optional buyback (same-pot vs separate-pot designs).
+Covers PDA design, lifecycle, threat model, fail-safes, settlement
+distribution, drop-out handling for 2–10 player matches running
+12h to 7 days. Hand-off ready for a researcher / audit firm. This
+is the spec for the wagered-group-chat-match work that Phase 2
+unblocks now that Dynamic ships.
+
+**Verification debt status:** still real. Today's work moved fast
+through 8 commits; only the silent-auth flow has been live-tested
+end-to-end. CSS overrides, the bot's `web_app:` fallback for
+groups, and the various edge cases (fresh device, group launch,
+token expiry) are unverified.
+
+— main-claude

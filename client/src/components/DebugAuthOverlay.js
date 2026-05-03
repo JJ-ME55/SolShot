@@ -9,17 +9,13 @@ import { useSolShotWallet } from '../wallet/WalletContext';
  *   localStorage.solshotDebug === '1' (persistent across reloads;
  *   set with `localStorage.setItem('solshotDebug','1')` in console).
  *
- * Designed to make "why is wagered queue rejecting me" debuggable in
- * one glance instead of console-diving on a phone. Renders a tiny
- * fixed-position card with:
- *   - Which wallet stack is active (dynamic / legacy)
- *   - Whether the SDK / wallet adapter has loaded
- *   - Whether a wallet has been provisioned (the typical block point
- *     when iframe / signing is broken on TG Web)
- *   - Whether SIWE-style server auth has completed (the actual gate
- *     for wagered queue join — false here = wagered will silently
- *     reject this client)
- *   - Last known fatal error from the auth/sign chain
+ * Renders a tiny fixed-position card with the wallet adapter's state:
+ *   - publicKey present
+ *   - wallet connected
+ *   - SOL balance
+ *   - SIWE-style server auth complete (the actual gate for wagered
+ *     queue join — false here = wagered will silently reject)
+ *   - last known fatal error
  *
  * Click to dismiss for the current session. Reload to re-show.
  */
@@ -42,8 +38,7 @@ function DebugAuthOverlay() {
   if (!enabled || dismissed) return null;
 
   const debug = wallet?.debug || {};
-  const source = debug.source || 'unknown';
-  const isDynamic = source === 'dynamic';
+  const source = debug.source || 'legacy';
 
   // Decide a single high-level status colour so the overlay reads at
   // a glance: green = fully ready, amber = partial, red = blocked.
@@ -113,15 +108,7 @@ function DebugAuthOverlay() {
       {row('connected', !!wallet?.connected)}
       {row('balance', (wallet?.balance ?? 0).toFixed(4))}
 
-      {isDynamic && (
-        <>
-          {row('sdkHasLoaded', !!debug.sdkHasLoaded)}
-          {row('hasPrimaryWallet', !!debug.hasPrimaryWallet)}
-          {row('hasUser', !!debug.hasUser)}
-          {row('autoLoginAttempted', !!debug.autoLoginAttempted)}
-        </>
-      )}
-      {!isDynamic && row('hasPublicKey', !!debug.hasPublicKey)}
+      {row('hasPublicKey', !!debug.hasPublicKey)}
 
       {debug.lastError && (
         <div style={{ marginTop: 4, color: '#ff8060' }}>

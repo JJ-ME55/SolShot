@@ -404,67 +404,20 @@ function SolShotWalletInner({ children }) {
 }
 
 /**
- * DynamicWalletBridge — listens to DynamicWalletInner's onWalletReady
- * callback and exposes the values via SolShotWalletContext so the rest
- * of the app can read them through useSolShotWallet() unchanged.
+ * Browser-wallet provider — Phantom / Solflare / Jupiter Mobile via Reown.
  *
- * Same shape as the legacy SolShotWalletInner — same hook works for
- * both wallet stacks, no consumer-side branching.
- */
-function DynamicWalletBridge({ children }) {
-    const { DynamicWalletInner } = require('./DynamicTelegramWallet');
-    const [walletState, setWalletState] = useState({
-        balance: 0,
-        refreshBalance: () => {},
-        walletAddress: null,
-        connected: false,
-        isAuthenticated: false,
-        authenticate: () => {},
-        shotBalance: 0,
-        prestigeInfo: { tier: 0, tierName: 'Unranked' },
-        signAndSendEscrowDeposit: async () => null,
-        signAndBurnShot: async () => null,
-    });
-    const [shotBalance, setShotBalance] = useState(0);
-    const [prestigeInfo, setPrestigeInfo] = useState({ tier: 0, tierName: 'Unranked' });
-
-    // Mirror the legacy SolShotWalletInner's shotInfo listener so SHOT
-    // balance + prestige tier flow into Dynamic-mode consumers too.
-    // DynamicWalletInner's onWalletReady provides everything except
-    // these (its comment says "managed by server via socket"), so we
-    // own that wiring here.
-    useEffect(() => {
-        const socket = window.socket;
-        if (!socket) return;
-        const handleShotInfo = (data) => {
-            if (typeof data?.balance === 'number') setShotBalance(data.balance);
-            if (data?.prestige) setPrestigeInfo(data.prestige);
-        };
-        socket.on('shotInfo', handleShotInfo);
-        socket.emit('getShotInfo');
-        return () => { socket.off('shotInfo', handleShotInfo); };
-    }, []);
-
-    // Merge Dynamic-provided values with our own SHOT/prestige state.
-    const merged = useMemo(
-        () => ({ ...walletState, shotBalance, prestigeInfo }),
-        [walletState, shotBalance, prestigeInfo]
-    );
-
-    return (
-        <DynamicWalletInner onWalletReady={setWalletState}>
-            <SolShotWalletContext.Provider value={merged}>
-                {children}
-            </SolShotWalletContext.Provider>
-        </DynamicWalletInner>
-    );
-}
-
-/**
- * Legacy browser-wallet path (Phantom / Solflare / Jupiter Mobile via Reown).
- * Extracted into its own component so its hooks are scoped here — the parent
- * SolShotWalletProvider can short-circuit to the Dynamic path without
- * violating React's rules-of-hooks (which forbid conditional hook calls).
+ * This is the ONLY wallet path SolShot uses. We previously had a Dynamic
+ * embedded-wallet branch for Telegram Mini Apps, which was removed because
+ * Dynamic's WaaS iframe failed in TG Web (frame-ancestors CSP block when
+ * nested inside web.telegram.org). Privy and Para hit the same iframe-class
+ * problem (third-party storage partitioning, X-Frame-Options DENY). Until
+ * a SaaS embedded wallet provider ships a non-iframe architecture that
+ * works in TG Web, we default everyone — TG users included — to the
+ * standard Solana wallet adapter and accept the friction in TG iOS where
+ * native wallet apps are portrait-only.
+ *
+ * The wallet decision will be revisited (custodial server-managed wallet,
+ * or new vendor) once on-chain escrow is fully tested + audited.
  */
 function LegacyBrowserWalletProvider({ children }) {
     const { jupiterAdapter } = useWrappedReownAdapter({
@@ -511,27 +464,6 @@ function LegacyBrowserWalletProvider({ children }) {
 }
 
 export function SolShotWalletProvider({ children }) {
-    const isTelegram = !!window.Telegram?.WebApp?.initData;
-    const hasDynamicEnv = !!process.env.REACT_APP_DYNAMIC_ENV_ID;
-
-    // Telegram Mini App: use Dynamic embedded wallet.
-    //
-    // <DynamicTelegramProvider> initialises Dynamic SDK + Solana connector.
-    // <DynamicWalletBridge> wraps <DynamicWalletInner> so its onWalletReady
-    // callback flows into SolShotWalletContext — without that bridge,
-    // useSolShotWallet() returns the hardcoded zero values the original
-    // 8436bf3 commit left in place.
-    if (isTelegram && hasDynamicEnv) {
-        const { DynamicTelegramProvider } = require('./DynamicTelegramWallet');
-        return (
-            <DynamicTelegramProvider>
-                <DynamicWalletBridge>
-                    {children}
-                </DynamicWalletBridge>
-            </DynamicTelegramProvider>
-        );
-    }
-
     return <LegacyBrowserWalletProvider>{children}</LegacyBrowserWalletProvider>;
 }
 

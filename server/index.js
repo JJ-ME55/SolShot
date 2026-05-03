@@ -12,9 +12,8 @@ import { initShotState } from './services/shot-token.js'
 import { initKeys } from './services/keys.js';
 import { initEscrow } from './services/escrow.js';
 import { requireAdminKey } from './middleware/guards.js';
-import { telegramSocketMiddleware, validateTelegramInitData } from './middleware/telegram.js';
+import { telegramSocketMiddleware } from './middleware/telegram.js';
 import { initBot, setupBotWebhook, stopBot } from './services/bot.js';
-import { mintAuthToken } from './services/dynamicAuthToken.js';
 import { restoreActiveTimers } from './services/groupchat/scheduler.js';
 import { startLobbyWatchdog } from './services/groupchat/lobbyWatchdog.js';
 // Importing lifecycle registers its onTimeout callback with the scheduler.
@@ -242,36 +241,6 @@ app.post('/api/csp-report', express.json({ type: 'application/csp-report' }), (r
     res.status(204).end();
 });
 
-// POST /api/auth/dynamic-token
-//
-// Mints a Dynamic-compatible Telegram auth JWT from validated WebApp initData.
-// Used by the Mini App when launched without a `?telegramAuthToken=` query
-// param (e.g. via a group-chat t.me link, which Telegram doesn't allow our
-// `web_app:` button URL params to traverse). The Mini App calls this on
-// load with the raw `Telegram.WebApp.initData` string; we verify the HMAC
-// against our bot token (proves Telegram authenticated the user, not us)
-// and mint a JWT the SDK's useTelegramLogin can consume for silent sign-in.
-//
-// This makes the silent-auth flow work for ALL launch paths: DM web_app:
-// buttons, group t.me links, deep links from outside the bot, direct URLs.
-app.post('/api/auth/dynamic-token', express.json(), (req, res) => {
-    const { initData } = req.body || {};
-    if (!initData || typeof initData !== 'string') {
-        return res.status(400).json({ error: 'initData required' });
-    }
-
-    const { valid, user } = validateTelegramInitData(initData);
-    if (!valid || !user) {
-        return res.status(401).json({ error: 'invalid initData' });
-    }
-
-    const token = mintAuthToken(user);
-    if (!token) {
-        return res.status(500).json({ error: 'token mint failed' });
-    }
-
-    res.json({ token });
-});
 
 // ─── Challenge endpoints (Phase 3 — Telegram Mini App) ───────────────────
 //

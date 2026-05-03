@@ -1,6 +1,5 @@
 import './styles/tokens.css';
 import React, { useState, useCallback, useEffect, Suspense, lazy } from 'react';
-import { useWallet } from '@solana/wallet-adapter-react';
 import { socket } from './socket/index';
 import './utils/haptic';
 import FAQ from './components/FAQ';
@@ -211,9 +210,6 @@ function AppInner() {
     // Unknown / unhandled startParams (ch_*, rf_*, etc.) fall through to default menu.
     // Wire those when the corresponding feature lands.
   }, [startParam]);
-
-  // CS-04: Use wallet adapter hook directly for rejoin logic (avoids window.solWallet)
-  const { publicKey, signMessage } = useWallet();
 
   // Navigate between screens — spread copy to avoid stale refs
   const navigate = useCallback((nextScreen, data = {}) => {

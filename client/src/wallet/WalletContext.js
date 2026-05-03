@@ -396,10 +396,6 @@ function SolShotWalletInner({ children }) {
 }
 
 /**
- * Main wallet provider — wrap your app with this.
- * Detects Telegram and uses Dynamic embedded wallet instead of Phantom/Solflare.
- */
-/**
  * DynamicWalletBridge — listens to DynamicWalletInner's onWalletReady
  * callback and exposes the values via SolShotWalletContext so the rest
  * of the app can read them through useSolShotWallet() unchanged.

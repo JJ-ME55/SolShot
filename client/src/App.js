@@ -11,6 +11,7 @@ import Layout from './components/Layout';
 import LoadingScreen from './screens/LoadingScreen';
 import MenuScreen from './screens/MenuScreen';
 import HandleModal from './components/HandleModal';
+import DebugAuthOverlay from './components/DebugAuthOverlay';
 import { useTelegram } from './telegram/TelegramContext';
 
 // Lazy — split into separate chunks (huge Phaser deps live in BattleScreen/AIPracticeScreen)
@@ -277,6 +278,7 @@ function AppInner() {
         <HandleModal onComplete={handleHandleComplete} />
       )}
       <PortraitWarning />
+      <DebugAuthOverlay />
       {/* Hide FAQ button during battle/shop to avoid cluttering gameplay */}
       {screen !== 'battle' && screen !== 'shop' && (
         <button

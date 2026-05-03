@@ -34,6 +34,11 @@ export function DynamicWalletInner({ children, onWalletReady }) {
   const [balance, setBalance] = useState(0);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [autoLoginAttempted, setAutoLoginAttempted] = useState(false);
+  // Last fatal auth/signing error — surfaced via the debug overlay so
+  // we can see at a glance why the wagered queue is rejecting a client
+  // (Dynamic iframe failed, signMessage threw, /api/auth/dynamic-token
+  // returned 4xx, etc.) without console-diving.
+  const [lastError, setLastError] = useState(null);
 
   // Silent TMA auth on first load — works for ALL launch paths.
   //
@@ -70,6 +75,7 @@ export function DynamicWalletInner({ children, onWalletReady }) {
         await telegramSignIn({ authToken, forceCreateUser: true });
       } catch (err) {
         console.error('[Dynamic] telegramSignIn failed:', err);
+        setLastError(`telegramSignIn: ${err?.message || err}`);
         setShowAuthFlow(true);
       }
     };
@@ -93,6 +99,7 @@ export function DynamicWalletInner({ children, onWalletReady }) {
         .then(({ token }) => trySilentSignIn(token, 'API'))
         .catch((err) => {
           console.error('[Dynamic] /api/auth/dynamic-token failed:', err);
+          setLastError(`token-mint: ${err?.message || err}`);
           setShowAuthFlow(true);
         });
       return;
@@ -245,9 +252,19 @@ export function DynamicWalletInner({ children, onWalletReady }) {
         prestigeInfo: { tier: 0, tierName: 'Unranked' },
         signAndSendEscrowDeposit,
         signAndBurnShot,
+        // Read by <DebugAuthOverlay> when ?debug=1 — surfaces the
+        // exact stage the auth chain is in (or stuck at).
+        debug: {
+          source: 'dynamic',
+          sdkHasLoaded,
+          hasUser: !!user,
+          hasPrimaryWallet: !!primaryWallet,
+          autoLoginAttempted,
+          lastError,
+        },
       });
     }
-  }, [balance, walletAddress, primaryWallet, isAuthenticated, onWalletReady, refreshBalance, authenticateWithServer, signAndSendEscrowDeposit, signAndBurnShot]);
+  }, [balance, walletAddress, primaryWallet, isAuthenticated, onWalletReady, refreshBalance, authenticateWithServer, signAndSendEscrowDeposit, signAndBurnShot, sdkHasLoaded, user, autoLoginAttempted, lastError]);
 
   return <>{children}</>;
 }

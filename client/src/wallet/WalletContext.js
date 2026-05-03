@@ -386,7 +386,15 @@ function SolShotWalletInner({ children }) {
         prestigeInfo,
         signAndSendEscrowDeposit,
         signAndBurnShot,
-    }), [balance, refreshBalance, walletAddress, connected, isAuthenticated, authenticate, shotBalance, prestigeInfo, signAndSendEscrowDeposit, signAndBurnShot]);
+        // Read by <DebugAuthOverlay> when ?debug=1
+        debug: {
+            source: 'legacy',
+            connected,
+            hasPublicKey: !!publicKey,
+            walletAddress,
+            isAuthenticated,
+        },
+    }), [balance, refreshBalance, walletAddress, connected, isAuthenticated, authenticate, shotBalance, prestigeInfo, signAndSendEscrowDeposit, signAndBurnShot, publicKey]);
 
     return (
         <SolShotWalletContext.Provider value={value}>

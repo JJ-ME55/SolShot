@@ -35,20 +35,23 @@ export function DynamicWalletInner({ children, onWalletReady }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [autoLoginAttempted, setAutoLoginAttempted] = useState(false);
 
-  // Silent TMA auth on first load.
+  // Silent TMA auth on first load — works for ALL launch paths.
   //
-  // The bot mints a JWT (server/services/dynamicAuthToken.js) containing
-  // the Telegram user identity + an HMAC hash, signed with the bot token.
-  // It appends that JWT as `?telegramAuthToken=<jwt>` to the Mini App URL
-  // when sending a `web_app:` button. useTelegramLogin().telegramSignIn()
-  // reads the token from the URL, exchanges it server-side with Dynamic
-  // for a session, and provisions a Solana embedded wallet — all without
-  // a popup, phone-number step, or Safari "URL can't be shown" error.
+  // Three sources of auth token, tried in order:
+  //   1. ?telegramAuthToken= URL query param — set by the bot's web_app:
+  //      buttons (only renders in private DMs).
+  //   2. POST /api/auth/dynamic-token with Telegram.WebApp.initData —
+  //      works for any Mini App launch including group t.me links where
+  //      Telegram strips our `web_app:` URL params. The server verifies
+  //      the initData HMAC against the bot token and mints a Dynamic-
+  //      compatible JWT identical to the one the bot would have minted.
+  //   3. Fallback to setShowAuthFlow(true) — only if neither token nor
+  //      initData is available (e.g. the Mini App was opened directly in
+  //      a browser, outside Telegram). User taps "Continue with Telegram"
+  //      in the dashboard-trimmed modal.
   //
-  // Fallback: if the Mini App was opened via a path that didn't carry the
-  // token (group-chat t.me link, deep-link from another app, etc.) we
-  // call setShowAuthFlow(true) so the user can still authenticate via the
-  // dashboard-trimmed modal (currently just "Continue with Telegram").
+  // No popup, no phone-number step, no Safari redirect — even from group
+  // chats — as long as the request reaches our server.
   useEffect(() => {
     if (!sdkHasLoaded || autoLoginAttempted) return;
     if (user || primaryWallet) {
@@ -57,17 +60,46 @@ export function DynamicWalletInner({ children, onWalletReady }) {
       return;
     }
     setAutoLoginAttempted(true);
-    const hasAuthToken = new URLSearchParams(window.location.search).has('telegramAuthToken');
-    if (hasAuthToken) {
-      console.log('[Dynamic] telegramAuthToken found — silent TMA sign-in');
-      telegramSignIn({ forceCreateUser: true }).catch((err) => {
+
+    const urlToken = new URLSearchParams(window.location.search).get('telegramAuthToken');
+    const tgInitData = window.Telegram?.WebApp?.initData;
+
+    const trySilentSignIn = async (authToken, source) => {
+      console.log(`[Dynamic] auth token from ${source} — silent TMA sign-in`);
+      try {
+        await telegramSignIn({ authToken, forceCreateUser: true });
+      } catch (err) {
         console.error('[Dynamic] telegramSignIn failed:', err);
         setShowAuthFlow(true);
-      });
-    } else {
-      console.log('[Dynamic] No auth token in URL — falling back to modal');
-      setShowAuthFlow(true);
+      }
+    };
+
+    if (urlToken) {
+      trySilentSignIn(urlToken, 'URL');
+      return;
     }
+
+    if (tgInitData) {
+      console.log('[Dynamic] No URL token — fetching from /api/auth/dynamic-token');
+      // Match the env var the socket already uses; fall back to API_URL
+      // for parity with ChallengeAcceptScreen, then same-origin as last resort.
+      const apiBase = process.env.REACT_APP_SERVER_URL || process.env.REACT_APP_API_URL || '';
+      fetch(`${apiBase}/api/auth/dynamic-token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ initData: tgInitData }),
+      })
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+        .then(({ token }) => trySilentSignIn(token, 'API'))
+        .catch((err) => {
+          console.error('[Dynamic] /api/auth/dynamic-token failed:', err);
+          setShowAuthFlow(true);
+        });
+      return;
+    }
+
+    console.log('[Dynamic] No URL token and no TG initData — falling back to modal');
+    setShowAuthFlow(true);
   }, [sdkHasLoaded, autoLoginAttempted, user, primaryWallet, telegramSignIn, setShowAuthFlow]);
 
   const walletAddress = useMemo(() => {

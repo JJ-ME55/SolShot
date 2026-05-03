@@ -221,7 +221,7 @@ export async function attachRoomId(shortCode, roomId, opts = {}) {
     return Challenge.findOneAndUpdate(
         { shortCode: code },
         { $set: update },
-        { new: true }
+        { returnDocument: 'after' }
     ).lean();
 }
 
@@ -234,7 +234,7 @@ export async function markMatched(shortCode) {
     return Challenge.findOneAndUpdate(
         { shortCode: code },
         { $set: { status: 'matched', matchedAt: new Date() } },
-        { new: true }
+        { returnDocument: 'after' }
     ).lean();
 }
 
@@ -246,6 +246,6 @@ export async function cancelChallenge(shortCode) {
     return Challenge.findOneAndUpdate(
         { shortCode: code, status: 'open' },
         { $set: { status: 'cancelled' } },
-        { new: true }
+        { returnDocument: 'after' }
     ).lean();
 }

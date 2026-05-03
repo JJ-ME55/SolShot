@@ -231,7 +231,7 @@ export function registerGroupChatSocketHandlers(client, io) {
                     $inc: { 'players.$.gold': -cost },
                     $push: { 'players.$.weapons': weaponId },
                 },
-                { new: true, projection: { players: 1 } }
+                { returnDocument: 'after', projection: { players: 1 } }
             );
             if (updated) {
                 const player = updated.players.find(p => p.telegramUserId === tgId);

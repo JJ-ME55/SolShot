@@ -106,7 +106,7 @@ export async function linkTelegramIdentity({
             return await User.findOneAndUpdate(
                 { telegramUserId },
                 { $set: update },
-                { new: true }
+                { returnDocument: 'after' }
             ).lean();
         }
 
@@ -120,7 +120,7 @@ export async function linkTelegramIdentity({
                 return await User.findOneAndUpdate(
                     { walletAddress },
                     { $set: baseSet },
-                    { new: true }
+                    { returnDocument: 'after' }
                 ).lean();
             }
         }
@@ -142,7 +142,7 @@ export async function linkTelegramIdentity({
                 return await User.findOneAndUpdate(
                     { uid },
                     { $set: update },
-                    { new: true }
+                    { returnDocument: 'after' }
                 ).lean();
             }
         }

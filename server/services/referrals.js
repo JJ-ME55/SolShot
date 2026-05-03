@@ -137,7 +137,7 @@ export async function processReferralReward(refereeQuery, { wagered = true } = {
                 'stats.totalReferralShotEarned': REFERRAL_REWARD_SHOT,
             },
         },
-        { new: true }
+        { returnDocument: 'after' }
     ).lean();
     if (!refereeUpdate) return null; // race lost — another path already rewarded
 

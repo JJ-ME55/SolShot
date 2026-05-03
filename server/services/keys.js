@@ -51,8 +51,18 @@ export function initKeys() {
         const bytes = Uint8Array.from(secretKeyArray);
         _escrowKeypair = Keypair.fromSecretKey(bytes);
 
-        // KM-04: Zero the input array — secret now lives only inside the Keypair object
-        bytes.fill(0);
+        // NOTE: We previously ran `bytes.fill(0)` here as KM-04 "zero the
+        // input array — secret now lives only inside the Keypair object."
+        // That optimization was wrong: @solana/web3.js Keypair.fromSecretKey
+        // ALIASES the input Uint8Array (verified empirically on 1.98.4 —
+        // `kp.secretKey` shares the same buffer). Zeroing the input also
+        // zeroed the keypair's internal secret. The public key was already
+        // computed (logs showed the right pubkey) but every signing op
+        // produced an invalid signature, surfacing as
+        //   "Signature verification failed. Invalid signature for public
+        //    key [HPy...]"
+        // on every createMatch / settleMatch / cancelMatch call. Removed.
+        // See server logs at 2026-05-03 21:33Z for the failure mode.
 
         console.log(`[Keys] Escrow authority: ${_escrowKeypair.publicKey.toBase58()}`);
         return true;

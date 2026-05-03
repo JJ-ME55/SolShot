@@ -1309,3 +1309,123 @@ groups, and the various edge cases (fresh device, group launch,
 token expiry) are unverified.
 
 — main-claude
+
+---
+
+### 2026-05-03 (late) — `[main-claude]` — STATUS / HANDOFF
+
+Long, draining day. Lots of motion, no production progress. Logging
+honestly so next-session-claude doesn't repeat any of it.
+
+**The arc:**
+
+Started the day flush from Phase 8B's silent-auth Dynamic win. JJ
+flagged that TG Web wagered didn't pair across two devices, then that
+Dynamic's WaaS iframe was being blocked entirely on TG Web by
+frame-ancestors CSP — even after adding `web.telegram.org` to
+Dynamic's CORS Origins (their CDN cache held the old policy + their
+`X-Frame-Options: DENY` was overriding the CSP allowance in some
+clients). Multiple iterations chasing it. JJ stopped me, rightly,
+when the loop became circular.
+
+Pivoted to evaluating alternatives. **Spent significant cycles on:**
+
+- **Privy** — stronger TG Mini App docs, confirmed Solana key export.
+  But: same architectural class (`auth.privy.io` iframe) → same
+  failure pattern in TG Web.
+- **Para** — better pricing, Solana embedded wallets shipped, friend
+  hit a $8K Privy bill in Dec 2025 making it look attractive. Built a
+  feature-flagged migration scaffold (`REACT_APP_USE_PARA=true`),
+  wired client + server. Deployed; immediately hit `ECONNABORTED` on
+  TG Web — Para's user-management-client uses `withCredentials: true`
+  for cross-origin requests, blocked by Telegram WebView's third-party
+  cookie partitioning.
+- **thirdweb** — Solana In-App Wallets are EVM-only; Solana support
+  is server-side API only. Not viable for our case.
+- **Privy deep-research pass** confirmed it would hit the same iframe
+  partition problem we hit with Dynamic and Para. Saved at
+  `Docs/briefs/privy-tg-web-research.md`.
+
+**Verdict from all of it:** every SaaS embedded-wallet vendor uses
+an iframe-based architecture that breaks in TG Web's nested-iframe
+context. Not a config issue we can fix. The TG-native success stories
+(Banana Gun, Maestro, Trojan, BLUM, Bullpen) are mostly custodial or
+roll-their-own. Turnkey (TEE-based, no iframe) is the only architecturally-
+plausible SaaS option for cross-surface TG, but unverified end-to-end.
+
+**JJ's call (correct):** stop chasing wallets, validate the on-chain
+escrow first with standard Solana wallet adapter (Phantom in browser),
+make the wallet decision later with hard data. So:
+
+- Rolled back to `pre-privy-migration` tag (wiped the Para migration
+  scaffold cleanly).
+- Stripped all Dynamic code in commit `f2d1e28`:
+  - `client/src/wallet/DynamicTelegramWallet.js` deleted
+  - `server/services/dynamicAuthToken.js` deleted
+  - `@dynamic-labs/*` packages uninstalled
+  - `WalletContext.js` simplified to single passthrough to legacy adapter
+  - `bot.js` `launchKeyboard` reverted to simple t.me/ link form
+  - `/api/auth/dynamic-token` endpoint removed
+  - CSP scrubbed of all Dynamic domains
+  - `DebugAuthOverlay` trimmed to legacy-only fields
+- All the genuinely useful work from the day **preserved**:
+  - HUD "not your turn" banner (`4461bac`)
+  - Lobby "N WAITING" badge (`a6d5d50`)
+  - Mongoose deprecation cleanup (`2bb4d58`)
+  - Wagered ungate via `REACT_APP_WAGERED_ENABLED` (`83dd750`)
+  - Server multi-socket audit log + clearer duplicate-join bot error
+    (`4461bac`)
+  - DebugAuthOverlay (now legacy-only)
+
+**Where things stand right now:**
+
+- HEAD `f2d1e28` on `main`. Build is green. Render + Vercel will
+  auto-deploy.
+- Browser users: Phantom / Solflare / Jupiter Mobile via the standard
+  wallet adapter — works as it always did.
+- TG users (Web, Desktop, iOS): fall through to the same path. Phantom
+  extension works in TG Web; Phantom mobile + landscape mode is broken
+  on TG iOS (Phantom mobile is portrait-only, SolShot is landscape) —
+  known limitation, deferred.
+- Wagered match modes (Quick Match / Duel / High Roller) are still
+  ungated via `REACT_APP_WAGERED_ENABLED=true` if it's set on Vercel.
+
+**JJ's strategic position (locked in by end of day):**
+
+> "We need to get to devnet testing for 1v1 and then for n-player,
+>  and then we stick the wallet decision on afterwards."
+
+So next session is on-chain escrow validation, NOT wallet vendor
+roulette. Two browsers, two Phantom test wallets, devnet SOL,
+0.1 SOL Quick Match end-to-end. Then build N-player escrow per
+`Docs/briefs/escrow-research-synthesis.md`.
+
+The wallet decision sits on the shelf until we have:
+1. Working 1v1 wagered on devnet (proves escrow program)
+2. Working N-player wagered on devnet (proves the new program design)
+3. Audit feedback on the N-player program
+
+THEN we ask: what's the right UX layer (custodial server-managed,
+Phantom-only, or revisit vendors when they fix their iframe story)?
+
+**Memory update worth flagging:** `MEMORY.md` references Dynamic as
+shipped on `2026-05-03`. That's now historically correct — the work
+DID ship, it just got rolled back later the same day. Any future
+session reading the memory should know Dynamic is no longer present
+in the codebase but the architectural lessons (iframe vendors don't
+work in TG Web) still apply.
+
+**Things I'd do differently next time:**
+
+1. Build a 20-min TG Web POC for any new wallet vendor *before*
+   migrating the codebase. Today's Para migration was 1.5 days of
+   work that got rolled back in 5 min once the fundamental issue
+   surfaced.
+2. Don't trust vendor docs that say "works on Telegram Mini App" —
+   they all mean mobile native. TG Web specifically is the
+   non-trivial surface and most vendors haven't tested there.
+3. When JJ says "TG Web is non-negotiable," I should not soften it
+   to "ship mobile-first and accept TG Web as edge case." That was
+   wrong twice today.
+
+— main-claude

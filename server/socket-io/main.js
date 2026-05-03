@@ -154,12 +154,63 @@ function getQueueKey(matchMode, matchLength) {
 }
 
 function removeFromAllQueues(socketId) {
+    let changed = false;
     for (const [key, queue] of matchmakingQueues.entries()) {
         const idx = queue.findIndex(e => e.socketId === socketId);
         if (idx !== -1) {
             queue.splice(idx, 1);
             if (queue.length === 0) matchmakingQueues.delete(key);
+            changed = true;
         }
+    }
+    return changed;
+}
+
+/**
+ * Build a public-safe snapshot of the matchmaking queues — counts only,
+ * no socket ids or wallets, aggregated by (mode, length, wager) so the
+ * lobby can show live "X waiting" badges per match-config combination.
+ *
+ * Different wagers within the same (mode, length) queue don't auto-pair
+ * (validateMatchMode + wager-mismatch guard in joinQueue), so the
+ * snapshot must include wager — otherwise a "1 waiting" badge could
+ * mislead a user whose wager doesn't actually match the waiting
+ * opponent's wager.
+ */
+function buildQueueSnapshot() {
+    const buckets = new Map();
+    for (const [key, queue] of matchmakingQueues.entries()) {
+        const [matchMode, matchLength] = key.split(':');
+        for (const entry of queue) {
+            const bucketKey = `${matchMode}:${matchLength}:${entry.wager}`;
+            buckets.set(bucketKey, (buckets.get(bucketKey) || 0) + 1);
+        }
+    }
+    const out = [];
+    for (const [bk, count] of buckets.entries()) {
+        const [matchMode, matchLength, wager] = bk.split(':');
+        out.push({
+            matchMode,
+            matchLength: Number(matchLength),
+            wager: Number(wager),
+            count,
+        });
+    }
+    return out;
+}
+
+/**
+ * Broadcast the queue snapshot to every connected socket. Cheap — clients
+ * not in the lobby just ignore it. Called whenever a queue mutation happens
+ * (join, leave, pair-consumed, disconnect) so the lobby UI is always in
+ * sync without polling.
+ */
+function broadcastQueueSnapshot(io) {
+    if (!io) return;
+    try {
+        io.emit('queueSnapshot', buildQueueSnapshot());
+    } catch (err) {
+        console.warn('[Queue] broadcastQueueSnapshot failed:', err.message);
     }
 }
 
@@ -960,6 +1011,13 @@ const mainsocket = (io) => {
         client.walletAddress = null
         client.isAuthenticated = false
 
+        // Send the current queue snapshot to this new socket so the lobby
+        // can render "● N WAITING" badges immediately on mount, without
+        // waiting for the next queue mutation to broadcast.
+        try {
+            client.emit('queueSnapshot', buildQueueSnapshot());
+        } catch (_) { /* ignore — snapshot is best-effort */ }
+
         // Audit-log multi-device sessions for the same TG account. Only
         // fires when telegramSocketMiddleware has already populated
         // client.telegramUser via validated initData on connect.
@@ -1395,7 +1453,7 @@ const mainsocket = (io) => {
 
         client.on('disconnect', async () => {
             // Remove from matchmaking queue first (before room cleanup)
-            removeFromAllQueues(client.id);
+            if (removeFromAllQueues(client.id)) broadcastQueueSnapshot(io);
             trackDisconnection()
 
             // Immediate cleanup — no reconnect window (disabled for P1 launch)
@@ -2325,12 +2383,14 @@ const mainsocket = (io) => {
                 if (opponent.wager !== wagerAmount) {
                     // Wager mismatch — do not pair, push joiner to queue instead
                     queue.push({ name: sanitizeName(playerName), color: tankColor, socketId: client.id, wallet: authenticatedWallets[client.id] || null, wager: wagerAmount });
+                    broadcastQueueSnapshot(io);
                     client.emit('queueWaiting', { matchMode, matchLength, position: queue.length });
                     console.log(`[Queue] Wager mismatch: opponent=${opponent.wager} SOL, joiner=${wagerAmount} SOL — queued separately`);
                     return;
                 }
                 queue.shift(); // now safe to consume
                 if (queue.length === 0) matchmakingQueues.delete(queueKey);
+                broadcastQueueSnapshot(io);
 
                 // Auto-create room — mirrors createRoom + joinRoom exactly
                 const roomId = crypto.randomBytes(4).toString('hex');
@@ -2489,13 +2549,14 @@ const mainsocket = (io) => {
                     matchMode,
                     queuedAt: Date.now(),
                 });
+                broadcastQueueSnapshot(io);
                 client.emit('queueWaiting', { matchMode, matchLength, position: queue.length });
                 console.log(`[Queue] ${sanitizedName} queued for ${matchMode} (${matchLength}) @ ${wagerAmount} SOL — ${queue.length} waiting`);
             }
         });
 
         client.on('leaveQueue', () => {
-            removeFromAllQueues(client.id);
+            if (removeFromAllQueues(client.id)) broadcastQueueSnapshot(io);
             client.emit('queueLeft');
             console.log(`[Queue] Player ${client.id} left queue`);
         });

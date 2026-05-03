@@ -289,6 +289,11 @@ function LobbyScreen({ navigate, screenData }) {
   const [selectedColor, setSelectedColor] = useState(0); // index into TANK_COLORS
   const [waiting, setWaiting] = useState(false); // waiting for opponent (custom_challenge / createRoom)
   const [queueState, setQueueState] = useState(null); // null | 'searching' | 'matched'
+  // Live snapshot of active matchmaking queue buckets — server broadcasts
+  // this on every queue mutation. Drives the "N WAITING" badge below the
+  // FIND MATCH button so a user can see at a glance whether tapping will
+  // pair them instantly or put them in solo wait.
+  const [queueSnapshot, setQueueSnapshot] = useState([]);
   const [error, setError] = useState(null);
   const [showEscrow, setShowEscrow] = useState(false);
   const [matchFound, setMatchFound] = useState(false);
@@ -394,6 +399,11 @@ function LobbyScreen({ navigate, screenData }) {
     setCustomWager(0.1);
     setMatchLength(1); // BO1 default
   }, [screenData]);
+
+  /* ── socket: live queue snapshot for "N WAITING" badge ── */
+  useSocket('queueSnapshot', (data) => {
+    setQueueSnapshot(Array.isArray(data) ? data : []);
+  });
 
   /* ── socket: room list ── */
   useSocket('setRooms', (data) => {
@@ -947,6 +957,33 @@ function LobbyScreen({ navigate, screenData }) {
             }}>
               {effectiveWager > 0 ? '◆ ' + effectiveWager + ' SOL WAGER' : '◆ FREE MATCH'}
             </div>
+            {/* Live "N WAITING" badge — only shown for queue-backed modes
+                (not custom_challenge, not practice) and only when at least
+                one OTHER player is queued for this exact (mode, length,
+                wager) combo. Subtracts 1 from the count when this client
+                is also queued so we don't count themselves. */}
+            {!isCustomMode && matchMode !== 'practice' && (() => {
+              const bucket = queueSnapshot.find(
+                (b) => b.matchMode === matchMode
+                  && b.matchLength === matchLength
+                  && Math.abs(b.wager - effectiveWager) < 1e-9
+              );
+              const total = bucket?.count || 0;
+              const others = queueState === 'searching' ? Math.max(0, total - 1) : total;
+              if (others <= 0) return null;
+              return (
+                <div style={{
+                  fontFamily: "'Share Tech Mono', monospace",
+                  fontSize: 11,
+                  color: 'var(--gg, #14F195)',
+                  letterSpacing: '0.18em',
+                  textAlign: 'center',
+                  marginTop: 4,
+                }}>
+                  {`● ${others} WAITING`}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Challenge by Callsign */}

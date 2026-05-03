@@ -35,8 +35,12 @@ const __dirname = path.dirname(__filename);
 const IDL_PATH = path.join(__dirname, '..', 'idl', 'solshot_escrow.json');
 
 // Program ID — must match deployed program
-// NOTE: This ID will change after fresh deploy — see OC-14 deploy checklist
-const PROGRAM_ID = new PublicKey('CqvRC6mSJe2CrBtENVfCEPkgRW3WwxLSL9C1hgXz7GtD');
+// Redeployed 2026-05-03 with N-player rewrite (Phase 20). New ID because
+// the original program-keypair file at target/deploy/ had been regenerated
+// since the Feb 18 deploy, so we couldn't upgrade in place. Old program
+// CqvRC6mSJe2CrBtENVfCEPkgRW3WwxLSL9C1hgXz7GtD is now obsolete (still on
+// devnet but unused; ~1.77 SOL rent recoverable via `solana program close`).
+const PROGRAM_ID = new PublicKey('4kzrDpV9JxjE27AMg4PQXzGuge9MEYQEFznSPvkBtnH1');
 
 // Config from environment
 const SOLANA_RPC = process.env.SOLANA_RPC || 'https://api.devnet.solana.com';

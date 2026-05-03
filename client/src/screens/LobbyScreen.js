@@ -756,7 +756,12 @@ function LobbyScreen({ navigate, screenData }) {
             <div style={s.sectionLabel}>MODE</div>
             <div style={s.modeRow}>
               {MODE_KEYS.map((key) => {
-                const locked = key !== 'practice';
+                // Wagered modes are gated until we explicitly enable them
+                // (devnet testing first, then graduated mainnet rollout per
+                // the research synthesis: $5 → $25 → $50 → 1 SOL cap ladder).
+                // Set REACT_APP_WAGERED_ENABLED=true in Vercel env to unlock.
+                const wageredEnabled = process.env.REACT_APP_WAGERED_ENABLED === 'true';
+                const locked = !wageredEnabled && key !== 'practice';
                 return (
                   <div
                     key={key}

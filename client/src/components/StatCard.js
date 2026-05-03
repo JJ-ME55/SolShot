@@ -579,7 +579,7 @@ function CardInternals({ callsign, wins, losses, totalDamage, bestWinStreak, mat
             fontSize: 6.5 * sc,
             color: '#434734',
             letterSpacing: '0.18em',
-          }}>WAGER PROTOCOL: LOCKED</div>
+          }}>WAGER PROTOCOL: {process.env.REACT_APP_WAGERED_ENABLED === 'true' ? 'LIVE' : 'LOCKED'}</div>
           <div style={{
             fontFamily: "'Share Tech Mono', monospace",
             fontSize: 6.5 * sc,

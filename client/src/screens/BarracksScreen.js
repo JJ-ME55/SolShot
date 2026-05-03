@@ -137,7 +137,7 @@ function DossierCard({ callsign, matches, wins, losses, totalDamage, bestWinStre
           display: 'flex', justifyContent: 'space-between',
           fontFamily: 'var(--f-mono)', fontSize: 9, color: 'var(--olive)', letterSpacing: '0.2em',
         }}>
-          <span>WAGER PROTOCOL · LOCKED</span>
+          <span>WAGER PROTOCOL · {process.env.REACT_APP_WAGERED_ENABLED === 'true' ? 'LIVE' : 'LOCKED'}</span>
           <span>{hasData ? `${matches} MATCHES` : '0 MATCHES'} · solshot.gg</span>
         </div>
       </div>

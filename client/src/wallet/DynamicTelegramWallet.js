@@ -29,20 +29,34 @@ const SHOT_TOKEN_MINT = process.env.REACT_APP_SHOT_TOKEN_MINT
  * Mirrors SolShotWalletInner's interface.
  */
 export function DynamicWalletInner({ children, onWalletReady }) {
-  const { primaryWallet, sdkHasLoaded, user } = useDynamicContext();
+  const { primaryWallet, sdkHasLoaded, user, setShowAuthFlow } = useDynamicContext();
   const [balance, setBalance] = useState(0);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [autoLoginAttempted, setAutoLoginAttempted] = useState(false);
 
-  // Auto-login via Telegram (creates embedded wallet silently)
+  // Trigger Dynamic auth flow on first load when no session exists.
+  //
+  // Dynamic SDK does NOT auto-trigger login from TG WebApp context alone —
+  // even with the dashboard configured for the Telegram identity provider,
+  // the SDK needs an imperative setShowAuthFlow(true) to start the flow.
+  // Without it the SDK boots and sits idle, primaryWallet stays null,
+  // and the rest of the app sees a wallet-less state.
+  //
+  // When the dashboard is correctly wired for TG, the auth modal that
+  // appears auto-detects window.Telegram.WebApp.initData and offers a
+  // one-tap "Continue as @<username>" button. If the dashboard is
+  // misconfigured, you'll see the generic Dynamic auth UI (email/socials).
   useEffect(() => {
     if (!sdkHasLoaded || autoLoginAttempted) return;
+    if (user || primaryWallet) {
+      // Already authenticated from a previous visit — Dynamic restored the session
+      setAutoLoginAttempted(true);
+      return;
+    }
     setAutoLoginAttempted(true);
-
-    // Dynamic handles Telegram auth automatically when configured
-    // The SDK detects Telegram WebApp context and signs in
-    // forceCreateUser is set in dashboard settings
-  }, [sdkHasLoaded, autoLoginAttempted]);
+    console.log('[Dynamic] No user/wallet on load — triggering auth flow');
+    setShowAuthFlow(true);
+  }, [sdkHasLoaded, autoLoginAttempted, user, primaryWallet, setShowAuthFlow]);
 
   const walletAddress = useMemo(() => {
     if (!primaryWallet) return null;

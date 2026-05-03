@@ -329,6 +329,15 @@ async function handleSettlementFailure(roomId, room, ws, error) {
 
 const SHOP_DURATION = 30; // seconds
 const RECONNECT_WINDOW_MS = 30000; // 30 seconds to reconnect
+
+// Tracks active socket IDs per TG user. Used purely as a debug signal —
+// when the same TG account is open from multiple devices simultaneously,
+// the second connection logs a warning. Catches the "same-account on
+// TG Web + iOS" UX confusion JJ hit during testing where two clients
+// shared the same player slot and one device's state mutations made
+// the other look broken (e.g. TG Web flips shopComplete=true, iOS
+// reads stale copy and skips shop). No behavioural impact.
+const socketsByTgId = new Map();
 const TURN_TIMEOUT_MS = 60000;     // 60 seconds per turn
 
 // O2: Debounced room broadcast — batch multiple room changes within 100ms
@@ -950,6 +959,26 @@ const mainsocket = (io) => {
         client.isHost = false
         client.walletAddress = null
         client.isAuthenticated = false
+
+        // Audit-log multi-device sessions for the same TG account. Only
+        // fires when telegramSocketMiddleware has already populated
+        // client.telegramUser via validated initData on connect.
+        const tgId = client.telegramUser?.id;
+        if (tgId) {
+            const existing = socketsByTgId.get(tgId) || new Set();
+            if (existing.size > 0) {
+                console.warn(`[multi-socket] TG user ${tgId} now has ${existing.size + 1} concurrent sockets (existing: ${[...existing].join(',')}; new: ${client.id})`);
+            }
+            existing.add(client.id);
+            socketsByTgId.set(tgId, existing);
+            client.on('disconnect', () => {
+                const set = socketsByTgId.get(tgId);
+                if (set) {
+                    set.delete(client.id);
+                    if (set.size === 0) socketsByTgId.delete(tgId);
+                }
+            });
+        }
 
         // Helper: build a Mongoose query identifying this client's User document.
         // Priority: walletAddress > telegramUserId > uid. Returns null if no

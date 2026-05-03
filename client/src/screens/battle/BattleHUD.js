@@ -487,8 +487,14 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
               // Tokenize: was hex literals — now resolves through theme
               color: isPlayerTurn ? 'var(--gg, #14F195)' : 'var(--red)',
               letterSpacing: '0.1em',
+              maxWidth: 120,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
             }}>
-              {isPlayerTurn ? 'YOUR TURN' : 'WAIT'}
+              {isPlayerTurn
+                ? 'YOUR TURN'
+                : `${(players[currentPlayerIndex]?.name || 'OPPONENT').toUpperCase().slice(0, 12)}'S TURN`}
             </div>
             {turnTimer != null && (
               <div style={{
@@ -521,7 +527,7 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
         <div style={{
           position: 'absolute', left: 4, top: '50%', transform: 'translateY(-50%)',
           pointerEvents: 'auto', zIndex: 11,
-          opacity: isPlayerTurn ? 1 : 0.08, transition: 'opacity 0.3s',
+          opacity: isPlayerTurn ? 1 : 0.3, transition: 'opacity 0.3s',
         }}>
           <AngleControl
             angle={angle}
@@ -535,7 +541,7 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
         <div style={{
           position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)',
           pointerEvents: 'auto', zIndex: 11,
-          opacity: isPlayerTurn ? 1 : 0.08, transition: 'opacity 0.3s',
+          opacity: isPlayerTurn ? 1 : 0.3, transition: 'opacity 0.3s',
         }}>
           <PowerControl
             power={power}
@@ -544,6 +550,40 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
             compact vertical
           />
         </div>
+
+        {/* WAITING-FOR-OPPONENT BANNER — only when not your turn.
+            Replaces the previous opacity-0.08 fade which made the controls
+            look broken instead of merely waiting. Now the controls dim to
+            0.3 (clearly disabled, still visible) AND we draw an explicit
+            banner so iOS / mobile users immediately understand the state
+            instead of mis-reading a non-functional UI. Tank-color dot ties
+            the banner to the player whose turn it actually is. */}
+        {!isPlayerTurn && (
+          <div style={{
+            margin: '0 12px 4px',
+            padding: '8px 12px',
+            background: 'rgba(14,18,9,0.88)',
+            border: '1px solid rgba(168,58,26,0.5)',
+            color: 'var(--bone)',
+            fontFamily: "'Black Ops One', cursive",
+            fontSize: 13,
+            letterSpacing: '0.08em',
+            textAlign: 'center',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            pointerEvents: 'none',
+          }}>
+            <span style={{
+              display: 'inline-block',
+              width: 10, height: 10,
+              background: players[currentPlayerIndex]?.color || 'var(--red)',
+              boxShadow: `0 0 8px ${players[currentPlayerIndex]?.color || '#a83a1a'}`,
+            }} />
+            WAITING FOR {(players[currentPlayerIndex]?.name || 'OPPONENT').toUpperCase()}
+          </div>
+        )}
 
         {/* BOTTOM CONTROLS — semi-transparent so the playfield (and
             specifically the tank when terrain has been chewed away
@@ -559,7 +599,7 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
           background: 'linear-gradient(to top, rgba(14,18,9,0.78) 60%, rgba(14,18,9,0.0) 100%)',
           borderTop: '1px solid rgba(61,74,47,0.35)',
           pointerEvents: 'auto',
-          opacity: isPlayerTurn ? 1 : 0.08,
+          opacity: isPlayerTurn ? 1 : 0.3,
           transition: 'opacity 0.3s',
           display: 'flex',
           alignItems: 'center',

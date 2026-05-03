@@ -249,7 +249,14 @@ async function handleJoinCallback(ctx) {
         return ctx.answerCbQuery('Match is full.', { show_alert: true });
     }
     if (match.players.some(p => p.telegramUserId === ctx.from.id)) {
-        return ctx.answerCbQuery("You're already in.");
+        // Clearer prompt — "you're already in" alone left users wondering
+        // what to do next (especially on iOS, where the same TG account
+        // may also be open on TG Web and showing a different match-state
+        // view). Tell them exactly where to go.
+        return ctx.answerCbQuery(
+            "You're already in this match — open the Mini App to play your turn.",
+            { show_alert: true }
+        );
     }
 
     // One match per (player, chat). Defense in depth — UI shouldn't expose

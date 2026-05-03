@@ -456,34 +456,13 @@ function DynamicWalletBridge({ children }) {
     );
 }
 
-export function SolShotWalletProvider({ children }) {
-    const isTelegram = !!window.Telegram?.WebApp?.initData;
-    const hasDynamicEnv = !!process.env.REACT_APP_DYNAMIC_ENV_ID;
-
-    // Telegram Mini App: use Dynamic embedded wallet.
-    //
-    // <DynamicTelegramProvider> initialises Dynamic SDK + Solana connector.
-    // <DynamicWalletBridge> (defined below) wraps <DynamicWalletInner> so
-    // its onWalletReady callback flows into SolShotWalletContext — without
-    // that bridge, useSolShotWallet() returns the hardcoded zero values
-    // the original 8436bf3 commit left in place. The bridge fix closes
-    // the gap so balance / walletAddress / signAndSendEscrowDeposit etc.
-    // are live on the Telegram Mini App surface.
-    if (isTelegram && hasDynamicEnv) {
-        const { DynamicTelegramProvider } = require('./DynamicTelegramWallet');
-        return (
-            <DynamicTelegramProvider>
-                <DynamicWalletBridge>
-                    {children}
-                </DynamicWalletBridge>
-            </DynamicTelegramProvider>
-        );
-    }
-
-    // Normal browser: use standard wallet adapter (Phantom/Solflare)
-    // JUP-01: Jupiter Mobile adapter via Reown/WalletConnect
-    // Hook must always be called (React rules of hooks — no conditional calls)
-    // When REOWN_PROJECT_ID is empty, the adapters are still created but connection will fail gracefully
+/**
+ * Legacy browser-wallet path (Phantom / Solflare / Jupiter Mobile via Reown).
+ * Extracted into its own component so its hooks are scoped here — the parent
+ * SolShotWalletProvider can short-circuit to the Dynamic path without
+ * violating React's rules-of-hooks (which forbid conditional hook calls).
+ */
+function LegacyBrowserWalletProvider({ children }) {
     const { jupiterAdapter } = useWrappedReownAdapter({
         appKitOptions: {
             metadata: {
@@ -500,7 +479,6 @@ export function SolShotWalletProvider({ children }) {
 
     const wallets = useMemo(() => {
         if (!REOWN_PROJECT_ID) {
-            // No project ID — hide Jupiter Mobile, log warning
             console.warn('[SolShot] REACT_APP_REOWN_PROJECT_ID not set — Jupiter Mobile adapter disabled');
             return [
                 new PhantomWalletAdapter(),
@@ -526,6 +504,31 @@ export function SolShotWalletProvider({ children }) {
             </WalletProvider>
         </ConnectionProvider>
     );
+}
+
+export function SolShotWalletProvider({ children }) {
+    const isTelegram = !!window.Telegram?.WebApp?.initData;
+    const hasDynamicEnv = !!process.env.REACT_APP_DYNAMIC_ENV_ID;
+
+    // Telegram Mini App: use Dynamic embedded wallet.
+    //
+    // <DynamicTelegramProvider> initialises Dynamic SDK + Solana connector.
+    // <DynamicWalletBridge> wraps <DynamicWalletInner> so its onWalletReady
+    // callback flows into SolShotWalletContext — without that bridge,
+    // useSolShotWallet() returns the hardcoded zero values the original
+    // 8436bf3 commit left in place.
+    if (isTelegram && hasDynamicEnv) {
+        const { DynamicTelegramProvider } = require('./DynamicTelegramWallet');
+        return (
+            <DynamicTelegramProvider>
+                <DynamicWalletBridge>
+                    {children}
+                </DynamicWalletBridge>
+            </DynamicTelegramProvider>
+        );
+    }
+
+    return <LegacyBrowserWalletProvider>{children}</LegacyBrowserWalletProvider>;
 }
 
 export { NETWORK, RPC_URL };

@@ -20,7 +20,7 @@
  */
 import logger from './logger.js';
 
-import { Connection, PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL } from '@solana/web3.js';
+import { Connection, PublicKey, Transaction, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { AnchorProvider, Program, Wallet } from '@coral-xyz/anchor';
 import BN from 'bn.js';
 import fs from 'fs';
@@ -144,12 +144,13 @@ export async function initializeConfig(authorityPubkey, treasuryAddress, opsAddr
         const authority = new PublicKey(authorityPubkey);
         const treasury = new PublicKey(treasuryAddress);
         const ops = new PublicKey(opsAddress);
+        // Anchor 0.30+ auto-resolves `config` (PDA, constant seeds) and
+        // `system_program` (fixed address) from the IDL. Passing them
+        // explicitly causes account-slot misalignment — only pass `payer`.
         const tx = await program.methods
             .initializeConfig(authority, treasury, ops)
             .accounts({
-                config: configPDA,
                 payer: getEscrowKeypair().publicKey,
-                systemProgram: PublicKey.default,
             })
             .rpc();
         console.log(`[Escrow] Config initialized — TX: ${tx}`);
@@ -172,7 +173,7 @@ export async function initializeConfig(authorityPubkey, treasuryAddress, opsAddr
 export async function updateConfig(newAuthority, newTreasury, newOps) {
     if (!program) return { success: false, error: 'Escrow not initialized' };
     try {
-        const [configPDA] = getConfigPDA();
+        // `config` PDA auto-resolved by Anchor from constant seeds.
         const tx = await program.methods
             .updateConfig(
                 newAuthority ? new PublicKey(newAuthority) : null,
@@ -180,7 +181,6 @@ export async function updateConfig(newAuthority, newTreasury, newOps) {
                 newOps ? new PublicKey(newOps) : null
             )
             .accounts({
-                config: configPDA,
                 authority: getEscrowKeypair().publicKey,
             })
             .rpc();
@@ -201,11 +201,10 @@ export async function updateConfig(newAuthority, newTreasury, newOps) {
 export async function pauseProgram() {
     if (!program) return { success: false, error: 'Escrow not initialized' };
     try {
-        const [configPDA] = getConfigPDA();
+        // `config` PDA auto-resolved by Anchor from constant seeds.
         const tx = await program.methods
             .pauseProgram()
             .accounts({
-                config: configPDA,
                 authority: getEscrowKeypair().publicKey,
             })
             .rpc();
@@ -226,11 +225,10 @@ export async function pauseProgram() {
 export async function unpauseProgram() {
     if (!program) return { success: false, error: 'Escrow not initialized' };
     try {
-        const [configPDA] = getConfigPDA();
+        // `config` PDA auto-resolved by Anchor from constant seeds.
         const tx = await program.methods
             .unpauseProgram()
             .accounts({
-                config: configPDA,
                 authority: getEscrowKeypair().publicKey,
             })
             .rpc();
@@ -286,15 +284,18 @@ export async function createMatchEscrow(matchId, wagerSOL, playerAddresses) {
         const wagerLamports = Math.round(wagerSOL * LAMPORTS_PER_SOL);
         const players = playerAddresses.map(a => new PublicKey(a));
         const [escrowPDA] = getEscrowPDA(matchId);
-        const [configPDA] = getConfigPDA();
 
+        // Anchor 0.30+ auto-resolves:
+        //   escrow         — PDA from arg `match_id`
+        //   config         — PDA from constant seeds [b"config"]
+        //   system_program — fixed address 11111111111111111111111111111111
+        // Passing these explicitly causes slot misalignment (we hit
+        // InvalidProgramId on system_program where Anchor placed the
+        // config PDA in the system_program slot). Only pass `authority`.
         const tx = await program.methods
             .createMatch(matchId, new BN(wagerLamports), players)
             .accounts({
-                escrow: escrowPDA,
                 authority: getEscrowKeypair().publicKey,
-                config: configPDA,
-                systemProgram: PublicKey.default,
             })
             .rpc();
 
@@ -329,16 +330,17 @@ export async function buildDepositTransaction(matchId, playerAddress) {
     try {
         const player = new PublicKey(playerAddress);
         const [escrowPDA] = getEscrowPDA(matchId);
-        const [configPDA] = getConfigPDA();
 
-        // Build unsigned transaction for client to sign
+        // `config` (PDA from constant seeds) and `system_program` (fixed
+        // address) are auto-resolved by Anchor 0.30+ from the IDL.
+        // `escrow` PDA seed depends on `escrow.match_id` (account-derived),
+        // which Anchor cannot resolve without first fetching the account —
+        // so we pass it explicitly.
         const ix = await program.methods
             .depositWager()
             .accounts({
                 escrow: escrowPDA,
                 player: player,
-                config: configPDA,
-                systemProgram: PublicKey.default,
             })
             .instruction();
 
@@ -393,8 +395,10 @@ export async function settleMatchEscrow(matchId, winnerAddress) {
         const treasury = new PublicKey(TREASURY_WALLET);
         const ops = new PublicKey(OPS_WALLET);
         const [escrowPDA] = getEscrowPDA(matchId);
-        const [configPDA] = getConfigPDA();
 
+        // `config` (PDA, constant seeds) and `system_program` (fixed
+        // address) auto-resolved by Anchor. `escrow` PDA depends on
+        // existing account data, so passed explicitly.
         const tx = await program.methods
             .settleMatch(winner)
             .accounts({
@@ -403,8 +407,6 @@ export async function settleMatchEscrow(matchId, winnerAddress) {
                 winner: winner,
                 treasury: treasury,
                 ops: ops,
-                config: configPDA,
-                systemProgram: PublicKey.default,
             })
             .rpc();
 
@@ -437,15 +439,15 @@ export async function cancelMatchEscrow(matchId, playerAddresses) {
 
     try {
         const [escrowPDA] = getEscrowPDA(matchId);
-        const [configPDA] = getConfigPDA();
 
+        // `config` (PDA, constant seeds) and `system_program` (fixed
+        // address) auto-resolved by Anchor. `escrow` PDA depends on
+        // existing account data, so passed explicitly.
         const tx = await program.methods
             .cancelMatch()
             .accounts({
                 escrow: escrowPDA,
                 caller: getEscrowKeypair().publicKey,
-                config: configPDA,
-                systemProgram: PublicKey.default,
             })
             .remainingAccounts(
                 playerAddresses.map(addr => ({
@@ -484,12 +486,13 @@ export async function permissionlessReclaimEscrow(matchId, playerAddresses) {
     try {
         const [escrowPDA] = getEscrowPDA(matchId);
 
+        // `system_program` (fixed address) auto-resolved by Anchor.
+        // `escrow` PDA depends on account data — passed explicitly.
         const tx = await program.methods
             .permissionlessReclaim()
             .accounts({
                 escrow: escrowPDA,
                 caller: provider.wallet.publicKey,
-                systemProgram: SystemProgram.programId,
             })
             .remainingAccounts(
                 playerAddresses.map(addr => ({
@@ -521,13 +524,13 @@ export async function startWithDepositorsEscrow(matchId) {
     if (!program) return { success: false, error: 'Escrow not initialized' };
     try {
         const [escrowPDA] = getEscrowPDA(matchId);
-        const [configPDA] = getConfigPDA();
+        // `config` PDA auto-resolved by Anchor. `escrow` PDA depends on
+        // account data — passed explicitly.
         const tx = await program.methods
             .startWithDepositors()
             .accounts({
                 escrow: escrowPDA,
                 authority: getEscrowKeypair().publicKey,
-                config: configPDA,
             })
             .rpc();
         console.log(`[Escrow] startWithDepositors for ${matchId} — TX: ${tx}`);

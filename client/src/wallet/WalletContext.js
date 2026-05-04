@@ -24,7 +24,7 @@
  *   const { walletAddress, signAndSendEscrowDeposit, login } = useSolShotWallet();
  */
 
-import React, { useMemo, useEffect, useCallback, useState, createContext, useContext } from 'react';
+import React, { useMemo, useEffect, useCallback, useRef, useState, createContext, useContext } from 'react';
 import { ConnectionProvider, WalletProvider, useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
 import { PhantomWalletAdapter, SolflareWalletAdapter } from '@solana/wallet-adapter-wallets';
@@ -564,12 +564,34 @@ function SolShotWalletInner({ children }) {
         return () => clearInterval(timer);
     }, []);
 
-    // Auto-authenticate when wallet connects and socket is ready
+    // Auto-authenticate when wallet connects and socket is ready.
+    //
+    // We deliberately do NOT include `authenticate` in the deps array even
+    // though we call it. Wallet-adapter regenerates `signMessage` on every
+    // render, which cascades into `signMessageUnified` → `authenticate` →
+    // this effect, causing repeated sign prompts on user rejection (the
+    // dreaded WalletSignMessageError loop). Use a ref so the effect only
+    // fires when actual auth-state inputs change.
+    //
+    // Once a sign attempt has been made (success OR rejection), we set
+    // `authAttemptedRef.current = true` and the effect won't retry until
+    // wallet/connect state actually changes. This prevents a rejected
+    // popup from immediately re-prompting.
+    const authenticateRef = useRef(authenticate);
+    useEffect(() => { authenticateRef.current = authenticate; }, [authenticate]);
+    const authAttemptedRef = useRef(false);
+    useEffect(() => {
+        // Reset attempt flag when wallet/connection state changes — a new
+        // wallet connecting deserves a fresh auth attempt.
+        authAttemptedRef.current = false;
+    }, [connected, publicKey]);
     useEffect(() => {
         if (!connected || !publicKey || isAuthenticated) return;
+        if (authAttemptedRef.current) return;
         const tryAuth = () => {
             if (window.socket && window.socket.connected) {
-                authenticate();
+                authAttemptedRef.current = true;
+                authenticateRef.current();
                 return true;
             }
             return false;
@@ -579,7 +601,7 @@ function SolShotWalletInner({ children }) {
             if (tryAuth()) clearInterval(timer);
         }, 1000);
         return () => clearInterval(timer);
-    }, [connected, publicKey, isAuthenticated, authenticate]);
+    }, [connected, publicKey, isAuthenticated]);
 
     // Public login/logout — exposed for Connect Wallet button
     const login = useCallback(() => {

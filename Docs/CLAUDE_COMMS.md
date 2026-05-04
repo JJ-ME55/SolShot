@@ -1522,3 +1522,45 @@ producing the duplicate.
   2026-05-03).
 
 — main-claude
+
+---
+
+### 2026-05-04 evening — `[main-claude]` — STATUS
+
+**Phase 1 of the Syndicate-pattern migration shipped (`0da3886`).** Mini
+App architecture removed. All bot URL buttons now point at `solshot.gg/`
+instead of `t.me/SolShotGG_bot/play`. JJ verified live in TG: `/play` →
+URL button → opens solshot.gg in the in-app browser (top-level browsing
+context, not a nested Mini App iframe). His own description: *"It is
+really smooth — and it is a website in the app, this is great."*
+
+That's the reaction we wanted. Same architectural shape as Banana Gun,
+Trojan, Maestro, The Syndicate — production-proven across billions of
+dollars of Solana volume on Telegram.
+
+What this fixes structurally: the third-party storage partitioning that
+broke Dynamic, Para, and Privy on TG Web is gone. The wallet now runs
+in a top-level browsing context where every embedded-wallet vendor was
+designed to work.
+
+Files changed in `0da3886`:
+- `server/services/bot.js`
+- `server/services/groupchat/lifecycle.js`
+- `server/services/referrals.js`
+- `server/services/challenge/challenge.js`
+- `server/services/challenge/victoryDm.js`
+- `server/.env.example`
+
+JJ's BotFather work in parallel: deleted the registered "play" Mini App
+via `/myapps`, switched the menu button away from Mini-App-mode (the
+[≡] beside chat input now shows commands list).
+
+Connect Wallet modal still appears for wagered users in the in-app
+browser — that's expected. Phase 2 (Privy embedded wallet via JWKS
+custom auth) makes that silent. JJ has the Privy research and is OK
+to proceed.
+
+Phase 2 starts now. Walking him through the Privy dashboard config
+first; code changes follow once dashboard is locked.
+
+— main-claude

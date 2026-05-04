@@ -1,0 +1,1342 @@
+{
+  "address": "BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N",
+  "metadata": {
+    "name": "solshot_escrow_v2",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "SolShot N-player (2-10) async/idle match escrow — fee snapshot at create, public timeout refund, configurable per-match duration up to 7d"
+  },
+  "instructions": [
+    {
+      "name": "cancel_match",
+      "docs": [
+        "Cancel match — refund deposited players via remaining_accounts.",
+        "Authority can ONLY cancel AwaitingDeposits state.",
+        "Players can cancel AwaitingDeposits, or any non-terminal state after the appropriate timeout."
+      ],
+      "discriminator": [
+        142,
+        136,
+        247,
+        45,
+        92,
+        112,
+        180,
+        83
+      ],
+      "accounts": [
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  116,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "escrow.match_id",
+                "account": "MatchEscrow"
+              }
+            ]
+          }
+        },
+        {
+          "name": "caller",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "docs": [
+            "Config: provides authority pubkey for the is-authority check.",
+            "Pause does NOT block cancel so in-flight funds can always exit."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "create_match",
+      "docs": [
+        "Create a new N-player match escrow.",
+        "Snapshots treasury/ops pubkeys and fee BPS from config — config changes from",
+        "this point on will NOT affect this match."
+      ],
+      "discriminator": [
+        107,
+        2,
+        184,
+        145,
+        70,
+        142,
+        17,
+        165
+      ],
+      "accounts": [
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  116,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "match_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "match_id",
+          "type": "string"
+        },
+        {
+          "name": "wager_lamports",
+          "type": "u64"
+        },
+        {
+          "name": "players",
+          "type": {
+            "vec": "pubkey"
+          }
+        },
+        {
+          "name": "duration_secs",
+          "type": "u32"
+        },
+        {
+          "name": "deposit_window_secs",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "deposit_wager",
+      "docs": [
+        "Player deposits their wager into the escrow PDA.",
+        "Hard-rejects after the deposit window closes."
+      ],
+      "discriminator": [
+        234,
+        73,
+        235,
+        136,
+        168,
+        103,
+        239,
+        207
+      ],
+      "accounts": [
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  116,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "escrow.match_id",
+                "account": "MatchEscrow"
+              }
+            ]
+          }
+        },
+        {
+          "name": "player",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "initialize_config",
+      "docs": [
+        "One-time initialization of the global config PDA.",
+        "Called by the deployer immediately after program deploy."
+      ],
+      "discriminator": [
+        208,
+        127,
+        21,
+        1,
+        194,
+        190,
+        196,
+        70
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "authority",
+          "type": "pubkey"
+        },
+        {
+          "name": "treasury",
+          "type": "pubkey"
+        },
+        {
+          "name": "ops",
+          "type": "pubkey"
+        },
+        {
+          "name": "fee_bps_treasury",
+          "type": "u16"
+        },
+        {
+          "name": "fee_bps_ops",
+          "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "pause_program",
+      "docs": [
+        "Emergency pause — halts new match creation + deposits.",
+        "Settle / cancel / permissionless_reclaim remain callable so in-flight funds can exit."
+      ],
+      "discriminator": [
+        91,
+        86,
+        253,
+        175,
+        66,
+        236,
+        172,
+        124
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "permissionless_reclaim",
+      "docs": [
+        "Permissionless reclaim — anyone can trigger refund after the public-grace window.",
+        "Trigger time:",
+        "- AwaitingDeposits: deposit_deadline + PUBLIC_REFUND_GRACE_SECS",
+        "- Active:           match_end_ts    + PUBLIC_REFUND_GRACE_SECS",
+        "Caller receives the PDA rent reserve as economic incentive (close = caller)."
+      ],
+      "discriminator": [
+        106,
+        139,
+        210,
+        3,
+        39,
+        23,
+        153,
+        59
+      ],
+      "accounts": [
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  116,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "escrow.match_id",
+                "account": "MatchEscrow"
+              }
+            ]
+          }
+        },
+        {
+          "name": "caller",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "settle_match",
+      "docs": [
+        "Settle match — distribute pot to winner, treasury, ops using SNAPSHOT BPS + pubkeys.",
+        "Only callable by the server authority. No deadline (server can settle any time after activation).",
+        "`winner` must be one of escrow.players[0..max_players]."
+      ],
+      "discriminator": [
+        71,
+        124,
+        117,
+        96,
+        191,
+        217,
+        116,
+        24
+      ],
+      "accounts": [
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  116,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "escrow.match_id",
+                "account": "MatchEscrow"
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "escrow",
+            "config"
+          ]
+        },
+        {
+          "name": "winner",
+          "docs": [
+            "Winner: must be one of escrow.players[0..max_players]"
+          ],
+          "writable": true
+        },
+        {
+          "name": "treasury",
+          "docs": [
+            "Treasury: must match the snapshot taken at create_match time"
+          ],
+          "writable": true
+        },
+        {
+          "name": "ops",
+          "docs": [
+            "Ops: must match the snapshot taken at create_match time"
+          ],
+          "writable": true
+        },
+        {
+          "name": "config",
+          "docs": [
+            "Config: provides authority gate. Pause does NOT block settlement so",
+            "in-flight funds can always exit."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "winner",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "start_with_depositors",
+      "docs": [
+        "Authority activates the match with whichever players have deposited.",
+        "Only callable AFTER the deposit window closes — prevents prematurely kicking stragglers.",
+        "Compacts deposited players to the front of the array, reducing max_players to N deposited."
+      ],
+      "discriminator": [
+        111,
+        103,
+        17,
+        116,
+        142,
+        163,
+        63,
+        72
+      ],
+      "accounts": [
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  116,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "escrow.match_id",
+                "account": "MatchEscrow"
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "escrow",
+            "config"
+          ]
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "unpause_program",
+      "discriminator": [
+        43,
+        162,
+        233,
+        92,
+        254,
+        62,
+        69,
+        58
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "update_config",
+      "docs": [
+        "Update config fields. All parameters are optional (pass None to keep current value).",
+        "Re-validates distinctness + fee cap after all updates.",
+        "NOTE: changes here do NOT affect in-flight matches — they snapshot at create_match."
+      ],
+      "discriminator": [
+        29,
+        158,
+        252,
+        191,
+        10,
+        83,
+        219,
+        99
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "new_authority",
+          "type": {
+            "option": "pubkey"
+          }
+        },
+        {
+          "name": "new_treasury",
+          "type": {
+            "option": "pubkey"
+          }
+        },
+        {
+          "name": "new_ops",
+          "type": {
+            "option": "pubkey"
+          }
+        },
+        {
+          "name": "new_fee_bps_treasury",
+          "type": {
+            "option": "u16"
+          }
+        },
+        {
+          "name": "new_fee_bps_ops",
+          "type": {
+            "option": "u16"
+          }
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "GlobalConfig",
+      "discriminator": [
+        149,
+        8,
+        156,
+        202,
+        160,
+        252,
+        176,
+        217
+      ]
+    },
+    {
+      "name": "MatchEscrow",
+      "discriminator": [
+        41,
+        253,
+        245,
+        149,
+        7,
+        243,
+        203,
+        139
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "ConfigUpdated",
+      "discriminator": [
+        40,
+        241,
+        230,
+        122,
+        11,
+        19,
+        198,
+        194
+      ]
+    },
+    {
+      "name": "MatchActive",
+      "discriminator": [
+        47,
+        250,
+        190,
+        20,
+        188,
+        234,
+        223,
+        201
+      ]
+    },
+    {
+      "name": "MatchCancelled",
+      "discriminator": [
+        99,
+        86,
+        22,
+        122,
+        82,
+        247,
+        60,
+        113
+      ]
+    },
+    {
+      "name": "MatchCreated",
+      "discriminator": [
+        151,
+        176,
+        11,
+        24,
+        34,
+        225,
+        227,
+        16
+      ]
+    },
+    {
+      "name": "MatchSettled",
+      "discriminator": [
+        243,
+        201,
+        134,
+        151,
+        193,
+        131,
+        223,
+        150
+      ]
+    },
+    {
+      "name": "WagerDeposited",
+      "discriminator": [
+        31,
+        48,
+        70,
+        183,
+        103,
+        182,
+        95,
+        75
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "MatchIdTooLong",
+      "msg": "Match ID must be 32 characters or fewer"
+    },
+    {
+      "code": 6001,
+      "name": "SamePlayer",
+      "msg": "Players must be different wallets"
+    },
+    {
+      "code": 6002,
+      "name": "InvalidState",
+      "msg": "Match is not in the correct state for this operation"
+    },
+    {
+      "code": 6003,
+      "name": "NotAPlayer",
+      "msg": "Signer is not a player in this match"
+    },
+    {
+      "code": 6004,
+      "name": "AlreadyDeposited",
+      "msg": "Player has already deposited"
+    },
+    {
+      "code": 6005,
+      "name": "InvalidWinner",
+      "msg": "Winner must be a registered player"
+    },
+    {
+      "code": 6006,
+      "name": "Unauthorized",
+      "msg": "Not authorized for this operation"
+    },
+    {
+      "code": 6007,
+      "name": "InvalidPlayer",
+      "msg": "Player account does not match escrow record"
+    },
+    {
+      "code": 6008,
+      "name": "AuthorityAsPlayer",
+      "msg": "Authority cannot participate as a player"
+    },
+    {
+      "code": 6009,
+      "name": "WagerTooSmall",
+      "msg": "Wager below minimum threshold"
+    },
+    {
+      "code": 6010,
+      "name": "WagerTooLarge",
+      "msg": "Wager above maximum threshold"
+    },
+    {
+      "code": 6011,
+      "name": "InvalidTreasury",
+      "msg": "Treasury account does not match snapshot"
+    },
+    {
+      "code": 6012,
+      "name": "InvalidOps",
+      "msg": "Ops account does not match snapshot"
+    },
+    {
+      "code": 6013,
+      "name": "DuplicateFeeAccount",
+      "msg": "Treasury and ops accounts must be different"
+    },
+    {
+      "code": 6014,
+      "name": "FeesTooHigh",
+      "msg": "Combined fee BPS exceeds 1000 (10%)"
+    },
+    {
+      "code": 6015,
+      "name": "ProgramPaused",
+      "msg": "Program is paused"
+    },
+    {
+      "code": 6016,
+      "name": "ArithmeticOverflow",
+      "msg": "Arithmetic overflow"
+    },
+    {
+      "code": 6017,
+      "name": "InvalidConfig",
+      "msg": "Invalid config parameters"
+    },
+    {
+      "code": 6018,
+      "name": "TooEarlyToReclaim",
+      "msg": "Cannot reclaim before public-grace deadline"
+    },
+    {
+      "code": 6019,
+      "name": "TooFewPlayers",
+      "msg": "Match requires at least 2 players"
+    },
+    {
+      "code": 6020,
+      "name": "TooManyPlayers",
+      "msg": "Match supports at most 10 players"
+    },
+    {
+      "code": 6021,
+      "name": "DurationTooShort",
+      "msg": "Duration too short (min 60s)"
+    },
+    {
+      "code": 6022,
+      "name": "DurationTooLong",
+      "msg": "Duration too long (max 7 days)"
+    },
+    {
+      "code": 6023,
+      "name": "DepositWindowTooShort",
+      "msg": "Deposit window too short (min 60s)"
+    },
+    {
+      "code": 6024,
+      "name": "DepositWindowTooLong",
+      "msg": "Deposit window too long (max 24h)"
+    },
+    {
+      "code": 6025,
+      "name": "DepositWindowClosed",
+      "msg": "Deposit window has closed"
+    },
+    {
+      "code": 6026,
+      "name": "DepositWindowOpen",
+      "msg": "Deposit window is still open"
+    },
+    {
+      "code": 6027,
+      "name": "MatchAlreadyStarted",
+      "msg": "Match has already started"
+    }
+  ],
+  "types": [
+    {
+      "name": "ConfigUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "treasury",
+            "type": "pubkey"
+          },
+          {
+            "name": "ops",
+            "type": "pubkey"
+          },
+          {
+            "name": "fee_bps_treasury",
+            "type": "u16"
+          },
+          {
+            "name": "fee_bps_ops",
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "GlobalConfig",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "treasury",
+            "type": "pubkey"
+          },
+          {
+            "name": "ops",
+            "type": "pubkey"
+          },
+          {
+            "name": "fee_bps_treasury",
+            "type": "u16"
+          },
+          {
+            "name": "fee_bps_ops",
+            "type": "u16"
+          },
+          {
+            "name": "is_paused",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MatchActive",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "match_id",
+            "type": "string"
+          },
+          {
+            "name": "total_pot",
+            "type": "u64"
+          },
+          {
+            "name": "match_end_ts",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MatchCancelled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "match_id",
+            "type": "string"
+          },
+          {
+            "name": "players",
+            "type": {
+              "vec": "pubkey"
+            }
+          },
+          {
+            "name": "deposits_mask",
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MatchCreated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "match_id",
+            "type": "string"
+          },
+          {
+            "name": "players",
+            "type": {
+              "vec": "pubkey"
+            }
+          },
+          {
+            "name": "max_players",
+            "type": "u8"
+          },
+          {
+            "name": "wager_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "duration_secs",
+            "type": "u32"
+          },
+          {
+            "name": "deposit_window_secs",
+            "type": "u32"
+          },
+          {
+            "name": "treasury",
+            "type": "pubkey"
+          },
+          {
+            "name": "ops",
+            "type": "pubkey"
+          },
+          {
+            "name": "fee_bps_treasury",
+            "type": "u16"
+          },
+          {
+            "name": "fee_bps_ops",
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MatchEscrow",
+      "docs": [
+        "Per-match escrow account — supports 2-10 players"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "match_id",
+            "docs": [
+              "Unique match identifier (max 32 chars, e.g. room ID)"
+            ],
+            "type": "string"
+          },
+          {
+            "name": "authority",
+            "docs": [
+              "Server authority that created/settles this match"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "players",
+            "docs": [
+              "Player wallets — fixed [Pubkey; 10], zero-padded for < 10 players"
+            ],
+            "type": {
+              "array": [
+                "pubkey",
+                10
+              ]
+            }
+          },
+          {
+            "name": "max_players",
+            "docs": [
+              "Number of active players (2-10)"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "wager_lamports",
+            "docs": [
+              "Wager per player in lamports"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "deposits_mask",
+            "docs": [
+              "Bitmap: bit N set = player N has deposited (u16 supports up to 16 players)"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "duration_secs",
+            "docs": [
+              "Match duration in seconds (set at create, locks match_end_ts on activation)"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "deposit_window_secs",
+            "docs": [
+              "Deposit window in seconds (set at create, governs deposit_deadline + start_with_depositors gate)"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "treasury_snapshot",
+            "docs": [
+              "Snapshot of config.treasury at create — settle/refund use this, not config"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "ops_snapshot",
+            "docs": [
+              "Snapshot of config.ops at create — settle/refund use this, not config"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "fee_bps_treasury_snapshot",
+            "docs": [
+              "Snapshot of config.fee_bps_treasury at create"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "fee_bps_ops_snapshot",
+            "docs": [
+              "Snapshot of config.fee_bps_ops at create"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "state",
+            "docs": [
+              "Current match state"
+            ],
+            "type": {
+              "defined": {
+                "name": "MatchState"
+              }
+            }
+          },
+          {
+            "name": "created_at",
+            "docs": [
+              "Unix timestamp of creation (deposit-window reference)"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "activated_at",
+            "docs": [
+              "Unix timestamp when match became Active (set on full deposits or start_with_depositors)",
+              "0 if not yet activated"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "match_end_ts",
+            "docs": [
+              "Unix timestamp when match expires (= activated_at + duration_secs)",
+              "0 if not yet activated. Powers public timeout refund."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump seed"
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MatchSettled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "match_id",
+            "type": "string"
+          },
+          {
+            "name": "winner",
+            "type": "pubkey"
+          },
+          {
+            "name": "winner_amount",
+            "type": "u64"
+          },
+          {
+            "name": "treasury_account",
+            "type": "pubkey"
+          },
+          {
+            "name": "treasury_amount",
+            "type": "u64"
+          },
+          {
+            "name": "ops_account",
+            "type": "pubkey"
+          },
+          {
+            "name": "ops_amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MatchState",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "AwaitingDeposits"
+          },
+          {
+            "name": "Active"
+          },
+          {
+            "name": "Settled"
+          },
+          {
+            "name": "Cancelled"
+          }
+        ]
+      }
+    },
+    {
+      "name": "WagerDeposited",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "match_id",
+            "type": "string"
+          },
+          {
+            "name": "player",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    }
+  ]
+}

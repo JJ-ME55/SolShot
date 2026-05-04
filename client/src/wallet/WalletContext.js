@@ -38,7 +38,6 @@ import {
     useWallets as usePrivySolanaWallets,
     useSignMessage as usePrivySignMessage,
     useSignAndSendTransaction as usePrivySignAndSend,
-    toSolanaWalletConnectors,
 } from '@privy-io/react-auth/solana';
 
 // Jupiter Mobile adapter via Reown/WalletConnect (JUP-01) — kept on the
@@ -511,25 +510,17 @@ function LegacyBrowserWalletProvider({ children }) {
 
 // ─── Top-level provider — Privy + wallet-adapter ────────────────────────
 
+// Privy v3.23.1 config — kept minimal. Login methods (email + external
+// wallet), allowed origins, and custom auth are all configured in the
+// dashboard at app.privy.io. The schema also dropped `solanaClusters` in
+// favour of dashboard-driven RPC config; we use defaults.
 const PRIVY_CONFIG = {
-    loginMethods: ['email', 'wallet'],
     embeddedWallets: {
-        // Solana embedded wallet — auto-create on login for users without
-        // an external wallet linked. This is the "silent UX" — user signs
-        // in with email, lands in the app, wallet is already provisioned.
+        // Auto-create a Solana wallet on login for users without an
+        // external wallet linked. Silent provisioning — user signs in
+        // with email, lands in the app with a wallet already present.
         solana: { createOnLogin: 'users-without-wallets' },
     },
-    externalWallets: {
-        // Allow users to connect existing Phantom / Solflare via the Privy
-        // modal. Privy handles the integration; we don't need wallet-adapter
-        // for this path (but keep wallet-adapter around for the Reown /
-        // Jupiter Mobile connector that isn't wired into Privy yet).
-        solana: { connectors: toSolanaWalletConnectors() },
-    },
-    solanaClusters: [
-        { name: 'devnet', rpcUrl: clusterApiUrl('devnet') },
-        { name: 'mainnet-beta', rpcUrl: clusterApiUrl('mainnet-beta') },
-    ],
     appearance: {
         theme: 'dark',
         accentColor: '#FFB200',
@@ -538,7 +529,6 @@ const PRIVY_CONFIG = {
         // the page origin doesn't match.
         logo: '/og-preview.png',
         landingHeader: 'Sign in to SolShot',
-        showWalletLoginFirst: false, // email first (Web2 UX), wallet second
     },
 };
 

@@ -319,7 +319,7 @@ function LobbyScreen({ navigate, screenData }) {
   const countdownRef = useRef(null);
 
   // CS-04: Use context hook instead of window.solWallet
-  const { signAndSendEscrowDeposit, walletAddress } = useSolShotWallet();
+  const { signAndSendEscrowDeposit, walletAddress, balance: solBalance, fundWallet } = useSolShotWallet();
 
   // Derived: available wagers + formats for current mode
   const modeConfig = MATCH_MODES[matchMode];
@@ -628,7 +628,7 @@ function LobbyScreen({ navigate, screenData }) {
   }, []);
 
   /* ── actions ── */
-  const createRoom = useCallback(() => {
+  const createRoom = useCallback(async () => {
     if (!window.socket) return;
 
     haptic.medium(); // primary CTA: room/challenge create
@@ -636,6 +636,28 @@ function LobbyScreen({ navigate, screenData }) {
     const name = getPlayerName();
     const color = TANK_COLORS[selectedColor].phaserHex;
     const wagerToSend = isCustomMode ? customWager : wager;
+
+    // Phase 3 — balance gate. If user picks a wagered match they
+    // can't afford, open Privy's Apple/Google Pay funding modal instead
+    // of letting the deposit silently fail. We add a small buffer
+    // (0.005 SOL) for transaction fees on top of the wager.
+    const FEE_BUFFER_SOL = 0.005;
+    if (wagerToSend > 0 && fundWallet && (solBalance ?? 0) < wagerToSend + FEE_BUFFER_SOL) {
+      // Suggest funding 0.05 SOL more than the shortfall, rounded up to
+      // a clean increment. This way the user can play multiple matches
+      // before having to top up again.
+      const shortfall = wagerToSend + FEE_BUFFER_SOL - (solBalance ?? 0);
+      const suggested = Math.max(0.05, Math.ceil(shortfall * 20) / 20); // round up to nearest 0.05
+      const opened = await fundWallet({ amount: suggested.toFixed(2) });
+      if (!opened) {
+        setError('Insufficient SOL to wager. Add SOL via /wallet or fund your address directly.');
+        return;
+      }
+      // After Privy's modal closes, re-check balance via refresh and
+      // bail — user retries Find Match once funded. (Privy's onramp is
+      // async; balance arrives in seconds-to-minutes after card auth.)
+      return;
+    }
 
     // Custom Challenge → emit createChallengeRoom (creates a Challenge document
     // + shortCode + shareable deep link). The lobby's challenge share panel
@@ -672,13 +694,27 @@ function LobbyScreen({ navigate, screenData }) {
 
     setWaitingRoomMax(numPlayers);
     setWaiting(true);
-  }, [getPlayerName, selectedColor, wager, customWager, isCustomMode, matchLength, matchMode, walletAddress, numPlayers]);
+  }, [getPlayerName, selectedColor, wager, customWager, isCustomMode, matchLength, matchMode, walletAddress, numPlayers, solBalance, fundWallet]);
 
-  const joinRoom = useCallback((roomId) => {
+  const joinRoom = useCallback(async (roomId) => {
     if (!window.socket) return;
 
     const name = getPlayerName();
     const color = TANK_COLORS[selectedColor].phaserHex;
+
+    // Phase 3 — same balance gate as createRoom. If joining a wagered
+    // room without enough SOL, surface the funding modal instead of
+    // landing in deposit-fails-silently territory.
+    const FEE_BUFFER_SOL = 0.005;
+    if (wager > 0 && fundWallet && (solBalance ?? 0) < wager + FEE_BUFFER_SOL) {
+      const shortfall = wager + FEE_BUFFER_SOL - (solBalance ?? 0);
+      const suggested = Math.max(0.05, Math.ceil(shortfall * 20) / 20);
+      const opened = await fundWallet({ amount: suggested.toFixed(2) });
+      if (!opened) {
+        setError('Insufficient SOL to join this match. Add SOL and try again.');
+      }
+      return;
+    }
 
     window.socket.emit('joinRoom', {
       roomId,
@@ -687,7 +723,7 @@ function LobbyScreen({ navigate, screenData }) {
       walletAddress: walletAddress || null,
       wager,
     });
-  }, [getPlayerName, selectedColor, wager, walletAddress]);
+  }, [getPlayerName, selectedColor, wager, walletAddress, solBalance, fundWallet]);
 
   const cancelRoom = useCallback(() => {
     if (!window.socket) return;

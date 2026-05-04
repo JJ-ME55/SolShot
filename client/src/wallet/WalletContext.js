@@ -23,7 +23,7 @@ import { Connection, clusterApiUrl, LAMPORTS_PER_SOL, Transaction, PublicKey } f
 import { createBurnInstruction, getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from '@solana/spl-token';
 
 // Privy SDK (Phase 2 — embedded Solana wallets via dashboard.privy.io)
-import { PrivyProvider, usePrivy } from '@privy-io/react-auth';
+import { PrivyProvider, usePrivy, useLogin } from '@privy-io/react-auth';
 import {
     useWallets as usePrivySolanaWallets,
     useSignMessage as usePrivySignMessage,
@@ -33,6 +33,7 @@ import {
     useSignTransaction as usePrivySignTransaction,
     useCreateWallet as usePrivyCreateSolanaWallet,
     useExportWallet as usePrivyExportSolanaWallet,
+    useFundWallet as usePrivyFundSolanaWallet,
     defaultSolanaRpcsPlugin,
 } from '@privy-io/react-auth/solana';
 
@@ -127,7 +128,26 @@ export function useSolShotWallet() {
 // ─── Inner provider (Privy-only) ───────────────────────────────────────
 
 function SolShotWalletInner({ children }) {
-    const { ready: privyReady, authenticated: privyAuthed, login: privyLogin, logout: privyLogout } = usePrivy();
+    const { ready: privyReady, authenticated: privyAuthed, logout: privyLogout } = usePrivy();
+    // useLogin gives us onComplete + onError callbacks (usePrivy().login
+    // does not). onComplete fires after successful auth with the user
+    // object + isNewUser flag — we use isNewUser to flag the welcome
+    // funding prompt on first sign-in.
+    const [isFreshSignIn, setIsFreshSignIn] = useState(false);
+    const { login: privyLogin } = useLogin({
+        onComplete: ({ isNewUser } = {}) => {
+            if (isNewUser) {
+                // Defer the prompt: wallet provisioning fires its own
+                // useEffect which races with this callback. Set a flag
+                // and let the LobbyScreen / MenuScreen pick it up once
+                // the wallet is ready.
+                setIsFreshSignIn(true);
+            }
+        },
+        onError: (err) => {
+            console.warn('[Privy] login error:', err?.message || err);
+        },
+    });
     const { wallets: privySolanaWallets, ready: privyWalletsReady } = usePrivySolanaWallets();
     const { signMessage: privySignMessageFn } = usePrivySignMessage();
     const { signTransaction: privySignTransactionFn } = usePrivySignTransaction();
@@ -137,6 +157,11 @@ function SolShotWalletInner({ children }) {
     // also exposes exportWallet but its docs explicitly say "Ethereum
     // address", so the Solana hook is the correct path here.
     const { exportWallet: privyExportSolanaWalletFn } = usePrivyExportSolanaWallet();
+    // Solana-specific fundWallet — opens Privy's onramp iframe (Apple Pay,
+    // Google Pay, debit/credit card via MoonPay/Coinbase). Requires
+    // dashboard.privy.io → User management → Account funding → "Pay with
+    // card" enabled. The cluster arg routes mainnet vs devnet per env.
+    const { fundWallet: privyFundSolanaWalletFn } = usePrivyFundSolanaWallet();
 
     // Stable Connection — replaces useConnection from wallet-adapter.
     // Memoized so it's reused across all sign/send/burn callbacks.
@@ -592,6 +617,36 @@ function SolShotWalletInner({ children }) {
         }
     }, [privyAuthed, privyExportSolanaWalletFn, privyWallet]);
 
+    /**
+     * Open Privy's funding modal — Apple Pay, Google Pay, or card. After
+     * the user pays, SOL arrives in their embedded wallet typically
+     * within seconds (card) to a few minutes (slower providers).
+     *
+     * @param {Object} [opts]
+     * @param {string} [opts.amount] — Decimal SOL amount string (e.g. '0.05')
+     * @param {string} [opts.cluster] — 'devnet' | 'mainnet-beta' (defaults to NETWORK)
+     * @returns {Promise<boolean>} — true if modal opened, false otherwise
+     */
+    const fundWallet = useCallback(async ({ amount, cluster } = {}) => {
+        if (!privyAuthed || !privyFundSolanaWalletFn) return false;
+        if (!privyWallet?.address) return false;
+        try {
+            const clusterName = cluster || (NETWORK === 'mainnet-beta' ? 'mainnet-beta' : 'devnet');
+            await privyFundSolanaWalletFn(privyWallet.address, {
+                cluster: { name: clusterName },
+                ...(amount ? { amount } : {}),
+            });
+            // After funding completes, refresh the displayed balance
+            // (the user may have closed the modal mid-flow; balance will
+            // catch up on next refresh either way).
+            refreshBalance();
+            return true;
+        } catch (err) {
+            console.warn('[Privy] fundWallet failed:', err?.message || err);
+            return false;
+        }
+    }, [privyAuthed, privyFundSolanaWalletFn, privyWallet, refreshBalance]);
+
     const activeSource = privyWallet ? 'privy' : null;
 
     const value = useMemo(() => ({
@@ -609,6 +664,12 @@ function SolShotWalletInner({ children }) {
         signAndSendGroupDeposit,
         signAndBurnShot,
         openPrivyAccount,
+        fundWallet,
+        // Set to true once after a fresh first-time sign-in. Screens read
+        // this to show a "Welcome — add SOL?" prompt, then call
+        // clearFreshSignIn() to dismiss.
+        isFreshSignIn,
+        clearFreshSignIn: () => setIsFreshSignIn(false),
         // Source = which wallet path is active (always 'privy' or null now)
         source: activeSource,
         privyReady,
@@ -628,7 +689,7 @@ function SolShotWalletInner({ children }) {
     }), [
         balance, refreshBalance, walletAddress, connected, isAuthenticated, authenticate,
         login, logout, shotBalance, prestigeInfo, signAndSendEscrowDeposit, signAndSendGroupDeposit, signAndBurnShot,
-        openPrivyAccount,
+        openPrivyAccount, fundWallet, isFreshSignIn,
         activeSource, privyReady, privyAuthed, privyWalletsReady, publicKey, privyWallet,
     ]);
 
@@ -692,6 +753,9 @@ const LOCAL_DEV_FALLBACK_VALUE = {
     signAndSendGroupDeposit: async () => null,
     signAndBurnShot: async () => null,
     openPrivyAccount: async () => false,
+    fundWallet: async () => false,
+    isFreshSignIn: false,
+    clearFreshSignIn: () => {},
     source: null,
     privyReady: false,
     privyAuthed: false,

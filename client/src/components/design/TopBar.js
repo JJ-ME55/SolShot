@@ -6,16 +6,15 @@ import { useSolShotWallet } from '../../wallet/WalletContext';
  * DesignTopBar — header used on Menu + similar hero screens.
  *
  * Right-side cluster shows different things depending on wallet state:
- *   - Disconnected: a CONNECT WALLET button that opens the standard
- *     Solana wallet adapter modal (Phantom / Solflare / Jupiter Mobile)
+ *   - Disconnected: SIGN IN button that opens Privy's modal (email +
+ *     embedded Solana wallet for new users; existing wallets still
+ *     supported via Privy's external-wallet picker). Falls back to the
+ *     wallet-adapter modal if Privy isn't configured (dev-mode default).
  *   - Connected: SHOT + SOL balances, plus a small truncated address pill
  *
- * Earlier versions of this file had a comment claiming "SolShot uses
- * Dynamic embedded wallets, no connect step." That was true during the
- * Phase 8B Dynamic experiment, which is no longer in the codebase —
- * Dynamic broke on TG Web's nested-iframe context (frame-ancestors CSP)
- * and was removed. The standard wallet adapter is the only path now,
- * and connecting is an explicit user action.
+ * Phase 2 of the Syndicate-pattern migration: Privy embedded wallet
+ * replaces the wallet-adapter-only flow. Email login auto-provisions a
+ * Solana wallet silently — first match should be one tap to start.
  */
 export default function DesignTopBar({
   callsign = 'OPERATIVE',
@@ -25,8 +24,32 @@ export default function DesignTopBar({
   solBalance = 0,
   badgeSrc,
 }) {
-  const { walletAddress, connected } = useSolShotWallet();
+  const { walletAddress, connected, login: privyLogin, source } = useSolShotWallet();
   const { setVisible } = useWalletModal();
+
+  // Connect handler — prefer Privy login modal (embedded wallet flow).
+  // If Privy isn't configured (dev mode), fall back to wallet-adapter modal.
+  const handleConnect = () => {
+    if (privyLogin) {
+      privyLogin();
+    } else {
+      setVisible(true);
+    }
+  };
+
+  // Pill click — when connected via Privy, opens the Privy account modal
+  // (manage wallets, export key, log out). When connected via adapter,
+  // opens the wallet-adapter modal (disconnect, change wallet).
+  const handlePillClick = () => {
+    if (source === 'privy' && privyLogin) {
+      // Privy doesn't expose an "open account" hook directly via usePrivy
+      // — clicking the pill just keeps the address visible for now. A
+      // dedicated Wallet screen ships in a follow-up commit with export
+      // + withdraw + disconnect.
+      return;
+    }
+    setVisible(true);
+  };
 
   const addrShort = walletAddress
     ? `${walletAddress.slice(0, 4)}…${walletAddress.slice(-4)}`
@@ -57,7 +80,7 @@ export default function DesignTopBar({
             <span style={{ color: 'var(--bone)' }}>&#9671; {solBalance.toFixed(2)} SOL</span>
             <button
               type="button"
-              onClick={() => setVisible(true)}
+              onClick={handlePillClick}
               title={walletAddress}
               style={{
                 fontFamily: 'var(--f-mono)',
@@ -77,7 +100,7 @@ export default function DesignTopBar({
         ) : (
           <button
             type="button"
-            onClick={() => setVisible(true)}
+            onClick={handleConnect}
             style={{
               fontFamily: 'var(--f-display)',
               fontSize: 12,
@@ -90,7 +113,7 @@ export default function DesignTopBar({
               clipPath: 'polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px))',
             }}
           >
-            CONNECT WALLET
+            SIGN IN
           </button>
         )}
       </div>

@@ -2,14 +2,26 @@
  * SolShot Wallet Context
  *
  * Provides Solana wallet connectivity throughout the app.
- * Supports Phantom, Solflare, and other Solana wallets.
  *
- * Usage in React:
+ * Architecture (Phase 2 of the Syndicate-pattern migration, 2026-05-04):
+ *   - Outer: PrivyProvider — provides embedded Solana wallets (silent UX)
+ *     plus integrated external-wallet connectors (Phantom, Solflare).
+ *     New users sign in with email → Privy auto-creates a Solana wallet.
+ *     Power users with Phantom can still connect their existing wallet.
+ *   - Inner: ConnectionProvider + wallet-adapter (legacy path) — kept as
+ *     a fallback for dev environments where REACT_APP_PRIVY_APP_ID isn't
+ *     set, and to support Reown / Jupiter Mobile connectors that aren't
+ *     yet first-class in Privy's externalWallets.
+ *
+ * The unified SolShotWalletInner reads BOTH layers and picks the active
+ * wallet at signing time:
+ *   - If Privy authenticated AND has a Solana wallet → use Privy
+ *   - Else if wallet-adapter connected → use wallet-adapter
+ *   - Else → no wallet
+ *
+ * Usage in React (unchanged from before):
  *   import { useSolShotWallet } from './wallet/WalletContext';
- *   const { balance, walletAddress, signAndSendEscrowDeposit } = useSolShotWallet();
- *
- *   import { useWallet } from '@solana/wallet-adapter-react';
- *   const { publicKey, connected, signMessage } = useWallet();
+ *   const { walletAddress, signAndSendEscrowDeposit, login } = useSolShotWallet();
  */
 
 import React, { useMemo, useEffect, useCallback, useState, createContext, useContext } from 'react';
@@ -18,27 +30,35 @@ import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
 import { PhantomWalletAdapter, SolflareWalletAdapter } from '@solana/wallet-adapter-wallets';
 import { clusterApiUrl, LAMPORTS_PER_SOL, Transaction, PublicKey } from '@solana/web3.js';
 import { createBurnInstruction, getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import bs58 from 'bs58';
 
-// Jupiter Mobile adapter via Reown/WalletConnect (JUP-01)
+// Privy SDK (Phase 2 — embedded Solana wallets via dashboard.privy.io)
+import { PrivyProvider, usePrivy } from '@privy-io/react-auth';
+import {
+    useWallets as usePrivySolanaWallets,
+    useSignMessage as usePrivySignMessage,
+    useSignAndSendTransaction as usePrivySignAndSend,
+    toSolanaWalletConnectors,
+} from '@privy-io/react-auth/solana';
+
+// Jupiter Mobile adapter via Reown/WalletConnect (JUP-01) — kept on the
+// wallet-adapter path; not yet wired into Privy's externalWallets list.
 import { useWrappedReownAdapter } from '@jup-ag/jup-mobile-adapter';
 
 // Import wallet adapter styles
 import '@solana/wallet-adapter-react-ui/styles.css';
 
-// Solana network (devnet for development, mainnet-beta for production)
+// ─── Env / config ──────────────────────────────────────────────────────
+
 const NETWORK = process.env.REACT_APP_SOLANA_NETWORK || 'devnet';
 const RPC_URL = process.env.REACT_APP_SOLANA_RPC || clusterApiUrl(NETWORK);
-
-// Reown (WalletConnect) project ID — required for Jupiter Mobile adapter
-// Register at https://dashboard.reown.com to get a project ID
 const REOWN_PROJECT_ID = process.env.REACT_APP_REOWN_PROJECT_ID || '';
+const PRIVY_APP_ID = process.env.REACT_APP_PRIVY_APP_ID || '';
 
-// SHOT token mint address (set in .env after deploying to devnet)
 const SHOT_TOKEN_MINT = process.env.REACT_APP_SHOT_TOKEN_MINT
     ? new PublicKey(process.env.REACT_APP_SHOT_TOKEN_MINT)
     : null;
 
-// CS-01: Escrow program ID for TX validation
 const ESCROW_PROGRAM_ID = process.env.REACT_APP_ESCROW_PROGRAM_ID
     ? new PublicKey(process.env.REACT_APP_ESCROW_PROGRAM_ID)
     : null;
@@ -46,8 +66,6 @@ const ESCROW_PROGRAM_ID = process.env.REACT_APP_ESCROW_PROGRAM_ID
 // CS-01: Known deposit_wager discriminator (SHA-256 of "global:deposit_wager" first 8 bytes)
 // Verified from IDL: [234, 73, 235, 136, 168, 103, 239, 207]
 const DEPOSIT_WAGER_DISCRIMINATOR = Buffer.from([234, 73, 235, 136, 168, 103, 239, 207]);
-
-// CS-01: Allowed program IDs in escrow deposit transactions
 const COMPUTE_BUDGET_PROGRAM_ID = new PublicKey('ComputeBudget111111111111111111111111111111');
 
 /**
@@ -56,72 +74,101 @@ const COMPUTE_BUDGET_PROGRAM_ID = new PublicKey('ComputeBudget111111111111111111
  */
 function validateEscrowTransaction(tx) {
     if (!ESCROW_PROGRAM_ID) {
-        // Dev mode — no program ID configured, skip validation
-        return { valid: true };
+        return { valid: true }; // Dev mode — no program ID configured
     }
-
     const instructions = tx.instructions;
     if (!instructions || instructions.length === 0) {
         return { valid: false, reason: 'Transaction has no instructions' };
     }
-
     let hasDepositInstruction = false;
-
     for (const ix of instructions) {
         const programId = ix.programId.toBase58();
-
         if (ix.programId.equals(ESCROW_PROGRAM_ID)) {
-            // Escrow program instruction — verify it's deposit_wager
             if (ix.data.length < 8) {
                 return { valid: false, reason: 'Escrow instruction data too short' };
             }
             const discriminator = ix.data.slice(0, 8);
             if (!Buffer.from(discriminator).equals(DEPOSIT_WAGER_DISCRIMINATOR)) {
-                return { valid: false, reason: `Unknown escrow instruction (discriminator mismatch)` };
+                return { valid: false, reason: 'Unknown escrow instruction (discriminator mismatch)' };
             }
             hasDepositInstruction = true;
         } else if (ix.programId.equals(COMPUTE_BUDGET_PROGRAM_ID)) {
-            // ComputeBudget is allowed (server may add compute unit price/limit)
             continue;
         } else {
-            // Unknown program — reject
             return { valid: false, reason: `Unexpected program: ${programId}` };
         }
     }
-
     if (!hasDepositInstruction) {
         return { valid: false, reason: 'No deposit_wager instruction found' };
     }
-
     return { valid: true };
 }
 
-// Context for SolShot-specific wallet state
+// ─── Context ───────────────────────────────────────────────────────────
+
 const SolShotWalletContext = createContext({
     balance: 0,
     refreshBalance: () => {},
     walletAddress: null,
     isAuthenticated: false,
     authenticate: () => {},
+    login: () => {},
+    logout: () => {},
 });
 
 export function useSolShotWallet() {
     return useContext(SolShotWalletContext);
 }
 
-/**
- * Inner provider that uses wallet adapter hooks
- */
+// ─── Inner provider — uses both Privy and wallet-adapter hooks ─────────
+
 function SolShotWalletInner({ children }) {
-    const { publicKey, connected, signMessage, signTransaction, sendTransaction } = useWallet();
+    // Wallet-adapter hooks (legacy path — kept for users with Phantom extension
+    // or for Jupiter Mobile via Reown)
+    const {
+        publicKey: adapterPubkey,
+        connected: adapterConnected,
+        signMessage: adapterSignMessage,
+        signTransaction: adapterSignTransaction,
+        sendTransaction: adapterSendTransaction,
+    } = useWallet();
     const { connection } = useConnection();
+
+    // Privy hooks (primary path — silent embedded wallet UX)
+    // These all gracefully no-op when PrivyProvider isn't wrapping (PRIVY_APP_ID
+    // unset), because PrivyConditionalProvider falls through to the legacy path
+    // entirely in that case. So no try/catch needed here.
+    const { ready: privyReady, authenticated: privyAuthed, login: privyLogin, logout: privyLogout } = usePrivy();
+    const { wallets: privySolanaWallets } = usePrivySolanaWallets();
+    const { signMessage: privySignMessageFn } = usePrivySignMessage();
+    const { signAndSendTransaction: privySignAndSendFn } = usePrivySignAndSend();
+
+    // Pick the active wallet — prefer Privy when authenticated AND has a wallet
+    const privyWallet = useMemo(() => {
+        if (!privyAuthed || !privySolanaWallets || privySolanaWallets.length === 0) return null;
+        return privySolanaWallets[0]; // first wallet is the user's primary
+    }, [privyAuthed, privySolanaWallets]);
+
+    const activeSource = privyWallet ? 'privy' : (adapterConnected ? 'adapter' : null);
+
+    const publicKey = useMemo(() => {
+        if (privyWallet) {
+            try { return new PublicKey(privyWallet.address); } catch { return null; }
+        }
+        return adapterPubkey || null;
+    }, [privyWallet, adapterPubkey]);
+
+    const connected = !!privyWallet || adapterConnected;
+
     const [balance, setBalance] = useState(0);
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [shotBalance, setShotBalance] = useState(0);
     const [prestigeInfo, setPrestigeInfo] = useState({ tier: 0, tierName: 'Unranked' });
 
-    // JUP-01: Inject CSS to visually highlight the first wallet (Jupiter Mobile) in the modal
-    // Uses the wallet-adapter-react-ui modal's list structure
+    // JUP-01: Inject CSS to highlight first wallet (Jupiter Mobile) in the
+    // wallet-adapter modal — only relevant for the legacy wallet-adapter path
+    // (when user picks "Connect Phantom/Solflare/Jupiter Mobile" instead of
+    // signing in with Privy).
     useEffect(() => {
         const style = document.createElement('style');
         style.setAttribute('data-solshot-jup-highlight', 'true');
@@ -157,7 +204,7 @@ function SolShotWalletInner({ children }) {
         return publicKey ? publicKey.toBase58() : null;
     }, [publicKey]);
 
-    // Fetch SOL balance
+    // Fetch SOL balance for the active wallet
     const refreshBalance = useCallback(async () => {
         if (!publicKey || !connection) {
             setBalance(0);
@@ -172,7 +219,6 @@ function SolShotWalletInner({ children }) {
         }
     }, [publicKey, connection]);
 
-    // Refresh balance when wallet connects
     useEffect(() => {
         if (connected && publicKey) {
             refreshBalance();
@@ -182,44 +228,66 @@ function SolShotWalletInner({ children }) {
         }
     }, [connected, publicKey, refreshBalance]);
 
-    // Listen for SHOT balance updates from server
+    // SHOT balance + prestige info from server socket
     useEffect(() => {
         const socket = window.socket;
         if (!socket) return;
-
         const handleShotInfo = (data) => {
             setShotBalance(data.balance || 0);
             if (data.prestige) setPrestigeInfo(data.prestige);
         };
-
         socket.on('shotInfo', handleShotInfo);
         return () => { socket.off('shotInfo', handleShotInfo); };
     }, []);
 
-    // Request SHOT info when authenticated
     useEffect(() => {
         if (isAuthenticated && window.socket) {
             window.socket.emit('getShotInfo');
         }
     }, [isAuthenticated]);
 
-    // Authenticate with server (sign a message to prove wallet ownership)
+    // ─── Unified signing methods — pick Privy or adapter at call time ───
+
+    const signMessageUnified = useCallback(async (encodedMessage) => {
+        if (privyWallet) {
+            const result = await privySignMessageFn({ message: encodedMessage, wallet: privyWallet });
+            return result.signature; // Uint8Array
+        }
+        if (adapterSignMessage) {
+            return adapterSignMessage(encodedMessage);
+        }
+        throw new Error('No wallet available to sign message');
+    }, [privyWallet, privySignMessageFn, adapterSignMessage]);
+
+    const sendTransactionUnified = useCallback(async (tx, conn) => {
+        if (privyWallet) {
+            const serialized = tx.serialize({ requireAllSignatures: false, verifySignatures: false });
+            const result = await privySignAndSendFn({
+                transaction: new Uint8Array(serialized),
+                wallet: privyWallet,
+            });
+            // signature is Uint8Array — convert to base58 (Solana TX-signature format)
+            return bs58.encode(result.signature);
+        }
+        if (adapterSendTransaction) {
+            return adapterSendTransaction(tx, conn);
+        }
+        throw new Error('No wallet available to send transaction');
+    }, [privyWallet, privySignAndSendFn, adapterSendTransaction]);
+
+    // ─── App-specific actions (authenticate, escrow deposit, SHOT burn) ───
+
     const authenticate = useCallback(async () => {
-        if (!publicKey || !signMessage) {
-            console.warn('[SolShot] Cannot authenticate: no wallet or signMessage');
+        if (!walletAddress) {
+            console.warn('[SolShot] Cannot authenticate: no wallet');
             return null;
         }
-
         try {
             const timestamp = Date.now();
             const message = `SolShot Auth: ${walletAddress} at ${timestamp}`;
             const encodedMessage = new TextEncoder().encode(message);
-            const signature = await signMessage(encodedMessage);
-
-            // Convert signature to base64 for transport
+            const signature = await signMessageUnified(encodedMessage);
             const signatureBase64 = btoa(String.fromCharCode(...signature));
-
-            // Send to server via socket
             const socket = window.socket;
             if (socket) {
                 socket.emit('authenticate', {
@@ -229,107 +297,71 @@ function SolShotWalletInner({ children }) {
                     timestamp,
                 });
             }
-
-            // Don't set isAuthenticated here — wait for server 'authResult' confirmation
             return { walletAddress, signature: signatureBase64, message };
         } catch (err) {
             console.error('[SolShot] Auth error:', err.message);
             setIsAuthenticated(false);
             return null;
         }
-    }, [publicKey, signMessage, walletAddress]);
+    }, [walletAddress, signMessageUnified]);
 
-    // Sign and send an escrow deposit transaction (base64 from server)
     const signAndSendEscrowDeposit = useCallback(async (serializedTxBase64, roomId) => {
-        if (!publicKey || !sendTransaction || !connection) {
+        if (!publicKey || !connection) {
             console.warn('[SolShot] Cannot sign escrow deposit: wallet not ready');
             return null;
         }
-
         try {
-            // Deserialize the transaction from base64
             const txBuffer = Buffer.from(serializedTxBase64, 'base64');
             const tx = Transaction.from(txBuffer);
 
-            // CS-01: Validate transaction instructions before signing
             const validation = validateEscrowTransaction(tx);
             if (!validation.valid) {
                 console.error('[SolShot] TX validation FAILED:', validation.reason);
-                // Silent report to server (don't reveal detection details to attacker)
                 const socket = window.socket;
                 if (socket) {
-                    socket.emit('suspiciousTx', {
-                        reason: validation.reason,
-                        roomId,
-                    });
+                    socket.emit('suspiciousTx', { reason: validation.reason, roomId });
                 }
                 return null;
             }
 
-            // Send via wallet adapter (prompts user to sign)
-            const signature = await sendTransaction(tx, connection);
-
-            // Confirm
+            const signature = await sendTransactionUnified(tx, connection);
             await connection.confirmTransaction(signature, 'confirmed');
 
-            // Notify server
             const socket = window.socket;
             if (socket) {
                 socket.emit('escrowDepositConfirm', { roomId, txSignature: signature });
             }
-
-            // Refresh balance after deposit
             refreshBalance();
-
             return signature;
         } catch (err) {
             console.error('[SolShot] Escrow deposit error:', err.message);
             return null;
         }
-    }, [publicKey, sendTransaction, connection, refreshBalance]);
+    }, [publicKey, connection, sendTransactionUnified, refreshBalance]);
 
-    // Burn SHOT tokens for prestige tier upgrade
     const signAndBurnShot = useCallback(async (burnAmount) => {
-        if (!publicKey || !sendTransaction || !connection || !SHOT_TOKEN_MINT) {
+        if (!publicKey || !connection || !SHOT_TOKEN_MINT) {
             console.warn('[SolShot] Cannot burn SHOT: wallet not ready or no token mint');
             return null;
         }
-
         try {
-            // Get player's associated token account for SHOT
             const ata = await getAssociatedTokenAddress(SHOT_TOKEN_MINT, publicKey);
-
-            // burnAmount is in whole tokens — convert to raw (9 decimals)
-            // Max burn is 4000 SHOT = 4e12 raw — well within Number.MAX_SAFE_INTEGER
             const rawAmount = burnAmount * 1_000_000_000;
-
-            // Build burn instruction (burns from player's ATA, reducing total supply)
             const burnIx = createBurnInstruction(
-                ata,              // token account to burn from
-                SHOT_TOKEN_MINT,  // mint
-                publicKey,        // owner (signer)
-                rawAmount,        // amount in raw units
-                [],               // multi-signers (none)
-                TOKEN_PROGRAM_ID
+                ata, SHOT_TOKEN_MINT, publicKey, rawAmount, [], TOKEN_PROGRAM_ID
             );
-
             const tx = new Transaction().add(burnIx);
             tx.feePayer = publicKey;
             const { blockhash } = await connection.getLatestBlockhash();
             tx.recentBlockhash = blockhash;
-
-            // Send via wallet adapter (prompts user to sign)
-            const signature = await sendTransaction(tx, connection);
-
-            // Confirm
+            const signature = await sendTransactionUnified(tx, connection);
             await connection.confirmTransaction(signature, 'confirmed');
-
             return signature;
         } catch (err) {
             console.error('[SolShot] SHOT burn error:', err.message);
             return null;
         }
-    }, [publicKey, sendTransaction, connection]);
+    }, [publicKey, connection, sendTransactionUnified]);
 
     // Listen for auth result from server
     useEffect(() => {
@@ -347,7 +379,6 @@ function SolShotWalletInner({ children }) {
             socket.on('authResult', handler);
             return () => { socket.off('authResult', handler); };
         };
-        // Socket might not exist yet — poll briefly
         const cleanup = checkSocket();
         if (cleanup) return cleanup;
         const timer = setInterval(() => {
@@ -360,7 +391,6 @@ function SolShotWalletInner({ children }) {
     // Auto-authenticate when wallet connects and socket is ready
     useEffect(() => {
         if (!connected || !publicKey || isAuthenticated) return;
-        // Poll for socket availability (may not exist on first render)
         const tryAuth = () => {
             if (window.socket && window.socket.connected) {
                 authenticate();
@@ -375,6 +405,23 @@ function SolShotWalletInner({ children }) {
         return () => clearInterval(timer);
     }, [connected, publicKey, isAuthenticated, authenticate]);
 
+    // Public login/logout — exposed for Connect Wallet button
+    const login = useCallback(() => {
+        if (privyLogin) {
+            privyLogin();
+        } else {
+            console.warn('[SolShot] Privy login unavailable — fall back to wallet-adapter modal');
+        }
+    }, [privyLogin]);
+
+    const logout = useCallback(async () => {
+        if (privyLogout && privyAuthed) {
+            await privyLogout();
+        }
+        // Wallet-adapter disconnect is handled by its own modal — we don't
+        // force-disconnect here because users may want to swap accounts.
+    }, [privyLogout, privyAuthed]);
+
     const value = useMemo(() => ({
         balance,
         refreshBalance,
@@ -382,19 +429,33 @@ function SolShotWalletInner({ children }) {
         connected,
         isAuthenticated,
         authenticate,
+        login,
+        logout,
         shotBalance,
         prestigeInfo,
         signAndSendEscrowDeposit,
         signAndBurnShot,
+        // Source = which wallet path is active
+        source: activeSource,
+        privyReady,
+        privyAuthed,
         // Read by <DebugAuthOverlay> when ?debug=1
         debug: {
-            source: 'legacy',
+            source: activeSource,
             connected,
             hasPublicKey: !!publicKey,
             walletAddress,
             isAuthenticated,
+            privyReady,
+            privyAuthed,
+            adapterConnected,
+            privyHasWallet: !!privyWallet,
         },
-    }), [balance, refreshBalance, walletAddress, connected, isAuthenticated, authenticate, shotBalance, prestigeInfo, signAndSendEscrowDeposit, signAndBurnShot, publicKey]);
+    }), [
+        balance, refreshBalance, walletAddress, connected, isAuthenticated, authenticate,
+        login, logout, shotBalance, prestigeInfo, signAndSendEscrowDeposit, signAndBurnShot,
+        activeSource, privyReady, privyAuthed, publicKey, privyWallet, adapterConnected,
+    ]);
 
     return (
         <SolShotWalletContext.Provider value={value}>
@@ -403,22 +464,8 @@ function SolShotWalletInner({ children }) {
     );
 }
 
-/**
- * Browser-wallet provider — Phantom / Solflare / Jupiter Mobile via Reown.
- *
- * This is the ONLY wallet path SolShot uses. We previously had a Dynamic
- * embedded-wallet branch for Telegram Mini Apps, which was removed because
- * Dynamic's WaaS iframe failed in TG Web (frame-ancestors CSP block when
- * nested inside web.telegram.org). Privy and Para hit the same iframe-class
- * problem (third-party storage partitioning, X-Frame-Options DENY). Until
- * a SaaS embedded wallet provider ships a non-iframe architecture that
- * works in TG Web, we default everyone — TG users included — to the
- * standard Solana wallet adapter and accept the friction in TG iOS where
- * native wallet apps are portrait-only.
- *
- * The wallet decision will be revisited (custodial server-managed wallet,
- * or new vendor) once on-chain escrow is fully tested + audited.
- */
+// ─── Wallet-adapter (legacy path) provider ─────────────────────────────
+
 function LegacyBrowserWalletProvider({ children }) {
     const { jupiterAdapter } = useWrappedReownAdapter({
         appKitOptions: {
@@ -442,7 +489,6 @@ function LegacyBrowserWalletProvider({ children }) {
                 new SolflareWalletAdapter(),
             ];
         }
-        // Jupiter Mobile at position 0 (top of list, highlighted as RECOMMENDED)
         return [
             jupiterAdapter,
             new PhantomWalletAdapter(),
@@ -463,8 +509,49 @@ function LegacyBrowserWalletProvider({ children }) {
     );
 }
 
+// ─── Top-level provider — Privy + wallet-adapter ────────────────────────
+
+const PRIVY_CONFIG = {
+    loginMethods: ['email', 'wallet'],
+    embeddedWallets: {
+        // Solana embedded wallet — auto-create on login for users without
+        // an external wallet linked. This is the "silent UX" — user signs
+        // in with email, lands in the app, wallet is already provisioned.
+        solana: { createOnLogin: 'users-without-wallets' },
+    },
+    externalWallets: {
+        // Allow users to connect existing Phantom / Solflare via the Privy
+        // modal. Privy handles the integration; we don't need wallet-adapter
+        // for this path (but keep wallet-adapter around for the Reown /
+        // Jupiter Mobile connector that isn't wired into Privy yet).
+        solana: { connectors: toSolanaWalletConnectors() },
+    },
+    solanaClusters: [
+        { name: 'devnet', rpcUrl: clusterApiUrl('devnet') },
+        { name: 'mainnet-beta', rpcUrl: clusterApiUrl('mainnet-beta') },
+    ],
+    appearance: {
+        theme: 'dark',
+        accentColor: '#FFB200',
+        logo: 'https://solshot.gg/og-preview.png',
+        landingHeader: 'Sign in to SolShot',
+        showWalletLoginFirst: false, // email first (Web2 UX), wallet second
+    },
+};
+
 export function SolShotWalletProvider({ children }) {
-    return <LegacyBrowserWalletProvider>{children}</LegacyBrowserWalletProvider>;
+    // Dev-mode guard: if no Privy app ID configured, fall through to the
+    // legacy wallet-adapter-only path. This keeps local dev working without
+    // requiring every contributor to set up a Privy account.
+    if (!PRIVY_APP_ID) {
+        console.warn('[SolShot] REACT_APP_PRIVY_APP_ID not set — falling back to wallet-adapter-only mode (no embedded wallet)');
+        return <LegacyBrowserWalletProvider>{children}</LegacyBrowserWalletProvider>;
+    }
+    return (
+        <PrivyProvider appId={PRIVY_APP_ID} config={PRIVY_CONFIG}>
+            <LegacyBrowserWalletProvider>{children}</LegacyBrowserWalletProvider>
+        </PrivyProvider>
+    );
 }
 
 export { NETWORK, RPC_URL };

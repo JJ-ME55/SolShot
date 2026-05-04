@@ -1747,9 +1747,6 @@ const mainsocket = (io) => {
 
             broadcastRooms(io)
 
-            // DIAG: log joinRoom escrow state
-            console.log(`[Match] joinRoom ${roomId}: wager=${roomWager} escrowEnabled=${isEscrowEnabled()} wallets=${JSON.stringify(ws?.wallets)} players=${room.players.map(p => p.socketId).join(',')} active=${room.active}`)
-
             // Create on-chain escrow for wagered matches
             if (roomWager > 0 && isEscrowEnabled()) {
                 // SRV-09: Collect all N player wallets for N-player escrow creation
@@ -1892,12 +1889,7 @@ const mainsocket = (io) => {
                     } catch (err) {
                         console.error(`[Match] Escrow error for ${roomId}:`, err.message)
                     }
-                } else {
-                    // DIAG: silent-skip branch — log why
-                    console.error(`[Match] Escrow SKIPPED for ${roomId}: have ${allWallets.length}/${room.players.length} wallets. ws.wallets=${JSON.stringify(ws?.wallets)}`)
                 }
-            } else if (roomWager > 0) {
-                console.error(`[Match] Escrow SKIPPED for ${roomId}: escrowEnabled=${isEscrowEnabled()} (wager=${roomWager})`)
             }
 
             // Always broadcast roomUpdate so both players see the lobby
@@ -2451,9 +2443,6 @@ const mainsocket = (io) => {
                 if (wagerAmount > 0) trackWager(wagerAmount * roomData.maxPlayers);  // All N players wager
                 broadcastRooms(io);
 
-                // DIAG: log queue match formation state — helps diagnose silent-skip escrow bugs
-                console.log(`[Queue] Forming match ${roomId}: wager=${wagerAmount} escrowEnabled=${isEscrowEnabled()} wallets=${JSON.stringify(wagerStates[roomId]?.wallets)} players=${roomData.players.map(p => p.socketId).join(',')}`)
-
                 // Escrow creation for wagered queue matches
                 if (wagerAmount > 0 && isEscrowEnabled()) {
                     // SRV-09: Collect all N player wallets (queue is always 2-player, but use N-player pattern for consistency)
@@ -2505,12 +2494,7 @@ const mainsocket = (io) => {
                         } catch (err) {
                             console.error(`[Queue] Escrow error for ${roomId}:`, err.message);
                         }
-                    } else {
-                        // DIAG: this is the silent-skip branch — log why escrow was skipped
-                        console.error(`[Queue] Escrow SKIPPED for ${roomId}: have ${allQueueWallets.length}/${roomData.players.length} wallets. wagerStates=${JSON.stringify(wagerStates[roomId])}`)
                     }
-                } else if (wagerAmount > 0) {
-                    console.error(`[Queue] Escrow SKIPPED for ${roomId}: escrowEnabled=${isEscrowEnabled()} (wager=${wagerAmount})`)
                 }
 
                 // Emit roomUpdate so both players see the waiting room lobby
@@ -3450,8 +3434,17 @@ const mainsocket = (io) => {
                     return
                 }
 
-                // Validate it's this player's turn
-                if (ms.currentTurn && ms.currentTurn !== this.id) {
+                // Validate it's this player's turn.
+                //   - Reject when currentTurn is null/undefined (between rounds, or
+                //     after a fatal blow when we deliberately clear it below).
+                //   - Reject when currentTurn doesn't match the firing socket.
+                // The earlier `ms.currentTurn && ms.currentTurn !== this.id` form
+                // missed the null branch — letting a stale fire slip through during
+                // the 3-second ROUND_END_DELAY window we observed in the 04 May test
+                // (sLgZ self-hit logged twice with identical impact coords).
+                if (!ms.currentTurn || ms.currentTurn !== this.id) {
+                    // DIAG: log mismatched fires so we can trace duplicate-fire root cause
+                    console.warn(`[Fire] rejected: currentTurn=${ms.currentTurn} shooterId=${this.id} status=${ms.status}`)
                     this.emit('fireRejected', { reason: 'Not your turn' })
                     return
                 }
@@ -3649,9 +3642,18 @@ const mainsocket = (io) => {
                     })
                 }
 
-                // Advance turn
+                // Advance turn.
+                // Bug fix (04 May): the old guard `ms.players.length > 1` only
+                // counts registered slots (alive + dead), so after a fatal blow
+                // in a 2-player match it still ran getNextTurn — which returned
+                // the *surviving shooter* as the next turn. Combined with the
+                // 3-second ROUND_END_DELAY before the SETTLING transition, the
+                // shooter could fire again on a stale turn id. Now we clear
+                // currentTurn explicitly when the round is over; the null-aware
+                // check above rejects any further fires until the next round
+                // initializes a new currentTurn via getNextTurn.
                 ms.turnCount++
-                ms.currentTurn = ms.players.length > 1 ? getNextTurn(ms) : null
+                ms.currentTurn = isRoundOver(ms) ? null : getNextTurn(ms)
 
                 // LP-07: Reset move count for the new current turn player
                 if (ms.moveCounts && ms.currentTurn) {

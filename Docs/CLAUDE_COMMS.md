@@ -1429,3 +1429,96 @@ work in TG Web) still apply.
    wrong twice today.
 
 — main-claude
+
+
+---
+
+### 2026-05-04 — `[main-claude]` — STATUS
+
+**First successful end-to-end wagered match on devnet.** 🎉
+
+Match `2f5b6180`. Settlement TX `4WSsDsKVzCugdjsfD6Zg2kHKc7VBcByUKsN5P9CQEMj2ExXuuw9jQJch6eK4Qqu1MY8Ma16Tw1QawJKig5V3b9sf`. Two Phantom wallets, 0.1 SOL each, full 90/7/3 split landed correctly: winner +0.18, treasury +0.014, ops +0.006. Verified on-chain.
+
+**What it took to get here today:**
+
+1. **Server-side `Keypair.fromSecretKey` aliasing fix** (`f551275`). The
+   `bytes.fill(0)` "secure-cleanup" was destroying the keypair's
+   internal secret because `@solana/web3.js@1.98.4` aliases the input
+   `Uint8Array` rather than copying it. Every signing op produced an
+   invalid signature. Removed the fill, signing works.
+
+2. **Anchor 0.30+ auto-resolution fix** (`c5731df`). `escrow.js` was
+   passing `config` (PDA, constant seeds) and `system_program` (fixed
+   address) explicitly to every `.accounts({...})` call. Anchor's
+   resolver, faced with both auto-resolved and explicit values for the
+   same accounts, was placing the config PDA into the system_program
+   slot — surfaced as `AnchorError: InvalidProgramId on system_program`.
+   Stripped the auto-resolvable accounts; now passing only signers and
+   non-PDA explicit accounts.
+
+3. **Diagnosing that the deployed program was *stale*.** The Feb 27
+   N-player rewrite (Phase 20) had been verified locally but never
+   deployed. Devnet was running the Feb 18 pre-rewrite 2-player
+   program. Client was sending the new 4-account layout (escrow,
+   authority, config, system_program); old program expected the 3-
+   account layout (escrow, authority, system_program). Misalignment
+   produced the same InvalidProgramId.
+
+4. **Redeploy** (`bec1d23`). The local
+   `target/deploy/solshot_escrow-keypair.json` had been regenerated
+   since the Feb 18 deploy, so we couldn't upgrade in place. Deployed
+   fresh at new ID `4kzrDpV9JxjE27AMg4PQXzGuge9MEYQEFznSPvkBtnH1` and
+   updated all references (escrow.js, IDL, Anchor.toml, render.yaml,
+   client/.env.production, client/.env.example, server/.env.example,
+   lib.rs `declare_id!`). First deploy needed a `declare_id!` rebuild
+   because the .so still had the old ID baked in
+   (`DeclaredProgramIdMismatch`). Second deploy worked — same program
+   account upgraded in place, ~0.002 SOL.
+
+5. **GlobalConfig PDA initialized** at
+   `92wnuoauqtxkkxDu22fBWGZMBjfNmvSXfKrsJ8nrfSU4` via new one-shot
+   `server/scripts/init-config.mjs`. Authority/treasury/ops match env
+   vars, `isPaused: false`.
+
+6. **Diagnostic logging** (`af9663e`) — added five log points to the
+   queue / joinRoom escrow paths to make the next failure
+   self-describing instead of silent. As it turned out, the next match
+   worked first try — diagnostic logs never tripped, but I left a few
+   in (joinQueue entry, fire-rejection details) for general future use.
+
+**Costs spent:** ~2.32 SOL on the program data account (recoverable
+rent if we ever close it), plus a few cents in tx fees. Old program at
+`CqvRC6mSJe2CrBtENVfCEPkgRW3WwxLSL9C1hgXz7GtD` is now obsolete; ~1.77
+SOL of its rent is recoverable via `solana program close` whenever we
+feel like it.
+
+**Bug discovered + fixed in the same test session:** duplicate-fire
+race during the `ROUND_END_DELAY` window. After a fatal blow, line
+3654 of `main.js` was advancing the turn via `getNextTurn(ms)` even
+when the round was over — and `getNextTurn` returns the surviving
+shooter when only one player is alive. So `currentTurn` stayed valid
+for 3 seconds (the round-end animation delay) and a stale fire could
+slip through. Fix: `ms.currentTurn = isRoundOver(ms) ? null :
+getNextTurn(ms)`, plus the turn check is now null-aware. Defensive
+enough to handle the bug regardless of whatever client-side retry was
+producing the duplicate.
+
+**State now:**
+
+- HEAD `<this commit>` on `main`.
+- Devnet escrow path is end-to-end working for 1v1 0.1 SOL Quick Match.
+- All deploys (Render server + Vercel client) auto-pull from `main`.
+- Render env var `MATCH_ESCROW_PROGRAM_ID` already updated to new ID.
+  Vercel `REACT_APP_ESCROW_PROGRAM_ID` likewise (since
+  `client/.env.production` is the source).
+
+**Next:**
+
+- Try a few more 1v1 wagered matches to confirm the duplicate-fire fix
+  holds and expose any remaining edge cases.
+- N-player escrow flow exercised on devnet (3p, 4p Quick Match —
+  blocked on UI / matchmaking surface, on-chain side is ready).
+- Then return to the wallet UX decision (per JJ's directive on
+  2026-05-03).
+
+— main-claude

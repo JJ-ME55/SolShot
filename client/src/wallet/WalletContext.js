@@ -128,7 +128,14 @@ export function useSolShotWallet() {
 // ─── Inner provider (Privy-only) ───────────────────────────────────────
 
 function SolShotWalletInner({ children }) {
-    const { ready: privyReady, authenticated: privyAuthed, logout: privyLogout } = usePrivy();
+    const {
+        ready: privyReady,
+        authenticated: privyAuthed,
+        logout: privyLogout,
+        user: privyUser,
+        linkEmail: privyLinkEmail,
+        linkTelegram: privyLinkTelegram,
+    } = usePrivy();
     // useLogin gives us onComplete + onError callbacks (usePrivy().login
     // does not). onComplete fires after successful auth with the user
     // object + isNewUser flag — we use isNewUser to flag the welcome
@@ -627,6 +634,56 @@ function SolShotWalletInner({ children }) {
      * @param {string} [opts.cluster] — 'devnet' | 'mainnet-beta' (defaults to NETWORK)
      * @returns {Promise<boolean>} — true if modal opened, false otherwise
      */
+    /**
+     * Recovery status — what login methods does the user have linked?
+     * If they only have one (e.g. just Telegram), losing access to that
+     * account means losing the wallet. Two methods = recoverable.
+     *
+     * Returns { hasEmail, hasTelegram, hasWallet (external), needsRecovery }
+     * where `needsRecovery` is true if user has only one auth method.
+     */
+    const recoveryStatus = useMemo(() => {
+        const hasEmail = !!(privyUser?.email?.address || privyUser?.linkedAccounts?.some?.((a) => a.type === 'email'));
+        const hasTelegram = !!(privyUser?.telegram?.telegramUserId || privyUser?.linkedAccounts?.some?.((a) => a.type === 'telegram'));
+        const hasExternalWallet = !!(privyUser?.linkedAccounts?.some?.((a) => a.type === 'wallet' && a.walletClient !== 'privy'));
+        const methodCount = (hasEmail ? 1 : 0) + (hasTelegram ? 1 : 0) + (hasExternalWallet ? 1 : 0);
+        return {
+            hasEmail,
+            hasTelegram,
+            hasExternalWallet,
+            needsRecovery: privyAuthed && methodCount < 2,
+        };
+    }, [privyUser, privyAuthed]);
+
+    /**
+     * Open Privy's "link an email" modal. Lets a TG-logged-in user add
+     * email as a recovery method (or vice versa). Idempotent — returns
+     * false if the user already has an email linked.
+     */
+    const linkEmailRecovery = useCallback(async () => {
+        if (!privyAuthed || !privyLinkEmail) return false;
+        if (recoveryStatus.hasEmail) return false;
+        try {
+            await privyLinkEmail();
+            return true;
+        } catch (err) {
+            console.warn('[Privy] linkEmail failed:', err?.message || err);
+            return false;
+        }
+    }, [privyAuthed, privyLinkEmail, recoveryStatus]);
+
+    const linkTelegramRecovery = useCallback(async () => {
+        if (!privyAuthed || !privyLinkTelegram) return false;
+        if (recoveryStatus.hasTelegram) return false;
+        try {
+            await privyLinkTelegram();
+            return true;
+        } catch (err) {
+            console.warn('[Privy] linkTelegram failed:', err?.message || err);
+            return false;
+        }
+    }, [privyAuthed, privyLinkTelegram, recoveryStatus]);
+
     const fundWallet = useCallback(async ({ amount, cluster } = {}) => {
         if (!privyAuthed || !privyFundSolanaWalletFn) return false;
         if (!privyWallet?.address) return false;
@@ -665,6 +722,11 @@ function SolShotWalletInner({ children }) {
         signAndBurnShot,
         openPrivyAccount,
         fundWallet,
+        // Recovery / linking — for the "secure your account" flow that
+        // lets a TG-only user add email as a backup (or vice versa).
+        recoveryStatus,
+        linkEmailRecovery,
+        linkTelegramRecovery,
         // Set to true once after a fresh first-time sign-in. Screens read
         // this to show a "Welcome — add SOL?" prompt, then call
         // clearFreshSignIn() to dismiss.
@@ -690,6 +752,7 @@ function SolShotWalletInner({ children }) {
         balance, refreshBalance, walletAddress, connected, isAuthenticated, authenticate,
         login, logout, shotBalance, prestigeInfo, signAndSendEscrowDeposit, signAndSendGroupDeposit, signAndBurnShot,
         openPrivyAccount, fundWallet, isFreshSignIn,
+        recoveryStatus, linkEmailRecovery, linkTelegramRecovery,
         activeSource, privyReady, privyAuthed, privyWalletsReady, publicKey, privyWallet,
     ]);
 
@@ -763,6 +826,9 @@ const LOCAL_DEV_FALLBACK_VALUE = {
     fundWallet: async () => false,
     isFreshSignIn: false,
     clearFreshSignIn: () => {},
+    recoveryStatus: { hasEmail: false, hasTelegram: false, hasExternalWallet: false, needsRecovery: false },
+    linkEmailRecovery: async () => false,
+    linkTelegramRecovery: async () => false,
     source: null,
     privyReady: false,
     privyAuthed: false,

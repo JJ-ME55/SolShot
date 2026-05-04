@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useSolShotWallet } from '../../wallet/WalletContext';
 
 /**
@@ -7,10 +7,10 @@ import { useSolShotWallet } from '../../wallet/WalletContext';
  * Right-side cluster shows different things depending on wallet state:
  *   - Disconnected: SIGN IN button that opens Privy's modal (email or
  *     Telegram login → embedded Solana wallet provisioned silently).
- *   - Connected: SHOT + SOL balances, plus a small truncated address pill
- *     - Single-tap: copy address to clipboard
- *     - Double-tap: open Privy's wallet-management modal (export key,
- *       full address view)
+ *   - Connected: SHOT + SOL balances, plus an address pill + chevron menu
+ *     - Single-tap pill: copy address (still works, fast path)
+ *     - Tap chevron: menu with Copy / Add SOL / Manage / Sign Out and
+ *       (when needed) a "Secure your account" recovery prompt.
  *
  * Privy is the single sign-in path. The wallet-adapter (Phantom/Solflare
  * extension auto-connect) was stripped to simplify UX to a two-button
@@ -24,17 +24,37 @@ export default function DesignTopBar({
   solBalance = 0,
   badgeSrc,
 }) {
-  const { walletAddress, connected, login, openPrivyAccount } = useSolShotWallet();
-  const [copied, setCopied] = React.useState(false);
+  const {
+    walletAddress,
+    connected,
+    login,
+    logout,
+    openPrivyAccount,
+    fundWallet,
+    recoveryStatus,
+    linkEmailRecovery,
+    linkTelegramRecovery,
+  } = useSolShotWallet();
+  const [copied, setCopied] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
 
-  // Connect handler — opens Privy login modal (email + Telegram options).
+  // Close menu on outside click
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [menuOpen]);
+
   const handleConnect = () => {
     if (login) login();
   };
 
-  // Single-tap — copy the full Solana address to the clipboard so the
-  // user can paste it into a funding source (CEX withdrawal, friend's
-  // app, etc.). Double-tap opens Privy's account modal (handled below).
   const handlePillClick = async () => {
     if (!walletAddress) return;
     try {
@@ -42,21 +62,56 @@ export default function DesignTopBar({
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch (err) {
-      // Clipboard API not available (e.g. http context) — silent
+      // Clipboard unavailable — fall through silently
     }
   };
 
-  // Double-tap — opens Privy's built-in account modal (full address +
-  // private-key reveal). No-op if Privy isn't ready (dev-mode fallback).
-  const handlePillDoubleClick = async () => {
-    if (openPrivyAccount) {
-      await openPrivyAccount();
-    }
+  // Menu actions
+  const doCopy = async () => {
+    setMenuOpen(false);
+    await handlePillClick();
+  };
+  const doFund = async () => {
+    setMenuOpen(false);
+    if (fundWallet) await fundWallet({ amount: '0.05' });
+  };
+  const doManage = async () => {
+    setMenuOpen(false);
+    if (openPrivyAccount) await openPrivyAccount();
+  };
+  const doSignOut = async () => {
+    setMenuOpen(false);
+    if (logout) await logout();
+  };
+  const doLinkEmail = async () => {
+    setMenuOpen(false);
+    if (linkEmailRecovery) await linkEmailRecovery();
+  };
+  const doLinkTelegram = async () => {
+    setMenuOpen(false);
+    if (linkTelegramRecovery) await linkTelegramRecovery();
   };
 
   const addrShort = walletAddress
     ? `${walletAddress.slice(0, 4)}…${walletAddress.slice(-4)}`
     : null;
+
+  // Menu item style helper — keeps the loop below readable
+  const menuItemStyle = (highlight = false) => ({
+    display: 'block',
+    width: '100%',
+    textAlign: 'left',
+    padding: '8px 12px',
+    background: highlight ? 'rgba(255, 178, 0, 0.08)' : 'transparent',
+    border: 'none',
+    borderBottom: '1px solid var(--border)',
+    color: highlight ? 'var(--accent)' : 'var(--bone)',
+    fontFamily: 'var(--f-mono)',
+    fontSize: 10,
+    letterSpacing: '0.18em',
+    cursor: 'pointer',
+    transition: 'background 0.1s',
+  });
 
   return (
     <div style={{
@@ -81,26 +136,91 @@ export default function DesignTopBar({
           <>
             <span style={{ color: 'var(--accent)' }}>&#9670; {shotBalance.toLocaleString()} SHOT</span>
             <span style={{ color: 'var(--bone)' }}>&#9671; {solBalance.toFixed(2)} SOL</span>
-            <button
-              type="button"
-              onClick={handlePillClick}
-              onDoubleClick={handlePillDoubleClick}
-              title={`${walletAddress}\n\nClick to copy · Double-click to manage wallet`}
-              style={{
-                fontFamily: 'var(--f-mono)',
-                fontSize: 10,
-                letterSpacing: '0.18em',
-                background: copied ? 'var(--accent)' : 'var(--bg-raised)',
-                color: copied ? 'var(--bg-deep)' : 'var(--olive)',
-                border: '1px solid var(--border)',
-                padding: '5px 9px',
-                cursor: 'pointer',
-                clipPath: 'polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px))',
-                transition: 'background 0.15s, color 0.15s',
-              }}
-            >
-              {copied ? 'COPIED' : addrShort}
-            </button>
+            <div ref={menuRef} style={{ position: 'relative', display: 'flex', alignItems: 'stretch', gap: 0 }}>
+              <button
+                type="button"
+                onClick={handlePillClick}
+                title={`${walletAddress}\n\nClick to copy · Open menu →`}
+                style={{
+                  fontFamily: 'var(--f-mono)',
+                  fontSize: 10,
+                  letterSpacing: '0.18em',
+                  background: copied ? 'var(--accent)' : 'var(--bg-raised)',
+                  color: copied ? 'var(--bg-deep)' : 'var(--olive)',
+                  border: '1px solid var(--border)',
+                  borderRight: 'none',
+                  padding: '5px 9px',
+                  cursor: 'pointer',
+                  transition: 'background 0.15s, color 0.15s',
+                }}
+              >
+                {copied ? 'COPIED' : addrShort}
+              </button>
+              <button
+                type="button"
+                onClick={() => setMenuOpen((v) => !v)}
+                title="Wallet menu"
+                aria-label="Open wallet menu"
+                style={{
+                  fontFamily: 'var(--f-mono)',
+                  fontSize: 10,
+                  background: menuOpen ? 'var(--accent)' : 'var(--bg-raised)',
+                  color: menuOpen ? 'var(--bg-deep)' : 'var(--olive)',
+                  border: '1px solid var(--border)',
+                  padding: '5px 7px',
+                  cursor: 'pointer',
+                  clipPath: 'polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px))',
+                  transition: 'background 0.15s, color 0.15s',
+                }}
+              >
+                {menuOpen ? '▴' : '▾'}
+              </button>
+              {menuOpen && (
+                <div style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 4px)',
+                  right: 0,
+                  minWidth: 200,
+                  background: 'var(--bg-raised)',
+                  border: '1px solid var(--border)',
+                  boxShadow: '0 6px 24px rgba(0, 0, 0, 0.5)',
+                  zIndex: 100,
+                  // Non-clipped corners — clip only outer container
+                  clipPath: 'polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px))',
+                }}>
+                  {recoveryStatus?.needsRecovery && (
+                    <>
+                      {!recoveryStatus.hasEmail && (
+                        <button type="button" onClick={doLinkEmail} style={menuItemStyle(true)}>
+                          ⚠ ADD EMAIL BACKUP
+                        </button>
+                      )}
+                      {!recoveryStatus.hasTelegram && (
+                        <button type="button" onClick={doLinkTelegram} style={menuItemStyle(true)}>
+                          ⚠ ADD TELEGRAM BACKUP
+                        </button>
+                      )}
+                    </>
+                  )}
+                  <button type="button" onClick={doCopy} style={menuItemStyle()}>
+                    COPY ADDRESS
+                  </button>
+                  <button type="button" onClick={doFund} style={menuItemStyle()}>
+                    + ADD SOL
+                  </button>
+                  <button type="button" onClick={doManage} style={menuItemStyle()}>
+                    EXPORT KEY
+                  </button>
+                  <button
+                    type="button"
+                    onClick={doSignOut}
+                    style={{ ...menuItemStyle(), borderBottom: 'none', color: 'var(--olive)' }}
+                  >
+                    SIGN OUT
+                  </button>
+                </div>
+              )}
+            </div>
           </>
         ) : (
           <button

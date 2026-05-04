@@ -1872,3 +1872,71 @@ This was the highest-value piece. Privy provisions an embedded wallet on solshot
 **State:** uncommitted on `main`. ESLint + node `--check` + smoke import test all pass. Ready for JJ to commit (suggested message: `feat(auth): magic-link TG↔wallet binding for Privy users + topbar account modal`) and a real end-to-end test.
 
 — main-claude
+
+---
+
+### 2026-05-04 (late) — `[main-claude]` — STATUS: full Privy audit + 6 phases shipped
+
+JJ asked for a comprehensive audit of the Privy integration with the brief: *"AAA game that doesn't feel like crypto, but crypto users are satisfied — and it can be decentralized (take your keys) if you want."* Audited every Privy touchpoint against canonical docs (via the new `mcp__7520e34b-...__search_privy_docs` MCP at `https://docs.privy.io/mcp`, configured per JJ's request in `.claude.json` at the SolShot project), produced an 11-item friction-reduction backlog, then shipped 9 of the 11 in 6 commits.
+
+**Commits this session (after the 5cf0107 Privy-only baseline):**
+- `1c13e33` — auto-open Privy login when linkToken in URL + unauthed
+- `4155d69` — wallet-by-name + silent auth modal + delete dead JS files (Phase 1)
+- `0b2cae2` — bot `login_url:` for silent Privy auto-sign-in in DM contexts (Phase 2)
+- `ddb316d` — Apple/Google Pay funding via `useFundWallet` + useLogin onComplete (Phase 3)
+- `fba2957` — retry `createOnLogin: 'users-without-wallets'` (Phase 4)
+- `367c362` — cross-link recovery + discoverable wallet menu (Phase 5)
+- `2f165a4` — remove 8 dead npm packages + their transitive forest (Phase 6)
+
+**Net: -14,500 package-lock entries, -267 src LoC, +substantial UX.**
+
+**Privy MCP correctness wins** (things the search-then-cat-mdx workflow caught that I would have guessed wrong):
+- `useLoginWithTelegram` is for the Login Widget popup flow specifically; `linkTelegram({launchParams})` is for binding TG to an existing user via Mini App initData — different APIs, easy to confuse.
+- The seamless TG auto-login is *automatic* once dashboard checkbox + bot button type are right; no client-side hook call needed (canonical: *"You do not have to call `login` from the `usePrivy` hook in this case!"*).
+- Both `web_app:` AND `login_url:` bot button types trigger Privy's auto-login. login_url: is safer for our architecture — works in TG in-app browser without re-introducing `telegram-web-app.js` (which broke Privy's modal in regular browsers).
+- `wallets[0]` was canonical-incorrect; the docs use `wallets.find(w => w.standardWallet.name === 'Privy')` — would matter if user ever links external wallet via Privy.
+- `useFundWallet` from `@privy-io/react-auth/solana` (NOT the EVM root export) is the Solana-specific funding hook with `cluster: { name: 'devnet' | 'mainnet-beta' }` instead of viem chain object.
+
+**What's deferred (still on the audit list):**
+- **H (MFA opt-in)** — Privy supports SMS/TOTP/Passkey MFA. ~50 LoC for an opt-in settings panel + dashboard toggle. Deferred until there's a Settings/Account screen to host it. Crypto-power-user signal.
+- **I (mainnet RPC retest)** — Currently sign-only + manual broadcast (workaround for unreliable Privy hosted devnet RPC). Worth retesting `useSignAndSendTransaction` on mainnet — would simplify `sendTransactionUnified` from 18 LoC to 3. Not blocking; current path works.
+
+**Dashboard tasks awaiting JJ (3 toggles):**
+1. Login Methods → Telegram → tick **"Enable login directly from the Telegram app"** (Phase 2 / login_url)
+2. User management → Account funding → enable **"Pay with card"** + set default 0.05 SOL on Solana devnet (Phase 3)
+3. (Deferred) MFA methods (Phase H, when we get there)
+
+**Key UX deltas for fresh users now:**
+
+| Action | Before | After |
+|---|---|---|
+| Sign in via TG (DM) | 3 steps: phone entry → confirm in TG → return | 1 step: "Allow @SolShotGG_bot to log you in?" → tap |
+| Buy SOL to wager | "Copy address → leave game → exchange → withdraw → wait → return" (~30 min, ~50% drop-off) | Tap "+ ADD SOL" in wallet menu → Apple Pay → 30s |
+| Find wallet management | Hidden double-click on pill | Visible chevron → menu |
+| Sign out | Possible in code, no UI | Menu item |
+| Recovery if you lose TG | None — wallet stranded | Menu prompt to add email backup |
+
+**Test path for next session:**
+1. Run `/play` from a fresh TG account → silent Privy auto-sign-in → verify "Wallet bound to TG user" in console
+2. Pick Wagered → 0.5 SOL (more than starting balance) → Find Match → Apple Pay modal opens (test mode is fine on devnet)
+3. Tap chevron next to address pill → verify menu opens with all 4-5 items + recovery prompts if user has only one auth method
+4. Settle a 1v1 wagered match end-to-end with the cleaned stack
+5. Repeat for 4-player groupchat
+
+**Files changed this session (cumulative):**
+- `client/src/wallet/WalletContext.js` — major surgery (useLogin, useFundWallet, recovery hooks, cleanup)
+- `client/src/components/design/TopBar.js` — full menu rewrite
+- `client/src/screens/LobbyScreen.js` — balance gate on createRoom + joinRoom
+- `client/public/index.html` — removed dead script tag, CSP tightened
+- `server/services/bot.js` — login_url: in DM contexts, 26 call sites updated via Python regex
+- `server/services/groupchat/index.js` — wagered-join error message updated
+- `server/services/groupchat/lifecycle.js` — wagered start error message updated
+- `server/services/walletLinkTokens.js` — new (magic-link binding store)
+- `server/services/users.js` — unchanged (existing linkTelegramIdentity does the work)
+- `server/index.js` — new POST /api/wallet/link-from-tg-token endpoint
+- `client/package.json` + `package-lock.json` — 8 deps removed
+- Deleted: `client/src/wallet/JupiterMobileAdapter.js`, `client/src/components/JupiterSwap.js`
+
+Stack is now: Privy embedded wallets (email + TG login) → Solana → escrow programs (v1 1v1, v2 N-player groupchat). No wallet-adapter, no Reown, no WalletConnect. Single sign-in path. Apple/Google Pay onramp inline.
+
+— main-claude

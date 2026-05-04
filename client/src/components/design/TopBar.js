@@ -1,20 +1,20 @@
 import React from 'react';
-import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { useSolShotWallet } from '../../wallet/WalletContext';
 
 /**
  * DesignTopBar — header used on Menu + similar hero screens.
  *
  * Right-side cluster shows different things depending on wallet state:
- *   - Disconnected: SIGN IN button that opens Privy's modal (email +
- *     embedded Solana wallet for new users; existing wallets still
- *     supported via Privy's external-wallet picker). Falls back to the
- *     wallet-adapter modal if Privy isn't configured (dev-mode default).
+ *   - Disconnected: SIGN IN button that opens Privy's modal (email or
+ *     Telegram login → embedded Solana wallet provisioned silently).
  *   - Connected: SHOT + SOL balances, plus a small truncated address pill
+ *     - Single-tap: copy address to clipboard
+ *     - Double-tap: open Privy's wallet-management modal (export key,
+ *       full address view)
  *
- * Phase 2 of the Syndicate-pattern migration: Privy embedded wallet
- * replaces the wallet-adapter-only flow. Email login auto-provisions a
- * Solana wallet silently — first match should be one tap to start.
+ * Privy is the single sign-in path. The wallet-adapter (Phantom/Solflare
+ * extension auto-connect) was stripped to simplify UX to a two-button
+ * sign-in: Email or Telegram.
  */
 export default function DesignTopBar({
   callsign = 'OPERATIVE',
@@ -24,51 +24,34 @@ export default function DesignTopBar({
   solBalance = 0,
   badgeSrc,
 }) {
-  const { walletAddress, connected, login: privyLogin, source, openPrivyAccount } = useSolShotWallet();
-  const { setVisible } = useWalletModal();
+  const { walletAddress, connected, login, openPrivyAccount } = useSolShotWallet();
   const [copied, setCopied] = React.useState(false);
 
-  // Connect handler — prefer Privy login modal (embedded wallet flow).
-  // If Privy isn't configured (dev mode), fall back to wallet-adapter modal.
+  // Connect handler — opens Privy login modal (email + Telegram options).
   const handleConnect = () => {
-    if (privyLogin) {
-      privyLogin();
-    } else {
-      setVisible(true);
-    }
+    if (login) login();
   };
 
-  // Single-tap — copies the full Solana address to the clipboard so the
-  // user can paste it into a funding source (Phantom on another device,
-  // exchange withdrawal, etc.). For wallet-adapter users we also open
-  // the wallet-adapter modal (which has change-wallet / disconnect).
-  // For Privy users, double-tap opens the Privy account modal (handled
-  // separately via onDoubleClick) — single-tap just copies.
+  // Single-tap — copy the full Solana address to the clipboard so the
+  // user can paste it into a funding source (CEX withdrawal, friend's
+  // app, etc.). Double-tap opens Privy's account modal (handled below).
   const handlePillClick = async () => {
-    if (walletAddress) {
-      try {
-        await navigator.clipboard.writeText(walletAddress);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      } catch (err) {
-        // Clipboard API not available (e.g. http context) — fall through to modal
-      }
-    }
-    if (source !== 'privy') {
-      setVisible(true);
+    if (!walletAddress) return;
+    try {
+      await navigator.clipboard.writeText(walletAddress);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch (err) {
+      // Clipboard API not available (e.g. http context) — silent
     }
   };
 
-  // Double-tap — opens Privy's built-in account modal (full address,
-  // balance, copy, export private key). For adapter users, falls back
-  // to the wallet-adapter modal which has the equivalent controls.
+  // Double-tap — opens Privy's built-in account modal (full address +
+  // private-key reveal). No-op if Privy isn't ready (dev-mode fallback).
   const handlePillDoubleClick = async () => {
-    if (source === 'privy' && openPrivyAccount) {
-      const opened = await openPrivyAccount();
-      if (opened) return;
-      // Fall through to adapter modal if Privy export failed
+    if (openPrivyAccount) {
+      await openPrivyAccount();
     }
-    setVisible(true);
   };
 
   const addrShort = walletAddress

@@ -39,6 +39,7 @@ import {
     useSignMessage as usePrivySignMessage,
     useSignAndSendTransaction as usePrivySignAndSend,
     useCreateWallet as usePrivyCreateSolanaWallet,
+    defaultSolanaRpcsPlugin,
 } from '@privy-io/react-auth/solana';
 
 // Jupiter Mobile adapter via Reown/WalletConnect (JUP-01) — kept on the
@@ -54,6 +55,10 @@ const NETWORK = process.env.REACT_APP_SOLANA_NETWORK || 'devnet';
 const RPC_URL = process.env.REACT_APP_SOLANA_RPC || clusterApiUrl(NETWORK);
 const REOWN_PROJECT_ID = process.env.REACT_APP_REOWN_PROJECT_ID || '';
 const PRIVY_APP_ID = process.env.REACT_APP_PRIVY_APP_ID || '';
+// Privy uses Solana standard chain identifiers (solana:mainnet / solana:devnet).
+// Without an explicit `chain` arg, signAndSendTransaction defaults to mainnet
+// (verified in the SDK source). Mismatch with our actual network breaks signing.
+const PRIVY_SOLANA_CHAIN = NETWORK === 'mainnet-beta' ? 'solana:mainnet' : 'solana:devnet';
 
 const SHOT_TOKEN_MINT = process.env.REACT_APP_SHOT_TOKEN_MINT
     ? new PublicKey(process.env.REACT_APP_SHOT_TOKEN_MINT)
@@ -162,7 +167,13 @@ function SolShotWalletInner({ children }) {
                 console.log('[Privy] Embedded Solana wallet created:', result?.wallet?.address || '(no address returned)');
             })
             .catch((err) => {
-                console.error('[Privy] Failed to create embedded Solana wallet:', err?.message || err);
+                const msg = err?.message || String(err);
+                if (msg.includes('already has an embedded wallet')) {
+                    // Wallet was created in a previous session — useWallets()
+                    // will pick it up on its next render. Not an error.
+                    return;
+                }
+                console.error('[Privy] Failed to create embedded Solana wallet:', msg);
             })
             .finally(() => {
                 setCreateWalletInFlight(false);
@@ -297,6 +308,9 @@ function SolShotWalletInner({ children }) {
             const result = await privySignAndSendFn({
                 transaction: new Uint8Array(serialized),
                 wallet: privyWallet,
+                // CRITICAL: pass explicit chain — Privy defaults to solana:mainnet
+                // which doesn't match our devnet RPC config.
+                chain: PRIVY_SOLANA_CHAIN,
             });
             // signature is Uint8Array — convert to base58 (Solana TX-signature format)
             return bs58.encode(result.signature);
@@ -625,6 +639,12 @@ const PRIVY_CONFIG = {
         logo: '/og-preview.png',
         landingHeader: 'Sign in to SolShot',
     },
+    // Register Privy's hosted Solana RPC plugin. Without it, Privy's
+    // signAndSendTransaction throws "No RPC configuration found for
+    // chain solana:mainnet" because the SDK doesn't know how to reach
+    // any Solana RPC by default. The plugin provides hosted endpoints
+    // for both mainnet and devnet via privy.systems.
+    plugins: [defaultSolanaRpcsPlugin()],
 };
 
 export function SolShotWalletProvider({ children }) {

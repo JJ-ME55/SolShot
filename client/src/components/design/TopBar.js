@@ -24,7 +24,7 @@ export default function DesignTopBar({
   solBalance = 0,
   badgeSrc,
 }) {
-  const { walletAddress, connected, login: privyLogin, source } = useSolShotWallet();
+  const { walletAddress, connected, login: privyLogin, source, openPrivyAccount } = useSolShotWallet();
   const { setVisible } = useWalletModal();
   const [copied, setCopied] = React.useState(false);
 
@@ -38,12 +38,12 @@ export default function DesignTopBar({
     }
   };
 
-  // Pill click — copies the full Solana address to the clipboard so the
+  // Single-tap — copies the full Solana address to the clipboard so the
   // user can paste it into a funding source (Phantom on another device,
   // exchange withdrawal, etc.). For wallet-adapter users we also open
-  // the wallet-adapter modal (which has change-wallet / disconnect),
-  // because Privy users can manage their wallet via the Privy modal
-  // separately.
+  // the wallet-adapter modal (which has change-wallet / disconnect).
+  // For Privy users, double-tap opens the Privy account modal (handled
+  // separately via onDoubleClick) — single-tap just copies.
   const handlePillClick = async () => {
     if (walletAddress) {
       try {
@@ -57,6 +57,18 @@ export default function DesignTopBar({
     if (source !== 'privy') {
       setVisible(true);
     }
+  };
+
+  // Double-tap — opens Privy's built-in account modal (full address,
+  // balance, copy, export private key). For adapter users, falls back
+  // to the wallet-adapter modal which has the equivalent controls.
+  const handlePillDoubleClick = async () => {
+    if (source === 'privy' && openPrivyAccount) {
+      const opened = await openPrivyAccount();
+      if (opened) return;
+      // Fall through to adapter modal if Privy export failed
+    }
+    setVisible(true);
   };
 
   const addrShort = walletAddress
@@ -89,7 +101,8 @@ export default function DesignTopBar({
             <button
               type="button"
               onClick={handlePillClick}
-              title={`${walletAddress}\n\nClick to copy`}
+              onDoubleClick={handlePillDoubleClick}
+              title={`${walletAddress}\n\nClick to copy · Double-click to manage wallet`}
               style={{
                 fontFamily: 'var(--f-mono)',
                 fontSize: 10,

@@ -43,6 +43,7 @@ import {
     // our own wallet-adapter Connection (api.devnet.solana.com) instead.
     useSignTransaction as usePrivySignTransaction,
     useCreateWallet as usePrivyCreateSolanaWallet,
+    useExportWallet as usePrivyExportSolanaWallet,
     defaultSolanaRpcsPlugin,
 } from '@privy-io/react-auth/solana';
 
@@ -166,6 +167,11 @@ function SolShotWalletInner({ children }) {
     const { signMessage: privySignMessageFn } = usePrivySignMessage();
     const { signTransaction: privySignTransactionFn } = usePrivySignTransaction();
     const { createWallet: privyCreateSolanaWallet } = usePrivyCreateSolanaWallet();
+    // Solana-specific exportWallet — opens an iframe-isolated modal showing
+    // the user's embedded wallet address + private-key reveal. usePrivy()
+    // also exposes exportWallet but its docs explicitly say "Ethereum
+    // address", so the Solana hook is the correct path here.
+    const { exportWallet: privyExportSolanaWalletFn } = usePrivyExportSolanaWallet();
 
     // Manual wallet creation after authentication — replaces the broken
     // `createOnLogin: 'users-without-wallets'` auto-create flow that
@@ -264,6 +270,55 @@ function SolShotWalletInner({ children }) {
     const walletAddress = useMemo(() => {
         return publicKey ? publicKey.toBase58() : null;
     }, [publicKey]);
+
+    // ─── Phase 2B: TG-wallet binding via magic link ────────────────────────
+    //
+    // When a Telegram user runs /link in the bot, they receive a URL like
+    //   https://solshot.gg/?linkToken=<base64url-32-bytes>
+    // After Privy provisions their embedded Solana wallet, we POST the
+    // token + wallet address back to the server, which calls
+    // linkTelegramIdentity to write the binding onto the User doc.
+    // Without this, Privy users cannot join wagered groupchat matches
+    // (handleJoinCallback gates on User.walletAddress).
+    //
+    // The token is single-use and 10-min TTL, so we only run this once
+    // per page load. We strip the token from the URL on success/failure
+    // so a refresh doesn't try to reuse it.
+    const [linkTokenAttempted, setLinkTokenAttempted] = useState(false);
+    useEffect(() => {
+        if (linkTokenAttempted) return;
+        if (!walletAddress) return;
+        const params = new URLSearchParams(window.location.search);
+        const token = params.get('linkToken');
+        if (!token) return;
+        setLinkTokenAttempted(true);
+        const serverUrl = process.env.REACT_APP_SERVER_URL || 'http://localhost:5001';
+        fetch(`${serverUrl}/api/wallet/link-from-tg-token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token, walletAddress }),
+        })
+            .then(async (resp) => {
+                const body = await resp.json().catch(() => ({}));
+                if (resp.ok) {
+                    console.log('[link] Wallet bound to TG user', body.telegramUserId);
+                } else {
+                    console.warn('[link] Token bind failed:', resp.status, body.error);
+                }
+            })
+            .catch((err) => {
+                console.warn('[link] Bind request errored:', err?.message || err);
+            })
+            .finally(() => {
+                // Strip linkToken from URL so a refresh doesn't replay
+                try {
+                    params.delete('linkToken');
+                    const qs = params.toString();
+                    const newUrl = window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash;
+                    window.history.replaceState({}, '', newUrl);
+                } catch (_) { /* ignore */ }
+            });
+    }, [walletAddress, linkTokenAttempted]);
 
     // Fetch SOL balance for the active wallet
     const refreshBalance = useCallback(async () => {
@@ -543,6 +598,26 @@ function SolShotWalletInner({ children }) {
         // force-disconnect here because users may want to swap accounts.
     }, [privyLogout, privyAuthed]);
 
+    // Open Privy's built-in account modal (shows full address + private-key
+    // export). Only meaningful for embedded-wallet users — for adapter
+    // users, callers should fall back to the wallet-adapter modal. Wrapped
+    // so missing/unavailable Privy doesn't throw.
+    //
+    // We pass the explicit Solana wallet address because the default
+    // selection picks the user's first embedded wallet, which would be
+    // wrong if they ever link an EVM wallet alongside Solana.
+    const openPrivyAccount = useCallback(async () => {
+        if (!privyAuthed || !privyExportSolanaWalletFn) return false;
+        if (!privyWallet?.address) return false;
+        try {
+            await privyExportSolanaWalletFn({ address: privyWallet.address });
+            return true;
+        } catch (err) {
+            console.warn('[Privy] exportWallet failed:', err?.message || err);
+            return false;
+        }
+    }, [privyAuthed, privyExportSolanaWalletFn, privyWallet]);
+
     const value = useMemo(() => ({
         balance,
         refreshBalance,
@@ -557,6 +632,7 @@ function SolShotWalletInner({ children }) {
         signAndSendEscrowDeposit,
         signAndSendGroupDeposit,
         signAndBurnShot,
+        openPrivyAccount,
         // Source = which wallet path is active
         source: activeSource,
         privyReady,
@@ -577,6 +653,7 @@ function SolShotWalletInner({ children }) {
     }), [
         balance, refreshBalance, walletAddress, connected, isAuthenticated, authenticate,
         login, logout, shotBalance, prestigeInfo, signAndSendEscrowDeposit, signAndSendGroupDeposit, signAndBurnShot,
+        openPrivyAccount,
         activeSource, privyReady, privyAuthed, publicKey, privyWallet, adapterConnected,
     ]);
 

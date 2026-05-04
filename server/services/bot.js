@@ -21,6 +21,7 @@
 
 import { Telegraf } from 'telegraf';
 import { lookupUserByTelegramId, getTopPlayers, getPlayerRank } from './users.js';
+import { mintLinkToken } from './walletLinkTokens.js';
 import { PRESTIGE_TIERS } from './shot-token.js';
 import { getOrCreateReferralCode, buildInviteLink, REFERRAL_REWARD_SHOT } from './referrals.js';
 import { getChallenge, markAccepted } from './challenge/challenge.js';
@@ -80,13 +81,57 @@ export function initBot() {
  * nested iframe). Until SolShot picks a wallet path that works
  * cross-surface, the launcher stays simple.
  */
-function launchKeyboard(label, startapp = '') {
-  const url = startapp
-    ? `${MINI_APP_URL}?startapp=${encodeURIComponent(startapp)}`
-    : MINI_APP_URL;
+/**
+ * Build a launch URL with optional startapp + linkToken query params.
+ * Used by both launchKeyboard (single button) and the inline-keyboard
+ * builders (multi-button menus like /play).
+ */
+function buildLaunchUrl(startapp = '', linkToken = null) {
+  const params = new URLSearchParams();
+  if (startapp) params.set('startapp', startapp);
+  if (linkToken) params.set('linkToken', linkToken);
+  const qs = params.toString();
+  return MINI_APP_URL + (qs ? '?' + qs : '');
+}
+
+function launchKeyboard(label, startapp = '', linkToken = null) {
   return {
-    inline_keyboard: [[{ text: label, url }]],
+    inline_keyboard: [[{ text: label, url: buildLaunchUrl(startapp, linkToken) }]],
   };
+}
+
+/**
+ * Mint a one-shot wallet-link token IF the calling TG user has no wallet
+ * binding yet, AND the call is happening in a private DM (never in a
+ * group, where the URL would be visible to everyone).
+ *
+ * Embedded as `?linkToken=` in launch URLs so that when the user opens
+ * solshot.gg, the WalletContext useEffect POSTs the token + the wallet
+ * Privy provisions back to the server, silently binding the TG id to
+ * the wallet. No /link step required.
+ *
+ * Returns null if:
+ *   - No ctx.from.id (shouldn't happen for command handlers but defensive)
+ *   - Chat is not private DM (group launch URLs are public)
+ *   - User already has walletAddress (binding done; no token needed)
+ *   - Lookup fails (fail-soft — never block the launch)
+ */
+async function mintLinkTokenIfNeeded(ctx) {
+  if (!ctx?.from?.id) return null;
+  if (ctx?.chat?.type !== 'private') return null;
+  try {
+    const user = await lookupUserByTelegramId(ctx.from.id);
+    if (user?.walletAddress) return null;
+    const { token } = mintLinkToken({
+      telegramUserId: ctx.from.id,
+      username: ctx.from?.username,
+      firstName: ctx.from?.first_name,
+    });
+    return token;
+  } catch (err) {
+    console.warn('[bot] mintLinkTokenIfNeeded failed:', err.message);
+    return null;
+  }
 }
 
 function registerCommands(bot) {
@@ -94,11 +139,12 @@ function registerCommands(bot) {
   // The payload (e.g. "/start join_xyz") arrives in ctx.startPayload.
   bot.start(async (ctx) => {
     const payload = ctx.startPayload || '';
+    const linkToken = await mintLinkTokenIfNeeded(ctx);
     await ctx.reply(
       'Welcome to SolShot — artillery duels on Solana.\n\n' +
       'Real money 1v1 matches. 20 weapons. Skill-based wagering.\n\n' +
       'Tap below to launch.',
-      { reply_markup: launchKeyboard('🎯 Launch SolShot', payload) }
+      { reply_markup: launchKeyboard('🎯 Launch SolShot', payload, linkToken) }
     );
   });
 
@@ -128,6 +174,10 @@ function registerCommands(bot) {
     }
 
     // DM context → full mode picker. Same buttons regardless of user state.
+    // We mint ONE link token for unbound users and embed it on every launch
+    // button. The first tap consumes the token; subsequent taps land at the
+    // PWA after binding completes and silently no-op on the bind step.
+    const linkToken = await mintLinkTokenIfNeeded(ctx);
     await ctx.reply(
       '🎯 SolShot — pick your pacing:\n\n' +
       '• 1v1 Quick: real-time match in the lobby (practice or wagered).\n' +
@@ -137,9 +187,9 @@ function registerCommands(bot) {
       {
         reply_markup: {
           inline_keyboard: [
-            [{ text: '⚡ 1v1 Quick',          url: `${MINI_APP_URL}?startapp=play` }],
-            [{ text: '🤖 vs Shot Bot',        url: `${MINI_APP_URL}?startapp=ai-practice` }],
-            [{ text: '⚔ Challenge a Friend', url: `${MINI_APP_URL}?startapp=challenge_new` }],
+            [{ text: '⚡ 1v1 Quick',          url: buildLaunchUrl('play', linkToken) }],
+            [{ text: '🤖 vs Shot Bot',        url: buildLaunchUrl('ai-practice', linkToken) }],
+            [{ text: '⚔ Challenge a Friend', url: buildLaunchUrl('challenge_new', linkToken) }],
             [{ text: '👥 Group chat (info)',  callback_data: 'play_pick_group' }],
           ],
         },
@@ -387,17 +437,21 @@ function registerCommands(bot) {
       const user = await lookupUserByTelegramId(ctx.from?.id);
       const callsign = (user?.handle || ctx.from?.first_name || 'OPERATIVE').toUpperCase();
 
-      // Case 1: no record yet — never played
+      // Case 1: no record yet — never played. The "Set Up Wallet" button
+      // embeds a fresh link token so opening it silently binds the TG id
+      // to whatever wallet Privy provisions.
       if (!user) {
+        const linkToken = await mintLinkTokenIfNeeded(ctx);
         return ctx.reply(
-          `${callsign}\n\nNo wallet yet. Open the Mini App and your Solana wallet is set up automatically — required for wagered matches and SHOT.`,
-          { reply_markup: launchKeyboard('Set Up Wallet', 'wallet') }
+          `${callsign}\n\nNo wallet yet. Tap below to set up your Solana wallet — required for wagered matches and SHOT.`,
+          { reply_markup: launchKeyboard('Set Up Wallet', 'wallet', linkToken) }
         );
       }
 
       // Case 2: TG-only user, wallet not yet provisioned (or provisioned but
       // not yet linked to this User doc). The Mini App auto-creates one via
-      // Dynamic on first open — they don't bring an external wallet.
+      // Privy on first open — they don't bring an external wallet. Same
+      // silent-bind flow via the embedded token.
       if (!user.walletAddress) {
         const tierIdx = user.stats?.prestigeTier || 0;
         const tierName = (PRESTIGE_TIERS[tierIdx] || PRESTIGE_TIERS[0]).name.toUpperCase();
@@ -410,12 +464,13 @@ function registerCommands(bot) {
         ];
         if (inGameShot > 0) {
           lines.push(`In-game SHOT: ${inGameShot.toLocaleString()}`);
-          lines.push('Open the Mini App to set up your wallet — your SHOT and earnings will sync.');
+          lines.push('Tap below to set up your Solana wallet — your SHOT and earnings will sync.');
         } else {
-          lines.push('Open the Mini App to set up your Solana wallet — needed to receive SHOT and wager SOL.');
+          lines.push('Tap below to set up your Solana wallet — needed to receive SHOT and wager SOL.');
         }
+        const linkToken = await mintLinkTokenIfNeeded(ctx);
         return ctx.reply(lines.join('\n'), {
-          reply_markup: launchKeyboard('Set Up Wallet', 'wallet'),
+          reply_markup: launchKeyboard('Set Up Wallet', 'wallet', linkToken),
         });
       }
 
@@ -461,6 +516,51 @@ function registerCommands(bot) {
         'Your wallet — balance, deposit, withdraw.',
         { reply_markup: launchKeyboard('Open Wallet', 'wallet') }
       );
+    }
+  });
+
+  // /link — mint a one-shot magic link that binds this Telegram user to
+  // whatever wallet they sign in with on solshot.gg. After Privy provisions
+  // their embedded Solana wallet, the PWA POSTs the token + wallet back to
+  // the server, which calls linkTelegramIdentity and writes the wallet to
+  // their User doc. Required for Privy users to join wagered groupchat
+  // matches (handleJoinCallback gates on User.walletAddress).
+  //
+  // DM-only: a token in a group reply would be visible to everyone. We
+  // refuse and instruct the user to DM instead.
+  bot.command('link', async (ctx) => {
+    if (ctx.chat?.type !== 'private') {
+      return ctx.reply(
+        'For security, link your wallet in DM with me — not in a group chat.\n\nDM @SolShotGG_bot and run /link there.'
+      );
+    }
+    try {
+      const tgId = ctx.from?.id;
+      if (!tgId) {
+        return ctx.reply('Could not read your Telegram id. Try again.');
+      }
+      const { token, expiresAt } = mintLinkToken({
+        telegramUserId: tgId,
+        username: ctx.from?.username,
+        firstName: ctx.from?.first_name,
+      });
+      const url = `${MINI_APP_URL}?linkToken=${encodeURIComponent(token)}`;
+      const minutes = Math.max(1, Math.round((expiresAt - Date.now()) / 60000));
+      await ctx.reply(
+        `Tap the button below to link your wallet.\n\n` +
+        `1. Sign in (or stay signed in) with your email\n` +
+        `2. Your Solana wallet auto-connects to your Telegram account\n` +
+        `3. You can now join wagered group matches\n\n` +
+        `Link expires in ~${minutes} min. Single use.`,
+        {
+          reply_markup: {
+            inline_keyboard: [[{ text: '🔗 Link Wallet', url }]],
+          },
+        }
+      );
+    } catch (err) {
+      console.warn('[bot:/link] failed:', err.message);
+      await ctx.reply('Could not generate a link token right now. Try again in a moment.');
     }
   });
 

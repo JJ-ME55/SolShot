@@ -184,7 +184,7 @@ async function beginWageredDepositPhase(match) {
     const missingWallets = match.players.filter(p => !p.walletAddress);
     if (missingWallets.length > 0) {
         const handles = missingWallets.map(p => `@${p.tgUsername || p.callsign}`).join(', ');
-        await postToChat(match.chatId, `⚠️ Match #${match.matchId} cannot start — these players have no linked wallet: ${handles}. They must link at solshot.gg first.`);
+        await postToChat(match.chatId, `⚠️ Match #${match.matchId} cannot start — these players have no linked wallet: ${handles}. They must DM @SolShotGG_bot and tap /play to set up first.`);
         return match;
     }
 

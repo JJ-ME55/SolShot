@@ -25,7 +25,8 @@ import {
     renderCardForChallenge,
     cancelChallenge,
 } from './services/challenge/challenge.js';
-import { lookupUserByTelegramId, getPlayerRank } from './services/users.js';
+import { lookupUserByTelegramId, getPlayerRank, linkTelegramIdentity } from './services/users.js';
+import { consumeLinkToken } from './services/walletLinkTokens.js';
 import { renderCareerCardPng } from './services/challenge/renderCareerCard.js';
 import { buildCareerProps } from './services/challenge/careerCardProps.js';
 
@@ -367,6 +368,58 @@ app.post('/api/challenge/:code/cancel', async (req, res) => {
     } catch (err) {
         console.error('[POST /api/challenge/:code/cancel]', err.message);
         res.status(500).json({ error: 'failed to cancel' });
+    }
+});
+
+// ─── Wallet ↔ Telegram linkage (Phase 2B) ───────────────────────────────
+//
+// POST /api/wallet/link-from-tg-token
+//   body: { token: string, walletAddress: string }
+//   Consumes a /link-issued one-shot token, validates the wallet address
+//   shape, and stamps the (telegramUserId, walletAddress) pair onto the
+//   User doc via linkTelegramIdentity. Single-use: token is burned on
+//   the first call regardless of outcome.
+//
+// Security: token is a 32-byte CSPRNG one-shot delivered via TG DM with
+// a 10-min TTL. For production, also verify a Privy access-token JWT in
+// the Authorization header so we know the caller actually owns the
+// wallet they're claiming. Devnet/hackathon: token-only is acceptable.
+app.post('/api/wallet/link-from-tg-token', async (req, res) => {
+    try {
+        const { token, walletAddress } = req.body || {};
+        if (!token || typeof token !== 'string') {
+            return res.status(400).json({ error: 'token required' });
+        }
+        if (!walletAddress || typeof walletAddress !== 'string') {
+            return res.status(400).json({ error: 'walletAddress required' });
+        }
+        // Minimal Solana base58 pubkey shape check (32 bytes ≈ 43–44 chars).
+        // Real validation happens inside linkTelegramIdentity / Mongo, but
+        // we reject obvious garbage early.
+        if (walletAddress.length < 32 || walletAddress.length > 64) {
+            return res.status(400).json({ error: 'walletAddress shape invalid' });
+        }
+        const entry = consumeLinkToken(token);
+        if (!entry) {
+            return res.status(404).json({ error: 'token_invalid_or_expired' });
+        }
+        const updated = await linkTelegramIdentity({
+            telegramUserId: entry.telegramUserId,
+            walletAddress,
+            username: entry.username || null,
+            firstName: entry.firstName || null,
+        });
+        if (!updated) {
+            return res.status(500).json({ error: 'link_failed' });
+        }
+        res.json({
+            ok: true,
+            telegramUserId: entry.telegramUserId,
+            walletAddress: updated.walletAddress || walletAddress,
+        });
+    } catch (err) {
+        console.error('[POST /api/wallet/link-from-tg-token]', err.message);
+        res.status(500).json({ error: 'failed to link wallet' });
     }
 });
 

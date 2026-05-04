@@ -291,7 +291,7 @@ async function handleJoinCallback(ctx) {
         const user = await lookupUserByTelegramId(ctx.from.id);
         if (!user?.walletAddress) {
             return ctx.answerCbQuery(
-                'Wagered match — link your wallet at solshot.gg first, then come back and tap Join.',
+                'Wagered match — DM @SolShotGG_bot and tap /play to set up your wallet (one tap, signs you in via email). Then come back and tap Join.',
                 { show_alert: true }
             );
         }

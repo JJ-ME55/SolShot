@@ -1786,3 +1786,89 @@ Wagered groupchat depends on three things from the Privy stack to actually play:
 If step 4 or step 7 fails, the binding write or the deposit-flow integration needs another pass.
 
 — main-claude
+
+
+---
+
+### 2026-05-04 (post-success) — `[main-claude]` — INVESTIGATION: Chrome mid-match crash
+
+**Trigger:** JJ reported Chrome crashed during the successful wagered match `7f5ac6e3` (after Privy login + several rounds played). Edge instance won by default. Hypothesis on the table: Phaser texture churn × Privy iframe memory.
+
+**Static-analysis findings (no heap snapshot available):**
+
+1. **Phaser teardown is correct.** `bridge/PhaserBootstrap.js:destroyBattle` calls `gameInstance.destroy(true)` and closes the WebAudio context first. `BattleScreen.js` `useEffect` mount/unmount lifecycle calls it on every screen exit. Not a retention leak.
+
+2. **No `new Connection()` per render.** WalletContext + screens use `useConnection()` from wallet-adapter (shared). No proliferation of WebSocket clients.
+
+3. **Weapon canvas churn is REAL but bounded.** `weapons/packs/Standard/Standard.js` allocates a `document.createElement('canvas')` on every `create()` call (40 sites in one file; ~50 across the codebase). Each is paired with `textures.exists() && textures.remove()` before `textures.addCanvas()`, so Phaser does release the texture, and the canvas should be GC'd. **But** during long matches, the GC pressure is sustained — every shot, every weapon swap. Browsers under memory pressure can OOM-kill a tab before GC catches up. This is NOT Privy-specific; it pre-dates the Privy migration. Worth fixing but probably not the immediate cause.
+
+4. **No event-listener leaks in WalletContext.** Zero `addEventListener` calls in the file. All Privy hook subscriptions are managed by the SDK.
+
+5. **Privy SDK iframe lifecycle is opaque to us.** Auth.privy.io, app.privy.io, and `*.rpc.privy.systems` iframes are injected by `@privy-io/react-auth@3.23.1`. We don't control their teardown. If the SDK leaks iframes per `signTransaction()` call (we sign N times per match — once per deposit, multiple per session for groupchat), this is a plausible cause. **Cannot verify statically.**
+
+6. **`useSignTransaction` + manual broadcast.** Our pattern signs in a Privy iframe then broadcasts via wallet-adapter `Connection`. If Privy retains the signing iframe between calls, repeated signs would compound iframe count.
+
+**Strongest candidates, ranked:**
+
+- **(A) Privy iframe accumulation per signTransaction.** Compound effect during a match with multiple deposits/signs. Need: chrome://crashes/ symbolicated dump + chrome://process-internals/ during a long session.
+- **(B) Phaser texture-canvas GC pressure.** Reproducible without Privy by simulating 200+ shots in a single battle.
+- **(C) Network flip → Privy WebSocket reconnection storm.** Bursty memory if WSS handshakes don't close cleanly. Less likely but possible on flaky connections.
+
+**Cannot fix without:**
+
+1. **Heap snapshot from a reproduced crash.** Open DevTools → Memory tab → take a snapshot every 5 minutes through a long match. Compare. Look for `HTMLIFrameElement` count growing, `Detached DOM tree` entries.
+2. **chrome://memory-internals/ during gameplay** to see process memory growth shape (linear vs sudden jump).
+3. **chrome://crashes/** to see the actual crash signature (OOM vs renderer kill vs GPU process kill).
+
+**Recommended next concrete step (when JJ is back at a Chrome session):** Open DevTools → Performance Monitor before starting a wagered match. Watch "JS heap size" + "DOM Nodes" + "JS event listeners" through the match. If any climb monotonically without flattening between rounds, we have the suspect.
+
+**Lightweight instrumentation we could add now (not yet done):** A `window.__solshotMemSnapshot()` helper that logs `performance.memory.usedJSHeapSize` + `document.querySelectorAll('iframe').length` to console + Sentry/server log every N seconds. Cheap to add, gives us actual data on the next crash. Held for now — can ship in a small follow-up if JJ wants.
+
+**Status:** Investigation closed without code change. Crash is unreproduced; without a heap profile, any fix would be a guess. Recommend: add the memory-snapshot helper next session AND/OR have JJ reproduce with DevTools open.
+
+— main-claude
+
+---
+
+### 2026-05-04 (post-success, batch 2) — `[main-claude]` — STATUS: 3 follow-ups landed
+
+JJ asked for three sequential pieces after the first wagered Privy match settled. All three landed without breaking the build. **Uncommitted; awaiting JJ's commit instruction per protocol.**
+
+**1. Address-pill double-tap → Privy account modal** *(client-only, surgical)*
+
+- `WalletContext.js`: imported `useExportWallet` from `@privy-io/react-auth/solana` (Solana-specific — `usePrivy().exportWallet` doc explicitly says "Ethereum address"), exposed `openPrivyAccount()` on the context value. Calls `exportWallet({ address: privyWallet.address })` so the right wallet is targeted even if the user later links an EVM wallet.
+- `TopBar.js`: added `onDoubleClick={handlePillDoubleClick}` next to the existing `onClick`. Single-tap copies (existing). Double-tap opens Privy's iframe-isolated wallet modal (full address, balance, copy, private-key reveal). For adapter users, falls back to the wallet-adapter modal.
+- Tooltip updated: `Click to copy · Double-click to manage wallet`.
+- ESLint clean (3 pre-existing warnings only). Production build passes.
+
+**2. Chrome mid-match crash investigation** *(report only — no code change)*
+
+Static analysis only (no heap snapshot from the actual crash). See full investigation entry above. tl;dr: Phaser teardown + WalletContext are clean. Strongest unverified candidates are (A) Privy iframe accumulation per `signTransaction()`, (B) Phaser texture-canvas GC pressure (Standard.js does ~50 `document.createElement('canvas')` calls — bounded but sustained), (C) Privy WSS reconnect storm on flaky network. Cannot fix without a heap snapshot from a reproduced crash. Recommended: open DevTools → Performance Monitor next time JJ plays a long session, watch JS heap + DOM nodes + listeners + iframe count for monotonic growth.
+
+**3. Phase 2B — magic-link auth + TG-wallet binding** *(unblocks groupchat wagered for Privy users)*
+
+This was the highest-value piece. Privy provisions an embedded wallet on solshot.gg, but `User.walletAddress` (Mongo) was never populated for Privy users — so `handleJoinCallback` blocked them from wagered groupchat with "link your wallet at solshot.gg first". This shipping flow closes that loop.
+
+- **`server/services/walletLinkTokens.js`** (new) — in-memory Map of `{ token → { telegramUserId, username, firstName, expiresAt } }`. Tokens are 32-byte CSPRNG (`crypto.randomBytes`), 10-min TTL, single-use (deleted on `consumeLinkToken`). Periodic sweeper (`setInterval` w/ `unref`) removes abandoned tokens; auto-stops when store drains. Smoke-tested: mint → consume returns tgId → replay returns null. ✅
+- **`server/services/bot.js`** — added `bot.command('link', ...)`. DM-only (group reply would expose token); refuses with instruction to DM `@SolShotGG_bot`. Generates token via `mintLinkToken`, sends inline button with URL `${MINI_APP_URL}?linkToken=<token>`. Reply explains the 3-step flow + TTL.
+- **`server/services/bot.js`** — also added `/link` to the `/help` command list, and updated `/wallet` Case 1+2 replies to point at `/link` instead of "Open the Mini App" (fixes the UX gap where Privy users would create unbound wallets).
+- **`server/services/groupchat/index.js`** — `handleJoinCallback` error message updated from "link your wallet at solshot.gg first" to "DM @SolShotGG_bot and run /link". Closer to the actual action they need.
+- **`server/index.js`** — new `POST /api/wallet/link-from-tg-token`. Body: `{ token, walletAddress }`. Validates wallet shape (length 32–64), consumes token (one-shot), calls `linkTelegramIdentity({ telegramUserId, walletAddress, username, firstName })` to upsert the User doc. Returns `{ ok, telegramUserId, walletAddress }` on success, `404 token_invalid_or_expired` on bad token, `400` on missing fields.
+- **`client/src/wallet/WalletContext.js`** — new `useEffect` that runs once after `walletAddress` is populated. Reads `linkToken` from `URLSearchParams`, POSTs `{ token, walletAddress }` to the server, then strips `linkToken` from the URL via `history.replaceState` so a refresh doesn't replay. Logs success/failure to console. Single-attempt-per-page-load via `linkTokenAttempted` state.
+
+**Security stance (hackathon scope):** Token is the auth — random 32 bytes, TG-DM-delivered, 10-min TTL, single-use. Threat model is "TG account compromised", which is post-Telegram-account-takeover territory and out of scope for this layer.
+
+**Production hardening TODO:** verify a Privy access-token JWT in the Authorization header on the link endpoint, so the wallet claim is provably owned by the caller (not just "anyone with that address string"). Privy publishes a JWKS endpoint we can use with `jose`. Not blocking the demo.
+
+**End-to-end flow (verifiable now):**
+1. JJ DMs `@SolShotGG_bot` → `/link` → bot replies with "Link Wallet" button
+2. JJ taps button → opens `https://solshot.gg/?linkToken=<32-byte>`
+3. Privy auto-signs JJ in (already authed) → wallet ready
+4. WalletContext useEffect POSTs `{ token, walletAddress }` to server
+5. Server consumes token, calls `linkTelegramIdentity`, returns ok
+6. Mongo: `User.walletAddress` now populated for JJ's TG id
+7. Back in TG group: JJ taps Join on a wagered groupchat → `lookupUserByTelegramId(tgId).walletAddress` resolves → join succeeds → deposit phase → match plays → settles
+
+**State:** uncommitted on `main`. ESLint + node `--check` + smoke import test all pass. Ready for JJ to commit (suggested message: `feat(auth): magic-link TG↔wallet binding for Privy users + topbar account modal`) and a real end-to-end test.
+
+— main-claude

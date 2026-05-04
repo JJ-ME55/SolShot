@@ -38,6 +38,7 @@ import {
     useWallets as usePrivySolanaWallets,
     useSignMessage as usePrivySignMessage,
     useSignAndSendTransaction as usePrivySignAndSend,
+    useCreateWallet as usePrivyCreateSolanaWallet,
 } from '@privy-io/react-auth/solana';
 
 // Jupiter Mobile adapter via Reown/WalletConnect (JUP-01) — kept on the
@@ -141,6 +142,32 @@ function SolShotWalletInner({ children }) {
     const { wallets: privySolanaWallets, ready: privyWalletsReady } = usePrivySolanaWallets();
     const { signMessage: privySignMessageFn } = usePrivySignMessage();
     const { signAndSendTransaction: privySignAndSendFn } = usePrivySignAndSend();
+    const { createWallet: privyCreateSolanaWallet } = usePrivyCreateSolanaWallet();
+
+    // Manual wallet creation after authentication — replaces the broken
+    // `createOnLogin: 'users-without-wallets'` auto-create flow that
+    // crashed in EmbeddedWalletOnAccountCreateScreen with "Cannot
+    // destructure property 'onSuccess' of 'a.createWallet'". This effect
+    // fires once after Privy is ready + authenticated and the user
+    // doesn't have a Solana wallet yet, then calls createWallet directly
+    // (no modal screen, no broken destructure).
+    const [createWalletInFlight, setCreateWalletInFlight] = useState(false);
+    useEffect(() => {
+        if (!privyReady || !privyAuthed || !privyWalletsReady) return;
+        if (privySolanaWallets && privySolanaWallets.length > 0) return;
+        if (createWalletInFlight) return;
+        setCreateWalletInFlight(true);
+        privyCreateSolanaWallet()
+            .then((result) => {
+                console.log('[Privy] Embedded Solana wallet created:', result?.wallet?.address || '(no address returned)');
+            })
+            .catch((err) => {
+                console.error('[Privy] Failed to create embedded Solana wallet:', err?.message || err);
+            })
+            .finally(() => {
+                setCreateWalletInFlight(false);
+            });
+    }, [privyReady, privyAuthed, privyWalletsReady, privySolanaWallets, privyCreateSolanaWallet, createWalletInFlight]);
 
     // Pick the active wallet — prefer Privy when authenticated AND has a
     // ready wallet. The `ready` flag from useWallets is critical: a wallet
@@ -350,6 +377,48 @@ function SolShotWalletInner({ children }) {
         }
     }, [publicKey, connection, sendTransactionUnified, refreshBalance]);
 
+    /**
+     * Sign and send a wagered group-chat match deposit.
+     * Mirrors signAndSendEscrowDeposit but for v2 escrow + group matches.
+     * On success, emits `confirmGroupDeposit` so the server can verify the
+     * deposit on-chain and (if all paid) auto-activate the match.
+     */
+    const signAndSendGroupDeposit = useCallback(async (serializedTxBase64, matchId) => {
+        if (!publicKey || !connection) {
+            console.warn('[SolShot] Cannot sign group deposit: wallet not ready');
+            return null;
+        }
+        try {
+            const txBuffer = Buffer.from(serializedTxBase64, 'base64');
+            const tx = Transaction.from(txBuffer);
+
+            // Same TX-shape sanity check as 1v1 deposits — guards against a
+            // server-side build bug or hostile RPC swapping in a different tx.
+            const validation = validateEscrowTransaction(tx);
+            if (!validation.valid) {
+                console.error('[SolShot] Group deposit TX validation FAILED:', validation.reason);
+                const socket = window.socket;
+                if (socket) {
+                    socket.emit('suspiciousTx', { reason: validation.reason, matchId });
+                }
+                return null;
+            }
+
+            const signature = await sendTransactionUnified(tx, connection);
+            await connection.confirmTransaction(signature, 'confirmed');
+
+            const socket = window.socket;
+            if (socket) {
+                socket.emit('confirmGroupDeposit', { matchId, txSignature: signature });
+            }
+            refreshBalance();
+            return signature;
+        } catch (err) {
+            console.error('[SolShot] Group deposit error:', err.message);
+            return null;
+        }
+    }, [publicKey, connection, sendTransactionUnified, refreshBalance]);
+
     const signAndBurnShot = useCallback(async (burnAmount) => {
         if (!publicKey || !connection || !SHOT_TOKEN_MINT) {
             console.warn('[SolShot] Cannot burn SHOT: wallet not ready or no token mint');
@@ -445,6 +514,7 @@ function SolShotWalletInner({ children }) {
         shotBalance,
         prestigeInfo,
         signAndSendEscrowDeposit,
+        signAndSendGroupDeposit,
         signAndBurnShot,
         // Source = which wallet path is active
         source: activeSource,
@@ -465,7 +535,7 @@ function SolShotWalletInner({ children }) {
         },
     }), [
         balance, refreshBalance, walletAddress, connected, isAuthenticated, authenticate,
-        login, logout, shotBalance, prestigeInfo, signAndSendEscrowDeposit, signAndBurnShot,
+        login, logout, shotBalance, prestigeInfo, signAndSendEscrowDeposit, signAndSendGroupDeposit, signAndBurnShot,
         activeSource, privyReady, privyAuthed, publicKey, privyWallet, adapterConnected,
     ]);
 
@@ -523,32 +593,35 @@ function LegacyBrowserWalletProvider({ children }) {
 
 // ─── Top-level provider — Privy + wallet-adapter ────────────────────────
 
-// Privy v3.23.1 config. Email-only login at the client level — even
-// though the dashboard has wallet login enabled, the client config wins.
-// Reason: passing `externalWallets.solana.connectors` (required when
-// wallet login is enabled at the client level too) triggers an internal
-// Privy destructure crash on `Cannot destructure property 'onSuccess'
-// of 'a.createWallet'`. The crash is reproducible: connectors out → no
-// crash but Privy warns about missing connectors; connectors in → crash.
-// The simplest stable path is to restrict client-side login to email
-// only — power users with Phantom can still connect via the
-// wallet-adapter inner provider (Connect Wallet button in their flow).
-// Phase 2B can revisit Privy wallet login once we know whether it's a
-// version-specific bug or our config still has a mismatch.
+// Privy v3.23.1 config. Two crashes the SDK exposes that this config
+// avoids:
+//
+//  1. `loginMethods: ['email']` — the dashboard has Solana wallet login
+//     enabled (free), but client-config takes precedence. We restrict
+//     to email-only because adding `externalWallets.solana.connectors`
+//     (required when wallet login is in the client list) triggers
+//     "Cannot destructure property 'onSuccess' of 'a.createWallet'".
+//     Email login alone doesn't need connectors.
+//
+//  2. `embeddedWallets.solana.createOnLogin: 'off'` — the auto-create
+//     code path renders `EmbeddedWalletOnAccountCreateScreen`, which
+//     reads `modalData.createWallet.{onSuccess,onFailure,...}`.
+//     `modalData.createWallet` is undefined on our login flow → same
+//     destructure crash class. Disabling auto-create avoids that
+//     screen entirely. We instead call `useCreateWallet().createWallet`
+//     ourselves in a useEffect after authentication settles, which
+//     uses a different code path that doesn't render the modal.
+//
+// Both workarounds are stable; revisiting in Phase 2B with newer Privy
+// SDK or different login-method shape.
 const PRIVY_CONFIG = {
     loginMethods: ['email'],
     embeddedWallets: {
-        // Auto-create a Solana wallet on login for users without an
-        // external wallet linked. Silent provisioning — user signs in
-        // with email, lands in the app with a wallet already present.
-        solana: { createOnLogin: 'users-without-wallets' },
+        solana: { createOnLogin: 'off' },
     },
     appearance: {
         theme: 'dark',
         accentColor: '#FFB200',
-        // Relative path so the logo works on any host (Vercel preview URLs,
-        // localhost, solshot.gg) — absolute URLs cause CSP violations when
-        // the page origin doesn't match.
         logo: '/og-preview.png',
         landingHeader: 'Sign in to SolShot',
     },

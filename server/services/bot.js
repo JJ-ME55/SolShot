@@ -29,10 +29,16 @@ import { buildCareerProps } from './challenge/careerCardProps.js';
 import { WEAPON_DATA } from './physics.js';
 import { registerGroupChatCommands } from './groupchat/index.js';
 
-// The path segment after the bot username is the Mini App `short_name` registered
-// in BotFather. Our Mini App is registered as `play` (not `solshot`). Set
-// MINI_APP_URL env to override if the short_name ever changes.
-const MINI_APP_URL = process.env.MINI_APP_URL || 'https://t.me/SolShotGG_bot/play';
+// 2026-05-04: switched off Mini App architecture. URL now points at the
+// solshot.gg PWA instead of `t.me/SolShotGG_bot/play`. URL buttons in
+// Telegram inline keyboards open external URLs in the in-app browser
+// (TG iOS) / default browser (TG Desktop) / new tab (TG Web) — a
+// top-level browsing context, NOT a nested Mini App iframe. This
+// eliminates the storage-partition class of bugs that broke Dynamic /
+// Para / Privy on TG Web. Variable name kept as `MINI_APP_URL` to
+// minimise mechanical churn; semantic is now "the URL the bot links to."
+// Override via the same `MINI_APP_URL` env var on Render if needed.
+const MINI_APP_URL = process.env.MINI_APP_URL || 'https://solshot.gg/';
 const WEBHOOK_PATH = '/api/telegram-webhook';
 const SERVER_BASE_URL = process.env.SERVER_BASE_URL || process.env.TELEGRAM_WEBHOOK_URL || '';
 

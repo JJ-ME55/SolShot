@@ -17,7 +17,8 @@ import User from '../../models/User.js';
 import { getBot } from '../bot.js';
 import { WEAPON_DATA } from '../physics.js';
 
-const MINI_APP_URL = process.env.MINI_APP_URL || 'https://t.me/SolShotGG_bot/play';
+// 2026-05-04: solshot.gg PWA replaces Mini App. See bot.js header comment.
+const MINI_APP_URL = process.env.MINI_APP_URL || 'https://solshot.gg/';
 
 /**
  * Sum a weapon-keyed map of numbers (matches client/AAR helper shape).

@@ -61,7 +61,8 @@ export async function getOrCreateReferralCode(userQuery) {
  * Mini App URL is configurable via env (matches bot.js MINI_APP_URL default).
  */
 export function buildInviteLink(referralCode) {
-    const base = process.env.MINI_APP_URL || 'https://t.me/SolShotGG_bot/play';
+    // 2026-05-04: solshot.gg PWA replaces Mini App. See bot.js header comment.
+    const base = process.env.MINI_APP_URL || 'https://solshot.gg/';
     return `${base}?startapp=rf_${referralCode}`;
 }
 

@@ -28,9 +28,11 @@ import { dispatchGroupVictoryDm } from '../challenge/victoryDm.js';
 import { earnGold, awardKillBonus } from '../gold.js';
 import { generateTerrain, generateTankPositions, generateWind, processShot, WEAPON_DATA } from '../physics.js';
 
-// NB: short_name is `play` on prod BotFather (per commit 910f88b — `solshot`
-// short name was never registered). Set MINI_APP_URL env to override.
-const MINI_APP_URL = process.env.MINI_APP_URL || 'https://t.me/SolShotGG_bot/play';
+// 2026-05-04: switched off Mini App architecture (see bot.js comment).
+// URL now points at solshot.gg PWA. The "Take your shot" inline button
+// becomes a `url:` button to solshot.gg, opening in the in-app browser
+// instead of a Mini App iframe.
+const MINI_APP_URL = process.env.MINI_APP_URL || 'https://solshot.gg/';
 
 /** Inline keyboard with a single "Take your shot" button deep-linking
  *  the player back to the Mini App for this match. */

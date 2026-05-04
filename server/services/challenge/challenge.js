@@ -14,9 +14,9 @@ import { renderChallengeCardPng, shortInitials, formatCountdown } from './render
 const DEFAULT_EXPIRES_HOURS = 24;
 const SHORTCODE_BYTES = 3; // 6 hex chars; we slice to 5 for cleaner aesthetics
 
-// Mini App base URL — must match the BotFather-registered short_name (`play`).
-// Override via MINI_APP_URL env if the short_name ever changes.
-const MINI_APP_URL = process.env.MINI_APP_URL || 'https://t.me/SolShotGG_bot/play';
+// 2026-05-04: solshot.gg PWA replaces Mini App. See bot.js header comment.
+// Variable name kept for backwards compat; semantic is "the URL bot links to."
+const MINI_APP_URL = process.env.MINI_APP_URL || 'https://solshot.gg/';
 
 /**
  * Generate a unique 5-char uppercase hex short code.

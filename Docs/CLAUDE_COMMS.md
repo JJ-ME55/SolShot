@@ -1621,3 +1621,53 @@ JJ wanted to move from 1v1 escrow (which landed earlier today) to N-player. We w
 - v2 `.so` built locally; **not deployed anywhere yet**. Dormant code until deploy.
 
 — main-claude
+
+---
+
+### 2026-05-04 (later still still) — `[main-claude]` — STATUS + HANDOFF
+
+**v2 escrow is now deployed on devnet AND the wagered group-chat integration is wired end-to-end on the server side.** Just the PWA deposit UI remains to ship a fully playable wagered group match.
+
+**Deployed + bootstrapped:**
+- Program ID: `BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N`
+- Config PDA: `6TAKdJj6f8KNJY6LicCiJ7ZTvYpL5uERX14bsgcdkBU5`
+- Authority/treasury/ops match v1 env values; 700/300 BPS; not paused
+- Anchor `test --skip-build` did the deploy as a side-effect (Anchor.toml `cluster = "devnet"`); init was first triggered by my test scaffold's `before()` hook with random keypairs, then `update_config` (TX `vrHkQ3o8wVnACttiQBnCJch6...`) corrected to the proper team wallets.
+
+**Discovery that changed the work scope significantly**
+
+What I expected to find a half-built groupchat path I'd need to extend was actually a near-complete N-player implementation in `server/services/groupchat/` waiting for v2 escrow. The Phase 2 hooks were explicitly placed (lifecycle.js had `// Phase 2 hook: settlement tx for wagered matches goes here (escrow v2)` at the settle path). configFlow.js had a complete wagered wizard (wager amounts, buyback config, etc.) gated behind a `gc_cfg_type_wagered_soon` placeholder. The 10-player tank-color palette, lobbyCard, scheduler, watchdog, idle-timeout-with-HP-penalty, auto-forfeit-after-3-missed, quiet-hours, trophy DM, bulkWrite stat-history pipeline — all there, all production-grade, validated by JJ ("I played the 4 p through and it worked well").
+
+So instead of writing N-player game logic from scratch, the work was just *wiring* the groupchat infrastructure to the new v2 escrow.
+
+**What landed in [`2dd5ffa`](server/services/groupchat/lifecycle.js)** (commit message says "fix(topbar)" — JJ ran `git commit -am` while my staged groupchat files were in the index, so they bundled together; the diff is correct, the message is misleading. 8 files / 463 insertions):
+
+- **State machine** got a new state: `awaiting_deposits` (between lobby and active for wagered matches).
+- **configFlow.js**: enabled Wagered selection (was gated). Buyback wizard step force-hidden for wagered v2 — the v2 escrow has no buyback CPI; deferred to v2.1. `finalize()` force-disables `buybacksEnabled` for wagered.
+- **GroupMatch model**: added `escrowPda`, `escrowProgramId`, `depositTimeoutAt`, plus the `awaiting_deposits` enum value.
+- **lifecycle.startMatch** split. Free path → `activateMatch` immediately (legacy behaviour preserved). Wagered path → `beginWageredDepositPhase` (creates escrow PDA on-chain with the locked roster, transitions Mongo to `awaiting_deposits`, posts a deposit-prompt button in the chat) → `confirmDeposit` (called by the new socket handler per deposit) → `activateMatch` once all paid.
+- **lifecycle.settleMatch**: Phase 2 hook now calls `escrow-v2.settleMatchEscrow(rankedFinishers[0]'s wallet)`. Failure leaves Mongo at `settled` and logs; permissionless_reclaim is the safety net (anyone can refund 24h after match_end_ts).
+- **lifecycle.cancelWageredEscrow** helper called from both `/cancelmatch` slash command and inline cancel button. No-op for free matches and for wagered matches whose escrow was never created.
+- **groupchat/index.js handleJoinCallback**: wagered joins **require a linked wallet** (looked up via `lookupUserByTelegramId`). Without one, the user gets "link your wallet at solshot.gg first, then come back and tap Join". With one, the wallet is snapped onto the player slot at join time so `beginWageredDepositPhase` has it ready.
+- **groupchat/index.js cancel + start handlers** now branch on `awaiting_deposits` for the lobby card edit text.
+- **socket-io/groupchat.js**: new `confirmGroupDeposit` event for the PWA. Verifies on-chain via `getEscrowStateV2` (mirrors v1's `escrowDepositConfirm` pattern — checks `deposits_mask` bit + wager amount), then calls `lifecycle.confirmDeposit` which auto-activates the match if all have paid. Broadcasts `groupDepositStatus` to the match room.
+- **solana.initSolana + index.js SIGHUP / reload-keys** also init `escrow-v2` alongside v1.
+
+Smoke check passed (all changed modules import cleanly).
+
+**What's left to ship a playable wagered group match (next session)**
+
+1. **PWA deposit screen for groupchat** — the only remaining missing piece. The server is ready to receive `confirmGroupDeposit` socket events; the client needs to:
+   - Handle the `?startapp=deposit_<matchId>` deep-link path (the deposit prompt button in chat sends players here)
+   - Fetch the match via `getGroupMatch`, render a "Deposit X SOL" modal showing wager + match info
+   - Call the existing `WalletContext.signAndSendEscrowDeposit` (might need a v2 sibling that accepts `matchId` + builds the v2 deposit tx via `buildDepositTransactionV2`)
+   - On confirmation: emit `confirmGroupDeposit` with the tx signature
+   - Listen for `groupDepositConfirmed` (success or `error`) and `groupDepositStatus` (broadcast roster update) to update UI
+2. **Awaiting-deposits watchdog** — currently the host can call `/startmatch` to manually trigger `start_with_depositors` after the deposit window closes. Adding a cron that auto-detects expired-deposit-window matches and calls `start_with_depositors` (≥2 deposited) or `cancel_match` (else) would close the loop, but isn't blocking a demo.
+3. **Top up devnet wallet** — `HPyVPj2VH9yBirr7FMgAJeDH8xJgaMKy5UnwLkjSnovk` was at 0.0149 SOL when test suite ran (rate-limited from CLI airdrop); 7 happy-path tests need ~1.5 SOL. JJ has already topped up per the conversation. Re-run via `./node_modules/.bin/ts-mocha -p ./tsconfig.json -t 240000 tests/solshot-escrow-v2.ts` (env: `ANCHOR_WALLET=$HOME/.config/solana/solshot-dev.json`, `ANCHOR_PROVIDER_URL=https://api.devnet.solana.com`).
+
+**Buyback decision recap (from this session)**: Both architecture reports recommended deferring buyback. JJ picked option (a) — hide the buyback wizard step for wagered v2. v2.1 will ship buyback CPI + un-hide the step. The model schema, configFlow code, and lifecycle code all remain buyback-aware (free matches use it; wagered just doesn't surface it yet), so v2.1 wiring should be small.
+
+**Wallet stack confirmed**: JJ updated me — currently on **Privy** embedded wallets (memory was stale). The `lookupUserByTelegramId` → `walletAddress` lookup works regardless of whether the wallet was bound via Privy embedded auto-provisioning or a power-user's Phantom connect.
+
+— main-claude

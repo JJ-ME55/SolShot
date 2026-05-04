@@ -278,10 +278,8 @@ function resetForPlayAgain(roomId, room, paRoundType, io) {
                             const numDep = Object.keys(wsCheck.deposits || {}).length
                             if (numDep === roomCheck.players.length) return
                             if (numDep === 0) {
-                                const cancelWals = roomCheck.players.map(p => wsCheck.wallets[p.socketId]).filter(Boolean)
-                                if (cancelWals.length > 0 && isEscrowEnabled()) {
-                                    await cancelMatchEscrow(roomId, cancelWals).catch(e => console.error(`[Escrow] PlayAgain timeout cancel: ${e.message}`))
-                                }
+                                // Zero deposits — close empty escrow PDA (no refunds needed).
+                                await cancelEscrowSafely(roomId, roomCheck, wsCheck, 'PlayAgain timeout (zero deposits)')
                                 io.sockets.in(roomId).emit('escrowDepositTimeout', { roomId })
                                 await removeRoom(roomId)
                                 broadcastRooms(io)
@@ -301,8 +299,7 @@ function resetForPlayAgain(roomId, room, paRoundType, io) {
                                 delete depositTimers[roomId]
                                 const ws3 = wagerStates[roomId]; const r3 = findRoom(roomId)
                                 if (!ws3 || !r3 || !ws3.partialDecisionMaker) return
-                                const refWals = r3.players.filter(p => ws3.deposits?.[p.socketId]).map(p => ws3.wallets[p.socketId]).filter(Boolean)
-                                if (isEscrowEnabled() && refWals.length > 0) await cancelMatchEscrow(roomId, refWals).catch(e => console.error(`[Escrow] PlayAgain decision timeout: ${e.message}`))
+                                await cancelEscrowSafely(roomId, r3, ws3, 'PlayAgain decision timeout')
                                 io.sockets.in(roomId).emit('escrowCancelledAll', { roomId, reason: 'decision_timeout' })
                                 await removeRoom(roomId); broadcastRooms(io); io.socketsLeave(roomId)
                             }, 30_000)
@@ -320,7 +317,11 @@ function resetForPlayAgain(roomId, room, paRoundType, io) {
 
 // SF-03: In-memory store for failed settlements — retry via cancelMatchEscrow (DB: H020/H050)
 const failedSettlements = new Map();
-// Shape: { [roomId]: { matchId, escrowPDA, allWallets, wagerSOL, failedAt, attempts, error } }
+// Shape: { [roomId]: { matchId, escrowPDA, depositorWallets, contiguous, wagerSOL, failedAt, attempts, error } }
+// `depositorWallets` is in player-index order, ONLY includes confirmed depositors.
+// `contiguous` is true if depositorWallets[0..k-1] correspond to players[0..k-1] —
+// non-contiguous deposits cannot be cancelled with the current on-chain program
+// (see cancelEscrowSafely / lib.rs cancel_match for details).
 
 // SF-03: Retry failed settlements every 60 seconds
 setInterval(async () => {
@@ -330,9 +331,16 @@ setInterval(async () => {
             failedSettlements.delete(matchId);
             continue;
         }
+        // Skip non-contiguous: it will always fail with InvalidPlayer on-chain.
+        // Logged once at handleSettlementFailure; don't spam retries.
+        if (data.contiguous === false) {
+            console.warn(`[Recovery] Skipping ${matchId}: non-contiguous deposits, cancel cannot succeed on-chain. Dropping from retry queue.`);
+            failedSettlements.delete(matchId);
+            continue;
+        }
         try {
             console.log(`[Recovery] Retrying cancel for ${matchId} (attempt ${data.attempts + 1})`);
-            const result = await cancelMatchEscrow(matchId, data.allWallets || [data.p1wallet, data.p2wallet].filter(Boolean));
+            const result = await cancelMatchEscrow(matchId, data.depositorWallets || []);
             if (result.success) {
                 console.log(`[Recovery] Successfully cancelled escrow for ${matchId}: ${result.txSignature}`);
                 failedSettlements.delete(matchId);
@@ -349,33 +357,33 @@ setInterval(async () => {
 
 // SF-03: Attempt cancel recovery and store for retry if needed
 async function handleSettlementFailure(roomId, room, ws, error) {
-    const allWallets = (room?.players || []).map(p => ws?.wallets?.[p.socketId]).filter(Boolean);
     const escrowPDA = room?.escrowPDA || null;
+    const { wallets: depositorWallets, contiguous, mask } = getEscrowDepositors(room, ws);
 
-    if (allWallets.length > 0) {
-        try {
-            const cancelResult = await cancelMatchEscrow(roomId, allWallets);
-            if (cancelResult.success) {
-                console.log(`[Recovery] Immediate cancel succeeded for ${roomId}: ${cancelResult.txSignature}`);
-                return; // Recovery succeeded, no need to store
-            }
-            console.warn(`[Recovery] Immediate cancel failed for ${roomId}: ${cancelResult.error}`);
-        } catch (err) {
-            console.error(`[Recovery] Immediate cancel threw for ${roomId}:`, err.message);
-        }
+    // Try immediate cancel via the safe wrapper. It handles contiguity + empty
+    // mask and only attempts the on-chain call when the deposits are recoverable.
+    const result = await cancelEscrowSafely(roomId, room, ws, 'Immediate post-settle-failure');
+    if (result?.success) return;
+
+    // Don't queue non-contiguous failures for retry — the on-chain call will
+    // never succeed without a program upgrade. Log once and move on.
+    if (!contiguous) {
+        console.error(`[Recovery] NOT queueing ${roomId} for retry: non-contiguous deposits (mask=0b${mask.toString(2)}). PDA funds stranded; needs program upgrade or manual ops intervention.`);
+        return;
     }
 
-    // Store for retry
+    // Contiguous but failed for some other reason — queue for retry.
     failedSettlements.set(roomId, {
         matchId: roomId,
         escrowPDA,
-        allWallets,
+        depositorWallets,
+        contiguous,
         wagerSOL: ws?.amount || 0,
         failedAt: Date.now(),
         attempts: 1,
         error: error || 'unknown',
     });
-    console.warn(`[Recovery] Stored failed settlement for retry: ${roomId}`);
+    console.warn(`[Recovery] Stored failed settlement for retry: ${roomId} (${depositorWallets.length} depositor refunds)`);
 }
 
 const SHOP_DURATION = 30; // seconds
@@ -404,6 +412,94 @@ function broadcastRooms(io) {
 // O1: O(1) room lookup via Map
 function findRoom(roomId) {
     return rooms.get(roomId) || null;
+}
+
+/**
+ * Return the wallets of players who have confirmed a deposit, in player-index
+ * order, plus whether that set is contiguous from index 0 (i.e. acceptable to
+ * the on-chain cancel_match / permissionless_reclaim, which iterate
+ * remaining_accounts[i] against players[i] AND require deposits_mask bit i to
+ * be set).
+ *
+ * For 2-player rooms the only non-contiguous case is `deposits_mask = 0b10`
+ * (player 1 deposited, player 0 didn't). That case is unrecoverable on-chain
+ * with the current program — caller must NOT attempt cancelMatchEscrow,
+ * because it will throw `InvalidPlayer` and lock the funds. Server logs
+ * loudly and writes the match off (devnet only — would need a program
+ * upgrade before mainnet).
+ *
+ * @returns {{wallets: string[], contiguous: boolean, mask: number}}
+ */
+function getEscrowDepositors(room, ws) {
+    if (!room || !ws) return { wallets: [], contiguous: true, mask: 0 };
+    const wallets = [];
+    let mask = 0;
+    for (let i = 0; i < room.players.length; i++) {
+        const p = room.players[i];
+        if (ws.deposits && ws.deposits[p.socketId] && ws.wallets && ws.wallets[p.socketId]) {
+            wallets.push(ws.wallets[p.socketId]);
+            mask |= 1 << i;
+        }
+    }
+    // Contiguous from index 0 means the bitmask is exactly (1 << wallets.length) - 1
+    const contiguous = mask === ((1 << wallets.length) - 1);
+    return { wallets, contiguous, mask };
+}
+
+/**
+ * Check whether a wagered room's escrow is fully funded — every player in
+ * `room.players` has a confirmed deposit in `wagerStates[roomId].deposits`.
+ * Returns true for non-wagered rooms (always "ready" for gameplay).
+ *
+ * Used to gate match-start surfaces (`requestTerrain`, `fire`) so that
+ * partial-deposit matches cannot proceed into BATTLE state and burn shots
+ * the on-chain escrow will never settle.
+ */
+function isEscrowReady(room, ws) {
+    if (!room) return false;
+    if (!room.wager || room.wager <= 0) return true; // practice mode
+    if (!ws || !ws.deposits) return false;
+    return room.players.every(p => ws.deposits[p.socketId]);
+}
+
+/**
+ * Safe wrapper around the on-chain `cancelMatchEscrow`. Determines from
+ * `room` + `ws` who actually deposited and only passes those wallets in
+ * player-index order. Three outcomes:
+ *
+ *   1. Empty mask → calls cancel with [] (closes the empty PDA, rent to authority)
+ *   2. Contiguous mask (e.g. 0b01 for "player 0 deposited, player 1 didn't",
+ *      or 0b11 for "both deposited") → calls cancel with the depositor wallets
+ *   3. Non-contiguous mask (e.g. 0b10 for "player 1 deposited, player 0 didn't")
+ *      → UNRECOVERABLE on-chain. Logs and returns failure without calling
+ *      cancel. PDA funds are stranded until the program is redeployed with
+ *      a fix that lets remaining_accounts skip non-deposited slots.
+ *
+ * @param {string} matchId
+ * @param {object} room — from `findRoom(roomId)`
+ * @param {object} ws — from `wagerStates[roomId]`
+ * @param {string} contextLabel — short label for log lines
+ * @returns {Promise<{success: boolean, txSignature?: string, error?: string}>}
+ */
+async function cancelEscrowSafely(matchId, room, ws, contextLabel) {
+    if (!isEscrowEnabled()) return { success: false, error: 'escrow_disabled' }
+    const { wallets, contiguous, mask } = getEscrowDepositors(room, ws)
+    if (!contiguous) {
+        console.error(`[Escrow] ${contextLabel}: UNRECOVERABLE non-contiguous deposits for ${matchId} (mask=0b${mask.toString(2)}, ${wallets.length} depositors). On-chain cancel cannot refund — PDA funds stranded until program redeploy.`)
+        return { success: false, error: 'non_contiguous_deposits' }
+    }
+    try {
+        const result = await cancelMatchEscrow(matchId, wallets)
+        if (result?.success) {
+            console.log(`[Escrow] ${contextLabel}: cancelled ${matchId} (${wallets.length} refunds, mask=0b${mask.toString(2)})`)
+        } else {
+            console.error(`[Escrow] ${contextLabel}: cancel returned failure for ${matchId}: ${result?.error}`)
+        }
+        return result
+    } catch (err) {
+        console.error(`[Escrow] ${contextLabel}: cancel threw for ${matchId}: ${err.message}`)
+        return { success: false, error: err.message }
+    }
 }
 
 // Auth helper: require wallet auth only for wagered matches.
@@ -1355,15 +1451,11 @@ const mainsocket = (io) => {
                             }
 
                             if (shouldRefund) {
-                                const allRefundWallets = room.players.map(p => ws.wallets[p.socketId]).filter(Boolean)
-                                if (allRefundWallets.length >= 2 && isEscrowEnabled()) {
-                                    try {
-                                        await cancelMatchEscrow(roomId, allRefundWallets)
-                                        console.log(`[Solana] Even disconnect refund (${reason}): room ${roomId}`)
-                                    } catch (err) {
-                                        console.error(`[Solana] Even disconnect refund failed:`, err.message)
-                                        await handleSettlementFailure(roomId, roomSnap, wsSnap, err.message)
-                                    }
+                                // Refund only confirmed depositors. cancelEscrowSafely handles
+                                // the contiguity / empty-mask edge cases.
+                                const refundResult = await cancelEscrowSafely(roomId, room, ws, `Even disconnect refund (${reason})`)
+                                if (!refundResult?.success) {
+                                    await handleSettlementFailure(roomId, roomSnap, wsSnap, refundResult?.error || 'even_disconnect_refund_failed')
                                 }
                                 transitionState(currentMs, MATCH_STATES.CANCELLED)
                                 if (opponentId) {
@@ -1793,16 +1885,9 @@ const mainsocket = (io) => {
                                 // Branch 1: All deposited — nothing to do (timer should have been cleared)
                                 if (numDeposited === totalPlayers) return
 
-                                // Branch 2: Zero deposits — cancel outright and destroy room
+                                // Branch 2: Zero deposits — close empty PDA and destroy room
                                 if (numDeposited === 0) {
-                                    const allCancelWallets = roomCheck.players.map(p => wsCheck.wallets[p.socketId]).filter(Boolean)
-                                    if (allCancelWallets.length > 0 && isEscrowEnabled()) {
-                                        try {
-                                            await cancelMatchEscrow(roomId, allCancelWallets)
-                                        } catch (err) {
-                                            console.error(`[Escrow] Deposit timeout cancel failed for ${roomId}:`, err.message)
-                                        }
-                                    }
+                                    await cancelEscrowSafely(roomId, roomCheck, wsCheck, 'JoinRoom deposit timeout (zero deposits)')
                                     io.sockets.in(roomId).emit('escrowDepositTimeout', { roomId })
                                     await removeRoom(roomId)
                                     broadcastRooms(io)
@@ -1866,16 +1951,9 @@ const mainsocket = (io) => {
 
                                     console.log(`[Escrow] Decision timeout for ${roomId} — auto-cancelling`)
 
-                                    // Auto-cancel: refund all depositors
-                                    const refundWallets = room2.players
-                                        .filter(p => ws2.deposits?.[p.socketId])
-                                        .map(p => ws2.wallets[p.socketId])
-                                        .filter(Boolean)
-                                    if (isEscrowEnabled() && refundWallets.length > 0) {
-                                        await cancelMatchEscrow(roomId, refundWallets).catch(err =>
-                                            console.error(`[Escrow] Decision timeout cancel failed for ${roomId}:`, err.message)
-                                        )
-                                    }
+                                    // Auto-cancel: refund depositors via the safe wrapper
+                                    // (handles contiguity check + non-recoverable warning)
+                                    await cancelEscrowSafely(roomId, room2, ws2, 'JoinRoom decision timeout')
 
                                     io.sockets.in(roomId).emit('escrowCancelledAll', { roomId, reason: 'decision_timeout' })
                                     await removeRoom(roomId)
@@ -2474,15 +2552,9 @@ const mainsocket = (io) => {
                                     // If all players already deposited, nothing to do
                                     const allDeposited = roomCheck.players.every(p => wsCheck.deposits && wsCheck.deposits[p.socketId])
                                     if (allDeposited) return
-                                    // N-player: collect all wallets for cancel
-                                    const allCancelWallets = roomCheck.players.map(p => wsCheck.wallets[p.socketId]).filter(Boolean)
-                                    if (allCancelWallets.length > 0 && isEscrowEnabled()) {
-                                        try {
-                                            await cancelMatchEscrow(roomId, allCancelWallets)
-                                        } catch (err) {
-                                            console.error(`[Escrow] Deposit timeout cancel failed for ${roomId}:`, err.message)
-                                        }
-                                    }
+                                    // Refund only confirmed depositors (or close empty PDA if none).
+                                    // cancelEscrowSafely handles the contiguity check.
+                                    await cancelEscrowSafely(roomId, roomCheck, wsCheck, 'Queue match deposit timeout')
                                     io.sockets.in(roomId).emit('escrowDepositTimeout', { roomId })
                                     await removeRoom(roomId)
                                     broadcastRooms(io)
@@ -3365,18 +3437,11 @@ const mainsocket = (io) => {
                 delete depositTimers[client.roomId]
             }
 
-            // Refund depositors on-chain (Pitfall 2: use room.players order)
-            const depositorWallets = room.players
-                .filter(p => ws.deposits?.[p.socketId])
-                .map(p => ws.wallets[p.socketId])
-                .filter(Boolean)
-            if (isEscrowEnabled() && depositorWallets.length > 0) {
-                await cancelMatchEscrow(client.roomId, depositorWallets).catch(err =>
-                    console.error(`[Escrow] Cancel-all failed for ${client.roomId}:`, err.message)
-                )
-            }
+            // Refund depositors on-chain via the safe wrapper (handles contiguity)
+            const numDepositorsRefunded = room.players.filter(p => ws.deposits?.[p.socketId]).length
+            await cancelEscrowSafely(client.roomId, room, ws, 'User cancel-all')
 
-            console.log(`[Escrow] Cancel-all for ${client.roomId}: refunding ${depositorWallets.length} depositors, room preserved`)
+            console.log(`[Escrow] Cancel-all for ${client.roomId}: refunding ${numDepositorsRefunded} depositors, room preserved`)
 
             // Preserve room — reset deposit and escrow state only
             room.active = false
@@ -3418,6 +3483,15 @@ const mainsocket = (io) => {
             const fireRoom = findRoom(this.roomId);
             if (fireRoom && fireRoom.wager > 0 && !this.isAuthenticated) {
                 this.emit('fireRejected', { reason: 'Authentication required' })
+                return
+            }
+
+            // ESC-GATE (defense-in-depth): wagered matches can't fire unless escrow is fully
+            // funded. requestTerrain already gates BATTLE entry on this, so in practice this
+            // rejection only fires if state somehow leaked through (race, reconnect).
+            const fireWs = wagerStates[this.roomId]
+            if (fireRoom && fireRoom.wager > 0 && !isEscrowReady(fireRoom, fireWs)) {
+                this.emit('fireRejected', { reason: 'Match has not been escrowed yet' })
                 return
             }
 
@@ -4101,6 +4175,27 @@ const mainsocket = (io) => {
             if (!room) return
 
             const ms = matchStates[client.roomId]
+            const ws = wagerStates[client.roomId]
+
+            // ESC-GATE: Wagered matches cannot start (no terrain, no BATTLE state)
+            // until all players have confirmed deposits on-chain. Without this,
+            // a partial-deposit match would play out without escrow — settle
+            // would fail with InvalidState and the depositor's SOL would be
+            // stranded in the PDA (live bug observed in match 69cb22a4 on
+            // 2026-05-04). Block at the terrain stage so ms.status never reaches
+            // BATTLE for a partially-deposited room.
+            if (room.wager > 0 && !isEscrowReady(room, ws)) {
+                const numDeposited = ws ? Object.keys(ws.deposits || {}).length : 0
+                const totalPlayers = room.players.length
+                console.warn(`[Terrain] requestTerrain blocked for ${client.roomId}: only ${numDeposited}/${totalPlayers} deposits confirmed`)
+                client.emit('escrowNotReady', {
+                    roomId: client.roomId,
+                    numDeposited,
+                    totalPlayers,
+                    reason: 'All players must deposit before the match can start',
+                })
+                return
+            }
 
             // If terrain already generated for this round, re-send to requesting client only
             if (room._terrainCache) {

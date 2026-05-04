@@ -533,7 +533,10 @@ const PRIVY_CONFIG = {
     appearance: {
         theme: 'dark',
         accentColor: '#FFB200',
-        logo: 'https://solshot.gg/og-preview.png',
+        // Relative path so the logo works on any host (Vercel preview URLs,
+        // localhost, solshot.gg) — absolute URLs cause CSP violations when
+        // the page origin doesn't match.
+        logo: '/og-preview.png',
         landingHeader: 'Sign in to SolShot',
         showWalletLoginFirst: false, // email first (Web2 UX), wallet second
     },

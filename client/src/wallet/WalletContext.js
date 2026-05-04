@@ -38,7 +38,6 @@ import {
     useWallets as usePrivySolanaWallets,
     useSignMessage as usePrivySignMessage,
     useSignAndSendTransaction as usePrivySignAndSend,
-    toSolanaWalletConnectors,
 } from '@privy-io/react-auth/solana';
 
 // Jupiter Mobile adapter via Reown/WalletConnect (JUP-01) — kept on the
@@ -511,20 +510,25 @@ function LegacyBrowserWalletProvider({ children }) {
 
 // ─── Top-level provider — Privy + wallet-adapter ────────────────────────
 
-// Privy v3.23.1 config. Login methods, allowed origins, and custom auth
-// are configured in the dashboard at app.privy.io. The connectors below
-// MUST be passed when Solana wallet login is enabled in the dashboard
-// (Privy raises a console warning otherwise). The deprecated
-// `solanaClusters` key is omitted — RPC config is now dashboard-driven.
+// Privy v3.23.1 config. Email-only login at the client level — even
+// though the dashboard has wallet login enabled, the client config wins.
+// Reason: passing `externalWallets.solana.connectors` (required when
+// wallet login is enabled at the client level too) triggers an internal
+// Privy destructure crash on `Cannot destructure property 'onSuccess'
+// of 'a.createWallet'`. The crash is reproducible: connectors out → no
+// crash but Privy warns about missing connectors; connectors in → crash.
+// The simplest stable path is to restrict client-side login to email
+// only — power users with Phantom can still connect via the
+// wallet-adapter inner provider (Connect Wallet button in their flow).
+// Phase 2B can revisit Privy wallet login once we know whether it's a
+// version-specific bug or our config still has a mismatch.
 const PRIVY_CONFIG = {
+    loginMethods: ['email'],
     embeddedWallets: {
         // Auto-create a Solana wallet on login for users without an
         // external wallet linked. Silent provisioning — user signs in
         // with email, lands in the app with a wallet already present.
         solana: { createOnLogin: 'users-without-wallets' },
-    },
-    externalWallets: {
-        solana: { connectors: toSolanaWalletConnectors() },
     },
     appearance: {
         theme: 'dark',

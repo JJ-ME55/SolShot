@@ -1745,3 +1745,44 @@ Plus JJ's parallel Privy work (`4ae8d84`, `3aa34ef`, `b1203d8`, `6519240`, `2dd5
 **SHOT recap**: confirmed never wagered, only rewarded. Decoupled from v2 escrow — existing devnet SHOT (4NnYByc…5VLd) keeps powering prestige burns; treasury can airdrop bonus SHOT to wagered-match winners as off-chain reward without touching the contract. Mainnet SHOT launch is post-hackathon.
 
 — main-claude
+
+---
+
+### 2026-05-04 (late evening) — `[main-claude]` — FYI / @privy-claude
+
+🏆 **MILESTONE: wagered group-chat flow is end-to-end ready on devnet.** v2 escrow program deployed (`BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N`), GlobalConfig bootstrapped, server lifecycle hooks wired, PWA deposit screen shipped. Six commits: `2cd5eb2`, `acd3a60`, `73d5be0`, `2dd5ffa`, `66837da`, `c79b7a9`, `1406259`. JJ is currently working on the Privy linkup on the `main` branch in parallel.
+
+**@privy-claude — heads up + suggestions from a session that just landed wagered groupchat on top of your Privy work**
+
+Wagered groupchat depends on three things from the Privy stack to actually play:
+1. `useSolShotWallet().walletAddress` resolves to a real Solana pubkey
+2. `useSolShotWallet().signAndSendGroupDeposit(serializedTxBase64, matchId)` signs & sends — added in this session, mirrors `signAndSendEscrowDeposit` exactly (same `sendTransactionUnified` plumbing, just emits `confirmGroupDeposit` instead of `escrowDepositConfirm`)
+3. The Privy-provisioned wallet address gets written to `User.walletAddress` in Mongo so `server/services/users.lookupUserByTelegramId(tgId).walletAddress` returns it. **This is the single most important binding** for the wagered flow — `handleJoinCallback` blocks the join with "link your wallet at solshot.gg first" if it's null. If you find a Privy-authed user has no Mongo wallet binding, the groupchat join silently fails.
+
+**Things I noticed in WalletContext.js while wiring this — flag for your attention:**
+
+1. **`SolShotWalletInner` crashes when `REACT_APP_PRIVY_APP_ID` is unset locally** — line 141-145 calls `usePrivy`, `usePrivySolanaWallets`, `usePrivySignMessage`, `usePrivySignAndSend`, `usePrivyCreateSolanaWallet` unconditionally. The comment at line 137-140 claims these "gracefully no-op when PrivyProvider isn't wrapping" but in practice they throw with `useWallets was called outside the PrivyProvider component`, which crashes the entire SolShotWalletInner with no UI rendering. Blocks all local dev unless you add PRIVY_APP_ID to `client/.env`. Cleanest fix: split into a `PrivyEnabledInner` that holds the Privy hooks and only renders inside the conditional provider, vs an `AdapterOnlyInner` for the legacy fallback. Production with proper env vars is unaffected.
+
+2. **`validateEscrowTransaction` checks `REACT_APP_ESCROW_PROGRAM_ID` (single var)** — currently set to v1's program ID (`4kzr…tnH1` should replace the stale `Cqv…7GtD` in `client/.env`). v2 deposits go to a different program ID (`BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N`). The discriminator `[234, 73, 235, 136, 168, 103, 239, 207]` for `deposit_wager` is identical between v1 and v2 (Anchor derives from instruction name), but the program-id equality check `ix.programId.equals(ESCROW_PROGRAM_ID)` will reject v2 deposits as "Unexpected program". **Two ways to fix:** (a) add `REACT_APP_ESCROW_V2_PROGRAM_ID` and accept either, (b) make ESCROW_PROGRAM_ID accept a comma-separated list. I'd take (a) — explicit per-version slot is clearer and forward-compatible to v3.
+
+3. **`suspiciousTx` event now has two payload shapes** — `{ reason, roomId }` for v1 (1v1) and `{ reason, matchId }` for groupchat. If you have a server-side handler keyed only on `roomId`, groupchat suspicious deposits will fail logging. Cheap union type on the server.
+
+4. **`window.solWallet` exposes `signAndSendEscrowDeposit` for Phaser scene access** (per memory note) — I did NOT add `signAndSendGroupDeposit` there because the new GroupDepositScreen uses the React context directly. If a future Phaser scene needs to trigger group deposits, add it to the `window.solWallet` shape symmetrically.
+
+5. **Manual `privyCreateSolanaWallet` workaround at line 154-176** — your comment notes this bypasses the broken `EmbeddedWalletOnAccountCreateScreen` "Cannot destructure property 'onSuccess' of 'a.createWallet'" crash. **Once a Privy SDK update fixes this**, the manual `useEffect` block can be removed — but the version bump should be tested for the User.walletAddress binding side-effect described in (3) above. I'd hold the manual create until Privy ships a SDK release notes saying it's resolved.
+
+**Verifying the binding (item 3) when you get back to it**: after a fresh Privy email login, fire `db.users.findOne({ telegramUserId: <tgId> })` in mongo and check `walletAddress` is set to the Privy-issued Solana address. If it's null, the binding write isn't firing — probably needs to be triggered explicitly after `privyCreateSolanaWallet` resolves (line 161 has a `.then(result => console.log(...))` that could be extended to POST to `/api/users/link-wallet` or emit a socket `linkWallet` event with the new address). Without this, wagered groupchat is unreachable for new Privy users.
+
+**End-to-end test JJ can run once Privy is solid:**
+1. Fresh TG account, open solshot.gg via the bot menu button
+2. Sign in via Privy (email)
+3. Confirm wallet pubkey appears in topbar pill
+4. Verify `User.walletAddress` populated in Mongo
+5. From a TG group: `/customgame` → Wagered → 0.01 SOL × 2 players → tap Join with the new account on one device + a second test account on another
+6. Both join → lobby fills → server creates escrow PDA → bot posts deposit button
+7. Both tap deposit button → GroupDepositScreen opens → sign → match auto-activates
+8. Play through to settle → check that 90% pot lands in winner's wallet, 7% in treasury, 3% in ops
+
+If step 4 or step 7 fails, the binding write or the deposit-flow integration needs another pass.
+
+— main-claude

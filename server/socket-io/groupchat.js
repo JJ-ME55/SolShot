@@ -22,6 +22,8 @@
 import GroupMatch from '../models/GroupMatch.js';
 import * as lifecycle from '../services/groupchat/lifecycle.js';
 import { getWeapon, getWeaponCost } from '../models/Weapon.js';
+import { getEscrowStateV2, isEscrowV2Enabled } from '../services/escrow-v2.js';
+import { lookupUserByTelegramId } from '../services/users.js';
 
 /**
  * Strip internal-only fields from a match doc before sending to the client.
@@ -315,7 +317,7 @@ export function registerGroupChatSocketHandlers(client, io) {
             const matches = await GroupMatch.find(
                 {
                     'players.telegramUserId': tgId,
-                    state: { $in: ['lobby', 'active'] },
+                    state: { $in: ['lobby', 'awaiting_deposits', 'active'] },
                 },
                 {
                     matchId: 1, chatId: 1, chatTitle: 1, hostTelegramId: 1,
@@ -333,6 +335,119 @@ export function registerGroupChatSocketHandlers(client, io) {
         } catch (err) {
             console.error('[group-chat] getMyGroupMatches error:', err);
             client.emit('myGroupMatches', { error: 'server_error', matches: [] });
+        }
+    });
+
+    /**
+     * PWA → server: confirm a deposit just signed by the player for a wagered
+     * group match in 'awaiting_deposits' state.
+     *
+     * Mirrors v1's `escrowDepositConfirm` handler in main.js — verifies the
+     * deposit is actually visible on-chain (via getEscrowStateV2) before
+     * trusting the client. Spoofing protection: tx signature alone isn't
+     * trusted; we re-fetch the escrow account and check the deposits_mask
+     * bit for the player's wallet position.
+     *
+     * Payload: { matchId, txSignature, walletAddress? }
+     * Emits to caller: 'groupDepositConfirmed' { matchId, allDeposited, error? }
+     * Emits to room:   'groupDepositStatus' { matchId, deposits: [...] }
+     */
+    client.on('confirmGroupDeposit', async (payload = {}) => {
+        const { matchId, txSignature } = payload;
+        const tgId = tgIdFor(client, payload);
+
+        if (!matchId || !txSignature) {
+            client.emit('groupDepositConfirmed', { matchId, error: 'missing_fields' });
+            return;
+        }
+        if (!tgId) {
+            client.emit('groupDepositConfirmed', { matchId, error: 'no_identity' });
+            return;
+        }
+
+        try {
+            // Resolve the depositor's wallet from User. Trust server lookup
+            // over a client-supplied walletAddress to prevent claim-on-behalf
+            // attacks ("I deposited" while supplying someone else's wallet).
+            const user = await lookupUserByTelegramId(tgId);
+            const walletAddress = user?.walletAddress;
+            if (!walletAddress) {
+                client.emit('groupDepositConfirmed', { matchId, error: 'no_linked_wallet' });
+                return;
+            }
+
+            const match = await GroupMatch.findOne({ matchId });
+            if (!match) {
+                client.emit('groupDepositConfirmed', { matchId, error: 'match_not_found' });
+                return;
+            }
+            if (match.state !== 'awaiting_deposits') {
+                client.emit('groupDepositConfirmed', { matchId, error: `wrong_state_${match.state}` });
+                return;
+            }
+
+            const playerIndex = match.players.findIndex(p => p.walletAddress === walletAddress);
+            if (playerIndex < 0) {
+                client.emit('groupDepositConfirmed', { matchId, error: 'not_a_player' });
+                return;
+            }
+
+            // SF-01-style on-chain verification (mirrors v1 escrowDepositConfirm).
+            // Skip in dev mode (escrow not initialized).
+            if (isEscrowV2Enabled()) {
+                let escrowState = await getEscrowStateV2(matchId);
+                if (!escrowState) {
+                    // Single retry — devnet confirmation lag.
+                    await new Promise(r => setTimeout(r, 2000));
+                    escrowState = await getEscrowStateV2(matchId);
+                }
+                if (!escrowState) {
+                    client.emit('groupDepositConfirmed', { matchId, error: 'escrow_pda_not_found' });
+                    return;
+                }
+
+                const bitSet = (escrowState.depositsMask & (1 << playerIndex)) !== 0;
+                if (!bitSet) {
+                    client.emit('groupDepositConfirmed', { matchId, error: 'deposit_not_confirmed_on_chain' });
+                    return;
+                }
+
+                const expectedLamports = match.config.wagerLamports;
+                if (escrowState.wagerLamports !== expectedLamports) {
+                    client.emit('groupDepositConfirmed', { matchId, error: 'wager_amount_mismatch' });
+                    return;
+                }
+            }
+
+            const result = await lifecycle.confirmDeposit(matchId, walletAddress, txSignature);
+
+            if (!result.ok) {
+                client.emit('groupDepositConfirmed', { matchId, error: result.error });
+                return;
+            }
+
+            client.emit('groupDepositConfirmed', {
+                matchId,
+                allDeposited: !!result.allDeposited,
+                alreadyConfirmed: !!result.alreadyConfirmed,
+            });
+
+            // Broadcast updated deposit roster to everyone watching the match.
+            const fresh = await GroupMatch.findOne({ matchId }).lean();
+            if (fresh) {
+                io.to(roomForMatch(matchId)).emit('groupDepositStatus', {
+                    matchId,
+                    state: fresh.state,
+                    deposits: fresh.players.map(p => ({
+                        walletAddress: p.walletAddress,
+                        callsign: p.callsign,
+                        deposited: !!p.initialDepositTx,
+                    })),
+                });
+            }
+        } catch (err) {
+            console.error('[group-chat] confirmGroupDeposit error:', err);
+            client.emit('groupDepositConfirmed', { matchId, error: 'server_error' });
         }
     });
 }

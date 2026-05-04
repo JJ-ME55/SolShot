@@ -22,6 +22,7 @@ import {
     createMatchEscrow, settleMatchEscrow, cancelMatchEscrow,
     buildDepositTransaction, getEscrowState, getEscrowPDA,
 } from './escrow.js';
+import { initEscrowV2, isEscrowV2Enabled } from './escrow-v2.js';
 import logger from './logger.js';
 
 const SOLANA_RPC = process.env.SOLANA_RPC || 'https://api.devnet.solana.com';
@@ -76,7 +77,11 @@ export function initSolana() {
 
     // Initialize escrow program (keypair loaded via keys.js)
     const escrowReady = initEscrow();
-    console.log(`[Solana] Escrow program: ${escrowReady ? 'ENABLED' : 'DISABLED (dev mode)'}`);
+    console.log(`[Solana] Escrow v1 program: ${escrowReady ? 'ENABLED' : 'DISABLED (dev mode)'}`);
+
+    // Initialize escrow v2 program (N-player groupchat) — same keypair as v1
+    const escrowV2Ready = initEscrowV2();
+    console.log(`[Solana] Escrow v2 program: ${escrowV2Ready ? 'ENABLED' : 'DISABLED (dev mode)'}`);
 
     return connection;
 }

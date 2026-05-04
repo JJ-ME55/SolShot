@@ -26,6 +26,7 @@ export default function DesignTopBar({
 }) {
   const { walletAddress, connected, login: privyLogin, source } = useSolShotWallet();
   const { setVisible } = useWalletModal();
+  const [copied, setCopied] = React.useState(false);
 
   // Connect handler — prefer Privy login modal (embedded wallet flow).
   // If Privy isn't configured (dev mode), fall back to wallet-adapter modal.
@@ -37,18 +38,25 @@ export default function DesignTopBar({
     }
   };
 
-  // Pill click — when connected via Privy, opens the Privy account modal
-  // (manage wallets, export key, log out). When connected via adapter,
-  // opens the wallet-adapter modal (disconnect, change wallet).
-  const handlePillClick = () => {
-    if (source === 'privy' && privyLogin) {
-      // Privy doesn't expose an "open account" hook directly via usePrivy
-      // — clicking the pill just keeps the address visible for now. A
-      // dedicated Wallet screen ships in a follow-up commit with export
-      // + withdraw + disconnect.
-      return;
+  // Pill click — copies the full Solana address to the clipboard so the
+  // user can paste it into a funding source (Phantom on another device,
+  // exchange withdrawal, etc.). For wallet-adapter users we also open
+  // the wallet-adapter modal (which has change-wallet / disconnect),
+  // because Privy users can manage their wallet via the Privy modal
+  // separately.
+  const handlePillClick = async () => {
+    if (walletAddress) {
+      try {
+        await navigator.clipboard.writeText(walletAddress);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      } catch (err) {
+        // Clipboard API not available (e.g. http context) — fall through to modal
+      }
     }
-    setVisible(true);
+    if (source !== 'privy') {
+      setVisible(true);
+    }
   };
 
   const addrShort = walletAddress
@@ -81,20 +89,21 @@ export default function DesignTopBar({
             <button
               type="button"
               onClick={handlePillClick}
-              title={walletAddress}
+              title={`${walletAddress}\n\nClick to copy`}
               style={{
                 fontFamily: 'var(--f-mono)',
                 fontSize: 10,
                 letterSpacing: '0.18em',
-                background: 'var(--bg-raised)',
-                color: 'var(--olive)',
+                background: copied ? 'var(--accent)' : 'var(--bg-raised)',
+                color: copied ? 'var(--bg-deep)' : 'var(--olive)',
                 border: '1px solid var(--border)',
                 padding: '5px 9px',
                 cursor: 'pointer',
                 clipPath: 'polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px))',
+                transition: 'background 0.15s, color 0.15s',
               }}
             >
-              {addrShort}
+              {copied ? 'COPIED' : addrShort}
             </button>
           </>
         ) : (

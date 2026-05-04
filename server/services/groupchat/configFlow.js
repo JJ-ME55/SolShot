@@ -82,7 +82,12 @@ function shouldSkip(step, partial) {
     if (step === 'wager' && partial.type === 'free') return true;
     if (step === 'buybacks' && partial.type === 'free') return true;
     if (step === 'buybackCap' && partial.type === 'free') return true;
-    // Wagered with buybacks off: no cap step
+    // Wagered v2: buyback requires on-chain top-up the escrow doesn't support
+    // until v2.1. Hide both buyback steps and force buybacksEnabled=false in
+    // finalize(). Re-enable when v2.1 ships buyback CPI.
+    if (step === 'buybacks' && partial.type === 'wagered') return true;
+    if (step === 'buybackCap' && partial.type === 'wagered') return true;
+    // Wagered with buybacks off: no cap step (vestigial; covered above for now)
     if (step === 'buybackCap' && !partial.buybacksEnabled) return true;
     return false;
 }
@@ -115,9 +120,9 @@ function promptForStep(step, partial) {
     switch (step) {
         case 'type':
             return {
-                text: `${summary}${stepHeader('Match type')}\n\nFree matches are live now. Wagered group matches need Escrow v2 (Phase 2 — coming soon).`,
+                text: `${summary}${stepHeader('Match type')}\n\nFree matches are gold-only. Wagered matches deposit SOL into on-chain escrow (v2) and pay 90% of pot to the winner, 7% treasury, 3% ops. Buybacks not yet supported in wagered v2 — coming in v2.1.`,
                 keyboard: kb([
-                    [btn('💸 Free', 'gc_cfg_type_free'), btn('💰 Wagered (soon)', 'gc_cfg_type_wagered_soon')],
+                    [btn('💸 Free', 'gc_cfg_type_free'), btn('💰 Wagered', 'gc_cfg_type_wagered')],
                     [btn('✖ Cancel', 'gc_cfg_cancel')],
                 ]),
             };
@@ -377,8 +382,10 @@ function applyValue(partial, callbackData) {
  */
 function finalize(partial) {
     const isFree = partial.type === 'free';
+    const isWagered = partial.type === 'wagered';
     // Free matches: no wager, buybacks force-off (escalating cost on 0 wager makes no sense)
-    const buybacksEnabled = isFree ? false : (partial.buybacksEnabled ?? DEFAULTS.buybacksEnabled);
+    // Wagered v2: buybacks force-off until v2.1 escrow ships buyback CPI
+    const buybacksEnabled = (isFree || isWagered) ? false : (partial.buybacksEnabled ?? DEFAULTS.buybacksEnabled);
     const maxPlayers = partial.maxPlayers ?? DEFAULTS.maxPlayers;
     // minPlayers scales with maxPlayers — small matches (2/3) need full attendance,
     // bigger matches (4+) keep the original 4-player floor for a real group feel.

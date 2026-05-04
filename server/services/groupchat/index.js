@@ -22,6 +22,7 @@ import GroupMatch from '../../models/GroupMatch.js';
 import * as configFlow from './configFlow.js';
 import * as lobbyCard from './lobbyCard.js';
 import * as lifecycle from './lifecycle.js';
+import { lookupUserByTelegramId } from '../users.js';
 
 // ─── Match ID generation ────────────────────────────────────────────────
 
@@ -100,22 +101,23 @@ async function handleStartMatch(ctx) {
         return ctx.reply(`Need at least ${match.config.minPlayers} players to start. Currently ${match.players.length}/${match.config.maxPlayers}.`);
     }
 
-    await lifecycle.startMatch(match.matchId);
+    const updated = await lifecycle.startMatch(match.matchId);
     // Edit the lobby card to show "match started" state — prevents stale joins.
     if (match.lobbyMessageId) {
-        await safeEdit(ctx, match.lobbyMessageId,
-            `🎯 <b>Match #${match.matchId}</b> — match active. See chat for turn pings.`,
-            { parse_mode: 'HTML' });
+        const cardText = updated?.state === 'awaiting_deposits'
+            ? `💰 <b>Match #${match.matchId}</b> — awaiting deposits. See chat for the deposit button.`
+            : `🎯 <b>Match #${match.matchId}</b> — match active. See chat for turn pings.`;
+        await safeEdit(ctx, match.lobbyMessageId, cardText, { parse_mode: 'HTML' });
     }
 }
 
 async function handleCancelMatch(ctx) {
     if (!isGroupChat(ctx)) return;
-    // Find any open (lobby OR active) match — host should be able to
+    // Find any open (lobby / awaiting_deposits / active) match — host should be able to
     // abandon a running match without waiting for it to settle naturally.
     const match = await GroupMatch.findOne({
         chatId: ctx.chat.id,
-        state: { $in: ['lobby', 'active'] },
+        state: { $in: ['lobby', 'awaiting_deposits', 'active'] },
     });
     if (!match) return ctx.reply('No open or active match in this chat.');
     if (match.hostTelegramId !== ctx.from.id) {
@@ -123,6 +125,7 @@ async function handleCancelMatch(ctx) {
     }
 
     const wasActive = match.state === 'active';
+    const wasWageredWithEscrow = match.config?.type === 'wagered' && match.escrowPda;
 
     // If it was active, clear its scheduled turn timer so the scheduler
     // doesn't try to fire idle penalties on a cancelled match.
@@ -137,6 +140,18 @@ async function handleCancelMatch(ctx) {
     match.cancelledAt = new Date();
     match.cancelReason = wasActive ? 'host_cancel_active' : 'host_cancel';
     await match.save();
+
+    // Wagered matches with an on-chain escrow: refund deposited players.
+    // Best-effort — if the chain call fails, permissionless_reclaim sweeps
+    // the pot 24h after match_end_ts so funds are never permanently stuck.
+    if (wasWageredWithEscrow) {
+        const result = await lifecycle.cancelWageredEscrow(match);
+        if (result.success && result.txSignature) {
+            await ctx.reply(`💸 On-chain refund settled — TX: <code>${result.txSignature}</code>`, { parse_mode: 'HTML' });
+        } else if (!result.success) {
+            await ctx.reply(`⚠️ On-chain refund failed (${result.error}). Players can self-reclaim 24h after match end via the PWA.`);
+        }
+    }
 
     await ctx.reply(`🚫 Match #${match.matchId} cancelled by host${wasActive ? ' (was in progress)' : ''}.`);
     if (match.lobbyMessageId) {
@@ -249,10 +264,6 @@ async function handleJoinCallback(ctx) {
         return ctx.answerCbQuery('Match is full.', { show_alert: true });
     }
     if (match.players.some(p => p.telegramUserId === ctx.from.id)) {
-        // Clearer prompt — "you're already in" alone left users wondering
-        // what to do next (especially on iOS, where the same TG account
-        // may also be open on TG Web and showing a different match-state
-        // view). Tell them exactly where to go.
         return ctx.answerCbQuery(
             "You're already in this match — open the Mini App to play your turn.",
             { show_alert: true }
@@ -264,7 +275,7 @@ async function handleJoinCallback(ctx) {
     // server boundary anyway.
     const conflict = await GroupMatch.findOne({
         chatId: ctx.chat.id,
-        state: 'lobby',
+        state: { $in: ['lobby', 'awaiting_deposits'] },
         'players.telegramUserId': ctx.from.id,
         matchId: { $ne: matchId },
     }).lean();
@@ -272,20 +283,40 @@ async function handleJoinCallback(ctx) {
         return ctx.answerCbQuery(`You're already in match #${conflict.matchId} in this chat.`, { show_alert: true });
     }
 
+    // Wagered: require a linked wallet BEFORE adding to the lobby. Without
+    // this, the lobby could fill with un-walletted players and beginWagered-
+    // DepositPhase would fail on chain (or refuse to call createMatchEscrow).
+    let walletAddress = null;
+    if (match.config?.type === 'wagered') {
+        const user = await lookupUserByTelegramId(ctx.from.id);
+        if (!user?.walletAddress) {
+            return ctx.answerCbQuery(
+                'Wagered match — link your wallet at solshot.gg first, then come back and tap Join.',
+                { show_alert: true }
+            );
+        }
+        walletAddress = user.walletAddress;
+    }
+
     const tankColor = pickAvailableTankColor(match.players);
-    match.players.push(buildPlayerSlot(ctx.from, tankColor));
+    const slot = buildPlayerSlot(ctx.from, tankColor);
+    if (walletAddress) slot.walletAddress = walletAddress;
+    match.players.push(slot);
     await match.save();
 
     await refreshLobbyCard(ctx, match);
-    await ctx.answerCbQuery('You\'re in!');
+    await ctx.answerCbQuery(match.config?.type === 'wagered' ? "You're in! Deposit prompt arrives when lobby fills." : "You're in!");
 
-    // Auto-start when lobby is full
+    // Auto-start when lobby is full. For wagered, this transitions to
+    // awaiting_deposits + posts the deposit prompt to the chat (lifecycle
+    // handles the message). For free, it goes straight to active.
     if (match.players.length >= match.config.maxPlayers) {
-        await lifecycle.startMatch(match.matchId);
+        const updated = await lifecycle.startMatch(match.matchId);
         if (match.lobbyMessageId) {
-            await safeEdit(ctx, match.lobbyMessageId,
-                `🎯 <b>Match #${match.matchId}</b> — match active. See chat for turn pings.`,
-                { parse_mode: 'HTML' });
+            const cardText = updated?.state === 'awaiting_deposits'
+                ? `💰 <b>Match #${match.matchId}</b> — lobby full, awaiting deposits. See chat for the deposit button.`
+                : `🎯 <b>Match #${match.matchId}</b> — match active. See chat for turn pings.`;
+            await safeEdit(ctx, match.lobbyMessageId, cardText, { parse_mode: 'HTML' });
         }
     }
 }
@@ -327,26 +358,39 @@ async function handleStartCallback(ctx) {
     }
 
     await ctx.answerCbQuery('Starting match…');
-    await lifecycle.startMatch(matchId);
+    const updated = await lifecycle.startMatch(matchId);
     if (match.lobbyMessageId) {
-        await safeEdit(ctx, match.lobbyMessageId,
-            `🎯 <b>Match #${match.matchId}</b> — match active. See chat for turn pings.`,
-            { parse_mode: 'HTML' });
+        const cardText = updated?.state === 'awaiting_deposits'
+            ? `💰 <b>Match #${match.matchId}</b> — awaiting deposits. See chat for the deposit button.`
+            : `🎯 <b>Match #${match.matchId}</b> — match active. See chat for turn pings.`;
+        await safeEdit(ctx, match.lobbyMessageId, cardText, { parse_mode: 'HTML' });
     }
 }
 
 async function handleCancelCallback(ctx) {
     const matchId = ctx.match[1];
-    const match = await GroupMatch.findOne({ matchId, state: 'lobby' });
+    // Inline-button cancel sits on the lobby card; reachable in 'lobby' and
+    // 'awaiting_deposits' (for wagered, before everyone has deposited).
+    const match = await GroupMatch.findOne({ matchId, state: { $in: ['lobby', 'awaiting_deposits'] } });
     if (!match) return ctx.answerCbQuery('That match is no longer open.', { show_alert: true });
     if (match.hostTelegramId !== ctx.from.id) {
         return ctx.answerCbQuery('Only the host can cancel.', { show_alert: true });
     }
 
+    const wasWageredWithEscrow = match.config?.type === 'wagered' && match.escrowPda;
+
     match.state = 'cancelled';
     match.cancelledAt = new Date();
     match.cancelReason = 'host_cancel_inline';
     await match.save();
+
+    // Wagered with deposits collected: refund on-chain.
+    if (wasWageredWithEscrow) {
+        const result = await lifecycle.cancelWageredEscrow(match);
+        if (!result.success) {
+            console.warn(`[groupchat] inline cancel of ${matchId} — chain refund failed:`, result.error);
+        }
+    }
 
     await ctx.editMessageText(
         `🚫 <b>Match #${match.matchId}</b> — cancelled by host.`,

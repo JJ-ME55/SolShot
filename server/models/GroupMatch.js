@@ -163,12 +163,27 @@ const groupMatchSchema = new mongoose.Schema({
     lobbyMessageId: { type: Number, default: null },
 
     // Lifecycle state
+    //   lobby             — players joining
+    //   awaiting_deposits — wagered only: lobby filled, escrow PDA created, players depositing
+    //   active            — turn rotation in progress
+    //   settled           — winner paid (and escrow settled on-chain for wagered)
+    //   cancelled         — host cancel / lobby expired / refund (and escrow cancelled on-chain for wagered)
     state: {
         type: String,
-        enum: ['lobby', 'active', 'settled', 'cancelled'],
+        enum: ['lobby', 'awaiting_deposits', 'active', 'settled', 'cancelled'],
         default: 'lobby',
         index: true,
     },
+
+    // Wagered (Phase 2 — null on free):
+    //   escrowPda           — base58 PDA created by escrow-v2.createMatchEscrow
+    //   escrowProgramId     — base58 program ID; future-proofs in case we ever
+    //                          coexist with a v3 escrow alongside in-flight v2 matches
+    //   depositTimeoutAt    — server's view of when the deposit window closes
+    //                          (for the deposit-watchdog cron + UI countdown)
+    escrowPda: { type: String, default: null },
+    escrowProgramId: { type: String, default: null },
+    depositTimeoutAt: { type: Date, default: null },
 
     // Match config (host-set knobs)
     config: { type: configSchema, required: true },

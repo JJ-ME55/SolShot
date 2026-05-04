@@ -11,6 +11,7 @@ import { healthCheck, getStats } from './services/monitoring.js'
 import { initShotState } from './services/shot-token.js'
 import { initKeys } from './services/keys.js';
 import { initEscrow } from './services/escrow.js';
+import { initEscrowV2 } from './services/escrow-v2.js';
 import { requireAdminKey } from './middleware/guards.js';
 import { telegramSocketMiddleware } from './middleware/telegram.js';
 import { initBot, setupBotWebhook, stopBot } from './services/bot.js';
@@ -191,7 +192,10 @@ app.post('/api/admin/reload-keys', requireAdminKey, (req, res) => {
     }
     // On Windows/dev: reload directly (SIGHUP throws ENOSYS on Windows)
     const ok = initKeys();
-    if (ok) initEscrow();
+    if (ok) {
+        initEscrow();
+        initEscrowV2();
+    }
     res.json({ ok, message: ok ? 'Keys reloaded directly' : 'Key reload failed' });
 });
 
@@ -414,6 +418,7 @@ process.on('SIGHUP', () => {
     const ok = initKeys();
     if (ok) {
         initEscrow();
+        initEscrowV2();
         console.log('[Server] Credential reload complete');
     } else {
         console.error('[Server] Credential reload failed — escrow unchanged');

@@ -27,6 +27,22 @@ import { getBot } from '../bot.js';
 import { dispatchGroupVictoryDm } from '../challenge/victoryDm.js';
 import { earnGold, awardKillBonus } from '../gold.js';
 import { generateTerrain, generateTankPositions, generateWind, processShot, WEAPON_DATA } from '../physics.js';
+import {
+    isEscrowV2Enabled,
+    createMatchEscrowV2,
+    settleMatchEscrowV2,
+    cancelMatchEscrowV2,
+    getEscrowPDAV2,
+    PROGRAM_ID as ESCROW_V2_PROGRAM_ID,
+} from '../escrow-v2.js';
+
+// Wagered deposit window — players have this long to deposit after the
+// escrow PDA is created. Tighter than the program max (24h) because the
+// chat lobby's social pressure means players are usually online at lobby-fill.
+// Server-side cron polls escrow state to detect "all deposited" and flip
+// the match to active before this expires; if some don't deposit, the host
+// can call /startmatch to use start_with_depositors (≥2 needed).
+const WAGERED_DEPOSIT_WINDOW_SECS = 60 * 60; // 1h
 
 // 2026-05-04: switched off Mini App architecture (see bot.js comment).
 // URL now points at solshot.gg PWA. The "Take your shot" inline button
@@ -118,9 +134,11 @@ async function postTurnPing(match) {
 // ─── Lifecycle entry points ─────────────────────────────────────────────
 
 /**
- * Transition a lobby match to active. Picks a random first player,
- * generates terrain (placeholder for now), schedules the first turn
- * timer, posts a turn ping to the group chat.
+ * Transition a lobby match towards play.
+ *   - Free matches: lobby → active immediately (legacy behaviour).
+ *   - Wagered matches: lobby → awaiting_deposits (creates escrow PDA;
+ *     activation runs from confirmDeposit() once all players have paid,
+ *     or from /startmatch via start_with_depositors after deposit window).
  */
 export async function startMatch(matchId) {
     const match = await GroupMatch.findOne({ matchId });
@@ -137,6 +155,126 @@ export async function startMatch(matchId) {
         return match;
     }
 
+    if (match.config.type === 'wagered') {
+        return await beginWageredDepositPhase(match);
+    }
+
+    return await activateMatch(match);
+}
+
+/**
+ * Wagered handoff — create the escrow PDA on-chain with the locked-in
+ * player roster, transition Mongo to awaiting_deposits, post deposit
+ * prompts to the group chat. Players sign deposits in the PWA; once all
+ * confirm, confirmDeposit() fires activateMatch().
+ *
+ * If escrow create fails, the lobby state is preserved so the host can
+ * retry via /startmatch (or cancel cleanly).
+ */
+async function beginWageredDepositPhase(match) {
+    if (!isEscrowV2Enabled()) {
+        console.warn(`[group-chat] startMatch ${match.matchId}: wagered match but escrow v2 not initialized`);
+        await postToChat(match.chatId, `⚠️ Match #${match.matchId} — wagered matches need escrow service running. Use /cancelmatch and try again later.`);
+        return match;
+    }
+
+    // Sanity: every player must have a linked wallet for wagered. Join handler
+    // is supposed to enforce this, but defence-in-depth — surface a clear error
+    // before we hit chain rejection (which would leave a paid PDA with no players).
+    const missingWallets = match.players.filter(p => !p.walletAddress);
+    if (missingWallets.length > 0) {
+        const handles = missingWallets.map(p => `@${p.tgUsername || p.callsign}`).join(', ');
+        await postToChat(match.chatId, `⚠️ Match #${match.matchId} cannot start — these players have no linked wallet: ${handles}. They must link at solshot.gg first.`);
+        return match;
+    }
+
+    const wallets = match.players.map(p => p.walletAddress);
+    const wagerSOL = match.config.wagerLamports / 1_000_000_000;
+    // Match duration = lifecycle config; deposit window = WAGERED_DEPOSIT_WINDOW_SECS.
+    // Escrow's match_end_ts is set by program at activation (full deposits) using
+    // durationSecs we pass at create.
+    const durationSecs = Math.floor(match.config.durationMs / 1000);
+
+    const result = await createMatchEscrowV2(
+        match.matchId,
+        wagerSOL,
+        wallets,
+        durationSecs,
+        WAGERED_DEPOSIT_WINDOW_SECS,
+    );
+
+    if (!result.success) {
+        console.error(`[group-chat] escrow create failed for ${match.matchId}: ${result.error}`);
+        await postToChat(match.chatId, `⚠️ Match #${match.matchId} — couldn't create on-chain escrow (${result.error}). Use /cancelmatch and try again.`);
+        return match;
+    }
+
+    match.state = 'awaiting_deposits';
+    match.escrowPda = result.escrowPDA;
+    match.escrowProgramId = ESCROW_V2_PROGRAM_ID.toBase58();
+    match.depositTimeoutAt = new Date(Date.now() + WAGERED_DEPOSIT_WINDOW_SECS * 1000);
+    await match.save();
+
+    await postToChat(match.chatId,
+        `💰 <b>Match #${match.matchId}</b> — deposit phase open\n` +
+        `Each player deposits <b>${wagerSOL.toFixed(3)} SOL</b> within ${Math.round(WAGERED_DEPOSIT_WINDOW_SECS / 60)}m. ` +
+        `Tap below to deposit (opens solshot.gg). Match auto-starts once everyone has paid.`,
+        {
+            reply_markup: {
+                inline_keyboard: [[{
+                    text: '💸 Deposit your wager',
+                    url: `${MINI_APP_URL}?startapp=deposit_${match.matchId}`,
+                }]],
+            },
+        }
+    );
+
+    return match;
+}
+
+/**
+ * Player has confirmed their deposit on-chain. Update tracking and, if
+ * all players have deposited, activate the match.
+ *
+ * @param {string} matchId
+ * @param {string} walletAddress - depositor's wallet (base58)
+ * @param {string} txSignature   - deposit transaction signature
+ * @returns {Promise<{ ok: boolean, allDeposited?: boolean, match?: object, error?: string }>}
+ */
+export async function confirmDeposit(matchId, walletAddress, txSignature) {
+    const match = await GroupMatch.findOne({ matchId });
+    if (!match) return { ok: false, error: 'match_not_found' };
+    if (match.state !== 'awaiting_deposits') {
+        return { ok: false, error: `wrong_state_${match.state}` };
+    }
+
+    const playerIdx = match.players.findIndex(p => p.walletAddress === walletAddress);
+    if (playerIdx === -1) return { ok: false, error: 'not_a_player' };
+
+    if (match.players[playerIdx].initialDepositTx) {
+        return { ok: true, allDeposited: false, alreadyConfirmed: true };
+    }
+
+    match.players[playerIdx].initialDepositTx = txSignature;
+    await match.save();
+
+    const allDeposited = match.players.every(p => p.initialDepositTx);
+    if (allDeposited) {
+        await activateMatch(match);
+        return { ok: true, allDeposited: true, match };
+    }
+
+    return { ok: true, allDeposited: false, match };
+}
+
+/**
+ * Run the actual game-start logic: terrain, tank positions, wind, gold,
+ * weapons, schedule first turn deadline, post chat ping. Called from:
+ *   - startMatch directly (free matches)
+ *   - confirmDeposit when last deposit confirms (wagered)
+ *   - (future) /startmatch resume path after partial-deposit start_with_depositors
+ */
+async function activateMatch(match) {
     const now = new Date();
 
     // Random first player — fairness over join-order privilege.
@@ -603,8 +741,83 @@ export async function settleMatch(match, reason) {
         } catch (err) {
             console.warn('[group-chat] dispatchGroupVictoryDm failed:', err.message);
         }
-        // Phase 2 hook: settlement tx for wagered matches goes here (escrow v2).
+        // Wagered: settle on-chain. Winner = rankedFinishers[0]'s wallet.
+        // Treasury/ops + fee BPS are the snapshots taken at create_match time
+        // (escrow-v2 reads them from the escrow account itself).
+        if (match.config?.type === 'wagered' && match.escrowPda) {
+            try {
+                const winnerTgId = match.rankedFinishers?.[0];
+                const winnerPlayer = match.players.find(p => p.telegramUserId === winnerTgId);
+                if (!winnerPlayer?.walletAddress) {
+                    console.error(`[group-chat] settle ${match.matchId}: winner ${winnerTgId} has no wallet — leaving escrow unsettled, public reclaim will fire after match_end + 24h`);
+                } else {
+                    const result = await settleMatchEscrowV2(match.matchId, winnerPlayer.walletAddress);
+                    if (result.success) {
+                        match.settlementTx = result.txSignature;
+                        await match.save();
+                        console.log(`[group-chat] settled ${match.matchId} on-chain — TX: ${result.txSignature}`);
+                    } else {
+                        console.error(`[group-chat] settleMatchEscrowV2 failed for ${match.matchId}: ${result.error}`);
+                        // Eventual consistency: if settle fails (RPC/etc), the
+                        // permissionless_reclaim path lets ANYONE refund the
+                        // pot 24h after match_end_ts. So worst case is a delay,
+                        // not lost funds.
+                    }
+                }
+            } catch (err) {
+                console.error(`[group-chat] settle on-chain crash for ${match.matchId}:`, err.message);
+            }
+        }
     });
+}
+
+/**
+ * Cancel a wagered match's on-chain escrow + refund any deposited players.
+ * No-op for free matches or wagered matches whose escrow was never created
+ * (state still 'lobby' at cancel time).
+ *
+ * @param {object} match - GroupMatch doc (already mutated to state=cancelled)
+ * @returns {Promise<{ success: boolean, txSignature?: string, error?: string, skipped?: string }>}
+ */
+export async function cancelWageredEscrow(match) {
+    if (match.config?.type !== 'wagered') {
+        return { success: true, skipped: 'free_match' };
+    }
+    if (!match.escrowPda) {
+        // Lobby-stage cancel before beginWageredDepositPhase ran — no chain action needed.
+        return { success: true, skipped: 'no_escrow_created' };
+    }
+
+    // Pass deposited player wallets in player-index order. Undeposited slots
+    // are skipped (cancel_match expects only deposited). escrow.cancelMatchEscrowV2
+    // walks remaining_accounts in player-index order, so we must filter while
+    // preserving slot positions.
+    const depositedWallets = match.players
+        .map((p, i) => p.initialDepositTx ? { wallet: p.walletAddress, slot: i } : null)
+        .filter(x => x !== null);
+
+    if (depositedWallets.length === 0) {
+        // Escrow exists but no one deposited — escrow account holds only rent,
+        // which v2 escrow's cancel/permissionless_reclaim closes back to host.
+        // For now, no-op; permissionless_reclaim will sweep after grace.
+        return { success: true, skipped: 'no_deposits' };
+    }
+
+    try {
+        const result = await cancelMatchEscrowV2(
+            match.matchId,
+            depositedWallets.map(d => d.wallet)
+        );
+        if (result.success) {
+            console.log(`[group-chat] cancelled ${match.matchId} on-chain — TX: ${result.txSignature}, refunded ${depositedWallets.length} player(s)`);
+        } else {
+            console.error(`[group-chat] cancelMatchEscrowV2 failed for ${match.matchId}: ${result.error}`);
+        }
+        return result;
+    } catch (err) {
+        console.error(`[group-chat] cancel on-chain crash for ${match.matchId}:`, err.message);
+        return { success: false, error: err.message };
+    }
 }
 
 /**

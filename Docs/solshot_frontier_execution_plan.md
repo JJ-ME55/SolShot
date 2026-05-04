@@ -61,7 +61,7 @@ Original Day 1 plan vs reality:
 
 - 🟡 **Scope lock meeting** — happened informally; formalise with a written list today (Day 2).
 - ❌ **`frontier-submission` branch** — not created. Decision: **stay on `main`.** Render and Vercel both auto-deploy from `main`, splitting the branch now would break our deploy pipeline 6 days from submission. The hackathon-window commits are clearly tagged in messages (`feat(escrow):`, `fix(turn):`, `docs(readme):`) and that's the judge-facing artifact, not a branch name.
-- ❌ **`v0.1.0-frontier-baseline` tag** — not created. Tag at end of Day 2 instead from current `c52274b` HEAD.
+- ⏭ **`v0.1.0-frontier-baseline` tag** — dropped. Hackathon doesn't require it; descriptive commit messages and a `v1.0.0-frontier-submission` tag at the end is sufficient for a judge to scan the window's work.
 - ✅ **Devnet wagering end-to-end test** — landed today (4 May). Match `2f5b6180`, settlement TX `4WSsDsKVzCugdjsfD6Zg2kHKc7VBcByUKsN5P9CQEMj2ExXuuw9jQJch6eK4Qqu1MY8Ma16Tw1QawJKig5V3b9sf`, 90/7/3 split verified.
 - ❌ **6 raw gameplay clips** — not captured. Push to today (Day 2) afternoon.
 - ❌ **Day 1 Twitter post** — not posted. Combine with Day 2's tweet today.
@@ -80,8 +80,7 @@ Original Day 1 plan vs reality:
 **Afternoon (Fish + Jamie — remaining Day 2 work)**
 
 - [ ] **Verify the duplicate-fire fix.** Two-browser Quick Match. Deliberately set up kill-shot scenarios (final-blow, simultaneous-elimination, self-kill-on-low-HP). Confirm the new `[Fire] rejected: currentTurn=… shooterId=…` log fires when stale fires are blocked, and no duplicate impacts appear.
-- [ ] **Tag baseline release.** From current HEAD: `git tag v0.1.0-frontier-baseline c52274b && git push origin v0.1.0-frontier-baseline`. This is the "before stabilisation" snapshot.
-- [ ] **Scope lock — written list** in `Docs/HACKATHON_SCOPE.md`. Three sections: "Shipping", "v2", "Won't ship". Both names sign at the bottom.
+- [x] **Scope lock — written list** in `Docs/HACKATHON_SCOPE.md`. Three sections: "Shipping", "v2", "Won't ship". Both names sign at the bottom. (Drafted 2026-05-04, signatures pending.)
 - [ ] **Capture raw gameplay clips** (45 min, see shot list below). Save to `Assets/clips/raw/` with descriptive filenames.
 
 **Shot list (must capture all 6, ideally 7):**

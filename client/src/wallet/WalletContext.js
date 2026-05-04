@@ -173,16 +173,23 @@ function SolShotWalletInner({ children }) {
             });
     }, [privyReady, privyAuthed, privyWalletsReady, privySolanaWallets, privyCreateSolanaWallet, createWalletInFlight]);
 
-    // Pick the active wallet — prefer the first ready Privy wallet. The
-    // `ready` flag from useWallets is critical: a wallet can appear in
-    // the array before its signing channel is established, and trying to
-    // signMessage on a not-ready wallet throws "Failed to connect to
+    // Pick the active wallet — find the Privy embedded wallet by name.
+    // Per Privy docs canonical pattern, `wallets[0]` would pick the wrong
+    // entry if the user ever links an external wallet (Phantom etc.) via
+    // Privy. `standardWallet.name === 'Privy'` is the explicit signal.
+    //
+    // The `ready` flag from useWallets is critical: a wallet can appear
+    // in the array before its signing channel is established, and trying
+    // to signMessage on a not-ready wallet throws "Failed to connect to
     // wallet". Waiting for `privyWalletsReady` avoids that race.
     const privyWallet = useMemo(() => {
         if (!privyAuthed) return null;
         if (!privyWalletsReady) return null;
         if (!privySolanaWallets || privySolanaWallets.length === 0) return null;
-        return privySolanaWallets[0]; // first wallet is the user's primary
+        const embedded = privySolanaWallets.find(
+            (w) => w?.standardWallet?.name === 'Privy'
+        );
+        return embedded || privySolanaWallets[0]; // fall back if shape unexpected
     }, [privyAuthed, privyWalletsReady, privySolanaWallets]);
 
     const publicKey = useMemo(() => {
@@ -321,7 +328,16 @@ function SolShotWalletInner({ children }) {
 
     const signMessageUnified = useCallback(async (encodedMessage) => {
         if (!privyWallet) throw new Error('Wallet not connected');
-        const result = await privySignMessageFn({ message: encodedMessage, wallet: privyWallet });
+        // showWalletUIs: false suppresses Privy's confirmation modal for
+        // this signature. Used for the auth signMessage which fires once
+        // per page load — popping a "confirm" modal every page load is
+        // friction. We keep the modal ON for real-money paths
+        // (sendTransactionUnified — escrow deposits, SHOT burns).
+        const result = await privySignMessageFn({
+            message: encodedMessage,
+            wallet: privyWallet,
+            options: { uiOptions: { showWalletUIs: false } },
+        });
         return result.signature; // Uint8Array
     }, [privyWallet, privySignMessageFn]);
 

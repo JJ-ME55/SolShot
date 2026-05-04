@@ -68,6 +68,16 @@ const ESCROW_PROGRAM_ID = process.env.REACT_APP_ESCROW_PROGRAM_ID
     ? new PublicKey(process.env.REACT_APP_ESCROW_PROGRAM_ID)
     : null;
 
+// v2 escrow program (2–10 player matches via TG group chat). Same instruction
+// discriminator for `deposit_wager` (Anchor derives it from the instruction
+// name, not the program), but a different program ID. The TX validator
+// accepts deposits to either program — 1v1 quick-match → v1, group chat → v2.
+const ESCROW_V2_PROGRAM_ID = process.env.REACT_APP_ESCROW_V2_PROGRAM_ID
+    ? new PublicKey(process.env.REACT_APP_ESCROW_V2_PROGRAM_ID)
+    : null;
+
+const ALLOWED_ESCROW_PROGRAM_IDS = [ESCROW_PROGRAM_ID, ESCROW_V2_PROGRAM_ID].filter(Boolean);
+
 // CS-01: Known deposit_wager discriminator (SHA-256 of "global:deposit_wager" first 8 bytes)
 // Verified from IDL: [234, 73, 235, 136, 168, 103, 239, 207]
 const DEPOSIT_WAGER_DISCRIMINATOR = Buffer.from([234, 73, 235, 136, 168, 103, 239, 207]);
@@ -78,7 +88,7 @@ const COMPUTE_BUDGET_PROGRAM_ID = new PublicKey('ComputeBudget111111111111111111
  * Returns { valid: true } or { valid: false, reason: string }
  */
 function validateEscrowTransaction(tx) {
-    if (!ESCROW_PROGRAM_ID) {
+    if (ALLOWED_ESCROW_PROGRAM_IDS.length === 0) {
         return { valid: true }; // Dev mode — no program ID configured
     }
     const instructions = tx.instructions;
@@ -88,7 +98,11 @@ function validateEscrowTransaction(tx) {
     let hasDepositInstruction = false;
     for (const ix of instructions) {
         const programId = ix.programId.toBase58();
-        if (ix.programId.equals(ESCROW_PROGRAM_ID)) {
+        // Match against EITHER v1 (1v1 quick-match) or v2 (TG group chat
+        // 2-10 player) escrow program ID. Same deposit_wager discriminator
+        // for both.
+        const matchesEscrow = ALLOWED_ESCROW_PROGRAM_IDS.some(p => ix.programId.equals(p));
+        if (matchesEscrow) {
             if (ix.data.length < 8) {
                 return { valid: false, reason: 'Escrow instruction data too short' };
             }

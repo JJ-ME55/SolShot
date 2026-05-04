@@ -10,7 +10,14 @@
          "Unexpected token '<'" syntax errors. The script was originally a
          workaround for Reown/AppKit 403s during the Dynamic era and is no
          longer needed (Privy handles its own error boundaries). -->
-    <script src="%PUBLIC_URL%/js/telegram-web-app.js"></script>
+    <!-- telegram-web-app.js removed 2026-05-04: it shimmed window.Telegram.WebApp
+         globally even in regular browsers, which caused Privy's TG login to
+         take the Mini App auth path (`initLoginWithTelegram`) and crash with
+         "Cannot read properties of undefined (reading 'auth')" because there's
+         no real TG initData outside an actual Mini App. We dropped the Mini
+         App architecture in favor of bot URL → in-app browser → solshot.gg
+         PWA, so the script is no longer needed. All `window.Telegram?.WebApp`
+         usages in the client are optional-chained and no-op without it. -->
     <script src="https://plugin.jup.ag/plugin-v1.js" defer></script>
     <meta name="theme-color" content="#0e1209" />
     <meta name="description" content="Browser-based 1v1 tank duels on Solana. Wager SOL, earn SHOT, climb the prestige ladder. Play in your browser or via Telegram Mini App." />

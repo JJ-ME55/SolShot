@@ -1747,6 +1747,9 @@ const mainsocket = (io) => {
 
             broadcastRooms(io)
 
+            // DIAG: log joinRoom escrow state
+            console.log(`[Match] joinRoom ${roomId}: wager=${roomWager} escrowEnabled=${isEscrowEnabled()} wallets=${JSON.stringify(ws?.wallets)} players=${room.players.map(p => p.socketId).join(',')} active=${room.active}`)
+
             // Create on-chain escrow for wagered matches
             if (roomWager > 0 && isEscrowEnabled()) {
                 // SRV-09: Collect all N player wallets for N-player escrow creation
@@ -1889,7 +1892,12 @@ const mainsocket = (io) => {
                     } catch (err) {
                         console.error(`[Match] Escrow error for ${roomId}:`, err.message)
                     }
+                } else {
+                    // DIAG: silent-skip branch — log why
+                    console.error(`[Match] Escrow SKIPPED for ${roomId}: have ${allWallets.length}/${room.players.length} wallets. ws.wallets=${JSON.stringify(ws?.wallets)}`)
                 }
+            } else if (roomWager > 0) {
+                console.error(`[Match] Escrow SKIPPED for ${roomId}: escrowEnabled=${isEscrowEnabled()} (wager=${roomWager})`)
             }
 
             // Always broadcast roomUpdate so both players see the lobby
@@ -2324,6 +2332,8 @@ const mainsocket = (io) => {
         client.on('joinQueue', async (data) => {
             if (!data || typeof data !== 'object') return;
             const { matchMode, matchLength, wager: wagerAmount, playerName, tankColor } = data;
+            // DIAG: log every queue join — pinpoints lost matchups
+            console.log(`[Queue] joinQueue from ${client.id} authedWallet=${authenticatedWallets[client.id]} mode=${matchMode} length=${matchLength} wager=${wagerAmount}`)
 
             // custom_challenge bypasses the queue — must use createRoom
             if (matchMode === 'custom_challenge') {
@@ -2441,6 +2451,9 @@ const mainsocket = (io) => {
                 if (wagerAmount > 0) trackWager(wagerAmount * roomData.maxPlayers);  // All N players wager
                 broadcastRooms(io);
 
+                // DIAG: log queue match formation state — helps diagnose silent-skip escrow bugs
+                console.log(`[Queue] Forming match ${roomId}: wager=${wagerAmount} escrowEnabled=${isEscrowEnabled()} wallets=${JSON.stringify(wagerStates[roomId]?.wallets)} players=${roomData.players.map(p => p.socketId).join(',')}`)
+
                 // Escrow creation for wagered queue matches
                 if (wagerAmount > 0 && isEscrowEnabled()) {
                     // SRV-09: Collect all N player wallets (queue is always 2-player, but use N-player pattern for consistency)
@@ -2492,7 +2505,12 @@ const mainsocket = (io) => {
                         } catch (err) {
                             console.error(`[Queue] Escrow error for ${roomId}:`, err.message);
                         }
+                    } else {
+                        // DIAG: this is the silent-skip branch — log why escrow was skipped
+                        console.error(`[Queue] Escrow SKIPPED for ${roomId}: have ${allQueueWallets.length}/${roomData.players.length} wallets. wagerStates=${JSON.stringify(wagerStates[roomId])}`)
                     }
+                } else if (wagerAmount > 0) {
+                    console.error(`[Queue] Escrow SKIPPED for ${roomId}: escrowEnabled=${isEscrowEnabled()} (wager=${wagerAmount})`)
                 }
 
                 // Emit roomUpdate so both players see the waiting room lobby

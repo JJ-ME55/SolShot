@@ -94,10 +94,28 @@ function buildLaunchUrl(startapp = '', linkToken = null) {
   return MINI_APP_URL + (qs ? '?' + qs : '');
 }
 
-function launchKeyboard(label, startapp = '', linkToken = null) {
-  return {
-    inline_keyboard: [[{ text: label, url: buildLaunchUrl(startapp, linkToken) }]],
-  };
+/**
+ * Build a launch button. In private DM context we use Telegram's
+ * `login_url` button — the bot signs an auth payload with the user's
+ * TG identity into the URL, and Privy detects + auto-signs them in
+ * with zero clicks (just a one-tap "Allow @SolShotGG_bot to log you
+ * in?" confirmation that's part of TG's native flow). No phone-number
+ * entry, no Login Widget popup, no manual email step.
+ *
+ * In groups (or when ctx isn't available), Telegram rejects login_url
+ * — fall back to plain url:. Group users picking 1v1-from-group still
+ * get the standard email/Login-Widget flow.
+ *
+ * Bot domain must be registered with @BotFather /setdomain for
+ * login_url to issue auth payloads (already done — solshot.gg).
+ */
+function launchKeyboard(label, startapp = '', linkToken = null, ctx = null) {
+  const url = buildLaunchUrl(startapp, linkToken);
+  const isPrivate = ctx?.chat?.type === 'private';
+  const button = isPrivate
+    ? { text: label, login_url: { url } }
+    : { text: label, url };
+  return { inline_keyboard: [[button]] };
 }
 
 /**
@@ -144,7 +162,7 @@ function registerCommands(bot) {
       'Welcome to SolShot — artillery duels on Solana.\n\n' +
       'Real money 1v1 matches. 20 weapons. Skill-based wagering.\n\n' +
       'Tap below to launch.',
-      { reply_markup: launchKeyboard('🎯 Launch SolShot', payload, linkToken) }
+      { reply_markup: launchKeyboard('🎯 Launch SolShot', payload, linkToken, ctx) }
     );
   });
 
@@ -187,9 +205,12 @@ function registerCommands(bot) {
       {
         reply_markup: {
           inline_keyboard: [
-            [{ text: '⚡ 1v1 Quick',          url: buildLaunchUrl('play', linkToken) }],
-            [{ text: '🤖 vs Shot Bot',        url: buildLaunchUrl('ai-practice', linkToken) }],
-            [{ text: '⚔ Challenge a Friend', url: buildLaunchUrl('challenge_new', linkToken) }],
+            // login_url: → silent Privy auto-sign-in for DM users (Phase 2).
+            // This branch only runs when ctx.chat.type === 'private', so
+            // login_url is always valid here.
+            [{ text: '⚡ 1v1 Quick',          login_url: { url: buildLaunchUrl('play', linkToken) } }],
+            [{ text: '🤖 vs Shot Bot',        login_url: { url: buildLaunchUrl('ai-practice', linkToken) } }],
+            [{ text: '⚔ Challenge a Friend', login_url: { url: buildLaunchUrl('challenge_new', linkToken) } }],
             [{ text: '👥 Group chat (info)',  callback_data: 'play_pick_group' }],
           ],
         },
@@ -227,7 +248,7 @@ function registerCommands(bot) {
   bot.command('challenge', async (ctx) => {
     await ctx.reply(
       'Create a 1v1 challenge — get a shareable link to send your opponent.',
-      { reply_markup: launchKeyboard('Create Challenge', 'challenge_new') }
+      { reply_markup: launchKeyboard('Create Challenge', 'challenge_new', null, ctx) }
     );
   });
 
@@ -237,7 +258,7 @@ function registerCommands(bot) {
       if (!user || !user.stats || (user.stats.matchesPlayed || 0) === 0) {
         return ctx.reply(
           'No record yet — play your first match to start tracking stats.',
-          { reply_markup: launchKeyboard('Find a Match', 'play') }
+          { reply_markup: launchKeyboard('Find a Match', 'play', null, ctx) }
         );
       }
 
@@ -258,7 +279,7 @@ function registerCommands(bot) {
         const caption = `${props.callsign} · ${tierName}${rank ? ` · #${rank}` : ''}`;
         return ctx.replyWithPhoto({ source: png }, {
           caption,
-          reply_markup: launchKeyboard('Full Record', 'stats'),
+          reply_markup: launchKeyboard('Full Record', 'stats', null, ctx),
         });
       }
 
@@ -271,13 +292,13 @@ function registerCommands(bot) {
         `${fmtDmg(props.totalDamage)} damage · ${props.kills} kills`,
       ];
       await ctx.reply(lines.join('\n'), {
-        reply_markup: launchKeyboard('Full Record', 'stats'),
+        reply_markup: launchKeyboard('Full Record', 'stats', null, ctx),
       });
     } catch (err) {
       console.warn('[bot:/stats] error, falling back:', err.message);
       await ctx.reply(
         'Your record, rank, and signature weapon.',
-        { reply_markup: launchKeyboard('Open Barracks', 'stats') }
+        { reply_markup: launchKeyboard('Open Barracks', 'stats', null, ctx) }
       );
     }
   });
@@ -365,7 +386,7 @@ function registerCommands(bot) {
       if (!top.length) {
         return ctx.reply(
           'No players ranked yet — be the first.',
-          { reply_markup: launchKeyboard('Find a Match', 'play') }
+          { reply_markup: launchKeyboard('Find a Match', 'play', null, ctx) }
         );
       }
 
@@ -414,13 +435,13 @@ function registerCommands(bot) {
 
       await ctx.reply(lines.join('\n'), {
         parse_mode: 'HTML',
-        reply_markup: launchKeyboard('Full Leaderboard', 'leaderboard'),
+        reply_markup: launchKeyboard('Full Leaderboard', 'leaderboard', null, ctx),
       });
     } catch (err) {
       console.warn('[bot:/leaderboard] error, falling back:', err.message);
       await ctx.reply(
         'Top players this season.',
-        { reply_markup: launchKeyboard('Open Leaderboard', 'leaderboard') }
+        { reply_markup: launchKeyboard('Open Leaderboard', 'leaderboard', null, ctx) }
       );
     }
   });
@@ -444,7 +465,7 @@ function registerCommands(bot) {
         const linkToken = await mintLinkTokenIfNeeded(ctx);
         return ctx.reply(
           `${callsign}\n\nNo wallet yet. Tap below to set up your Solana wallet — required for wagered matches and SHOT.`,
-          { reply_markup: launchKeyboard('Set Up Wallet', 'wallet', linkToken) }
+          { reply_markup: launchKeyboard('Set Up Wallet', 'wallet', linkToken, ctx) }
         );
       }
 
@@ -470,7 +491,7 @@ function registerCommands(bot) {
         }
         const linkToken = await mintLinkTokenIfNeeded(ctx);
         return ctx.reply(lines.join('\n'), {
-          reply_markup: launchKeyboard('Set Up Wallet', 'wallet', linkToken),
+          reply_markup: launchKeyboard('Set Up Wallet', 'wallet', linkToken, ctx),
         });
       }
 
@@ -508,13 +529,13 @@ function registerCommands(bot) {
       }
 
       await ctx.reply(lines.join('\n'), {
-        reply_markup: launchKeyboard('Open Wallet', 'wallet'),
+        reply_markup: launchKeyboard('Open Wallet', 'wallet', null, ctx),
       });
     } catch (err) {
       console.warn('[bot:/wallet] lookup failed, falling back:', err.message);
       await ctx.reply(
         'Your wallet — balance, deposit, withdraw.',
-        { reply_markup: launchKeyboard('Open Wallet', 'wallet') }
+        { reply_markup: launchKeyboard('Open Wallet', 'wallet', null, ctx) }
       );
     }
   });
@@ -575,7 +596,7 @@ function registerCommands(bot) {
       if (!user) {
         return ctx.reply(
           `Cosmetics, camos, and projectile trails — paid in SHOT.\n\n${TOTAL_COSMETICS} items in the Armory. Open the Mini App to browse.`,
-          { reply_markup: launchKeyboard('Open Armory', 'shop') }
+          { reply_markup: launchKeyboard('Open Armory', 'shop', null, ctx) }
         );
       }
 
@@ -596,13 +617,13 @@ function registerCommands(bot) {
       }
 
       await ctx.reply(lines.join('\n'), {
-        reply_markup: launchKeyboard('Open Armory', 'shop'),
+        reply_markup: launchKeyboard('Open Armory', 'shop', null, ctx),
       });
     } catch (err) {
       console.warn('[bot:/shop] lookup failed, falling back:', err.message);
       await ctx.reply(
         'Cosmetics, camos, and projectile trails — paid in SHOT.',
-        { reply_markup: launchKeyboard('Open Armory', 'shop') }
+        { reply_markup: launchKeyboard('Open Armory', 'shop', null, ctx) }
       );
     }
   });
@@ -635,12 +656,12 @@ function registerCommands(bot) {
           'You have reached the maximum prestige tier. Honoured.\n' +
           `Total burned: ${burnedTotal.toLocaleString()} SHOT`;
       }
-      await ctx.reply(body, { reply_markup: launchKeyboard('Open Prestige', 'prestige') });
+      await ctx.reply(body, { reply_markup: launchKeyboard('Open Prestige', 'prestige', null, ctx) });
     } catch (err) {
       console.warn('[bot:/prestige] lookup failed, falling back:', err.message);
       await ctx.reply(
         'Climb the prestige tiers — Bronze through Diamond. Burn SHOT to advance.',
-        { reply_markup: launchKeyboard('Open Prestige', 'prestige') }
+        { reply_markup: launchKeyboard('Open Prestige', 'prestige', null, ctx) }
       );
     }
   });
@@ -654,7 +675,7 @@ function registerCommands(bot) {
       if (!user || !user.stats || (user.stats.matchesPlayed || 0) === 0) {
         return ctx.reply(
           '20 weapons across 6 tiers — single shot to nuclear pineapple. Play your first match to start tracking.',
-          { reply_markup: launchKeyboard('Open Arsenal', 'weapons') }
+          { reply_markup: launchKeyboard('Open Arsenal', 'weapons', null, ctx) }
         );
       }
 
@@ -706,13 +727,13 @@ function registerCommands(bot) {
       }
 
       await ctx.reply(lines.join('\n'), {
-        reply_markup: launchKeyboard('Open Arsenal', 'weapons'),
+        reply_markup: launchKeyboard('Open Arsenal', 'weapons', null, ctx),
       });
     } catch (err) {
       console.warn('[bot:/weapons] lookup failed, falling back:', err.message);
       await ctx.reply(
         '20 weapons across 6 tiers — single shot to nuclear pineapple. Browse the arsenal.',
-        { reply_markup: launchKeyboard('Open Arsenal', 'weapons') }
+        { reply_markup: launchKeyboard('Open Arsenal', 'weapons', null, ctx) }
       );
     }
   });
@@ -783,7 +804,7 @@ function registerCommands(bot) {
 
     try {
       await ctx.replyWithMarkdownV2(lines.join('\n'), {
-        reply_markup: launchKeyboard(cta, ctaParam),
+        reply_markup: launchKeyboard(cta, ctaParam, null, ctx),
       });
     } catch (err) {
       // MarkdownV2 escaping bug? Fall back to plain.
@@ -792,7 +813,7 @@ function registerCommands(bot) {
         'SolShot — artillery duels on Solana.\n\n' +
         'Practice mode is free. Wagered modes pay out in SOL.\n' +
         'Web: solshot.gg | X: @SolShotGG',
-        { reply_markup: launchKeyboard('Launch SolShot') }
+        { reply_markup: launchKeyboard('Launch SolShot', '', null, ctx) }
       );
     }
   });
@@ -818,7 +839,7 @@ function registerCommands(bot) {
       if (!code) {
         return ctx.reply(
           'Open SolShot once to start tracking your account, then try /refer again.',
-          { reply_markup: launchKeyboard('Open SolShot') }
+          { reply_markup: launchKeyboard('Open SolShot', '', null, ctx) }
         );
       }
       const url = buildInviteLink(code);
@@ -828,11 +849,17 @@ function registerCommands(bot) {
         `When a friend taps it AND finishes their first wagered match, you both ` +
         `earn ${REFERRAL_REWARD_SHOT} SHOT.\n\n` +
         `Code: ${code}`;
+      // /refer launcher button — login_url: in DM for silent Privy auto
+      // sign-in, fall back to url: in groups (TG rejects login_url there).
+      const isPrivate = ctx?.chat?.type === 'private';
+      const launchBtn = isPrivate
+        ? { text: 'Open SolShot', login_url: { url: MINI_APP_URL } }
+        : { text: 'Open SolShot', url: MINI_APP_URL };
       await ctx.reply(reply, {
         reply_markup: {
           inline_keyboard: [[
             { text: '⚔ Send Invite', switch_inline_query: `rf_${code}` },
-            { text: 'Open SolShot', url: `${MINI_APP_URL}` },
+            launchBtn,
           ]],
         },
       });
@@ -852,7 +879,7 @@ function registerCommands(bot) {
       '• Turn-deadline reminders\n' +
       '• Daily digest opt-in\n\n' +
       'For now, manage your callsign + wallet in the Mini App.',
-      { reply_markup: launchKeyboard('Open Settings', 'settings') }
+      { reply_markup: launchKeyboard('Open Settings', 'settings', null, ctx) }
     );
   });
 
@@ -862,7 +889,7 @@ function registerCommands(bot) {
   bot.command('mygames', async (ctx) => {
     await ctx.reply(
       'See every group match you\'re in — across every chat. Tap below to open.',
-      { reply_markup: launchKeyboard('Open My Games', 'mygames') }
+      { reply_markup: launchKeyboard('Open My Games', 'mygames', null, ctx) }
     );
   });
 

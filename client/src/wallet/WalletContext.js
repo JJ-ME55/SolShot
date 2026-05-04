@@ -138,15 +138,21 @@ function SolShotWalletInner({ children }) {
     // unset), because PrivyConditionalProvider falls through to the legacy path
     // entirely in that case. So no try/catch needed here.
     const { ready: privyReady, authenticated: privyAuthed, login: privyLogin, logout: privyLogout } = usePrivy();
-    const { wallets: privySolanaWallets } = usePrivySolanaWallets();
+    const { wallets: privySolanaWallets, ready: privyWalletsReady } = usePrivySolanaWallets();
     const { signMessage: privySignMessageFn } = usePrivySignMessage();
     const { signAndSendTransaction: privySignAndSendFn } = usePrivySignAndSend();
 
-    // Pick the active wallet — prefer Privy when authenticated AND has a wallet
+    // Pick the active wallet — prefer Privy when authenticated AND has a
+    // ready wallet. The `ready` flag from useWallets is critical: a wallet
+    // can appear in the array before its signing channel is established,
+    // and trying to signMessage on a not-ready wallet throws "Failed to
+    // connect to wallet". Waiting for `privyWalletsReady` avoids that race.
     const privyWallet = useMemo(() => {
-        if (!privyAuthed || !privySolanaWallets || privySolanaWallets.length === 0) return null;
+        if (!privyAuthed) return null;
+        if (!privyWalletsReady) return null;
+        if (!privySolanaWallets || privySolanaWallets.length === 0) return null;
         return privySolanaWallets[0]; // first wallet is the user's primary
-    }, [privyAuthed, privySolanaWallets]);
+    }, [privyAuthed, privyWalletsReady, privySolanaWallets]);
 
     const activeSource = privyWallet ? 'privy' : (adapterConnected ? 'adapter' : null);
 
@@ -278,7 +284,7 @@ function SolShotWalletInner({ children }) {
 
     const authenticate = useCallback(async () => {
         if (!walletAddress) {
-            console.warn('[SolShot] Cannot authenticate: no wallet');
+            // No wallet yet — don't spam the console; auto-auth retries periodically.
             return null;
         }
         try {
@@ -298,7 +304,13 @@ function SolShotWalletInner({ children }) {
             }
             return { walletAddress, signature: signatureBase64, message };
         } catch (err) {
-            console.error('[SolShot] Auth error:', err.message);
+            // "Failed to connect to wallet" fires while Privy's signer channel
+            // is still warming up — happens on page-refresh-with-restored-session.
+            // Silent here; auto-auth retry covers it on subsequent ticks.
+            const msg = err?.message || String(err);
+            if (!msg.includes('Failed to connect')) {
+                console.error('[SolShot] Auth error:', msg);
+            }
             setIsAuthenticated(false);
             return null;
         }
@@ -447,6 +459,7 @@ function SolShotWalletInner({ children }) {
             isAuthenticated,
             privyReady,
             privyAuthed,
+            privyWalletsReady,
             adapterConnected,
             privyHasWallet: !!privyWallet,
         },

@@ -1671,3 +1671,77 @@ Smoke check passed (all changed modules import cleanly).
 **Wallet stack confirmed**: JJ updated me — currently on **Privy** embedded wallets (memory was stale). The `lookupUserByTelegramId` → `walletAddress` lookup works regardless of whether the wallet was bound via Privy embedded auto-provisioning or a power-user's Phantom connect.
 
 — main-claude
+
+---
+
+### 2026-05-04 (late evening) — `[main-claude]` — STATUS
+
+**Wagered group-chat flow is end-to-end ready on devnet.** The PWA deposit screen — the only remaining piece flagged in the previous handoff — landed in [`c79b7a9`](client/src/screens/GroupDepositScreen.js) and the build passes clean.
+
+**Final-flow shape:**
+
+```
+TG group chat                 PWA (solshot.gg)            Solana devnet
+─────────────                 ────────────────            ─────────────
+host /customgame
+  ↓ pick Wagered + wager + maxPlayers
+lobby card posted
+  ↓ players tap Join
+  └─ [server: linked-wallet check; rejects with link prompt if missing]
+lobby fills
+  ↓ lifecycle.beginWageredDepositPhase
+                                                          create_match PDA
+  ↓ deposit prompt button posted to chat
+                          ← player taps button
+                              GroupDepositScreen mounts
+                              fetches match via getGroupMatch
+                              shows wager + roster + balance
+                              [user taps Deposit]
+                              requestGroupDepositTx →  buildDepositTransactionV2
+                              ← base64 tx returned
+                              signAndSendGroupDeposit
+                              (Privy or wallet-adapter signs)
+                                                          deposit_wager → vault
+                              confirmGroupDeposit →    verify deposits_mask bit
+                                                       lifecycle.confirmDeposit
+                                                       (last deposit) → activateMatch
+                              ← groupDepositStatus broadcast (state=active)
+                              auto-bounce to group-match
+                              [existing battle UI runs unchanged]
+                              ↓ ranked finishers computed
+                                                       settleMatch Phase 2 hook
+                                                          settle_match → 90/7/3 split
+```
+
+**Cumulative shipped this session (5 commits on `main`):**
+
+- [`2cd5eb2`](programs/solshot-escrow-v2/src/lib.rs) — v2 program scaffold + tests
+- [`acd3a60`](Docs/CLAUDE_COMMS.md) — comms entry (scaffold)
+- [`73d5be0`](server/services/escrow-v2.js) — server wrapper + init/update scripts + GlobalConfig bootstrap
+- [`2dd5ffa`](server/services/groupchat/lifecycle.js) — server-side wagered integration (bundled with JJ's TopBar fix; misleading message but correct diff)
+- [`66837da`](Docs/CLAUDE_COMMS.md) — comms entry (integration)
+- [`c79b7a9`](client/src/screens/GroupDepositScreen.js) — PWA deposit screen + server requestGroupDepositTx handler + App.js routing
+
+Plus JJ's parallel Privy work (`4ae8d84`, `3aa34ef`, `b1203d8`, `6519240`, `2dd5ffa`, `a29f802`) — independent of the escrow path but shares the WalletContext (signAndSendGroupDeposit was bundled into one of the Privy commits via `git commit -am`).
+
+**Devnet state:**
+- v2 Program: `BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N`
+- v2 Config PDA: `6TAKdJj6f8KNJY6LicCiJ7ZTvYpL5uERX14bsgcdkBU5` (treasury 4Ekd…2hGk, ops G2Tg…Q9grx, 700/300 BPS, not paused)
+
+**What remains genuinely unfinished (none blocks a demo):**
+
+1. **Awaiting-deposits watchdog** — currently a host can call `/startmatch` to manually trigger `start_with_depositors` after the deposit window closes (kicks non-depositors, plays with whoever paid). Adding a 60s cron to auto-detect expired-deposit-window matches and fire either `start_with_depositors` (≥2 paid) or `cancel_match` (else) closes the loop. Not urgent — host can handle it manually for a demo.
+
+2. **End-to-end happy-path tests on devnet** — 7 of 9 tests (2/3/4/10-player happy paths + 4 adversarial-with-funding) were blocked on `solshot-dev.json` having only 0.0149 SOL when test suite ran. JJ has topped up since. Re-run via:
+   `ANCHOR_WALLET=$HOME/.config/solana/solshot-dev.json ANCHOR_PROVIDER_URL=https://api.devnet.solana.com ./node_modules/.bin/ts-mocha -p ./tsconfig.json -t 240000 tests/solshot-escrow-v2.ts`
+   The 2 adversarial tests that don't need funding (11-player rejected, same-player twice) already pass.
+
+3. **Local preview verification of GroupDepositScreen** — blocked by an unrelated pre-existing crash in `SolShotWalletInner` when `REACT_APP_PRIVY_APP_ID` isn't in the local `.env` (the inner component calls Privy hooks unconditionally; without the provider wrapping, it errors and prevents any screen from rendering). This is local-only — Render/Vercel deploy with proper env vars is unaffected. Verification fallback: client `npm run build` passes clean, all imports resolve, all server modules import cleanly.
+
+4. **Stale `client/.env` MATCH_ESCROW_PROGRAM_ID** — points at `CqvRC6mSJe2CrBtENVfCEPkgRW3WwxLSL9C1hgXz7GtD` (Feb 18 obsolete program). Should be `4kzrDpV9JxjE27AMg4PQXzGuge9MEYQEFznSPvkBtnH1` for v1; v2 doesn't ship a separate env var since the IDL embeds the program ID. Local-only concern; production envs are set.
+
+**Buyback recap**: Hidden in configFlow for wagered v2 per JJ's option-(a) decision; force-disabled in finalize(). When v2.1 ships buyback CPI, un-hide one wizard step + add one server hook + add one PWA action — the GroupMatch model + lifecycle code are already buyback-aware (free matches use it).
+
+**SHOT recap**: confirmed never wagered, only rewarded. Decoupled from v2 escrow — existing devnet SHOT (4NnYByc…5VLd) keeps powering prestige burns; treasury can airdrop bonus SHOT to wagered-match winners as off-chain reward without touching the contract. Mainnet SHOT launch is post-hackathon.
+
+— main-claude

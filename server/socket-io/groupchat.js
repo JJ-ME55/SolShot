@@ -22,7 +22,7 @@
 import GroupMatch from '../models/GroupMatch.js';
 import * as lifecycle from '../services/groupchat/lifecycle.js';
 import { getWeapon, getWeaponCost } from '../models/Weapon.js';
-import { getEscrowStateV2, isEscrowV2Enabled } from '../services/escrow-v2.js';
+import { getEscrowStateV2, isEscrowV2Enabled, buildDepositTransactionV2 } from '../services/escrow-v2.js';
 import { lookupUserByTelegramId } from '../services/users.js';
 
 /**
@@ -335,6 +335,76 @@ export function registerGroupChatSocketHandlers(client, io) {
         } catch (err) {
             console.error('[group-chat] getMyGroupMatches error:', err);
             client.emit('myGroupMatches', { error: 'server_error', matches: [] });
+        }
+    });
+
+    /**
+     * PWA → server: build a deposit transaction for a wagered group match.
+     * Returns the serialized tx (base64) that the client signs via Privy
+     * (or wallet-adapter for power users) and submits via signAndSendGroupDeposit.
+     *
+     * Trust model: server resolves the depositor's wallet from the socket's
+     * verified TG identity; client cannot supply an arbitrary wallet. Mirrors
+     * the v1 buildDepositTransaction pattern but scoped to group matches.
+     *
+     * Payload: { matchId }
+     * Emits to caller: 'groupDepositTxBuilt' { matchId, transaction (base64), wagerLamports, error? }
+     */
+    client.on('requestGroupDepositTx', async (payload = {}) => {
+        const { matchId } = payload;
+        const tgId = tgIdFor(client, payload);
+
+        if (!matchId) {
+            client.emit('groupDepositTxBuilt', { matchId, error: 'missing_matchId' });
+            return;
+        }
+        if (!tgId) {
+            client.emit('groupDepositTxBuilt', { matchId, error: 'no_identity' });
+            return;
+        }
+
+        try {
+            const user = await lookupUserByTelegramId(tgId);
+            const walletAddress = user?.walletAddress;
+            if (!walletAddress) {
+                client.emit('groupDepositTxBuilt', { matchId, error: 'no_linked_wallet' });
+                return;
+            }
+
+            const match = await GroupMatch.findOne({ matchId }).lean();
+            if (!match) {
+                client.emit('groupDepositTxBuilt', { matchId, error: 'match_not_found' });
+                return;
+            }
+            if (match.state !== 'awaiting_deposits') {
+                client.emit('groupDepositTxBuilt', { matchId, error: `wrong_state_${match.state}` });
+                return;
+            }
+            const isPlayer = match.players.some(p => p.walletAddress === walletAddress);
+            if (!isPlayer) {
+                client.emit('groupDepositTxBuilt', { matchId, error: 'not_a_player' });
+                return;
+            }
+
+            const result = await buildDepositTransactionV2(matchId, walletAddress);
+            if (!result.success) {
+                client.emit('groupDepositTxBuilt', { matchId, error: result.error });
+                return;
+            }
+
+            // Auto-join the match's socket room so this client receives the
+            // groupDepositStatus broadcasts (other players' deposit confirms).
+            client.join(roomForMatch(matchId));
+
+            client.emit('groupDepositTxBuilt', {
+                matchId,
+                transaction: result.transaction,
+                escrowPDA: result.escrowPDA,
+                wagerLamports: match.config.wagerLamports,
+            });
+        } catch (err) {
+            console.error('[group-chat] requestGroupDepositTx error:', err);
+            client.emit('groupDepositTxBuilt', { matchId, error: 'server_error' });
         }
     });
 

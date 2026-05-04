@@ -30,6 +30,7 @@ const TermsScreen          = lazy(() => import('./screens/TermsScreen'));
 const PrivacyScreen        = lazy(() => import('./screens/PrivacyScreen'));
 const ChallengeAcceptScreen = lazy(() => import('./screens/ChallengeAcceptScreen'));
 const GroupMatchScreen     = lazy(() => import('./screens/GroupMatchScreen'));
+const GroupDepositScreen   = lazy(() => import('./screens/GroupDepositScreen'));
 const MyGamesScreen        = lazy(() => import('./screens/MyGamesScreen'));
 
 /** Minimal fallback shown while a lazy-loaded screen chunk is fetching. */
@@ -180,8 +181,17 @@ function AppInner() {
     }
 
     // Group-chat match deep links (Phase 1c).
-    //   lobby_<matchId>  — wagered-mode join after deposit; routes to detail view
-    //   match_<matchId>  — active-or-settled match; same screen, renders by state
+    //   lobby_<matchId>    — wagered-mode join after deposit; routes to detail view
+    //   match_<matchId>    — active-or-settled match; same screen, renders by state
+    //   deposit_<matchId>  — wagered match in awaiting_deposits state; deposit screen
+    if (startParam.startsWith('deposit_')) {
+      const matchId = startParam.slice('deposit_'.length);
+      if (matchId) {
+        setScreenData({ groupMatchId: matchId });
+        setScreen('group-deposit');
+      }
+      return;
+    }
     if (startParam.startsWith('lobby_') || startParam.startsWith('match_')) {
       const matchId = startParam.slice(startParam.indexOf('_') + 1);
       if (matchId) {
@@ -263,6 +273,7 @@ function AppInner() {
             case 'privacy':     return <PrivacyScreen navigate={navigate} />;
             case 'challengeAccept': return <ChallengeAcceptScreen navigate={navigate} screenData={screenData} />;
             case 'group-match': return <GroupMatchScreen navigate={navigate} screenData={screenData} />;
+            case 'group-deposit': return <GroupDepositScreen navigate={navigate} screenData={screenData} />;
             case 'mygames':     return <MyGamesScreen navigate={navigate} />;
             default:            return <MenuScreen navigate={navigate} />;
           }

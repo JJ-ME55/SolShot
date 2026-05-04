@@ -37,7 +37,11 @@ import { PrivyProvider, usePrivy } from '@privy-io/react-auth';
 import {
     useWallets as usePrivySolanaWallets,
     useSignMessage as usePrivySignMessage,
-    useSignAndSendTransaction as usePrivySignAndSend,
+    // useSignAndSendTransaction broadcasts via Privy's hosted RPC, which is
+    // unreliable on devnet (`wss://solana-devnet.rpc.privy.systems` failed
+    // in production). useSignTransaction signs only — we broadcast through
+    // our own wallet-adapter Connection (api.devnet.solana.com) instead.
+    useSignTransaction as usePrivySignTransaction,
     useCreateWallet as usePrivyCreateSolanaWallet,
     defaultSolanaRpcsPlugin,
 } from '@privy-io/react-auth/solana';
@@ -160,7 +164,7 @@ function SolShotWalletInner({ children }) {
     const { ready: privyReady, authenticated: privyAuthed, login: privyLogin, logout: privyLogout } = usePrivy();
     const { wallets: privySolanaWallets, ready: privyWalletsReady } = usePrivySolanaWallets();
     const { signMessage: privySignMessageFn } = usePrivySignMessage();
-    const { signAndSendTransaction: privySignAndSendFn } = usePrivySignAndSend();
+    const { signTransaction: privySignTransactionFn } = usePrivySignTransaction();
     const { createWallet: privyCreateSolanaWallet } = usePrivyCreateSolanaWallet();
 
     // Manual wallet creation after authentication — replaces the broken
@@ -318,22 +322,31 @@ function SolShotWalletInner({ children }) {
 
     const sendTransactionUnified = useCallback(async (tx, conn) => {
         if (privyWallet) {
+            // Privy signs locally; we broadcast via our own RPC connection.
+            // This avoids Privy's unreliable hosted devnet RPC (the
+            // `wss://solana-devnet.rpc.privy.systems` WebSocket fails in
+            // production, which kills useSignAndSendTransaction with a
+            // misleading "Failed to connect to wallet" error).
             const serialized = tx.serialize({ requireAllSignatures: false, verifySignatures: false });
-            const result = await privySignAndSendFn({
+            const signResult = await privySignTransactionFn({
                 transaction: new Uint8Array(serialized),
                 wallet: privyWallet,
-                // CRITICAL: pass explicit chain — Privy defaults to solana:mainnet
-                // which doesn't match our devnet RPC config.
                 chain: PRIVY_SOLANA_CHAIN,
             });
-            // signature is Uint8Array — convert to base58 (Solana TX-signature format)
-            return bs58.encode(result.signature);
+            // signResult.signedTransaction is a Uint8Array of the fully signed TX.
+            // Broadcast through our own Connection (api.devnet.solana.com — same
+            // RPC the wallet-adapter path has been using successfully all along).
+            const signature = await conn.sendRawTransaction(signResult.signedTransaction, {
+                skipPreflight: false,
+                preflightCommitment: 'confirmed',
+            });
+            return signature;
         }
         if (adapterSendTransaction) {
             return adapterSendTransaction(tx, conn);
         }
         throw new Error('No wallet available to send transaction');
-    }, [privyWallet, privySignAndSendFn, adapterSendTransaction]);
+    }, [privyWallet, privySignTransactionFn, adapterSendTransaction]);
 
     // ─── App-specific actions (authenticate, escrow deposit, SHOT burn) ───
 

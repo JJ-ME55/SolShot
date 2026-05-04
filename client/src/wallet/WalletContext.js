@@ -38,6 +38,7 @@ import {
     useWallets as usePrivySolanaWallets,
     useSignMessage as usePrivySignMessage,
     useSignAndSendTransaction as usePrivySignAndSend,
+    toSolanaWalletConnectors,
 } from '@privy-io/react-auth/solana';
 
 // Jupiter Mobile adapter via Reown/WalletConnect (JUP-01) — kept on the
@@ -510,16 +511,20 @@ function LegacyBrowserWalletProvider({ children }) {
 
 // ─── Top-level provider — Privy + wallet-adapter ────────────────────────
 
-// Privy v3.23.1 config — kept minimal. Login methods (email + external
-// wallet), allowed origins, and custom auth are all configured in the
-// dashboard at app.privy.io. The schema also dropped `solanaClusters` in
-// favour of dashboard-driven RPC config; we use defaults.
+// Privy v3.23.1 config. Login methods, allowed origins, and custom auth
+// are configured in the dashboard at app.privy.io. The connectors below
+// MUST be passed when Solana wallet login is enabled in the dashboard
+// (Privy raises a console warning otherwise). The deprecated
+// `solanaClusters` key is omitted — RPC config is now dashboard-driven.
 const PRIVY_CONFIG = {
     embeddedWallets: {
         // Auto-create a Solana wallet on login for users without an
         // external wallet linked. Silent provisioning — user signs in
         // with email, lands in the app with a wallet already present.
         solana: { createOnLogin: 'users-without-wallets' },
+    },
+    externalWallets: {
+        solana: { connectors: toSolanaWalletConnectors() },
     },
     appearance: {
         theme: 'dark',

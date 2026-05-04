@@ -1564,3 +1564,60 @@ Phase 2 starts now. Walking him through the Privy dashboard config
 first; code changes follow once dashboard is locked.
 
 — main-claude
+
+---
+
+### 2026-05-04 (later still) — `[main-claude]` — DECISION + HANDOFF
+
+**N-player escrow v2 program scaffolded — Anchor compiles cleanly, `.so` + IDL + TS types generated, ready for `anchor test` and devnet deploy.**
+
+JJ wanted to move from 1v1 escrow (which landed earlier today) to N-player. We worked through two opinionated architecture reports JJ had pasted in (one ~Report 1 / one ~Report 2, ~30k tokens combined). They converged on ~90% of the skeleton; surfaced the real disagreements; locked decisions:
+
+**Decisions locked in:**
+- New program ID, **not** in-place upgrade of `4kzrDpV9...`. Old program kept alive only to settle outstanding 1v1 matches.
+- 2–10 players, **single program for both real-time (max 4) and async/idle (up to 10, 72h durations)** — escrow doesn't need to know "real-time vs idle"; just `max_players`, `wager`, `duration_secs`, deadlines. Game server interprets cadence.
+- **Fee snapshot at create time** (Report 1 over Report 2) — treasury/ops pubkeys + fee BPS copied into MatchEscrow at create, so config changes can never re-route in-flight fees. Settlement validates against snapshot, not config.
+- **Buyback deferred to v2.1** — both reports recommended this; cuts ~40% of state-machine complexity (no `awaiting_buyback` state) and tightens audit scope.
+- **Timeout split: equal in v2, HP-dependent later in v2.1** (slot wired into design but only `WinnerTakesAll` implemented).
+- **No on-chain elimination tracking in v2 launch** — defer to v2.1 alongside HP-split. Trade-off: if server is dead at `match_end_ts`, public refund returns to all depositors regardless of who would've won. Acceptable given 24h grace before refund kicks in.
+- **Skipped intermediate "test 4-player on existing v1 program" step** — would have required ~2-4 days of throwaway lobby/UI wiring (current `MATCH_MODES` are all 1v1). Better to wire 10-player end-to-end on v2 directly. JJ confirmed: "might as well go for the whole hog."
+- **Skipped audit gate for hackathon scope** — audit is a post-hackathon mainnet concern, not a build blocker.
+
+**Built this session:**
+
+- `programs/solshot-escrow-v2/` — new Anchor 0.32.1 program at ID `BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N` (devnet keypair at `target/deploy/solshot_escrow_v2-keypair.json`, ~750 LOC).
+- 10 instructions: `initialize_config`, `update_config`, `pause_program`, `unpause_program`, `create_match`, `deposit_wager`, `start_with_depositors`, `settle_match`, `cancel_match`, `permissionless_reclaim`.
+- 6 events, 25 error codes.
+- State machine: `AwaitingDeposits → Active → Settled` (or `Cancelled` from any non-terminal state via cancel/permissionless paths).
+- `MatchEscrow` SPACE = 509 bytes — `[Pubkey; 10]` players + `u16` deposits_mask + per-match snapshots.
+- New per-match config: `duration_secs` (60s–7d hard bounds), `deposit_window_secs` (60s–24h hard bounds), snapshot of treasury/ops/fee BPS.
+- Public refund window: `match_end_ts + 24h grace` (was `2x deposit_timeout` in v1).
+- Test scaffold at `tests/solshot-escrow-v2.ts`: 4 happy paths (2/3/4/10 player) + 4 adversarial cases (double-deposit, non-player winner, authority-as-player, 11-player rejected, same-player twice).
+- `Cargo.toml` workspace + `Anchor.toml` (devnet + localnet entries) updated.
+
+**Mirrors v1 conventions** (deliberate, for audit-readability):
+- Same borrow-checker pattern (read values into locals before `&mut` borrow).
+- Same direct-lamport math for transfers from program-owned PDA (no CPI).
+- Same `close = authority` on settle, `close = caller` on cancel/reclaim.
+- Same `remaining_accounts` pattern for refund flow (player-index order).
+
+**Wallet stack correction:** JJ noted the active stack is **Privy** (not the post-May-3-evening wallet-adapter pivot my memory captured). Memory updated — the `MEMORY.md` line about wallet stack now points at "currently Privy" with the longer history routed through `project_dynamic_decision.md`. When in doubt, ask.
+
+**Build gotcha worth remembering:** Windows Defender holds `solshot_escrow_v2-{hash}.exe` briefly after first emit, causing `LNK1104: cannot open file` on rebuilds. Just rerun `anchor build` once or twice; the `.so` is correct after the first successful build, only the IDL extraction step is affected. Same class of issue v1's proptest binaries hit.
+
+**Not done — picks up next session in priority order:**
+
+1. **`anchor test`** against the scaffold (validate the test file compiles + executes end-to-end on local validator). Likely needs minor wallet-funding tweaks for the 10-player case.
+2. **Devnet deploy:** `anchor deploy --provider.cluster devnet --program-name solshot_escrow_v2` + new one-shot init script for v2 GlobalConfig (mirror `server/scripts/init-config.mjs`).
+3. **`server/services/escrow-v2.js`** — new service wrapping all v2 ix calls. Mirror `escrow.js` pattern; remember Anchor 0.30+ auto-resolution gotcha (don't pass PDAs/system_program explicitly).
+4. **Lobby + server room state for >2 player matches.** Currently `MATCH_MODES` (defined in both `server/services/solana.js` and `client/src/screens/LobbyScreen.js`) only define 1v1 modes — needs new modes for groupchat N-player.
+5. **Battle logic for N-tank turn rotation + idle-turn timeout** (server forfeits player after X missed turns). The idle-turn timer is the biggest UX risk for 72h matches — without it, one ghosting player can stall a match for 3 days.
+6. **Reconciler cron** for chain-as-truth state mirroring (Mongo authoritative for game state, chain authoritative for funds).
+7. **TG push notifications** for "your turn" reminders in async play. Without these, players forget they're mid-match.
+
+**State now:**
+- HEAD on `main`, **uncommitted** (per CLAUDE.md guidance not to commit without explicit instruction). Per the comms protocol JJ may want a `docs(comms): add v2 escrow scaffold entry` commit — happy to do that on request.
+- v1 still LIVE on devnet at `4kzrDpV9...`, still handles 1v1.
+- v2 `.so` built locally; **not deployed anywhere yet**. Dormant code until deploy.
+
+— main-claude

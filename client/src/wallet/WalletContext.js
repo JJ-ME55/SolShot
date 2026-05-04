@@ -214,6 +214,31 @@ function SolShotWalletInner({ children }) {
     // The token is single-use and 10-min TTL, so we only run this once
     // per page load. We strip the token from the URL on success/failure
     // so a refresh doesn't try to reuse it.
+
+    // Auto-open Privy login when a linkToken is present and the user
+    // isn't authenticated yet. This is the fresh-TG-user fast path: bot
+    // /play button → opens solshot.gg?linkToken=... → Privy modal pops
+    // immediately. User picks email or Telegram, signs in, wallet
+    // provisions, linkToken effect (below) binds it to their TG id.
+    // Without this auto-pop, fresh users land on the menu with a
+    // SIGN IN button they may not notice.
+    const [autoLoginAttempted, setAutoLoginAttempted] = useState(false);
+    useEffect(() => {
+        if (autoLoginAttempted) return;
+        if (!privyReady) return;
+        if (privyAuthed) return;
+        if (!privyLogin) return;
+        const params = new URLSearchParams(window.location.search);
+        const token = params.get('linkToken');
+        if (!token) return;
+        setAutoLoginAttempted(true);
+        try {
+            privyLogin();
+        } catch (err) {
+            console.warn('[link] auto-login failed:', err?.message || err);
+        }
+    }, [privyReady, privyAuthed, privyLogin, autoLoginAttempted]);
+
     const [linkTokenAttempted, setLinkTokenAttempted] = useState(false);
     useEffect(() => {
         if (linkTokenAttempted) return;

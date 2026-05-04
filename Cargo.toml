@@ -1,6 +1,7 @@
 [workspace]
 members = [
-    "programs/solshot-escrow"
+    "programs/solshot-escrow",
+    "programs/solshot-escrow-v2"
 ]
 resolver = "2"
 

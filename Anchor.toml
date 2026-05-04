@@ -5,9 +5,11 @@ skip-lint = false
 # NOTE: Program ID will change after deploy — see OC-14 deploy checklist
 [programs.localnet]
 solshot_escrow = "4kzrDpV9JxjE27AMg4PQXzGuge9MEYQEFznSPvkBtnH1"
+solshot_escrow_v2 = "BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N"
 
 [programs.devnet]
 solshot_escrow = "4kzrDpV9JxjE27AMg4PQXzGuge9MEYQEFznSPvkBtnH1"
+solshot_escrow_v2 = "BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N"
 
 [registry]
 url = "https://api.apr.dev"

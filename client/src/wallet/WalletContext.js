@@ -711,10 +711,17 @@ function SolShotWalletInner({ children }) {
 //       (b) Bot token provided to Privy dashboard
 //       (c) Bot domain set via @BotFather: /setdomain → solshot.gg
 //
-// embeddedWallets.solana.createOnLogin: 'off' — auto-create renders
-//   `EmbeddedWalletOnAccountCreateScreen`, which crashes on undefined
-//   `modalData.createWallet`. We call createWallet manually in a
-//   useEffect after authentication settles.
+// embeddedWallets.solana.createOnLogin: 'users-without-wallets' —
+//   auto-creates a Solana wallet during the Privy login modal flow if
+//   the user doesn't have one. The previous setting was 'off' due to
+//   an SDK crash ("Cannot destructure property 'onSuccess' of
+//   'a.createWallet'" in EmbeddedWalletOnAccountCreateScreen) on an
+//   older SDK version; retesting on @privy-io/react-auth@3.23.1.
+//   Keeping the manual createWallet useEffect below as a belt-and-
+//   suspenders fallback during this test cycle — if auto-create works
+//   reliably, the manual path will become a no-op (the if-already-
+//   exists check at line ~206 short-circuits) and we can remove it in
+//   a follow-up commit.
 //
 // plugins: [defaultSolanaRpcsPlugin()] — registers Privy's hosted Solana
 //   RPC for chain identification. Without it, sign methods throw
@@ -723,7 +730,7 @@ function SolShotWalletInner({ children }) {
 const PRIVY_CONFIG = {
     loginMethods: ['email', 'telegram'],
     embeddedWallets: {
-        solana: { createOnLogin: 'off' },
+        solana: { createOnLogin: 'users-without-wallets' },
     },
     appearance: {
         theme: 'dark',

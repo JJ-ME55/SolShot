@@ -3,6 +3,7 @@ import { useTelegram } from '../telegram/TelegramContext';
 import { TxToastHost } from './TxToast';
 import WelcomeModal from './WelcomeModal';
 import TgWebViewBanner from './TgWebViewBanner';
+import IosInstallBanner from './IosInstallBanner';
 
 /* dApp browser detection banner — shown when wallet-injected mobile browser locks portrait */
 function DAppBrowserBanner() {
@@ -201,6 +202,11 @@ function Layout({ children }) {
       {/* iOS-in-TG-WebView detection banner — UA-gated, sessionStorage
           dismiss. Shown above all other UI when applicable. */}
       <TgWebViewBanner />
+      {/* iOS Safari (NOT in TG WebView, NOT in dApp browser, NOT already
+          standalone) — prompts user to "Add to Home Screen" so the PWA
+          launches fullscreen, recovering ~25% of viewport in iPhone
+          landscape that's normally lost to URL bar + tab strip. */}
+      <IosInstallBanner />
       <DAppBrowserBanner />
       <div data-theme="field" style={styles.viewport(isTelegram, tgHeight, isDesktopFrame)}>
         {/* Design-token overlays — scanlines, grain, vignette */}

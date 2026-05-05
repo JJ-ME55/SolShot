@@ -42,6 +42,18 @@
     <meta name="twitter:image:alt" content="SolShot — artillery duels on Solana" />
     <link rel="apple-touch-icon" href="%PUBLIC_URL%/apple-touch-icon.png" />
     <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+    <!-- iOS PWA / fullscreen launch:
+           apple-mobile-web-app-capable=yes — when launched from Home Screen,
+             iOS strips the URL bar + tab strip + nav arrows entirely. Without
+             this, even with manifest display:standalone, iOS keeps Safari
+             chrome and the game viewport loses ~25% on iPhone landscape.
+           apple-mobile-web-app-status-bar-style=black-translucent — overlay
+             status bar on top of our dark UI instead of reserving space.
+           apple-mobile-web-app-title — Home-screen icon label. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="SolShot" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <title>SolShot</title>
   </head>
   <body>

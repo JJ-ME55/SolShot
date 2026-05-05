@@ -128,6 +128,23 @@ async function handleCancelMatch(ctx) {
     const wasAwaitingDeposits = match.state === 'awaiting_deposits';
     const wasWageredWithEscrow = match.config?.type === 'wagered' && match.escrowPda;
 
+    // Refuse cancel for ACTIVE wagered matches. The on-chain program only
+    // allows authority to cancel during AwaitingDeposits — once players
+    // have all deposited and the match has activated, cancelMatchEscrowV2
+    // returns Unauthorized. Previously the handler marked Mongo cancelled
+    // anyway and the lobby card lied, leaving funds stuck on-chain with
+    // no clear recovery path. Now we refuse + tell host the actual options.
+    if (wasActive && wasWageredWithEscrow) {
+        return ctx.reply(
+            `⚠️ Match #${match.matchId} is already active and wagered — funds are deposited on-chain.\n\n` +
+            `Cancel is only possible during the deposit phase. To exit an active wagered match:\n\n` +
+            `• Play it through (last tank standing wins the pot)\n` +
+            `• Wait for match end + 24h, then any player can self-reclaim\n` +
+            `• Contact the team for emergency settle (devnet only)`,
+            { parse_mode: 'HTML' }
+        );
+    }
+
     // If it was active, clear its scheduled turn timer so the scheduler
     // doesn't try to fire idle penalties on a cancelled match.
     if (wasActive) {

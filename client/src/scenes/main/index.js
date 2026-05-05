@@ -1338,6 +1338,32 @@ export class MainScene extends Scene {
     // playerEliminated separately; the elimination data is in shotResult.
     if (this.sceneData.gameMode === 'group-chat') {
       this._socketHandlers.shotResult = (data) => {
+        // Diagnostic logging — JJ reported projectiles invisible + HP wrong
+        // in group-chat play after a wagered match (#92T2). Server logs were
+        // empty, browser console too — meaning no client-side errors fired.
+        // This log surfaces what the client actually receives so we can see
+        // if trajectory is empty / players[] mis-shaped / hp keys mis-keyed.
+        // Tagged [GC] for easy grep. Remove once root cause is identified.
+        try {
+          console.log('[GC shotResult] received', {
+            ok: data?.ok,
+            error: data?.error,
+            playerId: data?.playerId,
+            weaponId: data?.weaponId,
+            trajLen: data?.trajectory?.length,
+            trajFirst: data?.trajectory?.[0],
+            trajLast: data?.trajectory?.[data?.trajectory?.length - 1],
+            impact: data?.impact,
+            damageKeys: data?.damage ? Object.keys(data.damage) : null,
+            hpKeys: data?.hp ? Object.keys(data.hp) : null,
+            terrainUpdateLen: data?.terrainUpdate?.length || 0,
+            playersCount: data?.match?.players?.length,
+            playersHp: data?.match?.players?.map(p => ({ tg: p.telegramUserId, hp: p.hp, x: p.currentX, y: p.currentY, elim: p.eliminated })),
+            myPlayerIndex: this.myPlayerIndex,
+            mySocketId: window.socket?.id,
+          });
+        } catch (e) { console.warn('[GC shotResult] log failed:', e?.message); }
+
         if (!data?.ok) {
           // Treat errors like fireRejected
           this._socketHandlers.fireRejected({ reason: data?.error || 'shot_failed' });
@@ -2094,12 +2120,16 @@ export class MainScene extends Scene {
           // back which our shotResult adapter (registered below) translates
           // and feeds to the existing turnResult handler — same animation
           // path as 1v1.
-          socket.emit('fireGroupShot', {
+          const payload = {
             matchId: this.sceneData.matchId,
             angle: angle,
             power: myTank.power,
             weaponId: weaponObj.id,
-          });
+          };
+          // Diagnostic — paired with the [GC shotResult] log to trace the
+          // request/response shape. Remove once projectile-render bug solved.
+          console.log('[GC fireGroupShot] emit', { ...payload, mySocketId: socket.id, myTankX: myTank.x, myTankY: myTank.y });
+          socket.emit('fireGroupShot', payload);
         } else {
           socket.emit('fire', {
             angle: angle,

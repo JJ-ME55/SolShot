@@ -309,7 +309,10 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
             <Header match={match} onMenu={() => navigate('menu')} onRefresh={refresh} />
 
             {/* Orphan-account banner — shown when wallet isn't linked
-                to TG. Recovery: DM the bot and tap /play once. */}
+                to TG. Two-tap recovery via deep link into the bot's
+                /start=link flow (which mints a fresh token + posts a
+                button), then user taps the button → silent bind → can
+                refresh and fire. */}
             {isOrphan && (
                 <div style={{
                     margin: '12px 16px',
@@ -332,11 +335,32 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
                         fontSize: 13,
                         color: 'var(--bone)',
                         lineHeight: 1.5,
+                        marginBottom: 12,
                     }}>
-                        Your wallet isn't linked to your Telegram account.
-                        DM <strong>@SolShotGG_bot</strong> and tap <strong>/play</strong> to bind
-                        them — takes one tap. Then refresh this page to see your turn.
+                        Your wallet isn't linked to your Telegram account yet.
+                        Tap below to bind in Telegram — one tap, then refresh
+                        this page to see your turn.
                     </div>
+                    <a
+                        href="https://t.me/SolShotGG_bot?start=link"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                            display: 'inline-block',
+                            fontFamily: 'var(--f-display)',
+                            fontSize: 13,
+                            letterSpacing: '0.18em',
+                            background: 'var(--accent)',
+                            color: 'var(--bg-deep)',
+                            border: 'none',
+                            padding: '10px 16px',
+                            cursor: 'pointer',
+                            clipPath: 'polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px))',
+                            textDecoration: 'none',
+                        }}
+                    >
+                        🔗 LINK IN TELEGRAM
+                    </a>
                 </div>
             )}
 

@@ -170,9 +170,30 @@ async function mintLinkTokenIfNeeded(ctx) {
 
 function registerCommands(bot) {
   // /start — fires on first interaction or when user opens via t.me link.
-  // The payload (e.g. "/start join_xyz") arrives in ctx.startPayload.
+  // The payload (e.g. "/start join_xyz", "/start link") arrives in
+  // ctx.startPayload.
   bot.start(async (ctx) => {
     const payload = ctx.startPayload || '';
+
+    // Deep-link payload "link" — invoked from the orphan-account banner
+    // on solshot.gg. Skip the welcome copy, mint a token, send the
+    // bind button. Two-tap recovery from anywhere in the app.
+    if (payload === 'link') {
+      const linkToken = await mintLinkTokenIfNeeded(ctx);
+      if (!linkToken) {
+        // Already bound — confirm + open menu so the user knows nothing
+        // more is needed.
+        return ctx.reply(
+          '✓ Your wallet is already linked to this Telegram account.\n\nReturn to the match — you should now see your turn.',
+          { reply_markup: launchKeyboard('Open SolShot', 'menu', null, ctx) }
+        );
+      }
+      return ctx.reply(
+        'Tap below to link your wallet — one tap, signs you in via your existing Privy account, then return to the match.',
+        { reply_markup: launchKeyboard('🔗 Link Wallet', '', linkToken, ctx) }
+      );
+    }
+
     const linkToken = await mintLinkTokenIfNeeded(ctx);
     await ctx.reply(
       'Welcome to SolShot — artillery duels on Solana.\n\n' +

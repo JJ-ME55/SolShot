@@ -1270,12 +1270,21 @@ const mainsocket = (io) => {
                     try {
                         const userDoc = await User.findOne(
                             { walletAddress: result.walletAddress },
-                            { handle: 1 }
+                            { handle: 1, telegramUserId: 1 }
                         ).lean();
                         const persistedHandle = userDoc?.handle || null;
+                        // Include telegramUserId so GroupMatchScreen + other
+                        // TG-keyed flows can identify the user without depending
+                        // on window.Telegram.WebApp (which we no longer load —
+                        // it broke Privy's modal). Falls back to client.telegramUser
+                        // if the User doc doesn't have one but the socket has
+                        // validated initData.
+                        const tgUserId = userDoc?.telegramUserId
+                            || (client.telegramUser?.id || null);
                         client.emit('walletHandle', {
                             handle: persistedHandle,
                             locked: !!persistedHandle,
+                            telegramUserId: tgUserId,
                         });
                     } catch (err) {
                         console.warn('[Auth] Failed to load persisted handle:', err.message);
@@ -1337,12 +1346,18 @@ const mainsocket = (io) => {
 
                 const existing = await User.findOne(
                     { walletAddress: wallet },
-                    { handle: 1 }
+                    { handle: 1, telegramUserId: 1 }
                 ).lean();
+
+                const tgUserId = existing?.telegramUserId || (client.telegramUser?.id || null);
 
                 // Already set — re-emit existing, don't allow overwrite
                 if (existing?.handle) {
-                    return client.emit('walletHandle', { handle: existing.handle, locked: true });
+                    return client.emit('walletHandle', {
+                        handle: existing.handle,
+                        locked: true,
+                        telegramUserId: tgUserId,
+                    });
                 }
 
                 // First-time set: write it
@@ -1351,7 +1366,11 @@ const mainsocket = (io) => {
                     { $set: { handle: clean, lastActive: new Date() } },
                     { upsert: true }
                 );
-                client.emit('walletHandle', { handle: clean, locked: true });
+                client.emit('walletHandle', {
+                    handle: clean,
+                    locked: true,
+                    telegramUserId: tgUserId,
+                });
             } catch (err) {
                 console.warn('[setWalletHandle] failed:', err.message);
                 client.emit('walletHandle', { handle: null, locked: false, error: 'server_error' });

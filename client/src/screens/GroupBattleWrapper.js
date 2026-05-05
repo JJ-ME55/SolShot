@@ -42,6 +42,7 @@ import GameBridge from '../bridge/GameBridge';
 import { startBattle, destroyBattle } from '../bridge/PhaserBootstrap';
 import useGameState from '../hooks/useGameState';
 import { useTelegram } from '../telegram/TelegramContext';
+import { useSolShotWallet } from '../wallet/WalletContext';
 import BattleHUD from './battle/BattleHUD';
 import TutorialOverlay from '../components/TutorialOverlay';
 
@@ -94,6 +95,7 @@ function buildSceneData(match, myTgId) {
 
 export default function GroupBattleWrapper({ match, onMatchUpdate, fillMode = false, onLeaveMatch }) {
     const { user: tgUser } = useTelegram();
+    const { walletHandle } = useSolShotWallet();
     const canvasRef = useRef(null);
     const bridgeRef = useRef(null);
     const restoredSocketIdRef = useRef(null);
@@ -103,7 +105,11 @@ export default function GroupBattleWrapper({ match, onMatchUpdate, fillMode = fa
     const bridge = bridgeRef.current;
     const gameState = useGameState(bridge);
 
-    const myTgId = tgUser?.id;
+    // Server-resolved TG id (set via walletHandle socket event after auth)
+    // is the canonical identity. tgUser.id only populates inside an actual
+    // TG Mini App context, which we don't use anymore — relying on it
+    // alone broke the active-player firing UI in regular-browser sessions.
+    const myTgId = walletHandle?.telegramUserId || tgUser?.id || null;
 
     // Seed bridge with per-match state so BattleHUD has the right gold,
     // round (=1), and wager (free=0) before MainScene's first updateState.

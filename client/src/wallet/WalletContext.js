@@ -241,7 +241,13 @@ function SolShotWalletInner({ children }) {
     // a handle is persisted for this wallet (one-time-set semantic). When
     // locked, the client UI should hide any "change name" input — this
     // wallet's display name is fixed.
-    const [walletHandle, setWalletHandleState] = useState({ handle: null, locked: false });
+    //
+    // walletHandle.telegramUserId — server-resolved TG id linked to this
+    // wallet (via linkTelegramIdentity). Replaces the now-broken
+    // window.Telegram.WebApp.initDataUnsafe.user.id path (we removed
+    // telegram-web-app.js because it crashed Privy's modal). Used by
+    // GroupMatchScreen + other TG-keyed flows to identify the user.
+    const [walletHandle, setWalletHandleState] = useState({ handle: null, locked: false, telegramUserId: null });
 
     const walletAddress = useMemo(() => {
         return publicKey ? publicKey.toBase58() : null;
@@ -385,6 +391,7 @@ function SolShotWalletInner({ children }) {
             setWalletHandleState({
                 handle: data.handle || null,
                 locked: !!data.locked,
+                telegramUserId: data.telegramUserId || null,
             });
             // Sync to localStorage so legacy callers (LobbyScreen.getPlayerName,
             // BarracksScreen, AAR, etc.) pick up the server-canonical value
@@ -898,7 +905,7 @@ const LOCAL_DEV_FALLBACK_VALUE = {
     recoveryStatus: { hasEmail: false, hasTelegram: false, hasExternalWallet: false, needsRecovery: false },
     linkEmailRecovery: async () => false,
     linkTelegramRecovery: async () => false,
-    walletHandle: { handle: null, locked: false },
+    walletHandle: { handle: null, locked: false, telegramUserId: null },
     setWalletHandle: () => false,
     source: null,
     privyReady: false,

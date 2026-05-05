@@ -16,6 +16,7 @@
 
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { useTelegram } from '../telegram/TelegramContext';
+import { useSolShotWallet } from '../wallet/WalletContext';
 import BattlefieldPreview from '../components/BattlefieldPreview';
 import ShopScreen from './ShopScreen';
 import { EmptyState, ErrorState, SkeletonRow } from '../components/EmptyStates';
@@ -71,6 +72,13 @@ function formatTimeAgo(date) {
 
 export default function GroupMatchScreen({ navigate, screenData = {} }) {
     const { user: tgUser } = useTelegram();
+    // walletHandle.telegramUserId is the server-resolved TG id linked to
+    // this wallet — populated after auth via the `walletHandle` socket
+    // event. We prefer this over tgUser (which depends on
+    // window.Telegram.WebApp.initDataUnsafe, deprecated since we removed
+    // the telegram-web-app.js shim that broke Privy's modal). Falls back
+    // to tgUser if a future Mini App context re-introduces it.
+    const { walletHandle } = useSolShotWallet();
     const [match, setMatch] = useState(null);
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -188,9 +196,17 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
     }
     if (!match) return null;
 
-    const myTgId = tgUser?.id;
-    const myPlayer = match.players?.find(p => p.telegramUserId === myTgId);
+    // Identity priority: server-resolved walletHandle.telegramUserId
+    // (set after auth via /linkTelegramIdentity) → tgUser.id (only
+    // populated inside an actual TG Mini App context, which we no
+    // longer use). Without this, `tgUser?.id` is undefined in regular
+    // browsers, causing match.players.find(...telegramUserId ===
+    // undefined) to never match → the active player would see the
+    // spectator/waiting view of their own match.
+    const myTgId = walletHandle?.telegramUserId || tgUser?.id || null;
+    const myPlayer = myTgId ? match.players?.find(p => p.telegramUserId === myTgId) : null;
     const isMyTurn = match.state === 'active'
+        && myTgId != null
         && match.players?.[match.currentPlayerIndex]?.telegramUserId === myTgId;
 
     // ACTIVE + viewer is a player → InGameHUD pattern from the redesign:

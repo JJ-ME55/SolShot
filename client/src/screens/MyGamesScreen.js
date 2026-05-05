@@ -19,6 +19,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useTelegram } from '../telegram/TelegramContext';
+import { useSolShotWallet } from '../wallet/WalletContext';
 import { haptic } from '../telegram/haptic';
 import { EmptyState, ErrorState, SkeletonRow } from '../components/EmptyStates';
 
@@ -55,6 +56,12 @@ function stateColor(state) {
 
 export default function MyGamesScreen({ navigate }) {
     const { user: tgUser, isTelegram } = useTelegram();
+    const { walletHandle } = useSolShotWallet();
+    // Server-resolved TG id (preferred — set after auth via walletHandle
+    // event). Falls back to TG WebApp's tgUser.id only if a Mini App
+    // context ever populates it. Without this, regular-browser users
+    // see no matches in their list because tgUser.id is undefined.
+    const myTgId = walletHandle?.telegramUserId || tgUser?.id || null;
     const [matches, setMatches] = useState(null);
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -147,7 +154,7 @@ export default function MyGamesScreen({ navigate }) {
             {!loading && !error && matches && matches.length > 0 && (
                 <div style={styles.list}>
                     {matches.map(m => (
-                        <MatchCard key={m.matchId} match={m} myTgId={tgUser?.id} onOpen={() => openMatch(m.matchId)} />
+                        <MatchCard key={m.matchId} match={m} myTgId={myTgId} onOpen={() => openMatch(m.matchId)} />
                     ))}
                 </div>
             )}

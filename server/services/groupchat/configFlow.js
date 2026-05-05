@@ -120,9 +120,9 @@ function promptForStep(step, partial) {
     switch (step) {
         case 'type':
             return {
-                text: `${summary}${stepHeader('Match type')}\n\nFree matches are gold-only. Wagered matches deposit SOL into on-chain escrow (v2) and pay 90% of pot to the winner, 7% treasury, 3% ops. Buybacks not yet supported in wagered v2 — coming in v2.1.`,
+                text: `${summary}${stepHeader('Match type')}\n\n<b>FREE</b> matches are gold-only — no SOL changes hands.\n<b>WAGERED</b> matches deposit SOL into on-chain escrow (v2) and pay 90% of pot to the winner, 7% treasury, 3% ops. Buybacks not yet supported in wagered v2 — coming in v2.1.`,
                 keyboard: kb([
-                    [btn('💸 Free', 'gc_cfg_type_free'), btn('💰 Wagered', 'gc_cfg_type_wagered')],
+                    [btn('🎮 FREE (no SOL)', 'gc_cfg_type_free'), btn('💰 WAGERED (SOL)', 'gc_cfg_type_wagered')],
                     [btn('✖ Cancel', 'gc_cfg_cancel')],
                 ]),
             };
@@ -216,7 +216,11 @@ function promptForStep(step, partial) {
  */
 function renderSummary(partial) {
     const lines = [];
-    if (partial.type) lines.push(`Type: <b>${partial.type === 'free' ? 'Free' : 'Wagered'}</b>`);
+    // Make 'FREE' visually loud in the summary so a host can't miss that
+    // they're configuring a free match when they meant wagered (the type-pick
+    // buttons used to be `💸 Free` vs `💰 Wagered` which were easy to confuse;
+    // Markdown emphasis here doubles up as a confirmation safeguard).
+    if (partial.type) lines.push(`Type: <b>${partial.type === 'free' ? '🎮 FREE (no SOL)' : '💰 WAGERED (SOL)'}</b>`);
     if (partial.type === 'wagered' && partial.wagerLamports !== undefined) {
         const sol = partial.wagerLamports / SOL_PER_LAMPORT;
         const str = sol.toFixed(4).replace(/\.?0+$/, '');

@@ -95,34 +95,80 @@ function DAppBrowserBanner() {
   );
 }
 
+// Width threshold for the "desktop bordered frame" treatment. Anything
+// narrower (mobile portrait/landscape, narrow tablets) gets edge-to-
+// edge fullscreen instead of the 16:9 bordered look — the aspect-ratio
+// constraint at 90dvh used to leave significant dead space on mobile
+// (e.g. ~220px of black bars on iPhone landscape).
+const DESKTOP_FRAME_MIN_WIDTH = 1024;
+
 const styles = {
-  viewport: (isTelegram, tgHeight) => ({
+  viewport: (isTelegram, tgHeight, isDesktopFrame) => ({
     position: 'relative',
-    // In Telegram: fill the viewport.
-    // In browser: fill height, derive width from 16:9 aspect ratio,
-    // cap at 100vw so it never overflows horizontally.
+    // - Telegram: fill the viewport (host controls chrome)
+    // - Desktop browser (>= 1024px): bordered "CRT monitor" frame at
+    //   16:9 aspect ratio, capped at 90dvh to keep a margin around the
+    //   border so the framing reads as intentional. Content can be
+    //   taller than the frame (e.g. ShopScreen at 100dvh) — we scroll
+    //   inside the frame instead of clipping it.
+    // - Narrow / mobile: full-bleed 100dvh fullscreen, no aspect-ratio
+    //   constraint. Eliminates the ~220px of mobile-landscape dead
+    //   space caused by 16:9 + 90dvh on small viewports.
     ...(isTelegram
       ? { width: '100%', height: tgHeight || '100dvh' }
-      : { height: '90dvh', aspectRatio: '16 / 9', maxWidth: '100vw' }
+      : isDesktopFrame
+        ? { height: '90dvh', aspectRatio: '16 / 9', maxWidth: '100vw', margin: '0 auto' }
+        : { width: '100%', height: '100dvh' }
     ),
     background: 'var(--bg-deep)',
-    border: isTelegram ? 'none' : '1px solid var(--border)',
-    borderRadius: isTelegram ? 0 : 4,
+    border: isTelegram || !isDesktopFrame ? 'none' : '1px solid var(--border)',
+    borderRadius: isTelegram || !isDesktopFrame ? 0 : 4,
+    // Mobile-first: hide overflow so Phaser/canvas doesn't paint
+    // outside. Desktop frame: also hide here, but the inner content
+    // div allows vertical scroll so taller screens (ShopScreen) reveal
+    // their bottom controls instead of being clipped at 90dvh.
     overflow: 'hidden',
   }),
-  content: {
+  content: (isDesktopFrame) => ({
     position: 'relative',
     zIndex: 1,
     width: '100%',
     height: '100%',
     display: 'flex',
     flexDirection: 'column',
-  },
+    // Allow inner scroll on the bordered desktop frame so 100dvh-tall
+    // screens (ShopScreen, etc.) reveal their READY button instead of
+    // clipping. On mobile/Telegram the frame is the full viewport so
+    // no scroll needed — keeps page-pull-to-refresh from triggering.
+    overflowY: isDesktopFrame ? 'auto' : 'hidden',
+    WebkitOverflowScrolling: 'touch',
+  }),
 };
 
 function Layout({ children }) {
   const { isTelegram, webApp } = useTelegram();
   const [tgHeight, setTgHeight] = useState(null);
+  // Track whether the viewport is wide enough for the bordered desktop
+  // frame. Update on window resize so device rotation flips treatment
+  // (mobile landscape → still mobile, desktop browser narrowing →
+  // becomes mobile-style fullscreen, etc.).
+  const [isDesktopFrame, setIsDesktopFrame] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth >= DESKTOP_FRAME_MIN_WIDTH;
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onResize = () => {
+      setIsDesktopFrame(window.innerWidth >= DESKTOP_FRAME_MIN_WIDTH);
+    };
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('orientationchange', onResize);
+    };
+  }, []);
 
   // Listen for Telegram viewport changes (keyboard open/close, etc.)
   useEffect(() => {
@@ -149,12 +195,12 @@ function Layout({ children }) {
   return (
     <>
       <DAppBrowserBanner />
-      <div data-theme="field" style={styles.viewport(isTelegram, tgHeight)}>
+      <div data-theme="field" style={styles.viewport(isTelegram, tgHeight, isDesktopFrame)}>
         {/* Design-token overlays — scanlines, grain, vignette */}
         <div className="scanlines" />
         <div className="grain" />
         <div className="vignette" />
-        <div style={styles.content}>
+        <div style={styles.content(isDesktopFrame)}>
           {children}
         </div>
       </div>

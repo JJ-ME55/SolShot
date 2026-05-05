@@ -102,17 +102,76 @@ export default function AARScreen({ navigate, screenData, isWin }) {
   const stampText = isWin ? '★ CONFIRMED KILL ★' : '✕ MATCH LOST ✕';
   const verdict = isWin ? 'VICTOR' : 'DEFEATED';
 
-  const [copyOk, setCopyOk] = useState(false);
-  const copyResult = () => {
+  // Settlement details from server (matchEnd payload). For wagered
+  // wins we include the on-chain TX hash + Solscan link in the share
+  // text — concrete proof the SOL actually moved on-chain. Devnet
+  // matches use ?cluster=devnet on Solscan; mainnet drops the param.
+  const settlement = screenData?.settlement || null;
+  const settlementTx = settlement?.txSignature || null;
+  const winnerPayout = settlement?.winnerPayout || 0;
+  const network = (process.env.REACT_APP_SOLANA_NETWORK || 'devnet');
+  const solscanBase = 'https://solscan.io/tx/';
+  const solscanQs = network === 'mainnet-beta' ? '' : '?cluster=devnet';
+  const settlementUrl = settlementTx ? `${solscanBase}${settlementTx}${solscanQs}` : null;
+
+  // Build the share text once — used by both Copy + Share buttons.
+  const buildShareText = () => {
     const sig = (playerStats?.signatureWeapon || 'CLASSIFIED').toUpperCase();
     const result = isWin ? 'VICTORY' : 'DEFEAT';
     const score = `${myRoundWins}-${oppRoundWins}`;
-    const text = isWin
-      ? `${result} · ${myName.toUpperCase()} ${score} ${oppName.toUpperCase()} · ${myDmg} DMG · ${sig} · solshot.gg`
-      : `${result} · ${myName.toUpperCase()} ${score} ${oppName.toUpperCase()} · ${myDmg} DMG · ${sig} · solshot.gg`;
+    const lines = [];
+    if (isWin && wager > 0 && winnerPayout > 0) {
+      // Wagered win — lead with the SOL won on-chain
+      lines.push(`Just won ${winnerPayout.toFixed(3)} SOL on @SolShotGG`);
+      lines.push(`${myName.toUpperCase()} ${score} ${oppName.toUpperCase()} · ${myDmg} DMG · MVP: ${sig}`);
+      if (settlementUrl) lines.push(settlementUrl);
+      lines.push('solshot.gg — artillery duels on Solana');
+    } else if (isWin) {
+      lines.push(`${result} · ${myName.toUpperCase()} ${score} ${oppName.toUpperCase()} · ${myDmg} DMG · ${sig}`);
+      lines.push('solshot.gg');
+    } else {
+      lines.push(`${result} · ${myName.toUpperCase()} ${score} ${oppName.toUpperCase()} · ${myDmg} DMG · ${sig}`);
+      lines.push('solshot.gg');
+    }
+    return lines.join('\n');
+  };
+
+  const [copyOk, setCopyOk] = useState(false);
+  const [shareOk, setShareOk] = useState(false);
+
+  const copyResult = () => {
+    const text = buildShareText();
     navigator.clipboard.writeText(text)
       .then(() => { setCopyOk(true); setTimeout(() => setCopyOk(false), 1800); })
       .catch(() => {});
+  };
+
+  // Web Share API — falls back to copy if not available (desktop
+  // browsers, older mobile). On iOS/Android this opens the native
+  // share sheet (TG, Twitter, iMessage, etc.). Native share is far
+  // more useful than copy-paste for someone holding their phone.
+  const shareResult = async () => {
+    const text = buildShareText();
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: isWin ? 'SolShot — VICTORY' : 'SolShot — Match Result',
+          text,
+          // Don't pass `url` separately — embedding the Solscan link in
+          // text reads better in TG/Twitter previews than a bare URL.
+        });
+        setShareOk(true);
+        setTimeout(() => setShareOk(false), 1800);
+        return;
+      } catch (err) {
+        // User dismissed share sheet, or API failed — fall through to copy
+        if (err?.name !== 'AbortError') {
+          console.warn('[AAR] share failed:', err?.message || err);
+        }
+      }
+    }
+    // Fallback: copy to clipboard
+    copyResult();
   };
 
   const totalRounds = screenData?.totalRounds || (myRoundWins + oppRoundWins);
@@ -305,12 +364,43 @@ export default function AARScreen({ navigate, screenData, isWin }) {
 
         {/* Actions */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginBottom: 12 }}>
-          <button onClick={copyResult} style={aarBtnSecondary}>
-            {copyOk ? '✓ COPIED' : 'COPY RESULT'}
+          {/* Native share sheet (TG, Twitter, iMessage…) on mobile, copy
+              fallback on desktop. For wagered wins, share text leads
+              with "Just won X SOL" and embeds the on-chain settlement
+              TX link to Solscan — concrete proof for anyone you share
+              with that the SOL actually moved on-chain. */}
+          <button
+            onClick={shareResult}
+            style={isWin && wager > 0 ? aarBtnAccent : aarBtnSecondary}
+          >
+            {shareOk ? '✓ SHARED' : (isWin && wager > 0 ? `🏆 SHARE ${winnerPayout.toFixed(2)} SOL WIN` : 'SHARE')}
           </button>
-          <button onClick={() => setShowCard(true)} style={aarBtnAccent}>EXPORT CARD</button>
+          <button onClick={copyResult} style={aarBtnSecondary}>
+            {copyOk ? '✓ COPIED' : 'COPY'}
+          </button>
+          <button onClick={() => setShowCard(true)} style={aarBtnSecondary}>EXPORT CARD</button>
           <button onClick={() => navigate('barracks')} style={aarBtnSecondary}>BARRACKS</button>
         </div>
+        {/* Settlement TX link — direct Solscan view for wagered wins */}
+        {isWin && settlementUrl && (
+          <div style={{ textAlign: 'center', marginBottom: 12 }}>
+            <a
+              href={settlementUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                fontFamily: 'var(--f-mono)',
+                fontSize: 10,
+                color: 'var(--accent)',
+                letterSpacing: '0.18em',
+                textDecoration: 'none',
+                opacity: 0.85,
+              }}
+            >
+              ◆ VIEW ON-CHAIN SETTLEMENT — {settlementTx.slice(0, 6)}…{settlementTx.slice(-4)}
+            </a>
+          </div>
+        )}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginBottom: 16 }}>
           <button onClick={handlePlayAgain} style={aarBtnPrimary}>PLAY AGAIN</button>
           <button onClick={handleMenu} style={aarBtnSecondary}>EXIT</button>

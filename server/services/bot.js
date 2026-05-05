@@ -763,6 +763,13 @@ function registerCommands(bot) {
     let cta = '🎯 Launch SolShot';
     let ctaParam = '';
 
+    // MarkdownV2 escape: any of `_*[]()~`>#+-=|{}.!\\` in user-controlled
+    // text (callsigns, dynamic next-step strings, etc.) MUST be escaped or
+    // Telegram returns 400. Specifically a `_` inside a `*bold*` group
+    // breaks bold-pair matching and crashes parse with "Can't find end
+    // of Bold entity" — which is what JJ saw with callsign `JJ_ME`.
+    const mdv2Escape = (s) => String(s ?? '').replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, '\\$&');
+
     try {
       const user = await lookupUserByTelegramId(ctx.from?.id);
       if (user) {
@@ -771,19 +778,23 @@ function registerCommands(bot) {
         const callsign = (user.handle || ctx.from?.first_name || 'OPERATIVE').toUpperCase();
         const matches = user.stats?.matchesPlayed || 0;
         const wins = user.stats?.wins || 0;
-        tierLine = `You: *${callsign}* · ${tier} · ${wins}W / ${matches}M`;
+        // Escape callsign + tier — both come from user data and may
+        // contain MarkdownV2 specials. Static text around them is
+        // hand-escaped below.
+        tierLine = `You: *${mdv2Escape(callsign)}* · ${mdv2Escape(tier)} · ${wins}W / ${matches}M`;
 
-        // Suggest a next action based on state
+        // Suggest a next action based on state. The `next` string is
+        // mdv2-escaped at render time below — no need to escape here.
         if (matches === 0) {
           next = 'Tap Play below to start your first match';
           cta = '▶ Play first match';
           ctaParam = 'play';
         } else if ((user.stats?.shotBalance || 0) >= 200 && tierIdx === 0) {
-          next = `You have enough SHOT to unlock *BRONZE*. Open Prestige to burn`;
+          next = 'You have enough SHOT to unlock BRONZE. Open Prestige to burn';
           cta = '🏆 Open Prestige';
           ctaParam = 'prestige';
         } else if (matches > 0 && wins === 0) {
-          next = 'Try /weapons to see your loadout — pick a weapon you haven\\\'t used yet';
+          next = "Try /weapons to see your loadout — pick a weapon you haven't used yet";
           cta = '▶ Find a Match';
           ctaParam = 'play';
         } else if (matches >= 5 && (user.referralsMade || 0) === 0) {
@@ -799,7 +810,8 @@ function registerCommands(bot) {
       console.warn('[bot:/help] state lookup failed, falling back to generic:', err.message);
     }
 
-    // MarkdownV2 needs `.` and `-` and `!` escaped. Building parts cleanly.
+    // Build with mdv2Escape on user text. Static markdown (`*…*`,
+    // numbered list, etc.) keeps its bold/italic/escape-chars by hand.
     const lines = ['*SolShot* — artillery duels on Solana\\.', ''];
     if (tierLine) lines.push(tierLine, '');
     lines.push('*Quick start:*');
@@ -808,7 +820,7 @@ function registerCommands(bot) {
     lines.push('3\\. Take turns shooting — winner takes the pot');
     lines.push('');
     if (next) {
-      lines.push('*Next:* ' + next + '\\.', '');
+      lines.push('*Next:* ' + mdv2Escape(next), '');
     }
     lines.push('*Practice mode is free*\\. Wagered modes pay out in SOL\\.');
     lines.push('*Prestige* unlocks tiers from Bronze → Diamond\\.');

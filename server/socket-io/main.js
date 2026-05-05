@@ -1270,7 +1270,7 @@ const mainsocket = (io) => {
                     try {
                         const userDoc = await User.findOne(
                             { walletAddress: result.walletAddress },
-                            { handle: 1, telegramUserId: 1 }
+                            { handle: 1, telegramUserId: 1, username: 1 }
                         ).lean();
                         const persistedHandle = userDoc?.handle || null;
                         // Include telegramUserId so GroupMatchScreen + other
@@ -1281,6 +1281,27 @@ const mainsocket = (io) => {
                         // validated initData.
                         const tgUserId = userDoc?.telegramUserId
                             || (client.telegramUser?.id || null);
+                        // CRITICAL for group-chat fireGroupShot: backfill
+                        // client.telegramUser when we resolve the TG id via
+                        // wallet→User lookup. tgIdFor() in groupchat.js only
+                        // trusts socket.telegramUser.id — without this
+                        // backfill, browser-only Privy users (no TG initData)
+                        // would have null tgId and fireGroupShot would reject
+                        // their fire requests in production.
+                        //
+                        // Safe because: the wallet was just authenticated via
+                        // signMessage (handleAuthenticate verified the wallet
+                        // signature), and the linkTelegramIdentity flow is
+                        // the ONLY path that sets User.telegramUserId. So a
+                        // wallet → User → telegramUserId chain is as
+                        // trustworthy as a TG initData HMAC validation.
+                        if (tgUserId && !client.telegramUser?.id) {
+                            client.telegramUser = {
+                                id: tgUserId,
+                                username: userDoc?.username || null,
+                                first_name: null,
+                            };
+                        }
                         client.emit('walletHandle', {
                             handle: persistedHandle,
                             locked: !!persistedHandle,

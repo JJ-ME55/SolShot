@@ -129,20 +129,22 @@ const styles = {
     // their bottom controls instead of being clipped at 90dvh.
     overflow: 'hidden',
   }),
-  content: (isDesktopFrame) => ({
+  content: {
     position: 'relative',
     zIndex: 1,
     width: '100%',
     height: '100%',
     display: 'flex',
     flexDirection: 'column',
-    // Allow inner scroll on the bordered desktop frame so 100dvh-tall
-    // screens (ShopScreen, etc.) reveal their READY button instead of
-    // clipping. On mobile/Telegram the frame is the full viewport so
-    // no scroll needed — keeps page-pull-to-refresh from triggering.
-    overflowY: isDesktopFrame ? 'auto' : 'hidden',
-    WebkitOverflowScrolling: 'touch',
-  }),
+    // Page-level overflow stays hidden on every platform — each screen
+    // is responsible for its own internal scroll (e.g. ShopScreen's
+    // weapons grid scrolls while the READY footer stays pinned). Page
+    // scroll would let the READY button drift below the fold, which
+    // is the wrong UX. Screens that need to fill the container should
+    // use `height: '100%'` (fit parent), NOT `height: '100dvh'` (forces
+    // full viewport, clips inside the desktop 90dvh frame).
+    overflow: 'hidden',
+  },
 };
 
 function Layout({ children }) {
@@ -200,7 +202,7 @@ function Layout({ children }) {
         <div className="scanlines" />
         <div className="grain" />
         <div className="vignette" />
-        <div style={styles.content(isDesktopFrame)}>
+        <div style={styles.content}>
           {children}
         </div>
       </div>

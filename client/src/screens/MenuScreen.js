@@ -34,7 +34,7 @@ function MenuScreen({ navigate }) {
   }
 
   return (
-    <div style={{ position: 'relative', minHeight: '100dvh', overflow: 'hidden', background: 'var(--bg-deep)' }}>
+    <div style={{ position: 'relative', height: '100%', overflow: 'hidden', background: 'var(--bg-deep)' }}>
       {/* Grid background */}
       <div style={{
         position: 'absolute', inset: 0, pointerEvents: 'none', opacity: 0.05,
@@ -126,7 +126,7 @@ function MenuScreen({ navigate }) {
 /* ═══ MOBILE LANDSCAPE LAYOUT ═══ */
 function MobileMenu({ navigate, callsign, shotBalance, solBalance, onlineCount, secondary }) {
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100dvh', overflow: 'hidden', background: 'var(--bg-deep)' }}>
+    <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', background: 'var(--bg-deep)' }}>
       {/* Grid bg */}
       <div style={{
         position: 'absolute', inset: 0, opacity: 0.08, zIndex: 0,

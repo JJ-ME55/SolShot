@@ -355,7 +355,12 @@ function ShopScreen({ navigate, screenData }) {
   /* ══ MOBILE ══ */
   if (isMobile) {
     return (
-      <div style={{ position: 'relative', height: '100dvh', background: 'var(--bg-deep)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      // height: '100%' fits whatever the Layout container is (90dvh
+      // bordered desktop frame OR 100dvh full mobile viewport). Using
+      // '100dvh' here forced the screen to be taller than the desktop
+      // frame, clipping the bottom 10% — which is exactly where the
+      // pinned READY button lives.
+      <div style={{ position: 'relative', height: '100%', background: 'var(--bg-deep)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {/* Header strip */}
         <div style={{
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -517,8 +522,12 @@ function ShopScreen({ navigate, screenData }) {
 
   /* ══ DESKTOP ══ */
   return (
-    <div style={{ position: 'relative', minHeight: '100dvh', background: 'var(--bg-deep)', overflow: 'hidden' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', height: '100dvh' }}>
+    // height: '100%' fits the 90dvh bordered Layout frame. minHeight:
+    // '100dvh' was forcing the inner grid taller than the frame, so the
+    // bottom rows (READY button on the right column) clipped below the
+    // border.
+    <div style={{ position: 'relative', height: '100%', background: 'var(--bg-deep)', overflow: 'hidden' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', height: '100%' }}>
         {/* LEFT: Catalog */}
         <div style={{ display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--border)', overflow: 'hidden' }}>
           <div style={{

@@ -235,25 +235,57 @@ async function handleConfigCallback(ctx) {
 
 /** Called when the host taps "Create lobby" on the review screen. */
 async function onConfigConfirmed(ctx, config) {
+    // Wagered: host must have a linked wallet too. The host is auto-added
+    // to players[] below, and beginWageredDepositPhase later checks every
+    // player slot for walletAddress. Without this lookup, the host's slot
+    // would carry walletAddress=null even if they have one bound to their
+    // TG identity, and the match would fail at start with "@host has no
+    // linked wallet" — confusing because joiners with the same setup go in
+    // fine (they get the wallet check at handleJoinCallback).
+    let hostWalletAddress = null;
+    if (config.type === 'wagered') {
+        const user = await lookupUserByTelegramId(ctx.from.id);
+        if (!user?.walletAddress) {
+            const handle = ctx.from?.username
+                ? `@${ctx.from.username}`
+                : `<a href="tg://user?id=${ctx.from.id}">${ctx.from?.first_name || 'host'}</a>`;
+            await ctx.editMessageText(
+                `⚠️ ${handle} — wagered matches require a linked wallet. Tap below to set yours up, then run /customgame again.`,
+                {
+                    parse_mode: 'HTML',
+                    reply_markup: {
+                        inline_keyboard: [[{
+                            text: '🔗 Link Wallet (Telegram)',
+                            url: 'https://t.me/SolShotGG_bot?start=link',
+                        }]],
+                    },
+                }
+            );
+            await ctx.answerCbQuery('No linked wallet — see chat for fix.');
+            return;
+        }
+        hostWalletAddress = user.walletAddress;
+    }
+
     const matchId = await generateUniqueMatchId();
     const now = new Date();
     const lobbyExpiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
+    // Host auto-joins their own match. First color from the palette (Red).
+    // For wagered matches, attach their wallet so beginWageredDepositPhase
+    // doesn't reject them as "no linked wallet" later.
+    const hostSlot = buildPlayerSlot(ctx.from, /*tankColor*/ TANK_PHASER_COLORS[0]);
+    if (hostWalletAddress) hostSlot.walletAddress = hostWalletAddress;
 
     const match = new GroupMatch({
         matchId,
         chatId: ctx.chat.id,
         chatTitle: ctx.chat.title || null,
         hostTelegramId: ctx.from.id,
-        hostWallet: null,                                 // populated when wallet links (Phase 2 wagered)
+        hostWallet: hostWalletAddress,
         state: 'lobby',
         config,
-        players: [
-            // Host auto-joins their own match. First color from the palette
-            // (Red) — pickAvailableTankColor would return the same since
-            // the player array is empty at this point, but we hard-pick to
-            // make the contract explicit.
-            buildPlayerSlot(ctx.from, /*tankColor*/ TANK_PHASER_COLORS[0]),
-        ],
+        players: [hostSlot],
         createdAt: now,
         lobbyExpiresAt,
     });

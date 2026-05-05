@@ -457,6 +457,26 @@ if (MONGODB_URI) {
             server.listen(PORT, '0.0.0.0', function () {
                 console.log(`SolShot server listening on 0.0.0.0:${PORT}`);
             });
+            // Keep-alive: ping ourselves every 12 minutes so Render's
+            // free tier doesn't hibernate the dyno after 15min idle.
+            // Cold-start can take 5–10s on wake, which during a live
+            // match looks like "the game froze". This self-ping keeps
+            // the process active continuously.
+            //
+            // unref() so this interval doesn't block process shutdown.
+            // Disable by setting DISABLE_KEEPALIVE=1 (e.g. on a paid
+            // tier where hibernation isn't a thing).
+            if (!process.env.DISABLE_KEEPALIVE) {
+                const KEEPALIVE_MS = 12 * 60 * 1000; // 12 min
+                const keepAliveUrl = process.env.SERVER_BASE_URL || `http://127.0.0.1:${PORT}`;
+                const interval = setInterval(() => {
+                    fetch(`${keepAliveUrl}/health`).catch(() => {
+                        // Silent — self-ping failure is non-actionable
+                    });
+                }, KEEPALIVE_MS);
+                if (interval.unref) interval.unref();
+                console.log(`[KeepAlive] Self-ping enabled — every ${KEEPALIVE_MS / 60000}min to ${keepAliveUrl}/health`);
+            }
         })
         .catch((err) => {
             console.error('[FATAL] MongoDB connection failed — cannot start with unknown emission state:', err.message);

@@ -1814,8 +1814,17 @@ export class MainScene extends Scene {
       let fi = 0;
       let tf = 0;
       let done = false;
-      // Dynamic speed: cap animation at ~3 seconds (180 frames at 60fps)
-      const spd = Math.max(1, Math.ceil(traj.length / 180));
+      // Dynamic speed: long shots ~2s, short shots ~1s (60fps).
+      // Matches the single-shot trajectory pacing — multi-shot weapons
+      // (3 Shot etc.) used to be capped at ~3s which felt sluggish next
+      // to single-shot weapons after the speed-up tune in d840a44.
+      const MULTI_MIN_FRAMES = 60;   // 1s floor
+      const MULTI_MAX_FRAMES = 120;  // 2s ceiling
+      const MULTI_MAX_TRAJ = 1500;
+      const multiTargetFrames = Math.round(
+        MULTI_MIN_FRAMES + (MULTI_MAX_FRAMES - MULTI_MIN_FRAMES) * Math.min(1, traj.length / MULTI_MAX_TRAJ)
+      );
+      const spd = Math.max(1, Math.ceil(traj.length / multiTargetFrames));
 
       const timer = this.time.addEvent({
         delay: 1000 / 60,

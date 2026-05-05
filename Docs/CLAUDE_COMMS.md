@@ -1993,3 +1993,63 @@ Continuation of yesterday's audit-driven sprint. Pushed 7 more commits this morn
 - All audit items shipped except H (MFA) and I (mainnet RPC retest)
 
 — main-claude
+
+---
+
+### 2026-05-05 (evening) — `[main-claude]` — STATUS: 3-way escrow verified + hackathon prep
+
+@fishyboy-claude — good day of testing. Three things landed.
+
+**1. 3-way wagered escrow verified end-to-end on devnet.**
+Match `KT5Y`, 3 players × 0.01 SOL, all deposits confirmed, match active.
+- PDA: `B9TeA4opdoKQz4x3nUvtJirGaeojGLuppGE22SUaBr9A`
+- Activated: `2026-05-05T20:10:10Z`
+- Pot: 0.03 SOL (+ ~0.0044 rent)
+- First multi-player wagered match. Prior 1v1 milestone was `2f5b6180` on 2026-05-04.
+
+Settle of KT5Y is pending winner wallet from John (will run `recover-stuck-match.mjs KT5Y <winner>` then `mark-match-settled.mjs KT5Y <winner>`).
+
+**2. Turret rendering/animation confirmed working** in 3-player layout — no regressions vs 1v1.
+
+**3. Colosseum hackathon submission prep.**
+- Copilot skill installed: `npx skills add ColosseumOrg/colosseum-copilot` → `.agents/skills/colosseum-copilot/`, symlinked to `.claude/skills/`
+- PAT exported (env-only, not committed)
+- Project form drafted on Colosseum. Brief description (final cut, 470/500 chars):
+  > iShoot/Worms for the Telegram group chat. SolShot is an async turn-based PvP artillery game on Solana — friends /play in chat, silently bind a Privy wallet, and wager each other in 1v1 to 10-player matches without leaving the conversation. Sprint (12h), Weekend (3d), or Marathon (7d) — take your turn when you can. SOL goes into on-chain escrow; winner takes 90%, settled trustlessly. Deterministic physics = pure skill, no RNG. SHOT token gates prestige. Live on devnet.
+- Submission deadline: **2026-05-10 at 11:59 PM PDT**
+- Tomorrow: pitch video.
+
+**Memory gaps I discovered while doing the writeup** (worth flagging for `[fishyboy-claude]` too):
+
+- **Escrow v2 is the production path, not v1.** Anchor program at `programs/solshot-escrow-v2`, on-chain caps: `MAX_PLAYERS = 10`, `MAX_DURATION_SECS = 7 days`, `deposits_mask: u16`. Server uses `escrow-v2.js` (`createMatchEscrowV2`, `settleMatchEscrowV2`). v1 (`4kzrDpV9...`) still around but groupchat lifecycle uses v2 exclusively. My `MEMORY.md` had v1 listed as the active program — corrected mentally; will refresh memory file in next pass.
+- **GroupMatch async system fully shipped.** Mongoose model at `server/models/GroupMatch.js`, config flow at `server/services/groupchat/configFlow.js`. Player picker exposes 2/3/4/6/8/10. Duration: Sprint (12h) / Weekend (3d) / Marathon (7d). Default turn timer 12h. Plus quiet hours, idle penalty, buybacks (free only — wagered v2.1 will add), buyback caps. Whole subsystem was missing from `MEMORY.md`.
+
+**Competitive landscape (from Colosseum copilot, cluster `v1-c18` "Solana Competitive Wagering and Betting"):**
+
+Closest direct competitors:
+- **Scrim** (Breakout 3rd Place Gaming, $15k) — most credible threat; kept building Breakout → Cypherpunk
+- **Solana Sports Heads** (Breakout) — closest mechanical match (1v1 skill + escrow + casual game)
+- **Dojoduel.fun** (Cypherpunk) — generic arcade PvP wagering
+- **DOLERO** (Cypherpunk Honorable Mention) — 1v1 Blackjack-style
+- **Legends of the Sun** (Renaissance 2nd Place Gaming, $20k, accelerator C1 Spaceman Gaming) — best-funded prior art
+
+TG-native wagered: Swipe, Pump'n'Pass, SolBet, **RPS Arena** (Cypherpunk, RPS with TG mini-app + commit-reveal). RPS Arena is the *only* TG-native PvP wagered game in the corpus — but RPS, not skill-aiming. SolShot's defensible claim: *"first physics-skill PvP wagered game inside the Telegram group chat."*
+
+**HANDOFF:** KT5Y settle pending winner from John. Will append a follow-up entry with the settle TX once done.
+
+— main-claude
+
+---
+
+### 2026-05-05 (evening, follow-up) — `[main-claude]` — STATUS: KT5Y settled
+
+3-way wagered match `KT5Y` settled successfully. Winner: `E9rpmy13Mb9d8TKKz6y98K9Uq8Wf2uapodyGLsMQjy1t` (player slot [2]).
+
+- On-chain settle TX: `4q7VYrLd4dJRTBUviDVdLj1fYAJ9jCEXSfKzUXNdknKqnio3qiMdgLa6hjKsBPfegrS7qRVbUs6gahLqnaCK8pRc`
+- Solscan: https://solscan.io/tx/4q7VYrLd4dJRTBUviDVdLj1fYAJ9jCEXSfKzUXNdknKqnio3qiMdgLa6hjKsBPfegrS7qRVbUs6gahLqnaCK8pRc?cluster=devnet
+- Mongo reconciled: `state: active → settled`, winner wallet stamped
+- Pot split (0.03 SOL): winner +0.027, treasury +0.0021, ops +0.0009
+
+Three-player wagered loop is now end-to-end verified on devnet. v2 escrow + 3-way deposits + settle + Mongo lifecycle all green.
+
+— main-claude

@@ -752,6 +752,42 @@ function LobbyScreen({ navigate, screenData }) {
     setQueueState('searching');
   }, [getPlayerName, selectedColor, matchMode, matchLength, wager, customWager, isCustomMode]);
 
+  // ── Find-or-create unified matchmaking ────────────────────────────────
+  // Replaces the legacy joinQueue button for wagered modes (Quick Match,
+  // Duel, High Roller). Behaviour:
+  //   1. Scan OPEN LOBBIES for a matching (mode, length, wager) waiting
+  //      lobby. If found → joinRoom (instant matchmaking preserved).
+  //   2. Otherwise → createRoom, which surfaces the lobby in the right-
+  //      hand panel for OTHER players to discover and join (giving us
+  //      the visibility JJ asked for).
+  // Practice mode still uses createRoom directly via the CREATE MATCH
+  // button. Custom Challenge still uses createChallengeRoom (separate
+  // share-link flow). Server queue (joinQueue) remains as legacy
+  // fallback — not invoked by this path but still wired in case we
+  // need it.
+  const findOrCreateMatch = useCallback(() => {
+    if (!window.socket) return;
+    const wagerToSend = isCustomMode ? customWager : wager;
+    // Look for a matching room: same mode, same total rounds, same
+    // wager, and not full. Wager comparison is exact to avoid drift
+    // between e.g. 0.1 and 0.10000001 from FP math (current tiers are
+    // integer-stepped so this is fine).
+    const matching = rooms.find((r) =>
+      r.matchMode === matchMode
+      && (r.totalRounds || 1) === matchLength
+      && (r.wager || 0) === wagerToSend
+      && (r.currentPlayers || 1) < (r.maxPlayers || 2)
+    );
+    if (matching) {
+      // Existing waiting lobby — join it (uses our balance gate)
+      joinRoom(matching.roomId);
+    } else {
+      // No match — host one. Lobby card appears in the right pane for
+      // other players to find. Same balance gate runs in createRoom.
+      createRoom();
+    }
+  }, [rooms, matchMode, matchLength, wager, customWager, isCustomMode, joinRoom, createRoom]);
+
   const cancelQueue = useCallback(() => {
     if (!window.socket) return;
     window.socket.emit('leaveQueue');
@@ -979,7 +1015,11 @@ function LobbyScreen({ navigate, screenData }) {
                 CREATE MATCH
               </Button>
             ) : (
-              <Button variant="primary" onClick={joinQueue} style={{ fontSize: 15, padding: '12px 20px' }}>
+              // Wagered modes (Quick Match, Duel, High Roller) — use the
+              // find-or-create unified flow so wagered rooms appear in
+              // the OPEN LOBBIES pane while still auto-pairing instantly
+              // when a matching lobby already exists.
+              <Button variant="primary" onClick={findOrCreateMatch} style={{ fontSize: 15, padding: '12px 20px' }}>
                 {'FIND ' + modeConfig.label}
               </Button>
             )}

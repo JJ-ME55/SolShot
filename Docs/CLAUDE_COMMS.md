@@ -1940,3 +1940,56 @@ JJ asked for a comprehensive audit of the Privy integration with the brief: *"AA
 Stack is now: Privy embedded wallets (email + TG login) → Solana → escrow programs (v1 1v1, v2 N-player groupchat). No wallet-adapter, no Reown, no WalletConnect. Single sign-in path. Apple/Google Pay onramp inline.
 
 — main-claude
+
+---
+
+### 2026-05-05 (early) — `[main-claude]` — STATUS: Phase 6+ shipped, layout + callsign + welcome + JWT
+
+Continuation of yesterday's audit-driven sprint. Pushed 7 more commits this morning addressing JJ's test feedback + production hardening.
+
+**Test results from yesterday's deploy (`5cf0107` baseline → 7 commits):**
+
+| Test | Result |
+|---|---|
+| 1 — Sign-in | ✅ Pass |
+| 2 — TG silent auth | ✅ Pass (after `5275755` MINI_APP_URL = www.solshot.gg) |
+| 3 — Wallet menu | ✅ Pass |
+| 4 — Apple Pay funding modal | ✅ Pass |
+| 5 — Wagered match | ✅ **Settled naturally** (no forfeit-disconnect) — Chrome did NOT crash this time. Match `f54a318b` settled with TX `5ffW39H…`, full 90/7/3 split. CSP fix in `e1648bd` was the right call. |
+
+**Commits this morning:**
+
+- `5275755` — fix MINI_APP_URL = www.solshot.gg (TG login_url silently rejected when host didn't match BotFather /setdomain)
+- `e1648bd` — restore Privy-internal walletconnect URLs in CSP. Critical fix: my dep removal in `2f165a4` was overzealous. Privy SDK fetches `explorer-api.walletconnect.com` for its modal regardless of `loginMethods` config. Each rejected fetch threw an exception → object pressure compounded with Phaser canvas churn → contributed to the Chrome crash JJ reported twice.
+- `621c914` (later reverted in `a192d72`) — first attempt at fixing Layout 90dvh frame clipping ShopScreen 100dvh content. Used overflow-y: auto on Layout content as page-scroll fallback. JJ correctly flagged this as wrong UX — pinned READY footer should stay pinned, not drift.
+- `a192d72` — proper fix: change every full-viewport screen (ShopScreen, MenuScreen, both branches each) from `height: '100dvh'` → `height: '100%'` so they fit whatever Layout container gives them. Reverted Layout content overflow back to hidden.
+- `d4ab9f9` — **WelcomeModal** + **Privy JWT verify**:
+  - WelcomeModal: new component at `client/src/components/WelcomeModal.js`. Reads `isFreshSignIn` from WalletContext, prompts new users to fund 0.05 SOL via Apple Pay. Idempotent via localStorage flag keyed by walletAddress. Mounted in Layout.
+  - JWT verify: installed `@privy-io/server-auth`, new `server/services/privyAuth.js` with `requirePrivyAuth()` express middleware + graceful rollout (off when env vars unset, auto-on when both `PRIVY_APP_ID` + `PRIVY_APP_SECRET` set on Render). Wired to `/api/wallet/link-from-tg-token`. Client attaches `Authorization: Bearer <accessToken>` via `usePrivy().getAccessToken`.
+- `a3b1f30` — **wallet-anchored callsign** with one-time-set:
+  - Bug: User docs were keyed by `uid` (browser session ID). Each fresh localStorage = new uid = new User doc = new name. JJ could pick a different callsign every login.
+  - Fix: server emits `walletHandle` event after auth (looked up by walletAddress). Once set, locked — server ignores subsequent `setWalletHandle` calls. New `setWalletHandle` socket event for the one-time pick. `registerIdentity` no longer overwrites a wallet-bound User doc's handle. App.js syncs the server-canonical handle into local state + localStorage so legacy call-sites pick it up automatically. Auto-migrates existing localStorage handles to server on first wallet connect.
+
+**Dashboard tasks awaiting JJ (4 toggles total now):**
+1. Login Methods → Telegram → "Enable login directly from the Telegram app" *(Phase 2 silent auth — already done by JJ per test 2 passing)*
+2. User management → Account funding → "Pay with card" + 0.05 SOL devnet *(Phase 3 funding — already done per test 4)*
+3. **NEW:** Render env vars `PRIVY_APP_ID` + `PRIVY_APP_SECRET` *(Phase JWT verify — pending)*
+4. *(Deferred)* MFA toggle *(Phase H — not yet planned)*
+
+**Open asks from JJ (this session):**
+- **Wagered matches don't appear in OPEN LOBBIES** — only Practice mode shows up in the lobby list. JJ wants ALL match types visible: Practice, Quick Match, Duel, High Roller, Custom Challenge. Currently wagered uses `joinQueue` (server-side matchmaking) which doesn't surface the waiting room as a discoverable lobby. Practice mode uses `createRoom` which does. Need to unify so all wagered modes also show as joinable open lobbies.
+- **Click-to-sort on angle** — JJ doesn't like a click-to-sort gesture on the aiming control. Need to find + remove. Probably in BattleScreen or `screens/battle/AngleControl.js`.
+- **/help markdown bug** *(known, drive-by)* — `[bot:/help] markdown send failed, plain fallback: 400: Bad Request: can't parse entities: Can't find end of Bold entity at byte offset 415`. Callsign-with-underscore (e.g. `JJ_ME`) breaking MarkdownV2 bold parsing. Plain-text fallback works. Fix: escape user-controlled content before interpolating. Low priority.
+
+**Notes for next session:**
+- Render env: confirm `PRIVY_APP_ID` + `PRIVY_APP_SECRET` set so JWT verify activates. Boot logs will show `[privyAuth] Initialized — JWT verification enabled` when on; `[privyAuth] PRIVY_APP_ID or PRIVY_APP_SECRET not configured — JWT verification disabled (dev mode)` when off.
+- Welcome modal won't fire for users who already have a Privy session (returning users on the same browser). Only fires on truly new account creation (`isNewUser: true` from useLogin onComplete).
+- Callsign migration: existing users with localStorage handles get auto-pushed to server on next wallet connect. One-time, no UI shown to user. Could potentially wipe a name they wanted to change → if needed, add a "reset name" flow gated behind something deliberate.
+
+**Cumulative session state on `main`:**
+- 18 commits ahead of yesterday's `5cf0107`
+- Privy stack hardened: silent TG auth, Apple Pay funding, recovery prompts, wallet menu, JWT verify, callsign persistence, welcome modal
+- ~14,500 npm-lock entries removed (dead deps)
+- All audit items shipped except H (MFA) and I (mainnet RPC retest)
+
+— main-claude

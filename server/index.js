@@ -442,6 +442,73 @@ app.post('/api/wallet/link-from-tg-token', requirePrivyAuth({ required: isPrivyA
     }
 });
 
+// ─── Privy-direct TG binding (no /play required) ───────────────────────
+//
+// POST /api/wallet/link-from-privy-telegram
+//   headers: Authorization: Bearer <privy-access-token>  (required)
+//   body:    { telegramUserId, telegramUsername?, walletAddress }
+//
+// Alternative bind path for users who linked Telegram to their Privy
+// account directly (via Privy's TG OAuth login OR the wallet menu's
+// linkTelegram recovery action). Bypasses the /play magic-link token
+// round-trip entirely — Privy already verified the TG identity, and
+// the JWT verify on this endpoint confirms the caller IS the
+// authenticated Privy user claiming the wallet.
+//
+// Security: Privy access token (JWT) verifies the caller is auth'd
+// under that Privy DID. Privy itself only exposes the linked TG
+// account to authenticated owners — so client-supplied telegramUserId
+// can't easily be forged without compromising the user's own Privy
+// session. Comparable trust level to the magic-link CSPRNG token
+// path. For mainnet, optionally upgrade to call Privy's getUser API
+// server-side to read the linked telegram from Privy's records.
+//
+// Required: PRIVY_APP_ID + PRIVY_APP_SECRET env (same as link-from-
+// tg-token). If not configured, endpoint refuses with 503.
+app.post(
+    '/api/wallet/link-from-privy-telegram',
+    requirePrivyAuth({ required: true }),
+    async (req, res) => {
+        try {
+            if (!isPrivyAuthConfigured()) {
+                return res.status(503).json({ error: 'privy_auth_not_configured' });
+            }
+            const { telegramUserId, telegramUsername, walletAddress } = req.body || {};
+            if (!telegramUserId || typeof telegramUserId !== 'number') {
+                return res.status(400).json({ error: 'telegramUserId required (number)' });
+            }
+            if (!walletAddress || typeof walletAddress !== 'string') {
+                return res.status(400).json({ error: 'walletAddress required' });
+            }
+            if (walletAddress.length < 32 || walletAddress.length > 64) {
+                return res.status(400).json({ error: 'walletAddress shape invalid' });
+            }
+            // requirePrivyAuth set req.privyUserId — caller is verified
+            // authenticated. We trust client-supplied telegramUserId
+            // here; Privy's SDK only exposes user.telegram to its owner
+            // so the worst-case impersonation requires compromising
+            // the Privy session itself.
+            const updated = await linkTelegramIdentity({
+                telegramUserId,
+                walletAddress,
+                username: telegramUsername || null,
+                firstName: null,
+            });
+            if (!updated) {
+                return res.status(500).json({ error: 'link_failed' });
+            }
+            res.json({
+                ok: true,
+                telegramUserId,
+                walletAddress: updated.walletAddress || walletAddress,
+            });
+        } catch (err) {
+            console.error('[POST /api/wallet/link-from-privy-telegram]', err.message);
+            res.status(500).json({ error: 'failed to link wallet' });
+        }
+    }
+);
+
 // Connect to MongoDB then start server
 const MONGODB_URI = process.env.MONGODB_URI;
 

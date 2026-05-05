@@ -404,6 +404,70 @@ function SolShotWalletInner({ children }) {
         return () => { socket.off('walletHandle', handler); };
     }, []);
 
+    // Auto-bind via Privy-linked Telegram. Bypasses the /play magic-link
+    // round-trip when:
+    //   1. User is signed in with a wallet (walletAddress set)
+    //   2. Their Privy user object has telegram linked (privyUser.telegram)
+    //      — true if they signed in with "Continue with Telegram", OR
+    //      tapped "ADD TELEGRAM BACKUP" in the wallet menu
+    //   3. Server says walletHandle.telegramUserId is null (not yet bound
+    //      in our User doc)
+    //
+    // POSTs to /api/wallet/link-from-privy-telegram with Bearer JWT.
+    // Server verifies the JWT (proves auth) and writes the link.
+    // Then walletHandle event re-fires (because we re-emit on
+    // setWalletHandle path? actually we'd need a server push) —
+    // simpler: client refetches walletHandle by re-emitting authenticate
+    // — but that's heavy. We'll just optimistically set state.
+    const [autoBindAttempted, setAutoBindAttempted] = useState(false);
+    useEffect(() => {
+        if (autoBindAttempted) return;
+        if (!walletAddress) return;
+        if (!privyGetAccessToken) return;
+        // Only bind when Privy says we have telegram linked AND server
+        // says we don't have it yet. Avoids unnecessary POSTs.
+        const privyTgId = privyUser?.telegram?.telegramUserId;
+        if (!privyTgId) return;
+        if (walletHandle?.telegramUserId) return; // already bound
+        setAutoBindAttempted(true);
+        const serverUrl = process.env.REACT_APP_SERVER_URL || 'http://localhost:5001';
+        privyGetAccessToken()
+            .then((accessToken) => {
+                if (!accessToken) return null;
+                return fetch(`${serverUrl}/api/wallet/link-from-privy-telegram`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${accessToken}`,
+                    },
+                    body: JSON.stringify({
+                        telegramUserId: Number(privyTgId),
+                        telegramUsername: privyUser?.telegram?.username || null,
+                        walletAddress,
+                    }),
+                });
+            })
+            .then(async (resp) => {
+                if (!resp) return;
+                const body = await resp.json().catch(() => ({}));
+                if (resp.ok) {
+                    console.log('[link] Privy-direct TG bind succeeded for tg user', body.telegramUserId);
+                    // Optimistic update — match the shape the server will
+                    // emit in walletHandle. Triggers re-render so screens
+                    // pick up the bound state immediately.
+                    setWalletHandleState((prev) => ({
+                        ...prev,
+                        telegramUserId: Number(privyTgId),
+                    }));
+                } else {
+                    console.warn('[link] Privy-direct bind failed:', resp.status, body.error);
+                }
+            })
+            .catch((err) => {
+                console.warn('[link] Privy-direct bind errored:', err?.message || err);
+            });
+    }, [walletAddress, privyUser, walletHandle, privyGetAccessToken, autoBindAttempted]);
+
     /**
      * One-time-set the callsign for this wallet. Server enforces "first
      * set wins" — subsequent calls re-emit the existing handle without

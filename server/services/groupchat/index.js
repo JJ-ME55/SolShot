@@ -119,12 +119,13 @@ async function handleCancelMatch(ctx) {
         chatId: ctx.chat.id,
         state: { $in: ['lobby', 'awaiting_deposits', 'active'] },
     });
-    if (!match) return ctx.reply('No open or active match in this chat.');
+    if (!match) return ctx.reply('No open or active match in this chat. Run /customgame to start a fresh one.');
     if (match.hostTelegramId !== ctx.from.id) {
         return ctx.reply('Only the host can cancel the match.');
     }
 
     const wasActive = match.state === 'active';
+    const wasAwaitingDeposits = match.state === 'awaiting_deposits';
     const wasWageredWithEscrow = match.config?.type === 'wagered' && match.escrowPda;
 
     // If it was active, clear its scheduled turn timer so the scheduler
@@ -144,35 +145,58 @@ async function handleCancelMatch(ctx) {
     // Wagered matches with an on-chain escrow: refund deposited players.
     // Best-effort — if the chain call fails, permissionless_reclaim sweeps
     // the pot 24h after match_end_ts so funds are never permanently stuck.
+    let refundLine = '';
     if (wasWageredWithEscrow) {
         const result = await lifecycle.cancelWageredEscrow(match);
         if (result.success && result.txSignature) {
-            await ctx.reply(`💸 On-chain refund settled — TX: <code>${result.txSignature}</code>`, { parse_mode: 'HTML' });
+            refundLine = `\n💸 Refund settled on-chain — <a href="https://solscan.io/tx/${result.txSignature}?cluster=devnet">TX</a>`;
         } else if (!result.success) {
-            await ctx.reply(`⚠️ On-chain refund failed (${result.error}). Players can self-reclaim 24h after match end via the PWA.`);
+            refundLine = `\n⚠️ Refund failed (${result.error}). Players can self-reclaim 24h after match end.`;
         }
     }
 
-    await ctx.reply(`🚫 Match #${match.matchId} cancelled by host${wasActive ? ' (was in progress)' : ''}.`);
+    // Single consolidated cancel message — what was canceled, what
+    // refunded, what to do next. Host gets a clear path forward
+    // instead of three separate replies.
+    const stateLabel = wasActive ? 'in-progress match'
+        : wasAwaitingDeposits ? 'deposit-phase match'
+        : 'open lobby';
+    const msg = `🚫 <b>Match #${match.matchId}</b> cancelled by host (${stateLabel}).` +
+                refundLine +
+                `\n\n▶ Run /customgame to start a fresh match.`;
+    await ctx.reply(msg, { parse_mode: 'HTML', disable_web_page_preview: true });
+
+    // Edit the original lobby card so the chat history doesn't show a
+    // dead "JOIN" button that no longer works.
     if (match.lobbyMessageId) {
         await safeEdit(ctx, match.lobbyMessageId,
             `🚫 <b>Match #${match.matchId}</b> — cancelled by host.`,
             { parse_mode: 'HTML' });
+    }
+
+    // Broadcast cancel to all clients viewing the match on solshot.gg
+    // so they auto-redirect instead of staring at stale state. Looks
+    // for the io instance attached to the bot's bound app — see
+    // bot.js for where this gets injected.
+    try {
+        const io = global.__solshotIo;
+        if (io && match.matchId) {
+            io.to(`groupmatch:${match.matchId}`).emit('groupMatchCancelled', {
+                matchId: match.matchId,
+                reason: match.cancelReason,
+                refunded: !!(wasWageredWithEscrow && refundLine.includes('settled')),
+            });
+        }
+    } catch (err) {
+        console.warn('[group-chat] cancel broadcast failed:', err.message);
     }
 }
 
 // ─── Configuration callback handler ─────────────────────────────────────
 
 async function handleConfigCallback(ctx) {
-    // Wagered group-chat is gated until Escrow v2 (Phase 2). Surface this
-    // intent as a feature peek rather than a broken flow.
-    if (ctx.callbackQuery.data === 'gc_cfg_type_wagered_soon') {
-        return ctx.answerCbQuery(
-            'Wagered group matches are coming in Phase 2 (Escrow v2). Free matches are live now — pick Free to continue.',
-            { show_alert: true },
-        );
-    }
-
+    // (Removed: gc_cfg_type_wagered_soon callback handler — wagered v2
+    // shipped, configFlow now emits gc_cfg_type_wagered directly.)
     const result = configFlow.applyAction(ctx.chat.id, ctx.from.id, ctx.callbackQuery.data);
 
     try {

@@ -177,6 +177,15 @@ app.use(express.urlencoded({limit: "1mb", extended: true}))
 
 mainsocket(io)
 
+// Expose io to non-socket-handler modules that need to broadcast (e.g.
+// groupchat handleCancelMatch emitting groupMatchCancelled when a host
+// cancels via /cancelmatch — needs to reach connected clients in the
+// match's room without going through a socket-handler context).
+// Global is a controlled trade-off vs threading io through every
+// service constructor; tagged with __solshot prefix to avoid namespace
+// collisions.
+global.__solshotIo = io;
+
 app.get('/', (req, res) => {
     res.send('SolShot server running')
 })

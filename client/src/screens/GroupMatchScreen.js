@@ -157,6 +157,33 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
         window.socket.emit('fireGroupShot', { matchId, angle, power, weaponId });
     };
 
+    // Server emits `groupMatchCancelled` to the match room when the
+    // host runs /cancelmatch. Auto-show the cancelled state — saves
+    // the user from a stale view + a manual refresh.
+    useEffect(() => {
+        if (!window.socket || !matchId) return;
+        const handler = (payload) => {
+            if (payload?.matchId !== matchId) return;
+            // Mutate the local match into the cancelled state so the
+            // existing cancelled-state render path takes over.
+            setMatch((prev) => prev ? { ...prev, state: 'cancelled', cancelledAt: new Date().toISOString() } : prev);
+            // Surface a clear "match cancelled" toast (event-bus
+            // pattern — TxToastHost listens for solshot:toast).
+            try {
+                window.dispatchEvent(new CustomEvent('solshot:toast', {
+                    detail: {
+                        message: payload.refunded
+                            ? 'Match cancelled — deposits refunded on-chain.'
+                            : 'Match cancelled by host.',
+                        kind: 'info',
+                    },
+                }));
+            } catch (_) {}
+        };
+        window.socket.on('groupMatchCancelled', handler);
+        return () => window.socket.off('groupMatchCancelled', handler);
+    }, [matchId]);
+
     if (loading) {
         // Skeleton: header bar + a few stacked rows roughly shaped like
         // the lobby/active/settled content. Reserves the layout slot so

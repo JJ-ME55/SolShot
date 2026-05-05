@@ -75,8 +75,19 @@ export async function linkTelegramIdentity({
         if (existingByTg) {
             const update = { ...baseSet };
 
-            // Attach wallet only if (a) doc has none yet, (b) the new
-            // wallet isn't already claimed by a different User doc.
+            // Attach wallet only if (a) doc has none yet, (b) we can
+            // safely claim it. Three cases:
+            //   1. No conflict → just attach, normal path
+            //   2. Conflict is an "orphan" (no telegramUserId on the
+            //      conflicting doc — pure Privy sign-in artifact) →
+            //      consume the orphan: copy any non-trivial state we'd
+            //      want to preserve, then delete it, then attach. This
+            //      is the typical "/play after signing in" sequence
+            //      and the previous "skip with warning" behaviour was
+            //      blocking it permanently.
+            //   3. Conflict has a different telegramUserId (real
+            //      duplicate user, two TG accounts claiming same
+            //      wallet) → refuse + warn, manual merge needed.
             if (walletAddress && !existingByTg.walletAddress) {
                 const conflict = await User.findOne({
                     walletAddress,
@@ -85,10 +96,16 @@ export async function linkTelegramIdentity({
                 if (!conflict) {
                     update.walletAddress = walletAddress;
                     console.log(`[users] linked wallet ${walletAddress.slice(0, 8)}… to tg ${telegramUserId}`);
+                } else if (!conflict.telegramUserId) {
+                    // Orphan — consume it. Delete the empty Privy-only
+                    // doc and attach its wallet to our TG-keyed doc.
+                    await User.deleteOne({ _id: conflict._id });
+                    update.walletAddress = walletAddress;
+                    console.log(`[users] consumed orphan ${conflict._id} → linked wallet ${walletAddress.slice(0, 8)}… to tg ${telegramUserId}`);
                 } else {
-                    // Wallet belongs to another User. v1: log + skip the
-                    // assignment. Manual merge tooling can reconcile later.
-                    console.warn(`[users] cannot link wallet to tg ${telegramUserId} — wallet already on User ${conflict._id}`);
+                    // Real conflict — wallet belongs to a different TG
+                    // user. Refuse + warn; manual merge required.
+                    console.warn(`[users] cannot link wallet to tg ${telegramUserId} — wallet already on User ${conflict._id} (tg ${conflict.telegramUserId})`);
                 }
             }
 

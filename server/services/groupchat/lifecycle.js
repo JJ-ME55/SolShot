@@ -28,6 +28,7 @@ import { dispatchGroupVictoryDm } from '../challenge/victoryDm.js';
 import { earnGold, awardKillBonus } from '../gold.js';
 import { generateTerrain, generateTankPositions, generateWind, processShot, WEAPON_DATA } from '../physics.js';
 import {
+    initEscrowV2,
     isEscrowV2Enabled,
     createMatchEscrowV2,
     settleMatchEscrowV2,
@@ -172,6 +173,14 @@ export async function startMatch(matchId) {
  * retry via /startmatch (or cancel cleanly).
  */
 async function beginWageredDepositPhase(match) {
+    // Defensive lazy init — escrow v2 is supposed to be initialized at boot
+    // by index.js, but if the RPC was unreachable then or a SIGHUP hasn't
+    // landed since a key change, retry once before giving up. Cheap and
+    // idempotent (initEscrowV2 just resets + rebuilds module-level vars).
+    if (!isEscrowV2Enabled()) {
+        console.warn(`[group-chat] startMatch ${match.matchId}: escrow v2 not ready, retrying init`);
+        initEscrowV2();
+    }
     if (!isEscrowV2Enabled()) {
         console.warn(`[group-chat] startMatch ${match.matchId}: wagered match but escrow v2 not initialized`);
         await postToChat(match.chatId, `⚠️ Match #${match.matchId} — wagered matches need escrow service running. Use /cancelmatch and try again later.`);

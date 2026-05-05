@@ -37,6 +37,21 @@ dotenv.config()
 const keysLoaded = initKeys();
 console.log(`[Server] Keys: ${keysLoaded ? 'LOADED' : 'NOT CONFIGURED (dev mode)'}`);
 
+// Initialize escrow programs at boot. Previously these were lazy-init'd
+// only inside `initSolana()`, which was itself lazy-called from
+// `getConnection()` — meaning escrow v2 wasn't ready until the first
+// wagered web-client flow hit `verifyBalance()`. The groupchat path
+// (`beginWageredDepositPhase` → `createMatchEscrowV2`) doesn't go
+// through solana.js, so on a fresh Render boot the first `/customgame`
+// wagered match would fail with "wagered matches need escrow service
+// running". Init eagerly here so both flows are ready on boot.
+if (keysLoaded) {
+    const escrowV1Ready = initEscrow();
+    console.log(`[Server] Escrow v1: ${escrowV1Ready ? 'ENABLED' : 'DISABLED'}`);
+    const escrowV2Ready = initEscrowV2();
+    console.log(`[Server] Escrow v2: ${escrowV2Ready ? 'ENABLED' : 'DISABLED'}`);
+}
+
 const PORT = process.env.PORT || 5001
 const app = express();
 const server = http.createServer(app)

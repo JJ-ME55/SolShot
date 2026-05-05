@@ -202,12 +202,16 @@ export class MainScene extends Scene {
       }
     });
 
-    // ── Click-to-aim handler ──
-    // A single click on the game canvas snaps the turret toward the clicked point.
-    // No continuous tracking — the turret stays where it was set until the player
-    // clicks again or uses the keyboard/sliders.
-    // Clicks on React HUD elements (fire button, sliders, etc.) never reach here
-    // because those elements have pointerEvents: 'auto' and consume the event first.
+    // ── Click-to-aim handler — DISABLED pre-hackathon ──
+    // Per JJ: the click-to-set-angle gesture isn't precise enough yet
+    // (point-and-click maps roughly to a 0–180° turret angle but small
+    // pixel deltas swing the angle a lot, especially when clicking near
+    // the tank). Players were finding it frustrating mid-match. Better
+    // to revisit post-hackathon — possibly with a click-AND-drag aim
+    // line, or click-to-show-trajectory-preview before commit.
+    //
+    // The function definition is kept intact below so the feature can
+    // be brought back with a single line uncomment + handler register.
     this._clickAimHandler = (pointer) => {
       if (pointer.button !== 0) return; // left click only
       if (this._firePending) return;
@@ -229,7 +233,10 @@ export class MainScene extends Scene {
       if (this._bridge) this._bridge.setAngle(clamped);
     };
 
-    this.input.on('pointerdown', this._clickAimHandler);
+    // DISABLED: click-to-aim registration. Re-enable post-hackathon by
+    // uncommenting the line below. Cleanup at line ~2275 is also a
+    // no-op when the handler isn't registered (defensive off()).
+    // this.input.on('pointerdown', this._clickAimHandler);
 
     this._created = true;
   };

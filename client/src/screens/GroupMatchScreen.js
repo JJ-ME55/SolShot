@@ -209,6 +209,20 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
         && myTgId != null
         && match.players?.[match.currentPlayerIndex]?.telegramUserId === myTgId;
 
+    // Orphan state: viewer is signed in (walletHandle has fired) but
+    // walletHandle.telegramUserId is null → their wallet isn't linked to
+    // their TG account in the User doc. Happens when a user:
+    //   1. Signed up on solshot.gg via Privy email (got a wallet doc)
+    //   2. Used the bot in a TG group (got a separate TG-keyed doc)
+    //   3. Never ran /play in DM (which is the bind step that merges them)
+    // Without the link, we can't identify them in the match → no fire UI.
+    // Surface this loudly so the user knows the recovery action.
+    const isOrphan = match.state === 'active'
+        && match.players?.length > 0
+        && walletHandle != null
+        && walletHandle.handle !== null
+        && !myTgId;
+
     // ACTIVE + viewer is a player → InGameHUD pattern from the redesign:
     // fixed-height top player bar, flex battlefield, compact bottom strip.
     // No scrolling — the whole HUD fits within the viewport.
@@ -266,6 +280,38 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
     return (
         <div style={styles.fullPage}>
             <Header match={match} onMenu={() => navigate('menu')} onRefresh={refresh} />
+
+            {/* Orphan-account banner — shown when wallet isn't linked
+                to TG. Recovery: DM the bot and tap /play once. */}
+            {isOrphan && (
+                <div style={{
+                    margin: '12px 16px',
+                    padding: '14px 16px',
+                    border: '1px solid var(--accent)',
+                    background: 'rgba(218, 138, 40, 0.10)',
+                    clipPath: 'var(--clip-8)',
+                }}>
+                    <div style={{
+                        fontFamily: 'var(--f-mono)',
+                        fontSize: 10,
+                        color: 'var(--accent)',
+                        letterSpacing: '0.22em',
+                        marginBottom: 6,
+                    }}>
+                        ⚠ ACCOUNT NOT LINKED
+                    </div>
+                    <div style={{
+                        fontFamily: 'var(--f-sec)',
+                        fontSize: 13,
+                        color: 'var(--bone)',
+                        lineHeight: 1.5,
+                    }}>
+                        Your wallet isn't linked to your Telegram account.
+                        DM <strong>@SolShotGG_bot</strong> and tap <strong>/play</strong> to bind
+                        them — takes one tap. Then refresh this page to see your turn.
+                    </div>
+                </div>
+            )}
 
             {/* Spectator preview — show the live battlefield ONLY for active
                 matches the viewer isn't playing. For settled matches, the

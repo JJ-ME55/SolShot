@@ -1255,6 +1255,32 @@ const mainsocket = (io) => {
                     console.warn(`[Auth] Failed to load milestone state:`, err.message)
                     // Continue — in-memory defaults are fine, milestones just won't be restored
                 }
+
+                // Callsign persistence: emit the handle persisted under
+                // this wallet so the client doesn't keep regenerating
+                // from localStorage on each fresh login. Server is the
+                // source of truth — once a handle is set for a wallet,
+                // the client should display + use it (not its local
+                // copy, which can churn between sessions or browsers).
+                //
+                // If no handle yet for this wallet, emit { handle: null,
+                // canSet: true } — client can prompt for a one-time
+                // pick which it then sends via setWalletHandle.
+                if (isDbConnected()) {
+                    try {
+                        const userDoc = await User.findOne(
+                            { walletAddress: result.walletAddress },
+                            { handle: 1 }
+                        ).lean();
+                        const persistedHandle = userDoc?.handle || null;
+                        client.emit('walletHandle', {
+                            handle: persistedHandle,
+                            locked: !!persistedHandle,
+                        });
+                    } catch (err) {
+                        console.warn('[Auth] Failed to load persisted handle:', err.message);
+                    }
+                }
                 // Link Telegram identity if this socket has validated initData.
                 // Bot commands (/stats, /prestige, etc.) can then look up the
                 // User by ctx.from.id without forcing the user into the Mini App.
@@ -1282,6 +1308,56 @@ const mainsocket = (io) => {
         // match via socket.io rooms (room key: `groupmatch:<matchId>`).
         registerGroupChatSocketHandlers(client, io);
 
+        // === Callsign / handle persistence (one-time set per wallet) ===
+        // Client emits this after a fresh sign-in if walletHandle came
+        // back as { handle: null, canSet: true }. Server saves the
+        // chosen callsign to User.handle keyed by walletAddress, then
+        // emits walletHandle back with { locked: true } so the client
+        // UI can lock the input.
+        //
+        // Idempotent: if a handle is already set for this wallet, we
+        // ignore the request (and re-emit the existing handle so the
+        // client picks up the truth).
+        client.on('setWalletHandle', async ({ handle }) => {
+            try {
+                const wallet = authenticatedWallets[client.id];
+                if (!wallet) {
+                    return client.emit('walletHandle', { handle: null, locked: false, error: 'not_authenticated' });
+                }
+                if (!isDbConnected()) {
+                    return client.emit('walletHandle', { handle: null, locked: false, error: 'db_unavailable' });
+                }
+                let clean = (handle || '').slice(0, 16).trim();
+                if (!clean) {
+                    return client.emit('walletHandle', { handle: null, locked: false, error: 'empty_handle' });
+                }
+                if (isProfane(clean)) {
+                    return client.emit('walletHandle', { handle: null, locked: false, error: 'profanity_blocked' });
+                }
+
+                const existing = await User.findOne(
+                    { walletAddress: wallet },
+                    { handle: 1 }
+                ).lean();
+
+                // Already set — re-emit existing, don't allow overwrite
+                if (existing?.handle) {
+                    return client.emit('walletHandle', { handle: existing.handle, locked: true });
+                }
+
+                // First-time set: write it
+                await User.findOneAndUpdate(
+                    { walletAddress: wallet },
+                    { $set: { handle: clean, lastActive: new Date() } },
+                    { upsert: true }
+                );
+                client.emit('walletHandle', { handle: clean, locked: true });
+            } catch (err) {
+                console.warn('[setWalletHandle] failed:', err.message);
+                client.emit('walletHandle', { handle: null, locked: false, error: 'server_error' });
+            }
+        });
+
         // === PRACTICE IDENTITY (Phase 28) ===
         client.on('registerIdentity', ({ uid, handle }) => {
             if (!uid || typeof uid !== 'string' || uid.length < 10) return
@@ -1290,13 +1366,29 @@ const mainsocket = (io) => {
             if (isProfane(clean)) clean = 'Player' + uid.slice(0, 4)
             playerUids[client.id] = { uid, handle: clean }
 
-            // Upsert user record in DB (fire-and-forget)
+            // Upsert user record in DB (fire-and-forget). Important
+            // detail: we DO NOT overwrite an existing handle on a doc
+            // that's already wallet-bound. Once a wallet has a handle,
+            // it's locked — no client can rename it via registerIdentity
+            // (avoids the "user picks a different name each fresh
+            // browser session" bug). For wallet-bound docs, we update
+            // lastActive only. For uid-only / unbound docs, normal
+            // upsert behaviour preserved.
             if (isDbConnected()) {
-                User.findOneAndUpdate(
-                    { uid },
-                    { $set: { handle: clean, lastActive: new Date() } },
-                    { upsert: true }
-                ).catch(err => console.error('[Identity] upsert error:', err.message))
+                User.findOne({ uid }, { handle: 1, walletAddress: 1 })
+                    .lean()
+                    .then((existing) => {
+                        const isWalletBoundWithHandle = existing?.walletAddress && existing?.handle;
+                        const update = isWalletBoundWithHandle
+                            ? { lastActive: new Date() }
+                            : { handle: clean, lastActive: new Date() };
+                        return User.findOneAndUpdate(
+                            { uid },
+                            { $set: update },
+                            { upsert: true }
+                        );
+                    })
+                    .catch(err => console.error('[Identity] upsert error:', err.message))
 
                 // Link Telegram identity if this is a TG-validated socket and no wallet
                 // is connected yet (bot commands can still look this user up by

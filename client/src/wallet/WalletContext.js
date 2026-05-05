@@ -236,6 +236,12 @@ function SolShotWalletInner({ children }) {
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [shotBalance, setShotBalance] = useState(0);
     const [prestigeInfo, setPrestigeInfo] = useState({ tier: 0, tierName: 'Unranked' });
+    // Wallet-anchored callsign — server emits after auth via 'walletHandle'
+    // event. `handle` is null until server replies. `locked` is true once
+    // a handle is persisted for this wallet (one-time-set semantic). When
+    // locked, the client UI should hide any "change name" input — this
+    // wallet's display name is fixed.
+    const [walletHandle, setWalletHandleState] = useState({ handle: null, locked: false });
 
     const walletAddress = useMemo(() => {
         return publicKey ? publicKey.toBase58() : null;
@@ -366,6 +372,43 @@ function SolShotWalletInner({ children }) {
         };
         socket.on('shotInfo', handleShotInfo);
         return () => { socket.off('shotInfo', handleShotInfo); };
+    }, []);
+
+    // Wallet-anchored callsign: server emits after auth (and again after
+    // setWalletHandle). Authoritative — overrides any client-side
+    // localStorage handle.
+    useEffect(() => {
+        const socket = window.socket;
+        if (!socket) return;
+        const handler = (data) => {
+            if (!data || typeof data !== 'object') return;
+            setWalletHandleState({
+                handle: data.handle || null,
+                locked: !!data.locked,
+            });
+            // Sync to localStorage so legacy callers (LobbyScreen.getPlayerName,
+            // BarracksScreen, AAR, etc.) pick up the server-canonical value
+            // even before they're refactored to read from context.
+            if (data.handle) {
+                try { localStorage.setItem('solshot_handle', data.handle); } catch (_) {}
+            }
+        };
+        socket.on('walletHandle', handler);
+        return () => { socket.off('walletHandle', handler); };
+    }, []);
+
+    /**
+     * One-time-set the callsign for this wallet. Server enforces "first
+     * set wins" — subsequent calls re-emit the existing handle without
+     * overwriting. Returns true on success, false on validation error.
+     */
+    const setWalletHandle = useCallback((handle) => {
+        const socket = window.socket;
+        if (!socket || !socket.connected) return false;
+        const clean = String(handle || '').trim().slice(0, 16);
+        if (!clean) return false;
+        socket.emit('setWalletHandle', { handle: clean });
+        return true;
     }, []);
 
     useEffect(() => {
@@ -745,6 +788,13 @@ function SolShotWalletInner({ children }) {
         recoveryStatus,
         linkEmailRecovery,
         linkTelegramRecovery,
+        // Wallet-anchored callsign. `walletHandle.handle` is the
+        // authoritative display name for this wallet (null until server
+        // emits). `walletHandle.locked` is true once persisted —
+        // client UI should hide "change name" controls when locked.
+        // Call `setWalletHandle(name)` to one-time-set after wallet auth.
+        walletHandle,
+        setWalletHandle,
         // Set to true once after a fresh first-time sign-in. Screens read
         // this to show a "Welcome — add SOL?" prompt, then call
         // clearFreshSignIn() to dismiss.
@@ -771,6 +821,7 @@ function SolShotWalletInner({ children }) {
         login, logout, shotBalance, prestigeInfo, signAndSendEscrowDeposit, signAndSendGroupDeposit, signAndBurnShot,
         openPrivyAccount, fundWallet, isFreshSignIn,
         recoveryStatus, linkEmailRecovery, linkTelegramRecovery,
+        walletHandle, setWalletHandle,
         activeSource, privyReady, privyAuthed, privyWalletsReady, publicKey, privyWallet,
     ]);
 
@@ -847,6 +898,8 @@ const LOCAL_DEV_FALLBACK_VALUE = {
     recoveryStatus: { hasEmail: false, hasTelegram: false, hasExternalWallet: false, needsRecovery: false },
     linkEmailRecovery: async () => false,
     linkTelegramRecovery: async () => false,
+    walletHandle: { handle: null, locked: false },
+    setWalletHandle: () => false,
     source: null,
     privyReady: false,
     privyAuthed: false,

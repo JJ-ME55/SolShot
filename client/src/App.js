@@ -13,6 +13,7 @@ import MenuScreen from './screens/MenuScreen';
 import HandleModal from './components/HandleModal';
 import DebugAuthOverlay from './components/DebugAuthOverlay';
 import { useTelegram } from './telegram/TelegramContext';
+import { useSolShotWallet } from './wallet/WalletContext';
 
 // Lazy — split into separate chunks (huge Phaser deps live in BattleScreen/AIPracticeScreen)
 const LobbyScreen          = lazy(() => import('./screens/LobbyScreen'));
@@ -66,21 +67,48 @@ function AppInner() {
   const [faqOpen, setFaqOpen] = useState(false);
 
   const { isTelegram, user: tgUser, startParam } = useTelegram();
+  // walletHandle comes from server after auth and is the authoritative
+  // callsign for this wallet (locked once set). When present, we sync
+  // it into App's `handle` state so HandleModal doesn't re-prompt.
+  const { walletHandle, setWalletHandle: persistWalletHandle, walletAddress } = useSolShotWallet();
 
-  // Identity policy A — TG username is canonical.
-  //
-  // Browser-only users still use the HandleModal-driven `solshot_handle`
-  // localStorage value (no TG identity available). Telegram users have
-  // their handle force-synced from `tgUser.username || tgUser.first_name`
-  // on every connect, OVERWRITING any previously-saved value. Mirrors the
-  // server-side rule in linkTelegramIdentity. Per JJ: "few users so few
-  // problems" — losing a custom callsign was acceptable trade for a
-  // single source of truth across leaderboard, in-game labels, AAR, bot.
+  // Identity policy A — TG username is canonical (TG users only).
+  // Browser/email users now use the WALLET-anchored handle from server
+  // (walletHandle.handle, persisted via setWalletHandle). The localStorage
+  // `solshot_handle` value is kept as a transient cache for legacy
+  // call-sites; WalletContext mirrors the server-canonical value into
+  // localStorage on every walletHandle event so they stay in sync.
   const [handle, setHandle] = useState(() => {
     const stored = localStorage.getItem('solshot_handle');
     if (stored) return stored;
     return null;
   });
+
+  // Sync server-canonical wallet handle into local state. Once the
+  // server confirms a handle, it's locked — HandleModal won't re-show.
+  useEffect(() => {
+    if (walletHandle?.handle && walletHandle.handle !== handle) {
+      setHandle(walletHandle.handle);
+    }
+  }, [walletHandle, handle]);
+
+  // Auto-migrate: if wallet just connected and the server reports no
+  // handle yet but the user has a localStorage handle from a previous
+  // session (or another browser), push it to the server to lock it in.
+  // This means returning users keep their existing callsign without a
+  // re-pick, and once persisted server-side, all future logins on any
+  // device pick up the same name.
+  useEffect(() => {
+    if (!walletAddress) return;
+    if (!persistWalletHandle) return;
+    if (walletHandle?.locked) return; // already set, nothing to do
+    if (walletHandle?.handle === undefined) return; // server hasn't replied yet
+    // walletHandle.handle is null (server says no persisted handle)
+    if (walletHandle?.handle !== null) return;
+    const localHandle = localStorage.getItem('solshot_handle');
+    if (!localHandle) return;
+    persistWalletHandle(localHandle);
+  }, [walletAddress, walletHandle, persistWalletHandle]);
 
   useEffect(() => {
     if (!isTelegram || !tgUser) return;
@@ -102,7 +130,14 @@ function AppInner() {
     if (window.socket?.connected) {
       window.socket.emit('registerIdentity', { uid, handle: h });
     }
-  }, []);
+    // If wallet is connected and no handle yet locked, persist the
+    // chosen callsign server-side keyed by walletAddress (one-time set).
+    // This is the source of truth for the wallet's display name across
+    // sessions/devices — localStorage is just a cache.
+    if (walletAddress && !walletHandle?.locked && persistWalletHandle) {
+      persistWalletHandle(h);
+    }
+  }, [walletAddress, walletHandle, persistWalletHandle]);
 
   // Phase 28: Send practice identity to server on socket connect
   useEffect(() => {

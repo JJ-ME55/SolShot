@@ -364,7 +364,13 @@ export default function GroupDepositScreen({ navigate, screenData = {} }) {
 
 const styles = {
     wrap: {
-        minHeight: '100vh',
+        // Layout wrapper sets overflow: hidden — fill it with height: 100%
+        // and own the scroll here so iPhone Safari (where the URL bar +
+        // bottom nav eat ~25% of viewport in landscape) doesn't clip the
+        // deposit button. WebkitOverflowScrolling for momentum on iOS.
+        height: '100%',
+        overflowY: 'auto',
+        WebkitOverflowScrolling: 'touch',
         background: '#0a0a0f',
         color: '#e8e8f0',
         fontFamily: '"VT323", "Courier New", monospace',

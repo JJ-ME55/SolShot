@@ -31,7 +31,16 @@ function startBattle(container, sceneData, bridge) {
   bridge.scene = null;
 
   const config = {
-    type: Phaser.CANVAS,
+    // Phaser.AUTO prefers WebGL where supported, falls back to Canvas otherwise.
+    // We were forcing CANVAS — works fine on desktop, but on iOS Safari + iPad
+    // small Shape primitives (add.circle for projectiles, trail particles)
+    // were rendering at sub-pixel sizes that effectively went invisible due
+    // to pixelArt: true / antialias: false combined with iOS Canvas2D's
+    // imageSmoothingEnabled=false handling. Trajectories were arriving
+    // (verified via [GC shotResult] logs trajLen 67-157) but the projectile
+    // dot wasn't drawing on Apple touch devices. Switching to AUTO lets iOS
+    // use WebGL where shapes render reliably regardless of size.
+    type: Phaser.AUTO,
     parent: container,
     width: 1200,
     height: 800,

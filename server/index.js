@@ -403,7 +403,18 @@ app.post('/api/challenge/:code/cancel', async (req, res) => {
 //      Privy session" — typically the embedded wallet they're claiming.
 //   Both layers must pass when Privy is configured. In dev mode (no
 //   PRIVY_APP_SECRET), only layer 1 is enforced.
-app.post('/api/wallet/link-from-tg-token', requirePrivyAuth({ required: isPrivyAuthConfigured() }), async (req, res) => {
+// requirePrivyAuth here is non-required (soft) — the magic-link token
+// (32-byte CSPRNG, 10-min TTL, single-use, TG-DM-delivered) is the
+// primary auth. JWT was added as defense-in-depth (commit d4ab9f9)
+// but if it ever fails (wrong PRIVY_APP_SECRET on Render, signature
+// verification glitch, expired token, etc.), we shouldn't break the
+// magic-link path — that was working fine before JWT was added.
+//
+// Soft mode means: if a token is present and valid, req.privyUserId is
+// set (great, extra layer of trust). If absent or invalid, the request
+// still passes through but unverified — and the magic-link token logic
+// below is the gate.
+app.post('/api/wallet/link-from-tg-token', requirePrivyAuth({ required: false }), async (req, res) => {
     try {
         const { token, walletAddress } = req.body || {};
         if (!token || typeof token !== 'string') {

@@ -88,7 +88,16 @@ export function requirePrivyAuth(options = {}) {
             return next();
         } catch (err) {
             console.warn('[privyAuth] Token verification failed:', err?.message || err);
-            return res.status(401).json({ error: 'invalid_or_expired_token' });
+            // Soft mode: log + pass through unverified. Caller decides
+            // what to do with req.privyAuth = null (e.g. magic-link
+            // endpoint has its own primary auth and falls back to it).
+            // Strict mode: reject 401 so caller can't slip past.
+            if (required) {
+                return res.status(401).json({ error: 'invalid_or_expired_token' });
+            }
+            req.privyAuth = null;
+            req.privyUserId = null;
+            return next();
         }
     };
 }

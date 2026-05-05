@@ -1093,8 +1093,59 @@ function registerCommands(bot) {
  * Production mode: register webhook with Telegram and mount it on Express.
  * Returns true if webhook was set up, false if falling back to long polling.
  */
+/**
+ * Register slash-command autocomplete with Telegram. Different command
+ * sets per scope so DM users see DM-relevant commands and group admins
+ * see group-management commands. Telegram clients show these in the
+ * "/" autocomplete menu.
+ *
+ * Idempotent — safe to call on every server boot. Commands appear in
+ * Telegram clients within seconds of this call.
+ */
+async function registerBotCommands() {
+  if (!bot) return;
+  try {
+    // Default scope — visible in 1:1 DMs and any chat without a more
+    // specific scope set.
+    await bot.telegram.setMyCommands([
+      { command: 'play',        description: 'Pick a game mode (1v1, AI, challenge)' },
+      { command: 'stats',       description: 'View your career card' },
+      { command: 'wallet',      description: 'View your wallet + balance' },
+      { command: 'weapons',     description: 'Browse the weapon arsenal' },
+      { command: 'shop',        description: 'Open the cosmetic shop' },
+      { command: 'prestige',    description: 'Prestige + tier progression' },
+      { command: 'leaderboard', description: 'Top 10 players' },
+      { command: 'refer',       description: 'Get your invite link' },
+      { command: 'challenge',   description: 'Challenge a specific player' },
+      { command: 'mygames',     description: 'List your active group matches' },
+      { command: 'help',        description: 'Show help + commands' },
+    ], { scope: { type: 'default' } });
+
+    // Group-chat scope — overrides the default in groups. Surfaces the
+    // group-specific commands (customgame/cancelmatch/startmatch) so
+    // hosts can tap them from the / menu instead of typing manually.
+    await bot.telegram.setMyCommands([
+      { command: 'customgame',  description: 'Set up a group match (host)' },
+      { command: 'startmatch',  description: 'Start a full group match (host)' },
+      { command: 'cancelmatch', description: 'Cancel the current group match (host)' },
+      { command: 'play',        description: 'Quick info — 1v1 from any chat' },
+      { command: 'mygames',     description: 'List your active group matches' },
+      { command: 'help',        description: 'Show help + commands' },
+    ], { scope: { type: 'all_group_chats' } });
+
+    console.log('[bot] slash commands registered (default + all_group_chats scopes)');
+  } catch (err) {
+    console.warn('[bot] setMyCommands failed (non-fatal):', err.message);
+  }
+}
+
 export async function setupBotWebhook(app) {
   if (!bot) return false;
+
+  // Push command autocomplete to Telegram on every boot. Cheap (1-2
+  // API calls) and ensures the slash menu always reflects current
+  // command set. Don't await failures — non-fatal.
+  registerBotCommands().catch(() => {});
 
   const baseUrl = process.env.TELEGRAM_WEBHOOK_URL;
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET || undefined;

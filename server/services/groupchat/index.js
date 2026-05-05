@@ -314,10 +314,41 @@ async function handleJoinCallback(ctx) {
     if (match.config?.type === 'wagered') {
         const user = await lookupUserByTelegramId(ctx.from.id);
         if (!user?.walletAddress) {
-            return ctx.answerCbQuery(
-                'Wagered match — DM @SolShotGG_bot and tap /play to set up your wallet (one tap, signs you in via email). Then come back and tap Join.',
+            // Private alert (popup just for them — fast feedback)
+            await ctx.answerCbQuery(
+                "Your wallet isn't linked yet. Tap the chat link to set up.",
                 { show_alert: true }
             );
+            // Public chat message tagging the player so everyone in the
+            // group can see who's holding things up + the fix is one tap
+            // away in the chat itself. Per JJ: surface issues in chat
+            // so players correct them collaboratively without leaving.
+            //
+            // Mention format `@${username}` only works if user has a
+            // public username; fall back to first_name link with their
+            // tg user id (Telegram renders this as a tappable mention
+            // even without a username).
+            const handle = ctx.from?.username
+                ? `@${ctx.from.username}`
+                : `<a href="tg://user?id=${ctx.from.id}">${ctx.from?.first_name || 'player'}</a>`;
+            try {
+                await ctx.telegram.sendMessage(
+                    ctx.chat.id,
+                    `⚠️ ${handle} can't join — wallet not linked.\n\nOne tap to fix: link your wallet in the bot, then tap Join again.`,
+                    {
+                        parse_mode: 'HTML',
+                        reply_markup: {
+                            inline_keyboard: [[{
+                                text: '🔗 Link Wallet (Telegram)',
+                                url: 'https://t.me/SolShotGG_bot?start=link',
+                            }]],
+                        },
+                    }
+                );
+            } catch (err) {
+                console.warn('[group-chat] join-rejection chat post failed:', err.message);
+            }
+            return;
         }
         walletAddress = user.walletAddress;
     }

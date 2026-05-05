@@ -39,7 +39,13 @@ import { registerGroupChatCommands } from './groupchat/index.js';
 // Para / Privy on TG Web. Variable name kept as `MINI_APP_URL` to
 // minimise mechanical churn; semantic is now "the URL the bot links to."
 // Override via the same `MINI_APP_URL` env var on Render if needed.
-const MINI_APP_URL = process.env.MINI_APP_URL || 'https://solshot.gg/';
+// Default uses `www.solshot.gg` (with subdomain), matching the canonical
+// Vercel serves AND the @BotFather /setdomain. Telegram's login_url
+// button silently rejects messages where the URL host doesn't match the
+// registered bot domain — `solshot.gg` vs `www.solshot.gg` are
+// considered different. If you ever change the BotFather domain, update
+// this default OR the MINI_APP_URL env var on Render to match.
+const MINI_APP_URL = process.env.MINI_APP_URL || 'https://www.solshot.gg/';
 const WEBHOOK_PATH = '/api/telegram-webhook';
 const SERVER_BASE_URL = process.env.SERVER_BASE_URL || process.env.TELEGRAM_WEBHOOK_URL || '';
 
@@ -61,8 +67,18 @@ export function initBot() {
   bot = new Telegraf(token);
   registerCommands(bot);
 
+  // Log the launch URL once at boot so a domain-mismatch bug (login_url
+  // silently rejected by Telegram) is obvious in Render logs.
+  console.log(`[bot] launch URL: ${MINI_APP_URL}`);
+  console.log(`[bot] login_url: requires this host to match @BotFather /setdomain exactly`);
+
   bot.catch((err, ctx) => {
     console.error(`[bot] error handling ${ctx?.updateType}:`, err);
+    // Surface login_url-specific errors loudly — these silently drop the
+    // user-facing reply, making debugging painful without this log.
+    if (String(err?.message || err).toLowerCase().includes('login_url')) {
+      console.error(`[bot] LOGIN_URL ERROR: check that MINI_APP_URL host matches @BotFather /setdomain. Current: ${MINI_APP_URL}`);
+    }
   });
 
   return bot;

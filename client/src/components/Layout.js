@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useTelegram } from '../telegram/TelegramContext';
 import { TxToastHost } from './TxToast';
 import WelcomeModal from './WelcomeModal';
+import TgWebViewBanner from './TgWebViewBanner';
 
 /* dApp browser detection banner — shown when wallet-injected mobile browser locks portrait */
 function DAppBrowserBanner() {
@@ -197,6 +198,9 @@ function Layout({ children }) {
 
   return (
     <>
+      {/* iOS-in-TG-WebView detection banner — UA-gated, sessionStorage
+          dismiss. Shown above all other UI when applicable. */}
+      <TgWebViewBanner />
       <DAppBrowserBanner />
       <div data-theme="field" style={styles.viewport(isTelegram, tgHeight, isDesktopFrame)}>
         {/* Design-token overlays — scanlines, grain, vignette */}

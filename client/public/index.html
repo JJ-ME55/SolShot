@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <link rel="icon" href="%PUBLIC_URL%/favicon.ico">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://plugin.jup.ag https://auth.privy.io https://*.privy.io https://oauth.telegram.org https://telegram.org; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://plugin.jup.ag; font-src 'self' https://fonts.gstatic.com https://fonts.googleapis.com https://privy.io https://*.privy.io https://*.privy.systems https://auth.privy.io data:; img-src 'self' data: blob: https://privy.io https://*.privy.io https://*.privy.systems https://auth.privy.io https://t.me https://telegram.org https://*.telegram.org https://explorer-api.walletconnect.com; connect-src 'self' https://api.devnet.solana.com wss://api.devnet.solana.com https://api.mainnet-beta.solana.com wss://api.mainnet-beta.solana.com https://solshot.onrender.com wss://solshot.onrender.com http://localhost:5001 ws://localhost:5001 wss://localhost:5001 https://api.jup.ag https://plugin.jup.ag https://tokens.jup.ag https://cache.jup.ag https://auth.privy.io https://*.privy.io wss://*.privy.io https://*.privy.systems wss://*.privy.systems https://*.rpc.privy.systems https://oauth.telegram.org https://telegram.org https://explorer-api.walletconnect.com https://api.web3modal.org https://pulse.walletconnect.org https://relay.walletconnect.com wss://relay.walletconnect.com https://registry.walletconnect.com; frame-src https://plugin.jup.ag https://auth.privy.io https://*.privy.io https://oauth.telegram.org https://telegram.org; object-src 'none'; base-uri 'self';" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://plugin.jup.ag https://auth.privy.io https://*.privy.io https://oauth.telegram.org https://telegram.org https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://plugin.jup.ag; font-src 'self' https://fonts.gstatic.com https://fonts.googleapis.com https://privy.io https://*.privy.io https://*.privy.systems https://auth.privy.io data:; img-src 'self' data: blob: https://privy.io https://*.privy.io https://*.privy.systems https://auth.privy.io https://t.me https://telegram.org https://*.telegram.org https://explorer-api.walletconnect.com; connect-src 'self' https://api.devnet.solana.com wss://api.devnet.solana.com https://api.mainnet-beta.solana.com wss://api.mainnet-beta.solana.com https://solshot.onrender.com wss://solshot.onrender.com http://localhost:5001 ws://localhost:5001 wss://localhost:5001 https://api.jup.ag https://plugin.jup.ag https://tokens.jup.ag https://cache.jup.ag https://auth.privy.io https://*.privy.io wss://*.privy.io https://*.privy.systems wss://*.privy.systems https://*.rpc.privy.systems https://oauth.telegram.org https://telegram.org https://explorer-api.walletconnect.com https://api.web3modal.org https://pulse.walletconnect.org https://relay.walletconnect.com wss://relay.walletconnect.com https://registry.walletconnect.com; frame-src https://plugin.jup.ag https://auth.privy.io https://*.privy.io https://oauth.telegram.org https://telegram.org; object-src 'none'; base-uri 'self';" />
     <!-- suppress-wallet-errors.js removed 2026-05-04: Vercel SPA rewrite was
          intercepting the path and returning index.html, causing
          "Unexpected token '<'" syntax errors. The script was originally a
@@ -42,6 +42,33 @@
     <meta name="twitter:image:alt" content="SolShot — artillery duels on Solana" />
     <link rel="apple-touch-icon" href="%PUBLIC_URL%/apple-touch-icon.png" />
     <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+    <!-- Eruda: in-page dev console for mobile debugging. Loads only when
+         the URL has ?debug=1 (or solshot_debug=1 in localStorage). On a
+         Mac you'd use Safari Web Inspector via USB; without a Mac this
+         gives you the same console + network + DOM tools as a floating
+         widget. Tap the floating button bottom-right to open. -->
+    <script>
+      (function () {
+        try {
+          var qs = new URLSearchParams(window.location.search);
+          var enabled = qs.get('debug') === '1' || (window.localStorage && localStorage.getItem('solshot_debug') === '1');
+          if (qs.get('debug') === '1' && window.localStorage) {
+            // Persist so reloads don't lose the debug tool.
+            try { localStorage.setItem('solshot_debug', '1'); } catch (e) {}
+          }
+          if (qs.get('debug') === '0' && window.localStorage) {
+            try { localStorage.removeItem('solshot_debug'); } catch (e) {}
+            return;
+          }
+          if (enabled) {
+            var s = document.createElement('script');
+            s.src = 'https://cdn.jsdelivr.net/npm/eruda';
+            s.onload = function () { try { window.eruda && window.eruda.init(); } catch (e) {} };
+            document.head.appendChild(s);
+          }
+        } catch (e) { /* swallow — debug console must never break prod */ }
+      })();
+    </script>
     <!-- iOS PWA / fullscreen launch:
            apple-mobile-web-app-capable=yes — when launched from Home Screen,
              iOS strips the URL bar + tab strip + nav arrows entirely. Without

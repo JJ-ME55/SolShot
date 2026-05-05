@@ -135,6 +135,7 @@ function SolShotWalletInner({ children }) {
         user: privyUser,
         linkEmail: privyLinkEmail,
         linkTelegram: privyLinkTelegram,
+        getAccessToken: privyGetAccessToken,
     } = usePrivy();
     // useLogin gives us onComplete + onError callbacks (usePrivy().login
     // does not). onComplete fires after successful auth with the user
@@ -287,10 +288,27 @@ function SolShotWalletInner({ children }) {
         if (!token) return;
         setLinkTokenAttempted(true);
         const serverUrl = process.env.REACT_APP_SERVER_URL || 'http://localhost:5001';
-        fetch(`${serverUrl}/api/wallet/link-from-tg-token`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token, walletAddress }),
+
+        // Attach the Privy access token (JWT) so the server can verify
+        // we're actually the authenticated user claiming this wallet —
+        // production hardening on top of the magic-link CSPRNG token.
+        // If getAccessToken isn't available (Privy still warming up),
+        // we send without — server's graceful mode allows it through
+        // when PRIVY_APP_SECRET isn't set; rejects with 401 when it is.
+        const headers = { 'Content-Type': 'application/json' };
+        const tokenPromise = privyGetAccessToken
+            ? privyGetAccessToken().catch(() => null)
+            : Promise.resolve(null);
+
+        tokenPromise.then((accessToken) => {
+            if (accessToken) {
+                headers.Authorization = `Bearer ${accessToken}`;
+            }
+            return fetch(`${serverUrl}/api/wallet/link-from-tg-token`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ token, walletAddress }),
+            });
         })
             .then(async (resp) => {
                 const body = await resp.json().catch(() => ({}));
@@ -312,7 +330,7 @@ function SolShotWalletInner({ children }) {
                     window.history.replaceState({}, '', newUrl);
                 } catch (_) { /* ignore */ }
             });
-    }, [walletAddress, linkTokenAttempted]);
+    }, [walletAddress, linkTokenAttempted, privyGetAccessToken]);
 
     // Fetch SOL balance for the active wallet
     const refreshBalance = useCallback(async () => {

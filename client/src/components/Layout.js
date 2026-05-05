@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTelegram } from '../telegram/TelegramContext';
 import { TxToastHost } from './TxToast';
+import WelcomeModal from './WelcomeModal';
 
 /* dApp browser detection banner — shown when wallet-injected mobile browser locks portrait */
 function DAppBrowserBanner() {
@@ -209,6 +210,11 @@ function Layout({ children }) {
       {/* Global toast host — listens for `solshot:toast` window events
           so any screen can fire showToast(...) without prop drilling. */}
       <TxToastHost />
+      {/* First-sign-in welcome — fires once when isFreshSignIn flips
+          true, prompts the user to fund 0.05 SOL via Apple/Google Pay.
+          Self-gates via localStorage so dismiss persists across
+          refreshes. */}
+      <WelcomeModal />
     </>
   );
 }

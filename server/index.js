@@ -27,6 +27,7 @@ import {
 } from './services/challenge/challenge.js';
 import { lookupUserByTelegramId, getPlayerRank, linkTelegramIdentity } from './services/users.js';
 import { consumeLinkToken } from './services/walletLinkTokens.js';
+import { requirePrivyAuth, isPrivyAuthConfigured } from './services/privyAuth.js';
 import { renderCareerCardPng } from './services/challenge/renderCareerCard.js';
 import { buildCareerProps } from './services/challenge/careerCardProps.js';
 
@@ -371,20 +372,29 @@ app.post('/api/challenge/:code/cancel', async (req, res) => {
     }
 });
 
-// ─── Wallet ↔ Telegram linkage (Phase 2B) ───────────────────────────────
+// ─── Wallet ↔ Telegram linkage (Phase 2B + JWT hardening) ──────────────
 //
 // POST /api/wallet/link-from-tg-token
+//   headers: Authorization: Bearer <privy-access-token>  (optional in
+//            dev, required if PRIVY_APP_ID + PRIVY_APP_SECRET are set)
 //   body: { token: string, walletAddress: string }
-//   Consumes a /link-issued one-shot token, validates the wallet address
-//   shape, and stamps the (telegramUserId, walletAddress) pair onto the
-//   User doc via linkTelegramIdentity. Single-use: token is burned on
-//   the first call regardless of outcome.
 //
-// Security: token is a 32-byte CSPRNG one-shot delivered via TG DM with
-// a 10-min TTL. For production, also verify a Privy access-token JWT in
-// the Authorization header so we know the caller actually owns the
-// wallet they're claiming. Devnet/hackathon: token-only is acceptable.
-app.post('/api/wallet/link-from-tg-token', async (req, res) => {
+//   Consumes a /link-issued one-shot magic-link token, optionally
+//   verifies the Privy access token to confirm the caller is the
+//   authenticated user claiming the wallet, validates the wallet
+//   address shape, and stamps the (telegramUserId, walletAddress) pair
+//   onto the User doc via linkTelegramIdentity. Single-use: token is
+//   burned on the first call regardless of outcome.
+//
+// Security layers (defense in depth):
+//   1. Magic-link token: 32-byte CSPRNG one-shot, TG-DM-delivered,
+//      10-min TTL. Proves "the caller saw a TG DM to this user id".
+//   2. Privy access token (when configured): verified via
+//      @privy-io/server-auth. Proves "the caller has an authenticated
+//      Privy session" — typically the embedded wallet they're claiming.
+//   Both layers must pass when Privy is configured. In dev mode (no
+//   PRIVY_APP_SECRET), only layer 1 is enforced.
+app.post('/api/wallet/link-from-tg-token', requirePrivyAuth({ required: isPrivyAuthConfigured() }), async (req, res) => {
     try {
         const { token, walletAddress } = req.body || {};
         if (!token || typeof token !== 'string') {

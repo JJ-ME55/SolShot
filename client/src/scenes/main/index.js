@@ -1259,6 +1259,33 @@ export class MainScene extends Scene {
         tank.enablePhysics();
       });
 
+      // CRITICAL: seed each tank's HP + eliminated flag from sceneData.
+      // Without this, every scene mount initialises tanks at 250 HP (Score
+      // constructor default) regardless of the actual match state — so a
+      // player who navigates back into a mid-game battle sees 250/250 on
+      // every tank and the bug looks like "HP doesn't update". The data is
+      // present in sceneData.players (built by GroupBattleWrapper from
+      // match.players) and just needs to be applied to the client tanks.
+      // _applyServerStateImmediate later patches HP on every shot, but the
+      // FIRST render needs this snapshot. Without this seed step, JJ's
+      // "rounds 2/3 HP defaults to 250/250" symptom is exactly what would
+      // happen — fresh mount, no shotResult yet, tanks read default.
+      const sceneDataPlayers = this.sceneData.players || [];
+      sceneDataPlayers.forEach((pd, i) => {
+        const tank = this.tanks[i];
+        if (!tank) return;
+        if (tank.scoreHandler && pd.hp !== undefined && pd.hp !== null) {
+          tank.scoreHandler.hp = Math.max(0, pd.hp);
+        }
+        // Eliminated flag — without seeding, dead tanks render alive on
+        // mount until a fresh shot hits them again (which never happens
+        // for already-dead players). KIA badge + greyed-out state need
+        // this to be correct from frame 1.
+        if (pd.eliminated || pd.hp === 0) {
+          this._eliminated[i] = true;
+        }
+      });
+
       const firstTurnIdx = positions.findIndex(p => p.socketId === this.sceneData.firstTurn);
       this.currentPlayerIndex = firstTurnIdx >= 0 ? firstTurnIdx : 0;
       this._allConsumables = {};
@@ -2354,15 +2381,21 @@ export class MainScene extends Scene {
   _applyServerStateImmediate = (data) => {
     if (!data) return;
     try {
-      // 1. Terrain heightmap — server-authoritative crater after impact.
-      if (data.terrainUpdate && data.terrainUpdate.length > 0 && this.terrain) {
-        this._serverHeightmap = data.terrainUpdate;
-        this.terrain.applyHeightmap(data.terrainUpdate);
-        if (this.tanks) {
-          this.tanks.forEach(t => { if (t) t.settled = false; });
-        }
-      }
-      // 2. HP per tank — primary path uses data.players (N-player shape).
+      // NOTE: terrain heightmap is INTENTIONALLY NOT applied here. Doing
+      // so triggered tanks to re-settle to the new crater immediately —
+      // which on desktop made tanks visibly "jump" while the projectile
+      // was still mid-flight. Terrain dig stays in animation onComplete
+      // via applyTurnResult, paired with the visual impact.
+      //
+      // What DOES apply here: HP per tank + bridge push. That's the
+      // critical fix for "HP shows 250/250 after a confirmed direct hit
+      // on iOS" — HP value is decoupled from render-loop timing so the
+      // bar updates regardless of whether the trajectory animation
+      // completes. iOS where animation stalls: HP correct, terrain
+      // catches up on next shot's heightmap snapshot. Cosmetic minor
+      // desync at most; no gameplay impact.
+
+      // 1. HP per tank — primary path uses data.players (N-player shape).
       if (data.players && Array.isArray(data.players)) {
         data.players.forEach((pd, i) => {
           const tank = this.tanks[i];
@@ -2382,7 +2415,7 @@ export class MainScene extends Scene {
           }
         }
       }
-      // 3. Push to React HUD so the HP bar + eliminated overlays re-read.
+      // 2. Push to React HUD so the HP bar overlays re-read immediately.
       this._pushStateToBridge();
     } catch (err) {
       // Never let a state-sync error kill the scene; applyTurnResult

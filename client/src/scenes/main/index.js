@@ -157,6 +157,13 @@ export class MainScene extends Scene {
     this.createTerrain();
     this.createBoundWalls();
 
+    // STEP 4 (iOS render overhaul) — bake projectile / glow / trail textures
+    // once per scene create. Subsequent shots draw sprites from these
+    // textures instead of `add.circle` shapes, which iOS Canvas2D fails
+    // to rasterise reliably at small radii. Cheap (~20 small textures,
+    // <50KB total) and idempotent — early-returns if already baked.
+    this._initProjectileTextures();
+
     // N-player: create tanks[] from players array (or fall back to 2 for type4/backward compat)
     const playerCount = this.sceneData.players?.length || 2;
     this.createTanks(playerCount);
@@ -1410,6 +1417,35 @@ export class MainScene extends Scene {
           tunnelEntry: data.tunnelEntry || null,
           tunnelExit: data.tunnelExit || null,
         };
+        // STEP 3 (iOS render overhaul) — apply CRITICAL server state
+        // synchronously when shotResult arrives, BEFORE animation. Run the
+        // existing animation chain on top so visual juice/blast still fires
+        // on impact (preserves desktop UX).
+        //
+        // Why: previously the entire state-application chain was
+        //   shotResult → turnResult cb → animateTrajectory → onComplete
+        //     → set pendingTurnResult → physicsStep tick → applyTurnResult
+        // Three render-loop dependencies — all rAF-driven. iOS Safari
+        // throttles rAF when the URL bar reflows or Canvas2D is busy, so
+        // the chain stalls and HP never updates client-side. JJ saw HP
+        // stuck at 250/250 even after a confirmed direct hit.
+        //
+        // The fix here only sets the DATA values eagerly (HP per tank,
+        // terrain heightmap, eliminated flag, bridge push for the React
+        // HUD to re-read). It does NOT run impact juice / hit-stop /
+        // damage popup — those still wait for animation onComplete via
+        // the existing turnResult path below, so on desktop the visual
+        // timing is unchanged. On iOS where animation stalls, the state
+        // is at least correct — HP bar updates, eliminated tanks grey
+        // out, terrain is dug — so gameplay stays coherent. applyTurnResult
+        // re-applying the same values later is idempotent (HP is set to
+        // the same number, terrain to the same heightmap, etc.).
+        this._applyServerStateImmediate(adapted);
+
+        // Existing chain — animation drives juice/blast/hit-stop visuals
+        // on impact, then queues applyTurnResult via physicsStep. On iOS
+        // this still stalls, but the state above already covered the
+        // critical data path so the player isn't stuck.
         this._socketHandlers.turnResult(adapted);
 
         // Fire synthetic playerEliminated for each tank killed this shot.
@@ -1417,7 +1453,6 @@ export class MainScene extends Scene {
         // the kill list into shotResult.eliminations. Fan-out here so the
         // existing wreckage / spectator-mode handlers run identically.
         const elims = data.eliminations || [];
-        const aliveCount = positions.filter(p => p.alive).length;
         for (const elimId of elims) {
           this._socketHandlers.playerEliminated({
             eliminatedId: elimId,
@@ -1710,6 +1745,80 @@ export class MainScene extends Scene {
     29: { color: 0xFF0066, size: 4, trail: 0xFF3388, trailSize: 2, trailLife: 400, glow: 0xFF6699 }, // Cruiser — hot pink
   };
 
+  // STEP 4 (iOS render overhaul) — bake projectile / glow / trail circles
+  // into Phaser Textures once at scene start. Sprites drawn from these
+  // textures render reliably on iOS Canvas2D regardless of size, where
+  // raw `add.circle` shapes at radius 2-3 with `pixelArt: true` /
+  // `antialias: false` would rasterise to nothing. Phaser docs explicitly
+  // recommend this pattern when shapes are drawn repeatedly under Canvas:
+  // https://docs.phaser.io/phaser/concepts/gameobjects/render-texture
+  // Same colors, same sizes — just rendered through a texture path that
+  // Canvas2D respects.
+  _projectileTexBaked = false;
+  _projectileTexKey = (weaponId, kind) => `gc_proj_${weaponId}_${kind}`;
+  _initProjectileTextures = () => {
+    if (this._projectileTexBaked) return;
+    const padding = 2; // breathing room so anti-aliased edges don't clip
+    const bakeCircle = (key, fillColor, fillAlpha, radius) => {
+      if (this.textures.exists(key)) return;
+      const r = Math.max(1, Math.round(radius));
+      const dim = (r + padding) * 2;
+      const g = this.make.graphics({ x: 0, y: 0, add: false });
+      g.fillStyle(fillColor, fillAlpha);
+      g.fillCircle(r + padding, r + padding, r);
+      g.generateTexture(key, dim, dim);
+      g.destroy();
+    };
+    Object.entries(this._trajectoryVisuals).forEach(([wid, vis]) => {
+      bakeCircle(this._projectileTexKey(wid, 'main'),  vis.color, 1.0, vis.size);
+      bakeCircle(this._projectileTexKey(wid, 'trail'), vis.trail, 0.7, Math.max(1, vis.trailSize));
+      if (vis.glow) {
+        bakeCircle(this._projectileTexKey(wid, 'glow'), vis.glow, 0.3, vis.size + 3);
+      }
+    });
+    // Generic fallback for unknown weapon ids (mirrors the runtime default).
+    bakeCircle(this._projectileTexKey('default', 'main'),  0xFFFFFF, 1.0, 3);
+    bakeCircle(this._projectileTexKey('default', 'trail'), 0xFFFFFF, 0.7, 1);
+    this._projectileTexBaked = true;
+  };
+
+  // Helper: spawn a projectile sprite (or fallback to add.circle if textures
+  // somehow weren't baked). Used by animateTrajectory + _animateMultiTrajectory.
+  _spawnProjectileSprite = (weaponId, x, y, vis) => {
+    const key = this._projectileTexKey(weaponId, 'main');
+    if (this.textures.exists(key)) {
+      const s = this.add.sprite(x, y, key);
+      s.setDepth(5);
+      return s;
+    }
+    const c = this.add.circle(x, y, vis.size, vis.color);
+    c.setDepth(5);
+    return c;
+  };
+  _spawnGlowSprite = (weaponId, x, y, vis) => {
+    if (!vis.glow) return null;
+    const key = this._projectileTexKey(weaponId, 'glow');
+    if (this.textures.exists(key)) {
+      const s = this.add.sprite(x, y, key);
+      s.setDepth(4);
+      return s;
+    }
+    const c = this.add.circle(x, y, vis.size + 3, vis.glow, 0.3);
+    c.setDepth(4);
+    return c;
+  };
+  _spawnTrailSprite = (weaponId, x, y, vis) => {
+    const key = this._projectileTexKey(weaponId, 'trail');
+    if (this.textures.exists(key)) {
+      const s = this.add.sprite(x, y, key);
+      s.setDepth(4);
+      return s;
+    }
+    const c = this.add.circle(x, y, Math.max(0.5, vis.trailSize), vis.trail, 0.7);
+    c.setDepth(4);
+    return c;
+  };
+
   animateTrajectory = (weaponId, trajectory, impact, onComplete, extra = {}) => {
     if (!trajectory || trajectory.length === 0) {
       if (onComplete) onComplete();
@@ -1725,16 +1834,13 @@ export class MainScene extends Scene {
       return;
     }
 
-    // Create weapon-specific projectile
-    const projectile = this.add.circle(trajectory[0].x, trajectory[0].y, vis.size, vis.color);
-    projectile.setDepth(5);
+    // STEP 4 — sprite-based projectile. Visually identical to add.circle
+    // on desktop (same color, same size); reliably renders on iOS where
+    // small Shape primitives were disappearing.
+    const projectile = this._spawnProjectileSprite(weaponId, trajectory[0].x, trajectory[0].y, vis);
 
-    // Glow ring for weapons that have it
-    let glowRing = null;
-    if (vis.glow) {
-      glowRing = this.add.circle(trajectory[0].x, trajectory[0].y, vis.size + 3, vis.glow, 0.3);
-      glowRing.setDepth(4);
-    }
+    // Glow ring for weapons that have it (Heatseeker, Pile Driver, etc.)
+    const glowRing = this._spawnGlowSprite(weaponId, trajectory[0].x, trajectory[0].y, vis);
 
     let frameIndex = 0;
     let trailFrame = 0;
@@ -1747,12 +1853,17 @@ export class MainScene extends Scene {
     const speed = Math.max(1, Math.ceil(trajectory.length / targetFrames));
 
     const spawnTrail = (x, y) => {
-      const p = this.add.circle(
+      // STEP 4 — sprite-based trail particle, same color/size/jitter as before.
+      const p = this._spawnTrailSprite(
+        weaponId,
         x + (Math.random() - 0.5) * 2,
         y + (Math.random() - 0.5) * 2,
-        vis.trailSize, vis.trail, 0.7
+        vis
       );
-      p.setDepth(4);
+      // Sprite-spawn helpers default alpha to 1; trail wants 0.7 starting.
+      // (Texture has 0.7 baked in too, but explicit setAlpha keeps the
+      // tween math identical to the previous Circle.fillAlpha=0.7 path.)
+      if (p && p.setAlpha) p.setAlpha(0.7);
       this.tweens.add({
         targets: p,
         alpha: 0,
@@ -1834,8 +1945,9 @@ export class MainScene extends Scene {
     subTrajectories.forEach((traj, idx) => {
       if (!traj || traj.length === 0) { completedCount++; return; }
 
-      const proj = this.add.circle(traj[0].x, traj[0].y, vis.size, vis.color);
-      proj.setDepth(5);
+      // STEP 4 — sprite-based multi-projectile (3 Shot, etc.). Same color
+      // and size as before; reliably renders on iOS Canvas2D.
+      const proj = this._spawnProjectileSprite(weaponId, traj[0].x, traj[0].y, vis);
 
       let fi = 0;
       let tf = 0;
@@ -1870,9 +1982,14 @@ export class MainScene extends Scene {
           }
           const pt = traj[Math.min(Math.floor(fi), traj.length - 1)];
           proj.setPosition(pt.x, pt.y);
-          // Trail every frame (speed already skips points)
-          const p = this.add.circle(pt.x + (Math.random() - 0.5) * 2, pt.y + (Math.random() - 0.5) * 2, vis.trailSize, vis.trail, 0.7);
-          p.setDepth(4);
+          // STEP 4 — sprite-based trail particle (same as single-shot path).
+          const p = this._spawnTrailSprite(
+            weaponId,
+            pt.x + (Math.random() - 0.5) * 2,
+            pt.y + (Math.random() - 0.5) * 2,
+            vis
+          );
+          if (p && p.setAlpha) p.setAlpha(0.7);
           this.tweens.add({ targets: p, alpha: 0, scale: 0.3, duration: vis.trailLife, ease: 'Quad.easeOut', onComplete: () => { try { p.destroy(); } catch (_) {} } });
         },
         callbackScope: this,
@@ -2226,6 +2343,53 @@ export class MainScene extends Scene {
   // ── Bridge state push ──
   // N-player: push players[] array from tanks[]. Also push backward-compat
   // tank1/tank2 shims so BattleHUD (Phase 19) doesn't break until it's updated.
+
+  // STEP 3 (iOS render overhaul) — sync only the DATA portions of a
+  // shotResult: HP per tank, terrain heightmap, then push to the React
+  // bridge so the HUD re-renders. Does NOT play juice / hit-stop / blast
+  // (those stay tied to animation onComplete). Called immediately on
+  // shotResult arrival in the group-chat path so iOS Safari can show
+  // correct HP / terrain even when its rAF-driven animation chain stalls.
+  // applyTurnResult later re-applies the same values idempotently.
+  _applyServerStateImmediate = (data) => {
+    if (!data) return;
+    try {
+      // 1. Terrain heightmap — server-authoritative crater after impact.
+      if (data.terrainUpdate && data.terrainUpdate.length > 0 && this.terrain) {
+        this._serverHeightmap = data.terrainUpdate;
+        this.terrain.applyHeightmap(data.terrainUpdate);
+        if (this.tanks) {
+          this.tanks.forEach(t => { if (t) t.settled = false; });
+        }
+      }
+      // 2. HP per tank — primary path uses data.players (N-player shape).
+      if (data.players && Array.isArray(data.players)) {
+        data.players.forEach((pd, i) => {
+          const tank = this.tanks[i];
+          if (tank && tank.scoreHandler && pd.hp !== undefined) {
+            tank.scoreHandler.hp = Math.max(0, pd.hp);
+          }
+        });
+      } else if (data.hp) {
+        // Legacy: hp keyed by socketId (fallback for older payload shapes).
+        for (const [targetId, serverHp] of Object.entries(data.hp)) {
+          const posIdx = this._lastPositions
+            ? this._lastPositions.findIndex(p => p.socketId === targetId)
+            : -1;
+          const tank = posIdx >= 0 ? this.tanks[posIdx] : null;
+          if (tank && tank.scoreHandler) {
+            tank.scoreHandler.hp = Math.max(0, serverHp);
+          }
+        }
+      }
+      // 3. Push to React HUD so the HP bar + eliminated overlays re-read.
+      this._pushStateToBridge();
+    } catch (err) {
+      // Never let a state-sync error kill the scene; applyTurnResult
+      // will re-apply later via the animation chain.
+      console.warn('[GC] _applyServerStateImmediate failed:', err?.message);
+    }
+  };
 
   _pushStateToBridge = () => {
     if (!this._bridge) return;

@@ -10,6 +10,7 @@ import Phaser from 'phaser';
 import { MainScene } from '../scenes/main/index';
 
 let gameInstance = null;
+let visualViewportListener = null;
 
 /**
  * Start a battle -- creates Phaser game in the given container.
@@ -30,15 +31,25 @@ function startBattle(container, sceneData, bridge) {
   window.pendingSceneData = sceneData;
   bridge.scene = null;
 
+  // STEP 1 (iOS render overhaul) — pre-create the canvas and obtain its 2D
+  // context with `willReadFrequently: true` BEFORE Phaser touches it. The
+  // flag is only honoured on the first `getContext('2d', ...)` call, so we
+  // must claim it first. Phaser will then re-acquire the context (no-arg)
+  // and inherit the same flag. Without this, Phaser's many `getImageData`
+  // operations (terrain hit-detection in terrain.js — tens to hundreds per
+  // shot) trigger Canvas2D's slow GPU-readback path on iOS Safari, which
+  // is the root of the rAF throttling we observed (`[Violation]
+  // requestAnimationFrame handler took <N>ms` × 23 in JJ's earlier log).
+  const customCanvas = document.createElement('canvas');
+  customCanvas.width = 1200;
+  customCanvas.height = 800;
+  try {
+    customCanvas.getContext('2d', { willReadFrequently: true });
+  } catch (_) { /* extremely old browsers — fall through */ }
+
   const config = {
-    // Reverted to Phaser.CANVAS — the AUTO switch (commit 80eaa75) was
-    // intended to give iOS WebGL for small-shape rendering, but it broke
-    // turret sprite rendering on iPad (turret stopped appearing entirely).
-    // Net regression vs the original CANVAS setup. Going back to CANVAS so
-    // the turret is back; the projectile-invisibility bug needs a different
-    // fix — likely bumping minimum projectile size + adding a stroke so
-    // the circle is unmistakable even at tiny radius on iOS Canvas2D.
     type: Phaser.CANVAS,
+    canvas: customCanvas,
     parent: container,
     width: 1200,
     height: 800,
@@ -81,6 +92,29 @@ function startBattle(container, sceneData, bridge) {
     }
   });
 
+  // STEP 2 (iOS render overhaul) — listen for visualViewport resize and
+  // call game.scale.refresh(). iOS Safari's URL bar and tab strip change
+  // the visible viewport size dynamically (URL bar collapses ~2s after
+  // page load, returns on scroll-to-top, etc.). Phaser's ScaleManager
+  // measures parent dimensions at mount and never re-measures unless
+  // told to — Phaser issue #6072 is open and unfixed for this exact
+  // reason. window.visualViewport.resize fires reliably on iOS Safari
+  // when the URL bar shows/hides, on rotation, and on keyboard show/hide.
+  // game.scale.refresh() makes Phaser re-measure parent and re-fit canvas.
+  // Falls back gracefully on browsers without visualViewport (very old).
+  if (typeof window !== 'undefined' && window.visualViewport && !visualViewportListener) {
+    visualViewportListener = () => {
+      try {
+        if (gameInstance && gameInstance.scale) {
+          gameInstance.scale.refresh();
+        }
+      } catch (_) { /* swallow — never let a viewport refresh kill the scene */ }
+    };
+    window.visualViewport.addEventListener('resize', visualViewportListener);
+    // Also listen to orientationchange (older iOS, more reliable for rotation)
+    window.addEventListener('orientationchange', visualViewportListener);
+  }
+
   return gameInstance;
 }
 
@@ -88,6 +122,18 @@ function startBattle(container, sceneData, bridge) {
  * Destroy the Phaser game instance and clean up.
  */
 function destroyBattle() {
+  // STEP 2 cleanup — remove the visualViewport listener so a remounted
+  // game doesn't accumulate listeners over re-entries (StrictMode dev,
+  // route changes, etc.).
+  if (visualViewportListener) {
+    try {
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', visualViewportListener);
+      }
+      window.removeEventListener('orientationchange', visualViewportListener);
+    } catch (_) { /* ignore */ }
+    visualViewportListener = null;
+  }
   if (gameInstance) {
     try {
       // Explicitly close Web Audio context before destroy to prevent

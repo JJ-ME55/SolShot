@@ -36,3 +36,27 @@ solshot-server.json
 
 # Large media — store externally (Google Drive, S3, etc.)
 Markiting videos/
+Marketing/
+Handoffs/
+BATTLE/
+
+# Solana Vibes Kit audit artifact dirs — generated per-run, never commit
+.audit/
+.bok/
+.bulwark/
+.anchor/
+
+# Local agent / planning state
+.agents/
+.claude/scheduled_tasks.lock
+.claude/skills/
+.design-canvas.state.json
+
+# Old design exploration prototypes (not the live build)
+/src/
+/styles/
+/mobile/
+
+# Misc local artefacts
+SolShot_Redesign.html
+converted-repo.txt

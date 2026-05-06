@@ -133,7 +133,7 @@ SolShot/
 
 ## License
 
-ISC. See `package.json`.
+MIT. See [`LICENSE`](LICENSE).
 
 The original artillery game scaffold this codebase started from is
 [Pocket Tanks by Amankumar321](https://github.com/Amankumar321/pocket-tanks)

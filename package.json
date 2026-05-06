@@ -2,7 +2,6 @@
   "name": "solshot",
   "version": "1.0.0",
   "description": "SolShot — artillery duels on Solana. Wagered 1v1 / multiplayer tank battles with server-authoritative physics and on-chain escrow.",
-  "main": "generate-terrain-textures.js",
   "directories": {
     "test": "tests"
   },
@@ -30,7 +29,7 @@
   },
   "keywords": ["solana", "anchor", "phaser", "artillery-game", "wagered-pvp", "telegram-mini-app"],
   "author": "JJ-ME55",
-  "license": "ISC",
+  "license": "MIT",
   "type": "commonjs",
   "bugs": {
     "url": "https://github.com/JJ-ME55/SolShot/issues"

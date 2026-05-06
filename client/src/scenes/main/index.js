@@ -1552,15 +1552,21 @@ export class MainScene extends Scene {
       const tank = this.tanks[i];
       if (!tank) return;
       const px = pos.x ?? pos.pos?.x;
-      const py = pos.y ?? pos.pos?.y;
-      if (px === undefined && py === undefined) return;
-      const finalX = px !== undefined ? px : tank.x;
-      const finalY = py !== undefined ? py : tank.y;
-      const dx = Math.abs(tank.x - finalX);
-      const dy = Math.abs(tank.y - finalY);
-      if (dx > 1 || dy > 1) {
-        tank.setPosition(finalX, finalY);
-        if (tank.body) { tank.body.x = finalX; tank.body.y = finalY; }
+      if (px === undefined) return;
+      // Only sync X (knockback). Let physicsStep settle Y naturally on the
+      // terrain bitmap — avoids the -15 offset drift/snapback documented
+      // in commit 1e4215f (Mar 2026). When terrain digs, applyTurnResult
+      // calls terrain.applyHeightmap() and unsettles tanks, so Y catches
+      // up via physicsStep on the next tick. Snapping to server's Y here
+      // produces visible "tank jumps" because the server's terrain-settle
+      // tick rarely matches the client's exactly. Mirrors the legacy
+      // applyTurnResult inline sync (line ~506) verbatim.
+      //
+      // Don't reintroduce Y sync without re-reading 1e4215f's commit
+      // message + this comment.
+      if (Math.abs(tank.x - px) > 1) {
+        tank.setPosition(px, tank.y);
+        if (tank.body) tank.body.x = px;
         tank.settled = false;
       }
     });

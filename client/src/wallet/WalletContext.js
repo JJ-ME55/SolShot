@@ -705,6 +705,54 @@ function SolShotWalletInner({ children }) {
         // wallet connecting deserves a fresh auth attempt.
         authAttemptedRef.current = false;
     }, [connected, publicKey]);
+
+    // Reset auth state on socket disconnect + auto-trigger re-auth on
+    // reconnect. Without this, iOS Safari's tab-backgrounding socket
+    // recycles produced a session-killing race:
+    //   1. iOS backgrounds the tab, socket.io disconnects
+    //   2. iOS resumes the tab, socket.io auto-reconnects with NEW socket id
+    //   3. Server has no auth state for the new socket id
+    //   4. Client's isAuthenticated is still true from the previous session
+    //   5. Auto-auth effect skips because isAuthenticated===true
+    //   6. fireGroupShot calls hit the no_identity rejection at the server
+    // Symptom seen in JJ's iPad session: shots silently fail, projectiles
+    // never appear, HP never updates — server logs show
+    // `[client tg=anon w=?] [GC shotResult] {"ok":false,"error":"no_identity"}`.
+    //
+    // Resetting isAuthenticated + the attempt-ref on disconnect lets the
+    // auto-auth effect re-fire when reconnect happens.
+    useEffect(() => {
+        const checkSocket = () => {
+            const socket = window.socket;
+            if (!socket) return false;
+            const onDisconnect = (reason) => {
+                console.warn('[SolShot] socket disconnect — resetting auth', reason);
+                setIsAuthenticated(false);
+                authAttemptedRef.current = false;
+            };
+            const onConnect = () => {
+                // socket.io may emit 'connect' on initial mount AND on
+                // every successful reconnect. Resetting authAttempted here
+                // (in addition to disconnect) catches the rare edge case
+                // where 'disconnect' didn't fire but a fresh socket id is
+                // present (e.g. transport upgrade, server restart).
+                authAttemptedRef.current = false;
+            };
+            socket.on('disconnect', onDisconnect);
+            socket.on('connect', onConnect);
+            return () => {
+                socket.off('disconnect', onDisconnect);
+                socket.off('connect', onConnect);
+            };
+        };
+        const cleanup = checkSocket();
+        if (cleanup) return cleanup;
+        const timer = setInterval(() => {
+            const c = checkSocket();
+            if (c) { clearInterval(timer); }
+        }, 500);
+        return () => clearInterval(timer);
+    }, []);
     useEffect(() => {
         if (!connected || !publicKey || isAuthenticated) return;
         if (authAttemptedRef.current) return;

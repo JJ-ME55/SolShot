@@ -49,7 +49,14 @@ export const WEAPON_DATA = {
 // Physics constants matching client
 const DEFAULT_GRAVITY = 300;
 const POWER_FACTOR = 8;
-const TERRAIN_WIDTH = 1200;
+// Canvas dimensions — 16:9 native (1422 × 800). Was 1200 × 800 (3:2) prior
+// to 2026-05-06; widened to fill phone landscape viewports edge-to-edge
+// without letterbox, while preserving the 800px height so existing
+// trajectory + blast tunings stay valid (peak arcs comfortably fit).
+// Tank spawn positions auto-distribute across the new width via the
+// `width` parameter to generateTankPositions(). Heightmap snapshot
+// bandwidth grows ~18% per shot — negligible.
+const TERRAIN_WIDTH = 1422;
 const TERRAIN_HEIGHT = 800;  // full screen height — terrain canvas is now full height
 const PHYSICS_DT = 1 / 60;  // 60fps physics step
 const MAX_TRAJECTORY_STEPS = 3000; // safety cap (~50 seconds of flight)

@@ -40,8 +40,13 @@ function startBattle(container, sceneData, bridge) {
   // shot) trigger Canvas2D's slow GPU-readback path on iOS Safari, which
   // is the root of the rAF throttling we observed (`[Violation]
   // requestAnimationFrame handler took <N>ms` × 23 in JJ's earlier log).
+  // Canvas dims: 1422 × 800 = 16:9 native. Phone landscape fills width
+  // edge-to-edge with no letterbox; desktop 16:9 monitors fill natively.
+  // Match server/services/physics.js TERRAIN_WIDTH / TERRAIN_HEIGHT —
+  // server-authoritative heightmap is sized to these dims, so they MUST
+  // stay in lockstep. Was 1200 × 800 (3:2) prior to 2026-05-06.
   const customCanvas = document.createElement('canvas');
-  customCanvas.width = 1200;
+  customCanvas.width = 1422;
   customCanvas.height = 800;
   try {
     customCanvas.getContext('2d', { willReadFrequently: true });
@@ -51,7 +56,7 @@ function startBattle(container, sceneData, bridge) {
     type: Phaser.CANVAS,
     canvas: customCanvas,
     parent: container,
-    width: 1200,
+    width: 1422,
     height: 800,
     backgroundColor: '#000000',
     physics: {

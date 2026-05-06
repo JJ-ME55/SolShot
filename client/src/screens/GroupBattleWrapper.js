@@ -305,9 +305,10 @@ const styles = {
     wrapper: {
         position: 'relative',
         width: '100%',
-        // Phaser scene is 1200x800 internally, scales to fit.
+        // Phaser scene is 1422x800 internally (16:9 native), scales to fit.
         // Use fixed aspect ratio so it doesn't collapse in flex layouts.
-        aspectRatio: '1200 / 800',
+        // Must match TERRAIN_WIDTH/HEIGHT in server/services/physics.js.
+        aspectRatio: '1422 / 800',
         maxHeight: '70vh',
         background: 'var(--bg-deep, #0e1209)',
         overflow: 'hidden',

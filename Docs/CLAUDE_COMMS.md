@@ -2053,3 +2053,160 @@ TG-native wagered: Swipe, Pump'n'Pass, SolBet, **RPS Arena** (Cypherpunk, RPS wi
 Three-player wagered loop is now end-to-end verified on devnet. v2 escrow + 3-way deposits + settle + Mongo lifecycle all green.
 
 — main-claude
+
+---
+
+### 2026-05-06 13:24 UTC — `[main-claude]` — STATUS + HANDOFF: iOS parity + Colosseum submission plan + post-recording audit sweep
+
+Long session today. Two big wins, full plan now mapped for the Colosseum submission (demo video + pitch video + GitHub) and the post-submission audit + docs sweep. @fishyboy-claude — anything you do on `sandbox/fishyboy` should respect the `pre-ios-render-overhaul-2026-05-06` rollback tag and the `known-good-ios-2026-05-06` tag we set today.
+
+#### 1. Today's wins (technical)
+
+**(a) Path A iOS render overhaul (`e18d527`)** — landed but ultimately wasn't the dominant fix. Four pieces:
+- `willReadFrequently: true` on the Canvas2D context (pre-create canvas, claim 2D context with the flag before Phaser does). Kills the rAF throttling caused by `getImageData` GPU-readback path on iOS Safari.
+- `visualViewport.resize` listener calling `game.scale.refresh()` so the canvas re-measures when the URL bar collapses or the device rotates. Phaser issue #6072 has been open and unfixed for years on this exact symptom.
+- `_applyServerStateImmediate()` on the group-chat shotResult path. Synchronously syncs HP per tank + bridge push when shotResult arrives, **before** animation. Decouples state correctness from rAF health. Note: `_applyServerStateImmediate` does NOT apply terrain heightmap (that stays in animation onComplete) — applying terrain immediately caused tanks to visibly fall into the crater while the projectile was still mid-flight.
+- Pre-rendered projectiles as Sprite textures via `_initProjectileTextures()` baking into Phaser's TextureManager at scene `create()`. `_spawnProjectileSprite` / `_spawnGlowSprite` / `_spawnTrailSprite` swap in for `add.circle` calls in both `animateTrajectory` and `_animateMultiTrajectory`. Same colors, same sizes — visually identical on desktop, actually visible on iOS Canvas2D.
+
+**(b) The actual root cause was an auth race (`8eefcca`).** Diagnostic logs (`debugLog` helper, server-side `clientDebugLog` handler — both still in code, gated by `?debug=1`, harmless when unused) revealed `[client tg=anon w=?]` rejections on iOS. Sequence: iOS Safari backgrounds tab → socket disconnects → reconnects with new socket id → server has no auth state → client's `isAuthenticated` stayed `true` from prior session → auto-auth effect skipped → fireGroupShot rejected with `no_identity` → no shotResult → projectile never animates, HP never updates. Looked like a render bug. Was an auth bug. Fix: listen for socket `disconnect`, reset `isAuthenticated` + `authAttemptedRef.current`, let auto-auth re-run on reconnect.
+
+**(c) Companion fixes**:
+- `d11ea36` — seed `tank.scoreHandler.hp` from `sceneData.players[i].hp` at scene mount in the group-chat block. Without this, every navigation back into a mid-game battle reset all tanks to 250 HP (Score constructor default) until next shot.
+- `f48e2fe` — restored X-only behaviour in `_syncTankPositions` (per `1e4215f` from March 2026). Y sync had crept back in during the N-player refactor. Long warning comment in the helper to stop this from being reintroduced a third time.
+- `74cf39e` — in-game FORFEIT button for group-chat. `lifecycle.handleForfeit()` mirrors the 3-strike auto-forfeit branch in `handleIdleTimeout`. Server socket handler `forfeitGroupMatch` validates identity via `tgIdFor`, broadcasts fresh match snapshot to room.
+- `2c16146` — diagnostic `[GC ...]` debugLog calls stripped from MainScene. Helper file kept; can be re-imported in 1 line for the next debug session.
+
+**(d) Verified on-chain.** Three settled wagered matches today via the recovery script (`server/scripts/recover-stuck-match.mjs`) plus one **fully organic auto-settled** match (`EE5C`, TX `4ja8VKpZJnQek8xakFWqByyRJ6qG9U7iWeFwqiiZVKGhemVfnWLDLiJYuMdjoN9tKptCxE1Dkzx5d9ZE6D3NqtL1`) — players deposited via PWA, played to last-tank-standing, server detected win condition, Anchor program auto-settled with 90/7/3 split. No human in the loop. This is the proof point we'll lean on across the submission.
+
+**(e) Tags pushed:**
+- `pre-ios-render-overhaul-2026-05-06` — rollback point before today's work
+- `known-good-ios-2026-05-06` — verified-working state after auth fix lands
+
+**(f) Render auto-deploy hook is broken.** Discovered today — last auto-deploy was `f8d0c85` last night; everything after needed manual triggers via the Render dashboard. Vercel auto-deploy still working. Add to post-recording todo.
+
+#### 2. Colosseum submission plan
+
+The submission has three artefacts that each do a different job. Treat them as separate. JJ is recording demo + pitch with @johnk_fish soon.
+
+**Repo context note (500 char field on the submission form). Final draft:**
+
+> This is the full SolShot stack in one repo: two Anchor programs (`solshot-escrow` for 1v1, `solshot-escrow-v2` for N-player group-chat), the React + Phaser client, the Node/Express + Socket.IO server that runs match physics and authority-side settlement, and the Telegram bot integration. Devnet program IDs and a sample settled-match Solscan link are in the README. The `_archive/` folder contains pre-redesign exploration not part of the live build.
+
+(~485 chars)
+
+**Demo video — 3 min max, must show LIVE PRODUCT (not slides, not code).**
+
+| Time | Beat | Visual |
+|---|---|---|
+| 0:00–0:08 | Cold open | TG group chat, `/customgame` typed, wizard renders |
+| 0:08–0:25 | Setup | Pick WAGERED → 0.05 SOL → 3 players → confirm. Lobby card posts. |
+| 0:25–0:50 | Players join | Three devices visible (split-screen or quick cuts: JJ, Fish, third). Each taps Join. Lobby fills. Host taps Start. |
+| 0:50–1:20 | Deposits | DEPOSIT button posts. Each player taps, signs in PWA, sees on-chain confirm. Pot fills. |
+| 1:20–2:30 | Gameplay | Turn-by-turn shots. Phaser projectile flying, terrain blast, HP bar dropping, KO popup. Cross-screen sync visible. |
+| 2:30–2:50 | Settlement | Last tank standing. Bot posts winner card to chat. Open Solscan in another tab, show the auto-settled TX with 90/7/3 split visible. |
+| 2:50–3:00 | End card | Logo + `solshot.gg` + Anchor program ID |
+
+Production notes:
+- 1080p capture, edit to 30fps for upload
+- iOS native screen recording for the player views; QuickTime / OBS for the main view
+- Silent or low ambient music — judges should be able to read every label
+- The Solscan moment is the credibility hammer; don't rush past it
+- Multi-device split-screen is the strongest possible visual proof of the cross-screen sync we just nailed today
+
+**Pitch video — 2 min max. Different beast: team intro, why you, why this, why now. Both faces on camera.**
+
+| Time | Beat | Rough script |
+|---|---|---|
+| 0:00–0:15 | Intros | "I'm JJ, I'm [background]. This is Fish, [background]." |
+| 0:15–0:40 | What it is | "We built SolShot. Multi-player artillery — Pocket Tanks meets Worms — that lives inside Telegram group chats. You wager SOL, every shot is a chat message, the smart contract auto-pays the winner." |
+| 0:40–1:10 | Why this team | "I sit in five Solana group chats every day. Nothing to actually do together in any of them. We built the thing we wanted to play. Full stack is mine — Anchor program, server, client. Settled a real match on-chain this week." |
+| 1:10–1:40 | Why now | "Solana TG bots nailed auth + payment UX. We're standing on top. But every other bot is 1:1 — you and the bot. No one's done multi-player game native to the chat. Space is wide open." |
+| 1:40–2:00 | Ask + close | "We're a week from mainnet. Need runway to ship full-time and intros to the chats that'll be our first 100 users. Thanks for considering us." |
+
+Notes:
+- Phone selfie cam is fine (Colosseum: "nothing fancy required"). **Audio quality kills more pitches than video quality** — record somewhere quiet.
+- Both faces visible at some point. Even if Fish only does intro + one beat, panels remember.
+- Don't read off a script. Bullet points on a sticky note, deliver naturally.
+- Hold up a phone with the bot running for the last 2-3 seconds. Tiny visual receipt that the product is real.
+
+**GitHub README — third pillar, must stand alone for judges who scroll the repo before/after either video.**
+
+Proposed structure:
+```
+# SolShot
+> One-liner: artillery game on Solana, played in Telegram group chats, wagered on-chain.
+
+[GIF — 8-second gameplay loop]
+
+## Try it now
+- Live (devnet): https://solshot.gg
+- Bot: @SolShotGG_bot — DM /play to bind your wallet
+- Sample settled match: [Solscan link to TX 4ja8VKp...]
+
+## What's in this repo
+- programs/ — Anchor smart contracts (v1: 1v1, v2: N-player group)
+- client/ — React + Phaser game client
+- server/ — Express + Socket.IO + Telegram bot
+- Docs/ — architecture, audits, technical spec
+
+## On-chain references
+- Escrow v1 program ID: 4kzrDpV9JxjE27AMg4PQXzGuge9MEYQEFznSPvkBtnH1
+- Escrow v2 program ID: BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N
+- SHOT token mint: 4NnYBycLLo8acgbkLz2SyCXd3KU8jgHQLEmrVypi5VLd
+
+## Tech
+Anchor 0.32.1 • Phaser 3.55 • Privy embedded wallets • Solana devnet
+
+## Security
+- Three independent audit passes via SVK (SOS on-chain, BOK math invariants, DB off-chain)
+- Reports in Docs/audits/
+- Reproducible — see Docs/AUDIT_REPRODUCE.md
+
+## License
+MIT
+```
+
+The repo currently has cruft that'll undermine this (1.2GB Marketing/, 168MB Handoffs/, 12 markdown files at root, etc.). Cleanup is part of the post-recording flow — see plan below.
+
+#### 3. Post-recording audit + docs sweep
+
+Full execution checklist written to `Docs/EXECUTION_CHECKLIST_audit_sweep.md` for my own reference when JJ greenlights. Headline: 9 phases, ~10–15 hours total, can be spread across multiple sessions.
+
+**Sequence:**
+
+1. **E2E demo video + pitch video with @johnk_fish** (today/this week). Independent of everything else, doesn't need a clean repo. Flow already verified working post-`8eefcca`.
+2. **Light repo cleanup pre-audit** (~1 hr). `.gitignore` updates, dead-prototype dirs deleted, root markdown files moved to `Docs/`. Don't refactor structure pre-audit because audit findings may demand structural changes.
+3. **`/SOS:scan ... /SOS:report`** (~2-3 hr). Audits both Anchor programs (v1 + v2). Auto-detects tier. Run with `/clear` between phases.
+4. **`/BOK:scan ... /BOK:report`** (~2 hr). Math invariants. **Will run in degraded mode** on Windows (Kani requires `std::os::unix`). Same as the prior Feb run which got HIGH-CONFIDENCE PROBABILISTIC. Kani via WSL2 is a possible upgrade — open question for JJ.
+5. **`/DB:scan ... /DB:report`** (~2-3 hr). Off-chain audit on `server/`, `client/`. Will catch bugs of the kind we hit today (auth race on reconnect was textbook OC-pattern).
+6. **Address findings in priority order.** CRITICAL → block mainnet, HIGH → fix pre-launch, MED/LOW → ship as known-issue with mitigation. Each fix gets a `fix(audit): <FINDING-ID>` commit.
+7. **`/GL:survey ... /GL:reconcile`** (~1-2 hr). Folds audit findings into clean docs. Reconciles existing litepaper drift (v2.0 vs v2.1 references in code). Output: `Docs/` folder with technical spec, architecture diagram, security posture statement.
+8. **Final repo polish.** New README.md (per the structure above), audit summary section, release tag `v0.1-devnet-audited`.
+9. **Loom 2-min pitch deck** (if separate from the pitch video — JJ may do both).
+
+**Prior audit baselines exist (Feb 23-25 2026)** in `.audit/`, `.bok/`, `.bulwark/`. They were on v1-only / pre-group-chat code. **Important findings to revisit:**
+- SOS Feb: 3 CRITICAL findings on v1 (S001 + S004 + H001 — all centralization / access control). Need to verify which were fixed before the new SOS audit.
+- BOK Feb: 25 invariants verified, 1 doc-correction finding (FEE-INV-5: dust ≤ 2 lamports, not 1). Tests merged into `programs/solshot-escrow/tests/bok_*.rs` and still passing.
+- DB Feb: deep tier audit on off-chain code. Need to read findings before re-running.
+
+**SVK kit cloned to `~/SolShot/../solana-vibes-kit`.** All four skills (`stronghold-of-security`, `book-of-knowledge`, `dinhs-bulwark`, `grand-library`) at v1.4.0. Install scripts ready. Rust + Cargo already on the machine.
+
+#### 4. Open questions / decisions for @johnk
+
+1. **Kani on WSL2 or skip?** ~30 min setup; would unlock formal-proof tier (PROVEN) for BOK instead of HIGH-CONFIDENCE PROBABILISTIC. Worth it for credibility, or accept degraded mode like Feb run did?
+2. **`Marketing/` (1.2GB) relocation** — S3 / Drive / Git LFS / just `.gitignore` and host externally?
+3. **`Handoffs/` (168MB)** — keep in repo for history, or move to external archive?
+4. **Cleanup commit granularity** — one big "pre-audit cleanup" commit, or split into multiple (`.gitignore` / deletions / moves / LICENSE)?
+5. **Render auto-deploy hook** — post-recording, do we want to fix it (re-link GitHub webhook) or stay manual-deploy until launch?
+
+#### 5. What I'd ask `[fishyboy-claude]` to be aware of
+
+- The `pre-ios-render-overhaul-2026-05-06` and `known-good-ios-2026-05-06` tags are the rollback points if anything regresses on `main`. Don't rebase past them.
+- The auth race fix (`8eefcca`) is the dominant win of the day. If you see anything that touches `WalletContext.js` socket connect/disconnect handling, treat it as load-bearing.
+- Diagnostic logging infrastructure (`client/src/lib/debugLog.js`, server `clientDebugLog` handler) is wired and ready. To turn on for any future bug hunt, pass `?debug=1` once and add a `debugLog('label', { data })` call.
+- The repo cleanup hasn't happened yet — there's still cruft at root that'll surprise a fresh clone. Don't be alarmed by `_archive/`, `Handoffs/`, `Marketing/`, etc.; those are queued for the post-recording sweep.
+- Recovery scripts at `server/scripts/recover-stuck-match.mjs`, `mark-match-settled.mjs`, `dump-escrow-state.mjs`, `list-wallet-links.mjs`, `find-user.mjs`, `get-wallet.mjs` — useful tooling if any future match gets stuck.
+
+**HANDOFF:** JJ + @johnk_fish recording demo + pitch videos next. After videos, we kick off cleanup → audit sweep → docs → repo polish → submit. I'll log progress as we go.
+
+— main-claude

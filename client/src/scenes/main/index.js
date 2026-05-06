@@ -1725,21 +1725,14 @@ export class MainScene extends Scene {
       return;
     }
 
-    // Create weapon-specific projectile.
-    // Bump minimum radius to 5px and add a high-contrast black stroke —
-    // on iOS Safari Canvas mode, raw 2-3px circles with pixelArt: true +
-    // antialias: false were rendering at sub-pixel sizes and going
-    // invisible. The stroke gives every projectile a guaranteed visible
-    // outline regardless of fill rasterization.
-    const projectileRadius = Math.max(vis.size, 5);
-    const projectile = this.add.circle(trajectory[0].x, trajectory[0].y, projectileRadius, vis.color);
-    projectile.setStrokeStyle(2, 0x000000, 1);
+    // Create weapon-specific projectile
+    const projectile = this.add.circle(trajectory[0].x, trajectory[0].y, vis.size, vis.color);
     projectile.setDepth(5);
 
     // Glow ring for weapons that have it
     let glowRing = null;
     if (vis.glow) {
-      glowRing = this.add.circle(trajectory[0].x, trajectory[0].y, projectileRadius + 3, vis.glow, 0.3);
+      glowRing = this.add.circle(trajectory[0].x, trajectory[0].y, vis.size + 3, vis.glow, 0.3);
       glowRing.setDepth(4);
     }
 

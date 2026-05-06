@@ -102,6 +102,7 @@ export function registerGroupChatSocketHandlers(client, io) {
         try {
             const match = await GroupMatch.findOne({ matchId }).lean();
             if (!match) {
+                console.log(`[GC getMatch] match=${matchId} NOT_FOUND tg=${tgIdFor(client, {}) || 'anon'}`);
                 client.emit('groupMatchData', { error: 'not_found', matchId });
                 return;
             }
@@ -114,6 +115,13 @@ export function registerGroupChatSocketHandlers(client, io) {
             if (isMember) {
                 client.join(roomForMatch(matchId));
             }
+            // Always-on observability — every match load gets a one-line trace
+            // in Render logs so we can see who's looking at what when, and
+            // crucially whether they joined the broadcast room (room=Y means
+            // they'll receive shotResult; room=N means they won't, which is
+            // the most common cause of "I can't see other players' shots").
+            const roomMembers = io ? io.sockets.adapter.rooms.get(roomForMatch(matchId))?.size || 0 : 0;
+            console.log(`[GC getMatch] match=${matchId} state=${match.state} tg=${tgId || 'anon'} member=${isMember ? 'Y' : 'N'} room=${isMember ? 'JOINED' : 'NOT_JOINED'} roomSize=${roomMembers}`);
             client.emit('groupMatchData', { match: sanitizeMatch(match) });
         } catch (err) {
             console.error('[group-chat] getGroupMatch error:', err);
@@ -138,11 +146,21 @@ export function registerGroupChatSocketHandlers(client, io) {
      */
     client.on('fireGroupShot', async (payload = {}) => {
         const tgId = tgIdFor(client, payload);
+        // Always-on observability — entry log captures who's firing, what,
+        // where, with what aim. Greppable as `[GC fire]` in Render logs to
+        // trace any session end-to-end. We DELIBERATELY don't gate this on
+        // a debug flag — production observability for the wagered loop is
+        // not a debug-time luxury. ~80 bytes per fire, negligible.
+        const fireMeta = `tg=${tgId || 'anon'} match=${payload.matchId || '?'} weapon=${payload.weaponId} angle=${(payload.angle ?? 0).toFixed(3)} power=${payload.power}`;
+        console.log(`[GC fire] entry ${fireMeta}`);
+
         if (!tgId) {
+            console.log(`[GC fire] REJECT no_identity ${fireMeta}`);
             client.emit('shotResult', { ok: false, error: 'no_identity' });
             return;
         }
         if (!payload.matchId) {
+            console.log(`[GC fire] REJECT missing_matchId ${fireMeta}`);
             client.emit('shotResult', { ok: false, error: 'missing_matchId' });
             return;
         }
@@ -153,6 +171,7 @@ export function registerGroupChatSocketHandlers(client, io) {
             // firer already has a match snapshot client-side and only needs
             // to know the error.
             if (!result.ok) {
+                console.log(`[GC fire] REJECT ${result.error} ${fireMeta}`);
                 client.emit('shotResult', { ok: false, error: result.error });
                 return;
             }
@@ -173,14 +192,24 @@ export function registerGroupChatSocketHandlers(client, io) {
                 // new heightmap when it changed.
                 match: sanitizeMatchLight(result.match),
             };
+            const roomKey = roomForMatch(payload.matchId);
+            const roomSize = io ? (io.sockets.adapter.rooms.get(roomKey)?.size || 0) : 0;
+            const sd = result.shotData || {};
+            const dmgKeys = Object.keys(sd.damage || {});
+            const elims = sd.eliminations || [];
+            // Success log — captures everything a post-mortem would need:
+            // trajectory size (proves physics ran), impact type, who got hit,
+            // who got eliminated, broadcast room size (proves observers got it).
+            console.log(`[GC fire] OK ${fireMeta} trajLen=${(sd.trajectory || []).length} impact=${sd.impact?.type || '?'} dmg=${dmgKeys.length ? dmgKeys.join(',') : 'none'} elims=${elims.length ? elims.join(',') : 'none'} broadcast=${roomKey} roomSize=${roomSize}`);
             if (io) {
-                io.to(roomForMatch(payload.matchId)).emit('shotResult', broadcast);
+                io.to(roomKey).emit('shotResult', broadcast);
             } else {
                 // Fallback if io wasn't wired through (shouldn't happen in prod)
+                console.warn(`[GC fire] no io instance — fallback to client-only emit ${fireMeta}`);
                 client.emit('shotResult', broadcast);
             }
         } catch (err) {
-            console.error('[group-chat] fireGroupShot error:', err);
+            console.error(`[GC fire] EXCEPTION ${fireMeta}: ${err?.message || err}`, err?.stack || '');
             client.emit('shotResult', { ok: false, error: 'server_error' });
         }
     });

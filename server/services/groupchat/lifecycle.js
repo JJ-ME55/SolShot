@@ -222,6 +222,7 @@ async function beginWageredDepositPhase(match) {
     match.escrowPda = result.escrowPDA;
     match.escrowProgramId = ESCROW_V2_PROGRAM_ID.toBase58();
     match.depositTimeoutAt = new Date(Date.now() + WAGERED_DEPOSIT_WINDOW_SECS * 1000);
+    console.log(`[GC state] match=${match.matchId} lobby → awaiting_deposits players=${match.players.length} wager=${match.config.wagerLamports} pda=${result.escrowPDA?.slice(0,8)}…`);
     await match.save();
 
     await postToChat(match.chatId,
@@ -289,12 +290,15 @@ async function activateMatch(match) {
     // Random first player — fairness over join-order privilege.
     const firstIdx = Math.floor(Math.random() * match.players.length);
 
+    const priorState = match.state;
     match.state = 'active';
     match.startedAt = now;
     match.endsAt = new Date(now.getTime() + match.config.durationMs);
     match.currentPlayerIndex = firstIdx;
     match.turnNumber = 0;
     match.turnStartedAt = now;
+    const firstPlayerTg = match.players[firstIdx]?.telegramUserId;
+    console.log(`[GC state] match=${match.matchId} ${priorState} → active players=${match.players.length} firstTurn=tg=${firstPlayerTg} type=${match.config.type}`);
 
     // Generate terrain + tank spawn positions + initial wind.
     const { heightmap } = generateTerrain();
@@ -530,29 +534,55 @@ export async function advanceTurn(match) {
  * @param {object} shot - { angle, power, weaponId }
  */
 export async function handleShot(matchId, firerTgId, shot) {
+    // Always-on observability — every reject path logs a one-liner so we can
+    // see WHY a fire was rejected. Greppable as `[GC handleShot]`. Pairs
+    // with the `[GC fire]` socket-handler logs to give a complete trace.
     const match = await GroupMatch.findOne({ matchId });
-    if (!match || match.state !== 'active') {
+    if (!match) {
+        console.log(`[GC handleShot] REJECT match_not_found match=${matchId} tg=${firerTgId}`);
+        return { ok: false, error: 'match_not_active' };
+    }
+    if (match.state !== 'active') {
+        console.log(`[GC handleShot] REJECT match_not_active match=${matchId} state=${match.state} tg=${firerTgId}`);
         return { ok: false, error: 'match_not_active' };
     }
     const firerIdx = match.players.findIndex(p => p.telegramUserId === firerTgId);
-    if (firerIdx === -1) return { ok: false, error: 'not_a_player' };
-    if (firerIdx !== match.currentPlayerIndex) return { ok: false, error: 'not_your_turn' };
+    if (firerIdx === -1) {
+        const playerTgs = match.players.map(p => p.telegramUserId).join(',');
+        console.log(`[GC handleShot] REJECT not_a_player match=${matchId} tg=${firerTgId} (roster=${playerTgs})`);
+        return { ok: false, error: 'not_a_player' };
+    }
+    if (firerIdx !== match.currentPlayerIndex) {
+        const currentTg = match.players[match.currentPlayerIndex]?.telegramUserId;
+        console.log(`[GC handleShot] REJECT not_your_turn match=${matchId} firer=${firerTgId} (idx=${firerIdx}) currentTurn=${currentTg} (idx=${match.currentPlayerIndex})`);
+        return { ok: false, error: 'not_your_turn' };
+    }
     const firer = match.players[firerIdx];
-    if (firer.eliminated) return { ok: false, error: 'eliminated' };
+    if (firer.eliminated) {
+        console.log(`[GC handleShot] REJECT eliminated match=${matchId} tg=${firerTgId}`);
+        return { ok: false, error: 'eliminated' };
+    }
 
     const weapon = WEAPON_DATA[shot.weaponId];
-    if (!weapon) return { ok: false, error: 'unknown_weapon' };
+    if (!weapon) {
+        console.log(`[GC handleShot] REJECT unknown_weapon match=${matchId} tg=${firerTgId} weapon=${shot.weaponId}`);
+        return { ok: false, error: 'unknown_weapon' };
+    }
     // SECURITY: enforce inventory ownership. Without this a client could
     // skip the shop and fire any weapon by sending its id. The shop
     // (purchaseGroupWeapon handler) is the only path that mutates
     // player.weapons — bought weapons + the default [0] = Single Shot.
     const ownedWeapons = Array.isArray(firer.weapons) ? firer.weapons : [0];
     if (!ownedWeapons.includes(Number(shot.weaponId))) {
+        console.log(`[GC handleShot] REJECT weapon_not_owned match=${matchId} tg=${firerTgId} weapon=${shot.weaponId} owned=${ownedWeapons.join(',')}`);
         return { ok: false, error: 'weapon_not_owned' };
     }
     const angle = Number(shot.angle);
     const power = Math.max(1, Math.min(100, Number(shot.power) || 0));
-    if (!Number.isFinite(angle)) return { ok: false, error: 'bad_angle' };
+    if (!Number.isFinite(angle)) {
+        console.log(`[GC handleShot] REJECT bad_angle match=${matchId} tg=${firerTgId} angle=${shot.angle}`);
+        return { ok: false, error: 'bad_angle' };
+    }
 
     // Build tanks array for physics — exclude eliminated players (no body to hit)
     const tanks = match.players
@@ -574,6 +604,14 @@ export async function handleShot(matchId, firerTgId, shot) {
         tanks,
         wind: match.wind || 0,
     });
+
+    // Always-on observability — physics output trace. Captures whether the
+    // physics engine produced a real trajectory + impact, and what damage
+    // it computed before any state mutation. Pairs with the success log
+    // at the end of this function to show the full transform.
+    const dmgEntries = Object.entries(result.damage || {});
+    const dmgSummary = dmgEntries.length ? dmgEntries.map(([id, d]) => `${id}:${d}`).join(',') : 'none';
+    console.log(`[GC handleShot] PHYSICS match=${matchId} firer=${firerTgId} weapon=${shot.weaponId} trajLen=${(result.trajectory || []).length} impact=${result.impact?.type || 'none'}@(${result.impact?.x?.toFixed(0) ?? '?'},${result.impact?.y?.toFixed(0) ?? '?'}) dmg=${dmgSummary} terrainChanged=${!!result.newTerrain}`);
 
     // Apply damage map
     let totalDamage = 0;
@@ -772,6 +810,9 @@ export async function settleMatch(match, reason) {
     match.state = 'settled';
     match.settledAt = new Date();
     match.rankedFinishers = computeRanking(match);
+    const winnerTg = match.rankedFinishers?.[0];
+    const podium = match.rankedFinishers?.slice(0, 3).join(',') || '?';
+    console.log(`[GC state] match=${match.matchId} active → settled reason=${reason} winner=tg=${winnerTg} podium=${podium} type=${match.config.type}`);
 
     await match.save();
 

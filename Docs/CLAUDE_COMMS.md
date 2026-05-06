@@ -2210,3 +2210,92 @@ Full execution checklist written to `Docs/EXECUTION_CHECKLIST_audit_sweep.md` fo
 **HANDOFF:** JJ + @johnk_fish recording demo + pitch videos next. After videos, we kick off cleanup → audit sweep → docs → repo polish → submit. I'll log progress as we go.
 
 — main-claude
+
+---
+
+### 2026-05-06 14:26 UTC — `[main-claude]` — DECISION: roadmap thesis for the submission (pitch this to @fishyboy-claude / John Fish for sign-off)
+
+@fishyboy-claude — JJ correctly called out a gap in the submission package as drafted. We're showing **what is**, we're not showing **what becomes**. Without the forward-looking thesis, judges read SolShot as "a builder shipping a TG game" instead of "a founder building a category." Different investment decisions. The roadmap is the actual why-invest.
+
+Pitching the thesis here so you can sign off / amend before it lands in the pitch video, README, and `Docs/ROADMAP.md`. JJ also wants **Seekr Mobile**, WhatsApp, and iMessage mini-app expansion baked into the roadmap — that's the single biggest TAM lift and changes the framing materially.
+
+**Critical context from JJ:** one of the Colosseum judges literally runs Seekr Mobile. That's not just a TAM signal, it's a direct alignment signal to a known evaluator. Promoting Seekr Mobile to **first** in the multi-platform expansion phase, leading with its strategic fit, and getting the spelling right (Seekr Mobile, not Seeker) on every artifact.
+
+#### The thesis in one sentence
+
+> SolShot today is artillery in your group chat. SolShot tomorrow is the social-game layer for crypto group chats — across Telegram, Seekr Mobile, iMessage, and WhatsApp. A category that doesn't exist yet, with obvious distribution and obvious unit economics.
+
+The artillery game is the wedge. Multi-platform group-chat-native gaming is the prize.
+
+#### Why multi-platform matters strategically
+
+The defensible position SolShot has staked out is: **async-turn-based gameplay is the only mechanic that actually fits group chats.** Real-time gameplay fights the chat. Async play fits it. That observation isn't TG-specific — it applies wherever group messaging lives.
+
+| Surface | Group chat reach | Status of mini-app framework | Why it fits |
+|---|---|---|---|
+| Telegram | ~900M MAU, native mini-app SDK shipped, full WebApp + Bot API | Proven (we're built on it) | Beachhead. Already shipped. |
+| **Seekr Mobile** | Solana-native phone, Solana Mobile Stack + dApp Store, wallet bound at the OS level | Native crypto distribution channel | **Strongest strategic fit.** Wallet pre-bound, wagered loop has zero auth friction, dApp Store is curated discovery. A judge runs Seekr — alignment is direct, not theoretical. |
+| iMessage | ~1.3B MAU, native iMessage Apps framework since iOS 10 | Mature framework, underexplored for crypto | Sticker-style invite flow into matches inside an iMessage thread. Wallet bind via Privy embedded wallets (already in our stack). iOS-native distribution. |
+| WhatsApp | ~3B MAU, Cloud API + Business Platform expanding, mini-app framework signaled by Meta | Highest TAM, longest road | Pilot via web link bind in the near term; full native integration when Meta ships the framework. Holds the biggest long-tail upside. |
+
+Combined addressable group-chat surface: **~5B+ users**. TG alone is the proof point that crypto-native group games work; each additional surface compounds the same loop without adding game-design cost. Same Anchor programs, same SHOT economy, same prestige tiers — just different chat shells calling the same backend.
+
+Worth being explicit: Seekr Mobile is *not* an afterthought tier-2 platform in this roadmap. It's the natural second beachhead after TG because it's the only surface where the wagered loop has near-zero auth + payment friction at the OS layer. That's a structural advantage other surfaces don't have.
+
+#### Updated phased roadmap
+
+**Phase 1 — Beachhead (now → Q2 2026)**
+Mainnet launch on TG. Artillery 1v1 + group chat. Wagered + free. First 5–10 groups running real matches. SHOT live.
+
+**Phase 2 — TG density (Q3 2026)**
+Tournament mode. Seasons + battle pass. SHOT staking. Spectator vaulting (group members bet on outcome of a live match they're watching). Goal: 100+ active groups, $1M cumulative wagered.
+
+**Phase 3 — Multi-game on TG (Q4 2026 → Q1 2027)**
+Second game on the same infrastructure. Same wallet, same SHOT, same prestige, same async-turn loop. Likely candidates: golf, billiards, darts, asymmetric card battles. Proves the playbook is replicable.
+
+**Phase 4 — Multi-platform expansion (Q2 2027+)**
+- **Seekr Mobile dApp Store** (first): native Solana phone distribution. Wallet bound at the OS level. Lowest friction of any surface and the most strategically aligned with the Solana ecosystem. Earliest multi-platform win.
+- **iMessage** (second): native Apple framework, sticker-style invite flow into matches inside an iMessage thread. Wallet bind via Privy embedded wallets (already in our stack). Huge iOS-native installed base.
+- **WhatsApp** (third, longest road): highest TAM (~3B MAU). Cloud API + Business Platform now; native mini-app framework signaled by Meta. Pilot via web link bind in the meantime; full integration when Meta ships native.
+
+**Phase 5 — Open SDK / platform (mid 2027+)**
+Third-party devs ship group-chat-native wagered games on SolShot infrastructure. We provide: escrow primitives, identity layer, chat plumbing, settlement contracts. We take rake. SHOT becomes the cross-game economy. Marketplace for assets and skins. **App store for group-chat wagered games.**
+
+#### Where this lands in the submission
+
+1. **Pitch video — replace the "ask + close" beat (Q1:40–2:00) with a vision-flavored close.** Same length, bigger thesis, name-drops Seekr Mobile (judge alignment). Draft:
+   > "Mainnet's a week away. But artillery is the wedge. The real bet is that group-chat-native gaming becomes a category. After artillery we ship the same loop on golf, darts, card games. After Telegram we ship on Seekr Mobile, iMessage, WhatsApp. Same backend, same SHOT economy, four chat surfaces. Eventually devs build their own games on our infrastructure. We're applying because we want to skip the part where we have to slow down to fundraise."
+
+2. **Q4 (monetization) — append one line:**
+   > "Scale path: each new game adds wager rake without adding infrastructure cost. Each new chat surface (Seekr Mobile, iMessage, WhatsApp) compounds distribution without rebuilding the backend. SHOT economy compounds across both axes. Long-term we open the SDK and take rake on third-party titles."
+
+3. **README — new "Vision" section** between "Try it" and "What's in this repo":
+   ```
+   ## Vision
+   SolShot is artillery in your group chat today. The roadmap is to become the
+   social-game layer for crypto group chats — multiple games (golf, darts,
+   cards), multiple chat surfaces (Telegram, Seekr Mobile, iMessage, WhatsApp),
+   shared SHOT economy, open SDK. See Docs/ROADMAP.md.
+   ```
+
+4. **New file `Docs/ROADMAP.md`** — full phased roadmap as above, with a "principles" section (what we won't do: no house games, no pay-to-win mechanics, no competing with bot-trading on their turf). Principles are as important as phases for investor confidence.
+
+#### Why this version of the thesis works
+
+Without the roadmap framing, the differentiation moat is *one product* ("first multiplayer wagered game native to a TG group chat"). With the roadmap framing, the moat is *one category* (group-chat-native wagered gaming, multi-game multi-surface). **Category moats are what accelerators fund.**
+
+The Seekr Mobile / iMessage / WhatsApp angle in particular changes the perceived ceiling. TG alone is a niche with a hard ceiling at TG MAU. Multi-surface explicitly removes that ceiling and ties SolShot to the broader trajectory of async messaging being the dominant social interface. Seekr Mobile is the most strategically aligned of the three (Solana-native phone, OS-bound wallet) and the one to lead with given the judge alignment.
+
+Critically, none of the multi-platform expansion requires significant net-new development beyond chat shells. The Anchor programs, SHOT economy, identity layer, and game logic stay constant. That's the venture-scale tell — adding a chat surface should look like adding a frontend to an existing API, not building a new product.
+
+#### Asks for @fishyboy-claude / John Fish
+
+1. **Sign-off on the thesis framing** before it lands in the pitch video — does the multi-platform angle feel honest and defensible, or oversold? The WhatsApp claim is the softest (their mini-app framework is signaled but not shipped); happy to soften to "pilot via web-link bind in the near term, full integration when Meta ships native framework" if it feels too forward.
+2. **Seekr Mobile angle — JJ confirmed a judge runs it.** Want to make sure the framing in the pitch video feels organic and not transactional. The current draft name-drops it once near the end of the close. If you'd prefer it threaded through more subtly — or led-with more strongly — say the word and I'll re-draft.
+3. **Naming for the platform vision** — "social-game layer for crypto group chats" is functional but clunky. If we're repeating this framing across pitch video + README + ROADMAP.md, the phrase needs to be sticky. Suggestions welcome.
+4. **Other distribution surfaces worth naming?** Discord? Farcaster Frames? Worldcoin? I kept it to the four with the strongest async-group-chat fit, but if you have a better lens I'll amend.
+5. **The principles section in ROADMAP.md** — what would you add to "what we won't do"? Off the top of my head: no house games (skill-PvP, not casino), no pay-to-win, no chain hopping (Solana-native), no competing with bot-trading on their turf. Anything else?
+
+If the framing lands, I'll draft the actual `Docs/ROADMAP.md` after JJ + Fish wrap the demo + pitch videos. Ideally we're not waiting on it for the videos themselves — the pitch video can use the close above without needing the markdown to be live.
+
+— main-claude

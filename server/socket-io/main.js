@@ -1338,6 +1338,37 @@ const mainsocket = (io) => {
         // match via socket.io rooms (room key: `groupmatch:<matchId>`).
         registerGroupChatSocketHandlers(client, io);
 
+        // === Client debug log shipping ===
+        // When a client has `?debug=1` (or the localStorage flag) set, its
+        // diagnostic console.log calls also emit to this handler. We tee
+        // them into the server logs so multi-turn / multi-navigation flows
+        // are inspectable in Render's persistent log stream — Eruda on
+        // device resets per page load (every deep-link is a fresh load),
+        // making it useless for "works for a moment then falls apart"
+        // bugs. Server logs survive every navigation and Render restart.
+        //
+        // Payload size capped to ~2KB; identity tagged with the socket's
+        // verified TG id + a wallet prefix for easy grep.
+        // Stripped from production-spam concern via the client-side
+        // gate (debug flag); unconditioned server-side acceptance is
+        // fine because malicious payloads can't exceed the cap and
+        // can't crash a try/catch'd handler.
+        client.on('clientDebugLog', (payload = {}) => {
+            try {
+                const tg = client.telegramUser?.id || 'anon';
+                const wallet = authenticatedWallets[client.id];
+                const w = wallet ? wallet.slice(0, 6) : '?';
+                const label = String(payload.label || '').slice(0, 200);
+                let dataStr = '';
+                try {
+                    dataStr = JSON.stringify(payload.data || {}).slice(0, 2000);
+                } catch (_) {
+                    dataStr = '<unstringifiable>';
+                }
+                console.log(`[client tg=${tg} w=${w}] ${label} ${dataStr}`);
+            } catch (_) { /* never let a debug log crash the connection */ }
+        });
+
         // === Callsign / handle persistence (one-time set per wallet) ===
         // Client emits this after a fresh sign-in if walletHandle came
         // back as { handle: null, canSet: true }. Server saves the

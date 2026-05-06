@@ -127,6 +127,35 @@ export default function GroupBattleWrapper({ match, onMatchUpdate, fillMode = fa
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [match?.matchId]);
 
+    // Forfeit handler — confirms with the user, then emits forfeitGroupMatch
+    // to the server. Server marks the player eliminated (HP=0), advances
+    // turn, and posts to chat. If the firer's forfeit makes them the last
+    // alive minus 1, server auto-settles the match. The wagered case loses
+    // the player's stake (they took 90% themselves only if they were the
+    // last standing; otherwise the surviving player wins the pot per the
+    // standard split). The 12h idle timer would eventually achieve the same
+    // thing, but forfeit is the explicit synchronous version.
+    const handleForfeit = React.useCallback(() => {
+        if (!match?.matchId) return;
+        const isWagered = match.config?.type === 'wagered';
+        const confirmMsg = isWagered
+            ? `Forfeit Match #${match.matchId}? You will lose your wagered SOL — only the last tank standing wins the pot.`
+            : `Forfeit Match #${match.matchId}? Your tank will be eliminated and the match continues without you.`;
+        // window.confirm is the lowest-friction confirmation that survives
+        // every device + WebView context (TG Mini App, Safari, etc.).
+        if (!window.confirm(confirmMsg)) return;
+        const sock = window.socket;
+        if (!sock || !sock.connected) {
+            try { window.alert('Connection lost — refresh and try again.'); } catch (_) {}
+            return;
+        }
+        sock.emit('forfeitGroupMatch', { matchId: match.matchId });
+        // Don't navigate immediately — wait for the server's shotResult-shaped
+        // confirmation (next shotResult will reflect the elimination) OR a
+        // direct groupMatchCancelled if the forfeit ended the match.
+        // Parent (GroupMatchScreen) handles those events.
+    }, [match?.matchId, match?.config?.type]);
+
     // Global keyboard controls — Space=fire, 1-9=weapon select. The Tank
     // class binds QEAD/WS internally for angle/power, so those work via
     // Phaser's input system and don't need a React-level listener.
@@ -260,7 +289,7 @@ export default function GroupBattleWrapper({ match, onMatchUpdate, fillMode = fa
                     wager={0}
                     turnTimer={null}
                     onLeaveMatch={onLeaveMatch}
-                    onForfeit={onLeaveMatch}
+                    onForfeit={handleForfeit}
                     gameMode="group-chat"
                 />
             )}

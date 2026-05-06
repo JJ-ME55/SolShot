@@ -186,6 +186,52 @@ export function registerGroupChatSocketHandlers(client, io) {
     });
 
     /**
+     * Player-initiated forfeit from the in-game FORFEIT button. Marks the
+     * caller's tank HP=0, eliminated=true, advances turn (or settles if they
+     * were second-to-last). Mirrors the 3-strike auto-forfeit branch in
+     * handleIdleTimeout but synchronous.
+     *
+     * Identity: tgIdFor(client, payload) — same gate as fireGroupShot.
+     * Server uses the verified TG id, ignores any client-claimed wallet.
+     *
+     * Response: emits `forfeitGroupMatchResult` directly to the firer (ack).
+     * Subsequent state changes (turn advance, settlement) flow through the
+     * normal getGroupMatch / shotResult / groupMatchCancelled paths so all
+     * room members see the update via the existing broadcast surface.
+     */
+    client.on('forfeitGroupMatch', async (payload = {}) => {
+        const tgId = tgIdFor(client, payload);
+        if (!tgId) {
+            client.emit('forfeitGroupMatchResult', { ok: false, error: 'no_identity' });
+            return;
+        }
+        if (!payload.matchId) {
+            client.emit('forfeitGroupMatchResult', { ok: false, error: 'missing_matchId' });
+            return;
+        }
+        try {
+            const result = await lifecycle.handleForfeit(payload.matchId, tgId);
+            client.emit('forfeitGroupMatchResult', result);
+            // Broadcast a fresh match snapshot to all room members so their
+            // HP / eliminated / current-turn state reflects the forfeit
+            // immediately. (Spectators rely on this for cross-screen sync —
+            // without it, observers would only see the change on next chat
+            // ping refetch.)
+            if (result.ok && io) {
+                try {
+                    const fresh = await GroupMatch.findOne({ matchId: payload.matchId }).lean();
+                    if (fresh) {
+                        io.to(roomForMatch(payload.matchId)).emit('groupMatchData', { match: sanitizeMatch(fresh) });
+                    }
+                } catch (_) { /* broadcast best-effort; client will refetch on next chat ping */ }
+            }
+        } catch (err) {
+            console.error('[group-chat] forfeitGroupMatch error:', err);
+            client.emit('forfeitGroupMatchResult', { ok: false, error: 'server_error' });
+        }
+    });
+
+    /**
      * Purchase a weapon for the requesting player in an active match.
      * Mirrors 1v1's `buyWeapon` handler but operates on GroupMatch fields.
      * Validates: match active, requester is a player, weapon known, not

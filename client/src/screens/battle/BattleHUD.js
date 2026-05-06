@@ -635,24 +635,23 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
             FIRE
           </button>
 
-          {/* Forfeit (1v1 only — group-chat uses idle penalty for abandonment) */}
-          {!isGroupChat && (
-            <button
-              onClick={onForfeit}
-              style={{
-                fontFamily: "'Share Tech Mono', monospace",
-                fontSize: 9,
-                letterSpacing: 1,
-                padding: '5px 8px',
-                border: '1px solid rgba(204,34,0,0.3)',
-                background: 'rgba(204,34,0,0.12)',
-                color: 'var(--red)',
-                cursor: 'pointer',
-              }}
-            >
-              FORFEIT
-            </button>
-          )}
+          {/* Forfeit — same surface in 1v1 and group-chat. See desktop
+              comment above for rationale (player exit without 12h wait). */}
+          <button
+            onClick={onForfeit}
+            style={{
+              fontFamily: "'Share Tech Mono', monospace",
+              fontSize: 9,
+              letterSpacing: 1,
+              padding: '5px 8px',
+              border: '1px solid rgba(204,34,0,0.3)',
+              background: 'rgba(204,34,0,0.12)',
+              color: 'var(--red)',
+              cursor: 'pointer',
+            }}
+          >
+            FORFEIT
+          </button>
         </div>
 
         {/* ELIMINATION OVERLAY */}
@@ -847,26 +846,29 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <MoveButtons bridge={bridge} disabled={disabled} moveSteps={moveSteps} />
               <MoveCounter moves={moveSteps} />
-              {/* Forfeit (1v1 only — group-chat uses idle penalty for abandonment) */}
-              {!isGroupChat && (
-                <button
-                  onClick={onForfeit}
-                  style={{
-                    marginLeft: 'auto',
-                    fontFamily: "'Share Tech Mono', monospace",
-                    fontSize: 9, letterSpacing: 1,
-                    padding: '4px 8px',
-                    border: '1px solid rgba(204,34,0,0.3)',
-                    background: 'rgba(204,34,0,0.12)',
-                    color: 'var(--red)',
-                    cursor: 'pointer',
-                    pointerEvents: 'auto',
-                    opacity: 0.75,
-                  }}
-                >
-                  FORFEIT
-                </button>
-              )}
+              {/* Forfeit — available in both 1v1 AND group-chat. For
+                  group-chat, this lets a player exit a wagered match
+                  without waiting for the 12h idle timeout. Server marks
+                  HP=0, eliminated=true, advances turn (or settles if last
+                  alive). Confirms with the user first since on a wagered
+                  match this means losing your stake. */}
+              <button
+                onClick={onForfeit}
+                style={{
+                  marginLeft: 'auto',
+                  fontFamily: "'Share Tech Mono', monospace",
+                  fontSize: 9, letterSpacing: 1,
+                  padding: '4px 8px',
+                  border: '1px solid rgba(204,34,0,0.3)',
+                  background: 'rgba(204,34,0,0.12)',
+                  color: 'var(--red)',
+                  cursor: 'pointer',
+                  pointerEvents: 'auto',
+                  opacity: 0.75,
+                }}
+              >
+                FORFEIT
+              </button>
             </div>
           </div>
 

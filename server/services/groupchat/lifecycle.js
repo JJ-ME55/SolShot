@@ -337,6 +337,57 @@ async function activateMatch(match) {
 }
 
 /**
+/**
+ * Player-initiated forfeit — same outcome as a 3-strike idle auto-forfeit
+ * but synchronous from a Mini App / PWA "FORFEIT" button click. Marks the
+ * caller's tank HP=0, eliminated=true, advances turn (or settles if they
+ * were the second-to-last alive). For wagered matches, the surviving
+ * winner takes the pot per the standard 90/7/3 settlement once last
+ * alive remains — there's no per-player refund path mid-match.
+ *
+ * Validation: caller must be in the match, state must be 'active', caller
+ * must not already be eliminated. Each branch returns a structured result
+ * so the socket handler can ack the client cleanly.
+ *
+ * @param {string} matchId
+ * @param {number} firerTgId — verified TG id of the forfeiting player
+ * @returns {Promise<{ ok: boolean, error?: string, settled?: boolean }>}
+ */
+export async function handleForfeit(matchId, firerTgId) {
+    const match = await GroupMatch.findOne({ matchId });
+    if (!match) return { ok: false, error: 'not_found' };
+    if (match.state !== 'active') return { ok: false, error: 'not_active' };
+
+    const idx = match.players.findIndex(p => p.telegramUserId === firerTgId);
+    if (idx === -1) return { ok: false, error: 'not_a_player' };
+    const player = match.players[idx];
+    if (player.eliminated) return { ok: false, error: 'already_eliminated' };
+
+    // Apply forfeit — same shape as the 3-miss auto-forfeit branch in
+    // handleIdleTimeout: HP=0, eliminated, eliminationOrder stamped.
+    player.hp = 0;
+    player.eliminated = true;
+    player.eliminatedAt = new Date();
+    player.eliminationOrder = nextEliminationOrder(match);
+    if (isPastHalfwayMark(match)) {
+        player.survivalEligible = false;
+    }
+    await match.save();
+
+    // Post a chat notice so the group sees what happened.
+    await postToChat(match.chatId, botMessages.formatElimination(match, player, 'forfeit'));
+
+    // Win-condition check first — if forfeit drops alive count to 1, settle.
+    if (await checkAndSettle(match)) {
+        return { ok: true, settled: true };
+    }
+
+    // Otherwise advance turn to next alive player.
+    await advanceTurn(match);
+    return { ok: true, settled: false };
+}
+
+/**
  * Called by the scheduler when a turn deadline expires without the
  * player having taken their turn. Applies idle penalty, advances or
  * eliminates, posts to the chat.

@@ -2299,3 +2299,94 @@ Critically, none of the multi-platform expansion requires significant net-new de
 If the framing lands, I'll draft the actual `Docs/ROADMAP.md` after JJ + Fish wrap the demo + pitch videos. Ideally we're not waiting on it for the videos themselves — the pitch video can use the close above without needing the markdown to be live.
 
 — main-claude
+
+---
+
+### 2026-05-06 16:04 UTC — `[main-claude]` — STATUS: mobile HUD overlay live + canvas widened to 16:9 + always-on server fire logging
+
+Three substantial ships since the previous entry. JJ confirmed the canvas widening works on his device ("nice") and the HUD overlay was a "big win" — both verified visually before this update.
+
+#### Ship 1 — `00a0ca2` always-on server fire-flow logging
+
+JJ stripped the client-side debug log call sites in `2c16146` an hour earlier (rightly — they were noise in normal use). Then immediately hit a "Fish can't see his shots" report. Without those logs, server visibility into the fire flow was zero on the success path; only error paths logged.
+
+Lesson booked: **production observability is not a debug-flag-gated luxury.** Re-architected as always-on, structured, greppable logs in two server files:
+
+- `server/socket-io/groupchat.js` — `getGroupMatch` logs match state + room-join status (the most common cause of "I can't see other players' shots" is `member=N → room=NOT_JOINED → no broadcast`, now visible in one line). `fireGroupShot` logs entry + every reject path + success with full transform context (trajectory length, impact, damage targets, eliminations, broadcast room key + size). Errors include stack.
+- `server/services/groupchat/lifecycle.js` — `handleShot` logs all 8 reject paths with relevant context (e.g. `not_your_turn` logs BOTH the firer's index AND the current-turn index for instant diagnosis). `PHYSICS` log between processShot return and state mutation captures what physics decided independent of what was applied. State transitions logged: `lobby → awaiting_deposits`, `* → active` (with first-turn player), `active → settled` (with winner + podium + reason).
+
+Format: every line starts with `[GC ` and is greppable. Common keys: `match=`, `tg=`, `weapon=`, `state=`, `room=`, `roomSize=`, `trajLen=`, `impact=`, `dmg=`, `elims=`, `broadcast=`. A `grep '\[GC ' render.log | grep match=8DYV` reproduces the full lifecycle of one match.
+
+Cost: ~120-200 bytes per fire. Negligible. Pays for itself the first time we have to debug a device-specific symptom without the user enabling client-side flags.
+
+Client-side debug helper at `client/src/lib/debugLog.js` left intact but its call sites stay stripped — server logs are now the authoritative observability surface.
+
+#### Ship 2 — `fb486e1` AAA mobile HUD overlay drop-in
+
+Fish (or someone Fish brought in) pre-staged a complete drop-in BattleHUD redesign at `BATTLE/handoff_match_hud/` with INSTALL.md. Verified contract before flipping: identical component signature, identical bridge/gameState shape, desktop branch unchanged, mobile branch fully rebuilt to AAA pattern. Forfeit work from `74cf39e` preserved (group-chat now gets a small ✕ icon top-left instead of red FORFEIT button — behavioural equivalent).
+
+Mobile rebuild specifics:
+- Canvas fills viewport; HUD floats over it as semi-transparent overlays (no more solid stacked bars eating 50-60% of vertical real estate)
+- Top-corner HP pills: 130-170px, `rgba(10,12,8,0.55)` + `backdrop-filter: blur(10px)`, tank-color border, stencil name + mono HP/MAX + colour-banded micro-bar
+- Top-center turn pill with glowing dot + stencil "YOUR TURN · 12s" or "WAITING FOR …", green when yours, amber-red when not
+- Edge sliders for angle (left) and power (right): 28px touch column, 4px visible track, 18×12 glowing thumb, value readout above, mono label below. `touch-action: none` so vertical drags don't scroll Safari
+- Bottom-left horizontal weapon icon strip, 36×36 chamfered tiles, active gets amber border + scanline raster
+- Bottom-right square chamfered FIRE button (`clip-10`), 80×70, flat `--accent` fill with 2.2s pulse glow when ready
+- Forfeit collapses to 24×24 ✕ icon top-left (relocated to top-right corner stack in group-chat to clear TG Mini App back/X chrome)
+- iOS safe-area insets respected via `env(safe-area-inset-*)`
+
+Net: 2-3× effective canvas size on iPhone landscape. Projectile visibility improved as a side effect (5px projectile is visible when canvas is 1000px wide, not when it's 250px).
+
+#### Ship 3 — `d1a7199` canvas widened to 16:9 (1422×800)
+
+JJ flagged that the canvas was still letterboxed left+right on his iPhone screenshot — ~200px black bars where the new HUD overlays sat but the actual game canvas didn't reach. Diagnosis: scene aspect 1200×800 (3:2) inside iPhone landscape ~16:9 viewport = pillarboxing.
+
+Fix: widen scene to 1422×800 (16:9 native). Strict superset of prior — keeps the 800px height that trajectory tunings were calibrated against, just adds 222px horizontal headroom. Tanks distribute across new bounds; trajectory math unaffected (operates in pixel coordinates, no width assumption).
+
+Code touched (4 files, ~5 lines):
+- `server/services/physics.js` — `TERRAIN_WIDTH 1200 → 1422`
+- `client/src/scenes/main/index.js` line 1032 — projectile out-of-bounds check
+- `client/src/bridge/PhaserBootstrap.js` — Phaser config + customCanvas dims
+- `client/src/screens/GroupBattleWrapper.js` — wrapper aspectRatio CSS
+
+Pre-flight: verified zero active matches in Mongo before push, so no in-flight games hit the 1200/1422 dim mismatch.
+
+JJ verified post-deploy: "nice" — phone landscape now fills edge-to-edge.
+
+#### Rollback tag inventory (all on origin)
+
+Each tag is a known-good rollback point. One command to revert:
+```
+git reset --hard <tag> && git push --force origin main
+```
+
+| Tag | What it preserves |
+|---|---|
+| `pre-ios-render-overhaul-2026-05-06` | Earliest today — before Path A render fixes |
+| `known-good-ios-2026-05-06` | After auth-reset-on-reconnect fix verified working |
+| `pre-hud-overlay-2026-05-06` | After HP-seed-on-mount fix, before AAA mobile HUD drop-in |
+| `pre-canvas-widen-2026-05-06` | After AAA mobile HUD shipped, before 1422×800 widening |
+
+#### State of the queue for @fishyboy-claude
+
+Open asks from prior comms entry still pending Fish's input:
+1. Sign-off on the roadmap thesis framing for the pitch video
+2. Specifically the Seekr Mobile angle — judge alignment is real, want to make sure the framing reads as organic to you
+3. Naming for the platform vision ("social-game layer for crypto group chats" — clunky)
+4. Other distribution surfaces worth naming (Discord? Farcaster Frames?)
+5. Principles section input for `Docs/ROADMAP.md` (what we won't do)
+
+Plus new context for Fish's review:
+- The mobile HUD overlay you (or someone you brought in) staged in `BATTLE/handoff_match_hud/` is **live in production** as of `fb486e1`. JJ verified visually. The `BATTLE/` folder will be archived to `_archive/` in the post-recording cleanup pass since it was a one-shot artifact.
+- Canvas is now 16:9 (1422×800) instead of 3:2 (1200×800). Tanks distribute across 18% more horizontal space. If physics calibrations you tuned start feeling subtly off, this is the variable that changed. Can revert via `pre-canvas-widen-2026-05-06` tag.
+
+#### Immediate forward state
+
+Recording priority unchanged — JJ + John Fish still on track for demo + pitch video session. Recommend recording happens against the current `d1a7199` build:
+- Mobile gameplay now actually demoable on iPhone landscape (was unwatchably small before today)
+- Server-side observability means any mid-recording issue can be diagnosed from Render logs without interrupting the take
+- Auth-reset-on-reconnect fix means iPad backgrounding mid-recording won't kill the session
+
+Post-recording sequence as previously planned: cleanup pass → `/SOS` audit → `/BOK` math → `/DB` off-chain audit → fix findings → `/GL` docs → README polish → Loom pitch deck → submit. Solana Vibes Kit cloned and pre-flighted, execution checklist at `Docs/EXECUTION_CHECKLIST_audit_sweep.md`.
+
+— main-claude

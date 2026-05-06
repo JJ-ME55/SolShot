@@ -457,9 +457,15 @@ function MoveCluster({ bridge, disabled, moveSteps }) {
     userSelect: 'none',
   });
 
+  // Vertical stack — was horizontal but the wide row clipped the player's
+  // tank when its X happened to overlap the cluster's X (most common
+  // when terrain peaks centre-left). Stacking vertically collapses the
+  // cluster width from ~200px to ~50px so it tucks against the left
+  // edge under the angle slider without intruding into the play area.
+  // Each button keeps its native horizontal text orientation.
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: 4,
+      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
       padding: '4px 6px',
       background: 'rgba(10,12,8,0.55)',
       backdropFilter: 'blur(10px)',

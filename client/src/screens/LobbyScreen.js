@@ -8,20 +8,42 @@ import { useSolShotWallet } from '../wallet/WalletContext';
 import { haptic } from '../telegram/haptic';
 import { EmptyState } from '../components/EmptyStates';
 
-/* ── match modes (mirrors server MATCH_MODES — Litepaper v2.1) ── */
-// vs_bot is client-side-only — there is no corresponding server MATCH_MODES
-// entry because the server handles AI matches via `createAIMatch` (separate
-// flow). Including it here lets us surface Shot Bot as a first-class mode
-// tab alongside the wagered options, which is the right player-mental-model.
+/* ── match modes (Litepaper v2.1) ──
+ *
+ * Option A simplification (2026-05-07): the legacy QUICK_MATCH / DUEL /
+ * HIGH_ROLLER tabs are collapsed into a single WAGERED mode with a wager
+ * picker. The legacy mode names are preserved as wager-tier labels +
+ * derived server-side via `legacyModeForWager()` so the matchmaking-queue
+ * segmentation (server keys queues by matchMode:matchLength) is unchanged.
+ *
+ * vs_bot is client-side-only — server handles AI via `createAIMatch`.
+ */
 const MATCH_MODES = {
   vs_bot:           { label: 'VS SHOT BOT',      wagerRange: [0, 0],          formats: [1],       color: 'var(--kh)', aiOpponent: true },
   practice:         { label: 'PRACTICE',         wagerRange: [0, 0],          formats: [1],       color: 'var(--kh)' },
-  quick_match:      { label: 'QUICK MATCH',       wagerRange: [0.1, 0.1],      formats: [1, 3],    color: 'var(--sg)' },
-  duel:             { label: 'DUEL',              wagerRange: [0.25, 0.5],     formats: [3, 5],    color: '#00ccff' },
-  high_roller:      { label: 'HIGH ROLLER',       wagerRange: [1.0, 1.0],      formats: [3, 5],    color: '#ffcc00' },
-  custom_challenge: { label: 'CUSTOM CHALLENGE',  wagerRange: [0, Infinity],   formats: [1, 3, 5], color: '#ff6600' },
+  wagered:          { label: 'WAGERED',          wagerRange: [0.1, 1.0],      formats: [1, 3, 5], color: 'var(--sg)' },
+  custom_challenge: { label: 'CUSTOM CHALLENGE', wagerRange: [0, Infinity],   formats: [1, 3, 5], color: '#ff6600' },
 };
 const MODE_KEYS = Object.keys(MATCH_MODES);
+
+/* ── wager-tier metadata for the WAGERED mode ──
+ * Each tier carries: amount, legacy mode (sent to server for queue
+ * segmentation), valid formats (BO1/BO3/BO5 — preserves server validation),
+ * and a label that keeps the marketing name for casual recognition. */
+const WAGER_TIERS = [
+  { amount: 0.1,  legacyMode: 'quick_match', formats: [1, 3],    label: 'QUICK MATCH' },
+  { amount: 0.25, legacyMode: 'duel',        formats: [3, 5],    label: 'DUEL' },
+  { amount: 0.5,  legacyMode: 'duel',        formats: [3, 5],    label: 'DUEL' },
+  { amount: 1.0,  legacyMode: 'high_roller', formats: [3, 5],    label: 'HIGH ROLLER' },
+];
+function legacyModeForWager(wager) {
+  const tier = WAGER_TIERS.find(t => t.amount === wager);
+  return tier ? tier.legacyMode : null;
+}
+function formatsForWager(wager) {
+  const tier = WAGER_TIERS.find(t => t.amount === wager);
+  return tier ? tier.formats : [1, 3, 5];
+}
 
 /* ── all wager tiers — Litepaper v2.1 ── */
 const ALL_WAGER_TIERS = [0, 0.1, 0.25, 0.5, 1.0];
@@ -355,6 +377,17 @@ function LobbyScreen({ navigate, screenData }) {
       setMatchLength(cfg.formats[0]);
     }
   }, [matchMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // WAGERED mode: format options narrow based on wager tier (Option A
+  // preserves the same valid (wager, format) pairs as the legacy
+  // quick_match / duel / high_roller modes — server validation unchanged).
+  useEffect(() => {
+    if (matchMode !== 'wagered') return;
+    const validFormats = formatsForWager(wager);
+    if (!validFormats.includes(matchLength)) {
+      setMatchLength(validFormats[0]);
+    }
+  }, [matchMode, wager]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── derived player name from wallet context ── */
   const getPlayerName = useCallback(() => {
@@ -705,6 +738,21 @@ function LobbyScreen({ navigate, screenData }) {
       return;
     }
 
+    // Derive the legacy mode name for server matchmaking-queue keying.
+    // Server's `MATCH_MODES` (in services/solana.js) doesn't know about
+    // the new client-side WAGERED mode — it expects quick_match / duel /
+    // high_roller / practice / custom_challenge. legacyModeForWager()
+    // maps wager amount → the corresponding legacy mode.
+    let serverMatchMode = matchMode;
+    if (matchMode === 'wagered') {
+      const legacy = legacyModeForWager(wagerToSend);
+      if (!legacy) {
+        setError('Invalid wager amount for WAGERED mode');
+        return;
+      }
+      serverMatchMode = legacy;
+    }
+
     window.socket.emit('createRoom', {
       player: {
         name,
@@ -712,7 +760,7 @@ function LobbyScreen({ navigate, screenData }) {
         walletAddress: walletAddress || null,
         wager: wagerToSend,
         matchLength,
-        matchMode,
+        matchMode: serverMatchMode,
         maxPlayers: numPlayers,
       },
     });
@@ -767,8 +815,14 @@ function LobbyScreen({ navigate, screenData }) {
     const name = getPlayerName();
     const color = TANK_COLORS[selectedColor].phaserHex;
     const wagerToSend = isCustomMode ? customWager : wager;
+    // Same legacy-mode derivation as createRoom — server queues are
+    // segmented by quick_match / duel / high_roller, not by the new
+    // client-side WAGERED bucket.
+    const serverMatchMode = matchMode === 'wagered'
+      ? legacyModeForWager(wagerToSend)
+      : matchMode;
     window.socket.emit('joinQueue', {
-      matchMode,
+      matchMode: serverMatchMode,
       matchLength,
       wager: wagerToSend,
       playerName: name,
@@ -793,12 +847,19 @@ function LobbyScreen({ navigate, screenData }) {
   const findOrCreateMatch = useCallback(() => {
     if (!window.socket) return;
     const wagerToSend = isCustomMode ? customWager : wager;
+    // Server still tags open rooms with the legacy mode names
+    // (quick_match / duel / high_roller). When the client is in WAGERED
+    // mode, derive the legacy mode from the selected wager so we match
+    // open rooms correctly.
+    const targetMode = matchMode === 'wagered'
+      ? legacyModeForWager(wagerToSend)
+      : matchMode;
     // Look for a matching room: same mode, same total rounds, same
     // wager, and not full. Wager comparison is exact to avoid drift
     // between e.g. 0.1 and 0.10000001 from FP math (current tiers are
     // integer-stepped so this is fine).
     const matching = rooms.find((r) =>
-      r.matchMode === matchMode
+      r.matchMode === targetMode
       && (r.totalRounds || 1) === matchLength
       && (r.wager || 0) === wagerToSend
       && (r.currentPlayers || 1) < (r.maxPlayers || 2)
@@ -1002,20 +1063,36 @@ function LobbyScreen({ navigate, screenData }) {
               <div style={s.sectionLabel}>WAGER</div>
               <div style={s.sublabel}>SOL STAKE PER MATCH</div>
               <div style={s.wagerRow}>
-                {availableWagers.map((tier) => (
-                  <div
-                    key={tier}
-                    style={s.wagerBtn(wager === tier)}
-                    onClick={() => {
-                      setWager(tier);
-                      if (tier > 0 && !localStorage.getItem('solshot_escrow_seen')) {
-                        setShowEscrow(true);
-                      }
-                    }}
-                  >
-                    {tier === 0 ? 'FREE' : tier + ' SOL'}
-                  </div>
-                ))}
+                {availableWagers.map((tier) => {
+                  // For WAGERED mode, surface the legacy tier label as a
+                  // subtitle so casual players who learned the names from
+                  // the litepaper still see them.
+                  const tierMeta = matchMode === 'wagered'
+                    ? WAGER_TIERS.find(t => t.amount === tier)
+                    : null;
+                  return (
+                    <div
+                      key={tier}
+                      style={s.wagerBtn(wager === tier)}
+                      onClick={() => {
+                        setWager(tier);
+                        if (tier > 0 && !localStorage.getItem('solshot_escrow_seen')) {
+                          setShowEscrow(true);
+                        }
+                      }}
+                    >
+                      <div>{tier === 0 ? 'FREE' : tier + ' SOL'}</div>
+                      {tierMeta && (
+                        <div style={{
+                          fontSize: 8,
+                          opacity: 0.75,
+                          letterSpacing: '0.15em',
+                          marginTop: 2,
+                        }}>{tierMeta.label}</div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           ) : null}

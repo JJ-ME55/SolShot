@@ -72,6 +72,19 @@ export default function GroupDepositScreen({ navigate, screenData = {} }) {
             return;
         }
 
+        // Wait for the socket to authenticate before fetching the match. When
+        // this screen is reached via deep link (Telegram bot deposit button or
+        // direct URL), the screen mounts BEFORE the wallet-adapter has emitted
+        // its `authenticate` handshake — so emitting `getGroupMatch` here would
+        // race the H022 auth gate on the server and surface as
+        // "DEPOSIT UNAVAILABLE / auth_required" until the user retried.
+        // The render side already handles !privyReady / !walletAddress with
+        // sign-in fall-through; this just defers the fetch until the socket is
+        // actually authed, then re-runs when isAuthenticated flips true.
+        if (!isAuthenticated) {
+            return;
+        }
+
         const onMatchData = (payload) => {
             if (payload?.matchId && payload.matchId !== matchId) return;
             if (payload?.error) {
@@ -121,7 +134,7 @@ export default function GroupDepositScreen({ navigate, screenData = {} }) {
             sock.off('groupMatchData', onMatchData);
             sock.off('groupDepositStatus', onDepositStatus);
         };
-    }, [matchId, navigate]);
+    }, [matchId, navigate, isAuthenticated]);
 
     // ── 2. Listen for our own deposit-confirm result
     useEffect(() => {
@@ -234,17 +247,45 @@ export default function GroupDepositScreen({ navigate, screenData = {} }) {
     }, [matchId, walletAddress, signAndSendGroupDeposit]);
 
     // ── 5. Render
+    //
+    // Order matters: auth-prerequisite states render BEFORE the phase
+    // machine, otherwise the "Loading match…" placeholder dominates and
+    // the user never sees the sign-in CTA when arriving unauthenticated
+    // via a deep link. The match-fetch effect is gated on isAuthenticated,
+    // so phase stays 'loading' until the socket auths — fine, but we
+    // want to show "Sign in" instead of an indefinite spinner when
+    // Privy is ready but the user has no wallet yet.
 
-    if (phase === 'loading') {
+    // Privy SDK still booting — earliest state, no wallet decisions yet.
+    if (!privyReady) {
         return (
             <div style={styles.wrap}>
                 <div style={styles.card}>
-                    <div style={styles.title}>Loading match…</div>
+                    <div style={styles.title}>Connecting wallet…</div>
                 </div>
             </div>
         );
     }
 
+    // Privy ready but no wallet — surface the sign-in CTA. (We only nudge
+    // sign-in when there's no wallet at all; if the wallet is connected
+    // but the socket auth handshake hasn't completed yet, fall through to
+    // "Loading match…" which is the more accurate state.)
+    if (!walletAddress) {
+        return (
+            <div style={styles.wrap}>
+                <div style={styles.card}>
+                    <div style={styles.title}>Sign in to deposit</div>
+                    <div style={styles.subtitle}>You'll deposit <b>{formatSOL(wagerLamports)} SOL</b> into match <b>#{matchId}</b>.</div>
+                    <button style={styles.btnPrimary} onClick={() => login?.()}>Sign in</button>
+                    <button style={styles.btnSecondary} onClick={() => navigate('mygames')}>← My matches</button>
+                </div>
+            </div>
+        );
+    }
+
+    // Real errors (match-not-found, server errors) take priority over
+    // loading once we know the user is signed in.
     if (phase === 'error') {
         return (
             <div style={styles.wrap}>
@@ -257,25 +298,12 @@ export default function GroupDepositScreen({ navigate, screenData = {} }) {
         );
     }
 
-    // Wallet not ready (Privy still booting OR user not authed)
-    if (!privyReady) {
+    // Wallet present but socket auth or match fetch still in flight.
+    if (phase === 'loading' || !isAuthenticated) {
         return (
             <div style={styles.wrap}>
                 <div style={styles.card}>
-                    <div style={styles.title}>Connecting wallet…</div>
-                </div>
-            </div>
-        );
-    }
-
-    if (!isAuthenticated || !walletAddress) {
-        return (
-            <div style={styles.wrap}>
-                <div style={styles.card}>
-                    <div style={styles.title}>Sign in to deposit</div>
-                    <div style={styles.subtitle}>You'll deposit <b>{formatSOL(wagerLamports)} SOL</b> into match <b>#{matchId}</b>.</div>
-                    <button style={styles.btnPrimary} onClick={() => login?.()}>Sign in</button>
-                    <button style={styles.btnSecondary} onClick={() => navigate('mygames')}>← My matches</button>
+                    <div style={styles.title}>Loading match…</div>
                 </div>
             </div>
         );

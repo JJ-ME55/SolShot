@@ -236,18 +236,14 @@ export function formatSettlementSuccess(match, txSignature) {
 export function formatShotResult(match, firer, weapon, totalDamage, eliminatedThisShot, damagedThisShot = []) {
     const weaponName = weapon?.name || `Weapon ${weapon?.weaponId ?? '?'}`;
 
-    // KO tier — at least one player eliminated.
-    // Use nameOnly for KO'd targets too (consistent with Just1Fishing's
-    // request not to ping). The KO line + alive count tells the chat
-    // exactly who's gone without spamming notifications.
+    // KO tier — at least one player eliminated. Single-line format per
+    // JJ's feedback ("no need for the 3 breakdown hits") — consolidates
+    // weapon + KO target(s) + alive count onto one row, separator-joined.
+    // Targets via nameOnly (no @-ping) consistent with the rest.
     if (eliminatedThisShot.length > 0) {
         const targets = eliminatedThisShot.map(p => `<b>${nameOnly(p)}</b>`).join(', ');
-        const lines = [
-            `💥 ${mention(firer)} fires <b>${escapeHtml(weaponName)}</b>`,
-            `${eliminatedThisShot.length === 1 ? 'KO' : `${eliminatedThisShot.length}× KO`}: ${targets}`,
-            `${aliveLine(match)}`,
-        ];
-        return lines.join('\n');
+        const koLabel = eliminatedThisShot.length === 1 ? 'KO' : `${eliminatedThisShot.length}× KO`;
+        return `💥 ${mention(firer)} fires <b>${escapeHtml(weaponName)}</b> — ${koLabel} ${targets} · ${aliveLine(match)}`;
     }
 
     // Build the per-target damage suffix from damagedThisShot. If absent

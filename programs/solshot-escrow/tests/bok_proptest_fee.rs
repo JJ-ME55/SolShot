@@ -46,6 +46,66 @@ mod bok_fee_invariants {
     const MAX_WAGER_LAMPORTS: u64 = 100_000_000_000;
 
     // ---------------------------------------------------------------
+    // POST-FIX-BUNDLE TIMING CONSTANTS — mirrored for INV-4 doc-integrity guard
+    // ---------------------------------------------------------------
+
+    /// 1-hour cancel/post-activation timeout. POST-H035-FIX: was 600s.
+    const TIMEOUT_SECONDS: i64 = 3_600;
+
+    /// 2-hour permissionless reclaim timeout (2x normal timeout).
+    /// POST-H040-FIX: was 1200s; comment-vs-value drift fixed.
+    const PERMISSIONLESS_RECLAIM_TIMEOUT: i64 = TIMEOUT_SECONDS * 2; // 7_200
+
+    // ---------------------------------------------------------------
+    // INV-4 (POST-H040-FIX) — comment-vs-value drift guard.
+    //
+    // Pre-H040: docstring claimed "48-hour reclaim" but value computed to 1200s
+    // (= 600 * 2 = 20 min). Operators planning incident-response SLAs against
+    // the comment had a 144x drift. Post-fix, the comment must read "2 hours"
+    // and the value must compute to 7200s (= 3600 * 2).
+    //
+    // The fee tests don't currently import program constants (all program
+    // constants in lib.rs are private). This runtime test mirrors the constants
+    // locally and asserts the post-fix value. Any future bump to TIMEOUT_SECONDS
+    // without doc updates will cause this test to fail.
+    // ---------------------------------------------------------------
+
+    /// INV-4 (compile-time): const_assert that PERMISSIONLESS_RECLAIM_TIMEOUT == 7200.
+    /// If a future change drifts the constant, this fails at compile time.
+    const _: () = assert!(
+        PERMISSIONLESS_RECLAIM_TIMEOUT == 7_200,
+        "INV-4 (POST-H040-FIX): PERMISSIONLESS_RECLAIM_TIMEOUT comment-vs-value \
+         drift detected — must equal 7200s (= 2 hours = 2 * TIMEOUT_SECONDS)"
+    );
+
+    /// INV-4 (runtime): The reclaim timeout exactly equals 2 * TIMEOUT_SECONDS,
+    /// and TIMEOUT_SECONDS is the post-H035-fix value (3600s).
+    #[test]
+    fn fee_inv_4_post_h040_reclaim_constant_matches_documented_value() {
+        assert_eq!(
+            TIMEOUT_SECONDS, 3_600,
+            "POST-H035-FIX: TIMEOUT_SECONDS must be 3600s (1 hour); was 600s pre-fix"
+        );
+        assert_eq!(
+            PERMISSIONLESS_RECLAIM_TIMEOUT,
+            TIMEOUT_SECONDS * 2,
+            "POST-H040-FIX: PERMISSIONLESS_RECLAIM_TIMEOUT must equal 2 * TIMEOUT_SECONDS"
+        );
+        assert_eq!(
+            PERMISSIONLESS_RECLAIM_TIMEOUT, 7_200,
+            "POST-H040-FIX: doc-comment must read '2-hour' / '7200 seconds' to match runtime value; \
+             pre-fix value was 1200s with stale '48-hour' comment"
+        );
+        // Defense against future drift via overflow.
+        let checked = TIMEOUT_SECONDS.checked_mul(2);
+        assert_eq!(
+            checked,
+            Some(PERMISSIONLESS_RECLAIM_TIMEOUT),
+            "checked_mul(2) must produce PERMISSIONLESS_RECLAIM_TIMEOUT exactly"
+        );
+    }
+
+    // ---------------------------------------------------------------
     // Local re-implementation of the settle_match arithmetic
     // ---------------------------------------------------------------
 

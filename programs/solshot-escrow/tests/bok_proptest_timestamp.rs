@@ -1,7 +1,13 @@
-//! BOK Proptest Suite: Timestamp & Duration Invariants (TS-INV-1 through TS-INV-6)
+//! BOK Proptest Suite: Timestamp & Duration Invariants
+//! (TS-INV-1 through TS-INV-6 + INV-3 H035-fix + INV-10 H017-fix)
 //!
 //! Verifies arithmetic safety, deadline ordering, constant relationships, and
 //! timeout reference logic for the SolShot escrow program's time-based operations.
+//!
+//! POST-FIX-BUNDLE CONSTANTS (2026-05-07):
+//!   - TIMEOUT_SECONDS:                3600 (was 600)  — H035 race-window fix
+//!   - PERMISSIONLESS_RECLAIM_TIMEOUT: 7200 (was 1200) — H040 doc-vs-code drift fix
+//!   - MIN_DEPOSIT_WINDOW_SECS:        600  (NEW)      — H017 silent-kick fix
 //!
 //! DEGRADED MODE: Proptest only (no Kani harnesses).
 //!
@@ -13,14 +19,23 @@ use proptest::prelude::*;
 // CONSTANTS — mirrored from programs/solshot-escrow/src/lib.rs
 // ─────────────────────────────────────────────────────────────
 
-/// 10-minute timeout for deposit window (ESC-10 — higher no-show risk with more players).
-const TIMEOUT_SECONDS: i64 = 600;
+/// 1-hour timeout for deposit window AND post-activation player-cancel (ESC-10).
+/// POST-H035-FIX: was 600s; raised to 3600s to align with SETTLEMENT_TIMEOUT_SECONDS
+/// and eliminate the simultaneous-validity race window.
+const TIMEOUT_SECONDS: i64 = 3_600;
 
-/// 20-minute permissionless reclaim timeout (2x normal timeout) -- DCA-02.
-const PERMISSIONLESS_RECLAIM_TIMEOUT: i64 = TIMEOUT_SECONDS * 2; // 1_200
+/// 2-hour permissionless reclaim timeout (2x normal timeout) — DCA-02.
+/// POST-H040-FIX: was 1200s; comment claimed 48h but math gave 20min. Now matches
+/// the comment: TIMEOUT_SECONDS (3600) * 2 = 7200s = 2 hours.
+const PERMISSIONLESS_RECLAIM_TIMEOUT: i64 = TIMEOUT_SECONDS * 2; // 7_200
 
 /// 1-hour settlement deadline after match activation (OC-07).
 const SETTLEMENT_TIMEOUT_SECONDS: i64 = 3_600;
+
+/// Minimum deposit-window duration before authority may activate via start_with_depositors.
+/// POST-H017-FIX (NEW): mirrors v2's deposit_window_secs gate — prevents silent-kick
+/// of in-flight depositors by the authority.
+const MIN_DEPOSIT_WINDOW_SECS: i64 = 600; // 10 minutes
 
 /// Earliest realistic Unix timestamp: 2020-01-01T00:00:00Z.
 const MIN_REALISTIC_TS: i64 = 1_577_836_800;
@@ -54,7 +69,7 @@ fn realistic_timestamp() -> impl Strategy<Value = i64> {
 }
 
 /// Strategy producing timestamps that would trigger overflow on the largest
-/// addition (PERMISSIONLESS_RECLAIM_TIMEOUT = 172800).
+/// addition (PERMISSIONLESS_RECLAIM_TIMEOUT = 7200, post-H040-fix).
 fn overflow_boundary_timestamp() -> impl Strategy<Value = i64> {
     (i64::MAX - PERMISSIONLESS_RECLAIM_TIMEOUT + 1)..=i64::MAX
 }
@@ -173,10 +188,11 @@ proptest! {
     /// TS-INV-1c (realistic range): `timeout_ref + PERMISSIONLESS_RECLAIM_TIMEOUT`
     /// must not overflow i64 for any realistic timestamp in [2020, 2100].
     ///
-    /// In v1.4, SETTLEMENT_TIMEOUT_SECONDS (3600) is the largest addition in the program.
-    /// PERMISSIONLESS_RECLAIM_TIMEOUT (1200) is second-largest. Both are tiny compared
-    /// to i64::MAX so overflow is not a practical concern, but checked_add is used for safety.
-    /// If this overflows, the last-resort permissionless fund recovery path is broken.
+    /// POST-H040-FIX: PERMISSIONLESS_RECLAIM_TIMEOUT is now 7200s (was 1200s).
+    /// It is now the largest constant addition in the program (>= SETTLEMENT_TIMEOUT_SECONDS).
+    /// Both are tiny compared to i64::MAX so overflow is not a practical concern,
+    /// but checked_add is used for safety. If this overflows, the last-resort
+    /// permissionless fund recovery path is broken.
     #[test]
     fn ts_inv_1c_reclaim_timeout_no_overflow_realistic(
         timeout_ref in realistic_timestamp()
@@ -254,17 +270,19 @@ proptest! {
 // =============================================================
 
 proptest! {
-    /// TS-INV-2: For any valid `activated_at`, the three deadlines maintain
-    /// strict ordering: cancel_deadline < reclaim_deadline < settle_deadline.
+    /// TS-INV-2 (POST-H035-FIX): For any valid `activated_at`, the three deadlines
+    /// satisfy the post-fix-bundle relationship:
+    ///     cancel_deadline == settle_deadline < reclaim_deadline
     ///
-    /// This is the foundation of the v1.4 match lifecycle timeout design:
-    /// - Cancel window opens after 10 minutes (TIMEOUT_SECONDS = 600)
-    /// - Permissionless reclaim opens after 20 minutes (2x TIMEOUT_SECONDS = 1200)
-    /// - Settlement window closes after 1 hour (SETTLEMENT_TIMEOUT_SECONDS = 3600)
+    /// This is the foundation of the v1 match lifecycle timeout design after H035:
+    /// - Cancel window opens after 1 hour (TIMEOUT_SECONDS = 3600)
+    /// - Settlement window closes at 1 hour (SETTLEMENT_TIMEOUT_SECONDS = 3600)
+    /// - Permissionless reclaim opens after 2 hours (PERMISSIONLESS_RECLAIM_TIMEOUT = 7200)
     ///
-    /// NOTE: With v1.4 (TIMEOUT_SECONDS=600), settlement and cancel windows OVERLAP
-    /// (cancel opens at 600s, settlement closes at 3600s). Mutual exclusion is now
-    /// STATE-enforced (not time-enforced) — see TS-INV-5 for details.
+    /// POST-H035-FIX: cancel_deadline and settle_deadline are now EQUAL. The
+    /// simultaneous-validity race window has collapsed to at most a single slot
+    /// (where settle is `<=` and cancel is `>`, so the boundary partitions cleanly).
+    /// See INV-3 below for the no-overlap proof.
     #[test]
     fn ts_inv_2_deadline_ordering(
         activated_at in realistic_timestamp()
@@ -279,17 +297,25 @@ proptest! {
             .checked_add(SETTLEMENT_TIMEOUT_SECONDS)
             .unwrap();
 
+        // POST-H035-FIX: cancel_deadline == settle_deadline (both at 3600s).
+        prop_assert_eq!(
+            cancel_deadline, settle_deadline,
+            "POST-H035-FIX: cancel_deadline must EQUAL settle_deadline at activated_at={}",
+            activated_at,
+        );
+
+        // reclaim_deadline (7200s) must be strictly greater than both.
         prop_assert!(
-            cancel_deadline < reclaim_deadline,
-            "cancel_deadline {} must be < reclaim_deadline {} (activated_at={})",
-            cancel_deadline,
+            reclaim_deadline > cancel_deadline,
+            "reclaim_deadline {} must be > cancel_deadline {} (activated_at={})",
             reclaim_deadline,
+            cancel_deadline,
             activated_at,
         );
 
         prop_assert!(
-            reclaim_deadline < settle_deadline,
-            "reclaim_deadline {} must be < settle_deadline {} (activated_at={})",
+            reclaim_deadline > settle_deadline,
+            "reclaim_deadline {} must be > settle_deadline {} (activated_at={})",
             reclaim_deadline,
             settle_deadline,
             activated_at,
@@ -297,14 +323,23 @@ proptest! {
     }
 }
 
-/// TS-INV-2 (static): Verify constant ordering holds at the constant level,
+/// TS-INV-2 (static, POST-H035-FIX): Verify constant ordering holds at the constant level,
 /// independent of any timestamp value.
 ///
-/// v1.4 ordering: TIMEOUT_SECONDS (600) < PERMISSIONLESS_RECLAIM_TIMEOUT (1200) < SETTLEMENT_TIMEOUT_SECONDS (3600)
-/// The 2x relationship between cancel and reclaim is preserved.
-/// Settlement window now CLOSES AFTER the cancel window opens (overlap — state-enforced mutual exclusion).
+/// Post-fix-bundle ordering:
+///   TIMEOUT_SECONDS == SETTLEMENT_TIMEOUT_SECONDS (3600) < PERMISSIONLESS_RECLAIM_TIMEOUT (7200)
+///
+/// The 2x relationship between cancel/settle and reclaim is now via TIMEOUT_SECONDS
+/// rather than PERMISSIONLESS_RECLAIM_TIMEOUT alone.
+/// Cancel and settle deadlines coincide — see INV-3 for the no-overlap partition.
 #[test]
 fn ts_inv_2_constant_ordering_static() {
+    assert_eq!(
+        TIMEOUT_SECONDS, SETTLEMENT_TIMEOUT_SECONDS,
+        "POST-H035-FIX: TIMEOUT_SECONDS ({}) must EQUAL SETTLEMENT_TIMEOUT_SECONDS ({})",
+        TIMEOUT_SECONDS,
+        SETTLEMENT_TIMEOUT_SECONDS,
+    );
     assert!(
         TIMEOUT_SECONDS < PERMISSIONLESS_RECLAIM_TIMEOUT,
         "TIMEOUT_SECONDS ({}) must be < PERMISSIONLESS_RECLAIM_TIMEOUT ({})",
@@ -312,27 +347,24 @@ fn ts_inv_2_constant_ordering_static() {
         PERMISSIONLESS_RECLAIM_TIMEOUT,
     );
     assert!(
-        PERMISSIONLESS_RECLAIM_TIMEOUT < SETTLEMENT_TIMEOUT_SECONDS,
-        "PERMISSIONLESS_RECLAIM_TIMEOUT ({}) must be < SETTLEMENT_TIMEOUT_SECONDS ({})",
+        SETTLEMENT_TIMEOUT_SECONDS < PERMISSIONLESS_RECLAIM_TIMEOUT,
+        "SETTLEMENT_TIMEOUT_SECONDS ({}) must be < PERMISSIONLESS_RECLAIM_TIMEOUT ({})",
+        SETTLEMENT_TIMEOUT_SECONDS,
         PERMISSIONLESS_RECLAIM_TIMEOUT,
-        SETTLEMENT_TIMEOUT_SECONDS,
-    );
-    // Note: SETTLEMENT_TIMEOUT_SECONDS (3600) > TIMEOUT_SECONDS (600) — windows overlap.
-    // Mutual exclusion for settle vs cancel is now STATE-enforced (see TS-INV-5).
-    assert!(
-        SETTLEMENT_TIMEOUT_SECONDS > TIMEOUT_SECONDS,
-        "SETTLEMENT_TIMEOUT_SECONDS ({}) must be > TIMEOUT_SECONDS ({}) (overlap is expected)",
-        SETTLEMENT_TIMEOUT_SECONDS,
-        TIMEOUT_SECONDS,
     );
 }
 
-/// TS-INV-2 (static): Verify exact constant values match the specification.
+/// TS-INV-2 (static, POST-FIX-BUNDLE): Verify exact constant values match the
+/// post-fix-bundle specification (TIMEOUT_SECONDS=3600, RECLAIM=7200, MIN_DEPOSIT=600).
 #[test]
 fn ts_inv_2_constant_values_exact() {
     assert_eq!(SETTLEMENT_TIMEOUT_SECONDS, 3_600, "Settlement timeout must be 1 hour");
-    assert_eq!(TIMEOUT_SECONDS, 600, "Cancel timeout must be 10 minutes");
-    assert_eq!(PERMISSIONLESS_RECLAIM_TIMEOUT, 1_200, "Reclaim timeout must be 20 minutes");
+    assert_eq!(TIMEOUT_SECONDS, 3_600,
+        "POST-H035-FIX: Cancel timeout must be 1 hour (was 600s pre-fix)");
+    assert_eq!(PERMISSIONLESS_RECLAIM_TIMEOUT, 7_200,
+        "POST-H040-FIX: Reclaim timeout must be 2 hours (was 1200s pre-fix)");
+    assert_eq!(MIN_DEPOSIT_WINDOW_SECS, 600,
+        "POST-H017-FIX: Minimum deposit window must be 10 minutes");
 }
 
 // =============================================================
@@ -370,23 +402,24 @@ fn ts_inv_3_constant_relationship_2x() {
     );
 }
 
-/// TS-INV-3 (static): Settlement timeout is strictly greater than both cancel/reclaim constants.
+/// TS-INV-3 (static, POST-FIX-BUNDLE): Permissionless reclaim is strictly greater
+/// than both cancel and settle constants.
 ///
-/// v1.4 relationship: TIMEOUT_SECONDS (600) < PERMISSIONLESS_RECLAIM_TIMEOUT (1200) < SETTLEMENT_TIMEOUT_SECONDS (3600)
-/// Settlement is the LARGEST constant — the authority has the most time to settle.
+/// Post-fix relationship: TIMEOUT_SECONDS == SETTLEMENT_TIMEOUT_SECONDS (3600) < PERMISSIONLESS_RECLAIM_TIMEOUT (7200)
+/// Reclaim is now the LARGEST constant — the most permissive recovery path.
 #[test]
-fn ts_inv_3_settlement_less_than_all() {
+fn ts_inv_3_reclaim_greater_than_all() {
     assert!(
-        SETTLEMENT_TIMEOUT_SECONDS > TIMEOUT_SECONDS,
-        "Settlement ({}) must be > Cancel ({}) in v1.4",
-        SETTLEMENT_TIMEOUT_SECONDS,
+        PERMISSIONLESS_RECLAIM_TIMEOUT > TIMEOUT_SECONDS,
+        "Reclaim ({}) must be > Cancel ({}) post-fix",
+        PERMISSIONLESS_RECLAIM_TIMEOUT,
         TIMEOUT_SECONDS,
     );
     assert!(
-        SETTLEMENT_TIMEOUT_SECONDS > PERMISSIONLESS_RECLAIM_TIMEOUT,
-        "Settlement ({}) must be > Reclaim ({}) in v1.4",
-        SETTLEMENT_TIMEOUT_SECONDS,
+        PERMISSIONLESS_RECLAIM_TIMEOUT > SETTLEMENT_TIMEOUT_SECONDS,
+        "Reclaim ({}) must be > Settlement ({}) post-fix",
         PERMISSIONLESS_RECLAIM_TIMEOUT,
+        SETTLEMENT_TIMEOUT_SECONDS,
     );
 }
 
@@ -510,22 +543,24 @@ fn ts_inv_4_edge_activated_at_one() {
 // =============================================================
 
 proptest! {
-    /// TS-INV-5 (v1.4): With TIMEOUT_SECONDS=600 and SETTLEMENT_TIMEOUT_SECONDS=3600,
-    /// the settlement and cancel time windows DO overlap.
+    /// TS-INV-5 (POST-H035-FIX): With TIMEOUT_SECONDS == SETTLEMENT_TIMEOUT_SECONDS == 3600,
+    /// the settlement and cancel time windows do NOT overlap.
     ///
-    /// Settlement succeeds when: `now <= activated_at + SETTLEMENT_TIMEOUT_SECONDS` (3600s)
-    /// Cancel (timeout) succeeds when: `now > activated_at + TIMEOUT_SECONDS` (600s)
+    /// Settlement succeeds when: `now <= activated_at + SETTLEMENT_TIMEOUT_SECONDS` (≤ 3600s)
+    /// Cancel (timeout) succeeds when: `now > activated_at + TIMEOUT_SECONDS` (> 3600s)
     ///
-    /// Overlap zone: `activated_at + 600 < now <= activated_at + 3600`
-    /// Both conditions can be true simultaneously for a 3000-second window.
+    /// At the boundary `now == activated_at + 3600`:
+    ///   can_settle = (3600 ≤ 3600) = true
+    ///   can_cancel = (3600 > 3600) = false
+    /// At the next slot `now == activated_at + 3601`:
+    ///   can_settle = (3601 ≤ 3600) = false
+    ///   can_cancel = (3601 > 3600) = true
     ///
-    /// MUTUAL EXCLUSION IS NOW STATE-ENFORCED, NOT TIME-ENFORCED:
-    ///   - settle_match requires state == Active, sets state = Settled (terminal)
-    ///   - cancel_match requires state != Settled && != Cancelled, sets state = Cancelled (terminal)
-    ///   - Once either executes, the other cannot run again
-    ///   - Only the authority (server) can settle, so this is safe in practice
+    /// Overlap zone: ∅ (empty). Mutual exclusion is now TIME-ENFORCED.
+    /// State-machine enforcement remains as defense-in-depth.
     ///
-    /// This test documents that the overlap EXISTS (proving state enforcement is necessary).
+    /// This test asserts that NO valid (activated_at, now) pair exists where both
+    /// can_settle and can_cancel_timeout are simultaneously true.
     #[test]
     fn ts_inv_5_settlement_cancel_mutual_exclusion(
         activated_at in realistic_timestamp(),
@@ -541,65 +576,71 @@ proptest! {
         let can_settle = now <= settle_deadline;
         let can_cancel_timeout = now > cancel_deadline;
 
-        // v1.4: Overlap IS possible. Verify the overlap zone is exactly what we expect.
-        // If both are true, we must be in the overlap zone: [cancel_deadline+1, settle_deadline]
-        if can_settle && can_cancel_timeout {
-            prop_assert!(
-                now > cancel_deadline && now <= settle_deadline,
-                "Overlap zone check failed: now={}, cancel_deadline={}, settle_deadline={}",
-                now, cancel_deadline, settle_deadline,
-            );
-        }
+        // POST-H035-FIX: race window has collapsed. The two conditions are mutually
+        // exclusive at every timestamp.
+        prop_assert!(
+            !(can_settle && can_cancel_timeout),
+            "POST-H035-FIX violation: race re-opened at activated_at={}, now={}, \
+             cancel_deadline={}, settle_deadline={}",
+            activated_at, now, cancel_deadline, settle_deadline,
+        );
     }
 }
 
-/// TS-INV-5 (static proof v1.4): Mutual exclusion is STATE-enforced, not time-enforced.
+/// TS-INV-5 (static proof, POST-H035-FIX): Mutual exclusion is now TIME-ENFORCED.
 ///
-/// With TIMEOUT_SECONDS=600 and SETTLEMENT_TIMEOUT_SECONDS=3600:
-///   - Cancel window opens at: activated_at + 600
-///   - Settlement window closes at: activated_at + 3600
-///   - Overlap zone: 3000 seconds (600 to 3600 from activation)
+/// With TIMEOUT_SECONDS == SETTLEMENT_TIMEOUT_SECONDS == 3600:
+///   - Cancel window opens at: activated_at + 3600 (strict >)
+///   - Settlement window closes at: activated_at + 3600 (inclusive ≤)
+///   - Overlap zone: ∅ (empty)
 ///
-/// The program prevents double-drain via the state machine:
+/// State-machine enforcement remains as defense-in-depth:
 ///   - settle_match requires state == Active, sets state = Settled
 ///   - cancel_match requires state != Settled && != Cancelled, sets state = Cancelled
-///   - Both are terminal states — once set, the other instruction cannot execute
-///
-/// This is safe because only the authority (server keypair) can call settle_match.
 #[test]
 fn ts_inv_5_mutual_exclusion_static_proof() {
-    // v1.4: Overlap exists — settle closes AFTER cancel opens
+    // POST-H035-FIX: cancel and settle deadlines coincide.
     let overlap_size = SETTLEMENT_TIMEOUT_SECONDS - TIMEOUT_SECONDS;
     assert_eq!(
-        overlap_size,
-        3_000,
-        "Overlap between cancel and settlement windows must be 3000 seconds"
-    );
-    assert!(
-        overlap_size > 0,
-        "Windows overlap in v1.4 — mutual exclusion is state-enforced"
+        overlap_size, 0,
+        "POST-H035-FIX: overlap between cancel and settlement windows must be 0"
     );
 
-    // For activated_at = 0 (simplest case):
+    // Boundary partition check.
     let activated_at: i64 = 0;
-    let cancel_start = activated_at + TIMEOUT_SECONDS;      // 600
-    let settle_end = activated_at + SETTLEMENT_TIMEOUT_SECONDS; // 3600
-
-    // Overlap: (cancel_start, settle_end] is non-empty
-    assert!(
-        cancel_start < settle_end,
-        "Cancel opens ({}) before settle closes ({}) — overlap confirmed",
-        cancel_start,
-        settle_end,
+    let cancel_open_at = activated_at + TIMEOUT_SECONDS;      // 3600
+    let settle_close_at = activated_at + SETTLEMENT_TIMEOUT_SECONDS; // 3600
+    assert_eq!(
+        cancel_open_at, settle_close_at,
+        "POST-H035-FIX: cancel_open_at must equal settle_close_at"
     );
 
-    // The 2x-timeout reclaim also fits within the overlap zone
-    let reclaim_start = activated_at + PERMISSIONLESS_RECLAIM_TIMEOUT; // 1200
+    // At the boundary: can_settle = true, can_cancel = false (no overlap)
+    let now = activated_at + 3_600;
+    let can_settle = now <= settle_close_at;
+    let can_cancel = now > cancel_open_at;
+    assert!(can_settle, "settle valid at exact boundary");
+    assert!(!can_cancel, "cancel NOT valid at exact boundary");
+
+    // One slot later: roles flip, still no overlap
+    let now = activated_at + 3_601;
+    let can_settle = now <= settle_close_at;
+    let can_cancel = now > cancel_open_at;
+    assert!(!can_settle, "settle expired one slot past boundary");
+    assert!(can_cancel, "cancel valid one slot past boundary");
+
+    // Reclaim opens AFTER settle expires (1h gap between settle deadline and reclaim opening).
+    let reclaim_open_at = activated_at + PERMISSIONLESS_RECLAIM_TIMEOUT; // 7200
     assert!(
-        reclaim_start < settle_end,
-        "Reclaim opens ({}) before settle closes ({}) — also in overlap",
-        reclaim_start,
-        settle_end,
+        reclaim_open_at > settle_close_at,
+        "Reclaim opens ({}) AFTER settle closes ({}) post-fix",
+        reclaim_open_at,
+        settle_close_at,
+    );
+    assert_eq!(
+        reclaim_open_at - settle_close_at,
+        TIMEOUT_SECONDS,
+        "Gap between settle close and reclaim open must equal TIMEOUT_SECONDS"
     );
 }
 
@@ -608,14 +649,14 @@ fn ts_inv_5_mutual_exclusion_static_proof() {
 // =============================================================
 
 proptest! {
-    /// TS-INV-6: `reclaim_deadline > cancel_deadline` always holds, and the gap
-    /// is exactly `TIMEOUT_SECONDS` (24 hours).
+    /// TS-INV-6 (POST-FIX-BUNDLE): `reclaim_deadline > cancel_deadline` always
+    /// holds, and the gap is exactly `TIMEOUT_SECONDS` (now 3600s = 1 hour post-fix).
     ///
     /// The permissionless reclaim window opens strictly after the cancel window.
     /// This ensures:
-    /// - Players get the first opportunity to cancel (24h)
-    /// - Only after an additional 24h does anyone in the world get to reclaim
-    /// - The gap is exactly one `TIMEOUT_SECONDS` period
+    /// - Players get the first opportunity to cancel (1 hour after activation)
+    /// - Only after an additional 1 hour does anyone in the world get to reclaim
+    /// - The algebraic gap is exactly one `TIMEOUT_SECONDS` period
     #[test]
     fn ts_inv_6_reclaim_subsumes_cancel(
         timeout_ref in realistic_timestamp()
@@ -647,14 +688,15 @@ proptest! {
     }
 }
 
-/// TS-INV-6 (static): The gap between reclaim and cancel is derived from constants.
+/// TS-INV-6 (static, POST-FIX-BUNDLE): The gap between reclaim and cancel
+/// is derived from constants.
 ///
 /// reclaim_deadline - cancel_deadline
 ///   = (timeout_ref + PERMISSIONLESS_RECLAIM_TIMEOUT) - (timeout_ref + TIMEOUT_SECONDS)
 ///   = PERMISSIONLESS_RECLAIM_TIMEOUT - TIMEOUT_SECONDS
 ///   = 2 * TIMEOUT_SECONDS - TIMEOUT_SECONDS
 ///   = TIMEOUT_SECONDS
-///   = 600
+///   = 3600 (post-H035-fix; was 600 pre-fix)
 #[test]
 fn ts_inv_6_reclaim_cancel_gap_static() {
     let gap = PERMISSIONLESS_RECLAIM_TIMEOUT - TIMEOUT_SECONDS;
@@ -662,7 +704,7 @@ fn ts_inv_6_reclaim_cancel_gap_static() {
         gap, TIMEOUT_SECONDS,
         "Algebraic gap must equal TIMEOUT_SECONDS"
     );
-    assert_eq!(gap, 600, "Gap must be 600 seconds (10 minutes)");
+    assert_eq!(gap, 3_600, "Gap must be 3600 seconds (1 hour) post-fix");
 }
 
 // =============================================================
@@ -670,10 +712,10 @@ fn ts_inv_6_reclaim_cancel_gap_static() {
 // =============================================================
 
 proptest! {
-    /// Smoke test: Given a full lifecycle with both timestamps, all three
-    /// deadlines compute without overflow and maintain v1.4 ordering.
+    /// Smoke test (POST-FIX-BUNDLE): Given a full lifecycle with both timestamps,
+    /// all three deadlines compute without overflow and maintain post-fix ordering.
     ///
-    /// v1.4 ordering: cancel_deadline < reclaim_deadline < settle_deadline
+    /// Post-fix ordering: cancel(3600) == settle(3600) < reclaim(7200)
     #[test]
     fn full_lifecycle_deadlines_valid(
         created_at in realistic_timestamp(),
@@ -698,9 +740,165 @@ proptest! {
         let c = cancel.unwrap();
         let r = reclaim.unwrap();
 
-        // v1.4 ordering: cancel(600) < reclaim(1200) < settle(3600)
-        prop_assert!(c < r, "cancel {} must be < reclaim {}", c, r);
-        prop_assert!(r < s, "reclaim {} must be < settle {}", r, s);
+        // Post-fix ordering: cancel(3600) == settle(3600) < reclaim(7200)
+        prop_assert_eq!(c, s, "POST-H035-FIX: cancel {} must equal settle {}", c, s);
+        prop_assert!(r > s, "reclaim {} must be > settle {}", r, s);
+        prop_assert!(r > c, "reclaim {} must be > cancel {}", r, c);
+    }
+}
+
+// =============================================================
+// INV-3 (POST-H035-FIX): Cancel deadline equals settle deadline
+// =============================================================
+//
+// Post-fix-bundle invariant: TIMEOUT_SECONDS == SETTLEMENT_TIMEOUT_SECONDS,
+// so for every active match, cancel_deadline == settle_deadline.
+//
+// This is the CORE post-H035-fix invariant — the previous 3000s race window
+// where both can_cancel and can_settle could be true simultaneously is now
+// closed because the boundary partition `(settle: <=, cancel: >)` splits
+// the timeline cleanly at the shared deadline.
+
+/// INV-3 (static): The two constants that close the H035 race must be EQUAL.
+/// If anyone bumps either one without the other, the race window re-opens.
+#[test]
+fn inv_3_post_h035_fix_constants_equal() {
+    assert_eq!(
+        TIMEOUT_SECONDS, SETTLEMENT_TIMEOUT_SECONDS,
+        "POST-H035-FIX: TIMEOUT_SECONDS ({}) must EQUAL SETTLEMENT_TIMEOUT_SECONDS ({}) \
+         to keep the cancel/settle race window closed",
+        TIMEOUT_SECONDS,
+        SETTLEMENT_TIMEOUT_SECONDS,
+    );
+    assert_eq!(
+        TIMEOUT_SECONDS, 3_600,
+        "POST-H035-FIX: TIMEOUT_SECONDS must be 3600s (1 hour); was 600s pre-fix"
+    );
+}
+
+proptest! {
+    /// INV-3 (proptest, POST-H035-FIX): For every active match `(activated_at)`,
+    /// `cancel_deadline == settle_deadline`.
+    #[test]
+    fn inv_3_cancel_equals_settle_deadline(
+        activated_at in realistic_timestamp(),
+    ) {
+        let cancel_deadline = activated_at + TIMEOUT_SECONDS;
+        let settle_deadline = activated_at + SETTLEMENT_TIMEOUT_SECONDS;
+        prop_assert_eq!(
+            cancel_deadline,
+            settle_deadline,
+            "POST-H035-FIX: cancel_deadline must EQUAL settle_deadline for activated_at={}",
+            activated_at,
+        );
+    }
+
+    /// INV-3 (proptest, POST-H035-FIX): The race partition is clean — at every
+    /// (activated_at, now) pair, NOT both can_settle and can_cancel are true.
+    /// This is the property version of TS-INV-5's static partition check.
+    #[test]
+    fn inv_3_no_simultaneous_validity(
+        activated_at in realistic_timestamp(),
+        offset in -7_200i64..=7_200i64,
+    ) {
+        let now = activated_at + offset;
+        let cancel_open_at = activated_at + TIMEOUT_SECONDS;
+        let settle_close_at = activated_at + SETTLEMENT_TIMEOUT_SECONDS;
+        let can_cancel = now > cancel_open_at;
+        let can_settle = now <= settle_close_at;
+        prop_assert!(
+            !(can_cancel && can_settle),
+            "POST-H035-FIX violation: race re-opened at activated_at={}, offset={}, now={}",
+            activated_at, offset, now,
+        );
+    }
+}
+
+// =============================================================
+// INV-10 (POST-H017-FIX): Minimum Deposit Window Gate
+// =============================================================
+//
+// Post-fix invariant: v1's `start_with_depositors` requires
+// `now >= created_at + MIN_DEPOSIT_WINDOW_SECS` (600s = 10 min) before
+// the authority can compact the players array and activate the match.
+// This closes the H017 silent-kick window.
+
+/// INV-10 (static): MIN_DEPOSIT_WINDOW_SECS must be 600s and must not regress to 0.
+/// A regression to 0 re-opens the H017 silent-kick attack on in-flight depositors.
+#[test]
+fn inv_10_post_h017_min_deposit_window_did_not_regress() {
+    assert_eq!(
+        MIN_DEPOSIT_WINDOW_SECS, 600,
+        "POST-H017-FIX: MIN_DEPOSIT_WINDOW_SECS must remain 600s; do NOT regress"
+    );
+    assert!(
+        MIN_DEPOSIT_WINDOW_SECS > 0,
+        "Regression guard: H017 silent-kick attack returns at MIN_DEPOSIT_WINDOW_SECS == 0"
+    );
+}
+
+proptest! {
+    /// INV-10 (proptest, POST-H017-FIX): For every (created_at, now) pair,
+    /// `start_with_depositors` may proceed iff `now >= created_at + MIN_DEPOSIT_WINDOW_SECS`.
+    /// The gate partitions the timeline cleanly at the deposit deadline.
+    #[test]
+    fn inv_10_swd_gate_partition(
+        created_at in realistic_timestamp(),
+        offset in -700i64..=700i64,
+    ) {
+        let now = created_at + offset;
+        let deposit_deadline = created_at + MIN_DEPOSIT_WINDOW_SECS;
+        let gate_open = now >= deposit_deadline;
+        prop_assert_eq!(
+            gate_open,
+            offset >= MIN_DEPOSIT_WINDOW_SECS,
+            "INV-10 partition violation at created_at={}, offset={}, now={}, deadline={}",
+            created_at, offset, now, deposit_deadline,
+        );
+    }
+
+    /// INV-10 (proptest): At exactly `now == created_at + MIN_DEPOSIT_WINDOW_SECS`,
+    /// the gate must be OPEN (>=, inclusive boundary).
+    #[test]
+    fn inv_10_swd_gate_inclusive_at_boundary(
+        created_at in realistic_timestamp(),
+    ) {
+        let deposit_deadline = created_at + MIN_DEPOSIT_WINDOW_SECS;
+        let now = deposit_deadline; // exact boundary
+        let gate_open = now >= deposit_deadline;
+        prop_assert!(
+            gate_open,
+            "INV-10: gate must be OPEN at exact deadline (>= is inclusive); created_at={}",
+            created_at,
+        );
+    }
+
+    /// INV-10 (proptest): One slot before the deadline, the gate must be CLOSED.
+    #[test]
+    fn inv_10_swd_gate_closed_one_slot_early(
+        created_at in realistic_timestamp(),
+    ) {
+        let deposit_deadline = created_at + MIN_DEPOSIT_WINDOW_SECS;
+        let now = deposit_deadline - 1;
+        let gate_open = now >= deposit_deadline;
+        prop_assert!(
+            !gate_open,
+            "INV-10: gate must be CLOSED one slot before deadline; created_at={}",
+            created_at,
+        );
+    }
+
+    /// INV-10 (proptest): The deposit-deadline addition does not overflow for
+    /// realistic created_at values.
+    #[test]
+    fn inv_10_min_deposit_window_no_overflow_realistic(
+        created_at in realistic_timestamp(),
+    ) {
+        let result = created_at.checked_add(MIN_DEPOSIT_WINDOW_SECS);
+        prop_assert!(
+            result.is_some(),
+            "Deposit-deadline overflowed for created_at={}", created_at,
+        );
     }
 }
 
@@ -743,11 +941,11 @@ fn max_realistic_timestamp_headroom() {
     assert!(reclaim < i64::MAX);
 
     // Headroom from i64::MAX should be enormous
-    // In v1.4, settle (3600) is the largest deadline
-    let min_headroom = i64::MAX - settle; // settle is the largest in v1.4
+    // POST-FIX-BUNDLE: reclaim (7200) is the largest deadline
+    let min_headroom = i64::MAX - reclaim;
     assert!(
         min_headroom > 1_000_000_000_000_000_000,
-        "Headroom to i64::MAX from year-2100 settle should be > 1e18, got {}",
+        "Headroom to i64::MAX from year-2100 reclaim should be > 1e18, got {}",
         min_headroom,
     );
 }

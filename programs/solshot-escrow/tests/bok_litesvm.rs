@@ -33,15 +33,20 @@
 //   4. Uncomment the test code below
 // ======================================================================
 
-// Constants mirroring the on-chain program
+// Constants mirroring the on-chain program (POST-FIX-BUNDLE 2026-05-07)
 const TREASURY_BPS: u64 = 700;
 const OPS_BPS: u64 = 300;
 const BPS_DENOMINATOR: u64 = 10000;
 const MIN_WAGER_LAMPORTS: u64 = 10_000;
 const MAX_WAGER_LAMPORTS: u64 = 100_000_000_000;
-const TIMEOUT_SECONDS: i64 = 600;
+/// POST-H035-FIX: was 600s; raised to 3600s to align with SETTLEMENT_TIMEOUT_SECONDS
+const TIMEOUT_SECONDS: i64 = 3600;
+/// POST-H040-FIX: now 2 hours (= TIMEOUT_SECONDS * 2 = 7200s); was 1200s pre-fix
 const PERMISSIONLESS_RECLAIM_TIMEOUT: i64 = TIMEOUT_SECONDS * 2;
 const SETTLEMENT_TIMEOUT_SECONDS: i64 = 3600;
+/// POST-H017-FIX (NEW): 10-minute minimum deposit window before activation
+#[allow(dead_code)]
+const MIN_DEPOSIT_WINDOW_SECS: i64 = 600;
 
 /// Helper: compute fee split (mirrors on-chain settle_match arithmetic)
 fn settle_math(wager: u64) -> (u64, u64, u64, u64) {
@@ -246,7 +251,7 @@ fn ts_inv_4_timeout_reference_fallback_runtime_stub() {
     assert_eq!(timeout_reference(activated_at, created_at), created_at,
         "TS-INV-4: should fall back to created_at when not activated");
 
-    // Test B scenario
+    // Test B scenario (activation timestamp is arbitrary; just needs to be > 0)
     let activated_at = created_at + 600; // activated 10 minutes later
     assert_eq!(timeout_reference(activated_at, created_at), activated_at,
         "TS-INV-4: should use activated_at when activated");

@@ -14,7 +14,7 @@
  * the viewer's turn. Will hook into the existing Phaser scene.
  */
 
-import React, { useState, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { useTelegram } from '../telegram/TelegramContext';
 import { useSolShotWallet } from '../wallet/WalletContext';
 import BattlefieldPreview from '../components/BattlefieldPreview';
@@ -87,6 +87,16 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
     // Aim state lifted from FireControls so BattlefieldPreview can render
     // a live trajectory predictor on every slider change.
     const [aim, setAim] = useState({ angle: 45, power: 60 });
+    // Hold the Phaser scene mounted for ~4s after settlement so the killing
+    // shot's trajectory + impact + KO animation actually play. Without this,
+    // useFullScene flips false the instant match.state transitions
+    // active→settled (server bundles matchState='settled' inside the
+    // shotResult payload), so the scene unmounts before Phaser can render.
+    // Also drives the in-game VICTORY/DEFEAT overlay during the same window.
+    // GF9B post-mortem (May 7): Just1Fishing fired the winning shot, never
+    // saw it land — match-end view appeared instantly.
+    const [recentlySettled, setRecentlySettled] = useState(false);
+    const [showVictoryOverlay, setShowVictoryOverlay] = useState(false);
 
     const matchId = screenData.groupMatchId;
 
@@ -139,6 +149,28 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
         setLoading(true);
         window.socket.emit('getGroupMatch', { matchId });
     };
+
+    // Active→settled transition: keep the Phaser scene alive for ~4s so the
+    // killing shot's animation can play, and surface the VICTORY/DEFEAT
+    // overlay during that window. After the timer fires, useFullScene flips
+    // false and the standard settled view (rankings + AAR) takes over.
+    //
+    // Why 4s: matches handleShot's 3000ms delay on the chat post + the
+    // server-side 3500ms delay we just added on settleMatch's match-end
+    // post. Players get: animation plays → VICTORY overlay → match-end
+    // chat lands → standard rankings view.
+    const prevStateRef = useRef(null);
+    useEffect(() => {
+        const prev = prevStateRef.current;
+        const cur = match?.state;
+        if (prev === 'active' && cur === 'settled') {
+            setRecentlySettled(true);
+            setShowVictoryOverlay(true);
+            const t = setTimeout(() => setRecentlySettled(false), 4000);
+            return () => clearTimeout(t);
+        }
+        prevStateRef.current = cur;
+    }, [match?.state]);
 
     // Listen for shot results (response to a fireGroupShot we sent).
     useEffect(() => {
@@ -272,7 +304,12 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
     //
     // ACTIVE + spectator → SVG preview + slider UI in the scrollable layout.
     // LOBBY/SETTLED/CANCELLED → scrollable layout with full config + roster.
-    const useFullScene = match.state === 'active' && !!myPlayer;
+    //
+    // recentlySettled keeps the Phaser scene mounted for the killing-shot
+    // animation window. Once it expires the scene unmounts and the standard
+    // settled view (rankings, AAR) takes over.
+    const useFullScene = (match.state === 'active' && !!myPlayer)
+        || (match.state === 'settled' && !!myPlayer && recentlySettled);
 
     // Pre-battle shop gate: active match + viewer is a player + hasn't
     // locked in their loadout yet → show the weapon shop. Mirrors the
@@ -304,6 +341,8 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
         // inside GroupBattleWrapper) owns the top player bar, weapon picker,
         // angle/power sliders, FIRE button, gold display, wind readout —
         // same component the 1v1 BattleScreen uses, so identical UX.
+        const winnerTgId = match.state === 'settled' ? match.rankedFinishers?.[0] : null;
+        const viewerWon = winnerTgId != null && winnerTgId === myTgId;
         return (
             <div style={styles.fullBleed}>
                 <Suspense fallback={
@@ -316,6 +355,13 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
                         onLeaveMatch={() => navigate('menu')}
                     />
                 </Suspense>
+                {showVictoryOverlay && (
+                    <MatchEndOverlay
+                        match={match}
+                        viewerWon={viewerWon}
+                        onContinue={() => setShowVictoryOverlay(false)}
+                    />
+                )}
             </div>
         );
     }
@@ -1286,3 +1332,108 @@ const styles = {
         fontSize: 12,
     },
 };
+
+// ─── MatchEndOverlay ─────────────────────────────────────────────────────
+//
+// Shown over the Phaser scene when the match settles, while the killing-
+// shot animation plays out underneath. Two flavours:
+//
+//   viewerWon === true  → "VICTORY" stamp + winnings line
+//   viewerWon === false → "DEFEAT" stamp + winner credit
+//
+// Auto-dismisses on tap, or after 4s when the recentlySettled timer
+// fires and the parent unmounts the full-scene branch.
+//
+// Designed to feel like the OPFOR-stencil Trophy card the bot DMs you,
+// so the in-game moment matches the share-card brand.
+function MatchEndOverlay({ match, viewerWon, onContinue }) {
+    const winnerTgId = match?.rankedFinishers?.[0];
+    const winnerPlayer = winnerTgId
+        ? match.players?.find(p => p.telegramUserId === winnerTgId)
+        : null;
+    const winnerName = winnerPlayer?.callsign
+        || winnerPlayer?.tgUsername
+        || 'OPERATIVE';
+
+    // Estimate the winner payout for the headline. Mirrors botMessages
+    // estimateWinnerPayoutLamports — pot * (1 - feeBps/10000), where
+    // feeBps falls back to GlobalConfig defaults (700/300) if no per-match
+    // snapshot. Off by at most 2 lamports vs on-chain due to BPS-floor
+    // rounding (acceptable for display).
+    const wagerLamports = match?.config?.wagerLamports || 0;
+    const depositors = (match?.players || []).filter(p => p.initialDepositTx).length
+        || (match?.players || []).length;
+    const pot = wagerLamports * depositors;
+    const treasuryBps = match?.config?.fees?.treasuryBps ?? 700;
+    const opsBps = match?.config?.fees?.opsBps ?? 300;
+    const winnerPayout = pot - Math.floor((pot * treasuryBps) / 10000)
+        - Math.floor((pot * opsBps) / 10000);
+    const isWagered = match?.config?.type === 'wagered' && winnerPayout > 0;
+    const winnerPayoutSol = (winnerPayout / 1_000_000_000)
+        .toFixed(4)
+        .replace(/\.?0+$/, '') || '0';
+
+    const stamp = viewerWon ? 'VICTORY' : 'DEFEAT';
+    const stampColor = viewerWon ? 'var(--accent, #ff7a1a)' : 'var(--red, #a83a1f)';
+    const subtitle = viewerWon
+        ? (isWagered ? `+${winnerPayoutSol} SOL` : 'Last tank standing')
+        : `Winner: ${winnerName}`;
+
+    return (
+        <div
+            onClick={onContinue}
+            style={{
+                position: 'absolute', inset: 0, zIndex: 30,
+                background: 'rgba(10, 12, 8, 0.6)',
+                display: 'flex', flexDirection: 'column',
+                alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer',
+                pointerEvents: 'auto',
+                animation: 'matchend-fadein 0.4s ease-out',
+            }}
+        >
+            <style>{`
+                @keyframes matchend-fadein {
+                    from { opacity: 0; }
+                    to   { opacity: 1; }
+                }
+                @keyframes matchend-stamp {
+                    0%   { transform: scale(2.2) rotate(-8deg); opacity: 0; }
+                    60%  { transform: scale(0.92) rotate(-2deg); opacity: 1; }
+                    100% { transform: scale(1) rotate(-2deg); opacity: 1; }
+                }
+            `}</style>
+            <div style={{
+                fontFamily: "'Black Ops One', sans-serif",
+                fontSize: 56,
+                color: stampColor,
+                letterSpacing: '0.18em',
+                border: `4px solid ${stampColor}`,
+                padding: '14px 36px',
+                background: 'rgba(10, 12, 8, 0.85)',
+                animation: 'matchend-stamp 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
+            }}>
+                {stamp}
+            </div>
+            <div style={{
+                marginTop: 18,
+                fontFamily: "'Share Tech Mono', monospace",
+                fontSize: 14,
+                color: 'var(--bone, #fff8e8)',
+                letterSpacing: '0.22em',
+                opacity: 0.9,
+            }}>
+                {subtitle}
+            </div>
+            <div style={{
+                marginTop: 10,
+                fontFamily: "'Share Tech Mono', monospace",
+                fontSize: 9,
+                color: 'var(--olive, #6b7355)',
+                letterSpacing: '0.3em',
+            }}>
+                TAP TO CONTINUE
+            </div>
+        </div>
+    );
+}

@@ -827,13 +827,23 @@ export async function settleMatch(match, reason) {
 
     await match.save();
 
-    // PERF: chat post + history push + winner DM are best-effort follow-ups
-    // that historically blocked settleMatch's return. handleShot awaits
-    // checkAndSettle → settleMatch, so anything awaited here adds latency
-    // to the final shotResult broadcast that the killing player sees.
-    // Schedule them to run after the broadcast lands. Each is independently
-    // try/catch'd so one failure doesn't abort the others.
-    setImmediate(async () => {
+    // PERF + ORDERING: chat post + history push + winner DM are best-effort
+    // follow-ups that historically blocked settleMatch's return.
+    //
+    // The 3500ms delay ordering matters: handleShot's postShotSummary uses
+    // setTimeout(3000) so the killing-shot chat line lands AFTER the
+    // viewers' Phaser animation. If we post the match-end card via
+    // setImmediate, it overtakes the shot summary and the chat reads:
+    //   1. (penultimate) shot KO message
+    //   2. match-end card with rankings
+    //   3. (final) shot KO message ← out of order, looks like the match
+    //      ended before the killing shot
+    // GF9B post-mortem (May 7): both Just1Fishing and JJ noticed this in
+    // the live chat. Delay match-end by 3500ms so it always lands after
+    // the killing-shot summary that triggered it. For non-shot-triggered
+    // settles (forfeit, idle, time-cap), the 3.5s delay is harmless —
+    // there's no urgent UX dependency on the exact match-end timing.
+    setTimeout(async () => {
         try {
             await postToChat(match.chatId, botMessages.formatMatchEnd(match, reason));
         } catch (err) {
@@ -889,7 +899,7 @@ export async function settleMatch(match, reason) {
                 console.error(`[group-chat] settle on-chain crash for ${match.matchId}:`, err.message);
             }
         }
-    });
+    }, 3500);
 }
 
 /**

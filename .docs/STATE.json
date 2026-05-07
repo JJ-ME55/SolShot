@@ -53,12 +53,13 @@
       "completed": "2026-05-07",
       "type": "targeted_refresh",
       "trigger": "post-audit (SOS+BOK+DB) + v2 escrow + Privy migration + group-chat infrastructure",
-      "docs_refreshed": 6,
+      "docs_refreshed": 8,
       "docs_added": 2,
-      "docs_unchanged": 4,
+      "docs_unchanged": 2,
       "total_docs_now": 11,
-      "agents_spawned": 7,
-      "model": "sonnet"
+      "agents_spawned": 9,
+      "model": "sonnet",
+      "second_pass_2026-05-07": "After JJ flagged that player-facing docs (how-to-play, crypto-explainer) hadn't captured the TG-first flow, magic-link binding, Privy, and iOS WebView caveat — refreshed both with the actual current player journey."
     },
     "reconcile": {
       "status": "pending",

@@ -4,7 +4,7 @@
 
 ---
 
-SolShot lets players wager real SOL in PvP matches. This post explains exactly how the money flows — from deposit to settlement — and why you never have to trust us with your funds.
+SolShot lets players wager real SOL in PvP matches. This post explains exactly how the money flows from deposit to settlement, and why you never have to trust us with your funds.
 
 ## The Short Version
 
@@ -33,12 +33,12 @@ When both players accept the match, the SolShot server creates an escrow account
 Key points about the escrow:
 
 - It is a smart contract on Solana, not a wallet we control.
-- Nobody — not us, not either player — can withdraw from the escrow until the match result is submitted.
+- Nobody (not us, not either player) can withdraw from the escrow until the match result is submitted.
 - The escrow address and deposit transactions are publicly verifiable on any Solana block explorer.
 
 ### 3. The Match
 
-The match proceeds normally. Weapon shop, combat, terrain destruction. All server-authoritative — the physics and damage are calculated on our servers, not in your browser.
+The match proceeds normally. Weapon shop, combat, terrain destruction. All server-authoritative. The physics and damage are calculated on our servers, not in your browser.
 
 During the match, the escrow just sits there. Untouchable.
 
@@ -46,9 +46,9 @@ During the match, the escrow just sits there. Untouchable.
 
 When one player wins (opponent reaches 0 HP), the server calls the `settle_match` instruction on the smart contract. This single transaction distributes the pot:
 
-- **90% to the winner** — sent directly to their wallet
-- **7% to treasury** — funds game development and operations
-- **3% to operations** — covers server costs and gas fees
+- **90% to the winner.** Sent directly to their wallet.
+- **7% to treasury.** Funds game development and operations.
+- **3% to operations.** Covers server costs and gas fees.
 
 Settlement happens in under 2 seconds. The SOL appears in the winner's wallet immediately.
 
@@ -82,7 +82,7 @@ No. The settlement instruction requires a valid match result signed by the serve
 
 We could hold funds in a server-controlled wallet. Many games do this. The problem: you would have to trust us not to steal the funds, not to get hacked, and not to make mistakes with the math.
 
-On-chain escrow removes that trust requirement. The rules are encoded in a smart contract. The contract does exactly what it says, every time, verifiable by anyone. It is trustless — meaning you do not need to trust us at all.
+On-chain escrow removes that trust requirement. The rules are encoded in a smart contract. The contract does exactly what it says, every time, verifiable by anyone. It is trustless. You do not need to trust us at all.
 
 ## The Rake
 
@@ -90,7 +90,7 @@ SolShot takes a 10% total rake on wagered matches (7% treasury + 3% operations).
 
 For context, most poker platforms take 5-10% rake. Most crypto gaming platforms take 3-15%. Our 10% is competitive and clearly disclosed.
 
-The 7% treasury allocation funds continued game development: new weapons, terrain themes, tournaments, and infrastructure improvements. The 3% operations allocation covers server hosting, Solana gas fees, and database costs.
+The 7% treasury allocation funds continued game development: new weapons, terrain themes, tournaments and infrastructure improvements. The 3% operations allocation covers server hosting, Solana gas fees and database costs.
 
 ## Verifying Transactions
 

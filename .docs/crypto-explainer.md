@@ -31,7 +31,7 @@ That's the whole system. If you want to know more, keep reading.
 
 ## The Short Version
 
-When you wager SOL on a SolShot match, both players deposit their wager into an escrow account on the Solana blockchain. Nobody can touch those funds during the match -- not you, not your opponent, not even the SolShot server. When the match ends, the winner receives 90% of the total pot directly to their wallet. The remaining 10% is a fee: 7% goes to the SolShot treasury and 3% covers operations.
+When you wager SOL on a SolShot match, both players deposit their wager into an escrow account on the Solana blockchain. Nobody can touch those funds during the match. Not you, not your opponent, not even the SolShot server. When the match ends, the winner receives 90% of the total pot directly to their wallet. The remaining 10% is a fee: 7% goes to the SolShot treasury and 3% covers operations.
 
 That's it. You play, you win (or lose), the money moves automatically.
 
@@ -43,13 +43,13 @@ Think of it like a bank vault with a time lock.
 
 ### Both Players Deposit
 
-When you accept a wagered match, your wallet asks you to confirm the deposit. Your opponent does the same thing. Both deposits go into a single vault on the Solana blockchain -- a dedicated escrow account created just for your match. Once the funds are in, that vault is locked. No one can open it early.
+When you accept a wagered match, your wallet asks you to confirm the deposit. Your opponent does the same thing. Both deposits go into a single vault on the Solana blockchain: a dedicated escrow account created just for your match. Once the funds are in, that vault is locked. No one can open it early.
 
 If your opponent doesn't deposit within the funding window, you get a full refund. No match, no risk.
 
 ### The Match Plays Out
 
-While you're aiming, firing, and blowing up terrain, your SOL sits untouched in the vault. The blockchain isn't involved in gameplay at all -- it just holds the money. The game server handles physics, damage, gold, and everything you see on screen. You won't notice any delay from the blockchain; the total on-chain overhead is about 2 seconds across the entire match.
+While you're aiming, firing and blowing up terrain, your SOL sits untouched in the vault. The blockchain isn't involved in gameplay at all. It just holds the money. The game server handles physics, damage, gold, and everything you see on screen. You won't notice any delay from the blockchain. The total on-chain overhead is about 2 seconds across the entire match.
 
 ### The Winner Gets Paid
 
@@ -71,7 +71,7 @@ For group-chat matches with more than 2 players, the pot scales with the number 
 
 You don't need a separate crypto wallet app to play SolShot.
 
-SolShot uses Privy, an embedded wallet platform that lets you sign in with your email address, Google account, or Telegram. When you first authenticate, Privy creates a Solana wallet for you automatically -- it shows up as your connected wallet on the deposit and settlement screens.
+SolShot uses Privy, an embedded wallet platform that lets you sign in with your email address, Google account, or Telegram. When you first authenticate, Privy creates a Solana wallet for you automatically. It shows up as your connected wallet on the deposit and settlement screens.
 
 **What does this mean for you?**
 
@@ -91,11 +91,11 @@ Here's exactly what happens from sign-in to settlement.
 
 ### 1. You Sign In
 
-Go to [solshot.gg](https://solshot.gg) and tap Connect. Privy opens -- enter your email (or use Google or Telegram). That's it. Your embedded wallet is ready.
+Go to [solshot.gg](https://solshot.gg) and tap Connect. Privy opens. Enter your email (or use Google or Telegram). That's it. Your embedded wallet is ready.
 
 ### 2. You Bind via Telegram Bot (One-Time, for Wagered Matches)
 
-If you want to play wagered matches -- especially group-chat matches -- you link your Privy wallet to your Telegram identity once.
+If you want to play wagered matches, especially group-chat matches, you link your Privy wallet to your Telegram identity once.
 
 DM `@SolShotGG_bot` the command `/play`. The bot sends you a magic link. Tap it, your browser opens SolShot, Privy authenticates, and your wallet is bound to your Telegram account. You won't need to do this again unless you change Telegram accounts.
 
@@ -105,17 +105,17 @@ DM `@SolShotGG_bot` the command `/play`. The bot sends you a magic link. Tap it,
 
 ### 3. Both Players Deposit
 
-Once a match is set up, the server creates an escrow account on Solana and sends each player a deposit transaction to approve. Tap Confirm in your wallet -- Privy signs it. Your SOL moves from your wallet into the vault. Same for your opponent.
+Once a match is set up, the server creates an escrow account on Solana and sends each player a deposit transaction to approve. Tap Confirm in your wallet. Privy signs it. Your SOL moves from your wallet into the vault. Same for your opponent.
 
 If a player doesn't confirm within the funding window, the match is cancelled and all deposits are refunded in full.
 
 ### 4. You Play
 
-The match runs. Physics, damage, turns -- all server-authoritative. The blockchain is not involved in gameplay. Your SOL just sits in the vault waiting.
+The match runs. Physics, damage, turns: all server-authoritative. The blockchain is not involved in gameplay. Your SOL just sits in the vault waiting.
 
 ### 5. Winner Gets 90%. On-Chain. ~2 Seconds.
 
-Match ends. Server triggers settlement. One transaction: winner gets 90%, treasury gets 7%, ops gets 3%. Your SOL arrives in your Privy wallet. Funds never pass through the server -- they move directly from the vault to your wallet on-chain.
+Match ends. Server triggers settlement. One transaction: winner gets 90%, treasury gets 7%, ops gets 3%. Your SOL arrives in your Privy wallet. Funds never pass through the server. They move directly from the vault to your wallet on-chain.
 
 ---
 
@@ -134,13 +134,13 @@ For **group-chat (Telegram) matches**, turn timers are 12 hours. If you miss 3 c
 
 ### "What if the server crashes?"
 
-Your SOL is safe. The server doesn't hold your money -- the blockchain does. The server can crash, reboot, lose power, or vanish entirely, and your funds remain in the vault on-chain.
+Your SOL is safe. The server doesn't hold your money. The blockchain does. The server can crash, reboot, lose power, or vanish entirely, and your funds remain in the vault on-chain.
 
 Your funds have three independent escape paths:
 
-1. **Server recovery** -- The server restarts and settles based on last known game state. This is the normal path and handles the vast majority of disruptions.
-2. **Player cancel** -- If the server stays down, any registered player can trigger a cancel directly on-chain after the funding timeout expires. Both players get a full refund. No server required.
-3. **Permissionless reclaim** -- After a grace period, anyone can trigger a refund on-chain with no server involvement and no player authorization required:
+1. **Server recovery.** The server restarts and settles based on last known game state. This is the normal path and handles the vast majority of disruptions.
+2. **Player cancel.** If the server stays down, any registered player can trigger a cancel directly on-chain after the funding timeout expires. Both players get a full refund. No server required.
+3. **Permissionless reclaim.** After a grace period, anyone can trigger a refund on-chain with no server involvement and no player authorisation required:
    - **1v1 (real-time):** 2 hours after the match was created.
    - **Group-chat (Telegram):** 24 hours after the match end timestamp.
 
@@ -154,7 +154,7 @@ For a perfectly tied end state (same HP, same rounds won, no clear winner), both
 
 ### "What if my wallet disconnects but I'm still in the game?"
 
-Wallet connection and game connection are separate. Your game session runs over a direct connection to the server. Even if your wallet momentarily disconnects, the match continues. Your wallet is only needed for the initial deposit and to receive your winnings -- it's not involved in gameplay.
+Wallet connection and game connection are separate. Your game session runs over a direct connection to the server. Even if your wallet momentarily disconnects, the match continues. Your wallet is only needed for the initial deposit and to receive your winnings. It's not involved in gameplay.
 
 ---
 
@@ -170,7 +170,7 @@ When you tap a SolShot link inside the Telegram app on iPhone, Telegram may open
 2. Select **Open in Browser** (Safari or Chrome).
 3. The page reloads in your full browser. Privy loads correctly.
 
-This is a known iOS WebView limitation -- it doesn't affect your funds, your wallet, or anything on-chain. It's purely a login UX issue, and the workaround takes about three seconds.
+This is a known iOS WebView limitation. It doesn't affect your funds, your wallet, or anything on-chain. It's purely a login UX issue, and the workaround takes about three seconds.
 
 **Android** users generally don't encounter this issue. Telegram's in-app browser on Android handles Privy without problems in most cases.
 
@@ -188,26 +188,26 @@ Group-chat matches (started with `/customgame` in a Telegram group) use the same
 
 **Match end triggers:**
 - Last tank alive (all other players have been eliminated)
-- All turns exhausted -- the player with the most HP remaining wins
+- All turns exhausted, where the player with the most HP remaining wins
 - All players but one have been forfeited due to idle timeout
 - Manual forfeit by a player via the in-game menu
 
-**Recovery safety.** If the server goes offline during a long group-chat match, the permissionless reclaim path activates 24 hours after the match's scheduled end timestamp. Any player -- or anyone at all -- can trigger it and recover all deposited funds.
+**Recovery safety.** If the server goes offline during a long group-chat match, the permissionless reclaim path activates 24 hours after the match's scheduled end timestamp. Any player (or anyone at all) can trigger it and recover all deposited funds.
 
 ---
 
 ## Three Layers of Fund Safety
 
-No matter what happens -- to you, your opponent, or the SolShot server -- your SOL has three independent paths back to you.
+No matter what happens to you, your opponent, or the SolShot server, your SOL has three independent paths back to you.
 
-**Layer 1: Server Recovery**
-The server settles the match. This is the normal path. Settlement takes about 2 seconds. In the event of a transient failure (network blip, RPC timeout), the server retries automatically. Settlement failures propagate as errors -- they are never silently ignored.
+**Layer 1: Server Recovery.**
+The server settles the match. This is the normal path. Settlement takes about 2 seconds. In the event of a transient failure (network blip, RPC timeout), the server retries automatically. Settlement failures propagate as errors. They are never silently ignored.
 
-**Layer 2: Player Cancellation**
+**Layer 2: Player Cancellation.**
 If the server is unresponsive, any registered player can cancel the match directly on Solana after the funding window expires. This requires no server involvement. Both players receive full refunds.
 
-**Layer 3: Permissionless Reclaim**
-After the grace period -- 2 hours for 1v1 matches, 24 hours after the match-end timestamp for group-chat matches -- anyone can trigger a full refund. No authority key required. No player signature required. The caller receives the PDA rent as an economic incentive. This is the ultimate backstop: even if the server is permanently offline and no player acts, every escrow account becomes reclaimable.
+**Layer 3: Permissionless Reclaim.**
+After the grace period (2 hours for 1v1 matches, 24 hours after the match-end timestamp for group-chat matches), anyone can trigger a full refund. No authority key required. No player signature required. The caller receives the PDA rent as an economic incentive. This is the ultimate backstop. Even if the server is permanently offline and no player acts, every escrow account becomes reclaimable.
 
 ---
 
@@ -215,10 +215,10 @@ After the grace period -- 2 hours for 1v1 matches, 24 hours after the match-end 
 
 SolShot takes a 10% fee on every wagered match. Here's exactly where it goes:
 
-- **7% to the treasury** -- Funds development, infrastructure, and the SHOT token reward pool.
-- **3% to operations** -- Covers server costs, Solana transaction fees, and ongoing maintenance.
+- **7% to the treasury.** Funds development, infrastructure and the SHOT token reward pool.
+- **3% to operations.** Covers server costs, Solana transaction fees and ongoing maintenance.
 
-The fee is deducted from the total pot at settlement. If two players each wager 0.25 SOL (0.5 SOL total pot), the winner receives 0.45 SOL, the treasury receives 0.035 SOL, and operations receives 0.015 SOL. All three transfers happen in a single atomic transaction -- there's no partial payout state.
+The fee is deducted from the total pot at settlement. If two players each wager 0.25 SOL (0.5 SOL total pot), the winner receives 0.45 SOL, the treasury receives 0.035 SOL, and operations receives 0.015 SOL. All three transfers happen in a single atomic transaction. There's no partial payout state.
 
 For group-chat matches, the math scales with the number of depositors: four players at 0.25 SOL each = 1.0 SOL pot, 0.9 SOL to the winner, 0.07 to treasury, 0.03 to ops. Same percentages, larger absolute amounts.
 
@@ -228,7 +228,7 @@ The split is verified by independent mathematical analysis. 159 tests across all
 
 ## What About Gas?
 
-Solana transactions are cheap -- typically fractions of a cent each. SolShot handles the transaction fees for creating the escrow and settling the match. Your deposit is exactly the wager amount shown; no hidden gas surcharge on top.
+Solana transactions are cheap (typically fractions of a cent each). SolShot handles the transaction fees for creating the escrow and settling the match. Your deposit is exactly the wager amount shown. No hidden gas surcharge on top.
 
 ---
 
@@ -236,11 +236,11 @@ Solana transactions are cheap -- typically fractions of a cent each. SolShot han
 
 Three independent security analyses ran before mainnet:
 
-- **SOS (Stronghold of Security)** -- on-chain programs (Rust / Anchor). 50 attack hypotheses analyzed. Critical and high findings fixed before public testing.
-- **BOK (Book of Knowledge)** -- mathematical correctness of all financial arithmetic. 41 invariants verified. 159/159 tests passing.
-- **DB (Dinh's Bulwark)** -- server, client, bot, and database. Auth flows, rate limiting, identity binding, settlement logic.
+- **SOS (Stronghold of Security).** On-chain programs (Rust / Anchor). 50 attack hypotheses analysed. Critical and high findings fixed before public testing.
+- **BOK (Book of Knowledge).** Mathematical correctness of all financial arithmetic. 41 invariants verified. 159/159 tests passing.
+- **DB (Dinh's Bulwark).** Server, client, bot and database. Auth flows, rate limiting, identity binding, settlement logic.
 
-All findings, severity ratings, and fix decisions are published openly:
+All findings, severity ratings and fix decisions are published openly:
 
 - On-chain findings: `.audit/` and `Docs/REMEDIATION_DECISIONS.md`
 - Off-chain findings: `.bulwark/` and `Docs/DB_REMEDIATION_DECISIONS.md`
@@ -256,13 +256,13 @@ This section is for readers who want to know what "on-chain escrow" actually mea
 
 ### On-Chain Escrow
 
-SolShot uses a smart contract (called a "program" on Solana) that lives permanently on the blockchain. When you deposit SOL for a match, your funds go into a program-derived account -- an escrow address that the program controls, not the SolShot server. The program enforces the rules: it knows how much was deposited, who deposited it, and who is allowed to receive funds at settlement.
+SolShot uses a smart contract (called a "program" on Solana) that lives permanently on the blockchain. When you deposit SOL for a match, your funds go into a program-derived account: an escrow address that the program controls, not the SolShot server. The program enforces the rules. It knows how much was deposited, who deposited it, and who is allowed to receive funds at settlement.
 
-The SolShot server can trigger settlement, but it cannot choose where the funds go outside the registered player set. The on-chain program validates that the correct amounts go to the correct wallets -- the winner's wallet, the treasury, and the operations account. A compromised server key cannot redirect funds to a third-party wallet. It can only trigger settlement of existing matches to their original participants.
+The SolShot server can trigger settlement, but it cannot choose where the funds go outside the registered player set. The on-chain program validates that the correct amounts go to the correct wallets: the winner's wallet, the treasury and the operations account. A compromised server key cannot redirect funds to a third-party wallet. It can only trigger settlement of existing matches to their original participants.
 
 There are two escrow programs:
-- **v1** -- used for real-time 1v1 and multi-player duels (Quick Match, Duel, High Roller).
-- **v2** -- used for async Telegram group-chat matches (up to 10 players, 12-hour turns).
+- **v1.** Used for real-time 1v1 and multi-player duels (Quick Match, Duel, High Roller).
+- **v2.** Used for async Telegram group-chat matches (up to 10 players, 12-hour turns).
 
 ### Trustless Settlement
 
@@ -270,7 +270,7 @@ There are two escrow programs:
 
 ### Settlement Timing
 
-On-chain operations add about 2-3 seconds total per match: less than 2 seconds for Solana confirmation, under 1 second for server processing. During gameplay, no blockchain interaction occurs -- the chain is invisible until settlement.
+On-chain operations add about 2-3 seconds total per match: less than 2 seconds for Solana confirmation, under 1 second for server processing. During gameplay, no blockchain interaction occurs. The chain is invisible until settlement.
 
 ---
 

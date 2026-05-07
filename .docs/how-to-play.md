@@ -10,28 +10,28 @@ status: current
 SolShot is tank artillery built for Telegram group chats and the open web. Fire shots, destroy terrain, wager SOL on the outcome. Matches are server-authoritative, outcomes settle on-chain, and you don't need to know what any of that means to play.
 
 **Where to play:**
-- **Browser:** [solshot.gg](https://solshot.gg) — works in any modern browser, installable as a PWA
-- **Telegram:** [@SolShotGG_bot](https://t.me/SolShotGG_bot) — DM the bot or add it to any group chat
+- **Browser:** [solshot.gg](https://solshot.gg). Works in any modern browser, installable as a PWA.
+- **Telegram:** [@SolShotGG_bot](https://t.me/SolShotGG_bot). DM the bot or add it to any group chat.
 
 <!-- TODO: screenshot of solshot.gg main menu (PLAY / MY GAMES with active-turn badge / Armory / Barracks) -->
 
 ---
 
-## Quick Start — Three Paths
+## Quick Start: three paths
 
 ### Path A: Practice Mode vs Shot Bot (no wallet, ~10 seconds)
 
-**Practice mode pairs you against Shot Bot — SolShot's built-in AI opponent.** No matchmaking wait, no real opponent needed. You can practice any time.
+**Practice mode pairs you against Shot Bot, SolShot's built-in AI opponent.** No matchmaking wait, no real opponent needed. You can practice any time.
 
 1. Open [solshot.gg](https://solshot.gg).
-2. Hit the orange **PLAY** button — this opens the lobby with mode tabs.
+2. Hit the orange **PLAY** button. The lobby opens with mode tabs.
 3. Pick the **VS SHOT BOT** tab (leftmost). Pick your tank colour (white is reserved for Shot Bot).
-4. Hit **CREATE MATCH**. The match starts immediately — no opponent matchmaking. The Shop opens with 1,000 Gold.
-5. Take turns firing against Shot Bot. The bot picks weapons + aims based on the situation; expect it to whiff early shots and get sharper as the match goes on.
+4. Hit **CREATE MATCH**. The match starts immediately. No opponent matchmaking. The Shop opens with 1,000 Gold.
+5. Take turns firing against Shot Bot. The bot picks weapons and aims based on the situation. Expect it to whiff early shots and get sharper as the match goes on.
 
-No wallet. No wager. No real opponent required. Just tanks vs an AI that calibrates as it learns the field.
+No wallet. No wager. No real opponent required. Just tanks against an AI that calibrates as it learns the field.
 
-**About Shot Bot:** server-side AI that uses probabilistic aiming with calibration — random luck per shot, but it's improving from one shot to the next. Don't expect it to be a fixed difficulty curve; you'll get whiffs and clutch hits in the same match. Practice mode milestones still earn SHOT (at 25% the wagered rate), so prestige progression works here too.
+**About Shot Bot:** server-side AI that uses probabilistic aiming with calibration. Random luck per shot, but it's improving from one shot to the next. Don't expect a fixed difficulty curve. You'll get whiffs and clutch hits in the same match. Practice mode milestones still earn SHOT (at 25% the wagered rate), so prestige progression works here too.
 
 <!-- TODO: screenshot of a Practice match vs Shot Bot, mid-firing -->
 
@@ -42,7 +42,7 @@ No wallet. No wager. No real opponent required. Just tanks vs an AI that calibra
 You need a wallet bound once (see "Setting Up Your Wallet" below). After that:
 
 1. Open [solshot.gg](https://solshot.gg) and sign in with Privy.
-2. Hit **Deploy** and pick a wagered mode: Quick Match, Duel, or High Roller.
+2. Hit **Deploy** and pick a wagered mode: Quick Match, Duel or High Roller.
 3. Set your wager amount and match format.
 4. Confirm the deposit in your Privy wallet.
 5. Play. The winner's SOL arrives on-chain in about 2 seconds.
@@ -69,16 +69,16 @@ Best for a Telegram group with friends.
 
 ## Setting your callsign (one-time)
 
-Before your first match, SolShot asks you to pick a **callsign** — your in-game handle.
+Before your first match, SolShot asks you to pick a **callsign**. Your in-game handle.
 
 - 3 to 12 characters.
-- Letters, numbers, and underscores only (`a–z`, `A–Z`, `0–9`, `_`).
+- Letters, numbers and underscores only (`a–z`, `A–Z`, `0–9`, `_`).
 - Profanity-filtered.
 - Locked once confirmed. **It can't be changed.** No do-overs.
 
-This is the name that appears on every match card, every leaderboard, every Trophy DM. Choose carefully — the "LOCK IT IN" button means what it says.
+This is the name that appears on every match card, every leaderboard, every Trophy DM. Choose carefully. The "LOCK IT IN" button means what it says.
 
-The 12-character cap is deliberate: it's the max width that survives Telegram thumbnail compression on the Trophy / Career / Challenge cards without clipping.
+The 12-character cap is deliberate: it's the maximum width that survives Telegram thumbnail compression on the Trophy, Career and Challenge cards without clipping.
 
 (Code: `client/src/components/HandleModal.js`, validation in `client/src/utils/handleValidation.js`.)
 
@@ -88,13 +88,13 @@ The 12-character cap is deliberate: it's the max width that survives Telegram th
 
 ## Setting Up Your Wallet (One-Time)
 
-SolShot uses **Privy** embedded wallets. You don't need Phantom, MetaMask, or any browser extension. You sign in with email, Google, or Telegram, and Privy creates a Solana wallet for you automatically in the background.
+SolShot uses **Privy** embedded wallets. You don't need Phantom, MetaMask or any browser extension. You sign in with email, Google or Telegram, and Privy creates a Solana wallet for you automatically in the background.
 
 **Three login methods, all equal:**
 
-- **Email** — magic link, no password.
-- **Google** — one-tap OAuth.
-- **Telegram** — OAuth via the @SolShotGG_bot DM flow.
+- **Email.** Magic link, no password.
+- **Google.** One-tap OAuth.
+- **Telegram.** OAuth via the @SolShotGG_bot DM flow.
 
 **Steps via Telegram:**
 
@@ -107,8 +107,8 @@ SolShot uses **Privy** embedded wallets. You don't need Phantom, MetaMask, or an
 **Steps via web:**
 
 1. Open [solshot.gg](https://solshot.gg).
-2. Tap **Deploy** on a wagered mode — Privy will prompt sign-in.
-3. Pick email, Google, or Telegram. Done.
+2. Tap **Deploy** on a wagered mode. Privy will prompt sign-in.
+3. Pick email, Google or Telegram. Done.
 
 **After binding,** you can deposit and play from any group chat where the bot is active, or directly on solshot.gg.
 
@@ -116,11 +116,11 @@ SolShot uses **Privy** embedded wallets. You don't need Phantom, MetaMask, or an
 
 ### iOS note: WebView vs. your real browser
 
-Telegram on iPhone opens links inside its own in-app browser (WebView) by default. Privy wallet sign-in sometimes doesn't work cleanly in that environment — you may see the page load but the wallet flow stall or not complete.
+Telegram on iPhone opens links inside its own in-app browser (WebView) by default. Privy wallet sign-in sometimes doesn't work cleanly in that environment. You may see the page load but the wallet flow stall or fail to complete.
 
-**SolShot detects this for you.** If you're on an iPhone inside the Telegram WebView, the app shows a one-time banner at the top of the screen telling you exactly what to do — tap the share icon, then **Open in Browser** (Safari or Chrome). Complete the sign-in there. Once your wallet is bound and Privy has your session, gameplay works fine from either context.
+**SolShot detects this for you.** If you're on an iPhone inside the Telegram WebView, the app shows a one-time banner at the top of the screen telling you exactly what to do. Tap the share icon, then **Open in Browser** (Safari or Chrome). Complete the sign-in there. Once your wallet is bound and Privy has your session, gameplay works fine from either context.
 
-For the best experience on iPhone, open [solshot.gg](https://solshot.gg) in Safari, tap Share, and choose **Add to Home Screen**. SolShot also surfaces a native-looking install banner on iOS to walk you through this — installs as a fullscreen PWA with no browser chrome.
+For the best experience on iPhone, open [solshot.gg](https://solshot.gg) in Safari, tap Share, and choose **Add to Home Screen**. SolShot also surfaces a native-looking install banner on iOS to walk you through this. It installs as a fullscreen PWA with no browser chrome.
 
 ---
 
@@ -139,7 +139,7 @@ Hit **Deploy** from the main menu and choose your mode:
 
 ### 2. Deposit
 
-After matching, your wallet prompts you to confirm a deposit transaction. This sends your wager into a shared on-chain escrow. Neither player — and not even the server — can touch those funds until the match is over.
+After matching, your wallet prompts you to confirm a deposit transaction. This sends your wager into a shared on-chain escrow. Neither player can touch those funds until the match is over. Not even the server can.
 
 Both players must deposit within **1 hour**. If one player doesn't deposit in time, the other is automatically refunded in full.
 
@@ -174,18 +174,18 @@ After settlement, the bot DMs the winner a **Trophy share card** (see "Trophy DM
 
 ---
 
-## Custom Challenges — challenge a friend by link
+## Custom Challenges: challenge a friend by link
 
-Custom Challenges let you call out a specific player — DM the link, post it in a group, paste it anywhere. Anyone who taps it lands directly in your lobby.
+Custom Challenges let you call out a specific player. DM the link, post it in a group, paste it anywhere. Anyone who taps it lands directly in your lobby.
 
 **How it works:**
 
-1. From the main menu, tap **Deploy** → pick **Custom Challenge** mode.
+1. From the main menu, tap **Deploy** and pick **Custom Challenge** mode.
 2. Set your wager (any amount you can cover) and format (BO1 / BO3 / BO5).
-3. Tap **Create Challenge**. The server mints a 5-character challenge code and renders a **Duel Challenge Card** — a 1080×1080 PNG showing both your callsign + stats, the wager, the format, and the challenge code.
+3. Tap **Create Challenge**. The server mints a 5-character challenge code and renders a **Duel Challenge Card**, a 1080×1080 PNG showing both your callsign and stats, the wager, the format, and the challenge code.
 4. Two share options appear:
-   - **Share to Telegram** — opens TG with the card pre-attached and a `solshot.gg/c/<CODE>` deep link in the caption.
-   - **Copy link** — paste it anywhere.
+   - **Share to Telegram.** Opens TG with the card pre-attached and a `solshot.gg/c/<CODE>` deep link in the caption.
+   - **Copy link.** Paste it anywhere.
 5. Your friend taps the link. The Mini App opens to the **Challenge Accept** screen showing the terms and your card.
 6. They tap **Accept**, sign their deposit, and land in your lobby. Match begins.
 
@@ -197,12 +197,12 @@ The challenge code expires in 24 hours if no one accepts. You can cancel any tim
 
 ---
 
-## Career Card — your stats, shareable
+## Career Card: your stats, shareable
 
-Every player has a **Career Card** — a 1080×608 share image rendered server-side that summarises everything about your operative file:
+Every player has a **Career Card**: a 1080×608 share image rendered server-side that summarises everything about your operative file.
 
-- **Callsign + Registry ID** (your unique 4-hex tag)
-- **Tier** (Bronze → Diamond, with the prestige badge as a circular seal)
+- **Callsign and Registry ID** (your unique 4-hex tag)
+- **Tier** (Bronze to Diamond, with the prestige badge as a circular seal)
 - **Rank** (your position on the global leaderboard)
 - **Record** (W–L, win rate %)
 - **Total damage dealt** (lifetime HP)
@@ -220,20 +220,20 @@ Pull it up from your profile, share it to Telegram, or post it anywhere. The car
 
 ## Trophy DMs and sharing
 
-When you win a wagered match — 1v1 or group-chat — the bot DMs you a **Trophy share card** within seconds of settlement.
+When you win a wagered match (1v1 or group-chat), the bot DMs you a **Trophy share card** within seconds of settlement.
 
 **The card includes:**
 - Your callsign in 100pt stencil type
-- Your damage, accuracy %, total shots, MVP weapon
+- Your damage, accuracy %, total shots and MVP weapon
 - Final score (e.g. "2 – 1" for BO3)
-- Match ID, terrain biome, and duration
+- Match ID, terrain biome and duration
 - A "VICTORY" stamp slammed across it
 
 Two buttons attached:
-- **🔄 Find Another Match** — drops you straight back into matchmaking
-- **Open Barracks** / **My Games** — go to your stats or active matches
+- **🔄 Find Another Match.** Drops you straight back into matchmaking.
+- **Open Barracks** / **My Games.** Go to your stats or active matches.
 
-You can forward the card straight into the group chat where the match was posted, drop it in a different group, or save the PNG. The card renders fully server-side via Satori → resvg, so quality is consistent regardless of device.
+You can forward the card straight into the group chat where the match was posted, drop it in a different group, or save the PNG. The card renders fully server-side via Satori plus resvg, so quality is consistent regardless of device.
 
 (Code: `server/services/challenge/victoryDm.js` dispatch, `server/services/challenge/TrophyShareCard.js` design.)
 
@@ -241,20 +241,20 @@ You can forward the card straight into the group chat where the match was posted
 
 ---
 
-## My Games — your active group-chat matches
+## My Games: your active group-chat matches
 
 Async matches can run for hours or days. **My Games** is your home screen for tracking every group-chat match you're currently in.
 
 **How to reach it:**
-- DM `/mygames` to @SolShotGG_bot — opens the screen via deep link
-- Trophy DM "My Games" button after a group win
-- Direct: `solshot.gg/?startapp=mygames`
+- DM `/mygames` to @SolShotGG_bot. Opens the screen via deep link.
+- Trophy DM "My Games" button after a group win.
+- Direct: `solshot.gg/?startapp=mygames`.
 
 **What it shows:**
 - One card per active match
-- Match state: WAITING (lobby filling), IN PROGRESS (live), COMPLETE
+- Match state: WAITING (lobby filling), IN PROGRESS (live) or COMPLETE
 - Time remaining on your turn (e.g. "11h 45m")
-- Tap any card → **Take Your Shot** → opens the match
+- Tap any card, then **Take Your Shot**, to open the match
 
 If you're in zero matches, the screen pitches `/customgame` with a one-tap deep link.
 
@@ -264,7 +264,7 @@ If you're in zero matches, the screen pitches `/customgame` with a one-tap deep 
 
 ---
 
-## Referrals — bring a friend, both earn SHOT
+## Referrals: bring a friend, both earn SHOT
 
 SolShot has a two-sided referral program. Bring someone new in, and **both of you earn 25 SHOT** when they finish their first wagered match.
 
@@ -273,14 +273,14 @@ SolShot has a two-sided referral program. Bring someone new in, and **both of yo
 1. DM `/refer` to @SolShotGG_bot.
 2. The bot replies with your personal invite link: `solshot.gg/?startapp=rf_<CODE>`.
 3. Two buttons: **⚔ Send Invite** (opens TG inline-share with your code pre-attached) or **Open SolShot**.
-4. Send the link to a friend. They tap → SolShot opens → their account is silently attributed to you.
+4. Send the link to a friend. They tap, SolShot opens, and their account is silently attributed to you.
 5. When they finish their **first wagered match** (practice doesn't count), the SHOT lands in both wallets automatically.
 
 **Rules:**
 - One reward per invitee, ever (no farming the same person).
 - Self-referrals rejected.
-- First attribution wins — if a friend was already referred by someone else, your code doesn't overwrite it.
-- Treasury-subsidised — your 25 SHOT doesn't come out of anyone's balance.
+- First attribution wins. If a friend was already referred by someone else, your code doesn't overwrite it.
+- Treasury-subsidised. Your 25 SHOT doesn't come out of anyone's balance.
 
 (Code: `server/services/referrals.js`. Reward constant: `REFERRAL_REWARD_SHOT = 25`.)
 
@@ -305,13 +305,13 @@ Tap the deposit link in your DM. It opens solshot.gg with your match loaded. You
 
 ### Taking your shot
 
-When it's your turn, the bot sends a DM (and posts a prompt in the group chat) with a **"Take Your Shot"** button. Tap it. solshot.gg opens and loads directly into your active match. Aim, fire, and close the tab when you're done. Your shot is committed to the server — you don't need to stay in the app.
+When it's your turn, the bot sends a DM (and posts a prompt in the group chat) with a **"Take Your Shot"** button. Tap it. solshot.gg opens and loads directly into your active match. Aim, fire, and close the tab when you're done. Your shot is committed to the server. You don't need to stay in the app.
 
 Your turn timer is set per-match (4h / 12h / 24h). The bot sends a reminder if your timer is running low. **Quiet hours** (configurable, default 11pm–7am UTC) pause the timer overnight so async matches don't punish sleepers.
 
 ### Forfeits
 
-If you miss **3 consecutive turns**, you are automatically forfeited from the match. Your slot is removed and the remaining players continue. When you forfeit, you don't get your wager back — it stays in the pot for the eventual winner.
+If you miss **3 consecutive turns**, you are automatically forfeited from the match. Your slot is removed and the remaining players continue. When you forfeit, you don't get your wager back. It stays in the pot for the eventual winner.
 
 ### Buybacks (optional)
 
@@ -327,12 +327,12 @@ When only one tank remains alive, the server calls the on-chain settlement autom
 
 Four buttons:
 
-- **Deploy** — Find a match. This is your go-to. The bright orange one.
-- **Armory** — Browse cosmetic items: skins, patterns, trails, blast effects, kill effects. 28 items across 5 categories. Pay in SHOT (most) or SOL (premium exclusives).
-- **Prestige** — Burn SHOT tokens to unlock prestige tiers and exclusive weapons. More on this below.
-- **Barracks** — Customize your tank. Equip cosmetics, change colour, set your loadout.
+- **Deploy.** Find a match. This is your go-to. The bright orange one.
+- **Armory.** Browse cosmetic items: skins, patterns, trails, blast effects, kill effects. 28 items across 5 categories. Pay in SHOT (most) or SOL (premium exclusives).
+- **Prestige.** Burn SHOT tokens to unlock prestige tiers and exclusive weapons. More on this below.
+- **Barracks.** Customise your tank. Equip cosmetics, change colour, set your loadout.
 
-The header strip on every non-game screen also shows the **live SHOT/SOL price ticker** — pulled from Jupiter every minute, with 24h % change. Watching your token while you play.
+The header strip on every non-game screen also shows the **live SHOT/SOL price ticker**, pulled from Jupiter every minute, with 24h % change. Watch your token while you play.
 
 (Code: `client/src/components/ShotPriceTicker.js`.)
 
@@ -340,20 +340,20 @@ The header strip on every non-game screen also shows the **live SHOT/SOL price t
 
 ## Match Flow (Summary)
 
-Every match — practice, 1v1, or group-chat — follows the same core rhythm:
+Every match (practice, 1v1, or group-chat) follows the same core rhythm:
 
-1. **Deploy** — Pick a mode and get matched.
-2. **Shop** — Spend your Gold on weapons before each round.
-3. **Battle** — Alternate turns: angle, power, weapon, fire.
-4. **Round End** — HP hits 0 or turns run out. Round winner declared.
-5. **Repeat** — In BO3 / BO5, the Shop reopens. Play until a player has enough round wins.
-6. **Settlement** — Winner declared, SOL settles on-chain if wagered. Trophy DM sent to the winner.
+1. **Deploy.** Pick a mode and get matched.
+2. **Shop.** Spend your Gold on weapons before each round.
+3. **Battle.** Alternate turns: angle, power, weapon, fire.
+4. **Round End.** HP hits 0 or turns run out. Round winner declared.
+5. **Repeat.** In BO3 / BO5, the Shop reopens. Play until a player has enough round wins.
+6. **Settlement.** Winner declared. SOL settles on-chain if wagered. Trophy DM sent to the winner.
 
 ---
 
 ## Weapons
 
-SolShot has **15 base weapons** across six tiers, plus **5 prestige-exclusive weapons** unlocked by burning SHOT tokens. Every weapon has distinct physics — no reskins.
+SolShot has **15 base weapons** across six tiers, plus **5 prestige-exclusive weapons** unlocked by burning SHOT tokens. Every weapon has distinct physics. No reskins.
 
 ### Base Weapons
 
@@ -387,17 +387,17 @@ SolShot has **15 base weapons** across six tiers, plus **5 prestige-exclusive we
 
 ### Three Ways to Think About Weapons
 
-**Precision vs. forgiveness.** Single Shot rewards perfect aim (60 damage, small blast). Big Shot forgives bad aim (30 damage, enormous blast). Sniper Rifle is the ultimate gamble — 100 damage on a direct hit, but miss by 2 pixels and you get nothing.
+**Precision vs. forgiveness.** Single Shot rewards perfect aim (60 damage, small blast). Big Shot forgives bad aim (30 damage, enormous blast). Sniper Rifle is the ultimate gamble: 100 damage on a direct hit, but miss by 2 pixels and you get nothing.
 
 **Attack vs. terrain.** Dirt Ball and Magic Wall build cover. Pile Driver and Ground Hog destroy it. Napalm melts it. The battlefield changes with every shot.
 
-**Reliable vs. chaotic.** Heatseeker homes for guaranteed contact. Crazy Ivan scatters 15 random explosions and hopes for the best. Reliable weapons cost less gold; chaotic weapons are expensive but can end rounds instantly.
+**Reliable vs. chaotic.** Heatseeker homes for guaranteed contact. Crazy Ivan scatters 15 random explosions and hopes for the best. Reliable weapons cost less gold. Chaotic weapons are expensive but can end rounds instantly.
 
 ---
 
 ## Gold Economy
 
-Gold is earned during a match and spent at the Shop between rounds. It doesn't carry over between matches — every match starts fresh.
+Gold is earned during a match and spent at the Shop between rounds. It doesn't carry over between matches. Every match starts fresh.
 
 | Source | Amount |
 |---|---|
@@ -414,7 +414,7 @@ Gold is earned during a match and spent at the Shop between rounds. It doesn't c
 - **Balanced:** Heatseeker (500G) + 3 Shot (400G) = 900G
 - **Tactical:** Skipper (350G) + Spider (400G) + Magic Wall (200G) = 950G
 
-**Later rounds** open up. If you win round 1 and deal solid damage, you could have enough gold for Crazy Ivan (2,500G) by round 2. That's the natural power curve — play well early, unlock devastating weapons later.
+**Later rounds** open up. If you win round 1 and deal solid damage, you could have enough gold for Crazy Ivan (2,500G) by round 2. That's the natural power curve. Play well early, unlock devastating weapons later.
 
 The Legendary tier is deliberately out of reach in round 1. You earn your way to it.
 
@@ -422,7 +422,7 @@ The Legendary tier is deliberately out of reach in round 1. You earn your way to
 
 ## Wagering
 
-SolShot lets you wager real SOL on matches. The winner takes 90% of the pot. There's a 10% fee (7% to the treasury, 3% to operations) — that's it. All split values are fixed in the on-chain contract.
+SolShot lets you wager real SOL on matches. The winner takes 90% of the pot. There's a 10% fee (7% to the treasury, 3% to operations). That's it. All split values are fixed in the on-chain contract.
 
 ### Match Modes
 
@@ -437,15 +437,15 @@ SolShot lets you wager real SOL on matches. The winner takes 90% of the pot. The
 
 ### How Escrow Works
 
-Every wagered match uses an on-chain escrow. When you deposit, your SOL goes into a program-controlled account on Solana. The server cannot send those funds anywhere except back to a registered player (the legitimate winner or yourself in a refund). Settlement happens atomically — the contract distributes the full pot in a single transaction, with the math enforced in Rust.
+Every wagered match uses an on-chain escrow. When you deposit, your SOL goes into a program-controlled account on Solana. The server cannot send those funds anywhere except back to a registered player (the legitimate winner or yourself in a refund). Settlement happens atomically. The contract distributes the full pot in a single transaction, with the math enforced in Rust.
 
-You don't notice any of this during gameplay. It's just your normal turn-based match. The blockchain handles the money; you handle the aiming.
+You don't notice any of this during gameplay. It's just your normal turn-based match. The blockchain handles the money. You handle the aiming.
 
 ---
 
-## Cosmetics — the Armory
+## Cosmetics: the Armory
 
-The Armory holds **28 cosmetic items** across **5 categories**. Most are bought with SHOT, six premium pieces are SOL-only.
+The Armory holds **28 cosmetic items** across **5 categories**. Most are bought with SHOT. Six premium pieces are SOL-only.
 
 | Category | Icon | What it changes |
 |---|---|---|
@@ -455,9 +455,9 @@ The Armory holds **28 cosmetic items** across **5 categories**. Most are bought 
 | **SKIN** | `^` | Tank body finish (Stealth Black / Chrome / Gold Plated / Diamond Encrusted / Phantom Turret / Saga Edition) |
 | **KILL** | `!` | The animation when you destroy a tank (Confetti / Fireworks / Lightning Strike / Tactical Nuke / Validator Kill) |
 
-Tier coloring matches the weapon shop — TACTICAL (teal) → RARE (amber) → EPIC (purple) → LEGENDARY (red).
+Tier colouring matches the weapon shop. TACTICAL (teal), RARE (amber), EPIC (purple), LEGENDARY (red).
 
-You can equip one item per category. Equipping is free; the SHOT cost is a one-time burn.
+You can equip one item per category. Equipping is free. The SHOT cost is a one-time burn.
 
 (Code: `client/src/screens/ArmoryScreen.js`, item list in `client/src/data/tiers.js`.)
 
@@ -465,7 +465,7 @@ You can equip one item per category. Equipping is free; the SHOT cost is a one-t
 
 ## Prestige System
 
-The SHOT token is SolShot's utility token. You earn it by hitting gameplay milestones — completing your first wagered match, winning streaks, damage records. Every milestone is a one-time unlock.
+The SHOT token is SolShot's utility token. You earn it by hitting gameplay milestones: completing your first wagered match, winning streaks, damage records. Every milestone is a one-time unlock.
 
 Burn SHOT tokens at the **Prestige** screen to climb tiers. Each tier unlocks an exclusive weapon and cosmetic rewards (tank skins, kill effects, profile badges, name borders).
 
@@ -477,13 +477,13 @@ Burn SHOT tokens at the **Prestige** screen to climb tiers. Each tier unlocks an
 | Platinum | 2,500 SHOT | 4,400 | Chain Reaction |
 | Diamond | 4,000 SHOT | 8,400 | Pineapple |
 
-Burns are permanent. Once you burn SHOT for prestige, those tokens are gone forever. This makes prestige genuinely rare — reaching Diamond takes 8,400 SHOT and hundreds of hours of gameplay.
+Burns are permanent. Once you burn SHOT for prestige, those tokens are gone forever. This makes prestige genuinely rare. Reaching Diamond takes 8,400 SHOT and hundreds of hours of gameplay.
 
 Each prestige weapon is a real upgrade over the last. The Bronze Homing Missile matches Single Shot damage but adds guidance. The Diamond Pineapple splits into 20 fragments for up to 640 damage. High prestige players have access to 20 weapons versus 15 for everyone else.
 
 But prestige doesn't guarantee wins. Every prestige weapon can be countered with smart terrain play and precise aiming with base weapons. A new player with perfect aim beats a Diamond player who can't shoot straight.
 
-Practice mode milestones earn SHOT at a reduced rate (25%), so you can still progress without wagering — it just takes longer.
+Practice mode milestones earn SHOT at a reduced rate (25%), so you can still progress without wagering. It just takes longer.
 
 <!-- TODO: screenshot of PrestigeScreen showing the burn flow + Bronze→Diamond ladder -->
 
@@ -493,7 +493,7 @@ Practice mode milestones earn SHOT at a reduced rate (25%), so you can still pro
 
 There's a global leaderboard ranked by wins. Pull it up two ways:
 
-- DM `/leaderboard` to @SolShotGG_bot — top 10 in chat, plus your own rank if you're outside the top 10.
+- DM `/leaderboard` to @SolShotGG_bot. Top 10 in chat, plus your own rank if you're outside the top 10.
 - Tap the **Full Leaderboard** button in the bot reply to open the in-app version.
 
 Top 3 get medals (🥇🥈🥉). Your rank also appears as `#N` on your Career Card.
@@ -510,7 +510,7 @@ Wind affects your projectile horizontally and changes every round. Check the win
 
 ### Buy Multiple Weapons
 
-The Shop isn't "pick one weapon and go." You can buy several. A loadout of Heatseeker + Dirt Ball + 3 Shot gives you guided damage, terrain defense, and spread coverage. One weapon is a plan; three weapons are a strategy.
+The Shop isn't "pick one weapon and go." You can buy several. A loadout of Heatseeker + Dirt Ball + 3 Shot gives you guided damage, terrain defence and spread coverage. One weapon is a plan. Three weapons are a strategy.
 
 ### Save Gold in Multi-Round Matches
 
@@ -518,11 +518,11 @@ In Best of 3 or Best of 5, you don't have to spend everything in round 1. Going 
 
 ### Direct Hits Push Tanks
 
-When you take a direct hit, your tank gets knocked sideways. This changes your position for the next turn — and might push you off a cliff or out of cover. Be aware of it, and use it against your opponent. A well-placed shot can shove their tank into the open.
+When you take a direct hit, your tank gets knocked sideways. This changes your position for the next turn, and might push you off a cliff or out of cover. Be aware of it, and use it against your opponent. A well-placed shot can shove their tank into the open.
 
 ### In Group Matches, Don't Miss Turns
 
-After 3 consecutive missed turns in a group-chat match, you auto-forfeit and lose your wager. If you know you're going to be unavailable, the safest play is to fire a quick shot before you go — even a blind shot resets your forfeit counter.
+After 3 consecutive missed turns in a group-chat match, you auto-forfeit and lose your wager. If you know you're going to be unavailable, the safest play is to fire a quick shot before you go. Even a blind shot resets your forfeit counter.
 
 ---
 
@@ -534,7 +534,7 @@ The reconnect window is currently disabled. If you lose connection during a real
 
 ### You go dark mid-match (group-chat)
 
-Your slot is held. The turn timer runs for the duration the host configured (4h / 12h / 24h). If you miss your turn, the bot will try again on the next cycle. After 3 consecutive missed turns, you are auto-forfeited. You can always resume by tapping the "Take Your Shot" link from the bot — there's no reconnect window required.
+Your slot is held. The turn timer runs for the duration the host configured (4h / 12h / 24h). If you miss your turn, the bot will try again on the next cycle. After 3 consecutive missed turns, you are auto-forfeited. You can always resume by tapping the "Take Your Shot" link from the bot. There's no reconnect window required.
 
 ### The server goes down
 
@@ -544,7 +544,7 @@ Your SOL is safe on-chain regardless of what happens to the server. Three layers
 
 2. **Player cancel:** If the server stays down, either player can call `cancel_match` on-chain after the deposit timeout has elapsed. For 1v1 real-time matches, the deadline is 1 hour after activation. For group-chat matches, it's when the match-end timestamp passes.
 
-3. **Permissionless reclaim:** After a longer grace window, anyone on Solana can trigger a full refund — no server involvement required. The grace window is **2 hours** after creation for 1v1 matches, and **24 hours after match end** for group-chat matches. You do not need to do anything for this to work; it's a safety net callable by you or anyone else.
+3. **Permissionless reclaim:** After a longer grace window, anyone on Solana can trigger a full refund. No server involvement required. The grace window is **2 hours** after creation for 1v1 matches, and **24 hours after match end** for group-chat matches. You do not need to do anything for this to work. It's a safety net callable by you or anyone else.
 
 At no point can funds be permanently locked. Every scenario resolves to either correct settlement or full refund.
 
@@ -554,15 +554,15 @@ See the iOS note above. Tap the share icon in the Telegram browser and choose **
 
 ### You're not receiving Telegram messages from the bot
 
-The bot may be rate-limited on Telegram's end during busy periods. The best fallback is to go directly to [solshot.gg](https://solshot.gg) — your active matches are accessible there through the Lobby and My Games screens without needing the bot prompt.
+The bot may be rate-limited on Telegram's end during busy periods. The best fallback is to go directly to [solshot.gg](https://solshot.gg). Your active matches are accessible there through the Lobby and My Games screens without needing the bot prompt.
 
 ---
 
 ## What's coming
 
-The features below are designed and partially scaffolded — they're not live yet on devnet. Tracking them here so what you see today matches what you'll see in a few weeks.
+The features below are designed and partially scaffolded. They're not live yet on devnet. Tracking them here so what you see today matches what you'll see in a few weeks.
 
-### Consumables — in-match power-ups
+### Consumables: in-match power-ups
 
 Burn small amounts of SHOT to buy temporary boosts that last 5 matches. The system is scaffolded today (`server/services/consumables.js`) but only Overcharge ships in v1. The full menu planned:
 
@@ -586,7 +586,7 @@ A protocol-level buyback that uses a portion of treasury fees to repurchase SHOT
 
 ### Multi-day marathon match modes
 
-Group-chat matches currently cap at 24h turn timers (post-audit hardening — see SOS H039). The lobby UI already exposes "Marathon (7d)" duration, and longer per-turn timers are planned for post-mainnet rollout once we're confident in the stuck-match recovery path.
+Group-chat matches currently cap at 24h turn timers (post-audit hardening, see SOS H039). The lobby UI already exposes "Marathon (7d)" duration, and longer per-turn timers are planned for post-mainnet rollout once we're confident in the stuck-match recovery path.
 
 ### Expanded leaderboard
 
@@ -594,6 +594,6 @@ The current leaderboard is a single global "wins" board. Coming: per-mode boards
 
 ---
 
-**SolShot — Aim. Fire. Earn.**
+**SolShot. Aim. Fire. Earn.**
 
 [solshot.gg](https://solshot.gg) · [@SolShotGG_bot](https://t.me/SolShotGG_bot)

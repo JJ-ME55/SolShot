@@ -219,16 +219,29 @@ export function formatSettlementSuccess(match, txSignature) {
 
 /**
  * Posted after a successful shot. Tier-aware text:
- *   - Eliminated 1+ players → headline + standings
- *   - Massive hit (60+ HP)  → headline
- *   - Standard hit          → one-liner
+ *   - Eliminated 1+ players → headline + KO list + alive count
+ *   - Massive hit (60+ HP)  → headline + target name
+ *   - Standard hit          → one-liner with target(s)
+ *
+ * Targets are rendered via nameOnly() — visible to the chat but no @-ping.
+ * Per JJ's request: "say and not tag who JJ hit" — show the target without
+ * pinging them (avoids notification spam every shot, and the firer's
+ * @mention is already there for context).
+ *
+ * Multi-target shots (Crazy Ivan splash, Heatseeker chain, etc.) list each
+ * damaged player with their individual amount, joined with " · ".
  *
  * Phase 1e will add sticker selection on top of this for big-moment events.
  */
-export function formatShotResult(match, firer, weapon, totalDamage, eliminatedThisShot) {
+export function formatShotResult(match, firer, weapon, totalDamage, eliminatedThisShot, damagedThisShot = []) {
     const weaponName = weapon?.name || `Weapon ${weapon?.weaponId ?? '?'}`;
+
+    // KO tier — at least one player eliminated.
+    // Use nameOnly for KO'd targets too (consistent with Just1Fishing's
+    // request not to ping). The KO line + alive count tells the chat
+    // exactly who's gone without spamming notifications.
     if (eliminatedThisShot.length > 0) {
-        const targets = eliminatedThisShot.map(p => mention(p)).join(', ');
+        const targets = eliminatedThisShot.map(p => `<b>${nameOnly(p)}</b>`).join(', ');
         const lines = [
             `💥 ${mention(firer)} fires <b>${escapeHtml(weaponName)}</b>`,
             `${eliminatedThisShot.length === 1 ? 'KO' : `${eliminatedThisShot.length}× KO`}: ${targets}`,
@@ -236,10 +249,25 @@ export function formatShotResult(match, firer, weapon, totalDamage, eliminatedTh
         ];
         return lines.join('\n');
     }
+
+    // Build the per-target damage suffix from damagedThisShot. If absent
+    // (defensive), fall back to the legacy "— N HP" headline so older
+    // call sites + edge cases (self-damage only, weird physics) still
+    // produce a readable line.
+    const targetSuffix = damagedThisShot.length
+        ? damagedThisShot
+            .map(({ player, damage }) => `-${damage} HP ${nameOnly(player)}`)
+            .join(' · ')
+        : `${totalDamage} HP`;
+
+    // Massive-hit tier — same emoji elevation as before, with named targets.
     if (totalDamage >= 60) {
-        return `💥 ${mention(firer)} fires <b>${escapeHtml(weaponName)}</b> — <b>${totalDamage} HP</b> damage`;
+        return `💥 ${mention(firer)} fires <b>${escapeHtml(weaponName)}</b> — ${targetSuffix}`;
     }
-    return `🎯 ${mention(firer)} fires ${escapeHtml(weaponName)} — ${totalDamage} HP`;
+
+    // Standard tier — the one-liner JJ requested:
+    //   🎯 @jj_me fires Heatseeker: -50 HP PerryPeralta
+    return `🎯 ${mention(firer)} fires ${escapeHtml(weaponName)}: ${targetSuffix}`;
 }
 
 // ─── Quiet hours announcements ──────────────────────────────────────────

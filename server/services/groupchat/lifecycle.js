@@ -616,6 +616,13 @@ export async function handleShot(matchId, firerTgId, shot) {
     // Apply damage map
     let totalDamage = 0;
     const eliminatedThisShot = [];
+    // damagedThisShot collects every non-self target that took damage on
+    // this shot, paired with the applied amount. Drives the chat one-liner
+    // (e.g. "🎯 @jj_me fires Heatseeker: -50 HP PerryPeralta") so the
+    // group can see who got hit, not just the headline damage number.
+    // Self-damage is excluded — narrating "X hit themselves for Y" is
+    // already covered by the standard line which shows the firer.
+    const damagedThisShot = [];
     for (const [targetId, dmg] of Object.entries(result.damage || {})) {
         if (!dmg || dmg <= 0) continue;
         const targetIdx = match.players.findIndex(p => String(p.telegramUserId) === targetId);
@@ -627,6 +634,10 @@ export async function handleShot(matchId, firerTgId, shot) {
         target.hp = Math.max(0, target.hp - dmg);
         const applied = prevHp - target.hp;
         totalDamage += applied;
+
+        if (applied > 0 && targetIdx !== firerIdx) {
+            damagedThisShot.push({ player: target, damage: applied });
+        }
 
         if (target.hp <= 0) {
             target.eliminated = true;
@@ -679,7 +690,7 @@ export async function handleShot(matchId, firerTgId, shot) {
     // before the shell visually impacted on screen. Fire-and-forget; we
     // don't gate the socket return on chat post completion.
     setTimeout(() => {
-        postShotSummary(match, firer, weapon, totalDamage, eliminatedThisShot)
+        postShotSummary(match, firer, weapon, totalDamage, eliminatedThisShot, damagedThisShot)
             .catch(err => console.error('[group-chat] delayed postShotSummary error:', err));
     }, 3000);
 
@@ -786,12 +797,12 @@ export async function handleShot(matchId, firerTgId, shot) {
  *   - Standard hit → one-liner
  *   - Miss / glancing → silent (returns early)
  */
-async function postShotSummary(match, firer, weapon, totalDamage, eliminatedThisShot) {
+async function postShotSummary(match, firer, weapon, totalDamage, eliminatedThisShot, damagedThisShot = []) {
     if (totalDamage < 10 && eliminatedThisShot.length === 0) {
         // Silent tier — no chat post
         return;
     }
-    const text = botMessages.formatShotResult(match, firer, weapon, totalDamage, eliminatedThisShot);
+    const text = botMessages.formatShotResult(match, firer, weapon, totalDamage, eliminatedThisShot, damagedThisShot);
     await postToChat(match.chatId, text);
 }
 

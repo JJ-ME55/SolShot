@@ -87,13 +87,14 @@ export class MainScene extends Scene {
 
   preload = () => {
     this.load.image('wall', 'assets/images/wall.png');
-    // Load all 6 background themes — one is picked randomly in createBackground()
+    // Load the 5 background themes — one is picked randomly in createBackground().
+    // bg-default.png intentionally not preloaded; it duplicated bg-jungle's
+    // palette and the index entry was removed in the 012ff34 / 5455e8e fixes.
     this.load.image('bg-jungle', 'assets/images/backgrounds/bg-jungle.png');
     this.load.image('bg-arctic', 'assets/images/backgrounds/bg-arctic.png');
     this.load.image('bg-desert', 'assets/images/backgrounds/bg-desert.png');
     this.load.image('bg-moon', 'assets/images/backgrounds/bg-moon.png');
     this.load.image('bg-volcanic', 'assets/images/backgrounds/bg-volcanic.png');
-    this.load.image('bg-default', 'assets/images/backgrounds/bg-default.png');
     this.load.audio('background', ['assets/sounds/background.mp3']);
     this.load.audio('click', ['assets/sounds/click.wav']);
     this.load.audio('winner', ['assets/sounds/winner.mp3']);

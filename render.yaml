@@ -2,9 +2,17 @@
 # Deploy: Connect GitHub repo → Render detects this file automatically
 #
 # After connecting repo, these secrets are prompted during Blueprint setup (sync: false):
-#   SOLANA_KEYPAIR_JSON  — server authority keypair (JSON byte array)
-#   ADMIN_API_KEY        — for /api/admin/reload-keys endpoint
-#   MONGODB_URI          — from MongoDB Atlas
+#   SOLANA_KEYPAIR_JSON   — server authority keypair (JSON byte array)
+#   ADMIN_API_KEY         — for /api/admin/reload-keys endpoint
+#   MONGODB_URI           — from MongoDB Atlas
+#   PRIVY_APP_SECRET      — Privy app secret (REQUIRED in prod since DB H002 fix
+#                           — server returns 503 on auth without it)
+#   TELEGRAM_BOT_TOKEN    — @BotFather bot token (bot disables silently if absent)
+#   TELEGRAM_WEBHOOK_SECRET — optional, secures webhook delivery
+#
+# rootDir: server means Render only watches the server/ directory. Pushes that
+# touch only client/, programs/, .docs/, etc. correctly skip Render and rebuild
+# Vercel only.
 
 services:
   - type: web
@@ -32,6 +40,11 @@ services:
         value: G2TgxypFAQHvcfwRA1dkJMx2St4gYpDpz37uiG1Q9grx
       - key: CORS_ORIGINS
         value: https://solshot.gg,https://www.solshot.gg,https://sol-shot.vercel.app
+      # Public Privy app id — same value as REACT_APP_PRIVY_APP_ID on the client
+      - key: PRIVY_APP_ID
+        value: cmorbf1nk00z10cidg6jitsgm
+      - key: MINI_APP_URL
+        value: https://solshot.gg/
       - key: JWT_SECRET
         generateValue: true
       - key: SOLANA_KEYPAIR_JSON
@@ -39,6 +52,12 @@ services:
       - key: ADMIN_API_KEY
         sync: false
       - key: MONGODB_URI
+        sync: false
+      - key: PRIVY_APP_SECRET
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_WEBHOOK_SECRET
         sync: false
     healthCheckPath: /health
     autoDeploy: true

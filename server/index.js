@@ -1,3 +1,7 @@
+// Render auto-deploy verification bump — 2026-05-07
+// Confirms `rootDir: server` filter correctly triggers redeploy on server/ changes.
+// Same commit also adds PRIVY_APP_SECRET / TELEGRAM_BOT_TOKEN / PRIVY_APP_ID to render.yaml
+// so the H002 hard-503 path has its required env var documented as sync:false.
 import express from "express";
 import http from "http";
 import * as socket from "socket.io";

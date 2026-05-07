@@ -1,35 +1,118 @@
 ---
 doc_id: deployment-sequence
 title: "SolShot Deployment Runbook"
-status: draft
+status: current
 requires: ["architecture-decisions", "escrow-flow-decisions", "security-posture-decisions"]
-sources: ["escrow-flow", "security-posture", "token-economics", "architecture"]
-last_updated: 2026-02-24
+sources: ["escrow-flow", "security-posture", "token-economics", "architecture", "REMEDIATION_DECISIONS", "DB_REMEDIATION_DECISIONS"]
+last_updated: 2026-05-07
+network: devnet
 ---
 
 # SolShot Deployment Runbook
 
-Operational procedures for deploying and managing the SolShot stack: Anchor escrow program, Express/Socket.IO server, and React/Phaser client. This document captures what was previously tribal knowledge.
+Operational procedures for deploying and managing the SolShot stack: Anchor escrow programs (v1 + v2), Express/Socket.IO server, and React/Phaser client.
 
-**Audience:** Solo founder. This is not polished documentation -- it is a step-by-step reference for when you are sitting at the terminal at 2am before a launch.
+**Audience:** Solo founder. Not polished documentation — a step-by-step reference for when you are at the terminal before a launch.
 
 ---
 
 ## Table of Contents
 
-1. [Prerequisites](#1-prerequisites)
-2. [Program Deployment -- Devnet](#2-program-deployment----devnet)
-3. [Config Initialization](#3-config-initialization)
-4. [Server Deployment](#4-server-deployment)
-5. [Client Deployment](#5-client-deployment)
-6. [Program Deployment -- Mainnet](#6-program-deployment----mainnet)
-7. [Key Rotation](#7-key-rotation)
-8. [Emergency Procedures](#8-emergency-procedures)
-9. [Post-Deploy Verification](#9-post-deploy-verification)
+1. [Devnet — Current State](#1-devnet--current-state)
+2. [Sample Settled Matches](#2-sample-settled-matches)
+3. [Prerequisites](#3-prerequisites)
+4. [Deploy Procedure (Devnet)](#4-deploy-procedure--devnet)
+5. [Server Deployment](#5-server-deployment)
+6. [Client Deployment](#6-client-deployment)
+7. [Pre-Mainnet Checklist](#7-pre-mainnet-checklist)
+8. [Mainnet Deploy Procedure](#8-mainnet-deploy-procedure)
+9. [Post-Mainnet Monitoring](#9-post-mainnet-monitoring)
+10. [Rollback Procedure](#10-rollback-procedure)
+11. [Key Rotation](#11-key-rotation)
+12. [Emergency Procedures](#12-emergency-procedures)
+13. [Post-Deploy Verification](#13-post-deploy-verification)
+14. [Appendices](#14-appendices)
 
 ---
 
-## 1. Prerequisites
+## 1. Devnet — Current State
+
+**As of 2026-05-07 — post SOS + DB Audit #2 fix bundle (commit `7296e95`)**
+
+### Program IDs
+
+| Program | Address | Status |
+|---------|---------|--------|
+| **v1 Escrow** | `4kzrDpV9JxjE27AMg4PQXzGuge9MEYQEFznSPvkBtnH1` | Deployed on devnet. Fix bundle landed in source at `7296e95`. |
+| **v2 Escrow** | `BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N` | Deployed on devnet. Fix bundle landed in source at `7296e95`. |
+| ~~Old v1 (obsolete)~~ | ~~`CqvRC6mSJe2CrBtENVfCEPkgRW3WwxLSL9C1hgXz7GtD`~~ | OBSOLETE. Feb 18 deploy, pre-N-player rewrite. Keypair lost. ~1.77 SOL rent recoverable via `solana program close` if keypair can be recovered. Do not reference. |
+
+> **IMPORTANT — verify `.so` files are in sync with source:**
+> The fix bundle in commit `7296e95` patched both `programs/solshot-escrow/src/lib.rs` (v1) and `programs/solshot-escrow-v2/src/lib.rs` (v2). Verify the deployed `.so` files on devnet match this source by running `anchor build` and checking the build hash, then running `anchor upgrade` against both program IDs if the deployed bytecode predates the fix bundle.
+>
+> ```bash
+> # Verify v1
+> solana program show 4kzrDpV9JxjE27AMg4PQXzGuge9MEYQEFznSPvkBtnH1 --url devnet
+>
+> # Verify v2
+> solana program show BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N --url devnet
+>
+> # Upgrade if needed (run after anchor build)
+> anchor upgrade target/deploy/solshot_escrow.so \
+>   --program-id 4kzrDpV9JxjE27AMg4PQXzGuge9MEYQEFznSPvkBtnH1 \
+>   --provider.cluster devnet
+>
+> anchor upgrade target/deploy/solshot_escrow_v2.so \
+>   --program-id BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N \
+>   --provider.cluster devnet
+> ```
+
+### PDAs and Tokens
+
+| Item | Address | Notes |
+|------|---------|-------|
+| **GlobalConfig PDA** | `92wnuoauqtxkkxDu22fBWGZMBjfNmvSXfKrsJ8nrfSU4` | Seeds: `[b"config"]`. Initialized 2026-05-04. Authority = server hot wallet. |
+| **SHOT Token Mint** | `4NnYBycLLo8acgbkLz2SyCXd3KU8jgHQLEmrVypi5VLd` | 10M supply, 9 decimals. Mint authority BURNED — no more can be minted. |
+| **Server hot wallet** | `HPyVPj2VH9yBirr7FMgAJeDH8xJgaMKy5UnwLkjSnovk` | `solshot-dev.json`. Used as escrow authority, create_match signer, settle_match signer. |
+
+### Infrastructure
+
+| Component | Platform | Notes |
+|-----------|----------|-------|
+| **Server** | Render (Web Service) | Auto-deploys from `main` branch. Paid tier. |
+| **Client** | Vercel | Auto-deploys from `main` branch. Root: `client/`. |
+| **Database** | MongoDB Atlas | URI in `MONGODB_URI` env var on Render. |
+
+### Settlement Economics (verified on-chain)
+
+90/7/3 BPS split on the total pot (wager × num_deposited):
+
+| Recipient | BPS | Example (0.1 SOL × 2 players = 0.2 SOL pot) |
+|-----------|-----|----------------------------------------------|
+| Winner | 9000 | 0.18 SOL |
+| Treasury | 700 | 0.014 SOL |
+| Ops | 300 | 0.006 SOL |
+
+Winner amount is the remainder (`total - treasury - ops`) to prevent dust loss from integer division. BPS math uses u128 widening (BOK GAP-002 verified).
+
+---
+
+## 2. Sample Settled Matches
+
+### First 1v1 Wagered Match — 2026-05-04
+
+- Match ID: `2f5b6180`
+- Settlement TX: [`4WSsDsKVzCugdjsfD6Zg2kHKc7VBcByUKsN5P9CQEMj2ExXuuw9jQJch6eK4Qqu1MY8Ma16Tw1QawJKig5V3b9sf`](https://solscan.io/tx/4WSsDsKVzCugdjsfD6Zg2kHKc7VBcByUKsN5P9CQEMj2ExXuuw9jQJch6eK4Qqu1MY8Ma16Tw1QawJKig5V3b9sf?cluster=devnet)
+- Result: Winner +0.18 SOL, Treasury +0.014 SOL, Ops +0.006 SOL — all on-chain
+
+### First 3-Player Group-Chat Auto-Settle — 2026-05-06
+
+- Settlement TX: [`4ja8VKp...`](https://solscan.io/tx/4ja8VKp?cluster=devnet) _(expand short TX ID when referencing)_
+- Notes: N-player v2 path. Auto-settle triggered by server on game end.
+
+---
+
+## 3. Prerequisites
 
 ### Toolchain
 
@@ -39,11 +122,11 @@ Operational procedures for deploying and managing the SolShot stack: Anchor escr
 | Anchor CLI | 0.32.1 | Pinned in `Anchor.toml` `[toolchain]` section |
 | Rust | stable | `rustup default stable` |
 | Node.js | >= 18.0.0 | Pinned in `server/package.json` `engines` field |
-| npm | bundled with Node | -- |
+| npm | bundled with Node | — |
 
 ### Keypair Inventory
 
-You need three separate Solana keypairs. These must all be distinct addresses -- the on-chain program enforces that authority, treasury, and ops are different pubkeys.
+Three distinct keypairs required. The on-chain program enforces that authority, treasury, and ops are different pubkeys.
 
 | Keypair | Purpose | Generation |
 |---------|---------|------------|
@@ -51,57 +134,57 @@ You need three separate Solana keypairs. These must all be distinct addresses --
 | **Treasury** | Receives 7% of each settlement pot | `solana-keygen new -o ~/.config/solana/solshot-treasury.json` |
 | **Ops** | Receives 3% of each settlement pot | `solana-keygen new -o ~/.config/solana/solshot-ops.json` |
 
-Record all three public keys. You will need them for config initialization and `.env` files.
-
 ### RPC Endpoints
 
 | Network | Endpoint | Notes |
 |---------|----------|-------|
-| Devnet | `https://api.devnet.solana.com` | Public, rate-limited. Fine for dev. |
-| Mainnet | TBD -- not captured in interview | Use a dedicated RPC provider (Helius, QuickNode). Public mainnet RPC is unreliable under load. Budget accordingly. |
+| Devnet | `https://api.devnet.solana.com` | Public, rate-limited. Fine for dev/testing. |
+| Mainnet | Helius or QuickNode dedicated endpoint | Public mainnet RPC is unreliable under load. Budget for a paid plan. |
 
-### Pre-Flight Checklist (all deployments)
+### Pre-Flight (all deployments)
 
 - [ ] Solana CLI configured to correct cluster: `solana config set --url <cluster_url>`
-- [ ] Deployer wallet has sufficient SOL for rent + transaction fees (at least 3 SOL for program deploy)
+- [ ] Deployer wallet has >= 3 SOL for program rent + fees
 - [ ] All three keypairs generated and public keys recorded
 - [ ] `Anchor.toml` `[provider].cluster` set to target cluster
 - [ ] `Anchor.toml` `[provider].wallet` points to deployer keypair
 
 ---
 
-## 2. Program Deployment -- Devnet
+## 4. Deploy Procedure — Devnet
 
-### 2.1 Build the program
+### 4.1 Build
 
 ```bash
 anchor build
 ```
 
-This produces:
-- `target/deploy/solshot_escrow.so` -- the compiled BPF program
-- `target/idl/solshot_escrow.json` -- the IDL (copy to `server/idl/` after build)
-- `target/types/solshot_escrow.ts` -- TypeScript types
+Produces:
+- `target/deploy/solshot_escrow.so` — v1 BPF binary
+- `target/deploy/solshot_escrow_v2.so` — v2 BPF binary
+- `target/idl/solshot_escrow.json` — v1 IDL (copy to `server/idl/`)
+- `target/idl/solshot_escrow_v2.json` — v2 IDL (copy to `server/idl/` if used by server)
+- `target/types/` — TypeScript types
 
-### 2.2 Verify the program ID
+### 4.2 Verify Program IDs
 
-After first build, Anchor generates a keypair at `target/deploy/solshot_escrow-keypair.json`. The program ID is derived from this keypair.
+After build, confirm the keypair-derived program IDs match `declare_id!()` in source:
 
 ```bash
+# v1
 solana address -k target/deploy/solshot_escrow-keypair.json
+# Must match 4kzrDpV9JxjE27AMg4PQXzGuge9MEYQEFznSPvkBtnH1
+
+# v2
+solana address -k target/deploy/solshot_escrow_v2-keypair.json
+# Must match BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N
 ```
 
-**Critical:** This ID must match the `declare_id!()` in `programs/solshot-escrow/src/lib.rs` (currently `CqvRC6mSJe2CrBtENVfCEPkgRW3WwxLSL9C1hgXz7GtD`). If it does not match, update these locations:
+**If IDs do not match:** Update `declare_id!()` in `lib.rs`, `Anchor.toml`, `server/.env`, `server/services/escrow.js`, and `client/.env`, then rebuild. See Appendix A for full location list.
 
-1. `programs/solshot-escrow/src/lib.rs` -- `declare_id!("...")` macro
-2. `Anchor.toml` -- `[programs.devnet]` and `[programs.localnet]` sections
-3. `server/services/escrow.js` -- `PROGRAM_ID` constant
-4. `server/.env` -- `MATCH_ESCROW_PROGRAM_ID`
-5. `client/.env` -- `REACT_APP_ESCROW_PROGRAM_ID`
+> **Keypair gotcha:** `target/deploy/*-keypair.json` may be regenerated if deleted or if you run `anchor keys list` carelessly. Before any deploy, ALWAYS confirm the keypair-derived pubkey matches the deployed program ID. Mismatches deploy a fresh program at a new ID with no on-chain history.
 
-Then rebuild: `anchor build`
-
-### 2.3 Configure for devnet
+### 4.3 Configure for Devnet
 
 Verify `Anchor.toml`:
 
@@ -111,180 +194,148 @@ cluster = "devnet"
 wallet = "~/.config/solana/solshot-dev.json"
 ```
 
-### 2.4 Fund the deployer
+### 4.4 Fund the Deployer
 
 ```bash
 solana airdrop 5 --url devnet
 solana balance --url devnet
+# Need ~2-3 SOL per program. Airdrop multiple times if needed (devnet caps vary).
 ```
 
-You need roughly 2-3 SOL for program deployment rent. Airdrop multiple times if needed (devnet caps at 2 SOL per airdrop in some periods).
+### 4.5 Deploy or Upgrade
 
-### 2.5 Deploy
-
+**Fresh deploy (new program ID):**
 ```bash
 anchor deploy --provider.cluster devnet
 ```
 
-Expected output includes `Program Id: CqvRC6mSJe2CrBtENVfCEPkgRW3WwxLSL9C1hgXz7GtD` (or your generated ID).
+**Upgrade existing deployed program (existing program ID):**
+```bash
+anchor upgrade target/deploy/solshot_escrow.so \
+  --program-id 4kzrDpV9JxjE27AMg4PQXzGuge9MEYQEFznSPvkBtnH1 \
+  --provider.cluster devnet
 
-### 2.6 Copy the IDL to the server
+anchor upgrade target/deploy/solshot_escrow_v2.so \
+  --program-id BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N \
+  --provider.cluster devnet
+```
+
+Use `anchor upgrade` (not `anchor deploy`) when you already have a deployed program and want to preserve the program ID. The deployer wallet must currently hold the upgrade authority.
+
+### 4.6 Initialize GlobalConfig (first deploy only)
+
+The GlobalConfig PDA must be initialized exactly once after each fresh program deploy. Skip this step if upgrading an existing deployment with a live config.
+
+Verify config state first:
+```bash
+# If this returns data, config is already initialized — do not re-init
+solana account 92wnuoauqtxkkxDu22fBWGZMBjfNmvSXfKrsJ8nrfSU4 --url devnet --output json
+```
+
+If fresh:
+```bash
+node server/scripts/init-config.mjs
+```
+
+The script is at `server/scripts/init-config.mjs`. Edit the AUTHORITY / TREASURY / OPS pubkey constants before running. All three must be distinct.
+
+What it sets:
+
+| Field | Value |
+|-------|-------|
+| `authority` | Server hot wallet pubkey |
+| `treasury` | Treasury wallet pubkey |
+| `ops` | Ops wallet pubkey |
+| `is_paused` | `false` |
+
+Config can only be initialized once. Subsequent changes use `update_config`.
+
+### 4.7 Sync IDL to Server
 
 ```bash
 cp target/idl/solshot_escrow.json server/idl/solshot_escrow.json
 ```
 
-The server loads this IDL at startup from `server/idl/solshot_escrow.json` to construct the Anchor `Program` object.
+The server loads this IDL at startup to construct the Anchor `Program` object. Stale IDL = runtime errors on instruction calls.
 
-### 2.7 Run tests
+### 4.8 Run Tests
 
 ```bash
 anchor test --provider.cluster devnet
 ```
 
-Test script is configured in `Anchor.toml`: `npx ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts`
+Tests are in `tests/**/*.ts`, configured via `Anchor.toml` scripts section.
 
-### 2.8 Verification
+### 4.9 Deploy Verification
 
-- [ ] `solana program show <PROGRAM_ID> --url devnet` -- confirms program is deployed and shows data length, authority
+- [ ] `solana program show <PROGRAM_ID> --url devnet` — program deployed, authority correct
 - [ ] IDL copied to `server/idl/solshot_escrow.json`
-- [ ] Program ID matches across all 5 locations listed in step 2.2
+- [ ] Program ID matches in all 5 locations (Appendix A)
+- [ ] `getConfigState()` returns correct authority, treasury, ops, `isPaused: false`
 
 ---
 
-## 3. Config Initialization
+## 5. Server Deployment
 
-The GlobalConfig PDA must be initialized exactly once after each fresh program deploy. It stores the authority pubkey, treasury address, ops address, and the emergency pause flag.
+### 5.1 Environment Variables
 
-**Seeds:** `[b"config"]` -- singleton PDA, one per program.
-
-### 3.1 Pre-flight
-
-- [ ] Program is deployed (section 2 complete)
-- [ ] Server keypair is the same one used as `[provider].wallet` in Anchor.toml
-- [ ] You have the three pubkeys ready: authority, treasury, ops
-- [ ] All three addresses are distinct (the instruction enforces this on-chain)
-
-### 3.2 Initialize via the server escrow service
-
-The `initializeConfig()` function in `server/services/escrow.js` wraps the on-chain instruction. You can call it from a Node REPL or a one-off script:
-
-```javascript
-// init-config.mjs — run with: node init-config.mjs
-import dotenv from 'dotenv';
-dotenv.config({ path: './server/.env' });
-
-import { initKeys } from './server/services/keys.js';
-import { initEscrow, initializeConfig, getConfigState } from './server/services/escrow.js';
-
-initKeys();
-initEscrow();
-
-const AUTHORITY = '<server-keypair-pubkey>';
-const TREASURY  = '<treasury-wallet-pubkey>';
-const OPS       = '<ops-wallet-pubkey>';
-
-const result = await initializeConfig(AUTHORITY, TREASURY, OPS);
-console.log('initializeConfig result:', result);
-
-// Verify
-const state = await getConfigState();
-console.log('Config PDA state:', state);
-```
-
-### 3.3 What `initialize_config` sets
-
-| Field | Value | Notes |
-|-------|-------|-------|
-| `authority` | Server hot wallet pubkey | Signs settlement, cancellation, pause |
-| `treasury` | Treasury wallet pubkey | Receives 7% of settlement (700 BPS) |
-| `ops` | Ops wallet pubkey | Receives 3% of settlement (300 BPS) |
-| `is_paused` | `false` | Program starts unpaused |
-| `bump` | Auto-derived | PDA bump seed |
-
-### 3.4 Verification
-
-```bash
-# Fetch the config PDA account data
-solana account <CONFIG_PDA_ADDRESS> --url devnet --output json
-```
-
-Or use the `getConfigState()` function from the escrow service and confirm:
-- `authority` matches your server keypair pubkey
-- `treasury` matches your treasury wallet
-- `ops` matches your ops wallet
-- `isPaused` is `false`
-
-### 3.5 Important notes
-
-- **This instruction can only be called once.** The `init` constraint on the PDA means a second call fails with "already in use." If you need to change values after initialization, use `update_config` (see section 7).
-- If you deploy a fresh program (new program ID), you must initialize config again for that new program.
-- The payer (deployer) pays rent for the config account: 106 bytes = 8 (discriminator) + 32 (authority) + 32 (treasury) + 32 (ops) + 1 (bool) + 1 (u8).
-
----
-
-## 4. Server Deployment
-
-### 4.1 Environment variables
-
-Copy `server/.env.example` to `server/.env` and fill in all values:
+Copy `server/.env.example` to `server/.env`:
 
 | Variable | Example | Required |
 |----------|---------|----------|
 | `PORT` | `5001` | Yes |
 | `NODE_ENV` | `production` | Yes |
-| `MONGODB_URI` | `mongodb+srv://user:pass@cluster.mongodb.net/solshot` | Yes (server exits with FATAL if missing and DB is needed) |
+| `MONGODB_URI` | `mongodb+srv://user:pass@cluster.mongodb.net/solshot` | Yes |
 | `SOLANA_RPC` | `https://api.devnet.solana.com` | Yes |
 | `SOLANA_KEYPAIR_PATH` | `~/.config/solana/solshot-dev.json` | One of PATH or JSON required |
-| `SOLANA_KEYPAIR_JSON` | `[1,2,3,...,64]` | For cloud deploy -- raw JSON array |
-| `MATCH_ESCROW_PROGRAM_ID` | `CqvRC6mSJe2CrBtENVfCEPkgRW3WwxLSL9C1hgXz7GtD` | Yes |
-| `TREASURY_WALLET` | `4Ekd8xxsym6HiGaKbDVP7hgf3AoBsLmBSenyfx3N2hGk` | Yes |
-| `OPS_WALLET` | `G2TgxypFAQHvcfwRA1dkJMx2St4gYpDpz37uiG1Q9grx` | Yes |
+| `SOLANA_KEYPAIR_JSON` | `[1,2,...,64]` | For cloud deploy — raw JSON array |
+| `MATCH_ESCROW_PROGRAM_ID` | `4kzrDpV9JxjE27AMg4PQXzGuge9MEYQEFznSPvkBtnH1` | Yes |
+| `TREASURY_WALLET` | `<treasury-pubkey>` | Yes |
+| `OPS_WALLET` | `<ops-pubkey>` | Yes |
 | `JWT_SECRET` | 64+ random characters | Yes |
-| `ADMIN_API_KEY` | Random string for `/stats` and `/api/admin/reload-keys` | Yes in production |
+| `ADMIN_API_KEY` | Random string | Yes in production |
 | `CORS_ORIGINS` | `https://solshot.gg,https://www.solshot.gg` | Yes in production |
 | `SHOT_TOKEN_MINT` | `4NnYBycLLo8acgbkLz2SyCXd3KU8jgHQLEmrVypi5VLd` | For SHOT token features |
+| `PRIVY_APP_ID` | `<privy-app-id>` | For Privy auth |
+| `PRIVY_APP_SECRET` | `<privy-app-secret>` | For Privy auth |
 
-**Key loading priority:** `SOLANA_KEYPAIR_JSON` env var takes precedence over `SOLANA_KEYPAIR_PATH` file. For cloud deployments (Render), use `SOLANA_KEYPAIR_JSON` with the raw JSON array contents of the keypair file. The `keys.js` module zeros the byte array after constructing the Keypair object (KM-04).
+**Key loading priority:** `SOLANA_KEYPAIR_JSON` takes precedence over `SOLANA_KEYPAIR_PATH`. For Render, use `SOLANA_KEYPAIR_JSON` with the raw JSON array. `keys.js` zeros the byte array after constructing the Keypair object.
 
-### 4.2 Startup sequence
+### 5.2 Startup Sequence
 
-The server boot order in `server/index.js`:
-
-1. `dotenv.config()` -- loads `.env`
-2. `initKeys()` -- loads server keypair (logs `LOADED` or `NOT CONFIGURED`)
-3. Express middleware setup (helmet, CORS, rate limiter)
-4. Socket.IO initialization with per-IP connection limiting (max 100)
-5. MongoDB connection (if `MONGODB_URI` set)
-6. `initShotState()` -- loads SHOT token emission state from DB (fatal on failure)
+The server boots in this order (`server/index.js`):
+1. `dotenv.config()` — loads `.env`
+2. `initKeys()` — loads server keypair
+3. Express middleware: helmet, CORS, rate limiter
+4. Socket.IO initialization
+5. MongoDB connection
+6. `initShotState()` — loads SHOT emission state from DB
 7. `server.listen()` on `0.0.0.0:PORT`
 8. SIGHUP handler registered for credential hot-reload
 
-### 4.3 Cloud deployment (Render)
+### 5.3 Cloud Deployment (Render)
 
-The Launch Checklist references Render as the hosting platform.
+1. Create Web Service on Render, connect GitHub repo
+2. Build command: `cd server && npm install`
+3. Start command: `cd server && npm start`
+4. Set all env vars from section 5.1 in Render dashboard
+5. Use paid tier ($7/mo minimum) — free tier spins down after 15min, killing WebSocket connections
+6. `trust proxy = 1` is set in `index.js` — required for correct IP extraction behind Render's reverse proxy
 
-1. Create a Web Service on Render, connect the GitHub repo
-2. Set build command: `cd server && npm install`
-3. Set start command: `cd server && npm start`
-4. Set all environment variables from section 4.1 in the Render dashboard
-5. Use paid tier ($7/mo minimum) -- free tier spins down after 15min inactivity, killing WebSocket connections
-6. `trust proxy` is set to `1` in `index.js` -- required for correct IP extraction behind Render's reverse proxy
-
-### 4.4 Verification
+### 5.4 Verification
 
 - [ ] `GET /health` returns 200
-- [ ] `GET /stats` with `x-admin-key` header returns server metrics
-- [ ] Server logs show `[Keys] Escrow authority: <pubkey>`
-- [ ] Server logs show `[Escrow] Initialized` with correct program ID, config PDA, treasury, ops
-- [ ] Server logs show `MongoDB connected`
-- [ ] WebSocket connections work (test with a client connecting from browser)
+- [ ] `GET /stats` with `x-admin-key` header returns metrics
+- [ ] Logs: `[Keys] Escrow authority: <pubkey>`
+- [ ] Logs: `[Escrow] Initialized` with correct program ID, config PDA, treasury, ops
+- [ ] Logs: `MongoDB connected`
+- [ ] WebSocket connections work (test from browser)
 
 ---
 
-## 5. Client Deployment
+## 6. Client Deployment
 
-### 5.1 Environment variables
+### 6.1 Environment Variables
 
 Copy `client/.env.example` to `client/.env`:
 
@@ -292,184 +343,415 @@ Copy `client/.env.example` to `client/.env`:
 |----------|---------|----------|
 | `REACT_APP_SERVER_URL` | `https://solshot-server.onrender.com` | Yes |
 | `REACT_APP_SOLANA_NETWORK` | `devnet` or `mainnet-beta` | Yes |
-| `REACT_APP_ESCROW_PROGRAM_ID` | `CqvRC6mSJe2CrBtENVfCEPkgRW3WwxLSL9C1hgXz7GtD` | Yes |
+| `REACT_APP_ESCROW_PROGRAM_ID` | `4kzrDpV9JxjE27AMg4PQXzGuge9MEYQEFznSPvkBtnH1` | Yes |
 | `REACT_APP_SHOT_TOKEN_MINT` | `4NnYBycLLo8acgbkLz2SyCXd3KU8jgHQLEmrVypi5VLd` | For SHOT features |
 | `REACT_APP_SOLANA_RPC` | `https://mainnet.helius-rpc.com/?api-key=YOUR_KEY` | Recommended for mainnet |
-| `INLINE_RUNTIME_CHUNK` | `false` | Yes (CS-03: CSP compliance) |
+| `INLINE_RUNTIME_CHUNK` | `false` | Yes (CSP compliance) |
+| `GENERATE_SOURCEMAP` | `false` | Yes in production |
 
-### 5.2 Build and deploy (Vercel)
+### 6.2 Build and Deploy (Vercel)
 
 1. Create Vercel project, set root directory to `client/`
-2. Set environment variables in Vercel dashboard
-3. Deploy -- Vercel auto-detects Create React App
-4. Update `CORS_ORIGINS` on the server to include the Vercel domain
+2. Set env vars in Vercel dashboard
+3. Deploy — Vercel auto-detects Create React App
+4. Update `CORS_ORIGINS` on server to include the Vercel domain
 
-### 5.3 Verification
+### 6.3 Verification
 
 - [ ] Site loads at deployed URL
-- [ ] Browser console shows Socket.IO connected to server
-- [ ] Wallet connect button appears and Phantom/Solflare adapter works
-- [ ] Network matches expected cluster (devnet or mainnet-beta)
+- [ ] Browser console shows Socket.IO connected
+- [ ] Wallet connect button works (Phantom / Solflare via Privy)
+- [ ] Network matches expected cluster
 
 ---
 
-## 6. Program Deployment -- Mainnet
+## 7. Pre-Mainnet Checklist
 
-### 6.1 Pre-flight checklist
+Work through these bundles in order before any mainnet deploy. Each bundle should be a separate PR with a `DB:verify` / `SOS:verify` pass.
 
-This is the critical deployment. Do not rush it.
+### 7.1 Verify Fix Bundle Is Live On-Chain
 
-- [ ] All devnet testing complete -- full match lifecycle (create, deposit, settle, cancel) tested
-- [ ] 3 independent security analyses completed with 0 active CRITICAL/HIGH findings
-- [ ] Mainnet RPC endpoint provisioned (TBD -- not captured in interview; use Helius, QuickNode, or similar)
-- [ ] Mainnet SOL funded in deployer wallet (need ~3 SOL for program rent)
-- [ ] Mainnet treasury wallet created and funded with enough SOL for rent
-- [ ] Mainnet ops wallet created and funded with enough SOL for rent
-- [ ] Mainnet authority keypair generated (use a fresh keypair, not the devnet one)
-- [ ] OC-13: Plan to transfer upgrade authority to multisig after deploy (noted in `lib.rs` line 1)
-- [ ] Program code is identical to what was audited -- `anchor build` with no modifications after audit sign-off
+The source at `7296e95` has 9 SOS fixes + 16 DB fixes. Verify the deployed `.so` files reflect this:
 
-### 6.2 Update configuration
+- [ ] `anchor build` produces a `.so` hash that matches the post-`7296e95` build
+- [ ] `anchor upgrade` run against both program IDs on devnet if `.so` was not redeployed after the fix commit
+- [ ] IDL at `server/idl/` matches `target/idl/` output from the verified build
+
+### 7.2 Bundle 1 — Authority Hardening (SOS H001/H044/H046 + DB H012)
+
+**Rationale:** Current architecture uses a single hot wallet for both Layer-1 (upgrade authority) and Layer-2 (application authority). A single key compromise grants full control. This must be resolved before mainnet.
+
+Steps:
+1. Set up a Squads M-of-N multisig for program upgrade authority
+2. Transfer upgrade authority: `solana program set-upgrade-authority <PROGRAM_ID> --new-upgrade-authority <MULTISIG_ADDRESS>`
+3. Generate a separate hot wallet for application authority (config.authority)
+4. Call `update_config` to rotate authority to the new application wallet
+5. Add `propose_authority` + `accept_authority` instructions to both programs (closes SOS H001 — one-step transfer)
+6. Add `last_config_update_ts` + 24h timelock on `update_config` for treasury/ops/fee_bps changes (closes SOS H002/H032)
+7. Add `propose_recovery` guardian mechanism for key-loss recovery (closes SOS H042)
+
+**Verify:** Confirm upgrade authority is the multisig via `solana program show <ID> --url mainnet-beta`.
+
+> Warning on step 2: The multisig address transfer is irreversible. Verify the multisig address three times. If the multisig cannot be recovered, the program can never be upgraded.
+
+### 7.3 Bundle 2 — Refund Loop Refactor (SOS H024 + DB H014)
+
+**Rationale:** The current on-chain refund loop iterates `0..max_players` requiring contiguous bit mask. Non-contiguous masks (player 1 deposited, player 0 did not) leave funds UNRECOVERABLE on-chain. Also, server-side `remaining_accounts` construction must read the live on-chain mask rather than in-memory state.
+
+Steps:
+1. Refactor on-chain refund loop to accept `player_indices: Vec<u8>` + matching `remaining_accounts`
+2. Update IDL for both programs
+3. Update `server/services/escrow.js` (v1) to call `getEscrowState(matchId)` before building `remaining_accounts`, use on-chain `deposits_mask`
+4. Update `server/services/escrow-v2.js` (v2) same
+5. Test the non-contiguous mask scenario on devnet (force a partial-deposit scenario)
+6. Verify the mask scenario is now recoverable
+
+### 7.4 Bundle 3 — Off-Chain Hardening (DB H009/H010/H014/H015/H016 + SOS H049)
+
+Steps:
+1. Bump `match_id` entropy: `crypto.randomBytes(8)` → 16 hex chars (closes SOS H049 + DB H060)
+2. Add Mongoose `unique: true` constraint on `matchId` field
+3. Refactor `confirmDeposit` to use `findOneAndUpdate` with `$set` + `$elemMatch` guard (closes DB H016 — double-overwrite race)
+4. Convert group-chat settle to atomic `findOneAndUpdate({state:'active'},{state:'settled'})` (closes DB H015 — double-settle race)
+5. Add `updateWalletForTgUser()` helper with audit trail for wallet rotation (closes DB H009/H010)
+6. Add `consumed_signatures` Set with TTL eviction for auth signature replay protection (closes DB H004)
+7. Add server-side win-rate anomaly monitor + failedSettlements logging
+
+### 7.5 Bundle 4 — Client / Header Hardening (DB H034/H030/H047)
+
+Steps:
+1. Add `client/vercel.json` with `frame-ancestors`, `X-Frame-Options`, HSTS, Permissions-Policy headers (closes DB H034)
+2. Strip wallet pubkeys from `escrowDepositStatus` broadcast — emit only `{playerIndex, confirmed}` boolean (closes DB H030)
+3. Move magic-link token from URL query param to URL fragment `#linkToken=...` (closes DB H047)
+4. Remove `unsafe-inline` from client `script-src` CSP or add nonce-based policy (closes DB H036)
+
+### 7.6 Devnet Load Test
+
+Before mainnet:
+- [ ] Simulate 10-player v2 match reaching `permissionless_reclaim` — measure CU consumption (SOS G001)
+- [ ] If near 1.4M CU ceiling, refactor reclaim or split into two TXs
+- [ ] Simulate 50+ concurrent rooms and verify no birthday collision on 16-char match IDs (after Bundle 3 bump)
+- [ ] Simulate server crash during settlement — verify crash recovery settles correctly
+- [ ] Run `npm audit` on both `server/` and `client/` — address H041/H042/H043/H044/H045 (express-rate-limit, socket.io-parser, path-to-regexp, handlebars, bigint-buffer)
+
+### 7.7 Staging End-to-End Verification
+
+- [ ] Deploy fix-bundle source to staging server + staging Vercel
+- [ ] Full match lifecycle on devnet: create room → deposit wagered → play → settle
+- [ ] Prestige burn flow (SHOT token burn + on-chain verify)
+- [ ] 3-player group-chat match (v2 path)
+- [ ] Permissionless reclaim (wait 2h after timeout, verify any fee-payer can reclaim)
+- [ ] Emergency pause → verify deposits + creates are blocked
+- [ ] Emergency unpause → verify flow resumes
+
+---
+
+## 8. Mainnet Deploy Procedure
+
+Do not rush this. Work through section 7 completely first.
+
+### 8.1 Pre-Flight
+
+- [ ] All pre-mainnet bundles (section 7) merged, audited, verified on devnet
+- [ ] Mainnet RPC endpoint provisioned (Helius / QuickNode — budget for paid plan)
+- [ ] Mainnet SOL funded in deployer wallet (need ~3 SOL per program for rent)
+- [ ] Fresh authority keypair generated (do NOT reuse devnet hot wallet)
+- [ ] Squads multisig created and signers confirmed
+- [ ] Treasury and ops mainnet wallets created and funded
+- [ ] Program code is identical to what was audited — `anchor build` with no post-audit modifications
+- [ ] `anchor build` produces clean output (no warnings that affect behavior)
+
+### 8.2 Configure for Mainnet
 
 ```toml
 # Anchor.toml
 [programs.mainnet]
 solshot_escrow = "<MAINNET_PROGRAM_ID>"
+solshot_escrow_v2 = "<MAINNET_V2_PROGRAM_ID>"
 
 [provider]
 cluster = "mainnet"
 wallet = "~/.config/solana/solshot-mainnet.json"
 ```
 
-### 6.3 Build and deploy
+### 8.3 Build
 
 ```bash
-# Ensure clean build
+# Clean build from post-audit source
 anchor build
 
-# Verify program ID matches declare_id!
+# Verify program IDs match declare_id! in both programs
 solana address -k target/deploy/solshot_escrow-keypair.json
+solana address -k target/deploy/solshot_escrow_v2-keypair.json
+```
 
-# Deploy to mainnet
+### 8.4 Deploy
+
+```bash
 anchor deploy --provider.cluster mainnet
 ```
 
-### 6.4 Initialize config (mainnet)
+Expected output: `Program Id: <new-mainnet-program-id>` for each program.
 
-Same procedure as section 3, but with mainnet addresses:
+### 8.5 Initialize GlobalConfig (Mainnet)
 
-```javascript
-const AUTHORITY = '<mainnet-server-keypair-pubkey>';
-const TREASURY  = '<mainnet-treasury-pubkey>';
-const OPS       = '<mainnet-ops-pubkey>';
-
-const result = await initializeConfig(AUTHORITY, TREASURY, OPS);
-```
-
-### 6.5 Update all references
-
-After mainnet deploy, update the program ID in all 5 locations (see section 2.2), plus:
-
-- Server `.env`: `SOLANA_RPC` to mainnet RPC, all wallet pubkeys to mainnet versions
-- Client `.env`: `REACT_APP_SOLANA_NETWORK=mainnet-beta`, program ID, RPC endpoint
-- Server CSP `connectSrc` in `index.js`: ensure `mainnet-beta` RPC URLs are included (they already are)
-
-### 6.6 Transfer upgrade authority to multisig
-
-Per OC-13 (noted at top of `lib.rs`): transfer program upgrade authority to a Squads multisig before mainnet goes live.
+Same procedure as section 4.6, but with mainnet addresses:
 
 ```bash
-solana program set-upgrade-authority <PROGRAM_ID> --new-upgrade-authority <MULTISIG_ADDRESS>
+node server/scripts/init-config.mjs
+# Edit AUTHORITY / TREASURY / OPS to mainnet pubkeys before running
 ```
 
-**Warning:** This is irreversible if the multisig cannot be recovered. Double-check the multisig address.
+### 8.6 Transfer Upgrade Authority to Multisig
 
-TBD -- multisig setup details not captured in interview. Planned for v1.2 per security-posture D5.
+```bash
+solana program set-upgrade-authority <PROGRAM_ID_V1> \
+  --new-upgrade-authority <SQUADS_MULTISIG_ADDRESS>
 
-### 6.7 Verification
+solana program set-upgrade-authority <PROGRAM_ID_V2> \
+  --new-upgrade-authority <SQUADS_MULTISIG_ADDRESS>
+```
 
-- [ ] `solana program show <PROGRAM_ID> --url mainnet-beta` shows correct authority
+Verify:
+```bash
+solana program show <PROGRAM_ID> --url mainnet-beta
+# "Upgrade Authority" field must show the multisig address, not the deployer wallet
+```
+
+### 8.7 Update All References
+
+Update the program IDs in all 5 locations (Appendix A) for mainnet. Also update:
+- `server/.env`: `SOLANA_RPC` to mainnet RPC, all wallet pubkeys to mainnet versions, `NODE_ENV=production`
+- `client/.env`: `REACT_APP_SOLANA_NETWORK=mainnet-beta`, program IDs, RPC endpoint
+
+### 8.8 Deploy Server and Client
+
+1. Push to `main` — Render auto-deploys server
+2. Vercel auto-deploys client on push to `main`
+3. Verify all env vars are set in Render + Vercel dashboards
+
+### 8.9 Mainnet Post-Deploy Verification
+
+- [ ] `solana program show <PROGRAM_ID> --url mainnet-beta` — correct authority (multisig)
 - [ ] Config PDA initialized with correct mainnet addresses
-- [ ] `is_paused` is `false`
-- [ ] End-to-end test match on mainnet with minimum wager (0.1 SOL = 100,000,000 lamports, above the 10,000 lamport minimum)
+- [ ] `isPaused === false`
+- [ ] End-to-end test match on mainnet with minimum wager (0.1 SOL minimum recommended)
 - [ ] Settlement split verified: 90% winner, 7% treasury, 3% ops
 - [ ] Treasury and ops wallets received correct amounts
+- [ ] `GET /health` returns 200 on production server
+- [ ] Client loads at `solshot.gg` and connects to server
+- [ ] Wallet connect works (Phantom / Solflare via Privy on mainnet-beta)
+
+### 8.10 Rollback Plan
+
+See section 10 for full rollback procedure. Have it open before you start.
 
 ---
 
-## 7. Key Rotation
+## 9. Post-Mainnet Monitoring
 
-Authority keys can be rotated without disrupting active matches. The on-chain program reads authority from the GlobalConfig PDA at execution time, not at escrow creation time. Active PDAs continue working after rotation.
+### 9.1 Key Metrics to Watch
 
-### 7.1 When to rotate
+| Signal | Where | Alert threshold |
+|--------|-------|-----------------|
+| `failedSettlements` | Server logs + `/stats` endpoint | Any non-zero value |
+| `escrowDepositTimeout` | Server logs | Spike above baseline |
+| RPC latency | Server logs `[Solana]` prefixed lines | > 5s average |
+| `npm audit` critical CVEs | CI / manual run | Any critical |
+| Pause state | `getConfigState().isPaused` | Should always be `false` unless emergency |
+| Treasury + ops balance | On-chain accounts | Verify match deposits vs received amounts weekly |
+| Authority account balance | Server hot wallet | Keep above 0.1 SOL for TX fees |
+
+### 9.2 Settlement Health
+
+Watch for `MatchSettled` events on-chain. A `SettlementFailed` log (server-side) means the settlement TX was not confirmed. The server retry logic (`settling` state in MongoDB) will resubmit, but you should investigate if failures persist.
+
+On-chain events emitted by the programs:
+- `MatchCreated` — match escrow initialized
+- `WagerDeposited` — player deposited
+- `MatchSettled` — settlement complete (includes winner, amounts)
+- `MatchCancelled` — match cancelled
+- `ConfigUpdated` — authority/treasury/ops rotated
+- `Paused` / `Unpaused` — pause state changed (added in fix bundle)
+
+Use Helius webhooks or a Geyser plugin to stream these events to a monitoring service.
+
+### 9.3 Dependency Hygiene
+
+Run monthly (or before any production change):
+```bash
+cd server && npm audit
+cd client && npm audit
+```
+
+Priority packages from DB Audit #2:
+- `socket.io-parser` (H042) — DOS advisory
+- `path-to-regexp` (H043) — ReDoS advisory
+- `express-rate-limit` — already bumped to 8.5.1 in fix bundle
+
+### 9.4 RPC Health
+
+If `REACT_APP_SOLANA_RPC` or server `SOLANA_RPC` returns 429 or times out consistently:
+- Switch to backup RPC endpoint (DB H049 — add fallback RPC to server config)
+- Check Helius / QuickNode dashboard for rate limit usage
+- Exponential backoff wrapper (DB H050) should absorb transient spikes
+
+### 9.5 Bot and Scheduler
+
+- Monitor Telegram bot for `429 Too Many Requests` (DB H056 — bot lacks queue/backoff, deferred to Bundle C)
+- Monitor `lobbyWatchdog` scheduler for reentrance (DB H078 — deferred). If duplicate runs observed in logs, add `if (running) return` guard immediately.
+
+---
+
+## 10. Rollback Procedure
+
+### 10.1 Scope Assessment
+
+First determine what broke:
+
+| Scenario | Rollback target |
+|----------|----------------|
+| Server bug (logic, not on-chain) | Revert server commit, redeploy |
+| Client bug (UI, not on-chain) | Revert client commit, redeploy |
+| On-chain program bug (critical) | Pause program + upgrade program |
+| Settlement math bug | Pause immediately, manually settle affected matches, upgrade |
+| Key compromise | Pause + rotate authority (section 11) |
+
+### 10.2 Server Rollback
+
+```bash
+# Identify last good commit
+git log --oneline server/
+
+# Revert to last known good server state
+git revert <bad-commit> --no-edit
+git push origin main
+# Render auto-deploys from main
+```
+
+Or via Render dashboard: "Manual Deploy" → select a previous deploy.
+
+### 10.3 Client Rollback
+
+Via Vercel dashboard: Deployments → select previous deployment → "Promote to Production".
+
+Or:
+```bash
+git revert <bad-commit> --no-edit
+git push origin main
+# Vercel auto-deploys
+```
+
+### 10.4 On-Chain Program Rollback
+
+If a critical bug is found in the deployed program:
+
+**Step 1: Pause immediately**
+```javascript
+import { pauseProgram } from './server/services/escrow.js';
+await pauseProgram();
+```
+
+This blocks `create_match`, `deposit_wager`, `settle_match`, `cancel_match`. Permissionless reclaim remains unblocked as the player-safety backstop.
+
+**Step 2: Assess active matches**
+
+Check MongoDB for all matches in non-terminal state (`lobby`, `weapon_shop`, `battle`, `settling`). Decide per-match: cancel (refund players) or attempt manual settlement.
+
+**Step 3: Upgrade the program**
+
+Fix the bug in source, rebuild, then upgrade via the multisig (post-mainnet) or direct authority (devnet):
+
+```bash
+anchor build
+
+# Devnet (direct upgrade authority)
+anchor upgrade target/deploy/solshot_escrow.so \
+  --program-id <PROGRAM_ID> \
+  --provider.cluster devnet
+
+# Mainnet (via Squads multisig — requires M-of-N signatures)
+# Use Squads UI or squads-multisig-cli to propose and approve the upgrade TX
+```
+
+**Step 4: Unpause**
+```javascript
+import { unpauseProgram } from './server/services/escrow.js';
+await unpauseProgram();
+```
+
+**Step 5: Verify**
+
+Run the post-deploy verification checklist (section 13) before announcing resume of service.
+
+### 10.5 Fund Safety During Rollback
+
+Three independent layers ensure players never lose SOL during an outage or rollback:
+
+| Layer | Mechanism | Timeout |
+|-------|-----------|---------|
+| 1. Server recovery | Server restarts, settles based on last MongoDB state | Immediate on restart |
+| 2. Player cancel | Either player calls `cancel_match` on-chain | After 1h from activation (v1 TIMEOUT_SECONDS = 3600 post-fix) |
+| 3. Permissionless reclaim | Any fee payer calls `permissionless_reclaim` | After 2h (v1 PERMISSIONLESS_RECLAIM_TIMEOUT = 7200 post-fix) |
+
+Permissionless reclaim has NO pause guard — it remains available even when the program is paused. This is the absolute backstop.
+
+---
+
+## 11. Key Rotation
+
+Authority keys can be rotated without disrupting active matches. The on-chain program reads authority from GlobalConfig PDA at execution time.
+
+### 11.1 When to Rotate
 
 - Suspected key compromise
-- Scheduled rotation (define your own cadence -- TBD, not captured in interview)
-- Personnel change (N/A for solo founder, but relevant if team grows)
+- Scheduled rotation (define cadence post-mainnet)
+- Squads multisig signer departure
 
-### 7.2 Rotation procedure
+### 11.2 Rotate Application Authority
 
 **Step 1: Generate new keypair**
-
 ```bash
 solana-keygen new -o ~/.config/solana/solshot-authority-new.json
 solana address -k ~/.config/solana/solshot-authority-new.json
-# Record the new public key
 ```
 
 **Step 2: Update on-chain config**
 
-The current authority must sign this transaction. Use `update_config` with only the field(s) you want to change -- pass `null` for fields to keep unchanged.
-
+After Bundle 1 is implemented (propose/accept authority), use the two-step flow. Until then (devnet only):
 ```javascript
 import { updateConfig } from './server/services/escrow.js';
-
-// Rotate authority only (treasury and ops unchanged)
-const result = await updateConfig(
-    '<NEW_AUTHORITY_PUBKEY>',  // newAuthority
-    null,                      // newTreasury (keep current)
-    null                       // newOps (keep current)
-);
-console.log('Config update TX:', result.txSignature);
+await updateConfig('<NEW_AUTHORITY_PUBKEY>', null, null);
 ```
-
-On-chain, this emits a `ConfigUpdated` event with all three current addresses for audit trail.
-
-**Safety checks enforced by the program:**
-- New authority cannot be the zero address (prevents accidental governance burn -- SOS: B1)
-- All three addresses must remain distinct after update (prevents settlement DoS -- SOS: H003)
 
 **Step 3: Update server credentials**
 
-Two options depending on your deployment:
+Option A — SIGHUP hot-reload:
+```bash
+# Update SOLANA_KEYPAIR_JSON in Render dashboard, then:
+curl -X POST https://your-server/api/admin/reload-keys \
+  -H "x-admin-key: <YOUR_ADMIN_API_KEY>"
+```
 
-**Option A: SIGHUP hot-reload (Linux/Render)**
-
-1. Update the `SOLANA_KEYPAIR_JSON` environment variable in your hosting dashboard (Render) with the new keypair's JSON array
-2. Trigger credential reload:
-   ```bash
-   curl -X POST https://your-server/api/admin/reload-keys \
-     -H "x-admin-key: <YOUR_ADMIN_API_KEY>"
-   ```
-   This sends SIGHUP to the server process, which calls `initKeys()` then `initEscrow()` to reinitialize with the new keypair.
-
-**Option B: Restart**
-
-1. Update the keypair file or environment variable
-2. Restart the server process
+Option B — Restart:
+Update env var, redeploy.
 
 **Step 4: Verify**
-
 ```javascript
 import { getConfigState } from './server/services/escrow.js';
 const config = await getConfigState();
-console.log('Current authority:', config.authority);
-// Should match new keypair pubkey
+// config.authority must match new keypair pubkey
 ```
 
-### 7.3 Rotating treasury or ops
+### 11.3 What Happens to Active Matches
 
-Same procedure using `updateConfig`, but changing the second or third parameter:
+Nothing breaks. Settlement validates authority against GlobalConfig at execution time via `has_one = authority`. After rotation:
+- Old authority can no longer settle or create
+- New authority can settle all existing active matches
+- Players can cancel after timeout regardless of authority changes
+- Permissionless reclaim is unaffected
+
+### 11.4 Rotate Treasury or Ops
 
 ```javascript
 // Rotate treasury only
@@ -477,135 +759,93 @@ await updateConfig(null, '<NEW_TREASURY_PUBKEY>', null);
 
 // Rotate ops only
 await updateConfig(null, null, '<NEW_OPS_PUBKEY>');
-
-// Rotate all three at once
-await updateConfig('<NEW_AUTH>', '<NEW_TREASURY>', '<NEW_OPS>');
 ```
 
-After changing treasury or ops, update the corresponding `TREASURY_WALLET` / `OPS_WALLET` in the server's environment variables and restart or reload.
-
-### 7.4 What happens to active matches
-
-Nothing. Active escrow PDAs store `escrow.authority` but settlement validates the authority against the GlobalConfig PDA at execution time via `has_one = authority`. So after rotation:
-
-- The old authority can no longer settle or create matches
-- The new authority can settle all existing active matches
-- Players can still cancel after timeout (24h) regardless of authority changes
-- Permissionless reclaim (48h) is unaffected -- requires no authority at all
+After changing, update `TREASURY_WALLET` / `OPS_WALLET` in server env and reload.
 
 ---
 
-## 8. Emergency Procedures
+## 12. Emergency Procedures
 
-### 8.1 Pause the program (on-chain)
+### 12.1 Pause the Program
 
-Halts all economic instructions: `create_match`, `deposit_wager`, `settle_match`, `cancel_match`. The `permissionless_reclaim` instruction is NOT gated by the pause flag -- it remains available as the nuclear backstop.
+Halts `create_match`, `deposit_wager`, `settle_match`, `cancel_match`. Does NOT halt `permissionless_reclaim`.
 
 ```javascript
 import { pauseProgram } from './server/services/escrow.js';
-
 const result = await pauseProgram();
 console.log('Pause TX:', result.txSignature);
+// Idempotent — safe to call when already paused
 ```
 
-Or call via the Anchor CLI if the server is down:
-
-```bash
-# TBD — not captured in interview: direct CLI invocation of pause_program
-# You would need a script that constructs and sends the transaction manually
-```
-
-**Idempotent:** Calling `pauseProgram` when already paused succeeds without error.
-
-### 8.2 Unpause the program
+### 12.2 Unpause the Program
 
 ```javascript
 import { unpauseProgram } from './server/services/escrow.js';
-
 const result = await unpauseProgram();
 console.log('Unpause TX:', result.txSignature);
+// Idempotent — safe to call when already unpaused
 ```
 
-**Idempotent:** Calling `unpauseProgram` when already unpaused succeeds without error.
+### 12.3 Halt the Server
 
-### 8.3 Halt the server
+1. Pause the on-chain program first (12.1) — prevents settlement or deposit even if server restarts
+2. Stop the server process (Render: scale to 0 or manual deploy stop)
+3. All connected clients receive Socket.IO disconnect events
 
-If the situation requires stopping all match activity immediately:
+### 12.4 Crash Recovery
 
-1. **Pause the on-chain program first** (section 8.1) -- this prevents any settlement or deposit even if the server restarts
-2. Stop the server process (Render: manual deploy of a stopped state, or scale to 0)
-3. All connected clients will receive Socket.IO disconnect events
-4. MongoDB match states will reflect last known state
-
-### 8.4 Crash recovery
-
-When the server restarts after a crash, it checks MongoDB for matches in `settling` state (match MongoDB state machine: `lobby -> weapon_shop -> battle -> settling -> complete/cancelled`). The `settling` state specifically exists for the "did my TX land?" scenario:
-
-1. Server checks if settlement transaction already confirmed on-chain
+On server restart, check MongoDB for matches in `settling` state:
+1. Server checks if settlement TX already confirmed on-chain
 2. If confirmed: update MongoDB to `complete`
-3. If not confirmed: resubmit settlement transaction
-4. No match resumption -- winner determined by last known game state (escrow-flow D4)
+3. If not confirmed: resubmit settlement TX
 
-### 8.5 Fund safety layers during emergency
+### 12.5 Incident Checklist
 
-Three independent layers ensure players never lose SOL, even during extended outages:
-
-| Layer | Mechanism | Trigger | Timeout |
-|-------|-----------|---------|---------|
-| 1. Server recovery | Server restarts, settles based on last known state | Automatic on restart | Immediate |
-| 2. Player cancel | Either player calls `cancel_match` on-chain | Player signature required | After 24h from activation (or creation if never activated) |
-| 3. Permissionless reclaim | Anyone calls `permissionless_reclaim` | Any fee payer signature | After 48h (`TIMEOUT_SECONDS * 2 = 172800s`) |
-
-**Key point:** Permissionless reclaim (layer 3) works even when the program is paused. It has no pause guard. This is the absolute backstop -- funds can never be permanently locked.
-
-### 8.6 Incident checklist
-
-For any security incident:
-
-- [ ] **Immediate:** Pause the on-chain program (`pauseProgram()`)
-- [ ] **Immediate:** Halt the server if compromise is server-side
-- [ ] **Assess:** Check on-chain config state -- is authority still correct?
+- [ ] **Immediate:** Pause on-chain program (`pauseProgram()`)
+- [ ] **Immediate:** Halt server if compromise is server-side
+- [ ] **Assess:** Check on-chain config state — is authority still correct?
 - [ ] **Assess:** Check for unauthorized settlements via on-chain `MatchSettled` events
-- [ ] **Rotate:** If key compromise suspected, rotate authority (section 7.2) -- this is a single TX
-- [ ] **Communicate:** TBD -- not captured in interview (no public comms channel documented)
-- [ ] **Resume:** Unpause program, restart server, verify end-to-end flow
-- [ ] **Post-mortem:** Document what happened and update procedures
+- [ ] **Rotate:** If key compromise suspected, rotate authority (section 11.2)
+- [ ] **Communicate:** Notify players via Telegram bot / community channel
+- [ ] **Resume:** Unpause program, restart server, run section 13 verification
+- [ ] **Post-mortem:** Document and update procedures
 
 ---
 
-## 9. Post-Deploy Verification
+## 13. Post-Deploy Verification
 
-Run through this checklist after every deployment (devnet or mainnet).
+Run after every deployment (devnet or mainnet).
 
-### 9.1 On-chain verification
+### 13.1 On-Chain Verification
 
-- [ ] Program deployed: `solana program show <PROGRAM_ID> --url <cluster>`
-- [ ] Config initialized: `getConfigState()` returns correct authority, treasury, ops
-- [ ] Config not paused: `isPaused === false`
-- [ ] Create a test match escrow via `createMatchEscrow()`
-- [ ] Both test players deposit via `depositWager` client-side transactions
-- [ ] Settle the test match -- verify winner gets 90%, treasury gets 7%, ops gets 3%
-- [ ] Verify the escrow PDA is closed after settlement (rent returned to authority)
+- [ ] `solana program show <PROGRAM_ID> --url <cluster>` — program deployed, authority correct
+- [ ] `getConfigState()` returns correct authority, treasury, ops
+- [ ] `isPaused === false`
+- [ ] Create a test match escrow
+- [ ] Both test players deposit
+- [ ] Settle test match — verify 90/7/3 split
+- [ ] Verify escrow PDA is closed after settlement (rent returned to authority)
 
-### 9.2 Server verification
+### 13.2 Server Verification
 
 - [ ] `GET /health` returns 200
-- [ ] `GET /stats` (with admin key) returns metrics
-- [ ] Server logs: `[Keys] Escrow authority: <expected_pubkey>`
-- [ ] Server logs: `[Escrow] Initialized`
-- [ ] Server logs: `MongoDB connected`
-- [ ] WebSocket connections work (two players can join a room)
+- [ ] `GET /stats` with admin key returns metrics
+- [ ] Logs: `[Keys] Escrow authority: <expected_pubkey>`
+- [ ] Logs: `[Escrow] Initialized`
+- [ ] Logs: `MongoDB connected`
+- [ ] WebSocket connections work
 
-### 9.3 Client verification
+### 13.3 Client Verification
 
 - [ ] Site loads, Socket.IO connects
-- [ ] Wallet adapter detects Phantom/Solflare
+- [ ] Wallet adapter detects Phantom / Solflare (via Privy)
 - [ ] Balance displays correctly
-- [ ] Full match lifecycle: create room, join, fund, play, settle
+- [ ] Full match lifecycle: create room → join → fund → play → settle
 
-### 9.4 Settlement math verification
+### 13.4 Settlement Math Verification
 
-For a 0.1 SOL wager (each player), total pot = 0.2 SOL = 200,000,000 lamports:
+For 0.1 SOL wager each, 2 players:
 
 | Recipient | BPS | Lamports | SOL |
 |-----------|-----|----------|-----|
@@ -614,49 +854,69 @@ For a 0.1 SOL wager (each player), total pot = 0.2 SOL = 200,000,000 lamports:
 | Ops | 300 | 6,000,000 | 0.006 |
 | **Total** | **10000** | **200,000,000** | **0.2** |
 
-Winner amount is calculated as remainder (`total - treasury - ops`) to prevent dust loss from integer division. BPS math uses u128 widening to prevent overflow at max wager (100 SOL, BOK GAP-002).
+### 13.5 Wager Bounds Verification
 
-### 9.5 Wager bounds verification
-
-| Bound | Value | Enforced By |
+| Bound | Value | Enforced by |
 |-------|-------|-------------|
-| Minimum wager | 10,000 lamports (0.00001 SOL) | `MIN_WAGER_LAMPORTS` in `lib.rs` (OC-08) |
-| Maximum wager | 100,000,000,000 lamports (100 SOL) | `MAX_WAGER_LAMPORTS` in `lib.rs` (OC-12) |
-| Settlement deadline | 3,600 seconds (1 hour) after activation | `SETTLEMENT_TIMEOUT_SECONDS` (OC-07) |
-| Cancel timeout | 86,400 seconds (24 hours) | `TIMEOUT_SECONDS` |
-| Permissionless reclaim | 172,800 seconds (48 hours) | `PERMISSIONLESS_RECLAIM_TIMEOUT` |
+| Minimum wager | 10,000 lamports (0.00001 SOL) | `MIN_WAGER_LAMPORTS` in `lib.rs` |
+| Maximum wager | 100,000,000,000 lamports (100 SOL) | `MAX_WAGER_LAMPORTS` in `lib.rs` |
+| Settlement deadline | 3,600s after activation | `SETTLEMENT_TIMEOUT_SECONDS` |
+| Cancel timeout (v1 post-fix) | 3,600s | `TIMEOUT_SECONDS` (bumped from 600 per SOS H035) |
+| Permissionless reclaim (v1 post-fix) | 7,200s | `PERMISSIONLESS_RECLAIM_TIMEOUT` (= TIMEOUT_SECONDS * 2) |
 
 ---
 
-## Appendix A: Program ID Locations
+## 14. Appendices
+
+### Appendix A — Program ID Locations
 
 When the program ID changes (fresh deploy), update all of these:
 
-| File | Field / Constant |
-|------|-----------------|
+| File | Field |
+|------|-------|
 | `programs/solshot-escrow/src/lib.rs` | `declare_id!("...")` |
-| `Anchor.toml` | `[programs.devnet]` and `[programs.localnet]` |
+| `programs/solshot-escrow-v2/src/lib.rs` | `declare_id!("...")` |
+| `Anchor.toml` | `[programs.devnet]` and `[programs.localnet]` (both programs) |
 | `server/.env` | `MATCH_ESCROW_PROGRAM_ID` |
-| `server/services/escrow.js` | `PROGRAM_ID` constant (line 39) |
+| `server/services/escrow.js` | `PROGRAM_ID` constant |
 | `client/.env` | `REACT_APP_ESCROW_PROGRAM_ID` |
 
-## Appendix B: PDA Derivations
+### Appendix B — PDA Derivations
 
 | PDA | Seeds | Notes |
 |-----|-------|-------|
-| GlobalConfig | `[b"config"]` | Singleton. 106 bytes. |
-| MatchEscrow | `[b"match", match_id.as_bytes()]` | One per match. 168 bytes. `match_id` max 32 chars. |
+| GlobalConfig | `[b"config"]` | Singleton. Initialized once per program deploy. |
+| MatchEscrow (v1) | `[b"match", match_id.as_bytes()]` | One per match. 232 bytes. `match_id` max 32 chars. |
+| MatchEscrow (v2) | `[b"match", match_id.as_bytes()]` | Same seed pattern. |
 
-## Appendix C: On-Chain Instructions Quick Reference
+### Appendix C — On-Chain Instructions Quick Reference
 
 | Instruction | Signer | Pause-gated | Notes |
 |-------------|--------|-------------|-------|
 | `initialize_config` | Payer (deployer) | No | One-time after deploy |
 | `update_config` | Authority | No | Rotate authority/treasury/ops |
-| `pause_program` | Authority | No | Must work when paused |
-| `unpause_program` | Authority | No | Must work when paused |
+| `pause_program` | Authority | No | Emits `Paused` event (added in fix bundle) |
+| `unpause_program` | Authority | No | Emits `Unpaused` event (added in fix bundle) |
 | `create_match` | Authority | Yes | Server creates escrow PDA |
-| `deposit_wager` | Player | Yes | Client-signed, one per player |
-| `settle_match` | Authority | Yes | 90/7/3 split, closes PDA |
-| `cancel_match` | Authority OR Player | Yes | Refunds deposited players |
-| `permissionless_reclaim` | Any fee payer | **No** | 48h backstop, caller gets rent |
+| `deposit_wager` | Player | Yes | Client-signed; deadline strictly `< deposit_deadline` (v2 post-fix H018) |
+| `start_with_depositors` (v1) | Authority | No | Removed pause guard per SOS H016 fix; 1h deposit window gate (SOS H017 fix) |
+| `settle_match` | Authority | No | Removed pause guard per SOS H016 fix; 90/7/3 split, closes PDA |
+| `cancel_match` | Authority OR Player | No | Removed pause guard per SOS H016 fix; requires all depositors in remaining_accounts (SOS H023 fix) |
+| `permissionless_reclaim` | Any fee payer | **No** | 2h backstop (v1 post-fix); caller gets rent |
+
+### Appendix D — Deferred-to-Mainnet Finding Summary
+
+Audit findings explicitly deferred to pre-mainnet bundles. Full details in `Docs/REMEDIATION_DECISIONS.md` (SOS on-chain) and `Docs/DB_REMEDIATION_DECISIONS.md` (off-chain).
+
+**Must-fix before mainnet:**
+- SOS H001 — one-step authority transfer (no propose/accept)
+- SOS H044/H046 + DB H012 — single hot wallet holds both upgrade + application authority
+- SOS H002/H032 — BPS/treasury rotation with no timelock
+- SOS H024 + DB H014 — non-contiguous refund mask UNRECOVERABLE; server/on-chain desync
+- DB H015/H016 — group-chat double-settle and confirmDeposit double-overwrite races
+- DB H049/H050 — single unmonitored RPC endpoint, no retry backoff
+
+**Design-level pre-mainnet:**
+- SOS H003/H006/H007 — authority winner selection fraud (server-authoritative architecture limitation)
+- DB H003/H004 — JWT generated but never verified; auth signature replay window
+- DB H009/H010 — wallet rotation leaves stale DB entry

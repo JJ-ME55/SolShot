@@ -4,7 +4,17 @@
   "project_name": "SolShot",
   "mode": "existing",
   "created": "2026-02-22",
-  "updated": "2026-02-24",
+  "updated": "2026-05-07",
+  "refresh_history": [
+    {
+      "date": "2026-05-07",
+      "type": "targeted_refresh",
+      "trigger": "post-audit (SOS+BOK+DB) + v2 escrow + Privy migration + group-chat infrastructure",
+      "docs_updated": ["architecture.md", "security-model.md", "deployment-sequence.md", "edge-case-playbook.md", "one-pager.md", "PROJECT_BRIEF.md"],
+      "docs_added": ["audit-summary.md", "mainnet-roadmap.md"],
+      "docs_unchanged": ["competitive-landscape.md", "crypto-explainer.md", "how-to-play.md", "token-economics.md"]
+    }
+  ],
   "phases": {
     "survey": {
       "status": "complete",
@@ -36,7 +46,19 @@
       "waves_total": 4,
       "docs_generated": 9,
       "docs_validated": 0,
-      "note": "All 9 docs generated across 4 waves. Pending user review and validation."
+      "note": "All 9 docs generated across 4 waves in Feb run."
+    },
+    "refresh_2026-05-07": {
+      "status": "complete",
+      "completed": "2026-05-07",
+      "type": "targeted_refresh",
+      "trigger": "post-audit (SOS+BOK+DB) + v2 escrow + Privy migration + group-chat infrastructure",
+      "docs_refreshed": 6,
+      "docs_added": 2,
+      "docs_unchanged": 4,
+      "total_docs_now": 11,
+      "agents_spawned": 7,
+      "model": "sonnet"
     },
     "reconcile": {
       "status": "pending",

@@ -719,8 +719,12 @@ function LobbyScreen({ navigate, screenData }) {
 
     // Custom Challenge → emit createChallengeRoom (creates a Challenge document
     // + shortCode + shareable deep link). The lobby's challenge share panel
-    // renders automatically once the server responds with `challengeCreated`.
-    // Anything else → emit createRoom (standard private/quick room).
+    // renders automatically once the server responds with `challengeCreated`,
+    // and that share panel IS the "what to do next" UI for custom challenge —
+    // the user copies the link or sends the card to a specific friend.
+    // No matchmaking-queue, no random-opponent waiting, so we deliberately
+    // do NOT raise the AWAITING OPPONENT modal here (would cover the share
+    // panel that the user actually needs to interact with).
     if (isCustomMode) {
       const formatStr = matchLength === 5 ? 'BO5' : matchLength === 3 ? 'BO3' : 'BO1';
       window.socket.emit('createChallengeRoom', {
@@ -733,8 +737,6 @@ function LobbyScreen({ navigate, screenData }) {
         format: formatStr,
         wagerToken: 'SOL',
       });
-      setWaitingRoomMax(2); // challenges are always 1v1
-      setWaiting(true);
       return;
     }
 

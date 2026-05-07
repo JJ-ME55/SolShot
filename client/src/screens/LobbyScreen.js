@@ -7,6 +7,8 @@ import TANK_COLORS from '../data/colors';
 import { useSolShotWallet } from '../wallet/WalletContext';
 import { haptic } from '../telegram/haptic';
 import { EmptyState } from '../components/EmptyStates';
+import useIsMobile from '../hooks/useIsMobile';
+import ScanBtn from '../components/design/ScanBtn';
 
 /* ── match modes (Litepaper v2.1) ──
  *
@@ -307,6 +309,8 @@ const s = {
 
 
 function LobbyScreen({ navigate, screenData }) {
+  const isMobile = useIsMobile();
+
   /* ── state ── */
   const [rooms, setRooms] = useState([]);
   const [matchMode, setMatchMode] = useState('practice');
@@ -909,6 +913,607 @@ function LobbyScreen({ navigate, screenData }) {
     const payout = (amount * players * 0.90).toFixed(3);
     return pot + ' SOL pot \u2014 winner takes ' + payout + ' SOL';
   };
+
+  // ── MOBILE LANDSCAPE BRANCH ──────────────────────────────────────────
+  // 3-column landscape layout per HAndover from Design/mobile/MobileDeploy.jsx.
+  // Uses the shipped 4-mode taxonomy (vs_bot / practice / wagered / custom_challenge).
+  // All state, handlers, socket events stay unchanged — this branch only
+  // changes the render output. The existing desktop return follows below.
+  if (isMobile) {
+    const wageredEnabled = process.env.REACT_APP_WAGERED_ENABLED === 'true';
+    const mobileModeSectionLabel = {
+      fontFamily: 'var(--f-mono)', fontSize: 8,
+      color: 'var(--olive)', letterSpacing: '0.25em',
+      marginBottom: 4,
+    };
+    const mobileChipStyle = (active, color) => ({
+      padding: '4px 8px',
+      background: active ? (color || 'var(--accent)') : 'var(--bg-raised)',
+      color: active ? '#0e1209' : 'var(--bone)',
+      border: '1px solid ' + (active ? (color || 'var(--accent-hot)') : 'var(--border)'),
+      clipPath: 'var(--clip-6)',
+      fontFamily: 'var(--f-mono)', fontSize: 9, letterSpacing: '0.12em',
+      cursor: 'pointer',
+      userSelect: 'none',
+    });
+    const mobileModes = [
+      { key: 'vs_bot',           label: 'VS BOT',          sub: 'PRACTICE · FREE' },
+      { key: 'practice',         label: 'PRACTICE',        sub: '1V1 · FREE' },
+      { key: 'wagered',          label: 'WAGERED',         sub: 'MATCHMAKE · SOL' },
+      { key: 'custom_challenge', label: 'CUSTOM',          sub: 'SET TERMS' },
+    ];
+    const playerHandle = getPlayerName();
+
+    // Determine wager display label for summary card
+    const summaryWagerLabel = isCustomMode
+      ? (customWager === 0 ? 'FREE' : customWager + ' SOL')
+      : matchMode === 'practice' || matchMode === 'vs_bot'
+        ? 'FREE'
+        : effectiveWager > 0
+          ? effectiveWager + ' SOL'
+          : 'FREE';
+
+    // Open lobbies filtered to current mode (if not custom)
+    const filteredRooms = isCustomMode
+      ? []
+      : rooms.filter(r => {
+          const targetMode = matchMode === 'wagered' ? legacyModeForWager(effectiveWager) : matchMode;
+          return r.matchMode === targetMode;
+        });
+
+    // Live "N WAITING" badge count
+    const queueBucket = !isCustomMode && matchMode !== 'practice' && matchMode !== 'vs_bot'
+      ? queueSnapshot.find(
+          (b) => b.matchMode === (matchMode === 'wagered' ? legacyModeForWager(effectiveWager) : matchMode)
+            && b.matchLength === matchLength
+            && Math.abs(b.wager - effectiveWager) < 1e-9
+        )
+      : null;
+    const othersWaiting = queueBucket
+      ? (queueState === 'searching' ? Math.max(0, queueBucket.count - 1) : queueBucket.count)
+      : 0;
+
+    return (
+      <>
+        {/* MOBILE LANDSCAPE LAYOUT */}
+        <div style={{
+          position: 'relative', height: '100%', overflow: 'hidden',
+          background: 'var(--bg-deep)', display: 'flex', flexDirection: 'column',
+        }}>
+          {/* Header strip */}
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'auto 1fr auto', alignItems: 'center', gap: 8,
+            padding: '5px 12px', borderBottom: '1px solid var(--border)',
+            flexShrink: 0,
+          }}>
+            <button
+              onClick={() => { if (queueState === 'searching') cancelQueue(); if (waiting) cancelRoom(); navigate('menu'); }}
+              style={{
+                fontFamily: 'var(--f-mono)', fontSize: 8, color: 'var(--olive)',
+                letterSpacing: '0.25em', background: 'transparent', border: 'none',
+                cursor: 'pointer', padding: '2px 4px',
+              }}
+            >← MENU</button>
+            <div style={{
+              fontFamily: 'var(--f-display)', fontSize: 18, color: 'var(--bone)',
+              letterSpacing: '0.18em', textAlign: 'center', lineHeight: 1,
+            }}>DEPLOY</div>
+            <div style={{
+              fontFamily: 'var(--f-mono)', fontSize: 8, color: 'var(--olive)',
+              letterSpacing: '0.18em', textAlign: 'right',
+            }}>{playerHandle}</div>
+          </div>
+
+          {/* Body: 3-column grid */}
+          <div style={{
+            flex: 1, display: 'grid', gridTemplateColumns: '130px 1fr 160px',
+            gap: 10, padding: '8px 10px', minHeight: 0,
+          }}>
+
+            {/* LEFT: mode list */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minHeight: 0 }}>
+              <div style={mobileModeSectionLabel}>MODE</div>
+              {mobileModes.map(m => {
+                const locked = !wageredEnabled && m.key !== 'practice' && m.key !== 'vs_bot';
+                const isActive = matchMode === m.key;
+                return (
+                  <button
+                    key={m.key}
+                    onClick={locked ? undefined : () => setMatchMode(m.key)}
+                    style={{
+                      padding: '5px 8px',
+                      background: isActive ? 'rgba(218,138,40,0.12)' : 'var(--bg-raised)',
+                      color: isActive ? 'var(--accent)' : 'var(--bone)',
+                      border: isActive ? '1px solid var(--accent)' : '1px solid var(--border)',
+                      borderLeft: isActive ? '3px solid var(--accent)' : '3px solid transparent',
+                      clipPath: 'var(--clip-6)',
+                      cursor: locked ? 'not-allowed' : 'pointer',
+                      textAlign: 'left',
+                      display: 'flex', flexDirection: 'column', gap: 0,
+                      opacity: locked ? 0.4 : 1,
+                      position: 'relative',
+                    }}
+                  >
+                    <span className="stencil" style={{ fontSize: 10, letterSpacing: '0.15em', lineHeight: 1 }}>{m.label}</span>
+                    <span style={{ fontFamily: 'var(--f-mono)', fontSize: 7, opacity: 0.7, letterSpacing: '0.15em', marginTop: 2 }}>{m.sub}</span>
+                    {locked && (
+                      <span style={{
+                        position: 'absolute', top: -4, right: -2,
+                        fontFamily: 'var(--f-mono)', fontSize: 7, letterSpacing: 0.5,
+                        color: 'var(--bone)', background: 'var(--bg-deep)',
+                        border: '1px solid var(--border)', borderRadius: 2, padding: '1px 3px',
+                      }}>SOON</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* MIDDLE: match config */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minHeight: 0, overflowY: 'auto' }}>
+
+              {/* WAGER */}
+              {isCustomMode ? (
+                <div>
+                  <div style={mobileModeSectionLabel}>WAGER</div>
+                  <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                    {[0, 0.1, 0.25, 0.5, 1.0].map(tier => (
+                      <button
+                        key={tier}
+                        onClick={() => setCustomWager(tier)}
+                        style={mobileChipStyle(customWager === tier, '#ff6600')}
+                      >
+                        {tier === 0 ? 'FREE' : tier + ' SOL'}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => { if ([0, 0.1, 0.25, 0.5, 1.0].includes(customWager)) setCustomWager(0.2); }}
+                      style={mobileChipStyle(![0, 0.1, 0.25, 0.5, 1.0].includes(customWager), '#ff6600')}
+                    >CUSTOM</button>
+                  </div>
+                  {![0, 0.1, 0.25, 0.5, 1.0].includes(customWager) && (
+                    <input
+                      type="number" min="0.01" step="0.01"
+                      value={customWager}
+                      onChange={e => { const v = parseFloat(e.target.value); if (!isNaN(v) && v >= 0) setCustomWager(Math.round(v * 100) / 100); }}
+                      style={{
+                        width: '100%', padding: '5px 8px', marginTop: 4,
+                        fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: 1,
+                        background: 'rgba(255,102,0,0.08)', border: '1px solid #ff6600',
+                        clipPath: 'var(--clip-6)', color: '#ff6600', outline: 'none',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                  )}
+                </div>
+              ) : availableWagers.length > 1 ? (
+                <div>
+                  <div style={mobileModeSectionLabel}>WAGER</div>
+                  <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                    {availableWagers.map(tier => {
+                      const tierMeta = matchMode === 'wagered' ? WAGER_TIERS.find(t => t.amount === tier) : null;
+                      return (
+                        <button
+                          key={tier}
+                          onClick={() => { setWager(tier); if (tier > 0 && !localStorage.getItem('solshot_escrow_seen')) setShowEscrow(true); }}
+                          style={{ ...mobileChipStyle(wager === tier, 'var(--sg)'), display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}
+                        >
+                          <span>{tier === 0 ? 'FREE' : tier + ' SOL'}</span>
+                          {tierMeta && <span style={{ fontSize: 7, opacity: 0.75, letterSpacing: '0.12em', marginTop: 1 }}>{tierMeta.label}</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div style={mobileModeSectionLabel}>WAGER</div>
+                  <div style={{
+                    fontFamily: 'var(--f-mono)', fontSize: 9, color: 'var(--sg)',
+                    letterSpacing: '0.18em', padding: '3px 0',
+                  }}>FREE</div>
+                </div>
+              )}
+
+              {/* FORMAT */}
+              <div>
+                <div style={mobileModeSectionLabel}>FORMAT</div>
+                <div style={{ display: 'flex', gap: 3 }}>
+                  {availableFormats.map(m => (
+                    <button
+                      key={m.rounds}
+                      onClick={() => setMatchLength(m.rounds)}
+                      style={mobileChipStyle(matchLength === m.rounds)}
+                    >{m.label}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* TANK COLOR */}
+              <div>
+                <div style={mobileModeSectionLabel}>TANK COLOR</div>
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                  {TANK_COLORS.map((c, i) => {
+                    const isClaimed = claimedColors.includes(c.phaserHex);
+                    return (
+                      <div
+                        key={c.id}
+                        title={isClaimed ? c.name + ' (taken)' : c.name}
+                        onClick={() => !isClaimed && setSelectedColor(i)}
+                        style={{
+                          width: 20, height: 20,
+                          clipPath: 'var(--clip-6)',
+                          background: c.hex,
+                          border: selectedColor === i ? '2px solid var(--bone)' : '2px solid transparent',
+                          cursor: isClaimed ? 'not-allowed' : 'pointer',
+                          opacity: isClaimed ? 0.25 : 1,
+                          boxShadow: selectedColor === i ? `0 0 6px ${c.hex}` : 'none',
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* CUSTOM CHALLENGE: handle input + send */}
+              {isCustomMode && (
+                <div>
+                  <div style={mobileModeSectionLabel}>CHALLENGE PLAYER</div>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <input
+                      type="text"
+                      placeholder="CALLSIGN"
+                      value={challengeCallsign}
+                      onChange={e => setChallengeCallsign(e.target.value.toUpperCase().slice(0, 16))}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && challengeCallsign.trim())
+                          window.socket?.emit('challengeCallsign', { callsign: challengeCallsign.trim() });
+                      }}
+                      style={{
+                        flex: 1, padding: '5px 8px',
+                        fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: 1,
+                        background: 'rgba(42,51,31,0.3)', border: '1px solid var(--border)',
+                        clipPath: 'var(--clip-6)', color: 'var(--bone)', outline: 'none',
+                        textTransform: 'uppercase',
+                      }}
+                    />
+                    <button
+                      onClick={() => { if (challengeCallsign.trim()) window.socket?.emit('challengeCallsign', { callsign: challengeCallsign.trim() }); }}
+                      style={{ ...mobileChipStyle(false), padding: '5px 10px', fontSize: 9 }}
+                    >SEND</button>
+                  </div>
+                  {challengeSentTo && (
+                    <div style={{ fontFamily: 'var(--f-mono)', fontSize: 8, color: 'var(--accent)', letterSpacing: '0.18em', marginTop: 3, animation: 'fl 2s ease-in-out infinite' }}>
+                      CHALLENGE SENT TO {challengeSentTo}...
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* OPEN LOBBIES (middle column, below config, non-custom modes) */}
+              {!isCustomMode && (
+                <div style={{ marginTop: 4 }}>
+                  <div style={mobileModeSectionLabel}>
+                    OPEN LOBBIES{filteredRooms.length > 0 ? ' · ' + filteredRooms.length : ''}
+                  </div>
+                  {filteredRooms.length === 0 ? (
+                    <div style={{
+                      fontFamily: 'var(--f-mono)', fontSize: 8, color: 'var(--olive)',
+                      letterSpacing: '0.15em', opacity: 0.5, padding: '4px 0',
+                    }}>NO OPEN LOBBIES</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      {filteredRooms.slice(0, 4).map(room => (
+                        <div key={room.roomId} style={{
+                          display: 'grid', gridTemplateColumns: '1fr auto auto auto',
+                          alignItems: 'center', gap: 4, padding: '3px 5px',
+                          background: 'var(--bg-raised)', borderLeft: '2px solid var(--accent)',
+                          fontFamily: 'var(--f-mono)', fontSize: 7, letterSpacing: '0.12em',
+                        }}>
+                          <span style={{ color: 'var(--bone)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {room.host?.name || 'UNKNOWN'}
+                          </span>
+                          <span style={{ color: 'var(--accent)', flexShrink: 0 }}>
+                            {room.wager > 0 ? room.wager + ' SOL' : 'FREE'}
+                          </span>
+                          <span style={{ color: 'var(--olive)', flexShrink: 0 }}>
+                            {(room.currentPlayers || 1) + '/' + (room.maxPlayers || 2)}
+                          </span>
+                          <button
+                            onClick={() => setConfirmJoin({
+                              roomId: room.roomId,
+                              hostName: room.host?.name || 'UNKNOWN',
+                              mode: MATCH_MODES[room.matchMode]?.label || 'MATCH',
+                              format: 'BO' + (room.totalRounds || 1),
+                            })}
+                            style={{
+                              padding: '2px 5px', background: 'transparent', color: 'var(--accent)',
+                              border: '1px solid var(--accent)', fontFamily: 'var(--f-mono)', fontSize: 7,
+                              letterSpacing: '0.18em', cursor: 'pointer',
+                            }}
+                          >JOIN</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* CUSTOM CHALLENGE: share panel (appears after challengeCreated) */}
+              {isCustomMode && challengeShortCode && challengeDeepLink && waitingRoomPlayers.length < waitingRoomMax && (
+                <div style={{
+                  background: 'var(--bg-surface)', border: '1px solid var(--accent)',
+                  padding: '8px 10px', clipPath: 'var(--clip-6)',
+                }}>
+                  <div style={{ fontFamily: 'var(--f-mono)', fontSize: 8, color: 'var(--accent)', letterSpacing: '0.22em', marginBottom: 5 }}>
+                    CHALLENGE · CH-#{challengeShortCode}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
+                    <button
+                      onClick={() => {
+                        const tg = window.Telegram?.WebApp;
+                        if (tg?.switchInlineQuery) {
+                          tg.switchInlineQuery('ch_' + challengeShortCode, ['users', 'groups']);
+                        } else if (navigator.share) {
+                          navigator.share({ title: 'SolShot Challenge', url: challengeDeepLink }).catch(() => {});
+                        } else {
+                          window.open('https://t.me/share/url?url=' + encodeURIComponent(challengeDeepLink), '_blank');
+                        }
+                      }}
+                      style={{
+                        padding: '7px 8px', background: 'var(--accent)', color: '#0e1209',
+                        border: '1px solid var(--accent-hot)', clipPath: 'var(--clip-6)',
+                        fontFamily: 'var(--f-display)', fontSize: 9, letterSpacing: '0.18em', cursor: 'pointer',
+                      }}
+                    >SEND CARD</button>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(challengeDeepLink)
+                          .then(() => { setLinkCopied(true); setTimeout(() => setLinkCopied(false), 1800); })
+                          .catch(() => {});
+                      }}
+                      style={{
+                        padding: '7px 8px', background: 'transparent', color: 'var(--bone)',
+                        border: '1px solid var(--border)', clipPath: 'var(--clip-6)',
+                        fontFamily: 'var(--f-display)', fontSize: 9, letterSpacing: '0.18em', cursor: 'pointer',
+                      }}
+                    >{linkCopied ? '✓ COPIED' : 'COPY LINK'}</button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* RIGHT: summary card + CTA */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minHeight: 0 }}>
+              <div style={mobileModeSectionLabel}>SUMMARY</div>
+
+              {/* Summary card */}
+              <div style={{
+                padding: '8px 8px', background: 'var(--bg-raised)', border: '1px solid var(--border)',
+                clipPath: 'var(--clip-6)', fontFamily: 'var(--f-mono)', fontSize: 8,
+                letterSpacing: '0.12em', lineHeight: 1.9,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--olive)' }}>MODE</span>
+                  <span style={{ color: 'var(--bone)' }}>{MATCH_MODES[matchMode]?.label || matchMode}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--olive)' }}>FORMAT</span>
+                  <span style={{ color: 'var(--bone)' }}>{'BO' + matchLength}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--olive)' }}>WAGER</span>
+                  <span style={{ color: effectiveWager > 0 ? 'var(--sg)' : 'var(--olive)' }}>{summaryWagerLabel}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--olive)' }}>COLOR</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ display: 'inline-block', width: 10, height: 10, background: TANK_COLORS[selectedColor]?.hex, borderRadius: 1 }} />
+                    <span style={{ color: 'var(--bone)' }}>{TANK_COLORS[selectedColor]?.name || ''}</span>
+                  </span>
+                </div>
+                {effectiveWager > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--olive)' }}>POT</span>
+                    <span style={{ color: 'var(--accent)' }}>{(effectiveWager * (numPlayers || 2)).toFixed(2)} SOL</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Primary CTA */}
+              {isCustomMode ? (
+                <ScanBtn
+                  height={40}
+                  fontSize={13}
+                  onClick={createRoom}
+                  style={{ marginBottom: 0 }}
+                >
+                  {customWager > 0 ? 'CREATE · ' + customWager + ' SOL' : 'CREATE FREE'}
+                </ScanBtn>
+              ) : matchMode === 'practice' || matchMode === 'vs_bot' ? (
+                <ScanBtn
+                  height={40}
+                  fontSize={13}
+                  onClick={createRoom}
+                  style={{ marginBottom: 0 }}
+                >
+                  {matchMode === 'vs_bot' ? 'VS BOT' : 'CREATE MATCH'}
+                </ScanBtn>
+              ) : (
+                <ScanBtn
+                  height={40}
+                  fontSize={13}
+                  onClick={findOrCreateMatch}
+                  style={{ marginBottom: 0 }}
+                >
+                  FIND MATCH
+                </ScanBtn>
+              )}
+
+              {/* Wager indicator */}
+              <div style={{
+                fontFamily: 'var(--f-mono)', fontSize: 8, color: modeConfig.color,
+                letterSpacing: '0.15em', textAlign: 'center', opacity: 0.85,
+              }}>
+                {effectiveWager > 0 ? '◆ ' + effectiveWager + ' SOL' : '◆ FREE MATCH'}
+              </div>
+
+              {/* N WAITING badge */}
+              {othersWaiting > 0 && (
+                <div style={{
+                  fontFamily: 'var(--f-mono)', fontSize: 8, color: 'var(--gg, #14F195)',
+                  letterSpacing: '0.18em', textAlign: 'center',
+                }}>
+                  {'● ' + othersWaiting + ' WAITING'}
+                </div>
+              )}
+
+              {/* Lobbies count link (non-custom) */}
+              {!isCustomMode && rooms.length > 0 && (
+                <div style={{
+                  fontFamily: 'var(--f-mono)', fontSize: 7, color: 'var(--olive)',
+                  letterSpacing: '0.18em', textAlign: 'center', opacity: 0.7,
+                }}>
+                  {rooms.length + ' OPEN ' + (rooms.length === 1 ? 'LOBBY' : 'LOBBIES')}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* ── MOBILE WAITING OVERLAY ── */}
+        {waiting && (
+          <div style={{
+            position: 'fixed', inset: 0,
+            background: 'rgba(10, 12, 8, 0.88)',
+            display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center',
+            zIndex: 30, gap: 10,
+          }}>
+            <div style={{
+              fontFamily: 'var(--f-display)', fontSize: 18, color: 'var(--accent)',
+              letterSpacing: '0.15em', animation: 'fl 2s ease-in-out infinite',
+            }}>
+              {waitingRoomPlayers.length >= waitingRoomMax
+                ? waitingRoomPlayers.length + '/' + waitingRoomMax + ' PLAYERS'
+                : 'AWAITING OPPONENT...'}
+            </div>
+            <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--olive)', letterSpacing: '0.18em' }}>
+              {modeConfig.label + ' / BO' + matchLength + (effectiveWager > 0 ? ' / ' + effectiveWager + ' SOL' : '')}
+              {depositStatuses.length > 0 && effectiveWager > 0 && (
+                <span>{' · ' + depositStatuses.filter(d => d.confirmed).length + '/' + depositStatuses.length + ' DEPOSITED'}</span>
+              )}
+            </div>
+            {depositCountdown !== null && (
+              <div style={{
+                fontFamily: 'var(--f-mono)', fontSize: depositCountdown <= 30 ? 16 : 12,
+                color: depositCountdown <= 30 ? '#ff6644' : 'var(--olive)',
+                letterSpacing: '0.18em',
+                animation: depositCountdown <= 10 ? 'fl 1s ease-in-out infinite' : 'none',
+              }}>
+                {Math.floor(depositCountdown / 60) + ':' + String(depositCountdown % 60).padStart(2, '0') + ' ' + (partialDepositInfo ? 'DECISION TIME' : 'DEPOSIT WINDOW')}
+              </div>
+            )}
+            {partialDepositInfo && isDecisionMaker && (
+              <div style={{ display: 'flex', gap: 8 }}>
+                {partialDepositInfo.canStart && (
+                  <button
+                    onClick={handlePartialStart}
+                    style={{ ...mobileChipStyle(true), padding: '8px 14px', fontSize: 11 }}
+                  >{'START WITH ' + partialDepositInfo.numDeposited}</button>
+                )}
+                <button
+                  onClick={handleCancelAll}
+                  style={{ ...mobileChipStyle(false), padding: '8px 14px', fontSize: 11 }}
+                >CANCEL & REFUND</button>
+              </div>
+            )}
+            <button
+              onClick={cancelRoom}
+              style={{ ...mobileChipStyle(false), padding: '8px 18px', fontSize: 11, marginTop: 4 }}
+            >CANCEL</button>
+          </div>
+        )}
+
+        {/* ── MOBILE QUEUE SEARCHING OVERLAY ── */}
+        {queueState === 'searching' && (
+          <div style={{
+            position: 'fixed', inset: 0,
+            background: 'rgba(10, 12, 8, 0.88)',
+            display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center',
+            zIndex: 30, gap: 10,
+          }}>
+            <div style={{
+              fontFamily: 'var(--f-display)', fontSize: 18, color: 'var(--accent)',
+              letterSpacing: '0.15em', animation: 'fl 2s ease-in-out infinite',
+            }}>SEARCHING...</div>
+            <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--olive)', letterSpacing: '0.18em' }}>
+              {modeConfig.label + ' / BO' + matchLength + (effectiveWager > 0 ? ' / ' + effectiveWager + ' SOL' : ' / FREE')}
+            </div>
+            <button
+              onClick={cancelQueue}
+              style={{ ...mobileChipStyle(false), padding: '8px 18px', fontSize: 11, marginTop: 4 }}
+            >CANCEL</button>
+          </div>
+        )}
+
+        {/* ── MODALS (reuse desktop modal components) ── */}
+        {error && (
+          <Modal title="ERROR" message={error}
+            buttons={[{ label: 'DISMISS', variant: 'secondary', onClick: () => setError(null) }]}
+            onClose={() => setError(null)}
+          />
+        )}
+        {showEscrow && (
+          <Modal title="HOW WAGERING WORKS"
+            message="Your SOL is held by a smart contract (escrow) during the match. The winner receives 90% of the pot. Neither player nor SolShot can access funds during the match. If your opponent disconnects, you get a full refund."
+            buttons={[{ label: 'GOT IT', variant: 'primary', onClick: () => { localStorage.setItem('solshot_escrow_seen', 'true'); setShowEscrow(false); } }]}
+            onClose={() => { localStorage.setItem('solshot_escrow_seen', 'true'); setShowEscrow(false); }}
+          />
+        )}
+        {kickedMessage && (
+          <Modal title="REMOVED FROM MATCH" message={kickedMessage}
+            buttons={[{ label: 'RETURN TO MENU', variant: 'secondary', onClick: () => { setKickedMessage(null); navigate('menu'); } }]}
+            onClose={() => { setKickedMessage(null); navigate('menu'); }}
+          />
+        )}
+        {incomingChallenge && (
+          <Modal title="INCOMING CHALLENGE"
+            message={incomingChallenge.fromCallsign + ' wants to battle you!'}
+            buttons={[
+              { label: 'ACCEPT', variant: 'primary', onClick: () => { window.socket?.emit('acceptChallenge', { fromSocketId: incomingChallenge.fromSocketId }); setIncomingChallenge(null); } },
+              { label: 'DECLINE', variant: 'secondary', onClick: () => { window.socket?.emit('declineChallenge', { fromSocketId: incomingChallenge.fromSocketId }); setIncomingChallenge(null); } },
+            ]}
+            onClose={() => { window.socket?.emit('declineChallenge', { fromSocketId: incomingChallenge.fromSocketId }); setIncomingChallenge(null); }}
+          />
+        )}
+        {confirmJoin && (
+          <Modal title="JOIN MATCH?"
+            message={confirmJoin.hostName + ' — ' + confirmJoin.mode + ' / ' + confirmJoin.format}
+            buttons={[
+              { label: 'YES', variant: 'primary', onClick: () => { joinRoom(confirmJoin.roomId); setConfirmJoin(null); } },
+              { label: 'NO', variant: 'secondary', onClick: () => setConfirmJoin(null) },
+            ]}
+            onClose={() => setConfirmJoin(null)}
+          />
+        )}
+        {matchFound && (
+          <div style={{
+            position: 'fixed', inset: 0, background: 'rgba(10,12,8,0.9)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50,
+          }}>
+            <div style={{
+              fontFamily: 'var(--f-display)', fontSize: 28, color: 'var(--accent)',
+              letterSpacing: '0.18em', animation: 'fl 1s ease-in-out infinite',
+              textShadow: '0 0 20px rgba(218,138,40,0.4)',
+            }}>MATCH FOUND</div>
+          </div>
+        )}
+      </>
+    );
+  }
+  // ── END MOBILE BRANCH ─────────────────────────────────────────────────
 
   return (
     <>

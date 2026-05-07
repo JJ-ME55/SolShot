@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useSolShotWallet } from '../../wallet/WalletContext';
+import useIsMobile from '../../hooks/useIsMobile';
 
 /**
  * DesignTopBar — header used on Menu + similar hero screens.
@@ -35,6 +36,7 @@ export default function DesignTopBar({
     linkEmailRecovery,
     linkTelegramRecovery,
   } = useSolShotWallet();
+  const isMobile = useIsMobile();
   const [copied, setCopied] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
@@ -113,25 +115,60 @@ export default function DesignTopBar({
     transition: 'background 0.1s',
   });
 
+  // Mobile landscape phone (390px tall): the desktop padding 14/28 +
+  // wordmark fontSize 38 eats ~60px of header. Halve everything for
+  // mobile so the rest of the screen has breathing room.
   return (
     <div style={{
       position: 'relative', zIndex: 3,
       display: 'grid', gridTemplateColumns: '1fr auto 1fr',
-      alignItems: 'center', padding: '14px 28px',
+      alignItems: 'center',
+      padding: isMobile ? '6px 12px' : '14px 28px',
       borderBottom: '1px solid var(--border)',
     }}>
-      <div style={{ justifySelf: 'start', display: 'flex', alignItems: 'center', gap: 10 }}>
-        {badgeSrc && <img src={badgeSrc} style={{ width: 28, height: 28, filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))' }} alt="rank" />}
+      <div style={{ justifySelf: 'start', display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 10 }}>
+        {badgeSrc && (
+          <img
+            src={badgeSrc}
+            style={{
+              width: isMobile ? 20 : 28,
+              height: isMobile ? 20 : 28,
+              filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))',
+            }}
+            alt="rank"
+          />
+        )}
         <div>
-          <div style={{ fontFamily: 'var(--f-sec)', fontSize: 13, color: 'var(--bone)', letterSpacing: '0.1em' }}>{callsign}</div>
-          <div style={{ fontFamily: 'var(--f-mono)', fontSize: 9, color: 'var(--olive)', letterSpacing: '0.2em' }}>{tier} · LVL {level}</div>
+          <div style={{
+            fontFamily: 'var(--f-sec)',
+            fontSize: isMobile ? 10 : 13,
+            color: 'var(--bone)',
+            letterSpacing: '0.1em',
+          }}>{callsign}</div>
+          <div style={{
+            fontFamily: 'var(--f-mono)',
+            fontSize: isMobile ? 7 : 9,
+            color: 'var(--olive)',
+            letterSpacing: '0.2em',
+          }}>{tier} · LVL {level}</div>
         </div>
       </div>
-      <div style={{ fontFamily: 'var(--f-display)', fontSize: 38, letterSpacing: '0.04em', lineHeight: 1, userSelect: 'none' }}>
+      <div style={{
+        fontFamily: 'var(--f-display)',
+        fontSize: isMobile ? 18 : 38,
+        letterSpacing: '0.04em', lineHeight: 1, userSelect: 'none',
+      }}>
         <span style={{ color: 'var(--bone)' }}>SOL</span>
         <span style={{ color: 'var(--accent)' }}>SHOT</span>
       </div>
-      <div style={{ justifySelf: 'end', display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '0.15em' }}>
+      <div style={{
+        justifySelf: 'end',
+        display: 'flex', alignItems: 'center',
+        gap: isMobile ? 6 : 10,
+        fontFamily: 'var(--f-mono)',
+        fontSize: isMobile ? 9 : 11,
+        letterSpacing: '0.15em',
+      }}>
         {connected ? (
           <>
             <span style={{ color: 'var(--accent)' }}>&#9670; {shotBalance.toLocaleString()} SHOT</span>

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import ScreenHeader from '../components/design/ScreenHeader';
+import ScanBtn from '../components/design/ScanBtn';
 import TerrainSilhouette from '../components/design/Terrain';
+import useIsMobile from '../hooks/useIsMobile';
 import { PRESTIGE_TIERS } from '../data/tiers';
 import { useSolShotWallet } from '../wallet/WalletContext';
 
@@ -13,6 +15,7 @@ const BADGE_IMAGES = {
 };
 
 function PrestigeScreen({ navigate }) {
+  const isMobile = useIsMobile();
   const [currentTier, setCurrentTier] = useState(0);
   const [shotBalance, setShotBalance] = useState(0);
   const [burning, setBurning] = useState(false);
@@ -76,6 +79,187 @@ function PrestigeScreen({ navigate }) {
       setTimeout(() => setBurnResult(null), 3000);
     }
   };
+
+  // ── MOBILE LANDSCAPE LAYOUT ───────────────────────────────────────
+  // Ports HAndover/mobile/MobileArmoryPrestige.jsx (Prestige half).
+  // Horizontal 5-tier ladder spans the screen; bottom panel pins the
+  // primary BURN CTA. Fits within the 844×390 frame without scrolling.
+  // Renders Bronze→Diamond (tiers 1-5); Unranked (tier 0) is the
+  // pre-Bronze starting state and is shown in the header pill.
+  if (isMobile) {
+    const ladderTiers = PRESTIGE_TIERS.filter(t => t.tier >= 1);
+    return (
+      <div style={{
+        position: 'relative', height: '100%',
+        background: 'var(--bg-deep)', overflow: 'hidden',
+        display: 'flex', flexDirection: 'column',
+      }}>
+        {/* Header strip */}
+        <div style={{
+          display: 'grid', gridTemplateColumns: 'auto 1fr auto',
+          alignItems: 'center', gap: 10,
+          padding: '6px 14px', borderBottom: '1px solid var(--border)',
+        }}>
+          <button onClick={() => navigate('menu')} style={{
+            background: 'transparent', border: 'none', padding: 0, cursor: 'pointer',
+            fontFamily: 'var(--f-mono)', fontSize: 9,
+            color: 'var(--olive)', letterSpacing: '0.22em',
+          }}>◂ MENU</button>
+          <div style={{ textAlign: 'center' }}>
+            <div className="stencil" style={{
+              fontSize: 14, color: 'var(--bone)', letterSpacing: '0.18em', lineHeight: 1,
+            }}>PRESTIGE</div>
+            <div style={{
+              fontFamily: 'var(--f-mono)', fontSize: 7, color: 'var(--olive)',
+              letterSpacing: '0.2em', marginTop: 2,
+            }}>BURN $SHOT · UNLOCK SIG WEAPONS</div>
+          </div>
+          <div style={{
+            fontFamily: 'var(--f-mono)', fontSize: 9,
+            color: currentPrestige.color, letterSpacing: '0.15em',
+          }}>{currentPrestige.name.toUpperCase()} · LV {currentTier}</div>
+        </div>
+
+        {/* Ladder — 5 tiers across */}
+        <div style={{
+          flex: 1, padding: '8px 14px',
+          display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)',
+          alignItems: 'center', gap: 4, minHeight: 0,
+        }}>
+          {ladderTiers.map((t, i) => {
+            const isCurrent = t.tier === currentTier;
+            const isLocked = t.tier > currentTier + 1;
+            const isNext = t.tier === currentTier + 1;
+            const prevIsCurrent = i > 0 && ladderTiers[i - 1].tier === currentTier;
+            return (
+              <div key={t.tier}
+                onClick={() => setSelected(t.tier)}
+                style={{
+                  position: 'relative', textAlign: 'center', cursor: 'pointer',
+                  opacity: isLocked ? 0.5 : 1,
+                }}
+              >
+                {/* Connector line to previous tier */}
+                {i > 0 && (
+                  <div style={{
+                    position: 'absolute', left: '-50%', right: '50%',
+                    top: 28, height: 1,
+                    borderTop: '1px dashed ' + (prevIsCurrent || isCurrent ? 'var(--accent)' : 'var(--border)'),
+                  }} />
+                )}
+                <img src={BADGE_IMAGES[t.tier]} alt={t.name}
+                  style={{
+                    width: 56, height: 56,
+                    filter: isCurrent
+                      ? 'drop-shadow(0 0 14px rgba(218,138,40,0.55))'
+                      : isLocked ? 'grayscale(1) brightness(0.6)' : 'none',
+                    position: 'relative', zIndex: 1,
+                  }} />
+                <div className="stencil" style={{
+                  fontSize: 11, letterSpacing: '0.2em', marginTop: 2,
+                  color: isCurrent ? 'var(--accent)' : 'var(--bone)',
+                }}>{t.name.toUpperCase()}</div>
+                <div style={{
+                  fontFamily: 'var(--f-mono)', fontSize: 6,
+                  color: isCurrent ? 'var(--bone)' : 'var(--olive)',
+                  letterSpacing: '0.25em', marginTop: 2,
+                }}>
+                  {isCurrent ? '★ CURRENT' : `${t.cost.toLocaleString()} SHOT`}
+                </div>
+                <div style={{
+                  fontFamily: 'var(--f-mono)', fontSize: 6,
+                  color: 'var(--muted)', letterSpacing: '0.18em', marginTop: 1,
+                }}>
+                  {t.weapons && t.weapons.length > 0 ? t.reward.toUpperCase() : '—'}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Bottom CTA panel */}
+        {!isMaxTier ? (() => {
+          const insufficient = shotBalance < nextTier.cost;
+          const progressPct = Math.max(0, Math.min(100, (shotBalance / nextTier.cost) * 100));
+          return (
+            <div style={{
+              padding: '8px 14px',
+              background: 'var(--bg-raised)',
+              borderTop: '1px solid var(--accent)',
+              display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', gap: 12,
+            }}>
+              <div>
+                <div style={{
+                  fontFamily: 'var(--f-mono)', fontSize: 7, color: 'var(--olive)',
+                  letterSpacing: '0.3em',
+                }}>// NEXT PRESTIGE</div>
+                <div className="stencil" style={{
+                  fontSize: 13, color: 'var(--bone)',
+                  letterSpacing: '0.18em', marginTop: 1,
+                }}>BURN {nextTier.cost.toLocaleString()} SHOT → {nextTier.name.toUpperCase()}</div>
+                <div style={{
+                  fontFamily: 'var(--f-mono)', fontSize: 7,
+                  color: insufficient ? 'var(--red, #c86060)' : 'var(--accent)',
+                  letterSpacing: '0.22em', marginTop: 2,
+                }}>
+                  {insufficient
+                    ? `NEED ${(nextTier.cost - shotBalance).toLocaleString()} MORE`
+                    : `UNLOCKS ${(nextTier.reward || '').toUpperCase()}`}
+                </div>
+                {/* Compact progress bar */}
+                <div style={{
+                  marginTop: 4, height: 3, background: 'var(--bg-deep)',
+                  border: '1px solid var(--border)', borderRadius: 1,
+                }}>
+                  <div style={{
+                    height: '100%', width: progressPct + '%',
+                    background: insufficient ? 'var(--olive)' : 'var(--accent)',
+                  }} />
+                </div>
+              </div>
+              <ScanBtn
+                onClick={canBurn ? handleBurn : undefined}
+                width={110} height={40} fontSize={13}
+                style={canBurn ? {} : { opacity: 0.5, cursor: 'default' }}
+              >{burning ? '...' : 'BURN'}</ScanBtn>
+            </div>
+          );
+        })() : (
+          <div style={{
+            padding: '10px 14px',
+            background: 'var(--bg-raised)',
+            borderTop: '1px solid var(--accent)',
+            textAlign: 'center',
+          }}>
+            <div className="stencil" style={{
+              fontSize: 13, color: 'var(--accent)', letterSpacing: '0.18em',
+            }}>★ MAX PRESTIGE — DIAMOND ★</div>
+            <div style={{
+              fontFamily: 'var(--f-mono)', fontSize: 8, color: 'var(--olive)',
+              letterSpacing: '0.22em', marginTop: 3,
+            }}>ALL SIGNATURE WEAPONS UNLOCKED</div>
+          </div>
+        )}
+
+        {/* Burn result toast */}
+        {burnResult && (
+          <div style={{
+            position: 'absolute', bottom: 60, left: '50%', transform: 'translateX(-50%)',
+            padding: '8px 16px',
+            background: burnResult.success ? 'rgba(127,208,96,0.15)' : 'rgba(168,58,26,0.15)',
+            border: `1px solid ${burnResult.success ? '#7fd060' : 'var(--red, #c86060)'}`,
+            clipPath: 'var(--clip-6)',
+            fontFamily: 'var(--f-display)', fontSize: 12,
+            color: burnResult.success ? '#7fd060' : 'var(--red, #c86060)',
+            letterSpacing: '0.18em',
+            zIndex: 50,
+          }}>
+            {burnResult.message}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     // Scroll-safe pattern: flex:1 + overflowY:auto + minHeight:0 inside

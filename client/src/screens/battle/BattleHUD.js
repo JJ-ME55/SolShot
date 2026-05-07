@@ -987,24 +987,70 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
 
 
 /* ════════════════════════════════════════════
-   ELIMINATION OVERLAY (unchanged)
+   ELIMINATION OVERLAY
+   Auto-shown on KIA. Self-dismissable so the player can keep
+   spectating the live match — can be re-summoned via the small
+   pill that lingers in the corner.
 ════════════════════════════════════════════ */
 function EliminationOverlay({ placement, onLeave }) {
+  const [dismissed, setDismissed] = React.useState(false);
   const ordinal = (n) => n === 1 ? '1ST' : n === 2 ? '2ND' : n === 3 ? '3RD' : (n || '?') + 'TH';
+
+  // Dismissed: tiny corner pill that re-opens the overlay or leaves outright.
+  if (dismissed) {
+    return (
+      <div style={{
+        position: 'absolute', top: 8, right: 8, zIndex: 20,
+        display: 'flex', alignItems: 'center', gap: 4,
+        background: 'rgba(10,12,8,0.7)', border: '1px solid rgba(61,74,47,0.6)',
+        padding: '4px 6px', pointerEvents: 'auto',
+      }}>
+        <button onClick={() => setDismissed(false)} style={{
+          fontFamily: 'var(--f-mono)', fontSize: 9, letterSpacing: 1.5,
+          background: 'transparent', border: 'none', color: 'var(--olive)',
+          cursor: 'pointer', padding: '2px 6px',
+        }} title="Show elimination panel">KIA · {ordinal(placement)}</button>
+        <button onClick={onLeave} style={{
+          fontFamily: 'var(--f-mono)', fontSize: 9, letterSpacing: 1.5,
+          background: 'transparent', border: 'none', color: 'var(--olive)',
+          cursor: 'pointer', padding: '2px 6px', borderLeft: '1px solid rgba(61,74,47,0.6)',
+        }} title="Leave match">LEAVE</button>
+      </div>
+    );
+  }
+
   return (
     <div style={{
       position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
       background: 'rgba(10,12,8,0.9)', border: '1px solid rgba(61,74,47,0.8)',
       padding: '22px 32px', textAlign: 'center', pointerEvents: 'auto', zIndex: 20,
       display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center',
+      minWidth: 200,
     }}>
+      {/* Close X — top-right of overlay. Dismisses to corner pill so the
+          player can spectate the rest of the match (Just1Fishing's request
+          after the GF9B match showed the overlay locked the view). */}
+      <button onClick={() => setDismissed(true)} style={{
+        position: 'absolute', top: 4, right: 4,
+        fontFamily: 'var(--f-mono)', fontSize: 14, lineHeight: 1,
+        background: 'transparent', border: 'none', color: 'var(--olive)',
+        cursor: 'pointer', padding: '4px 8px',
+      }} title="Hide — keep spectating" aria-label="Dismiss elimination overlay">×</button>
+
       <div style={{ fontFamily: 'var(--f-display)', fontSize: 20, color: 'var(--bone)', letterSpacing: 3 }}>YOU PLACED {ordinal(placement)}</div>
       <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--kh)', letterSpacing: 2, opacity: 0.6 }}>SPECTATING...</div>
-      <button onClick={onLeave} style={{
-        fontFamily: 'var(--f-display)', fontSize: 13, letterSpacing: 2,
-        padding: '8px 20px', border: '1px solid rgba(61,74,47,0.8)',
-        background: 'rgba(184,168,138,0.12)', color: 'var(--bone)', cursor: 'pointer',
-      }}>LEAVE MATCH</button>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button onClick={() => setDismissed(true)} style={{
+          fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: 1.5,
+          padding: '8px 14px', border: '1px solid rgba(61,74,47,0.6)',
+          background: 'transparent', color: 'var(--olive)', cursor: 'pointer',
+        }}>WATCH</button>
+        <button onClick={onLeave} style={{
+          fontFamily: 'var(--f-display)', fontSize: 13, letterSpacing: 2,
+          padding: '8px 20px', border: '1px solid rgba(61,74,47,0.8)',
+          background: 'rgba(184,168,138,0.12)', color: 'var(--bone)', cursor: 'pointer',
+        }}>LEAVE MATCH</button>
+      </div>
     </div>
   );
 }

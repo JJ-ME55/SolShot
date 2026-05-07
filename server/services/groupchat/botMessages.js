@@ -100,8 +100,56 @@ export function formatElimination(match, player, cause = 'shot') {
 
 // ─── Match end ──────────────────────────────────────────────────────────
 
+const SOL_PER_LAMPORT = 1_000_000_000;
+
+/**
+ * Default v2 escrow fee snapshot in BPS — matches GlobalConfig defaults
+ * at the time settle_match was called. Used as a fallback when the match
+ * doc doesn't carry an explicit per-match fee snapshot. This is for the
+ * preview-style winnings line; the actual on-chain math is authoritative.
+ */
+const DEFAULT_TREASURY_BPS = 700;
+const DEFAULT_OPS_BPS = 300;
+
+/**
+ * Estimate the winner payout for a wagered match — pot minus treasury+ops
+ * fees. Reads per-match BPS from match.config.fees if present (escrow-v2
+ * snapshots them at create_match time, so this lines up with the on-chain
+ * settlement). Falls back to the GlobalConfig defaults otherwise.
+ *
+ * Returns lamports as a number. Off by ≤2 lamports vs on-chain due to
+ * BPS-floor rounding (acceptable for display).
+ */
+function estimateWinnerPayoutLamports(match) {
+    const wager = match?.config?.wagerLamports || 0;
+    if (!wager) return 0;
+    // Count actual depositors. For a 3-player wagered match where all
+    // deposited, that's 3 — same number used by the on-chain CPI.
+    const depositors = (match?.players || []).filter(p => p.initialDepositTx).length
+        || (match?.players || []).length; // fall back to player count if deposit field absent
+    const pot = wager * depositors;
+    const treasuryBps = match?.config?.fees?.treasuryBps ?? DEFAULT_TREASURY_BPS;
+    const opsBps = match?.config?.fees?.opsBps ?? DEFAULT_OPS_BPS;
+    const treasury = Math.floor((pot * treasuryBps) / 10_000);
+    const ops = Math.floor((pot * opsBps) / 10_000);
+    return pot - treasury - ops;
+}
+
+function formatSOL(lamports) {
+    if (!lamports) return '0';
+    const sol = lamports / SOL_PER_LAMPORT;
+    // Trim trailing zeros for nicer display: 0.0270 → 0.027
+    return sol.toFixed(4).replace(/\.?0+$/, '') || '0';
+}
+
 /**
  * Posted when a match settles. Shows winner + summary.
+ *
+ * For wagered matches, includes an estimated winnings line so spectators
+ * see the upside ("JJ wins ~0.027 SOL — 0.03 SOL pot") immediately when
+ * the match-end card lands. The actual settlement TX is announced via
+ * formatSettlementSuccess once the on-chain CPI confirms — replaces the
+ * old "Settlement happens via escrow v2 (Phase 2)." placeholder.
  *
  * @param {object} match - The settled match doc
  * @param {string} reason - 'last_alive' | 'time_cap'
@@ -124,8 +172,45 @@ export function formatMatchEnd(match, reason = 'last_alive') {
         '',
         ...podium,
     ];
-    if (match.config.type === 'wagered') {
-        lines.push('', `<i>Settlement happens via escrow v2 (Phase 2).</i>`);
+    if (match.config?.type === 'wagered') {
+        const winnerTgId = ranked[0];
+        const winnerPlayer = winnerTgId
+            ? match.players.find(p => p.telegramUserId === winnerTgId)
+            : null;
+        const winnerPayout = estimateWinnerPayoutLamports(match);
+        const wager = match.config.wagerLamports || 0;
+        const depositors = (match.players || []).filter(p => p.initialDepositTx).length
+            || (match.players || []).length;
+        const pot = wager * depositors;
+        if (winnerPlayer && winnerPayout > 0) {
+            lines.push('');
+            lines.push(`💰 <b>${nameOnly(winnerPlayer)}</b> wins <b>~${formatSOL(winnerPayout)} SOL</b>`);
+            lines.push(`<i>Pot ${formatSOL(pot)} SOL · settling on-chain…</i>`);
+        }
+    }
+    return lines.join('\n');
+}
+
+/**
+ * Posted as a follow-up after the on-chain settlement TX confirms.
+ * Closes the loop on the "settling on-chain…" line from formatMatchEnd
+ * with the actual TX signature so the chat can verify the payout.
+ */
+export function formatSettlementSuccess(match, txSignature) {
+    const winnerTgId = (match.rankedFinishers || [])[0];
+    const winnerPlayer = winnerTgId
+        ? match.players.find(p => p.telegramUserId === winnerTgId)
+        : null;
+    const winnerPayout = estimateWinnerPayoutLamports(match);
+    const winnerLabel = winnerPlayer ? nameOnly(winnerPlayer) : 'Winner';
+    const explorer = txSignature
+        ? `https://explorer.solana.com/tx/${txSignature}?cluster=devnet`
+        : null;
+    const lines = [
+        `✅ <b>${escapeHtml(winnerLabel)}</b> paid <b>${formatSOL(winnerPayout)} SOL</b> on-chain`,
+    ];
+    if (explorer) {
+        lines.push(`<a href="${explorer}">View settlement TX</a>`);
     }
     return lines.join('\n');
 }

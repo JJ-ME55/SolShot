@@ -979,11 +979,16 @@ function LobbyScreen({ navigate, screenData }) {
         <div style={{
           position: 'relative', height: '100%', overflow: 'hidden',
           background: 'var(--bg-deep)', display: 'flex', flexDirection: 'column',
+          // Safari mobile clips into the URL/notch area — pad the top by the
+          // device safe-area inset so the header isn't cropped on iPhones.
+          paddingTop: 'env(safe-area-inset-top, 0px)',
         }}>
-          {/* Header strip */}
+          {/* Header strip — minimum 10px top padding so the DEPLOY title and
+              MENU button aren't visually flush with the viewport edge on
+              mobile Safari (was 5px → "DEPOLY" cropped on JJ's phone). */}
           <div style={{
             display: 'grid', gridTemplateColumns: 'auto 1fr auto', alignItems: 'center', gap: 8,
-            padding: '5px 12px', borderBottom: '1px solid var(--border)',
+            padding: '10px 12px 6px', borderBottom: '1px solid var(--border)',
             flexShrink: 0,
           }}>
             <button
@@ -996,7 +1001,7 @@ function LobbyScreen({ navigate, screenData }) {
             >← MENU</button>
             <div style={{
               fontFamily: 'var(--f-display)', fontSize: 18, color: 'var(--bone)',
-              letterSpacing: '0.18em', textAlign: 'center', lineHeight: 1,
+              letterSpacing: '0.18em', textAlign: 'center', lineHeight: 1.1,
             }}>DEPLOY</div>
             <div style={{
               fontFamily: 'var(--f-mono)', fontSize: 8, color: 'var(--olive)',

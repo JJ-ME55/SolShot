@@ -857,6 +857,15 @@ export async function settleMatch(match, reason) {
                         match.settlementTx = result.txSignature;
                         await match.save();
                         console.log(`[group-chat] settled ${match.matchId} on-chain — TX: ${result.txSignature}`);
+                        // Follow-up TG post — "Just1Fishing wants a victor message
+                        // showing total winnings". The match-end card already shows
+                        // the estimated payout; this announces the on-chain TX so
+                        // anyone in the group can verify via Solana Explorer.
+                        try {
+                            await postToChat(match.chatId, botMessages.formatSettlementSuccess(match, result.txSignature));
+                        } catch (err) {
+                            console.warn('[group-chat] settlement-success postToChat failed:', err.message);
+                        }
                     } else {
                         console.error(`[group-chat] settleMatchEscrowV2 failed for ${match.matchId}: ${result.error}`);
                         // Eventual consistency: if settle fails (RPC/etc), the

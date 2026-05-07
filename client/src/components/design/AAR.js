@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import useSocket from '../../hooks/useSocket';
+import useIsMobile from '../../hooks/useIsMobile';
 import Modal from '../Modal';
 import TrophyShareOverlay from '../TrophyShareOverlay';
 import TelegramShare from '../TelegramShare';
 import { useTelegram } from '../../telegram/TelegramContext';
 import { getWeaponById } from '../../data/weapons';
 import { haptic } from '../../telegram/haptic';
+import ScanBtn from './ScanBtn';
 
 const ordinal = (n) => n === 1 ? '1st' : n === 2 ? '2nd' : n === 3 ? '3rd' : n + 'th';
 
@@ -36,6 +38,7 @@ function sumWeaponMap(map) {
   `isWin` flips the stamp, banner color, and copy.
 */
 export default function AARScreen({ navigate, screenData, isWin }) {
+  const isMobile = useIsMobile();
   const [opponentLeft, setOpponentLeft] = useState(false);
   const [showCard, setShowCard] = useState(false);
   const [playerStats, setPlayerStats] = useState(null);
@@ -175,6 +178,279 @@ export default function AARScreen({ navigate, screenData, isWin }) {
   };
 
   const totalRounds = screenData?.totalRounds || (myRoundWins + oppRoundWins);
+
+  // Compute accuracy at the top level so the mobile stat bars can use it
+  // (the desktop layout doesn't show accuracy as a bar — only in the
+  // Trophy share card — but the mobile design has it as one of 4 stats).
+  const myShots = myId && scores[myId] ? sumWeaponMap(scores[myId].weaponShots) : 0;
+  const myHits = myId && scores[myId] ? sumWeaponMap(scores[myId].weaponHits) : 0;
+  const myAcc = myShots > 0 ? Math.round((myHits / myShots) * 100) : 0;
+  const oppShots = opponentId && scores[opponentId] ? sumWeaponMap(scores[opponentId].weaponShots) : 0;
+  const oppHits = opponentId && scores[opponentId] ? sumWeaponMap(scores[opponentId].weaponHits) : 0;
+  const oppAcc = oppShots > 0 ? Math.round((oppHits / oppShots) * 100) : 0;
+
+  // ── MOBILE LANDSCAPE LAYOUT ───────────────────────────────────────
+  // Ports the Handover-from-Design `MobileReport.jsx` spec into a true
+  // 2-column 844×390 landscape AAR. Replaces the previous portrait
+  // single-column approach which had two bugs flagged by JJ:
+  //   1. minHeight:100dvh + overflow:hidden trapped scroll on phones
+  //   2. clamp() typography scaled too big in the 390px-tall frame
+  // The design uses static type sizes (title 18, callsign 12, stat
+  // labels 8) tuned for the landscape phone. Everything fits within
+  // the frame — no scroll needed.
+  if (isMobile) {
+    const stamp = stampText;
+    const matchIdShort = `M-#${(screenData?.matchId || 'UNKNOWN').toString().slice(0, 5).toUpperCase()}`;
+    return (
+      <div style={{
+        position: 'relative', height: '100%',
+        background: 'var(--bg-deep)', overflow: 'hidden',
+        display: 'flex', flexDirection: 'column',
+      }}>
+        {/* Stamp strip header — DOC · STAMP · M# */}
+        <div style={{
+          display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 6,
+          padding: '6px 14px', borderBottom: '1px solid var(--border)',
+          fontFamily: 'var(--f-mono)', fontSize: 8, color: 'var(--olive)', letterSpacing: '0.2em',
+        }}>
+          <span style={{ justifySelf: 'start' }}>DOC 14-C · DECLASSIFIED</span>
+          <span style={{
+            color: bannerColor, border: `2px solid ${bannerColor}`,
+            padding: '2px 8px', transform: 'rotate(-2deg)',
+            fontFamily: 'var(--f-display)', fontSize: 10, letterSpacing: '0.15em',
+          }}>{stamp}</span>
+          <span style={{ justifySelf: 'end' }}>{matchIdShort}</span>
+        </div>
+
+        {/* Title row — AFTER ACTION REPORT · BO# · WAGER */}
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+          padding: '4px 14px 6px', borderBottom: '1px solid var(--border)',
+        }}>
+          <div className="stencil" style={{
+            fontSize: 16, color: 'var(--bone)', letterSpacing: '0.12em', lineHeight: 1,
+          }}>AFTER ACTION REPORT</div>
+          <div style={{ fontFamily: 'var(--f-mono)', fontSize: 7, color: 'var(--olive)', letterSpacing: '0.2em' }}>
+            BO{totalRounds || '?'}{wager > 0 ? ` · ${wager} SOL` : ' · PRACTICE'}{isAIMatch ? ' · VS AI' : ''}
+          </div>
+        </div>
+
+        {/* BODY: 2 columns — left (winner strip + stat bars) | right (combatants + actions) */}
+        <div style={{
+          flex: 1, display: 'grid', gridTemplateColumns: '1fr 230px',
+          gap: 8, padding: '6px 14px', minHeight: 0,
+        }}>
+          {/* LEFT COLUMN */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minHeight: 0 }}>
+            {/* Winner strip */}
+            <div style={{
+              background: bannerBg, clipPath: 'var(--clip-10)',
+              padding: '8px 12px',
+              display: 'flex', alignItems: 'center', gap: 12,
+            }}>
+              <div style={{ fontFamily: 'var(--f-display)', fontSize: 32, color: '#0e1209', lineHeight: 0.8 }}>
+                {isWin ? 'W' : 'L'}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontFamily: 'var(--f-mono)', fontSize: 7, color: '#0e1209', opacity: 0.7, letterSpacing: '0.2em' }}>
+                  {verdict}
+                </div>
+                <div className="stencil" style={{
+                  fontSize: 16, color: '#0e1209', letterSpacing: '0.04em', lineHeight: 1,
+                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                }}>{(myName || 'YOU').toUpperCase()}</div>
+              </div>
+              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                <div style={{ fontFamily: 'var(--f-mono)', fontSize: 7, color: '#0e1209', opacity: 0.7, letterSpacing: '0.2em' }}>FINAL</div>
+                <div className="stencil" style={{ fontSize: 20, color: '#0e1209', lineHeight: 1 }}>
+                  {myRoundWins} – {oppRoundWins}
+                </div>
+              </div>
+            </div>
+
+            {/* Stat bars card */}
+            <div style={{
+              background: 'var(--bg-surface)', border: '1px solid var(--border)',
+              clipPath: 'var(--clip-10)', padding: '8px 12px',
+              flex: 1, minHeight: 0,
+            }}>
+              <MobileStatBar label="DMG DEALT" a={myDmg} b={oppDmg} max={Math.max(900, myDmg, oppDmg)} />
+              <MobileStatBar label="ACCURACY" a={myAcc} b={oppAcc} max={100} unit="%" />
+              <MobileStatBar label="ROUNDS" a={myRoundWins} b={oppRoundWins} max={totalRounds || 3} />
+              <MobileStatBar label="KILLS" a={myKills} b={0} max={Math.max(5, myKills)} />
+            </div>
+
+            {/* SOL / Gold reward strip — shown if there's anything to report */}
+            {(wager > 0 || myGold > 0) && (
+              <div style={{
+                display: 'grid', gridTemplateColumns: wager > 0 ? '1fr 1fr' : '1fr',
+                gap: 6,
+              }}>
+                {wager > 0 && (
+                  <div style={{
+                    padding: '6px 10px',
+                    background: isWin ? 'rgba(127,208,96,0.10)' : 'rgba(168,58,26,0.10)',
+                    border: `1px solid ${isWin ? 'rgba(127,208,96,0.3)' : 'rgba(168,58,26,0.3)'}`,
+                    clipPath: 'var(--clip-6)', textAlign: 'center',
+                  }}>
+                    <div style={{
+                      fontFamily: 'var(--f-display)', fontSize: 16,
+                      color: isWin ? '#7fd060' : 'var(--red)', lineHeight: 1, letterSpacing: '0.06em',
+                    }}>{isWin ? '+' : '−'}{solDelta.toFixed(3)}</div>
+                    <div style={{
+                      fontFamily: 'var(--f-mono)', fontSize: 7, color: 'var(--olive)',
+                      letterSpacing: '0.2em', marginTop: 2,
+                    }}>SOL {isWin ? 'EARNED' : 'WAGERED'}</div>
+                  </div>
+                )}
+                <div style={{
+                  padding: '6px 10px',
+                  background: 'rgba(200,120,26,0.08)',
+                  border: '1px solid rgba(200,120,26,0.3)',
+                  clipPath: 'var(--clip-6)', textAlign: 'center',
+                }}>
+                  <div style={{
+                    fontFamily: 'var(--f-display)', fontSize: 16,
+                    color: 'var(--accent)', lineHeight: 1, letterSpacing: '0.06em',
+                  }}>◆ {myGold}</div>
+                  <div style={{
+                    fontFamily: 'var(--f-mono)', fontSize: 7, color: 'var(--olive)',
+                    letterSpacing: '0.2em', marginTop: 2,
+                  }}>GOLD</div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* RIGHT COLUMN */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minHeight: 0 }}>
+            {/* Combatants card */}
+            <div style={{
+              background: 'var(--bg-surface)', border: '1px solid var(--border)',
+              clipPath: 'var(--clip-6)', padding: '6px 9px',
+              display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6,
+            }}>
+              {[
+                { label: 'YOU', name: myName, color: isWin ? 'var(--accent)' : 'var(--olive)' },
+                { label: 'OPPONENT', name: oppName, color: isWin ? 'var(--olive)' : 'var(--accent)' },
+              ].map((p, i) => (
+                <div key={i} style={{ textAlign: i === 0 ? 'left' : 'right' }}>
+                  <div style={{ fontFamily: 'var(--f-mono)', fontSize: 6, color: 'var(--olive)', letterSpacing: '0.2em' }}>
+                    {p.label}
+                  </div>
+                  <div className="stencil" style={{
+                    fontSize: 11, color: p.color, letterSpacing: '0.06em', lineHeight: 1, marginTop: 2,
+                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                  }}>
+                    {(p.name || 'UNKNOWN').toUpperCase()}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Settlement TX link — wagered wins only, compact */}
+            {isWin && settlementUrl && (
+              <a href={settlementUrl} target="_blank" rel="noopener noreferrer" style={{
+                fontFamily: 'var(--f-mono)', fontSize: 8, color: 'var(--accent)',
+                letterSpacing: '0.18em', textDecoration: 'none',
+                padding: '4px 8px', textAlign: 'center',
+                border: '1px solid rgba(200,120,26,0.3)',
+                background: 'rgba(200,120,26,0.05)',
+                clipPath: 'var(--clip-6)',
+              }}>
+                ◆ ON-CHAIN · {settlementTx.slice(0, 4)}…{settlementTx.slice(-3)}
+              </a>
+            )}
+
+            {/* Final standings — N-player matches only */}
+            {survivorOrder.length > 2 && (
+              <div style={{
+                background: 'var(--bg-surface)', border: '1px solid var(--border)',
+                clipPath: 'var(--clip-6)', padding: '5px 8px',
+              }}>
+                <div style={{ fontFamily: 'var(--f-mono)', fontSize: 6, color: 'var(--accent)', letterSpacing: '0.25em', marginBottom: 3 }}>
+                  STANDINGS
+                </div>
+                {survivorOrder.slice(0, 4).map((id, rank) => {
+                  const p = playerMap[id];
+                  const isMe = id === myId;
+                  return (
+                    <div key={id} style={{
+                      display: 'grid', gridTemplateColumns: '24px 8px 1fr', gap: 6, alignItems: 'center',
+                      padding: '2px 0',
+                      fontFamily: 'var(--f-mono)', fontSize: 8, letterSpacing: '0.1em',
+                    }}>
+                      <span style={{ color: rank === 0 ? 'var(--accent)' : 'var(--muted)' }}>{ordinal(rank + 1)}</span>
+                      <div style={{ width: 8, height: 8, background: p?.color || '#fff' }} />
+                      <span style={{ color: isMe ? (isWin ? '#7fd060' : 'var(--red)') : 'var(--bone)' }}>
+                        {isMe ? 'YOU' : (p?.name || 'UNKNOWN')}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Action buttons — 2x grid then primary then back */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+              <button onClick={shareResult} style={mobileBtnSecondary}>
+                {shareOk ? '✓ SHARED' : 'SHARE'}
+              </button>
+              <button onClick={copyResult} style={mobileBtnSecondary}>
+                {copyOk ? '✓ COPIED' : 'COPY'}
+              </button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+              <button onClick={() => setShowCard(true)} style={mobileBtnSecondary}>CARD</button>
+              <button onClick={() => navigate('barracks')} style={mobileBtnSecondary}>BARRACKS</button>
+            </div>
+            <ScanBtn onClick={handlePlayAgain} height={36} fontSize={13}>PLAY AGAIN ▸</ScanBtn>
+            <button onClick={handleMenu} style={{ ...mobileBtnSecondary, padding: '5px' }}>◂ MENU</button>
+
+            {/* Footer */}
+            <div style={{
+              textAlign: 'center', marginTop: 'auto',
+              fontFamily: 'var(--f-mono)', fontSize: 6, color: 'var(--muted)',
+              letterSpacing: '0.3em',
+              paddingTop: 4, borderTop: '1px dashed var(--muted)',
+            }}>
+              ◣ SOLSHOT.GG · {new Date().toISOString().slice(11, 16)}Z ◣
+            </div>
+          </div>
+        </div>
+
+        {/* Modals (shared with desktop layout) */}
+        {opponentLeft && (
+          <Modal title="OPPONENT LEFT" message="Your opponent has disconnected."
+            buttons={[{ label: 'LOBBY', variant: 'secondary', onClick: handleLobby }]}
+            onClose={handleLobby} />
+        )}
+
+        {showCard && (() => {
+          const myMvp = computeMvpWeapon(scores[myId]?.weaponDamage);
+          const oppMvp = computeMvpWeapon(scores[opponentId]?.weaponDamage);
+          return (
+            <TrophyShareOverlay
+              isWin={isWin}
+              winner={isWin
+                ? { callsign: (myName || 'OPERATIVE').toUpperCase(), damage: myDmg, accuracy: myAcc, shots: myShots, best: myMvp }
+                : { callsign: (oppName || 'UNKNOWN').toUpperCase(), damage: oppDmg, accuracy: oppAcc, shots: oppShots, best: oppMvp }
+              }
+              loser={isWin
+                ? { callsign: (oppName || 'UNKNOWN').toUpperCase() }
+                : { callsign: (myName || 'OPERATIVE').toUpperCase() }
+              }
+              score={`${myRoundWins} – ${oppRoundWins}`}
+              matchId={matchIdShort}
+              terrain={(screenData?.terrain || 'CLASSIFIED').toUpperCase()}
+              duration={screenData?.duration || '00:00'}
+              onClose={() => setShowCard(false)}
+            />
+          );
+        })()}
+      </div>
+    );
+  }
 
   return (
     <div style={{ position: 'relative', minHeight: '100dvh', background: 'var(--bg-deep)', overflow: 'hidden' }}>
@@ -427,15 +703,11 @@ export default function AARScreen({ navigate, screenData, isWin }) {
       )}
 
       {showCard && (() => {
-        // Compute per-match MVP weapon + accuracy from weaponDamage / weaponShots / weaponHits
+        // Compute per-match MVP weapon — accuracy + shot counts already
+        // computed at top-level (see myAcc/myShots above) so they can be
+        // shared between mobile stat bars and the share card.
         const myScore = myId && scores[myId] ? scores[myId] : {};
         const oppScore = opponentId && scores[opponentId] ? scores[opponentId] : {};
-        const myShots = sumWeaponMap(myScore.weaponShots);
-        const myHits = sumWeaponMap(myScore.weaponHits);
-        const myAcc = myShots > 0 ? Math.round((myHits / myShots) * 100) : 0;
-        const oppShots = sumWeaponMap(oppScore.weaponShots);
-        const oppHits = sumWeaponMap(oppScore.weaponHits);
-        const oppAcc = oppShots > 0 ? Math.round((oppHits / oppShots) * 100) : 0;
         const myMvp = computeMvpWeapon(myScore.weaponDamage);
         const oppMvp = computeMvpWeapon(oppScore.weaponDamage);
         return (
@@ -460,6 +732,41 @@ export default function AARScreen({ navigate, screenData, isWin }) {
     </div>
   );
 }
+
+// Compact mobile stat bar — landscape phone has tight vertical budget,
+// so labels are 8px and the bar is 6px tall (matches design spec).
+function MobileStatBar({ label, a, b, max, unit = '' }) {
+  const pctA = max > 0 ? Math.min(100, (a / max) * 100) : 0;
+  const pctB = max > 0 ? Math.min(100, (b / max) * 100) : 0;
+  return (
+    <div style={{ marginBottom: 5 }}>
+      <div style={{
+        display: 'flex', justifyContent: 'space-between',
+        fontFamily: 'var(--f-mono)', fontSize: 8, letterSpacing: '0.15em',
+        marginBottom: 2,
+      }}>
+        <span style={{ color: 'var(--accent)' }}>{a}{unit}</span>
+        <span style={{ color: 'var(--olive)' }}>{label}</span>
+        <span style={{ color: 'var(--olive)' }}>{b}{unit}</span>
+      </div>
+      <div style={{ display: 'flex', gap: 3, height: 6 }}>
+        <div style={{ flex: 1, background: 'var(--bg-deep)', border: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end' }}>
+          <div style={{ width: pctA + '%', background: 'var(--accent)' }} />
+        </div>
+        <div style={{ flex: 1, background: 'var(--bg-deep)', border: '1px solid var(--border)' }}>
+          <div style={{ width: pctB + '%', height: '100%', background: 'var(--olive)' }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const mobileBtnSecondary = {
+  padding: '6px 4px', background: 'var(--bg-raised)', color: 'var(--bone)',
+  border: '1px solid var(--border)', clipPath: 'var(--clip-6)',
+  fontFamily: 'var(--f-display)', fontSize: 10, letterSpacing: '0.18em',
+  cursor: 'pointer',
+};
 
 function StatBar({ label, a, b, max }) {
   const pctA = max > 0 ? Math.min(100, (a / max) * 100) : 0;

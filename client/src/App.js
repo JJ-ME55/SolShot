@@ -324,7 +324,11 @@ function AppInner() {
         <HandleModal onComplete={handleHandleComplete} />
       )}
       <PortraitWarning />
-      <DebugAuthOverlay />
+      {/* H031 fix — only render DebugAuthOverlay in non-production builds.
+          Previously it shipped in the production bundle and was activated
+          via `?debug=1` URL param, exposing live auth state + balance to
+          any user. */}
+      {process.env.NODE_ENV !== 'production' && <DebugAuthOverlay />}
       {/* Hide FAQ button during battle/shop to avoid cluttering gameplay */}
       {screen !== 'battle' && screen !== 'shop' && (
         <button

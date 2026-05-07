@@ -1355,6 +1355,10 @@ const mainsocket = (io) => {
         // can't crash a try/catch'd handler.
         client.on('clientDebugLog', (payload = {}) => {
             try {
+                // H020 fix — require authentication. Previously any unauthenticated
+                // socket could inject log content + cause TG ID + wallet co-logging
+                // (PII linkage) on the same line. Now: silently drop pre-auth.
+                if (!client.isAuthenticated) return;
                 const tg = client.telegramUser?.id || 'anon';
                 const wallet = authenticatedWallets[client.id];
                 const w = wallet ? wallet.slice(0, 6) : '?';
@@ -3259,8 +3263,12 @@ const mainsocket = (io) => {
         })
 
         client.on('acceptChallenge', (data) => {
+            // H019 fix — require authentication. fromSocketId is client-supplied
+            // and socket IDs leak via roomUpdate broadcasts; without an auth
+            // gate, any socket could impersonate any callee.
+            if (!requireAuth(client, 'acceptChallenge')) return
             const challengerSocketId = data?.fromSocketId
-            if (!challengerSocketId) return
+            if (!challengerSocketId || typeof challengerSocketId !== 'string') return
             const challengerSocket = io.sockets.sockets.get(challengerSocketId)
             if (!challengerSocket) {
                 client.emit('challengeError', { reason: 'Challenger disconnected' })
@@ -3274,8 +3282,10 @@ const mainsocket = (io) => {
         })
 
         client.on('declineChallenge', (data) => {
+            // H019 fix — same as acceptChallenge above.
+            if (!requireAuth(client, 'declineChallenge')) return
             const challengerSocketId = data?.fromSocketId
-            if (!challengerSocketId) return
+            if (!challengerSocketId || typeof challengerSocketId !== 'string') return
             const challengerSocket = io.sockets.sockets.get(challengerSocketId)
             if (challengerSocket) {
                 challengerSocket.emit('challengeDeclined', {
@@ -3373,13 +3383,24 @@ const mainsocket = (io) => {
 
 
         // LEGACY: shoot relay (still works — client sends, server relays to opponent)
-        // H024: Add state validation + sanitize relayed fields
+        // H018 fix — require auth + verify caller owns the current turn.
+        //   Previously zero auth: any unauthenticated socket could relay shot
+        //   visuals to forge gameplay. Auth alone wasn't enough — we also
+        //   need to verify the caller is the current turn-holder so an
+        //   authenticated spectator can't spoof a shot for the active player.
         client.on('shoot', (data) => {
+            if (!requireAuth(client, 'shoot')) return
             if (!data || typeof data !== 'object') return
 
             // Only allow during battle state
             const ms = matchStates[client.roomId]
             if (ms && !validateAction(ms.status, 'shoot')) return
+
+            // H018 — verify turn ownership
+            if (ms && ms.currentTurn && ms.currentTurn !== client.id) {
+                // Spectator or out-of-turn — silently drop
+                return
+            }
 
             // Sanitize numeric fields before relay
             const { selectedWeapon, power, rotation, rotation1, rotation2, position1, position2 } = data
@@ -3686,13 +3707,17 @@ const mainsocket = (io) => {
                     return
                 }
 
-                // Fix 4: Nonce/idempotency — prevent replay from Socket.IO retries
+                // Fix 4: Nonce/idempotency — prevent replay from Socket.IO retries.
+                // H026 fix — `seq` is now REQUIRED (was: only checked when present,
+                // so a client could omit it to bypass the idempotency guard).
                 const clientSeq = data.seq
-                if (clientSeq !== undefined) {
-                    if (clientSeq !== ms.turnSequence) {
-                        this.emit('fireRejected', { reason: 'Turn sequence mismatch (possible replay)' })
-                        return
-                    }
+                if (typeof clientSeq !== 'number' || !Number.isInteger(clientSeq)) {
+                    this.emit('fireRejected', { reason: 'Missing or invalid seq (turn nonce required)' })
+                    return
+                }
+                if (clientSeq !== ms.turnSequence) {
+                    this.emit('fireRejected', { reason: 'Turn sequence mismatch (possible replay)' })
+                    return
                 }
                 // Increment server-side nonce (client must send matching seq next turn)
                 ms.turnSequence++

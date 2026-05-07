@@ -240,11 +240,23 @@ export async function markMatched(shortCode) {
 
 /**
  * Cancel an open challenge (challenger's choice).
+ * H023 fix: requires `caller` identity (wallet pubkey OR telegram user id) to
+ * match the challenger's recorded identity. Without this gate, anyone with the
+ * shortcode could cancel any open challenge.
  */
-export async function cancelChallenge(shortCode) {
+export async function cancelChallenge(shortCode, caller) {
     const code = String(shortCode).toUpperCase();
+    if (!caller || (typeof caller !== 'object')) {
+        return null; // No identity → reject
+    }
+    const { wallet, tgUserId } = caller;
+    // Build challenger-match guard: caller must be the challenger
+    const ownerGuard = [];
+    if (wallet && typeof wallet === 'string') ownerGuard.push({ challengerWallet: wallet });
+    if (tgUserId && Number.isInteger(tgUserId)) ownerGuard.push({ challengerTgUserId: tgUserId });
+    if (ownerGuard.length === 0) return null; // No usable identity
     return Challenge.findOneAndUpdate(
-        { shortCode: code, status: 'open' },
+        { shortCode: code, status: 'open', $or: ownerGuard },
         { $set: { status: 'cancelled' } },
         { returnDocument: 'after' }
     ).lean();

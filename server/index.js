@@ -159,13 +159,13 @@ app.use(helmet({
                 "https://api.web3modal.org",
                 "https://pulse.walletconnect.org",
                 "https://explorer-api.walletconnect.com",
-                // Dynamic embedded wallet SDK
-                "https://app.dynamic.xyz",
-                "https://api.dynamic.xyz",
+                // Privy embedded wallet SDK (migrated from Dynamic 2026-05-04)
+                "https://auth.privy.io",
+                "https://api.privy.io",
                 ...devConnectSrc,
             ],
             fontSrc: ["'self'", "https://fonts.gstatic.com", "https://fonts.googleapis.com"],
-            frameSrc: ["https://plugin.jup.ag", "https://app.dynamic.xyz"],
+            frameSrc: ["https://plugin.jup.ag", "https://auth.privy.io"],
             objectSrc: ["'none'"],
             baseUri: ["'self'"],
             reportUri: ['/api/csp-report'],
@@ -387,8 +387,17 @@ app.get('/api/stats/:tgUserId/card.png', async (req, res) => {
 
 app.post('/api/challenge/:code/cancel', async (req, res) => {
     try {
-        const challenge = await cancelChallenge(req.params.code);
-        if (!challenge) return res.status(404).json({ error: 'not_found_or_already_closed' });
+        // H023 fix — require caller identity matching challenger.
+        // Caller may pass (wallet, tgUserId) in body; both are validated against
+        // the recorded challengerWallet / challengerTgUserId in the document.
+        const wallet = typeof req.body?.wallet === 'string' ? req.body.wallet.trim() : null;
+        const tgUserIdRaw = req.body?.tgUserId;
+        const tgUserId = Number.isInteger(tgUserIdRaw) ? tgUserIdRaw : null;
+        if (!wallet && !tgUserId) {
+            return res.status(401).json({ error: 'caller_identity_required' });
+        }
+        const challenge = await cancelChallenge(req.params.code, { wallet, tgUserId });
+        if (!challenge) return res.status(404).json({ error: 'not_found_or_already_closed_or_not_owner' });
         res.json({ ok: true });
     } catch (err) {
         console.error('[POST /api/challenge/:code/cancel]', err.message);
@@ -509,11 +518,34 @@ app.post(
             if (walletAddress.length < 32 || walletAddress.length > 64) {
                 return res.status(400).json({ error: 'walletAddress shape invalid' });
             }
-            // requirePrivyAuth set req.privyUserId — caller is verified
-            // authenticated. We trust client-supplied telegramUserId
-            // here; Privy's SDK only exposes user.telegram to its owner
-            // so the worst-case impersonation requires compromising
-            // the Privy session itself.
+            // H001 fix — verify the supplied telegramUserId matches the
+            // Privy session's actual Telegram link. Without this check,
+            // any Privy-authenticated user could bind any victim's TG ID
+            // to their own wallet (full identity takeover).
+            const privyUserId = req.privyUserId;
+            const privyClient = (await import('@privy-io/server-auth')).PrivyClient;
+            const client = new privyClient(process.env.PRIVY_APP_ID, process.env.PRIVY_APP_SECRET);
+            let claimedTgId = null;
+            try {
+                const privyUser = await client.getUser(privyUserId);
+                // Privy User object includes linkedAccounts[] with type='telegram' entries
+                const tgAccount = (privyUser?.linkedAccounts || [])
+                    .find(a => a?.type === 'telegram');
+                claimedTgId = tgAccount?.telegramUserId
+                    ? Number(tgAccount.telegramUserId)
+                    : (tgAccount?.subject ? Number(tgAccount.subject) : null);
+            } catch (lookupErr) {
+                console.error('[POST /api/wallet/link-from-privy-telegram] Privy lookup failed:', lookupErr.message);
+                return res.status(502).json({ error: 'privy_user_lookup_failed' });
+            }
+            if (!claimedTgId || claimedTgId !== Number(telegramUserId)) {
+                console.warn('[POST /api/wallet/link-from-privy-telegram] tg_id mismatch:', {
+                    privyUserId,
+                    privyClaimedTgId: claimedTgId,
+                    bodyTgId: Number(telegramUserId),
+                });
+                return res.status(403).json({ error: 'tg_id_mismatch' });
+            }
             const updated = await linkTelegramIdentity({
                 telegramUserId,
                 walletAddress,
@@ -540,6 +572,12 @@ const MONGODB_URI = process.env.MONGODB_URI;
 
 // Initialise Telegram bot (no-op if TELEGRAM_BOT_TOKEN not set)
 initBot();
+
+// H032 fix — enforce schema validation on all update paths globally.
+// Without this, findOneAndUpdate / updateOne / bulkWrite skip validators
+// (enums on Match.status, GroupMatch.state, Challenge.status, regex on
+// referralCode, min:0 on wager — all bypassable via direct update).
+mongoose.set('runValidators', true);
 
 if (MONGODB_URI) {
     mongoose.connect(MONGODB_URI)

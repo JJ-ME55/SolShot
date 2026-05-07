@@ -63,7 +63,23 @@ export function requirePrivyAuth(options = {}) {
     return async (req, res, next) => {
         const client = getClient();
         if (!client) {
-            // Dev mode — no verification possible, pass through
+            // H002 fix — when `required: true`, never silently pass through.
+            // Production must reject if Privy isn't configured (was: silent fail-open
+            // because PRIVY_APP_SECRET absent in render.yaml made every required-auth
+            // endpoint completely ungated).
+            if (required) {
+                if (process.env.NODE_ENV === 'production') {
+                    console.error('[privyAuth] Refusing request: required=true but Privy is not configured. Set PRIVY_APP_ID + PRIVY_APP_SECRET.');
+                    return res.status(503).json({ error: 'auth_not_configured' });
+                }
+                // Dev fallback: pass through so local development keeps working,
+                // but log loudly so the gap is visible.
+                console.warn('[privyAuth] DEV-MODE pass-through on required=true endpoint. Set PRIVY env vars for parity.');
+                req.privyAuth = null;
+                req.privyUserId = null;
+                return next();
+            }
+            // Soft mode — pass through unverified
             return next();
         }
 

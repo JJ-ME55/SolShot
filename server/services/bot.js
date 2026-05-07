@@ -350,6 +350,20 @@ function registerCommands(bot) {
    * Safe to leave in prod — it never reads or writes the DB.
    */
   bot.command('teststats', async (ctx) => {
+    // H055 fix — gate to admin TG IDs only in production.
+    // ADMIN_TELEGRAM_IDS env: comma-separated list of allowed numeric TG IDs.
+    // In non-production, allow all (dev convenience).
+    if (process.env.NODE_ENV === 'production') {
+      const adminIds = (process.env.ADMIN_TELEGRAM_IDS || '')
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean)
+        .map(Number);
+      const callerId = ctx.from?.id;
+      if (!callerId || !adminIds.includes(Number(callerId))) {
+        return; // Silently ignore non-admin in prod
+      }
+    }
     const PRESETS = {
       strong: {
         tierName: 'PLATINUM', rank: 7,

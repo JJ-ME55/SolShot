@@ -13,6 +13,7 @@
  * Fixes: H006, H015, H009, H017, H020, H062, IM-02
  */
 
+import crypto from 'node:crypto';
 import { trackError } from '../services/monitoring.js';
 
 // ─── requireAdminKey ────────────────────────────────────────
@@ -21,10 +22,19 @@ import { trackError } from '../services/monitoring.js';
 // Usage: app.get('/stats', requireAdminKey, getStats)
 //
 // Fixes: IM-02 — unauthenticated /stats endpoint exposing financial metrics
+//        H083 — timing-unsafe `!==` compare replaced with crypto.timingSafeEqual
 
 export function requireAdminKey(req, res, next) {
     const apiKey = req.headers['x-admin-key'];
-    if (!process.env.ADMIN_API_KEY || apiKey !== process.env.ADMIN_API_KEY) {
+    const expected = process.env.ADMIN_API_KEY;
+    if (!expected || typeof apiKey !== 'string') {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+    // Constant-time comparison: convert both to fixed-length buffers.
+    // Length mismatch → fail without revealing which length is correct.
+    const a = Buffer.from(apiKey);
+    const b = Buffer.from(expected);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
         return res.status(401).json({ error: 'Unauthorized' });
     }
     next();

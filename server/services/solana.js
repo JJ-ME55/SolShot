@@ -242,18 +242,35 @@ export async function refundWager(playerAddress, wagerSOL, matchId, playerAddres
         return { success: true, txSignature: null };
     }
 
-    // If escrow is live, cancel on-chain (refunds all deposited players)
+    // If escrow is live, cancel on-chain (refunds all deposited players).
+    // H013 fix — propagate failure properly. Previously this fell through
+    // to `return { success: true }` even after the on-chain CPI threw,
+    // making callers believe the refund succeeded while SOL remained
+    // locked on-chain.
     if (isEscrowEnabled() && matchId && playerAddresses && playerAddresses.length > 0) {
-        const result = await cancelMatchEscrow(matchId, playerAddresses);
-        if (result.success) {
-            console.log('[Solana] On-chain refund:', { matchId, txSignature: result.txSignature });
-            return { success: true, txSignature: result.txSignature };
+        try {
+            const result = await cancelMatchEscrow(matchId, playerAddresses);
+            if (result.success) {
+                console.log('[Solana] On-chain refund:', { matchId, txSignature: result.txSignature });
+                return { success: true, txSignature: result.txSignature };
+            }
+            // On-chain cancel returned success: false — surface that to caller.
+            console.error('[Solana] On-chain cancel failed (returning failure to caller):', result.error);
+            return { success: false, error: result.error || 'cancel_returned_false' };
+        } catch (err) {
+            // CPI threw outright — also surface to caller.
+            console.error('[Solana] On-chain cancel threw (returning failure to caller):', err?.message || err);
+            return { success: false, error: err?.message || 'cancel_threw' };
         }
-        console.error('[Solana] On-chain cancel failed:', result.error);
     }
 
-    // Fallback: log refund
-    logger.info({ amount: wagerSOL }, '[Solana] Refund (off-chain)');
+    // Fallback: only used when escrow is NOT enabled (dev mode without on-chain).
+    // In production with escrow enabled, this path means matchId/playerAddresses
+    // weren't passed — that's a programming error and we should warn.
+    if (isEscrowEnabled()) {
+        console.warn('[Solana] refundWager called without matchId/playerAddresses while escrow enabled — returning success but NO on-chain refund happened.');
+    }
+    logger.info({ amount: wagerSOL }, '[Solana] Refund (off-chain dev/no-escrow path)');
 
     return { success: true, txSignature: null };
 }

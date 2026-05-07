@@ -1,0 +1,122 @@
+{
+  "skill": "dinhs-bulwark",
+  "version": "1.0.0",
+  "updated": "2026-02-24T01:00:00Z",
+  "audit_number": 1,
+  "config": {
+    "tier": "deep",
+    "batch_size": 5,
+    "ecosystem": "solana-offchain",
+    "protocol_types": ["game-server", "wagering", "wallet-integration", "socket-io-realtime"],
+    "models": {
+      "index": "haiku",
+      "phase1": "sonnet",
+      "quality_gate": "haiku",
+      "strategize": "opus",
+      "investigate": "sonnet",
+      "investigate_tier3": "haiku",
+      "coverage": "sonnet",
+      "report": "opus",
+      "verify": "sonnet"
+    },
+    "selected_auditors": [
+      { "id": "SEC-01", "name": "Private Key & Wallet Security", "trigger_matches": 6, "files_hit": 11 },
+      { "id": "SEC-02", "name": "Secret & Credential Management", "trigger_matches": 7, "files_hit": 20, "always_select": true },
+      { "id": "AUTH-01", "name": "Authentication Mechanisms", "trigger_matches": 5, "files_hit": 8 },
+      { "id": "AUTH-03", "name": "Authorization & Access Control", "trigger_matches": 4, "files_hit": 7 },
+      { "id": "INJ-01", "name": "SQL & NoSQL Injection", "trigger_matches": 3, "files_hit": 11 },
+      { "id": "INJ-05", "name": "Prototype Pollution & Deserialization", "trigger_matches": 4, "files_hit": 12 },
+      { "id": "WEB-02", "name": "CORS, CSP & Security Headers", "trigger_matches": 4, "files_hit": 12 },
+      { "id": "CHAIN-01", "name": "Transaction Construction & Signing", "trigger_matches": 7, "files_hit": 8 },
+      { "id": "CHAIN-02", "name": "RPC Client & Node Trust", "trigger_matches": 6, "files_hit": 9 },
+      { "id": "CHAIN-03", "name": "Wallet Integration & Adapter Security", "trigger_matches": 5, "files_hit": 19 },
+      { "id": "CHAIN-06", "name": "Program Account & PDA Interaction", "trigger_matches": 3, "files_hit": 6 },
+      { "id": "API-03", "name": "WebSocket & Real-Time Security", "trigger_matches": 6, "files_hit": 21 },
+      { "id": "DATA-01", "name": "Database & Query Security", "trigger_matches": 3, "files_hit": 13 },
+      { "id": "DATA-04", "name": "Logging & Information Disclosure", "trigger_matches": 5, "files_hit": 20, "always_select": true },
+      { "id": "DATA-05", "name": "Encryption & Data Protection", "trigger_matches": 4, "files_hit": 9 },
+      { "id": "DEP-01", "name": "Package & Dependency Security", "trigger_matches": 3, "files_hit": 4, "always_select": true },
+      { "id": "ERR-01", "name": "Error Handling & Fail Modes", "trigger_matches": 6, "files_hit": 20, "always_select": true },
+      { "id": "ERR-02", "name": "Race Conditions & Concurrency", "trigger_matches": 5, "files_hit": 20 },
+      { "id": "ERR-03", "name": "Rate Limiting & Resource Exhaustion", "trigger_matches": 3, "files_hit": 9 },
+      { "id": "CRYPTO-01", "name": "Random Number Generation & Nonces", "trigger_matches": 4, "files_hit": 13 },
+      { "id": "LOGIC-01", "name": "Business Logic & Workflow Security", "trigger_matches": 8, "files_hit": 30 },
+      { "id": "LOGIC-02", "name": "Financial & Economic Logic", "trigger_matches": 10, "files_hit": 30, "always_select": true }
+    ],
+    "auditor_count": 22
+  },
+  "phases": {
+    "scan": {
+      "status": "complete",
+      "completed_at": "2026-02-23T12:30:00Z",
+      "files_scanned": 93,
+      "loc_estimated": 36512,
+      "hot_spots_found": 10,
+      "static_scan": {
+        "server_npm_audit": "30 vulnerabilities (4 low, 8 moderate, 18 high)",
+        "client_npm_audit": "131 vulnerabilities (20 low, 35 moderate, 73 high, 3 critical)",
+        "env_files_tracked": 0,
+        "secrets_in_source": 0,
+        "keypair_files_in_tree": 0
+      }
+    },
+    "analyze": {
+      "status": "complete",
+      "completed_at": "2026-02-23T15:00:00Z",
+      "agents_completed": 22,
+      "agents_total": 22,
+      "batches_completed": 5,
+      "batches_total": 5,
+      "quality_gate": "passed",
+      "re_runs": 0
+    },
+    "strategize": {
+      "status": "complete",
+      "completed_at": "2026-02-23T20:45:00Z",
+      "strategies_generated": 120,
+      "supplemental_generated": 10,
+      "tier_1_count": 28,
+      "tier_2_count": 35,
+      "tier_3_count": 57,
+      "novel_count": 27
+    },
+    "investigate": {
+      "status": "complete",
+      "completed_at": "2026-02-23T23:30:00Z",
+      "strategies_total": 130,
+      "strategies_completed": 130,
+      "findings_confirmed": 70,
+      "findings_potential": 29,
+      "findings_not_vulnerable": 31,
+      "tier1_batches": 6,
+      "tier2_batches": 5,
+      "tier3_batches": 5,
+      "supplemental_batches": 1,
+      "coverage_verification": "passed",
+      "coverage_percentage": 100,
+      "coverage_gaps": 0
+    },
+    "report": {
+      "status": "complete",
+      "completed_at": "2026-02-24T01:00:00Z",
+      "report_file": "FINAL_REPORT.md",
+      "findings_critical": 12,
+      "findings_high": 34,
+      "findings_medium": 18,
+      "findings_low": 6,
+      "findings_potential": 29,
+      "findings_not_vulnerable": 31,
+      "attack_trees": 4,
+      "remediation_phases": 5
+    }
+  },
+  "cross_skill": {
+    "sos_available": true,
+    "sos_summary": "On-chain escrow audit available in .audit/. Key concerns: single authority hot wallet, absent input validation on socket events, no auth enforcement post-authenticate, all economic state in-memory.",
+    "gl_available": false
+  },
+  "stacking": {
+    "is_stacked": false
+  },
+  "previous_audit": null
+}

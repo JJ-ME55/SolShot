@@ -1,699 +1,891 @@
-# Timestamp/Duration Invariants (VP-087 through VP-090)
+---
+task_id: bok-analyze-timestamp-duration
+provides: [invariant-proposals]
+subsystem: timestamp-duration
+confidence: high
+invariant_count: 12
+---
 
-**Category:** Timestamp and timeout arithmetic
-**Source:** `programs/solshot-escrow/src/lib.rs` (lines 20-26, 236-244, 322-333, 397-410)
-**Author:** BOK invariant proposer agent
-**Date:** 2026-02-23
-**Tools:** Proptest (pure arithmetic), LiteSVM (runtime integration)
+# Invariant Proposals — Timestamp / Duration Arithmetic
+
+## Source
+
+Cluster of 8 math regions across both escrow versions:
+
+- **v2 deposit-deadline calc** — `programs/solshot-escrow-v2/src/lib.rs:255-262` (post-H018-fix: strict `<`)
+- **v2 match-end calc** — `programs/solshot-escrow-v2/src/lib.rs:296-303, 365-369`
+- **v2 cancel deadline branches** — `programs/solshot-escrow-v2/src/lib.rs:470-477`
+- **v2 reclaim deadline branches** — `programs/solshot-escrow-v2/src/lib.rs:539-549`
+- **v1 settlement deadline** — `programs/solshot-escrow/src/lib.rs:264-272`
+- **v1 cancel timeout** — `programs/solshot-escrow/src/lib.rs:357-378` (post-H035-fix: `TIMEOUT_SECONDS = 3600`)
+- **v1 reclaim 2x timeout** — `programs/solshot-escrow/src/lib.rs:442-456` (post-fix: `PERMISSIONLESS_RECLAIM_TIMEOUT = 7200`)
+- **v1 NEW MIN_DEPOSIT_WINDOW gate** — `programs/solshot-escrow/src/lib.rs:493-501` (post-H017-fix)
+
+**Verification mode:** Kani UNAVAILABLE. All invariants assigned to LiteSVM and/or Proptest.
+
+**Constants context (post-fix-bundle):**
+
+| Program | Constant | Value | Notes |
+|---------|----------|-------|-------|
+| v1 | `TIMEOUT_SECONDS` | 3600s (1h) | was 600s; H035 fix |
+| v1 | `PERMISSIONLESS_RECLAIM_TIMEOUT` | 7200s (2h) | = `TIMEOUT_SECONDS * 2`; was 1200s |
+| v1 | `SETTLEMENT_TIMEOUT_SECONDS` | 3600s (1h) | unchanged |
+| v1 | `MIN_DEPOSIT_WINDOW_SECS` | 600s (10m) | NEW — H017 fix |
+| v2 | `MIN_DURATION_SECS` | 60s | per-match minimum match duration |
+| v2 | `MAX_DURATION_SECS` | 86400s (24h) | was 604800s; H039 fix |
+| v2 | `MIN_DEPOSIT_WINDOW_SECS` | 60s | per-match `deposit_window_secs` floor |
+| v2 | `MAX_DEPOSIT_WINDOW_SECS` | 86400s (24h) | per-match ceiling |
+| v2 | `PUBLIC_REFUND_GRACE_SECS` | 86400s (24h) | reclaim grace after match-end / deposit-deadline |
 
 ---
 
-## Constants Under Analysis
+## Proposed Invariants
 
-```rust
-const TIMEOUT_SECONDS: i64 = 86400;                              // 24 hours (line 20)
-const PERMISSIONLESS_RECLAIM_TIMEOUT: i64 = TIMEOUT_SECONDS * 2; // 172800 = 48 hours (line 23)
-const SETTLEMENT_TIMEOUT_SECONDS: i64 = 3600;                    // 1 hour (line 26)
-```
+### INV-1 (I-TIME-1): No Overflow on Any Deadline Addition
 
-## Arithmetic Under Analysis
+**What it checks:**
+Every `checked_add` against a `Clock::get()?.unix_timestamp` (or a stored `created_at`/`activated_at`/`match_end_ts` field) cannot overflow `i64` for any plausible Solana timestamp. The sum `created_at + window_secs`, `activated_at + duration_secs`, `match_end_ts + PUBLIC_REFUND_GRACE_SECS`, etc. always returns `Some(_)` for realistic inputs (year 2020 through year 9000+), and the `?` propagates `ArithmeticOverflow` only at truly absurd values (year 292 billion AD).
 
-```rust
-// settle_match (lines 237-239)
-let deadline = ctx.accounts.escrow.activated_at
-    .checked_add(SETTLEMENT_TIMEOUT_SECONDS)
-    .ok_or(EscrowError::ArithmeticOverflow)?;
+**Why it matters:**
+If a deadline addition silently wrapped, a pre-2020-style negative deadline (e.g. `i64::MAX + 1` wraps to `i64::MIN`) would be interpreted as "already expired" by every `now > deadline` / `now <= deadline` comparison. Every settle, cancel, and reclaim guard would simultaneously pass at activation, collapsing the entire timeout architecture in a single block. Concretely: if `created_at + deposit_window_secs` wrapped negative, `start_with_depositors` (`now >= deposit_deadline`) would succeed in the same slot as deposit, giving the authority an immediate silent-kick path with no minimum-window enforcement. Conversely, a deadline that wraps below `now` makes `permissionless_reclaim` callable instantly — anyone can reclaim before any player has had a chance to play.
 
-// cancel_match (lines 329-331)
-let timeout_deadline = timeout_reference
-    .checked_add(TIMEOUT_SECONDS)
-    .ok_or(EscrowError::ArithmeticOverflow)?;
-
-// permissionless_reclaim (lines 404-406)
-let reclaim_deadline = timeout_reference
-    .checked_add(PERMISSIONLESS_RECLAIM_TIMEOUT)
-    .ok_or(EscrowError::ArithmeticOverflow)?;
-
-// timeout_reference derivation (lines 322-326 and 397-401)
-let timeout_reference = if ctx.accounts.escrow.activated_at > 0 {
-    ctx.accounts.escrow.activated_at
-} else {
-    ctx.accounts.escrow.created_at
-};
-```
-
----
-
-## INV-1: Overflow Safety — Timestamp + Duration Never Overflows i64
-
-### INV-1a: Settlement Deadline Overflow Safety (VP-087)
-
-**What it checks:** For any Solana-realistic unix timestamp, `activated_at + SETTLEMENT_TIMEOUT_SECONDS` does not overflow i64.
-
-**Why it matters:** If a maliciously large `activated_at` value were somehow stored (e.g., via a future migration bug or deserialization error), the `checked_add` would return `None`, causing an `ArithmeticOverflow` error. While `checked_add` makes this a safe failure rather than a silent wrap, the invariant proves that under all realistic Solana clock values the addition ALWAYS succeeds, meaning users are never blocked from settling by a spurious overflow error. A Solana Clock timestamp is an i64 set by the cluster; realistic values range from approximately 1.7 billion (2024) to roughly 9.2 quintillion (i64::MAX, theoretically year ~292 billion). The practical upper bound for Solana's lifetime is approximately year 2262 (when i64 seconds overflow), but any timestamp the cluster produces is valid.
-
-**Tool:** Proptest (pure arithmetic, no runtime needed)
-
+**Tool:** Proptest (boundary tests + realistic-range sweep), LiteSVM (smoke check on representative paths)
 **Confidence:** high
-
-**Based on:** VP-087 — timestamp overflow safety
+**Based on:** VP-089 (Timestamp Overflow at Large Values)
 
 **Formal Property:**
 ```
-forall t: i64 where 0 < t <= i64::MAX - SETTLEMENT_TIMEOUT_SECONDS:
-    t.checked_add(3600_i64) = Some(t + 3600)
+For all plausible timestamps ts ∈ [1_577_836_800, 4_102_444_800] (2020 through 2100):
+  ts.checked_add(SETTLEMENT_TIMEOUT_SECONDS).is_some()              [v1]
+  ts.checked_add(TIMEOUT_SECONDS).is_some()                          [v1]
+  ts.checked_add(PERMISSIONLESS_RECLAIM_TIMEOUT).is_some()           [v1]
+  ts.checked_add(MIN_DEPOSIT_WINDOW_SECS).is_some()                  [v1]
+  ts.checked_add(deposit_window_secs as i64).is_some()               [v2, ≤ 86400]
+  ts.checked_add(duration_secs as i64).is_some()                     [v2, ≤ 86400]
+  ts.checked_add(PUBLIC_REFUND_GRACE_SECS).is_some()                 [v2]
+  (ts + window_secs).checked_add(PUBLIC_REFUND_GRACE_SECS).is_some() [v2 chained]
 
-forall t: i64 where t > i64::MAX - SETTLEMENT_TIMEOUT_SECONDS:
-    t.checked_add(3600_i64) = None
+For boundary at i64::MAX:
+  i64::MAX.checked_add(_) is None for all positive constants
+  (i64::MAX - K).checked_add(K) = Some(i64::MAX) for all K ≥ 0
+  (i64::MAX - K + 1).checked_add(K) is None
 ```
 
 **Proptest sketch:**
 ```rust
-use proptest::prelude::*;
-
-const SETTLEMENT_TIMEOUT_SECONDS: i64 = 3600;
-
-// Realistic Solana clock range: 2020-01-01 to year 2262
-// 2020-01-01 = 1_577_836_800, year 2262 ~ 9_223_372_036_854_775_807 (i64::MAX)
-const MIN_REALISTIC_TS: i64 = 1_577_836_800;
-const MAX_REALISTIC_TS: i64 = 4_102_444_800; // year 2100 — generous upper bound
-
 proptest! {
     #[test]
-    fn settlement_deadline_never_overflows_realistic(
-        activated_at in MIN_REALISTIC_TS..=MAX_REALISTIC_TS
+    fn ts_inv_1_all_v1_deadlines_no_overflow_realistic(
+        ts in MIN_REALISTIC_TS..=MAX_REALISTIC_TS
     ) {
-        let result = activated_at.checked_add(SETTLEMENT_TIMEOUT_SECONDS);
-        prop_assert!(result.is_some(),
-            "activated_at={} overflowed when adding SETTLEMENT_TIMEOUT_SECONDS={}",
-            activated_at, SETTLEMENT_TIMEOUT_SECONDS);
-        let deadline = result.unwrap();
-        prop_assert!(deadline > activated_at,
-            "deadline={} must be strictly after activated_at={}",
-            deadline, activated_at);
+        prop_assert!(ts.checked_add(SETTLEMENT_TIMEOUT_SECONDS).is_some());
+        prop_assert!(ts.checked_add(TIMEOUT_SECONDS).is_some());
+        prop_assert!(ts.checked_add(PERMISSIONLESS_RECLAIM_TIMEOUT).is_some());
+        prop_assert!(ts.checked_add(MIN_DEPOSIT_WINDOW_SECS).is_some());
     }
 
     #[test]
-    fn settlement_deadline_overflow_boundary(
-        activated_at in (i64::MAX - SETTLEMENT_TIMEOUT_SECONDS + 1)..=i64::MAX
+    fn ts_inv_1_all_v2_deadlines_no_overflow_realistic(
+        ts in MIN_REALISTIC_TS..=MAX_REALISTIC_TS,
+        window_secs in (V2_MIN_DEPOSIT_WINDOW_SECS as i64)..=(V2_MAX_DEPOSIT_WINDOW_SECS as i64),
+        duration_secs in (V2_MIN_DURATION_SECS as i64)..=(V2_MAX_DURATION_SECS as i64),
     ) {
-        // Values above i64::MAX - 3600 MUST overflow (checked_add returns None)
-        let result = activated_at.checked_add(SETTLEMENT_TIMEOUT_SECONDS);
-        prop_assert!(result.is_none(),
-            "activated_at={} should have overflowed but got {:?}",
-            activated_at, result);
-    }
-
-    #[test]
-    fn settlement_deadline_exact_boundary() {
-        // Exact boundary: i64::MAX - 3600 should NOT overflow
-        let boundary = i64::MAX - SETTLEMENT_TIMEOUT_SECONDS;
-        let result = boundary.checked_add(SETTLEMENT_TIMEOUT_SECONDS);
-        assert_eq!(result, Some(i64::MAX));
-
-        // One past boundary: i64::MAX - 3599 SHOULD overflow
-        let past = boundary + 1;
-        let result2 = past.checked_add(SETTLEMENT_TIMEOUT_SECONDS);
-        assert!(result2.is_none());
+        // deposit_deadline
+        let dep = ts.checked_add(window_secs);
+        prop_assert!(dep.is_some());
+        // match_end_ts
+        let me = ts.checked_add(duration_secs);
+        prop_assert!(me.is_some());
+        // reclaim_deadline (Active)
+        let rd_active = me.unwrap().checked_add(V2_PUBLIC_REFUND_GRACE_SECS);
+        prop_assert!(rd_active.is_some());
+        // reclaim_deadline (AwaitingDeposits — chained)
+        let rd_awaiting = dep.unwrap().checked_add(V2_PUBLIC_REFUND_GRACE_SECS);
+        prop_assert!(rd_awaiting.is_some());
     }
 }
-```
 
----
-
-### INV-1b: Cancel Timeout Overflow Safety (VP-087)
-
-**What it checks:** For any Solana-realistic unix timestamp, `timeout_reference + TIMEOUT_SECONDS` does not overflow i64.
-
-**Why it matters:** Same reasoning as INV-1a but with TIMEOUT_SECONDS (86400). If overflow occurred, the `cancel_match` instruction would fail with ArithmeticOverflow, trapping player funds in an uncancellable escrow until the `permissionless_reclaim` timeout passes. The 86400-second addition has more headroom than 172800 but the same structure.
-
-**Tool:** Proptest
-
-**Confidence:** high
-
-**Based on:** VP-087 — timestamp overflow safety
-
-**Formal Property:**
-```
-forall t: i64 where 0 < t <= i64::MAX - TIMEOUT_SECONDS:
-    t.checked_add(86400_i64) = Some(t + 86400)
-```
-
-**Proptest sketch:**
-```rust
-const TIMEOUT_SECONDS: i64 = 86400;
-
-proptest! {
-    #[test]
-    fn cancel_deadline_never_overflows_realistic(
-        timeout_ref in MIN_REALISTIC_TS..=MAX_REALISTIC_TS
-    ) {
-        let result = timeout_ref.checked_add(TIMEOUT_SECONDS);
-        prop_assert!(result.is_some(),
-            "timeout_ref={} overflowed when adding TIMEOUT_SECONDS={}",
-            timeout_ref, TIMEOUT_SECONDS);
-    }
-}
-```
-
----
-
-### INV-1c: Permissionless Reclaim Overflow Safety (VP-087)
-
-**What it checks:** For any Solana-realistic unix timestamp, `timeout_reference + PERMISSIONLESS_RECLAIM_TIMEOUT` does not overflow i64. This is the largest addition (172800 seconds) and thus the tightest headroom.
-
-**Why it matters:** Permissionless reclaim is the last-resort fund recovery mechanism (DCA-02). If this addition overflowed and returned `None`, the instruction would fail, and funds would be permanently locked in the escrow PDA with no recovery path. This would be a fund-loss vulnerability.
-
-**Tool:** Proptest
-
-**Confidence:** high
-
-**Based on:** VP-087 — timestamp overflow safety
-
-**Formal Property:**
-```
-forall t: i64 where 0 < t <= i64::MAX - PERMISSIONLESS_RECLAIM_TIMEOUT:
-    t.checked_add(172800_i64) = Some(t + 172800)
-
-# Stronger bound for Solana-realistic timestamps:
-forall t: i64 where MIN_REALISTIC_TS <= t <= MAX_REALISTIC_TS:
-    t + 172800 < i64::MAX
-```
-
-**Proptest sketch:**
-```rust
-const PERMISSIONLESS_RECLAIM_TIMEOUT: i64 = 172800;
-
-proptest! {
-    #[test]
-    fn reclaim_deadline_never_overflows_realistic(
-        timeout_ref in MIN_REALISTIC_TS..=MAX_REALISTIC_TS
-    ) {
-        let result = timeout_ref.checked_add(PERMISSIONLESS_RECLAIM_TIMEOUT);
-        prop_assert!(result.is_some(),
-            "timeout_ref={} overflowed when adding PERMISSIONLESS_RECLAIM_TIMEOUT={}",
-            timeout_ref, PERMISSIONLESS_RECLAIM_TIMEOUT);
-        // Also verify the result is positive (timestamps must be)
-        let deadline = result.unwrap();
-        prop_assert!(deadline > 0, "deadline must be positive, got {}", deadline);
-    }
-
-    #[test]
-    fn reclaim_overflow_headroom() {
-        // Prove: even at year 2262, the largest timeout fits
-        // i64::MAX = 9_223_372_036_854_775_807
-        // i64::MAX - 172800 = 9_223_372_036_854_603_007
-        // This is approximately year 292277026596 — well beyond Solana's lifetime
-        let max_safe = i64::MAX - PERMISSIONLESS_RECLAIM_TIMEOUT;
-        assert!(max_safe > MAX_REALISTIC_TS,
-            "max safe timestamp {} must exceed realistic max {}",
-            max_safe, MAX_REALISTIC_TS);
-    }
-}
-```
-
----
-
-## INV-2: Ordering Guarantee — Settlement < Cancel < Reclaim Deadlines (VP-088)
-
-**What it checks:** For the same match with a given `activated_at > 0`, the three deadlines are strictly ordered:
-- `settlement_deadline < cancel_deadline < reclaim_deadline`
-- Equivalently: `activated_at + 3600 < activated_at + 86400 < activated_at + 172800`
-
-**Why it matters:** This ordering is the foundation of the match lifecycle timeout design:
-1. The authority has 1 hour to settle (settlement window).
-2. After 24 hours, players can cancel and self-refund (cancel window).
-3. After 48 hours, anyone can reclaim (permissionless reclaim window).
-
-If these deadlines were misordered (e.g., a code change made SETTLEMENT_TIMEOUT_SECONDS > TIMEOUT_SECONDS), the authority's settlement window would extend past the cancel window. Players could cancel a match that the authority was still authorized to settle, creating a race condition where both settlement and cancellation could succeed for the same escrow, potentially double-spending funds.
-
-Concrete exploit scenario: If `SETTLEMENT_TIMEOUT_SECONDS` were accidentally set to `100_000` (> 86400), a match could be both settled by authority (paying winner/treasury/ops) AND cancelled by a player (refunding both wagers) within the overlap window, draining more lamports from the escrow than it holds.
-
-**Tool:** Proptest (constants + arithmetic)
-
-**Confidence:** high
-
-**Based on:** VP-088 — deadline ordering guarantee
-
-**Formal Property:**
-```
-# Constant ordering (compile-time verifiable):
-SETTLEMENT_TIMEOUT_SECONDS < TIMEOUT_SECONDS < PERMISSIONLESS_RECLAIM_TIMEOUT
-3600 < 86400 < 172800
-
-# Runtime ordering (for any valid activated_at):
-forall activated_at: i64 where activated_at > 0 AND activated_at <= i64::MAX - 172800:
-    let settle  = activated_at + SETTLEMENT_TIMEOUT_SECONDS;
-    let cancel  = activated_at + TIMEOUT_SECONDS;
-    let reclaim = activated_at + PERMISSIONLESS_RECLAIM_TIMEOUT;
-    settle < cancel < reclaim
-```
-
-**Proptest sketch:**
-```rust
-const SETTLEMENT_TIMEOUT_SECONDS: i64 = 3600;
-const TIMEOUT_SECONDS: i64 = 86400;
-const PERMISSIONLESS_RECLAIM_TIMEOUT: i64 = 172800;
-
-proptest! {
-    #[test]
-    fn deadline_ordering_holds(
-        activated_at in 1_i64..=(i64::MAX - PERMISSIONLESS_RECLAIM_TIMEOUT)
-    ) {
-        let settle_deadline = activated_at.checked_add(SETTLEMENT_TIMEOUT_SECONDS).unwrap();
-        let cancel_deadline = activated_at.checked_add(TIMEOUT_SECONDS).unwrap();
-        let reclaim_deadline = activated_at.checked_add(PERMISSIONLESS_RECLAIM_TIMEOUT).unwrap();
-
-        prop_assert!(settle_deadline < cancel_deadline,
-            "settle_deadline={} must be < cancel_deadline={}",
-            settle_deadline, cancel_deadline);
-        prop_assert!(cancel_deadline < reclaim_deadline,
-            "cancel_deadline={} must be < reclaim_deadline={}",
-            cancel_deadline, reclaim_deadline);
-    }
-
-    #[test]
-    fn constant_ordering_holds() {
-        // This is a static invariant but we verify it via test
-        assert!(SETTLEMENT_TIMEOUT_SECONDS < TIMEOUT_SECONDS,
-            "SETTLEMENT_TIMEOUT ({}) must be < TIMEOUT ({})",
-            SETTLEMENT_TIMEOUT_SECONDS, TIMEOUT_SECONDS);
-        assert!(TIMEOUT_SECONDS < PERMISSIONLESS_RECLAIM_TIMEOUT,
-            "TIMEOUT ({}) must be < PERMISSIONLESS_RECLAIM_TIMEOUT ({})",
-            TIMEOUT_SECONDS, PERMISSIONLESS_RECLAIM_TIMEOUT);
-    }
-
-    #[test]
-    fn no_deadline_overlap_window(
-        activated_at in MIN_REALISTIC_TS..=MAX_REALISTIC_TS
-    ) {
-        // Verify there is no time at which both settle_match and cancel_match
-        // could succeed simultaneously.
-        // settle_match requires: now <= activated_at + 3600
-        // cancel_match (player, timed out) requires: now > activated_at + 86400
-        // These windows cannot overlap because 3600 < 86400:
-        let settle_window_end = activated_at + SETTLEMENT_TIMEOUT_SECONDS;
-        let cancel_window_start = activated_at + TIMEOUT_SECONDS;
-        prop_assert!(settle_window_end < cancel_window_start,
-            "Settlement window end ({}) must be before cancel window start ({})",
-            settle_window_end, cancel_window_start);
-
-        // Gap between settlement expiry and cancel availability:
-        let gap_seconds = cancel_window_start - settle_window_end;
-        prop_assert_eq!(gap_seconds, TIMEOUT_SECONDS - SETTLEMENT_TIMEOUT_SECONDS,
-            "Gap must be exactly {} seconds", TIMEOUT_SECONDS - SETTLEMENT_TIMEOUT_SECONDS);
-        // gap = 86400 - 3600 = 82800 seconds = 23 hours
-    }
-}
-```
-
----
-
-## INV-3: Constant Relationship — PERMISSIONLESS_RECLAIM_TIMEOUT == 2 * TIMEOUT_SECONDS (VP-089)
-
-**What it checks:** The compile-time constant `PERMISSIONLESS_RECLAIM_TIMEOUT` is exactly `2 * TIMEOUT_SECONDS`. This is specified in the DCA-02 design document and enforced at line 23 via `TIMEOUT_SECONDS * 2`.
-
-**Why it matters:** The 2x multiplier is a deliberate design choice from DCA-02 (Decentralized Contingency Action):
-- 1x timeout (24h): Players can self-cancel, authority can cancel AwaitingDeposits.
-- 2x timeout (48h): Permissionless reclaim by any party, providing a decentralized safety net.
-
-If a developer modifies `TIMEOUT_SECONDS` without understanding that `PERMISSIONLESS_RECLAIM_TIMEOUT` depends on it, or if the multiplication is changed, the 2x relationship would break. A reclaim timeout less than the cancel timeout would allow permissionless reclaim before the players have had a chance to cancel, unnecessarily exposing matches to third-party intervention. A reclaim timeout much larger than 2x would leave funds locked longer than intended.
-
-Additionally, the Rust compiler evaluates `TIMEOUT_SECONDS * 2` at compile time using wrapping arithmetic for `const` expressions. If `TIMEOUT_SECONDS` were ever set to a value greater than `i64::MAX / 2`, the multiplication would wrap silently at compile time (no `checked_mul` for const expressions in Rust), producing a negative or small positive constant. This test catches that scenario.
-
-**Tool:** Proptest + static assertion
-
-**Confidence:** high
-
-**Based on:** VP-089 — constant derivation correctness
-
-**Formal Property:**
-```
-PERMISSIONLESS_RECLAIM_TIMEOUT == 2 * TIMEOUT_SECONDS
-172800 == 2 * 86400
-TIMEOUT_SECONDS <= i64::MAX / 2  (no compile-time overflow)
-```
-
-**Proptest sketch:**
-```rust
-const TIMEOUT_SECONDS: i64 = 86400;
-const PERMISSIONLESS_RECLAIM_TIMEOUT: i64 = TIMEOUT_SECONDS * 2;
-
+// Boundary tests (one-shot)
 #[test]
-fn constant_relationship_2x() {
-    assert_eq!(PERMISSIONLESS_RECLAIM_TIMEOUT, 2 * TIMEOUT_SECONDS,
-        "PERMISSIONLESS_RECLAIM_TIMEOUT ({}) must be exactly 2 * TIMEOUT_SECONDS ({})",
-        PERMISSIONLESS_RECLAIM_TIMEOUT, 2 * TIMEOUT_SECONDS);
+fn ts_inv_1_boundary_overflow_caught() {
+    assert!(i64::MAX.checked_add(SETTLEMENT_TIMEOUT_SECONDS).is_none());
+    assert!(i64::MAX.checked_add(PERMISSIONLESS_RECLAIM_TIMEOUT).is_none());
+    let last_safe = i64::MAX - PERMISSIONLESS_RECLAIM_TIMEOUT;
+    assert!(last_safe.checked_add(PERMISSIONLESS_RECLAIM_TIMEOUT).is_some());
+    assert!((last_safe + 1).checked_add(PERMISSIONLESS_RECLAIM_TIMEOUT).is_none());
 }
-
-#[test]
-fn constant_values_match_specification() {
-    assert_eq!(TIMEOUT_SECONDS, 86400, "TIMEOUT_SECONDS must be 86400 (24 hours)");
-    assert_eq!(PERMISSIONLESS_RECLAIM_TIMEOUT, 172800,
-        "PERMISSIONLESS_RECLAIM_TIMEOUT must be 172800 (48 hours)");
-    assert_eq!(SETTLEMENT_TIMEOUT_SECONDS, 3600,
-        "SETTLEMENT_TIMEOUT_SECONDS must be 3600 (1 hour)");
-}
-
-#[test]
-fn no_const_overflow_in_2x_multiplication() {
-    // Prove TIMEOUT_SECONDS is small enough that * 2 doesn't overflow i64
-    assert!(TIMEOUT_SECONDS <= i64::MAX / 2,
-        "TIMEOUT_SECONDS ({}) must be <= i64::MAX / 2 ({}) to avoid const overflow",
-        TIMEOUT_SECONDS, i64::MAX / 2);
-    // Verify the product is positive (not wrapped)
-    assert!(PERMISSIONLESS_RECLAIM_TIMEOUT > 0,
-        "PERMISSIONLESS_RECLAIM_TIMEOUT must be positive, got {}",
-        PERMISSIONLESS_RECLAIM_TIMEOUT);
-    assert!(PERMISSIONLESS_RECLAIM_TIMEOUT > TIMEOUT_SECONDS,
-        "2x must be greater than 1x");
-}
-
-proptest! {
-    /// Parametric: if TIMEOUT_SECONDS were changed, verify 2x still holds
-    #[test]
-    fn parametric_2x_relationship(
-        base_timeout in 1_i64..=(i64::MAX / 2)
-    ) {
-        let reclaim = base_timeout.checked_mul(2);
-        prop_assert!(reclaim.is_some(),
-            "base_timeout={} * 2 overflowed", base_timeout);
-        prop_assert_eq!(reclaim.unwrap(), base_timeout * 2);
-        prop_assert!(reclaim.unwrap() > base_timeout,
-            "2x must be > 1x");
-    }
-}
-```
-
----
-
-## INV-4: Timeout Reference Fallback — activated_at == 0 Falls Back to created_at (VP-090)
-
-**What it checks:** When `activated_at == 0` (match never reached Active state), the timeout reference correctly falls back to `created_at`. When `activated_at > 0` (match was activated), the timeout reference uses `activated_at`.
-
-**Why it matters:** The `timeout_reference` derivation is critical for two instructions:
-1. **cancel_match** (lines 322-326): Determines when a player can self-cancel after timeout.
-2. **permissionless_reclaim** (lines 397-401): Determines when anyone can reclaim funds.
-
-If the fallback logic were inverted (using `created_at` when `activated_at > 0`, or using `activated_at = 0` as the reference), the consequences would be:
-- **Using activated_at=0**: The timeout deadline would be `0 + 86400 = 86400`, which is January 2, 1970. Since `Clock::get()?.unix_timestamp` is always > 86400 on modern Solana, the match would be immediately cancellable/reclaimable after activation, bypassing the intended timeout window entirely. An attacker who deposits second could immediately cancel and reclaim both wagers.
-- **Using created_at when activated_at > 0**: The timeout would be anchored to creation time rather than activation time. If there is a long delay between creation and both players depositing, the timeout window could partially or fully expire before the match even starts, allowing cancellation during an active match.
-
-The design intent (OC-07) is:
-- For Active matches: timeout starts when both players deposited (activated_at).
-- For AwaitingDeposits matches: timeout starts at creation (created_at), so stuck pre-deposit matches can be cleaned up.
-
-**Tool:** LiteSVM (requires runtime to verify Clock interaction); Proptest for pure logic
-
-**Confidence:** high
-
-**Based on:** VP-090 — timeout reference fallback correctness
-
-**Formal Property:**
-```
-timeout_reference(activated_at, created_at) =
-    if activated_at > 0 then activated_at
-    else created_at
-
-# Correctness conditions:
-1. When activated_at > 0: timeout_reference == activated_at
-2. When activated_at == 0: timeout_reference == created_at
-3. created_at > 0 always (set by Clock::get() in create_match)
-4. activated_at >= created_at when activated_at > 0 (activation happens after creation)
-```
-
-**Proptest sketch (pure logic):**
-```rust
-fn timeout_reference(activated_at: i64, created_at: i64) -> i64 {
-    if activated_at > 0 {
-        activated_at
-    } else {
-        created_at
-    }
-}
-
-proptest! {
-    #[test]
-    fn fallback_uses_created_at_when_not_activated(
-        created_at in MIN_REALISTIC_TS..=MAX_REALISTIC_TS
-    ) {
-        let activated_at = 0_i64; // never activated
-        let result = timeout_reference(activated_at, created_at);
-        prop_assert_eq!(result, created_at,
-            "When activated_at=0, must use created_at={}, got {}",
-            created_at, result);
-    }
-
-    #[test]
-    fn uses_activated_at_when_activated(
-        created_at in MIN_REALISTIC_TS..=MAX_REALISTIC_TS,
-        delay in 0_i64..=86400_i64 // activation within 24h of creation
-    ) {
-        let activated_at = created_at + delay;
-        let result = timeout_reference(activated_at, created_at);
-        prop_assert_eq!(result, activated_at,
-            "When activated_at={} > 0, must use activated_at, got {}",
-            activated_at, result);
-    }
-
-    #[test]
-    fn activated_at_is_always_gte_created_at(
-        created_at in MIN_REALISTIC_TS..=MAX_REALISTIC_TS,
-        delay in 0_i64..=604800_i64 // up to 7 days
-    ) {
-        let activated_at = created_at + delay;
-        prop_assert!(activated_at >= created_at,
-            "activated_at={} must be >= created_at={}",
-            activated_at, created_at);
-    }
-
-    #[test]
-    fn fallback_never_uses_zero(
-        created_at in MIN_REALISTIC_TS..=MAX_REALISTIC_TS
-    ) {
-        // When activated_at=0, the result must be created_at, which is > 0
-        let result = timeout_reference(0, created_at);
-        prop_assert!(result > 0,
-            "Timeout reference must never be 0, got {} for created_at={}",
-            result, created_at);
-    }
-
-    #[test]
-    fn timeout_reference_consistency_between_cancel_and_reclaim(
-        created_at in MIN_REALISTIC_TS..=MAX_REALISTIC_TS,
-        activated_at_raw in 0_i64..=1_i64 // test both branches
-    ) {
-        // Both cancel_match and permissionless_reclaim use the same
-        // timeout_reference derivation. Verify they produce the same base.
-        let activated_at = if activated_at_raw == 0 { 0 } else { created_at + 100 };
-
-        let cancel_ref = timeout_reference(activated_at, created_at);
-        let reclaim_ref = timeout_reference(activated_at, created_at);
-
-        prop_assert_eq!(cancel_ref, reclaim_ref,
-            "cancel and reclaim must use same timeout_reference");
-    }
-}
-```
-
-**LiteSVM sketch (runtime integration):**
-```rust
-/// Integration test: create a match, do NOT deposit, verify cancel_match
-/// uses created_at as timeout reference (activated_at remains 0).
-#[test]
-fn cancel_awaiting_deposits_uses_created_at_timeout() {
-    // 1. Set up LiteSVM with program deployed
-    // 2. Call create_match at time T0
-    // 3. Warp clock to T0 + TIMEOUT_SECONDS + 1
-    // 4. Call cancel_match as player -> should succeed (timed out from created_at)
-    // 5. Verify escrow is closed and state is Cancelled
-}
-
-/// Integration test: create a match, both deposit (activating it), verify
-/// cancel_match uses activated_at as timeout reference.
-#[test]
-fn cancel_active_match_uses_activated_at_timeout() {
-    // 1. Set up LiteSVM with program deployed
-    // 2. Call create_match at time T0
-    // 3. Both players deposit at time T1 (activated_at = T1)
-    // 4. Warp clock to T0 + TIMEOUT_SECONDS + 1 (past created_at timeout)
-    //    but T1 + TIMEOUT_SECONDS has NOT passed yet (if T1 > T0)
-    // 5. Call cancel_match as player -> should FAIL (not timed out from activated_at)
-    // 6. Warp clock to T1 + TIMEOUT_SECONDS + 1
-    // 7. Call cancel_match as player -> should SUCCEED
-}
-```
-
----
-
-## INV-5: Settlement Window Exclusion — No Concurrent Settle + Cancel (VP-088, novel)
-
-**What it checks:** There exists no point in time `now` at which both `settle_match` and `cancel_match` (via player timeout path) can succeed for the same Active escrow.
-
-**Why it matters:** `settle_match` distributes the pot to winner/treasury/ops. `cancel_match` refunds both players their full wagers. If both could execute at the same instant, the escrow would be drained by more than its balance:
-- settle_match drains: `winner_amount + treasury_amount + ops_amount = total_pot = 2 * wager`
-- cancel_match drains: up to `2 * wager` (one wager per deposited player)
-- Total drain: up to `4 * wager` from an escrow holding only `2 * wager` + rent
-
-The settle_match window is `[activated_at, activated_at + 3600]` (inclusive).
-The player-cancel window (for Active matches) starts at `now > activated_at + 86400`.
-The gap between settlement expiry and cancel eligibility is 82,800 seconds (23 hours).
-
-This is a derived property from INV-2 but stated as a separate invariant because the exploit scenario is the most severe.
-
-**Tool:** Proptest
-
-**Confidence:** high
-
-**Based on:** VP-088 (deadline ordering) + novel (mutual exclusion)
-
-**Formal Property:**
-```
-forall activated_at > 0, forall now: i64:
-    NOT (
-        (now <= activated_at + SETTLEMENT_TIMEOUT_SECONDS)   // settle_match allowed
-        AND
-        (now > activated_at + TIMEOUT_SECONDS)               // cancel_match timeout path allowed
-    )
-
-# Proof: For the conjunction to hold:
-#   now <= activated_at + 3600  AND  now > activated_at + 86400
-#   => activated_at + 86400 < now <= activated_at + 3600
-#   => 86400 < 3600  (contradiction)
-# QED: The conjunction is unsatisfiable.
-```
-
-**Proptest sketch:**
-```rust
-proptest! {
-    #[test]
-    fn settle_and_cancel_windows_never_overlap(
-        activated_at in 1_i64..=(i64::MAX - PERMISSIONLESS_RECLAIM_TIMEOUT),
-        now_offset in 0_i64..=200_000_i64 // offsets from activated_at
-    ) {
-        let now = activated_at.saturating_add(now_offset);
-
-        let settle_allowed = now <= activated_at + SETTLEMENT_TIMEOUT_SECONDS;
-        let cancel_timeout_allowed = now > activated_at + TIMEOUT_SECONDS;
-
-        prop_assert!(
-            !(settle_allowed && cancel_timeout_allowed),
-            "VIOLATION: at now={}, both settle (allowed={}) and cancel-timeout \
-             (allowed={}) are true. activated_at={}",
-            now, settle_allowed, cancel_timeout_allowed, activated_at
-        );
-    }
-}
-```
-
----
-
-## INV-6: Permissionless Reclaim Window Subsumes Cancel Window (VP-088, novel)
-
-**What it checks:** The permissionless reclaim window starts strictly after the cancel window starts. Specifically, for any given timeout_reference, `reclaim_deadline > cancel_deadline`, meaning the reclaim path is always available later than the cancel path.
-
-**Why it matters:** This ensures the escalation ladder is correctly ordered:
-1. Authority/players can cancel during [0, cancel_deadline] depending on permissions.
-2. Players can self-cancel after cancel_deadline (timeout path).
-3. Anyone can reclaim after reclaim_deadline (permissionless path).
-
-If the reclaim deadline were before or equal to the cancel deadline, the permissionless reclaim (which has weaker authorization requirements -- anyone can call it) would preempt the more restrictive cancel path. An attacker could call `permissionless_reclaim` before the players have a chance to `cancel_match`, and receive the PDA rent as an economic incentive, even if the players would have preferred to cancel themselves.
-
-**Tool:** Proptest
-
-**Confidence:** high
-
-**Based on:** VP-088 — deadline ordering
-
-**Formal Property:**
-```
-forall timeout_reference > 0:
-    timeout_reference + TIMEOUT_SECONDS < timeout_reference + PERMISSIONLESS_RECLAIM_TIMEOUT
-    (trivially true since 86400 < 172800, but verify no overflow invalidates this)
-```
-
-**Proptest sketch:**
-```rust
-proptest! {
-    #[test]
-    fn reclaim_deadline_always_after_cancel_deadline(
-        timeout_ref in 1_i64..=(i64::MAX - PERMISSIONLESS_RECLAIM_TIMEOUT)
-    ) {
-        let cancel_deadline = timeout_ref.checked_add(TIMEOUT_SECONDS).unwrap();
-        let reclaim_deadline = timeout_ref.checked_add(PERMISSIONLESS_RECLAIM_TIMEOUT).unwrap();
-
-        prop_assert!(reclaim_deadline > cancel_deadline,
-            "reclaim_deadline={} must be > cancel_deadline={} for timeout_ref={}",
-            reclaim_deadline, cancel_deadline, timeout_ref);
-
-        // The gap should be exactly TIMEOUT_SECONDS (24 hours)
-        let gap = reclaim_deadline - cancel_deadline;
-        prop_assert_eq!(gap, TIMEOUT_SECONDS,
-            "Gap between reclaim and cancel must be {} seconds, got {}",
-            TIMEOUT_SECONDS, gap);
-    }
-}
-```
-
----
-
-## INV-7: Settlement Guard Bypass — activated_at == 0 Skips Deadline Check (novel)
-
-**What it checks:** When `activated_at == 0` (match was never activated), the `settle_match` instruction's settlement deadline check at lines 236-244 is skipped entirely via the `if activated_at > 0` guard.
-
-**Why it matters:** This is a design-level observation that warrants verification. The code at line 236 reads:
-```rust
-if ctx.accounts.escrow.activated_at > 0 {
-    let deadline = ctx.accounts.escrow.activated_at
-        .checked_add(SETTLEMENT_TIMEOUT_SECONDS)
-        .ok_or(EscrowError::ArithmeticOverflow)?;
-    require!(
-        Clock::get()?.unix_timestamp <= deadline,
-        EscrowError::SettlementExpired
-    );
-}
-```
-
-If `activated_at == 0`, the entire deadline block is skipped. However, `settle_match` also requires `state == MatchState::Active`, and `activated_at` is set to `Clock::get()?.unix_timestamp` in `deposit_wager` when the match transitions to Active. Therefore, any Active match should always have `activated_at > 0`. The invariant to verify is: **it is impossible for a match to be in Active state with activated_at == 0**.
-
-If this invariant were violated (e.g., through a deserialization bug or a migration that corrupts the field), `settle_match` would have no time limit -- the authority could settle at any time, even years later. While this is low-risk in isolation, it breaks the protocol's guarantee that stale matches eventually become player-cancellable.
-
-**Tool:** LiteSVM (requires runtime to verify state transitions)
-
-**Confidence:** medium (the invariant is upheld by the current code path, but a migration or program upgrade could break it)
-
-**Based on:** novel — state/timestamp coupling invariant
-
-**Formal Property:**
-```
-forall escrow: MatchEscrow:
-    escrow.state == MatchState::Active => escrow.activated_at > 0
-
-# Contrapositive:
-    escrow.activated_at == 0 => escrow.state != MatchState::Active
 ```
 
 **LiteSVM sketch:**
 ```rust
+// Smoke test: deploy program, create_match with MAX windows, advance clock by 24h+,
+// assert no instruction returns ArithmeticOverflow at realistic timestamps.
+// Optional: assert ArithmeticOverflow IS returned if forced via mocked huge-clock scenario.
+```
+
+---
+
+### INV-2 (I-TIME-2): Monotonic Deadline Ordering Per Match
+
+**What it checks:**
+For any single in-flight match, the deadlines stay in non-decreasing order along the lifecycle: `deposit_deadline ≤ match_end_ts ≤ reclaim_deadline`. Specifically:
+
+- (v2 AwaitingDeposits) `deposit_deadline = created_at + deposit_window_secs`
+- (v2 Active) `match_end_ts = activated_at + duration_secs` and `activated_at ≥ deposit_deadline` if activated via `start_with_depositors` (so `match_end_ts ≥ deposit_deadline`)
+- (v2 Active) `reclaim_deadline = match_end_ts + PUBLIC_REFUND_GRACE_SECS ≥ match_end_ts`
+- (v2 AwaitingDeposits stalled) `reclaim_deadline = deposit_deadline + PUBLIC_REFUND_GRACE_SECS > deposit_deadline`
+
+**Why it matters:**
+The lifecycle relies on each phase strictly succeeding the previous one — players need a chance to deposit before the match starts, the match needs to reach its expected end before players can cancel, and the public-grace window needs to extend beyond match-end before strangers can reclaim. If ordering inverts (e.g. `reclaim_deadline ≤ match_end_ts`), the permissionless reclaim becomes valid before the match has officially ended, letting any rent-sniping bot drain the escrow while the legitimate authority is still trying to settle. Inversions are typically caused by sign errors, swapped arguments, or comments-vs-code drift.
+
+**Tool:** Proptest (sweep over all valid `(deposit_window_secs, duration_secs)` pairs), LiteSVM (end-to-end timeline assertion)
+**Confidence:** high
+**Based on:** VP-090 (Time Window Boundary Precision) + VP-088 (Epoch Boundary Off-by-One)
+
+**Formal Property:**
+```
+For all valid v2 inputs:
+  MIN_DEPOSIT_WINDOW_SECS ≤ deposit_window_secs ≤ MAX_DEPOSIT_WINDOW_SECS
+  MIN_DURATION_SECS ≤ duration_secs ≤ MAX_DURATION_SECS
+  created_at ≥ MIN_REALISTIC_TS
+
+Let:
+  deposit_deadline = created_at + deposit_window_secs
+  // v2:351 require!(now >= deposit_deadline) for start_with_depositors
+  // → activated_at ≥ deposit_deadline (in start_with_depositors path)
+  // For full-mask deposit path, activated_at can be < deposit_deadline,
+  //   but match_end_ts may be < deposit_deadline (acceptable: full deposits
+  //   ended early and game starts immediately).
+  match_end_ts_full = activated_at_full + duration_secs       (full deposit path)
+  match_end_ts_swd  = activated_at_swd + duration_secs ≥ deposit_deadline + duration_secs
+  reclaim_deadline_active    = match_end_ts + PUBLIC_REFUND_GRACE_SECS
+  reclaim_deadline_awaiting  = deposit_deadline + PUBLIC_REFUND_GRACE_SECS
+
+Then:
+  reclaim_deadline_active   > match_end_ts                              [strict]
+  reclaim_deadline_awaiting > deposit_deadline                          [strict]
+  match_end_ts_swd          ≥ deposit_deadline                          [≥, equality at edge]
+```
+
+**Proptest sketch:**
+```rust
+proptest! {
+    #[test]
+    fn ts_inv_2_v2_swd_ordering(
+        created_at in V2_REALISTIC_TS_RANGE,
+        deposit_window_secs in (V2_MIN_DEPOSIT_WINDOW_SECS as i64)..=(V2_MAX_DEPOSIT_WINDOW_SECS as i64),
+        duration_secs in (V2_MIN_DURATION_SECS as i64)..=(V2_MAX_DURATION_SECS as i64),
+    ) {
+        let dep_deadline = created_at + deposit_window_secs;
+        // start_with_depositors requires now >= deposit_deadline → choose activated_at = dep_deadline
+        let activated_at = dep_deadline;
+        let match_end_ts = activated_at + duration_secs;
+        let reclaim_deadline = match_end_ts + V2_PUBLIC_REFUND_GRACE_SECS;
+
+        prop_assert!(match_end_ts >= dep_deadline,
+            "match_end_ts {} < dep_deadline {}", match_end_ts, dep_deadline);
+        prop_assert!(reclaim_deadline > match_end_ts,
+            "reclaim_deadline {} ≤ match_end_ts {}", reclaim_deadline, match_end_ts);
+    }
+
+    #[test]
+    fn ts_inv_2_v2_awaiting_ordering(
+        created_at in V2_REALISTIC_TS_RANGE,
+        deposit_window_secs in (V2_MIN_DEPOSIT_WINDOW_SECS as i64)..=(V2_MAX_DEPOSIT_WINDOW_SECS as i64),
+    ) {
+        let dep_deadline = created_at + deposit_window_secs;
+        let reclaim_deadline = dep_deadline + V2_PUBLIC_REFUND_GRACE_SECS;
+        prop_assert!(reclaim_deadline > dep_deadline);
+        // Grace must be at least 24h
+        prop_assert_eq!(reclaim_deadline - dep_deadline, V2_PUBLIC_REFUND_GRACE_SECS);
+    }
+}
+```
+
+**LiteSVM sketch:**
+```rust
+// 1. create_match with deposit_window_secs=W, duration_secs=D.
+// 2. Have all players deposit immediately (full-mask path). Read match_end_ts.
+//    Assert match_end_ts == created_at_observed + (something close to D within slot drift).
+// 3. Advance clock to match_end_ts. Assert reclaim returns TooEarlyToReclaim.
+// 4. Advance clock to match_end_ts + PUBLIC_REFUND_GRACE_SECS - 1. Still TooEarlyToReclaim.
+// 5. Advance clock to match_end_ts + PUBLIC_REFUND_GRACE_SECS + 1. Reclaim succeeds.
+// Repeat for the start_with_depositors path with partial deposits.
+```
+
+---
+
+### INV-3 (I-TIME-3): v1 Settle/Cancel Race Window Eliminated (Post-H035-Fix)
+
+**What it checks:**
+With `TIMEOUT_SECONDS = 3600` and `SETTLEMENT_TIMEOUT_SECONDS = 3600`, the simultaneous-validity overlap between `settle_match` and player `cancel_match` is reduced to at most a single slot. Concretely:
+
+- `settle_match` is valid for `now ≤ activated_at + SETTLEMENT_TIMEOUT_SECONDS` (≤, inclusive)
+- player `cancel_match` (timeout path) is valid for `now > activated_at + TIMEOUT_SECONDS` (>, strict)
+- With both constants = 3600, the overlap is `now > activated_at + 3600 ∧ now ≤ activated_at + 3600` = empty
+
+The 50-minute race window from the pre-fix configuration (TIMEOUT_SECONDS=600 < SETTLEMENT_TIMEOUT_SECONDS=3600) is closed.
+
+**Why it matters:**
+H035 documented that the 50-minute simultaneous-validity zone gave any losing player a settlement-denial primitive: observe the authority's `settle_match` TX in mempool, broadcast a higher-priority-fee `cancel_match`, win the priority-fee race, and recover their full wager (refunding all depositors, including the winner who was denied 0.8×W). With both constants at 3600, the overlap collapses — when the cancel becomes valid, the settle has already expired. Mutual exclusion is now effectively time-enforced rather than only state-enforced. The invariant fails if either constant changes without the other, or if either comparison's strictness changes (e.g. cancel switches to `≥` or settle switches to `<`). This invariant must guard against such drift.
+
+**Tool:** Proptest (constant-relationship + boundary tests), LiteSVM (race scenario at exact boundary)
+**Confidence:** high
+**Based on:** VP-090 (Time Window Boundary Precision) — directly applicable to two-window mutual-exclusion case
+
+**Formal Property:**
+```
+TIMEOUT_SECONDS = SETTLEMENT_TIMEOUT_SECONDS = 3600
+
+For any activated_at and any now:
+  let cancel_open_at  = activated_at + TIMEOUT_SECONDS       // strict > boundary
+  let settle_close_at = activated_at + SETTLEMENT_TIMEOUT_SECONDS  // ≤ boundary
+  let can_cancel  = now > cancel_open_at
+  let can_settle  = now ≤ settle_close_at
+  // Race window: can_cancel ∧ can_settle should be impossible
+  ¬(can_cancel ∧ can_settle)
+
+Equivalent: cancel_open_at ≥ settle_close_at ∧ no slot satisfies both bounds.
+With both = 3600: at now = activated_at + 3600, can_settle = true, can_cancel = false.
+                   at now = activated_at + 3601, can_settle = false, can_cancel = true.
+                   Race window = ∅.
+```
+
+**Proptest sketch:**
+```rust
 #[test]
-fn active_match_always_has_nonzero_activated_at() {
-    // 1. Set up LiteSVM
-    // 2. Create a match (state = AwaitingDeposits, activated_at = 0)
-    // 3. Verify: activated_at == 0 AND state == AwaitingDeposits
-    // 4. Player 1 deposits (state still AwaitingDeposits, activated_at still 0)
-    // 5. Player 2 deposits (state transitions to Active)
-    // 6. Read escrow account data
-    // 7. Assert: activated_at > 0
-    // 8. Assert: activated_at approximately equals current clock timestamp
+fn ts_inv_3_v1_constants_eliminate_race() {
+    assert_eq!(TIMEOUT_SECONDS, SETTLEMENT_TIMEOUT_SECONDS,
+        "H035 fix: TIMEOUT_SECONDS must equal SETTLEMENT_TIMEOUT_SECONDS to close race");
+    assert_eq!(TIMEOUT_SECONDS, 3600);
+}
+
+proptest! {
+    #[test]
+    fn ts_inv_3_v1_no_settle_cancel_overlap(
+        activated_at in REALISTIC_TS_RANGE,
+        offset in -7200i64..=7200i64,
+    ) {
+        let now = activated_at + offset;
+        let cancel_open_at = activated_at + TIMEOUT_SECONDS;
+        let settle_close_at = activated_at + SETTLEMENT_TIMEOUT_SECONDS;
+        let can_cancel = now > cancel_open_at;
+        let can_settle = now <= settle_close_at;
+        prop_assert!(!(can_cancel && can_settle),
+            "Race at activated_at={}, offset={}, now={}", activated_at, offset, now);
+    }
+}
+```
+
+**LiteSVM sketch:**
+```rust
+// 1. create_match v1, both players deposit, match goes Active. Record activated_at.
+// 2. Advance clock to activated_at + 3600 exactly.
+// 3. Submit BOTH settle_match (authority) and cancel_match (player) in same slot.
+//    Assert exactly ONE succeeds. The other fails on either deadline OR state-check.
+// 4. Repeat at activated_at + 3601: settle must fail (SettlementExpired),
+//    cancel must succeed.
+// 5. Repeat at activated_at + 3599: settle must succeed,
+//    cancel must fail (Unauthorized — is_timed_out=false).
+```
+
+---
+
+### INV-4 (I-TIME-4): v1 Constant-Doc Integrity (Post-H040-Fix)
+
+**What it checks:**
+The runtime value of `PERMISSIONLESS_RECLAIM_TIMEOUT` matches its doc-comment description. Specifically:
+
+- Pre-fix: comment claimed "48-hour" / `// 172800 seconds`, actual value was `TIMEOUT_SECONDS * 2 = 600 * 2 = 1200s = 20 min`. Comment was 144× wrong.
+- Post-fix: comment must now describe `TIMEOUT_SECONDS * 2 = 3600 * 2 = 7200s = 2 hours`. The numeric claim and the computed value must agree.
+
+This invariant is enforced via a `const _: () = assert!(...)` static assertion plus a runtime test that verifies the computed value matches the documented value.
+
+**Why it matters:**
+H040 documented that operators reading the stale "48-hour" comment to plan incident-response SLAs would miss the actual 20-minute reclaim window — third-party rent-sniping bots can drain PDA rent reserves while the operator waits a day. While not a fund-loss bug per se, comment drift undermines audit confidence and operational planning. A static assertion at the constant site catches future drift at compile time. This is a documentation invariant that, if violated, means the codebase has a "trojan-horse comment" that lies about its constant.
+
+**Tool:** Proptest (compile-time static assertion via `const fn` check) + Rust unit test
+**Confidence:** high
+**Based on:** novel — H040 finding directly motivates this invariant
+
+**Formal Property:**
+```
+PERMISSIONLESS_RECLAIM_TIMEOUT == TIMEOUT_SECONDS * 2
+PERMISSIONLESS_RECLAIM_TIMEOUT == 7200
+TIMEOUT_SECONDS == 3600
+
+If a doc-comment near the constant says "N-hour" or "N seconds":
+  N must equal the computed value at that location.
+```
+
+**Proptest sketch (unit-test form):**
+```rust
+#[test]
+fn ts_inv_4_v1_reclaim_constant_matches_documented_value() {
+    assert_eq!(TIMEOUT_SECONDS, 3600, "TIMEOUT_SECONDS must be 1 hour");
+    assert_eq!(
+        PERMISSIONLESS_RECLAIM_TIMEOUT,
+        TIMEOUT_SECONDS * 2,
+        "PERMISSIONLESS_RECLAIM_TIMEOUT must equal 2 * TIMEOUT_SECONDS"
+    );
+    assert_eq!(
+        PERMISSIONLESS_RECLAIM_TIMEOUT,
+        7200,
+        "Doc-comment must read '2-hour' / '7200 seconds' to match runtime value"
+    );
+    // Defense against future drift
+    let checked = TIMEOUT_SECONDS.checked_mul(2);
+    assert_eq!(checked, Some(PERMISSIONLESS_RECLAIM_TIMEOUT));
+}
+
+// Compile-time guard (drop into lib.rs when adding fix)
+const _: () = assert!(
+    PERMISSIONLESS_RECLAIM_TIMEOUT == 7200,
+    "PERMISSIONLESS_RECLAIM_TIMEOUT must be 7200s; update doc-comment if changing"
+);
+```
+
+---
+
+### INV-5 (I-TIME-5): v2 Strict Deposit Deadline (Post-H018-Fix)
+
+**What it checks:**
+At exactly `now = deposit_deadline`, `deposit_wager` is REJECTED while `start_with_depositors` is PERMITTED. The two windows partition the timeline at the boundary instead of overlapping.
+
+- v2:274 `deposit_wager`: `require!(now < deposit_deadline)` — strict `<` after H018 fix
+- v2:350 `start_with_depositors`: `require!(now >= deposit_deadline)` — inclusive `≥`
+
+At `now = deposit_deadline`, the first check fails (`now < deposit_deadline` is false) and the second passes (`now >= deposit_deadline` is true). No simultaneous validity.
+
+**Why it matters:**
+H018 documented that pre-fix, both `deposit_wager` (was `≤`) and `start_with_depositors` (`≥`) accepted `now = deposit_deadline`. A slow-network last-second depositor would race the authority's compaction TX in the same slot. If start-with-depositors landed first, the depositor's TX failed on `state == Active` and they were silently kicked despite acting in good faith within their advertised window. The strict-`<` fix makes the deposit window a half-open interval `[created_at, created_at + window)` — clean, matches VP-090's recommended convention, and removes the boundary race. Inversion or relaxation of either check (e.g. cancel switching to `≤`) re-opens the race; this invariant must guard against that drift.
+
+**Tool:** LiteSVM (boundary instruction at exact deposit_deadline), Proptest (strategy-driven sweep of `(now, deposit_deadline)` pairs near the boundary)
+**Confidence:** high
+**Based on:** VP-090 (Time Window Boundary Precision)
+
+**Formal Property:**
+```
+For all v2 matches and all now, deposit_deadline:
+  Let deposit_valid = (state == AwaitingDeposits) ∧ (now < deposit_deadline)
+  Let swd_valid     = (state == AwaitingDeposits) ∧ (now >= deposit_deadline) ∧ ...
+
+  ¬(deposit_valid ∧ swd_valid)        // mutual exclusion
+  At now = deposit_deadline:
+    deposit_valid = false
+    swd_valid     = true (subject to other guards)
+  At now = deposit_deadline - 1:
+    deposit_valid = true
+    swd_valid     = false
+```
+
+**Proptest sketch:**
+```rust
+proptest! {
+    #[test]
+    fn ts_inv_5_v2_deposit_window_partition(
+        created_at in V2_REALISTIC_TS_RANGE,
+        window_secs in (V2_MIN_DEPOSIT_WINDOW_SECS as i64)..=(V2_MAX_DEPOSIT_WINDOW_SECS as i64),
+        offset in -10i64..=10i64,
+    ) {
+        let deposit_deadline = created_at + window_secs;
+        let now = deposit_deadline + offset;
+        let deposit_check = now < deposit_deadline;
+        let swd_check     = now >= deposit_deadline;
+        prop_assert!(!(deposit_check && swd_check),
+            "Boundary race at offset={}, now={}, dd={}", offset, now, deposit_deadline);
+        prop_assert!(deposit_check || swd_check,
+            "Boundary gap at offset={}, now={}, dd={}", offset, now, deposit_deadline);
+        if offset == 0 {
+            prop_assert!(!deposit_check, "deposit must be REJECTED at exact deadline");
+            prop_assert!(swd_check, "swd must be PERMITTED at exact deadline");
+        }
+    }
+}
+```
+
+**LiteSVM sketch:**
+```rust
+// 1. create_match v2 with deposit_window_secs = 60s.
+// 2. Advance clock to created_at + 59. Both players try deposit_wager.
+//    Player A succeeds. Player B's deposit also succeeds (or fails on different reason).
+// 3. Reset; advance clock to created_at + 60 exactly. Try deposit_wager → must fail
+//    with DepositWindowClosed.
+// 4. Same slot, try start_with_depositors → must succeed (with at least 2 deposits).
+// 5. Reset; advance to created_at + 59. Try start_with_depositors → must fail with
+//    DepositWindowOpen.
+```
+
+---
+
+### INV-6 (I-TIME-6): v2 Per-Match Deposit Window Bounded
+
+**What it checks:**
+At every `create_match` invocation, `MIN_DEPOSIT_WINDOW_SECS ≤ deposit_window_secs ≤ MAX_DEPOSIT_WINDOW_SECS` is enforced. Storage of the field on the escrow account preserves the bound (no off-by-one or u32→i64 cast surprises).
+
+- v2 `MIN_DEPOSIT_WINDOW_SECS = 60`
+- v2 `MAX_DEPOSIT_WINDOW_SECS = 86400` (24h)
+- Stored as `u32` on `MatchEscrow.deposit_window_secs`; widened to `i64` at every read site (safe: `u32::MAX = 4.29e9 << i64::MAX`).
+
+**Why it matters:**
+The deposit window is a parameter the authority sets per-match. An out-of-range value would either trap the first depositor in a multi-day idle window (extreme upper) or auto-fail every player on slow-network conditions (extreme lower). The bounds gate ensures players' funds are not held longer than the documented protocol horizon (24h max + 24h grace = 48h worst case for AwaitingDeposits-stuck escrows). If the lower bound regressed to 0, the deposit window collapses to `created_at == deposit_deadline` and every deposit_wager fails immediately. If the upper bound regressed (e.g. to 7-days like v2's old `MAX_DURATION_SECS`), the maximum lockup horizon for a stalled match doubles or worse.
+
+**Tool:** Proptest (sweep over valid bounds), LiteSVM (boundary failure test)
+**Confidence:** high
+**Based on:** novel — bounds-enforcement category, common audit finding
+
+**Formal Property:**
+```
+At create_match:
+  require!(deposit_window_secs >= MIN_DEPOSIT_WINDOW_SECS, DepositWindowTooShort)
+  require!(deposit_window_secs <= MAX_DEPOSIT_WINDOW_SECS, DepositWindowTooLong)
+  After write: escrow.deposit_window_secs == deposit_window_secs (round-trip preserves)
+
+For all valid x ∈ [MIN_DEPOSIT_WINDOW_SECS, MAX_DEPOSIT_WINDOW_SECS]:
+  (x as i64) ≤ MAX_DEPOSIT_WINDOW_SECS as i64        [no widening corruption]
+  (x as i64) ≥ MIN_DEPOSIT_WINDOW_SECS as i64
+```
+
+**Proptest sketch:**
+```rust
+proptest! {
+    #[test]
+    fn ts_inv_6_deposit_window_bounds_in_range(
+        x in (V2_MIN_DEPOSIT_WINDOW_SECS as u32)..=(V2_MAX_DEPOSIT_WINDOW_SECS as u32),
+    ) {
+        // Allowed range round-trips through u32→i64 cast safely
+        let i64_val = x as i64;
+        prop_assert!(i64_val >= V2_MIN_DEPOSIT_WINDOW_SECS as i64);
+        prop_assert!(i64_val <= V2_MAX_DEPOSIT_WINDOW_SECS as i64);
+    }
+
+    #[test]
+    fn ts_inv_6_deposit_window_bounds_reject_out_of_range(
+        below in 0u32..(V2_MIN_DEPOSIT_WINDOW_SECS as u32),
+        above in ((V2_MAX_DEPOSIT_WINDOW_SECS as u32) + 1)..=u32::MAX,
+    ) {
+        // Below MIN must be rejected (DepositWindowTooShort)
+        prop_assert!(below < V2_MIN_DEPOSIT_WINDOW_SECS as u32);
+        // Above MAX must be rejected (DepositWindowTooLong)
+        prop_assert!(above > V2_MAX_DEPOSIT_WINDOW_SECS as u32);
+    }
+}
+```
+
+**LiteSVM sketch:**
+```rust
+// 1. create_match with deposit_window_secs = 59 → must fail DepositWindowTooShort.
+// 2. create_match with deposit_window_secs = 60 → succeeds.
+// 3. create_match with deposit_window_secs = 86400 → succeeds.
+// 4. create_match with deposit_window_secs = 86401 → must fail DepositWindowTooLong.
+// 5. create_match with deposit_window_secs = u32::MAX → must fail DepositWindowTooLong.
+// 6. After successful create, read escrow.deposit_window_secs and assert it equals input.
+```
+
+---
+
+### INV-7 (I-TIME-7): v2 Match Duration Bounded (Post-H039-Fix)
+
+**What it checks:**
+At every `create_match` invocation, `MIN_DURATION_SECS ≤ duration_secs ≤ MAX_DURATION_SECS` is enforced. Post-H039-fix: `MAX_DURATION_SECS = 86400` (24h), down from the old 604800 (7 days). This bounds the maximum fund-lockup horizon to 24h + 24h grace = 48h.
+
+**Why it matters:**
+H039 documented that pre-fix, an authority could set `duration_secs = 604800` (7 days) to lock all deposited player funds for 8 days (7-day match + 24-hour grace before permissionless reclaim). The authority gained no lamports from this — pure griefing surface. With MAX_DURATION_SECS = 86400, the worst-case lockup is 48h, which is acceptable for an async-multi-day gaming product. The lower bound (`MIN_DURATION_SECS = 60`) prevents 0-duration matches that would auto-end at activation. If the upper bound regresses (e.g. someone re-introduces 604800 thinking the cap was design intent rather than a temporary fix), the H039 attack surface re-opens. This invariant pins the ceiling.
+
+**Tool:** Proptest, LiteSVM (boundary failures)
+**Confidence:** high
+**Based on:** novel — H039 finding directly motivates this; relates to bounds-enforcement category
+
+**Formal Property:**
+```
+At create_match:
+  require!(duration_secs >= MIN_DURATION_SECS, DurationTooShort)
+  require!(duration_secs <= MAX_DURATION_SECS, DurationTooLong)
+
+MIN_DURATION_SECS = 60
+MAX_DURATION_SECS = 86400  (NOT 604800)
+
+For all valid d ∈ [60, 86400]:
+  (d as i64) ≤ 86400
+  Stored escrow.duration_secs == input duration_secs
+
+Maximum fund-lockup horizon for any v2 match:
+  total_lockup ≤ MAX_DURATION_SECS + PUBLIC_REFUND_GRACE_SECS = 172800s = 48h
+```
+
+**Proptest sketch:**
+```rust
+proptest! {
+    #[test]
+    fn ts_inv_7_duration_in_range(
+        d in (V2_MIN_DURATION_SECS as u32)..=(V2_MAX_DURATION_SECS as u32),
+    ) {
+        prop_assert!((d as i64) >= V2_MIN_DURATION_SECS as i64);
+        prop_assert!((d as i64) <= V2_MAX_DURATION_SECS as i64);
+    }
+
+    #[test]
+    fn ts_inv_7_max_lockup_horizon(
+        d in (V2_MIN_DURATION_SECS as u32)..=(V2_MAX_DURATION_SECS as u32),
+    ) {
+        let max_lockup = (d as i64) + V2_PUBLIC_REFUND_GRACE_SECS;
+        prop_assert!(max_lockup <= 172_800,
+            "Max lockup horizon must be ≤ 48h; got {}s", max_lockup);
+    }
 }
 
 #[test]
-fn settle_match_with_zero_activated_at_is_unreachable() {
-    // Attempt to construct a scenario where state == Active but activated_at == 0.
-    // This should be impossible through normal instruction flow.
-    // If we could directly manipulate account data (as an attacker cannot),
-    // verify that settle_match would skip the deadline check.
-    // This test documents the coupling and serves as a regression guard.
+fn ts_inv_7_max_duration_did_not_regress() {
+    assert_eq!(MAX_DURATION_SECS, 86400,
+        "H039 fix: MAX_DURATION_SECS must remain 86400; do NOT regress to 604800");
+    assert!(MAX_DURATION_SECS < 604800,
+        "Regression guard: MAX_DURATION_SECS must be < 7d");
+}
+```
+
+**LiteSVM sketch:**
+```rust
+// 1. create_match with duration_secs = 86400 → succeeds.
+// 2. create_match with duration_secs = 86401 → must fail DurationTooLong.
+// 3. create_match with duration_secs = 604800 → must fail DurationTooLong.
+// 4. create_match with duration_secs = 59 → must fail DurationTooShort.
+// 5. End-to-end: full 24h match, advance clock, assert lockup ≤ 48h before reclaim.
+```
+
+---
+
+### INV-8 (I-TIME-8): `activated_at` Set-Once Invariants
+
+**What it checks:**
+The `activated_at` field on every escrow account satisfies:
+
+1. Pre-activation: `activated_at == 0` (initialized at create_match)
+2. At-activation: set to `Clock::get()?.unix_timestamp` in the same atomic instruction as `state = MatchState::Active`
+3. Post-activation: never modified again — neither `cancel_match`, `permissionless_reclaim`, nor `settle_match` write to it
+4. `match_end_ts == 0` before activation; `match_end_ts == activated_at + duration_secs` after activation (v2 only); both fields written together at activation
+
+This is INVARIANT-T1, T3, and T4 from the SOS timing audit consolidated.
+
+**Why it matters:**
+The timeout-reference branching at v1:373-377 (cancel) and v1:466-470 (reclaim) and v2:471-477 (cancel) and v2:561-571 (reclaim) all branch on `activated_at > 0` to choose between the AwaitingDeposits and Active deadline formulas. If `activated_at` could be reset to 0 mid-lifecycle, an Active match would suddenly use the AwaitingDeposits formula (`created_at + deposit_window_secs`), which would either be way in the past (instant reclaim available) or way in the future (no escape hatch). If `activated_at` could be modified upward, the authority could effectively extend the match indefinitely — re-creating the H039 lockup attack with extra steps. The set-once-and-only-at-Active-transition guarantee is load-bearing for every timeout decision.
+
+**Tool:** LiteSVM (multi-step lifecycle state assertions; observe `activated_at` through every instruction), Proptest (model the state machine and assert atomic activation)
+**Confidence:** high
+**Based on:** SOS INVARIANT-T1, T3, T4 (timing-ordering audit context)
+
+**Formal Property:**
+```
+Initial state (post-create_match):
+  escrow.state == AwaitingDeposits
+  escrow.activated_at == 0
+  escrow.match_end_ts == 0
+
+Activation transitions (deposit_wager full-mask path OR start_with_depositors):
+  Pre:  state == AwaitingDeposits ∧ activated_at == 0
+  Post: state == Active ∧ activated_at == clock_now ∧ match_end_ts == clock_now + duration_secs
+  All three writes occur in the same instruction (atomic from observer perspective)
+
+Post-activation invariants for any subsequent settle/cancel/reclaim:
+  escrow.activated_at unchanged (immutable post-Active)
+  escrow.match_end_ts unchanged (immutable post-Active)
+  escrow.state ∈ {Active, Settled, Cancelled} (cannot return to AwaitingDeposits)
+```
+
+**LiteSVM sketch:**
+```rust
+// 1. create_match → assert activated_at == 0, match_end_ts == 0, state == AwaitingDeposits.
+// 2. Single deposit (not full mask) → assert all three fields unchanged.
+// 3. Final deposit completing full mask → assert activated_at != 0,
+//    match_end_ts == activated_at + duration_secs, state == Active.
+// 4. Read activated_at value, save as A.
+// 5. Submit cancel_match (player path) — should fail or succeed depending on time.
+//    After: assert escrow.activated_at == A (unchanged, even on cancel success).
+// 6. Reset; full lifecycle through start_with_depositors path. Same assertions.
+// 7. After settle_match: assert activated_at unchanged.
+// 8. Negative test: ensure NO instruction provides a path to reset activated_at to 0.
+```
+
+**Proptest sketch:**
+```rust
+// Model-based test: simulate the state machine in Rust, randomly fire valid instructions,
+// after every instruction assert:
+//   1. activated_at is monotonic (only goes 0 → positive, never back)
+//   2. match_end_ts is monotonic (only goes 0 → positive, never back)
+//   3. state transitions follow the allowed graph
+proptest! {
+    #[test]
+    fn ts_inv_8_activated_at_monotonic(actions in prop::collection::vec(any_action(), 0..50)) {
+        let mut escrow = create_initial_escrow();
+        let mut last_activated_at = 0i64;
+        let mut last_match_end_ts = 0i64;
+        for action in actions {
+            apply_action(&mut escrow, action);
+            prop_assert!(
+                escrow.activated_at == last_activated_at
+                    || (last_activated_at == 0 && escrow.activated_at > 0),
+                "activated_at non-monotonic: was {} now {}", last_activated_at, escrow.activated_at);
+            prop_assert!(escrow.match_end_ts == last_match_end_ts
+                || (last_match_end_ts == 0 && escrow.match_end_ts > 0));
+            last_activated_at = escrow.activated_at;
+            last_match_end_ts = escrow.match_end_ts;
+        }
+    }
+}
+```
+
+---
+
+### INV-9 (I-TIME-9): Reclaim Grace Minimum
+
+**What it checks:**
+The permissionless reclaim deadline is strictly greater than the latest player-action deadline by at least the documented grace period:
+
+- v2 (Active match): `reclaim_deadline ≥ match_end_ts + 24h` (PUBLIC_REFUND_GRACE_SECS)
+- v2 (AwaitingDeposits stalled): `reclaim_deadline ≥ deposit_deadline + 24h`
+- v1 (Active match): `reclaim_deadline ≥ activated_at + 7200s` (PERMISSIONLESS_RECLAIM_TIMEOUT)
+- v1 (AwaitingDeposits stalled): `reclaim_deadline ≥ created_at + 7200s`
+
+The strict `>` comparison in v1:478 / v2:574 (`require!(now > reclaim_deadline, ...)`) ensures no one can reclaim AT exactly the deadline; reclaim opens the slot AFTER it.
+
+**Why it matters:**
+Permissionless reclaim is the last-resort escape hatch for stalled funds. The grace period exists to give legitimate participants (winner, authority) a window to settle without rent-sniping bots front-running them for 0.002 SOL. If the grace shrinks below the documented horizon, a bot can claim PDA rent the moment the match ends. Players still get refunded (refund loop runs unconditionally), but the rent that was set aside for the protocol's operational expenses leaks to whichever monitor watches the chain. If the grace inverts (i.e. `reclaim_deadline < match_end_ts`), reclaim becomes available BEFORE the match has officially ended — a far worse failure mode where players lose their match-in-progress to a bot. This invariant pins the floor.
+
+**Tool:** Proptest (sweep), LiteSVM (boundary instruction at exact reclaim_deadline)
+**Confidence:** high
+**Based on:** VP-090 (Time Window Boundary Precision)
+
+**Formal Property:**
+```
+v2:
+  At reclaim time, with state ∈ {AwaitingDeposits, Active}, activated_at > 0:
+    reclaim_deadline = match_end_ts + PUBLIC_REFUND_GRACE_SECS
+    require!(now > reclaim_deadline)
+  With activated_at == 0:
+    reclaim_deadline = (created_at + deposit_window_secs) + PUBLIC_REFUND_GRACE_SECS
+    require!(now > reclaim_deadline)
+
+  In all paths: reclaim_deadline > player_cancel_deadline
+  Specifically: reclaim_deadline - player_cancel_deadline == PUBLIC_REFUND_GRACE_SECS
+                                                          == 86400 (24h)
+
+v1:
+  reclaim_deadline = timeout_reference + PERMISSIONLESS_RECLAIM_TIMEOUT
+  reclaim_deadline - cancel_deadline == PERMISSIONLESS_RECLAIM_TIMEOUT - TIMEOUT_SECONDS
+                                      == 7200 - 3600 == 3600 (1h gap)
+  Note: post-fix v1 has cancel_deadline == settle_deadline == activated_at + 3600,
+        so reclaim opens 1h after settle expires.
+```
+
+**Proptest sketch:**
+```rust
+proptest! {
+    #[test]
+    fn ts_inv_9_v2_active_reclaim_after_match_end(
+        activated_at in V2_REALISTIC_TS_RANGE,
+        duration_secs in (V2_MIN_DURATION_SECS as i64)..=(V2_MAX_DURATION_SECS as i64),
+    ) {
+        let match_end_ts = activated_at + duration_secs;
+        let reclaim_deadline = match_end_ts + V2_PUBLIC_REFUND_GRACE_SECS;
+        prop_assert!(reclaim_deadline > match_end_ts);
+        prop_assert_eq!(reclaim_deadline - match_end_ts, V2_PUBLIC_REFUND_GRACE_SECS);
+        prop_assert_eq!(reclaim_deadline - match_end_ts, 86400);
+    }
+
+    #[test]
+    fn ts_inv_9_v2_awaiting_reclaim_after_deposit_deadline(
+        created_at in V2_REALISTIC_TS_RANGE,
+        deposit_window_secs in (V2_MIN_DEPOSIT_WINDOW_SECS as i64)..=(V2_MAX_DEPOSIT_WINDOW_SECS as i64),
+    ) {
+        let deposit_deadline = created_at + deposit_window_secs;
+        let reclaim_deadline = deposit_deadline + V2_PUBLIC_REFUND_GRACE_SECS;
+        prop_assert_eq!(reclaim_deadline - deposit_deadline, 86400);
+    }
+
+    #[test]
+    fn ts_inv_9_v1_reclaim_gap_one_hour(
+        timeout_ref in REALISTIC_TS_RANGE,
+    ) {
+        let cancel_deadline = timeout_ref + V1_TIMEOUT_SECONDS;        // 3600
+        let reclaim_deadline = timeout_ref + V1_PERMISSIONLESS_RECLAIM_TIMEOUT;  // 7200
+        prop_assert_eq!(reclaim_deadline - cancel_deadline, 3600);
+    }
+}
+```
+
+**LiteSVM sketch:**
+```rust
+// v2: full lifecycle:
+// 1. create + deposits + activation. Record match_end_ts.
+// 2. Advance clock to match_end_ts + 86400 exactly. Try permissionless_reclaim → must fail
+//    TooEarlyToReclaim (strict > boundary).
+// 3. Advance to match_end_ts + 86401. Try permissionless_reclaim → must succeed.
+// 4. Repeat for AwaitingDeposits-stuck case (one player deposited, one didn't, deadline passed).
+```
+
+---
+
+### INV-10 (I-TIME-10): v1 MIN_DEPOSIT_WINDOW Gate (Post-H017-Fix)
+
+**What it checks:**
+v1's `start_with_depositors` (`programs/solshot-escrow/src/lib.rs:529-537`, post-H017-fix) requires `now >= created_at + MIN_DEPOSIT_WINDOW_SECS` (600s = 10 minutes) before authority can compact and activate the match. Pre-fix, there was no timing gate — the authority could front-run an in-flight depositor's TX and silently kick them.
+
+**Why it matters:**
+H017 documented that without this gate, the authority could:
+1. Observe Player A and B deposit, while Player C's deposit TX is still propagating (~400ms).
+2. Front-run with `start_with_depositors`, compacting the players array to [A, B] and zeroing C's slot.
+3. C's deposit_wager arrives, fails on `state == Active`, C loses TX fees plus their match slot.
+
+The fix mirrors v2's `deposit_window_secs` enforcement: the authority must wait at least 10 minutes after match creation before starting with whatever players have deposited. This guarantees C's TX has time to confirm before compaction can run. If MIN_DEPOSIT_WINDOW_SECS regresses (e.g. someone reduces it to 60s for "faster matches"), C has less time to confirm; if it regresses to 0, the H017 attack returns.
+
+**Tool:** LiteSVM (timing-precise instruction submission), Proptest (constant-relationship)
+**Confidence:** high
+**Based on:** novel — H017 finding directly motivates this
+
+**Formal Property:**
+```
+v1 start_with_depositors precondition (post-H017-fix):
+  let deposit_deadline = created_at + MIN_DEPOSIT_WINDOW_SECS
+  require!(now >= deposit_deadline, DepositWindowOpen)
+
+MIN_DEPOSIT_WINDOW_SECS == 600  (NOT < 600)
+
+For all valid created_at and now < created_at + 600:
+  start_with_depositors must fail with DepositWindowOpen
+
+For all valid created_at and now >= created_at + 600:
+  start_with_depositors may proceed (subject to other guards: state, num_deposited)
+```
+
+**Proptest sketch:**
+```rust
+#[test]
+fn ts_inv_10_v1_min_deposit_window_did_not_regress() {
+    assert_eq!(MIN_DEPOSIT_WINDOW_SECS, 600,
+        "H017 fix: MIN_DEPOSIT_WINDOW_SECS must remain 600s; do NOT regress");
+    assert!(MIN_DEPOSIT_WINDOW_SECS > 0,
+        "Regression guard: H017 attack returns at MIN_DEPOSIT_WINDOW_SECS == 0");
+}
+
+proptest! {
+    #[test]
+    fn ts_inv_10_v1_swd_gate_partition(
+        created_at in REALISTIC_TS_RANGE,
+        offset in -700i64..=700i64,
+    ) {
+        let now = created_at + offset;
+        let deposit_deadline = created_at + MIN_DEPOSIT_WINDOW_SECS;
+        let gate_open = now >= deposit_deadline;
+        prop_assert_eq!(gate_open, offset >= MIN_DEPOSIT_WINDOW_SECS);
+    }
+}
+```
+
+**LiteSVM sketch:**
+```rust
+// 1. v1 create_match. Record created_at.
+// 2. 2 of 4 players deposit. Authority tries start_with_depositors at created_at + 599
+//    → must fail DepositWindowOpen.
+// 3. Same scenario at created_at + 600 → may succeed (and does, since num_deposited >= 2).
+// 4. Negative case: at created_at + 0 (immediately after creation) → must fail.
+```
+
+---
+
+### INV-11 (Novel): Clock Sysvar Read Correctness
+
+**What it checks:**
+Every time-comparing instruction reads `Clock::get()?.unix_timestamp` directly via the sysvar, not via account passed by the caller. This protects against EP-006-style fake-sysvar injection. The sysvar must be a syscall-derived value, not a deserialized account.
+
+**Why it matters:**
+Solana programs that accept the Clock as a regular account (via `&AccountInfo`) can be fooled by a caller passing a different account with crafted timestamp data. This is a known attack vector documented in EP-006 and several historical incidents. The escrow program must never trust caller-provided "Clock" data — only the sysvar syscall provides the authoritative validator-current timestamp. Inspection of the v1/v2 source confirms `Clock::get()?` is used at every site (no `Sysvar<Clock>` account input). This invariant pins that pattern.
+
+**Tool:** Code-grep + LiteSVM (negative test: verify a malicious caller passing a fake clock account cannot affect timing decisions)
+**Confidence:** medium (mostly a static-analysis assertion; LiteSVM coverage limited)
+**Based on:** novel — EP-006 family; SOS Mechanism 4 (Clock::get sysvar usage)
+
+**Formal Property:**
+```
+Every instruction handler in v1 and v2 reads time via:
+  Clock::get()?.unix_timestamp
+
+NOT via:
+  ctx.accounts.clock.unix_timestamp  (account-derived, attacker-controlled)
+  Sysvar::from_account_info(...)     (account-derived, attacker-controlled)
+
+Static check: no `Sysvar<Clock>` field in any account struct definition.
+Static check: no `clock: AccountInfo` field in any account struct.
+```
+
+**Proptest sketch (static):**
+```rust
+// Test source-grep at compile time via build.rs or external linter.
+// Or runtime check: serialize each Accounts struct discriminator and ensure
+// Clock is not a field name.
+#[test]
+fn ts_inv_11_no_account_clock_in_v1() {
+    // Read v1/lib.rs source, assert no "clock: " field in any Accounts struct
+    let src = include_str!("../../programs/solshot-escrow/src/lib.rs");
+    assert!(!src.contains("clock: Sysvar<"),
+        "v1 must use Clock::get(), not Sysvar<Clock> account");
+    assert!(!src.contains("Sysvar<Clock>"),
+        "v1 must not import Sysvar<Clock>");
+}
+
+#[test]
+fn ts_inv_11_no_account_clock_in_v2() {
+    let src = include_str!("../../programs/solshot-escrow-v2/src/lib.rs");
+    assert!(!src.contains("clock: Sysvar<"));
+    assert!(!src.contains("Sysvar<Clock>"));
+}
+```
+
+---
+
+### INV-12 (Novel): u32 → i64 Cast Safety for `as i64` Widening
+
+**What it checks:**
+Every `(some_u32_field as i64)` cast (e.g. `deposit_window_secs as i64`, `duration_secs as i64`) is safe — `u32::MAX = 4_294_967_295` is well within `i64` range (`9.22e18`). The cast can never silently change sign or wrap. Combined with `MAX_DEPOSIT_WINDOW_SECS = 86400` and `MAX_DURATION_SECS = 86400`, the cast values are tiny.
+
+**Why it matters:**
+Rust's `as` casts on integers wrap silently. If a future change introduces a `usize` or `u64` field cast to `i64`, the safety must be re-verified. For the current code, `u32 as i64` is provably safe and cannot produce a negative value. This invariant is mostly a "future-drift guard" — it pins the assumption so future audits/proptests can flag any new casts that break it.
+
+**Tool:** Proptest (sweep over u32 range)
+**Confidence:** high
+**Based on:** novel — VP-089 corollary on widening casts
+
+**Formal Property:**
+```
+For all v ∈ u32:
+  (v as i64) >= 0
+  (v as i64) <= u32::MAX as i64
+  (v as i64) < i64::MAX
+
+For the bounded fields specifically:
+  MAX_DEPOSIT_WINDOW_SECS as i64 == 86400 (positive, well below i64::MAX)
+  MAX_DURATION_SECS as i64 == 86400
+```
+
+**Proptest sketch:**
+```rust
+proptest! {
+    #[test]
+    fn ts_inv_12_u32_to_i64_safe(v in 0u32..=u32::MAX) {
+        let widened = v as i64;
+        prop_assert!(widened >= 0);
+        prop_assert!(widened <= u32::MAX as i64);
+        prop_assert!(widened < i64::MAX);
+    }
+
+    #[test]
+    fn ts_inv_12_bounded_fields_addition_safe(
+        ts in REALISTIC_TS_RANGE,
+        v in 0u32..=(V2_MAX_DEPOSIT_WINDOW_SECS as u32),
+    ) {
+        // Even at u32::MAX (theoretical), addition must be safe at realistic timestamps.
+        // For the program's bounded values, doubly safe.
+        let result = ts.checked_add(v as i64);
+        prop_assert!(result.is_some());
+    }
 }
 ```
 
@@ -701,28 +893,35 @@ fn settle_match_with_zero_activated_at_is_unreachable() {
 
 ## Coverage Gap Analysis
 
-### Gaps Covered by These Invariants
+The 12 invariants above cover all 8 named math regions and all 9 invariants requested in the assignment. Additional gaps to note:
 
-| Gap | INV | Status |
-|-----|-----|--------|
-| Timestamp + duration overflow for all three timeouts | INV-1a, INV-1b, INV-1c | Covered (Proptest) |
-| Deadline ordering: settle < cancel < reclaim | INV-2 | Covered (Proptest) |
-| Mutual exclusion: settle and cancel windows | INV-5 | Covered (Proptest) |
-| Constant derivation: 2x relationship | INV-3 | Covered (Proptest + static) |
-| Timeout reference fallback logic | INV-4 | Covered (Proptest + LiteSVM sketch) |
-| Reclaim window subsumes cancel window | INV-6 | Covered (Proptest) |
-| Active state implies activated_at > 0 | INV-7 | Covered (LiteSVM sketch) |
+### Gaps NOT covered by these invariants
 
-### Remaining Gaps (Not Covered Here)
+1. **Slot drift sensitivity at MIN bounds** (SOS Risk Observation #7): At `MIN_DURATION_SECS = 60`, validator clock drift of 1-2s = 1.6-3.3% of window. Proptest cannot easily model adversarial validator clock drift; LiteSVM has `set_sysvar` but realistic drift modeling requires explicit timing-fuzz tests. Not added as an invariant because the SOS audit deemed it "not exploitable in current bounds." Could add as a probe test if the team wants belt-and-suspenders.
 
-| Gap | Reason | Recommended Action |
-|-----|--------|--------------------|
-| **Negative timestamp handling:** What if `Clock::get()` returns a negative value? The Solana cluster should never produce this, but the code does not guard against it. The `activated_at > 0` check would treat negative as "not activated," but a negative `created_at` would produce unreliable timeout behavior. | Edge case: Solana Clock is cluster-controlled, negative values are theoretically impossible but not program-enforced. | Add INV for: `created_at > 0` after `create_match` (LiteSVM). Low priority. |
-| **Concurrent instruction execution:** Can `settle_match` and `cancel_match` execute in the same transaction or same slot? Solana transactions within the same slot for the same account are serialized by the runtime (account lock), so this is safe. But a formal proof would require modeling Solana's account locking. | Outside Proptest/LiteSVM scope; requires Solana runtime model. | Document as accepted risk; Solana's account locking provides mutual exclusion. |
-| **Clock manipulation:** Solana validators set the clock. A malicious validator supermajority could set an artificially large timestamp, making all matches instantly time out. This is a protocol-level trust assumption, not a program bug. | Threat model: Solana clock is trusted. | Document as trust assumption in audit report. |
-| **Constant compile-time overflow:** If `TIMEOUT_SECONDS` were set to `i64::MAX`, the `TIMEOUT_SECONDS * 2` multiplication at line 23 would overflow at compile time with wrapping semantics. INV-3 covers this for the current value but a `const_assert!` macro in the program would provide compile-time protection. | Rust `const` arithmetic wraps silently on overflow. | Add `const_assert!(TIMEOUT_SECONDS <= i64::MAX / 2)` to the program. Filed as hardening recommendation. |
-| **BPS fee interaction with settlement deadline:** If settlement is attempted at deadline edge (clock == deadline), both `settle_match` and subsequent `cancel_match` (if called in the next slot) could interact with the fee math. The fee invariants are covered in a separate invariant file. | Cross-invariant dependency. | Link to fee-calculation invariants when available. |
+2. **Authority's no-deadline settlement (v2 ASSUMPTION-T3)**: The SOS audit flagged that v2 has no on-chain deadline forcing the authority to call `settle_match` promptly. This is an architectural gap, not a math-arithmetic invariant — it would need a new instruction (e.g. `signal_settle` lock) rather than a property test. Out of scope for timestamp-arithmetic verification.
 
-### Kani Availability Note
+3. **Settle vs cancel race in v2 (post-fix-bundle status unclear)**: The fix bundle context says H035 was fixed in v1 but doesn't claim v2's race was eliminated. v2's `settle_match` still has no time deadline (v2:401-405), and player `cancel_match` opens at `match_end_ts`. The race window is `[match_end_ts, match_end_ts + 86400]`. State-machine mutual exclusion (Settled vs Cancelled terminal states) is the only protection. Not a timestamp-arithmetic invariant per se; covered by state-machine invariants in another cluster.
 
-Kani is not available on Windows. All invariants are designed for Proptest (pure arithmetic) or LiteSVM (runtime integration). If Kani becomes available (Linux/macOS CI), the Proptest invariants could be upgraded to exhaustive verification with bounded model checking, particularly for INV-1 (overflow boundaries) and INV-5 (mutual exclusion).
+4. **Race between deposit_wager full-mask activation and start_with_depositors** (SOS Risk Observation #8, post-H018-fix should be eliminated): Verified by INV-5 above for the boundary case but a separate end-to-end LiteSVM scenario would be more direct.
+
+5. **`created_at` set-once** (SOS INVARIANT-T2): Implicit in the standard Solana account model (account is `init`'d once at create_match). No write site post-creation reads or modifies `created_at`. This is enforced by the absence of a field-write rather than by an explicit assertion — could be added as a static-analysis grep, but low value compared to verifying the more-complex `activated_at` invariant in INV-8.
+
+### Confidence Summary
+
+| Invariant | Confidence | Pattern Match |
+|-----------|------------|---------------|
+| INV-1 (overflow) | high | VP-089 direct |
+| INV-2 (ordering) | high | VP-090 + VP-088 direct |
+| INV-3 (race eliminated) | high | VP-090 direct |
+| INV-4 (doc integrity) | high | novel |
+| INV-5 (strict deposit deadline) | high | VP-090 direct |
+| INV-6 (window bounded) | high | novel (bounds enforcement) |
+| INV-7 (duration bounded) | high | novel (bounds enforcement) |
+| INV-8 (activated_at monotone) | high | SOS INVARIANT-T1 |
+| INV-9 (reclaim grace floor) | high | VP-090 direct |
+| INV-10 (v1 H017 gate) | high | novel |
+| INV-11 (Clock::get sysvar) | medium | EP-006 family |
+| INV-12 (u32→i64 cast) | high | VP-089 corollary |
+
+**Verification mode:** All invariants assigned to **Proptest** (primary) and/or **LiteSVM** (integration). Kani is unavailable in this audit run — tests run in degraded "high-confidence probabilistic" tier rather than "proven for all inputs" tier.

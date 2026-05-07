@@ -95,8 +95,16 @@ export function registerGroupChatSocketHandlers(client, io) {
      * (Opening the Mini App is the canonical "I'm watching this match" cue.)
      */
     client.on('getGroupMatch', async ({ matchId } = {}) => {
-        if (!matchId) {
-            client.emit('groupMatchData', { error: 'missing_matchId' });
+        // H022 fix — require auth. Previously any unauthenticated caller could read
+        // arbitrary match documents (full participant list including wallet pubkeys).
+        if (!client.isAuthenticated) {
+            client.emit('groupMatchData', { error: 'auth_required' });
+            return;
+        }
+        // H072 fix — strict matchId type check. Previously `if (!matchId)` accepted
+        // operator-injection objects like `{$gt: ""}` which return arbitrary docs.
+        if (!matchId || typeof matchId !== 'string') {
+            client.emit('groupMatchData', { error: 'missing_or_invalid_matchId' });
             return;
         }
         try {

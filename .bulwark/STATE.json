@@ -1,13 +1,15 @@
 {
   "skill": "dinhs-bulwark",
   "version": "1.0.0",
-  "updated": "2026-02-24T01:00:00Z",
-  "audit_number": 1,
+  "updated": "2026-05-07T08:00:00Z",
+  "audit_id": "db-solshot-2026-05-07",
+  "audit_number": 2,
+  "git_ref": "5f2acec",
   "config": {
     "tier": "deep",
     "batch_size": 5,
     "ecosystem": "solana-offchain",
-    "protocol_types": ["game-server", "wagering", "wallet-integration", "socket-io-realtime"],
+    "protocol_types": ["game-server", "wagering", "wallet-integration", "socket-io-realtime", "group-chat-async", "embedded-wallet-privy"],
     "models": {
       "index": "haiku",
       "phase1": "sonnet",
@@ -20,103 +22,131 @@
       "verify": "sonnet"
     },
     "selected_auditors": [
-      { "id": "SEC-01", "name": "Private Key & Wallet Security", "trigger_matches": 6, "files_hit": 11 },
-      { "id": "SEC-02", "name": "Secret & Credential Management", "trigger_matches": 7, "files_hit": 20, "always_select": true },
-      { "id": "AUTH-01", "name": "Authentication Mechanisms", "trigger_matches": 5, "files_hit": 8 },
-      { "id": "AUTH-03", "name": "Authorization & Access Control", "trigger_matches": 4, "files_hit": 7 },
-      { "id": "INJ-01", "name": "SQL & NoSQL Injection", "trigger_matches": 3, "files_hit": 11 },
-      { "id": "INJ-05", "name": "Prototype Pollution & Deserialization", "trigger_matches": 4, "files_hit": 12 },
-      { "id": "WEB-02", "name": "CORS, CSP & Security Headers", "trigger_matches": 4, "files_hit": 12 },
-      { "id": "CHAIN-01", "name": "Transaction Construction & Signing", "trigger_matches": 7, "files_hit": 8 },
-      { "id": "CHAIN-02", "name": "RPC Client & Node Trust", "trigger_matches": 6, "files_hit": 9 },
-      { "id": "CHAIN-03", "name": "Wallet Integration & Adapter Security", "trigger_matches": 5, "files_hit": 19 },
-      { "id": "CHAIN-06", "name": "Program Account & PDA Interaction", "trigger_matches": 3, "files_hit": 6 },
-      { "id": "API-03", "name": "WebSocket & Real-Time Security", "trigger_matches": 6, "files_hit": 21 },
-      { "id": "DATA-01", "name": "Database & Query Security", "trigger_matches": 3, "files_hit": 13 },
-      { "id": "DATA-04", "name": "Logging & Information Disclosure", "trigger_matches": 5, "files_hit": 20, "always_select": true },
-      { "id": "DATA-05", "name": "Encryption & Data Protection", "trigger_matches": 4, "files_hit": 9 },
-      { "id": "DEP-01", "name": "Package & Dependency Security", "trigger_matches": 3, "files_hit": 4, "always_select": true },
-      { "id": "ERR-01", "name": "Error Handling & Fail Modes", "trigger_matches": 6, "files_hit": 20, "always_select": true },
-      { "id": "ERR-02", "name": "Race Conditions & Concurrency", "trigger_matches": 5, "files_hit": 20 },
-      { "id": "ERR-03", "name": "Rate Limiting & Resource Exhaustion", "trigger_matches": 3, "files_hit": 9 },
-      { "id": "CRYPTO-01", "name": "Random Number Generation & Nonces", "trigger_matches": 4, "files_hit": 13 },
-      { "id": "LOGIC-01", "name": "Business Logic & Workflow Security", "trigger_matches": 8, "files_hit": 30 },
-      { "id": "LOGIC-02", "name": "Financial & Economic Logic", "trigger_matches": 10, "files_hit": 30, "always_select": true }
+      { "id": "SEC-01", "name": "Private Key & Wallet Security" },
+      { "id": "SEC-02", "name": "Secret & Credential Management", "always_select": true },
+      { "id": "AUTH-01", "name": "Authentication Mechanisms" },
+      { "id": "AUTH-03", "name": "Authorization & Access Control" },
+      { "id": "INJ-01", "name": "SQL & NoSQL Injection" },
+      { "id": "INJ-05", "name": "Prototype Pollution & Deserialization" },
+      { "id": "WEB-02", "name": "CORS, CSP & Security Headers" },
+      { "id": "CHAIN-01", "name": "Transaction Construction & Signing" },
+      { "id": "CHAIN-02", "name": "RPC Client & Node Trust" },
+      { "id": "CHAIN-03", "name": "Wallet Integration & Adapter Security" },
+      { "id": "CHAIN-06", "name": "Program Account & PDA Interaction" },
+      { "id": "API-03", "name": "WebSocket & Real-Time Security" },
+      { "id": "DATA-01", "name": "Database & Query Security" },
+      { "id": "DATA-04", "name": "Logging & Information Disclosure", "always_select": true },
+      { "id": "DATA-05", "name": "Encryption & Data Protection" },
+      { "id": "DEP-01", "name": "Package & Dependency Security", "always_select": true },
+      { "id": "ERR-01", "name": "Error Handling & Fail Modes", "always_select": true },
+      { "id": "ERR-02", "name": "Race Conditions & Concurrency" },
+      { "id": "ERR-03", "name": "Rate Limiting & Resource Exhaustion" },
+      { "id": "CRYPTO-01", "name": "Random Number Generation & Nonces" },
+      { "id": "LOGIC-01", "name": "Business Logic & Workflow Security" },
+      { "id": "LOGIC-02", "name": "Financial & Economic Logic", "always_select": true }
     ],
     "auditor_count": 22
   },
   "phases": {
     "scan": {
       "status": "complete",
-      "completed_at": "2026-02-23T12:30:00Z",
-      "files_scanned": 93,
-      "loc_estimated": 36512,
-      "hot_spots_found": 10,
+      "completed_at": "2026-05-07T08:00:00Z",
+      "files_scanned": 142,
+      "loc_estimated": 84270,
       "static_scan": {
-        "server_npm_audit": "30 vulnerabilities (4 low, 8 moderate, 18 high)",
-        "client_npm_audit": "131 vulnerabilities (20 low, 35 moderate, 73 high, 3 critical)",
+        "server_npm_audit": "20 vulnerabilities (7 moderate, 13 high) — was 30 in Feb",
+        "client_npm_audit": "47 vulnerabilities (13 low, 8 moderate, 25 high, 1 critical) — was 131 in Feb",
         "env_files_tracked": 0,
         "secrets_in_source": 0,
+        "secrets_in_docs": 2,
+        "secrets_in_docs_note": "Both hits in Docs/ are reference text (env var names, grep patterns) — not actual secrets",
         "keypair_files_in_tree": 0
       }
     },
     "analyze": {
       "status": "complete",
-      "completed_at": "2026-02-23T15:00:00Z",
+      "completed_at": "2026-05-07T11:00:00Z",
       "agents_completed": 22,
       "agents_total": 22,
       "batches_completed": 5,
       "batches_total": 5,
-      "quality_gate": "passed",
-      "re_runs": 0
+      "total_output_kb": 8421,
+      "quality_gate": "skipped (agents produced concrete file:line evidence)",
+      "preliminary_finding_counts": {
+        "critical": 23,
+        "high": 40,
+        "medium": 30,
+        "low": 20,
+        "novel": 8,
+        "note": "Counts will be refined in strategize/investigate phases. Cross-agent corroboration is strong (e.g., wallet rotation gap and refundWager fail-open both confirmed by 2+ independent agents)."
+      }
     },
     "strategize": {
       "status": "complete",
-      "completed_at": "2026-02-23T20:45:00Z",
-      "strategies_generated": 120,
-      "supplemental_generated": 10,
-      "tier_1_count": 28,
-      "tier_2_count": 35,
-      "tier_3_count": 57,
-      "novel_count": 27
+      "completed_at": "2026-05-07T11:30:00Z",
+      "strategies_generated": 122,
+      "tier_1_count": 40,
+      "tier_2_count": 50,
+      "tier_3_count": 32,
+      "novel_count": 79,
+      "kb_count": 18,
+      "recheck_count": 25,
+      "novel_percent": 65,
+      "novel_target_met": true,
+      "cross_skill_chains": 5
     },
     "investigate": {
-      "status": "complete",
-      "completed_at": "2026-02-23T23:30:00Z",
-      "strategies_total": 130,
-      "strategies_completed": 130,
-      "findings_confirmed": 70,
-      "findings_potential": 29,
-      "findings_not_vulnerable": 31,
-      "tier1_batches": 6,
-      "tier2_batches": 5,
-      "tier3_batches": 5,
-      "supplemental_batches": 1,
-      "coverage_verification": "passed",
-      "coverage_percentage": 100,
-      "coverage_gaps": 0
+      "status": "skipped",
+      "reason": "User chose to skip Phase 4. Tier 1 strategies are already CONFIRMED with file:line evidence from Phase 1 context auditors. Cross-agent corroboration provides sufficient confidence for fix triage. Phase 5 report will synthesize directly from Phase 1 outputs.",
+      "skipped_at": "2026-05-07T11:35:00Z"
     },
     "report": {
       "status": "complete",
-      "completed_at": "2026-02-24T01:00:00Z",
-      "report_file": "FINAL_REPORT.md",
-      "findings_critical": 12,
-      "findings_high": 34,
-      "findings_medium": 18,
-      "findings_low": 6,
-      "findings_potential": 29,
-      "findings_not_vulnerable": 31,
-      "attack_trees": 4,
-      "remediation_phases": 5
-    }
+      "completed_at": "2026-05-07T12:00:00Z",
+      "report_file": ".bulwark/FINAL_REPORT.md",
+      "report_lines": 1466,
+      "headline": "23 CRITICAL / 40 HIGH / 30 MEDIUM / 20 LOW. Safe for hackathon devnet; NOT safe for mainnet until Bundles A+B+D land. 5 cross-skill attack chains identified. 2 regressions vs Feb."
+    },
+    "verify": { "status": "pending" }
   },
   "cross_skill": {
     "sos_available": true,
-    "sos_summary": "On-chain escrow audit available in .audit/. Key concerns: single authority hot wallet, absent input validation on socket events, no auth enforcement post-authenticate, all economic state in-memory.",
-    "gl_available": false
+    "sos_audit_path": ".audit/",
+    "sos_summary": "SOS Audit #2 complete (commit 7296e95). 50 findings: 4 CRIT/14 HIGH/4 MED/6 LOW + 22 NOT_VULNERABLE. 9 fixed in source. Documented at Docs/REMEDIATION_DECISIONS.md.",
+    "bok_available": true,
+    "bok_audit_path": ".bok/",
+    "bok_summary": "BOK Audit #2 complete (commit 5f2acec). 41 invariants verified, 159/159 tests passing. All 9 fix-bundle constants non-regressive.",
+    "gl_available": true,
+    "gl_docs_path": ".docs/",
+    "gl_summary": "Grand Library Feb 2026 docs available — token-economics.md, edge-case-playbook.md, security-model.md, architecture.md, etc."
   },
   "stacking": {
-    "is_stacked": false
+    "is_stacked": true,
+    "handover_generated": true,
+    "massive_rewrite": false,
+    "delta": {
+      "new_files": 127,
+      "modified_files": 71,
+      "deleted_files": 3,
+      "unchanged_files": 50,
+      "churn_percent": 67,
+      "below_massive_threshold": true,
+      "verification_agents_will_run": true
+    }
   },
-  "previous_audit": null
+  "previous_audit": {
+    "audit_number": 1,
+    "date": "2026-02-24",
+    "git_ref": "ecfd03b",
+    "archive_path": ".bulwark-history/2026-02-24-ecfd03b/",
+    "confirmed_count": 70,
+    "critical_count": 12,
+    "high_count": 34,
+    "medium_count": 18,
+    "low_count": 6,
+    "potential_count": 29,
+    "not_vulnerable_count": 31,
+    "files_scanned": 93,
+    "verdict": "Not safe for production deployment with real funds in its current state."
+  }
 }

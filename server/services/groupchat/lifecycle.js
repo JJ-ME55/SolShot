@@ -312,9 +312,13 @@ async function activateMatch(match) {
     match.terrainSnapshot = heightmap;
     match.walls = [];
     match.wind = generateWind();
-    // Pick a random background theme (0-5) — client mirrors this order
-    // in scenes/main/index.js _bgThemes (jungle/arctic/desert/moon/volcanic/default).
-    match.backgroundIndex = Math.floor(Math.random() * 6);
+    // Pick a random background theme (0-4) — five distinct biomes.
+    // Client mirrors this order in scenes/main/index.js _bgThemes
+    // (jungle / arctic / desert / moon / volcanic). bg-default (idx 5)
+    // was removed because its palette was identical to jungle, biasing
+    // the random pick toward "feels green" — JJ flagged this in the
+    // GF9B + 57BU sweep on May 7.
+    match.backgroundIndex = Math.floor(Math.random() * 5);
 
     // Initialise gold + weapon inventory for every player. Mirrors 1v1's
     // initGold + weapon shop bootstrap. Each player starts with 1000G,

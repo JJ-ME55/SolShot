@@ -4401,8 +4401,11 @@ const mainsocket = (io) => {
 
             const { path, heightmap } = generateTerrain(1200, 800, seed32)
             const wind = generateWind()
-            // Pick random background theme (0-5) so both clients show the same one
-            const backgroundIndex = Math.floor(Math.random() * 6)
+            // Pick a random background theme (0-4) — five distinct biomes
+            // (jungle / arctic / desert / moon / volcanic). The 6th client-
+            // side entry (bg-default) was removed because its palette dup'd
+            // jungle and was biasing matches toward green.
+            const backgroundIndex = Math.floor(Math.random() * 5)
 
             // Store server-side
             room.heightmap = heightmap

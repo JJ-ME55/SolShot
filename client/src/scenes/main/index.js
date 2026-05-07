@@ -277,7 +277,13 @@ export class MainScene extends Scene {
     this.rightWall.setOrigin(0, 0);
   };
 
-  // Background themes with matching base fill colors and terrain layer palettes
+  // Background themes with matching base fill colors and terrain layer palettes.
+  //
+  // Five distinct biomes — bg-default was previously a 6th entry but had an
+  // identical green palette to bg-jungle (idx 0), which biased the random
+  // pick toward "feels green" 2/6 of the time. Removed; server roll now
+  // matches at 0..4. Old matches with backgroundIndex=5 fall back to
+  // jungle via the (idx % length) modulo at the consumer.
   _bgThemes = [
     { key: 'bg-jungle',   fill: '#0a1a0a', terrainLayers: [
       {color: 'rgba(107,123,61,1)', width: 10}, {color: 'rgba(92,106,53,1)', width: 30},
@@ -298,10 +304,6 @@ export class MainScene extends Scene {
     { key: 'bg-volcanic', fill: '#1a0a0a', terrainLayers: [
       {color: 'rgba(180,80,30,1)', width: 10}, {color: 'rgba(150,60,20,1)', width: 30},
       {color: 'rgba(120,45,15,1)', width: 70}, {color: 'rgba(90,30,10,1)', width: 130}, {color: 'rgba(60,20,8,1)', width: 200}
-    ]},
-    { key: 'bg-default',  fill: '#0a1a0a', terrainLayers: [
-      {color: 'rgba(107,123,61,1)', width: 10}, {color: 'rgba(92,106,53,1)', width: 30},
-      {color: 'rgba(74,86,42,1)', width: 70}, {color: 'rgba(58,69,31,1)', width: 130}, {color: 'rgba(42,51,31,1)', width: 200}
     ]},
   ];
 
@@ -1158,8 +1160,9 @@ export class MainScene extends Scene {
     // ── STEP 1: Server-generated terrain ──
     // Both clients listen for terrainGenerated. Host triggers requestTerrain.
     this._socketHandlers.terrainGenerated = ({ path, heightmap, positions, tankPositions, seed, wind, backgroundIndex, firstTurn, seq, consumables }) => {
-      // Re-draw background with server-chosen theme so both clients match
-      this._backgroundIndex = backgroundIndex ?? Math.floor(Math.random() * 6);
+      // Re-draw background with server-chosen theme so both clients match.
+      // Fallback random matches the server's roll range (5 themes, idx 0-4).
+      this._backgroundIndex = backgroundIndex ?? Math.floor(Math.random() * this._bgThemes.length);
       this.createBackground();
       // Store server heightmap for later terrain sync
       this._serverHeightmap = heightmap;

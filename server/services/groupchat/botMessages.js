@@ -218,39 +218,48 @@ export function formatSettlementSuccess(match, txSignature) {
 // ─── Shot result ────────────────────────────────────────────────────────
 
 /**
- * Posted after a successful shot. Single line, single format — no tiers.
+ * Posted after a successful shot. Two formats only:
  *
+ * HIT (no eliminations this shot):
  *   🎯 @jj_me fires Heatseeker: -50 HP PerryPeralta
  *
- * Multi-target shots list each hit on the same line, separator-joined:
+ * KO (one or more eliminations this shot):
+ *   💥 @jj_me fires Heatseeker — KO PerryPeralta · 2 alive of 3
  *
+ * Per JJ's feedback: one type of hit notification, one type of KO
+ * notification. No massive-hit / multi-tier branches — the damage
+ * number speaks for itself.
+ *
+ * Multi-target HIT lists each on the same line:
  *   🎯 @jj_me fires Crazy Ivan: -30 HP PerryPeralta · -20 HP Just1Fishing
  *
- * Per JJ's feedback: no special formatting for KO / massive-hit / multi-
- * target tiers — keep every shot in the single-hit format. Eliminations
- * surface via formatElimination + match-end summary; the per-shot line
- * just narrates damage.
+ * Multi-KO uses the count prefix:
+ *   💥 @jj_me fires Crazy Ivan — 2× KO PerryPeralta, Just1Fishing · 1 alive of 3
  *
- * Targets are rendered via nameOnly() — visible to the chat but no @-ping.
- * Only the firer is mentioned (deserves credit, but won't spam the room
- * with "you've been pinged" notifications every shot).
- *
- * eliminatedThisShot is kept in the signature for backward compat but
- * no longer changes the output — the elimination notice fires on its
- * own pipeline.
+ * Targets render via nameOnly() — visible to the chat but no @-ping.
+ * Only the firer gets mentioned (deserves credit, won't spam the room
+ * with notifications every shot).
  */
 export function formatShotResult(match, firer, weapon, totalDamage, eliminatedThisShot, damagedThisShot = []) {
     const weaponName = weapon?.name || `Weapon ${weapon?.weaponId ?? '?'}`;
 
-    // Build the per-target damage suffix from damagedThisShot. If absent
-    // (defensive — self-damage only, weird physics edge cases), fall
-    // back to the legacy "N HP" so the line is still readable.
+    // KO tier — at least one player eliminated. Single-line format with
+    // weapon + KO target(s) + alive count, separator-joined.
+    if (eliminatedThisShot.length > 0) {
+        const targets = eliminatedThisShot.map(p => `<b>${nameOnly(p)}</b>`).join(', ');
+        const koLabel = eliminatedThisShot.length === 1 ? 'KO' : `${eliminatedThisShot.length}× KO`;
+        return `💥 ${mention(firer)} fires <b>${escapeHtml(weaponName)}</b> — ${koLabel} ${targets} · ${aliveLine(match)}`;
+    }
+
+    // HIT tier — damage with no elimination. Per-target suffix joined
+    // with " · " for multi-target weapons (Crazy Ivan splash, Heatseeker
+    // chain). Falls back to "N HP" if damagedThisShot is absent
+    // (defensive — self-damage only, weird physics edge cases).
     const targetSuffix = damagedThisShot.length
         ? damagedThisShot
             .map(({ player, damage }) => `-${damage} HP ${nameOnly(player)}`)
             .join(' · ')
         : `${totalDamage} HP`;
-
     return `🎯 ${mention(firer)} fires ${escapeHtml(weaponName)}: ${targetSuffix}`;
 }
 

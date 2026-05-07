@@ -35,8 +35,11 @@ const MIN_WAGER_LAMPORTS: u64 = 10_000;            // 0.00001 SOL — ensures fe
 const MAX_WAGER_LAMPORTS: u64 = 100_000_000_000;   // 100 SOL — prevents unfundable escrow
 
 /// Per-match duration bounds
+/// H039 fix: cap reduced from 7 days to 24h. Authority griefing surface (8-day fund lockup
+/// possible at the old cap) was disproportionate to the async-multi-day use case;
+/// 24h covers realistic group-chat tempo and aligns with PUBLIC_REFUND_GRACE_SECS.
 const MIN_DURATION_SECS: u32 = 60;                 // 1 min — supports real-time mode
-const MAX_DURATION_SECS: u32 = 7 * 24 * 3_600;     // 7 days — covers 72h async + headroom
+const MAX_DURATION_SECS: u32 = 24 * 3_600;         // 24h — was 7 days; H039 fix
 
 /// Per-match deposit-window bounds
 const MIN_DEPOSIT_WINDOW_SECS: u32 = 60;           // 1 min
@@ -143,13 +146,21 @@ pub mod solshot_escrow_v2 {
 
     /// Emergency pause — halts new match creation + deposits.
     /// Settle / cancel / permissionless_reclaim remain callable so in-flight funds can exit.
+    /// H043 fix: emits Paused event for off-chain monitoring.
     pub fn pause_program(ctx: Context<PauseProgram>) -> Result<()> {
         ctx.accounts.config.is_paused = true;
+        emit!(Paused {
+            authority: ctx.accounts.authority.key(),
+        });
         Ok(())
     }
 
+    /// H043 fix: emits Unpaused event for off-chain monitoring.
     pub fn unpause_program(ctx: Context<UnpauseProgram>) -> Result<()> {
         ctx.accounts.config.is_paused = false;
+        emit!(Unpaused {
+            authority: ctx.accounts.authority.key(),
+        });
         Ok(())
     }
 
@@ -252,12 +263,15 @@ pub mod solshot_escrow_v2 {
             EscrowError::InvalidState
         );
 
-        // Hard deposit-window deadline
+        // Hard deposit-window deadline.
+        // H018 fix: strict `<` (was `<=`) — at exactly T = deposit_deadline, only start_with_depositors
+        // is valid. Closes the edge-collision race where both deposit_wager and start_with_depositors
+        // pass their time check in the same slot.
         let deposit_deadline = created_at
             .checked_add(deposit_window_secs as i64)
             .ok_or(EscrowError::ArithmeticOverflow)?;
         require!(
-            Clock::get()?.unix_timestamp <= deposit_deadline,
+            Clock::get()?.unix_timestamp < deposit_deadline,
             EscrowError::DepositWindowClosed
         );
 
@@ -498,6 +512,14 @@ pub mod solshot_escrow_v2 {
             escrow.state = MatchState::Cancelled;
         }
 
+        // H023 fix — require complete refund: caller must pass exactly one remaining_account per
+        // deposited bit. Without this gate, a malicious player could pass a partial array and
+        // have `close = caller` sweep un-refunded co-depositor wagers (worst case: 9×100 SOL).
+        require!(
+            ctx.remaining_accounts.len() == deposits_mask.count_ones() as usize,
+            EscrowError::IncompleteRefund
+        );
+
         // Refund deposited players via remaining_accounts (caller passes them in player-index order)
         for (i, account) in ctx.remaining_accounts.iter().enumerate() {
             require!(i < max_players, EscrowError::InvalidPlayer);
@@ -557,6 +579,14 @@ pub mod solshot_escrow_v2 {
             let escrow = &mut ctx.accounts.escrow;
             escrow.state = MatchState::Cancelled;
         }
+
+        // H023 fix — require complete refund: same check as cancel_match.
+        // Permissionless reclaim is callable by anyone after grace deadline; without this gate,
+        // an observer could pass a partial array and rent-sweep un-refunded wagers via close=caller.
+        require!(
+            ctx.remaining_accounts.len() == deposits_mask.count_ones() as usize,
+            EscrowError::IncompleteRefund
+        );
 
         for (i, account) in ctx.remaining_accounts.iter().enumerate() {
             require!(i < max_players, EscrowError::InvalidPlayer);
@@ -701,29 +731,33 @@ pub struct SettleMatch<'info> {
     pub authority: Signer<'info>,
 
     /// Winner: must be one of escrow.players[0..max_players]
-    /// CHECK: constraint validates against escrow.players
+    /// H025 fix: !executable guard prevents lamport burn on executable accounts (EP-106).
+    /// CHECK: constraint validates against escrow.players; not executable
     #[account(
         mut,
         constraint = (0..escrow.max_players as usize)
             .any(|i| escrow.players[i] == winner.key())
-            @ EscrowError::InvalidWinner
+            @ EscrowError::InvalidWinner,
+        constraint = !winner.executable @ EscrowError::ExecutableNotAllowed,
     )]
     pub winner: UncheckedAccount<'info>,
 
     /// Treasury: must match the snapshot taken at create_match time
-    /// CHECK: constraint validates against escrow.treasury_snapshot
+    /// CHECK: constraint validates against escrow.treasury_snapshot; not executable (H025)
     #[account(
         mut,
         constraint = treasury.key() == escrow.treasury_snapshot @ EscrowError::InvalidTreasury,
         constraint = treasury.key() != ops.key() @ EscrowError::DuplicateFeeAccount,
+        constraint = !treasury.executable @ EscrowError::ExecutableNotAllowed,
     )]
     pub treasury: UncheckedAccount<'info>,
 
     /// Ops: must match the snapshot taken at create_match time
-    /// CHECK: constraint validates against escrow.ops_snapshot
+    /// CHECK: constraint validates against escrow.ops_snapshot; not executable (H025)
     #[account(
         mut,
         constraint = ops.key() == escrow.ops_snapshot @ EscrowError::InvalidOps,
+        constraint = !ops.executable @ EscrowError::ExecutableNotAllowed,
     )]
     pub ops: UncheckedAccount<'info>,
 
@@ -955,6 +989,17 @@ pub struct ConfigUpdated {
     pub fee_bps_ops: u16,
 }
 
+/// H043 fix: pause/unpause audit trail for off-chain monitoring
+#[event]
+pub struct Paused {
+    pub authority: Pubkey,
+}
+
+#[event]
+pub struct Unpaused {
+    pub authority: Pubkey,
+}
+
 // ─────────────────────────────────────────────
 // ERRORS
 // ─────────────────────────────────────────────
@@ -1005,7 +1050,7 @@ pub enum EscrowError {
     TooManyPlayers,
     #[msg("Duration too short (min 60s)")]
     DurationTooShort,
-    #[msg("Duration too long (max 7 days)")]
+    #[msg("Duration too long (max 24h)")]
     DurationTooLong,
     #[msg("Deposit window too short (min 60s)")]
     DepositWindowTooShort,
@@ -1017,4 +1062,8 @@ pub enum EscrowError {
     DepositWindowOpen,
     #[msg("Match has already started")]
     MatchAlreadyStarted,
+    #[msg("remaining_accounts must equal count_ones(deposits_mask) — partial refund not allowed")]
+    IncompleteRefund,
+    #[msg("Account must not be executable")]
+    ExecutableNotAllowed,
 }

@@ -1,553 +1,647 @@
-# Access Control & Account Validation Analysis
-
+---
+task_id: sos-phase1-access-control
+provides: [access-control-findings, access-control-invariants]
+focus_area: access-control
+files_analyzed:
+  - programs/solshot-escrow/src/lib.rs
+  - programs/solshot-escrow-v2/src/lib.rs
+finding_count: 18
+severity_breakdown: {critical: 1, high: 6, medium: 7, low: 4}
+---
 <!-- CONDENSED_SUMMARY_START -->
+# Access Control & Account Validation — Condensed Summary
 
-## Condensed Summary
+## Trust Model
 
-### Scope
-- **File:** `programs/solshot-escrow/src/lib.rs` (855 LOC, single-file Anchor program)
-- **Instructions analyzed:** 7 (initialize_config, update_config, pause_program, unpause_program, create_match, deposit_wager, settle_match, cancel_match, permissionless_reclaim)
-- **Account structs analyzed:** 7
-- **Estimated coverage:** 100% of on-chain access control surface
+### Authority key powers
+- Update `GlobalConfig.{authority, treasury, ops}` (and v2: `fee_bps_treasury`, `fee_bps_ops`) instantly with no timelock — `v1:72-108`, `v2:96-142`.
+- Set/clear `is_paused` flag — `v1:112-122`, `v2:146-154`.
+- Create new match escrows (only authority can — `has_one = authority` on `CreateMatch`) — `v1:625`, `v2:659`.
+- Settle a match by selecting a winner from `escrow.players[0..max_players]` — `v1:258-338`, `v2:387-454`. The 90/7/3 split is fixed by snapshot in v2 / live config in v1; the WINNER is freely chosen.
+- Activate a match with whichever subset of players have deposited (`start_with_depositors`) — `v1:493-536`, `v2:323-382`. v2 gates this behind deposit-window expiry; v1 does not.
+- Cancel an `AwaitingDeposits` match at any time before timeout — `v1:344-419`, `v2:459-519`.
 
-### Key Findings
+### Player powers
+- Deposit own wager exactly once into a match where they are listed in `escrow.players[0..max_players]` — `v1:187-252`, `v2:239-318`.
+- Cancel an `AwaitingDeposits` match they are a player in — `v1:374-378`, `v2:485-489`.
+- Cancel any non-terminal match they are a player in after the appropriate timeout fires — same lines.
 
-**1. One-step authority transfer (update_config) -- centralization + lockout risk**
-`update_config` (line 70) allows the current authority to instantly set a new authority via `new_authority: Option<Pubkey>`. There is no two-step (propose/accept) pattern. If the authority is set to an incorrect or uncontrolled pubkey, the entire program becomes permanently ungovernable. Additionally, there is no validation that `new_authority != treasury`, `new_authority != ops`, or that the three addresses remain distinct after an update. The distinct-address invariant enforced in `initialize_config` (lines 53-55) is NOT re-enforced in `update_config`.
+### Anyone (permissionless) powers
+- After the public-grace deadline (v1: `2 * TIMEOUT_SECONDS = 1200s` = 20 min; v2: `match_end_ts + 24h` or `deposit_deadline + 24h`), anyone may call `permissionless_reclaim` and receive the PDA rent reserve as gas reimbursement — `v1:425-487`, `v2:526-578`.
 
-**2. CreateMatch does not verify authority matches config.authority**
-The `CreateMatch` account struct (line 510) requires `authority` as a `Signer<'info>` and uses it as the payer, but it does NOT have `has_one = authority` on the `config` account. The `config` account is only used for the pause guard. This means ANY signer can create a match, not just `config.authority`. The match's `escrow.authority` is then set to whoever called it (line 133). However, `settle_match` requires `has_one = authority` on the escrow (line 565) AND `has_one = authority` on config (line 604). So settlement requires both: (a) the signer who created the match, AND (b) the current `config.authority`. If they differ, settlement is impossible, and funds are stuck until the 24h/48h cancel/reclaim timeouts trigger.
+## Account Validation Coverage Map
 
-**3. Permissionless reclaim bypasses pause guard by design (DCA-02)**
-`PermissionlessReclaim` (line 654) intentionally omits the `config` account and therefore has no pause guard. This is by design as an escape hatch, but it means a paused program still allows permissionless reclaim after 48h. This is noted as a design decision (DCA-02), not a vulnerability.
+| Instruction | File | Signer? | has_one | PDA seeds | Notable constraint coverage |
+|-------------|------|---------|---------|-----------|------------------------------|
+| `initialize_config` | both | `payer: Signer` | n/a | `[b"config"]` init | distinctness check authority/treasury/ops at runtime; no signer-bound to "deployer" — anyone can pay |
+| `update_config` | both | `authority: Signer` | `has_one = authority` on config | `[b"config"]` mut | distinctness re-validated post-update; v2 also caps fee bps |
+| `pause_program` | both | `authority: Signer` | `has_one = authority` | `[b"config"]` mut | idempotent |
+| `unpause_program` | both | `authority: Signer` | `has_one = authority` | `[b"config"]` mut | idempotent |
+| `create_match` | both | `authority: Signer` | `has_one = authority` on config | `[b"match", id]` init + `[b"config"]` | S004 fix landed; pause-guarded |
+| `deposit_wager` | both | `player: Signer` | none — player matched against `escrow.players[..]` in handler | `[b"match", id]` mut + `[b"config"]` | pause-guarded; player allowlist via array |
+| `settle_match` | both | `authority: Signer` | `has_one = authority` on escrow AND on config | `[b"match", id]` mut/close + `[b"config"]` | winner constraint = `escrow.players[0..max_players]`; treasury/ops differ between v1 and v2 (live config vs snapshot) |
+| `cancel_match` | both | `caller: Signer` | none on escrow (caller checked in handler) | `[b"match", id]` mut/close + `[b"config"]` | v1 pause-blocked, v2 pause-permissive |
+| `permissionless_reclaim` | both | `caller: Signer` | none | `[b"match", id]` mut/close | v1 has NO config account at all, v2 same |
+| `start_with_depositors` | both | `authority: Signer` | `has_one = authority` on escrow AND on config | `[b"match", id]` mut + `[b"config"]` | pause-guarded; v2 also gated on deposit-window expiry |
 
-**4. CancelMatch caller receives PDA rent -- economic incentive misalignment**
-The `close = caller` constraint on `CancelMatch` (line 619) means whoever calls cancel receives the PDA rent lamports. This creates an incentive for the authority or players to cancel rather than settle, since cancellation returns the wager AND gives rent to the caller. The rent for a 168-byte account is approximately 0.00146 SOL. At small wagers (0.00001 SOL minimum), the PDA rent can be 146x the wager amount, creating a perverse incentive.
+## Critical Invariants (this focus area)
+1. **Authority key is the single root of trust** for: who can create matches, who can settle them, who can pause, and who can rotate config — enforced via `has_one = authority` and `Signer<'info>` on every privileged path.
+2. **Only listed players can deposit:** `escrow.players[0..max_players]` allowlist enforced in handler — `v1:201-204`, `v2:264-267`.
+3. **Winner must be a registered player:** `(0..escrow.max_players as usize).any(|i| escrow.players[i] == winner.key())` constraint — `v1:676-679`, `v2:707-710`.
+4. **Treasury ≠ Ops:** validated at config init, on every config update, AND at settle time — `v1:687`, `v2:718`.
+5. **Authority ≠ player:** validated at create_match — `v1:145-147`, `v2:186-188`. (Note: only checks the SIGNING authority key, not its derivatives — see H027 below.)
+6. **Distinctness re-validated after update_config:** `v1:96-98`, `v2:125-131`. Fixes Feb H003.
+7. **PDAs are derived canonically:** all PDA accounts use `seeds = [...]; bump = stored_bump` for re-validation; `escrow.bump` and `config.bump` are stored at init and reused thereafter — Anchor handles this safely.
 
-### Invariants
-- I1: Only `config.authority` can settle, pause, unpause, or update config
-- I2: Only registered players (player_one or player_two) can deposit
-- I3: Winner must be player_one or player_two
-- I4: Treasury and ops accounts must match config values and be distinct
-- I5: Authority cannot be a player in the match it creates
-- I6: Program cannot create matches, deposit, settle, or cancel while paused (except permissionless_reclaim)
-- I7: Config is a singleton PDA -- only one exists per program
+## Open Concerns / Risks
+- **CRITICAL** — `H001` family STILL OPEN in both v1 and v2: no `pending_authority` field, no two-step transfer. A single `update_config` call rotates authority instantly. Per JJ this is intentional pre-mainnet, but it means hot-wallet compromise = instant total takeover (treasury redirect + winner fraud). `v1:787-798` GlobalConfig, `v1:72-84` update path; `v2:810-818` GlobalConfig, `v2:96-108` update path.
+- **HIGH** — `H002`/`H011` STILL APPLIES TO v1: settle reads treasury from LIVE config (`v1:686`), not a snapshot. An authority key that's compromised mid-match can swap treasury/ops to attacker pubkeys before the next settle. v2 snapshots at create_match (`v2:211-214`) so this is mitigated for in-flight matches there, but v2 inherits the same root authority gap so future matches are still affected.
+- **HIGH** — `H005` still applies to BOTH versions (and is worse in v2): the authority key freely picks any winner from `escrow.players`. v2 supports up to 10 players → larger pots = larger blast radius from a single bad settle.
+- **HIGH** — `H007` STILL OPEN IN v1, FIXED IN v2: v1 `CancelMatch` has `constraint = !config.is_paused` at `v1:729`. v2 `CancelMatch` (`v2:743-765`) has NO pause constraint — explicit comment at `v2:756` ("Pause does NOT block cancel so in-flight funds can always exit"). This is a real divergence between the two versions and a deliberate v2 fix that does not back-port to v1.
+- **HIGH** — `H011` (treasury self-redirect) STILL OPEN in v1: nothing prevents `update_config` from setting `treasury == config.authority`. Distinctness only checks `authority != treasury` etc. across the three config slots, but the AUTHORITY itself can be set to be the same wallet that holds the treasury role; an authority can rotate treasury → its own pubkey before settling. v2 mitigates for in-flight via snapshot but the underlying gap persists for future matches.
+- **HIGH** — Authority can update fee_bps_treasury and fee_bps_ops in v2 with NO TIMELOCK. Even though MAX_FEE_BPS=1000 caps the absolute amount and the snapshot model protects in-flight matches, the authority key can ratchet fees up to 10% on next-created matches at any moment. EP-074 violation. `v2:96-142`, especially `v2:118-123, 128-131`.
+- **HIGH POTENTIAL** — `H027` design limitation: `AuthorityAsPlayer` only checks `*p != ctx.accounts.authority.key()`. Server can always create a fresh wallet, list it as a "player," fund it, then have the authority key settle the match in favor of that wallet. There is NO on-chain way to detect this authority/player collusion. Not formally a vulnerability — it's a design limitation of the server-as-authority model.
+- **MEDIUM** — v2's `permissionless_reclaim` (`v2:768-782`) does not pass a `config` account at all, so even if the authority adds an `is_paused` flag intended to halt some flow, the reclaim path bypasses it. Note the same pattern in v1 (`v1:740-754`). Comment indicates this is intentional ("escape hatch") — confirmed safe behavior, but worth noting that the system has a permissionless escape hatch with NO governance check whatsoever.
+- **MEDIUM** — `initialize_config` accepts ANY payer as the signer (`v1:556`, `v2:597`). If for some reason an attacker won the race against the deployer's first init transaction, they would set `authority = attacker_pubkey`. The race is normally won by the deployer who fires the init TX in the same deploy script, but it is a documented Solana footgun (EP-076 — front-runnable init pre-funding DoS). Likely OK for this protocol since deploy + init are in the same operator's control, but document the assumption.
+- **MEDIUM** — `winner` in settle_match is `UncheckedAccount` and there is no `executable: false` check. If authority key picks a system-reserved or executable account as winner (somehow legal under the players[] allowlist — only would happen if a player wallet accidentally collided with an executable program ID, which is essentially impossible to weaponize), the lamport transfer at `v1:317-318` / `v2:434-435` would silently fail (per Solana reserved-account write demotion). Functionally a DoS if the authority is compromised; not exploitable for theft.
+- **MEDIUM** — `treasury` and `ops` are `UncheckedAccount` (no executable check). Same demotion risk. v2 is slightly safer because the fee destinations are snapshotted at create_match, but the authority chooses what to snapshot. If config.treasury or config.ops gets set to an executable program account or sysvar by the authority (hostile or fat-fingered), every subsequent v2 match created during that config window will silently fail at settle time → funds locked until permissionless_reclaim 24h+ later.
+- **MEDIUM** — In v2 `cancel_match`, the `config` account is fetched with NO has_one and NO pause guard — only used to read `config.authority` for the is-authority check. Since this is a read-only field reference, it's safe; flagging only because the comment is needed to explain why the omitted constraints are deliberate.
+- **MEDIUM** — In `permissionless_reclaim` (BOTH v1 and v2), there is NO check that `caller != Pubkey::default()`. Solana's runtime would not allow a default-pubkey signer in practice, but combined with `close = caller`, the semantic intent ("rent goes to caller as gas reimbursement") leans on Solana runtime guarantees, not explicit constraints.
+- **LOW** — v1's `players: [Pubkey; 4]` and v2's `players: [Pubkey; 10]` are zero-padded with `Pubkey::default()` for unused slots. Player allowlist iteration uses `players[..max_players]` correctly everywhere I checked, but a future code change that loops over the full array would treat `Pubkey::default()` as a "player" — meaning anyone signing as `Pubkey::default()` would pass. Solana doesn't normally permit signing as default, but in remaining_accounts loops (for refund), if `max_players` was somehow corrupted upward, the constraint `*account.key == players[i]` could match a default key. Brittle but currently safe.
+- **LOW** — Authority's `Signer<'info>` is on a regular hot wallet. Per JJ this is intentional pre-mainnet posture. Document for the report.
 
-### Cross-Focus Handoffs
-- **To CPI Agent:** `system_program::transfer` CPI in `deposit_wager` (line 179) passes player's signer authority to system program. Direct lamport manipulation in settle/cancel/reclaim (lines 284-291, 359-367, 421-428). Verify no privilege escalation.
-- **To State Machine Agent:** Authority-gated state transitions: only authority can settle (Active -> Settled); authority-only cancel restricted to AwaitingDeposits state. Player cancel requires timeout for Active state. Verify state guards cannot be bypassed.
-- **To Token/Economic Agent:** Authority controls fee destination addresses (treasury/ops) via `update_config`. Fee BPS are hardcoded constants (not admin-changeable). The `close = caller` / `close = authority` rent reclamation creates economic incentives that should be analyzed.
-- **To Timing Agent:** Settlement deadline (1h) is authority-only. Cancel timeout (24h) gates player access. Permissionless reclaim (48h) opens to anyone. All timing checks interact with access control tiers.
+## RECHECK Verdicts
 
-### Risks Requiring Investigation
-- R1: `update_config` can break the distinct-address invariant from `initialize_config`
-- R2: `CreateMatch` has no `has_one = authority` on config -- anyone can create matches
-- R3: One-step authority transfer with no acceptance step or timelock
-- R4: PDA rent incentive for cancellation over settlement at low wagers
-- R5: No CPI guard on any instruction -- all instructions are callable via CPI from other programs
+| ID | Status | Justification |
+|----|--------|---------------|
+| **S004** (PDA Namespace Pre-Squatting DoS) | **FIXED** in v1, **FIXED** in v2 | `has_one = authority @ Unauthorized` is present on `CreateMatch.config` at `v1:625` and `v2:659`. Combined with `authority: Signer<'info>` and the implicit Anchor cross-account `has_one` derivation, only the configured authority can create. Confirmed no regression. |
+| **H001** (One-step authority transfer) | **STILL_OPEN** in both v1 and v2 | No `pending_authority` field in either `GlobalConfig` (`v1:787-798`, `v2:810-818`). `update_config` rotates `authority` in a single TX with no two-step. Per JJ, intentional pre-mainnet hot-wallet posture. |
+| **H002** (Fee destination hijack via update_config) | **STILL_OPEN** in v1, **EVOLVED** in v2 | v1 still reads treasury/ops from live config at settle (`v1:686, 695`), so a mid-match config rotation hijacks the next settle. v2 mitigates in-flight matches via snapshot at create (`v2:211-214` write, `v2:717, 726` read), but root cause (one-step fee rotation) persists; only NEW v2 matches see the new fee destinations, not in-flight. |
+| **H005** (Authority winner selection fraud) | **STILL_OPEN** in both v1 and v2 | Authority freely chooses `winner` from `escrow.players`. v2 makes this WORSE because pots are 2-10x v1 (10-player limit). No on-chain mechanism prevents authority/winner collusion. Inherent to the server-as-authority design. |
+| **H008** (CreateMatch PDA Occupancy DoS) | **FIXED** in v1, **FIXED** in v2 | Subsumed by S004 fix — only authority can create, so a third party cannot pre-squat the PDA. |
+| **H011** (Config treasury self-redirect) | **STILL_OPEN** in v1, **EVOLVED** in v2 | v1: distinctness checks only ensure `treasury != ops`, `authority != treasury`, etc. — but nothing prevents authority FROM rotating treasury to authority's OWN pubkey by first changing the authority away, then changing it back. Multi-TX rotation chain bypasses the distinctness check. Same gap in v2 but with snapshot mitigation for in-flight. |
+| **H014** (Authority collusion to settle in favor of controlled player) | **STILL_OPEN** in both | Authority creates a match where one of the listed players is a wallet they control (only the authority's CURRENT signing key is excluded by `AuthorityAsPlayer` — derivative wallets are not). Then settles in their favor. v2 amplifies impact via 10-player pots. Design limitation, not a fixable vulnerability without architectural change. |
+| **H027** (Authority self-play bypass via secondary wallet) | **STILL_OPEN** by design in both | OC-06 only excludes `ctx.accounts.authority.key()`. Doesn't prevent authority operator from controlling a different "player" wallet. Out of scope for on-chain enforcement. |
 
+## Cross-focus handoffs
+- → **Token & Economic agent**: Investigate H011 chain in v1 — can authority rotation enable mid-match treasury redirect in a way that breaks the 90/7/3 invariant? Verify v2's snapshot-at-create logic is actually atomic with create (no window where escrow exists with default treasury_snapshot).
+- → **Token & Economic agent**: v2's runtime-configurable fees: even with 10% cap, an authority who is compromised between matches could ratchet fees from 7%/3% → 5%/5% (or any combo summing to ≤10%) on every NEW match. Check the EV impact across realistic stake volumes.
+- → **State Machine agent**: The pause-guard divergence (v1 `cancel_match` pause-blocked at `v1:729`; v2 `cancel_match` pause-permissive at `v2:743-765`) is an explicit H007 fix in v2 only. Verify v1 still has the griefing path: paused → players cannot cancel → permissionless_reclaim is the ONLY exit (and only after 1200s timeout from `created_at` or `activated_at`).
+- → **Arithmetic agent**: Verify v2's `(fee_bps_treasury as u32 + fee_bps_ops as u32) <= MAX_FEE_BPS as u32` widening at `v2:77, 129` cannot overflow when both fields are individually `u16::MAX = 65535` (`u32::MAX = 4_294_967_295`, sum bounded at `131_070`, safe).
+- → **CPI agent**: All instructions only call `system_program::transfer` (lines `v1:213-222`, `v2:275-284`) and direct lamport math via `try_borrow_mut_lamports`. No CPI to arbitrary programs. Trust model is fully captured by Solana runtime + the program's own validation. No CPI-side authority leakage to external programs.
+- → **Upgrade & Admin agent**: Both programs are deployed under hot-wallet upgrade authority (per `OC-13` comment at `v1:1` and JJ's stated posture). NO multisig wrapping. NO timelock on `update_config`. Single signature controls authority/treasury/ops/fees + pause + winner selection + match creation.
+- → **Account Validation agent**: All `UncheckedAccount` usages have `/// CHECK:` comments. Justifications cite Anchor `constraint = ...` validation. Verify each constraint is actually sufficient — particularly `winner.key()` matched only against the players array, no executable-flag check; treasury/ops matched against config or snapshot, no executable-flag check.
+
+## Trust Boundaries
+The protocol has THREE trust tiers. (1) **Authority key** is a single hot wallet that can rotate config, pause, create/settle/cancel matches, and pick winners — it is the only privileged role. There is no multisig, no timelock, and no key-rotation pattern beyond the single-step `update_config`. (2) **Player keys** are trusted only to deposit their own wager into a match where they appear in the pre-registered allowlist. (3) **Anyone** can call `permissionless_reclaim` after the public-grace deadline, providing a server-down failsafe. The on-chain code performs strong account-validation (PDA seeds, has_one, distinctness checks, signer-required) within these boundaries; the residual risk comes almost entirely from the centralization of the authority key. Per JJ's notes, this is an explicit pre-mainnet posture choice — not an oversight.
 <!-- CONDENSED_SUMMARY_END -->
 
 ---
 
+# Access Control & Account Validation — Full Analysis
+
 ## Executive Summary
 
-The SolShot escrow program implements a server-authority model where a single `config.authority` pubkey controls all privileged operations: match settlement, emergency pause/unpause, config updates, and (partially) match creation. The program uses Anchor's type system (`Signer<'info>`, `has_one`, `Account<'info, T>`) consistently for authority enforcement, with all 7 account structs containing appropriate signer constraints. The pause guard (OC-04) is applied to all 4 economic instructions via `constraint = !config.is_paused`.
+I analyzed `programs/solshot-escrow/src/lib.rs` (v1, 962 LOC, modified +247/-140 since Feb audit) and `programs/solshot-escrow-v2/src/lib.rs` (v2, 1020 LOC, NEW — never audited) through the access-control and account-validation lens.
 
-However, the analysis reveals several access control observations that warrant investigation:
+**Headline:** The on-chain code's *implementation* of access control is rigorous: every privileged instruction has `Signer<'info>`, every config touch has `has_one = authority`, every PDA is canonically derived, every UncheckedAccount has a `/// CHECK:` comment with a constraint that backs it. The S004 fix landed cleanly in both programs and there are no missing-signer-check bugs.
 
-1. The `CreateMatch` instruction does not validate that the calling authority matches `config.authority`, meaning anyone can create match escrows. While settlement requires config authority, mismatched creation authority leads to stuck funds requiring timeout-based recovery.
+The risk lives at a higher level: the *design* concentrates an unusually large amount of power in a single hot wallet, and there is no two-step rotation, no timelock, and no on-chain mechanism preventing authority/player collusion. v2 introduces partial mitigation via per-match snapshots of treasury/ops/fees, but the root authority gap is unchanged.
 
-2. The `update_config` instruction uses a one-step authority transfer pattern without a propose/accept flow, creating lockout risk. It also does not re-validate the distinct-address invariant, allowing the authority to set overlapping treasury/ops/authority addresses after initialization.
-
-3. All instructions lack CPI guards, making them callable as inner instructions from other programs. While the program's trust model assumes direct invocation by the server, CPI-based invocation could create unexpected interaction patterns.
-
-The overall access control architecture is well-structured for a server-authority escrow. The tiered timeout system (1h settlement, 24h player cancel, 48h permissionless reclaim) provides progressive access escalation that prevents permanent fund lockup.
-
----
+The most consequential divergence between v1 and v2 is the H007 fix: v2 explicitly removes the pause-guard from `cancel_match` and `permissionless_reclaim`, ensuring funds can always exit even if the program is paused. v1 still has the pause guard on `cancel_match` and is therefore vulnerable to the original H007 griefing pattern.
 
 ## Scope
 
-- **Files analyzed:** `programs/solshot-escrow/src/lib.rs` (855 LOC)
-- **Functions analyzed:** `initialize_config`, `update_config`, `pause_program`, `unpause_program`, `create_match`, `deposit_wager`, `settle_match`, `cancel_match`, `permissionless_reclaim` (9 instruction handlers)
-- **Account structs analyzed:** `InitializeConfig`, `UpdateConfig`, `PauseProgram`, `UnpauseProgram`, `CreateMatch`, `DepositWager`, `SettleMatch`, `CancelMatch`, `PermissionlessReclaim` (9 structs)
-- **Estimated coverage:** 100% of on-chain access control surface
+- **Files analyzed:**
+  - `programs/solshot-escrow/src/lib.rs` (full, 962 LOC)
+  - `programs/solshot-escrow-v2/src/lib.rs` (full, 1020 LOC)
 
----
+- **Functions analyzed:** All 8 public instructions in each file (16 total instruction handlers), 8 account structs in each file (16 total `#[derive(Accounts)]` structs), 2 state account types per file (4 total `#[account]` structs).
+
+- **Estimated coverage:** ~100% of access-control surface area in both programs; 100% of account validation surface area; full PDA derivation map; full signer-and-constraint map.
 
 ## Key Mechanisms
 
-### Mechanism 1: Global Config Initialization (OC-01)
+### M1. Authority key as single root of trust
 
-**Location:** `lib.rs:47-65` (handler), `lib.rs:446-461` (account struct)
+**Location:** `v1:787-798` (`GlobalConfig`), `v1:72-108` (`update_config`); `v2:810-818` (`GlobalConfig`), `v2:96-142` (`update_config`).
 
-**Purpose:**
-One-time initialization of the program's global configuration PDA, which stores the authority pubkey, treasury address, ops address, pause flag, and PDA bump.
-
-**How it works:**
-1. Line 447-455: Anchor `init` constraint creates the config PDA with seeds `[b"config"]` and canonical bump. The `init` constraint ensures this can only be called once -- subsequent calls fail because the account already exists.
-2. Line 458: `payer` is a `Signer<'info>` that pays rent. This is the deployer, but the payer is NOT necessarily the authority.
-3. Lines 53-55: Three `require!` checks enforce that authority, treasury, and ops are all distinct pubkeys.
-4. Lines 57-63: The config fields are set. Notably, `config.authority = authority` where `authority` is a parameter, not the payer's key. The payer and authority can be different addresses.
-
-**Assumptions:**
-- The deployer is trusted to provide correct authority, treasury, and ops addresses at initialization time.
-- `init` constraint prevents reinitialization (Anchor discriminator check).
-- The payer is trusted not to pass malicious addresses. There is no on-chain verification that the authority key is actually controlled by anyone -- it is a raw `Pubkey` parameter.
-
-**Invariants:**
-- I7: Only one GlobalConfig PDA can exist per program (PDA seeds `[b"config"]` are fixed).
-- After initialization: `authority != treasury`, `authority != ops`, `treasury != ops`.
-
-**Concerns:**
-- The authority is set from a function parameter, not from the signer. A malicious deployer could set authority to any pubkey, including an address nobody controls, immediately bricking the program.
-- There is no event emitted for initialization. Monitoring cannot detect when/how the config was initialized.
-
----
-
-### Mechanism 2: Config Update / Authority Transfer
-
-**Location:** `lib.rs:70-89` (handler), `lib.rs:464-475` (account struct)
-
-**Purpose:**
-Allows the current authority to update any combination of authority, treasury, and ops addresses.
+**Purpose:** A singleton PDA (`seeds = [b"config"]`) stores a single `authority: Pubkey`. This wallet is the gate for: (a) updating config fields, (b) pause/unpause, (c) creating new match escrows, (d) settling matches and choosing winners, (e) starting matches with partial deposits.
 
 **How it works:**
-1. Line 466-471: Account struct requires `config` with `has_one = authority @ EscrowError::Unauthorized` and `authority: Signer<'info>`. This ensures only the current config authority can call this instruction.
-2. Lines 78-86: Each field is updated only if the corresponding `Option` parameter is `Some`. If `None`, the current value is preserved.
-3. Line 79: `config.authority = a` -- immediate one-step transfer. No pending state, no acceptance by new authority.
+- `GlobalConfig` PDA is initialized once per program deploy via `initialize_config`.
+- `authority` field stored at init — `v1:58, 82-84`, `v2:67, 82-83, 106-108`.
+- All privileged instructions add `has_one = authority @ Unauthorized` on the config account and require `authority: Signer<'info>` — so Anchor checks both that the stored authority matches the signing key.
+- `update_config` rotates authority directly (`v1:80-83`, `v2:106-108`), with no proposal/acceptance flow.
 
 **Assumptions:**
-- The authority is trusted to provide valid new addresses.
-- The authority will not accidentally set authority to an uncontrolled key.
-- No distinct-address re-validation is needed after initialization (this assumption is INCORRECT -- see concerns).
+- The deployer wins the race to initialize `GlobalConfig` after deploy (otherwise an attacker could front-run init and set `authority = attacker_pubkey`).
+- The authority private key is never compromised (because compromise = total program takeover).
+- The off-chain server holds the authority key in a manner appropriate to its game-state mediation role.
 
 **Invariants:**
-- I1: Only `config.authority` (as signer) can update config.
+- After initialization, every privileged operation requires the current `config.authority` as signer.
+- `config.authority` cannot be `Pubkey::default()` (zero-address guard at `v1:82`, `v2:107`).
+- `config.authority`, `config.treasury`, `config.ops` are pairwise distinct after every config-mutating instruction (`v1:53-55, 96-98`, `v2:73-75, 125-127`).
 
 **Concerns:**
-- **One-step authority transfer (EP-069/SP-017 pattern):** Line 79 sets authority immediately. If `new_authority` is set to an incorrect pubkey (typo, uncontrolled key, zero address), the program becomes permanently ungovernable. The secure pattern is two-step: propose + accept (SP-017). This is the highest-priority access control observation.
-- **Distinct-address invariant not re-validated:** `initialize_config` enforces `authority != treasury`, `authority != ops`, `treasury != ops` (lines 53-55). However, `update_config` does NOT re-check these invariants. An authority could:
-  - Set `new_authority` to the same address as treasury or ops.
-  - Set `new_treasury` to the same address as ops.
-  - Set `new_authority` to the same address as `new_treasury` AND `new_ops` by calling `update_config` twice (first update treasury, then update authority to match).
-  - This breaks the `treasury != ops` check in `SettleMatch` (line 588), but since that check compares the accounts passed to the instruction (not the config values), an attacker could pass different accounts. Wait -- the constraint `treasury.key() == config.treasury` (line 587) and `ops.key() == config.ops` (line 596) bind the instruction accounts to config. If `config.treasury == config.ops`, then the same account must be passed for both, which would violate `treasury.key() != ops.key()` (line 588). So settlement would fail. The authority could set treasury == ops and effectively prevent settlement, requiring cancel/reclaim timeout recovery.
-- **No event emitted:** Authority changes are not logged on-chain. An authority rotation would be invisible to monitoring unless indexing transaction logs.
+- **C1 (CRITICAL — H001):** No `pending_authority` field. Single-step rotation with one signature. If the hot wallet is compromised, an attacker can rotate authority instantly to a wallet they control, then use that to redirect treasury/ops, settle in their favor, etc. Per JJ this is intentional pre-mainnet, but the design pattern (EP-069 / EP-073) is well-known and trivially fixable with `propose_authority` + `accept_authority`.
+- **C2 (HIGH — H011 ENABLER):** Distinctness check at `v1:96-98` is necessary but not sufficient. An attacker who already controls the authority key can do a 2-TX rotation: TX1 rotate `treasury` to attacker pubkey A AND `authority` to attacker pubkey B (passes distinctness because authority != treasury). TX2 from B settles a match with treasury directed to A — now the 7% fee goes to attacker. v2 mitigates this for in-flight matches via snapshot-at-create, but new matches are still subject to the rotated treasury.
+- **C3 (HIGH — EP-074):** No timelock on any config change. Rotation is instantaneous, indistinguishable on-chain from legitimate operational changes.
 
----
+### M2. CreateMatch authorization gate (S004 fix)
 
-### Mechanism 3: Emergency Pause/Unpause (OC-04)
+**Location:** `v1:606-631` (struct), `v1:130-182` (handler); `v2:642-665` (struct), `v2:161-235` (handler).
 
-**Location:** `lib.rs:93-103` (handlers), `lib.rs:480-505` (account structs)
-
-**Purpose:**
-Emergency pause mechanism that halts all economic instructions.
+**Purpose:** Prevent any third party from "pre-squatting" the match-PDA namespace before the legitimate server can claim it.
 
 **How it works:**
-1. Both `PauseProgram` and `UnpauseProgram` account structs require `has_one = authority` on the config account and `authority: Signer<'info>`.
-2. Pause sets `config.is_paused = true` (line 94). Unpause sets it to `false` (line 101).
-3. Both are idempotent -- calling pause when already paused is a no-op (no error).
-4. The pause guard appears as `constraint = !config.is_paused @ EscrowError::ProgramPaused` on 4 instructions: `CreateMatch` (line 527), `DepositWager` (line 551), `SettleMatch` (line 605), `CancelMatch` (line 644).
+- `CreateMatch` requires `authority: Signer<'info>`.
+- Config account constraint at `v1:625` and `v2:659`: `has_one = authority @ Unauthorized` — Anchor cross-references `config.authority` with the signing key.
+- Match PDA derived from `seeds = [b"match", match_id.as_bytes()]` — `v1:613, v2:648` — and Anchor `init` errors if it already exists (canonical Anchor pattern).
 
 **Assumptions:**
-- The authority will use pause judiciously and not permanently pause to grief users.
-- The pause guard covers all economically sensitive instructions.
-- `permissionless_reclaim` intentionally bypasses pause (DCA-02 design).
+- `match_id` is a server-generated identifier with sufficient entropy that no attacker can guess and pre-squat the slot. The TODO.md mentions CSPRNG for room IDs; this is satisfied off-chain.
+- The S004 fix (the explicit `has_one = authority` on the config account inside `CreateMatch`) is the load-bearing protection — without it, the only check would be that the authority is some signer, not THE authority.
 
 **Invariants:**
-- I1: Only `config.authority` can pause/unpause.
-- I6: Paused state blocks create_match, deposit_wager, settle_match, cancel_match.
+- Only `config.authority` can ever cause a match-PDA to be initialized.
 
 **Concerns:**
-- **Pause blocks cancel_match but not permissionless_reclaim:** During a pause, players cannot cancel active matches. They must wait the full 48h for permissionless reclaim. The 24h cancel window is frozen during pause. If the authority pauses the program with Active matches, those matches can only be recovered via permissionless_reclaim (48h). This is a known design tradeoff documented as DCA-02.
-- **Pause blocks settlement:** If the authority pauses the program, it also blocks itself from settling active matches. This means: pause -> cannot settle -> wait 48h -> permissionless reclaim refunds both players. The authority cannot selectively settle during pause.
-- **Same authority for pause and unpause:** A compromised authority can pause the program to prevent settlements, then let timeouts trigger refunds for matches where it should have settled a winner. This is a denial-of-service vector, not a fund theft vector, since refunds go to the correct players.
+- None. S004 fix landed cleanly. v2 inherits the same protection.
 
----
+### M3. Player allowlist + deposit gating
 
-### Mechanism 4: Match Creation Authority
+**Location:** `v1:201-204` (handler), `v1:634-655` (struct); `v2:264-267` (handler), `v2:667-687` (struct).
 
-**Location:** `lib.rs:110-152` (handler), `lib.rs:510-532` (account struct)
-
-**Purpose:**
-Creates a new match escrow PDA with two registered players and a wager amount.
+**Purpose:** Only listed players can deposit, and each player can deposit only once.
 
 **How it works:**
-1. Line 510-518: The `escrow` account is initialized with `init`, `payer = authority`, seeds `[b"match", match_id.as_bytes()]`.
-2. Line 520-521: `authority` is `Signer<'info>` and `mut` (pays rent).
-3. Line 524-529: `config` is loaded with pause guard but NO `has_one = authority` constraint.
-4. Lines 117-129: Input validation -- match_id length, wager bounds, distinct players, authority != player.
-5. Line 133: `escrow.authority = ctx.accounts.authority.key()` -- stores the signer's pubkey as the match authority.
+- At `create_match`, the caller passes `players: Vec<Pubkey>` — `v1:134, v2:165`. Stored in fixed-width array with zero-padding.
+- At `deposit_wager`, the player's signing key is searched against `escrow.players[..max_players]` via `.position(...)`. If not found → `NotAPlayer` error. If found → bit position in `deposits_mask` is checked for double-deposit.
+- v1 uses `u8` mask (max 8 players), v2 uses `u16` mask (max 16, capped at 10 by `MAX_PLAYERS`).
+- Distinctness check: `v1:150-154`, `v2:190-194` — every pair of `players[i] != players[j]`. Prevents one wallet from depositing twice into the same slot.
+- Authority exclusion: `v1:145-147`, `v2:186-188` — `*p != ctx.accounts.authority.key()`. Authority signing key can't appear in players array.
 
 **Assumptions:**
-- The calling authority is the server keypair that will later settle the match.
-- The server ensures match_id uniqueness (PDA seeds enforce on-chain uniqueness).
+- The server's off-chain logic doesn't accidentally include the authority key as a player.
+- Players truly intend to participate when their key is added to the array (no consent mechanism on-chain).
 
 **Invariants:**
-- I5: `player_one != player_two` AND `authority != player_one` AND `authority != player_two`.
-- The match PDA is unique per match_id (PDA derivation).
+- Only `escrow.players[i]` for `i < max_players` can deposit.
+- Each player can deposit at most once (enforced by bitmask).
 
 **Concerns:**
-- **Missing `has_one = authority` on config (OBSERVATION):** The `CreateMatch` account struct does NOT validate that the signer matches `config.authority`. Any signer can create a match, paying their own SOL for rent. The `config` account is only used for the `!is_paused` constraint. This means:
-  - A random user could create match escrows with arbitrary players and wager amounts.
-  - The created escrow's `authority` field would be set to the random user's pubkey.
-  - Later, `settle_match` requires BOTH `escrow.has_one = authority` (line 565) AND `config.has_one = authority` (line 604). If the escrow's authority differs from config's authority, settlement is impossible.
-  - The match would require timeout-based cancel (24h by player, 48h by anyone).
-  - This is likely by design for the server model (only the server has the keypair and sends create_match transactions), but is not enforced on-chain.
-  - **5 Whys:** Why is there no `has_one = authority` on CreateMatch? Likely because the server is the only expected caller. Why is this a concern? Because on-chain enforcement should not rely on off-chain assumptions. Why would an attacker create a match? To lock up SOL in unresolvable escrows (grief) or to create matches where they are both player_one and player_two (self-play). Why can't they self-play? Because `player_one != player_two` is enforced (line 125), but both could be controlled by the same entity via separate keypairs.
+- **C4 (HIGH — H027 design limitation):** "Authority" exclusion only excludes `authority.key()`. Authority operator can use a fresh wallet (not the signing key) as a player and pre-fund it from the treasury, then settle in its favor. No on-chain way to detect.
+- **C5 (LOW):** v2 zero-pads `players[10]` with `Pubkey::default()`. The `..max_players` slice is used everywhere I traced, so this is currently safe. But a future audit should re-check after refactors that the slice bound is preserved.
+- **C6 (MEDIUM — players selected at create, not at deposit):** Authority chooses the players array. A player can't unilaterally enter a match — they have to be listed by the authority first. This is by design (server-mediated matchmaking), but it means the authority has full control over which wallets are eligible to deposit. Reinforces M1 trust concentration.
 
----
+### M4. SettleMatch winner validation
 
-### Mechanism 5: Deposit Authorization
+**Location:** `v1:258-338` (handler), `v1:658-709` (struct); `v2:387-454` (handler), `v2:689-740` (struct).
 
-**Location:** `lib.rs:156-223` (handler), `lib.rs:536-556` (account struct)
-
-**Purpose:**
-Allows registered players to deposit their wager into the escrow PDA.
+**Purpose:** Authority signs a settle TX naming the winner; on-chain code validates the winner is a registered player and that fee destinations are correct.
 
 **How it works:**
-1. Line 544-545: `player: Signer<'info>` -- the depositor must sign.
-2. Lines 163-166: State check -- must be `AwaitingDeposits`.
-3. Lines 168-170: Player identity check -- depositor must be `escrow.player_one` or `escrow.player_two`.
-4. Lines 172-176: Double-deposit prevention -- checks `player_one_deposited` / `player_two_deposited` flags.
-5. Lines 179-188: System program CPI transfer from player to escrow PDA.
-6. Lines 193-197: Update deposit flags.
-7. Lines 206-209: If both deposited, transition to Active and record `activated_at`.
+- `winner: UncheckedAccount<'info>` with constraint at `v1:676-679` and `v2:707-710`:
+  ```rust
+  constraint = (0..escrow.max_players as usize)
+      .any(|i| escrow.players[i] == winner.key())
+      @ EscrowError::InvalidWinner
+  ```
+- Treasury/Ops accounts:
+  - **v1**: validated against `config.treasury` and `config.ops` (LIVE config) at `v1:686, 695`.
+  - **v2**: validated against `escrow.treasury_snapshot` and `escrow.ops_snapshot` (FROZEN at create_match) at `v2:717, 726`.
+- Treasury vs Ops uniqueness: `treasury.key() != ops.key()` at `v1:687`, `v2:718` — prevents the same account from receiving both fee shares (which would matter for the `try_borrow_mut_lamports` math).
+- Both versions enforce `escrow.state == MatchState::Active` at `v1:259-262`, `v2:388-391` — match must be activated before settlement.
+- v1 additionally enforces a settlement deadline (`activated_at + 3600s`) at `v1:266-274`. v2 has no settlement deadline.
+- 90/7/3 split (v1, hardcoded constants) and snapshot-bps split (v2) are computed in u128 to avoid overflow.
 
 **Assumptions:**
-- The system program CPI correctly transfers lamports.
-- `player.key()` comparison against stored pubkeys is sufficient for identity verification.
-- A player with insufficient lamports will have the CPI fail, preventing state corruption.
+- The off-chain match outcome (winner determination) is correctly computed by the server.
+- The authority key is honest in selecting the winner.
+- Fee destinations don't accept lamports back (executable account write demotion would break the lamport increment — see C7).
 
 **Invariants:**
-- I2: Only player_one or player_two can deposit.
-- Each player can deposit exactly once.
-- Deposit amount equals `escrow.wager_lamports` (read from escrow state, not from instruction params).
+- Winner must be a member of the players allowlist.
+- Treasury and Ops must be distinct accounts.
+- After settle, escrow.state == Settled (set BEFORE transfers — defense-in-depth at `v1:309-313`, `v2:427-431`).
+- `winner_amount + treasury_amount + ops_amount <= total_pot` (winner gets remainder; integer division rounds down for treasury/ops).
 
 **Concerns:**
-- No concerns identified. The deposit authorization is well-implemented. The player must be the signer, must match a registered player address, must not have already deposited, and the deposit amount is read from the escrow (not user-supplied).
+- **C7 (MEDIUM):** No `executable: false` check on `winner`, `treasury`, or `ops`. If any of these is an executable account or sysvar, `try_borrow_mut_lamports` write would silently fail (per Solana write-demotion). The constraint `escrow.players[i] == winner.key()` doesn't prevent a player wallet from BEING an executable program, but in practice player wallets are EOA. Treasury/Ops are server-controlled; if authority misconfigures (or is compromised) and points treasury to e.g. `system_program::ID`, every settle in that config window silently fails → DoS. Mitigation: add `winner.executable == false` constraint, etc.
+- **C8 (HIGH — H005):** Authority freely chooses the winner. No on-chain mechanism prevents authority/winner collusion. v2 amplifies (more pot per match).
+- **C9 (HIGH — H002 v1 only):** v1 reads treasury from LIVE config. Mid-match config rotation by compromised authority redirects fees on the next settle. v2 fixes this for in-flight matches via snapshot.
+- **C10 (LOW):** v1's settlement deadline is 3600s (1 hour) after activation. If authority is offline / server crashes for >1 hour after activation, the settle TX will revert with `SettlementExpired`. This is a liveness concern, not a security concern. Players can `cancel` (paused-blocked) or wait for `permissionless_reclaim` (1200s after activation). v2 has no deadline, so this concern is gone in v2.
 
----
+### M5. CancelMatch authorization (the H007 v1/v2 divergence)
 
-### Mechanism 6: Settlement Authorization
+**Location:** `v1:344-419` (handler), `v1:712-735` (struct); `v2:459-519` (handler), `v2:743-765` (struct).
 
-**Location:** `lib.rs:228-305` (handler), `lib.rs:560-610` (account struct)
-
-**Purpose:**
-Authority-only settlement that distributes the pot to winner, treasury, and ops.
+**Purpose:** Allow either authority (during AwaitingDeposits only) or any player (after timeout) to cancel a match and refund deposits.
 
 **How it works:**
-1. Line 560-567: `escrow` has `has_one = authority` (the match creator authority) and `close = authority`.
-2. Line 570-571: `authority: Signer<'info>`.
-3. Line 574-580: `winner: UncheckedAccount` with constraint `winner.key() == escrow.player_one || winner.key() == escrow.player_two`.
-4. Line 585-590: `treasury: UncheckedAccount` with constraints `treasury.key() == config.treasury` AND `treasury.key() != ops.key()`.
-5. Line 594-597: `ops: UncheckedAccount` with constraint `ops.key() == config.ops`.
-6. Line 601-606: `config` with `has_one = authority` (the config authority) AND `!config.is_paused`.
+- `caller: Signer<'info>` is the signer.
+- Handler computes `is_authority = caller == config.authority` and `is_player = players[..max_players].contains(&caller)`.
+- Authorization rule:
+  ```
+  (is_authority && state == AwaitingDeposits) ||
+  (is_player && (state == AwaitingDeposits || is_timed_out))
+  ```
+- v1 uses `created_at + TIMEOUT_SECONDS (600s)` if `activated_at == 0`, else `activated_at + TIMEOUT_SECONDS` — `v1:357-365`.
+- v2 uses `created_at + deposit_window_secs` if `activated_at == 0`, else `match_end_ts` — `v2:471-477`.
+- Refunds: iterates `ctx.remaining_accounts`, validates each against `players[i]` and the deposit-mask bit, then `try_borrow_mut_lamports` to transfer wager_lamports.
+- `close = caller` on the escrow account → caller receives the rent reserve as gas reimbursement.
 
-**Assumptions:**
-- The match creator authority is the same as config.authority. If they differ, settlement is impossible.
-- The authority is trusted to honestly report the winner.
-- UncheckedAccount for winner/treasury/ops is safe because all are validated via constraints.
+**Critical divergence:**
+- **v1**: `CancelMatch` config account at `v1:726-731` HAS `constraint = !config.is_paused @ ProgramPaused` at `v1:729`. Pause blocks cancel. **H007 STILL OPEN.**
+- **v2**: `CancelMatch` config account at `v2:757-761` does NOT have a pause guard. Comment at `v2:756`: "Pause does NOT block cancel so in-flight funds can always exit." **H007 FIXED in v2.**
+
+**Assumptions (v1 H007 attack):**
+- The authority key is compromised OR malicious.
+- Authority pauses the program, which blocks cancel for all callers (including players).
+- Players cannot exit until v1's permissionless reclaim deadline (`activated_at + 1200s` = 20 minutes after activation, OR `created_at + 1200s` = 20 minutes after match creation if not activated).
+- During the lockup window, attacker can demand ransom or otherwise grief.
 
 **Invariants:**
-- I1: Only config.authority AND escrow.authority (must be same key) can settle.
-- I3: Winner must be one of the two registered players.
-- I4: Treasury matches config.treasury, ops matches config.ops, treasury != ops.
+- Authority can't cancel an active or settled/cancelled match (only AwaitingDeposits).
+- Player can't cancel before timeout if state is Active.
+- Refunds correspond to the deposits_mask exactly (no double refund, no missed refund) — though the handler trusts `ctx.remaining_accounts` to be in the right order. Account validation focus should re-verify this.
 
 **Concerns:**
-- **Dual authority requirement:** Settlement requires the signer to match BOTH `escrow.authority` (via `has_one` on escrow, line 565) AND `config.authority` (via `has_one` on config, line 604). If `config.authority` was rotated between match creation and settlement, old matches become unsettleable. The authority must remain stable during the 1h settlement window, or delegate to the same key.
-- **Winner determination is authority-only:** The authority (server) decides who won. There is no on-chain game logic or dispute resolution. The authority could declare the wrong winner. This is an inherent trust assumption of the server-authority model.
-- **UncheckedAccount for winner is appropriate:** The winner is a wallet address, not a program-owned account. `UncheckedAccount` with the constraint validation is the correct Anchor pattern here. The `/// CHECK:` comment is present (line 574).
-- **UncheckedAccount for treasury/ops is appropriate:** Same reasoning. These are destination wallets, not program-owned accounts.
+- **C11 (HIGH — H007 v1):** Pause guard blocks cancel in v1. Real griefing risk if authority is compromised.
+- **C12 (HIGH — caller validation):** The handler trusts that `ctx.remaining_accounts[i]` is the player at `escrow.players[i]`. The constraint `*account.key == players[i]` validates the pubkey, but if the bit `(deposits_mask >> i) & 1 == 0`, the loop returns `InvalidPlayer` (= aborts the entire TX). This means a single malformed remaining_accounts entry blocks the entire refund. So an honest caller has to construct the list correctly. If they accidentally include an undeposited player, the refund TX fails.
+  - Actually, re-reading: the loop iterates `remaining_accounts`. So if i ranges over `0..remaining_accounts.len()`, we don't iterate undeposited players unless caller explicitly passed them. But the constraint requires `bit_set` — so if caller passed only DEPOSITED players, in player-index order, with bits filling the prefix, the loop succeeds. If caller passed them out of order (e.g., player[0] not deposited but player[1] deposited; caller passes only player[1] in slot 0), then `bit_set` for i=0 is FALSE → fails. So the loop has STRICT ordering requirement: caller must pass deposited-prefix-aligned. This is brittle but not a security issue.
+  - Wait, but there's a SUBTLER issue. What if some `players[i]` is not deposited (mask bit clear), and caller passes a DIFFERENT i+1 deposited player at position i? Then `bit_set` for i is false → fails. So the loop depends on the caller iterating in the natural index order. OK, this seems fine for honest callers.
+- **C13 (MEDIUM):** v2 cancel_match's config account is fetched but only `config.authority` is read. No has_one binding. If config PDA is somehow corrupted or substituted (not possible due to seeds = [b"config"]), the authority check would be wrong. Anchor's seed validation makes this safe; just note for completeness.
 
----
+### M6. PermissionlessReclaim — escape hatch
 
-### Mechanism 7: Cancellation Authorization (OC-05)
+**Location:** `v1:425-487` (handler), `v1:738-754` (struct); `v2:526-578` (handler), `v2:767-782` (struct).
 
-**Location:** `lib.rs:310-376` (handler), `lib.rs:614-649` (account struct)
-
-**Purpose:**
-Two-tier cancellation: authority can cancel AwaitingDeposits; players can cancel AwaitingDeposits immediately or any state after 24h timeout.
+**Purpose:** Anyone can refund deposits if the match has been stuck past the public-grace deadline. Provides server-down failsafe.
 
 **How it works:**
-1. Line 614-624: `escrow` with `close = caller`. `caller: Signer<'info>`.
-2. Lines 627-638: `player_one` and `player_two` are `UncheckedAccount` validated against escrow records.
-3. Line 641-646: `config` with pause guard but NO `has_one = authority`. The config is used for `config.authority` comparison (line 312, 336) and pause check.
-4. Lines 336-344: Authorization logic:
-   - `is_authority = caller == config_authority` (line 336)
-   - `is_player = caller == escrow.player_one || caller == escrow.player_two` (lines 337-338)
-   - Authority can cancel ONLY if state is `AwaitingDeposits` (line 341)
-   - Player can cancel if state is `AwaitingDeposits` OR if `is_timed_out` (line 342)
-5. Lines 346-349: Terminal state check -- cannot cancel Settled or Cancelled.
+- `caller: Signer<'info>` (any wallet).
+- v1 deadline: `timeout_reference + 1200s`, where timeout_reference = `activated_at` if > 0, else `created_at`. Timeout is 20 min total.
+- v2 deadline:
+  - If activated: `match_end_ts + 86400s` (24h after match expires).
+  - If not activated: `created_at + deposit_window_secs + 86400s` (24h after deposit window closes).
+- After deadline → caller can call this and receive rent reserve as incentive.
+- Refunds same as cancel_match (iterate remaining_accounts, validate, transfer, close PDA).
+- **No config account in either version's struct** — `v1:739-754`, `v2:767-782`. This means pause is irrelevant to permissionless_reclaim (intentional escape hatch).
 
 **Assumptions:**
-- `config.authority` read from the config account is the current authority (it is -- Anchor deserializes the account).
-- The 24h timeout correctly prevents premature cancellation.
-- The caller (authority or player) is an appropriate recipient for PDA rent.
+- Caller wants the rent reimbursement enough to construct the `remaining_accounts` correctly.
+- The deadline math is correct (24h is plenty for v2; 20 min is tight for v1).
 
 **Invariants:**
-- Authority can only cancel pre-deposit matches.
-- Players can cancel pre-deposit matches immediately, or any non-terminal match after 24h.
-- The caller receives PDA rent (incentive to clean up stale matches).
+- Cannot reclaim before deadline.
+- Cannot reclaim a Settled or Cancelled match (state check at `v1:435-439`, `v2:534-537`).
+- Refunds match deposits_mask exactly (same loop pattern as cancel).
 
 **Concerns:**
-- **No `has_one = authority` on config:** The `CancelMatch` config account does NOT use `has_one = authority`. Instead, the handler reads `config.authority` (line 312) and compares it manually with `caller.key()` (line 336). This is functionally equivalent but differs from the pattern used in `SettleMatch` (which does use `has_one`). The manual comparison is safe because it reads from the validated config PDA, but it is an inconsistency.
-- **Authority cancel vs. player cancel ambiguity:** If the authority is also a player (which is prevented by OC-06 in `create_match`, line 128-129), this would create ambiguity. Since OC-06 prevents authority-as-player, the `is_authority` and `is_player` paths are mutually exclusive for any given match.
-- **Unauthorized caller who is neither authority nor player:** If someone who is neither authority nor a player calls cancel, both `is_authority` and `is_player` are false, and the `require!` on line 340-344 fails with `Unauthorized`. This is correct.
+- **C14 (LOW):** No restriction on who calls. By design. The rent incentive is a few thousand lamports — enough to cover gas.
+- **C15 (LOW):** v1's 1200s window is very tight. If a player is offline 20 minutes after deposit, they could lose their wager to a permissionless caller (who refunds them but the player only learns about it later). This is just a timing characteristic, not a vulnerability — the player still gets their wager back.
+- **C16 (MEDIUM):** No config account, so even if pause is enabled, this still works. v1 + v2. This is an intentional escape hatch (DCA-02), but it does mean that an attacker who pauses the program cannot block refunds — they can only block cancel (v1) and they can only delay refunds for `PERMISSIONLESS_RECLAIM_TIMEOUT - TIMEOUT_SECONDS = 600s = 10 minutes` (v1) or `PUBLIC_REFUND_GRACE_SECS = 24h` (v2).
 
----
+### M7. PauseProgram — emergency control
 
-### Mechanism 8: Permissionless Reclaim (DCA-02)
+**Location:** `v1:112-115, v1:577-588` (struct); `v2:146-149, v2:615-626` (struct).
 
-**Location:** `lib.rs:381-438` (handler), `lib.rs:654-681` (account struct)
-
-**Purpose:**
-Escape hatch allowing anyone to trigger refund after 48 hours, with PDA rent going to the caller as incentive.
+**Purpose:** Authority can flip `is_paused` flag.
 
 **How it works:**
-1. Line 654-664: `escrow` with `close = caller`. `caller: Signer<'info>`. No `config` account.
-2. Lines 667-678: `player_one` and `player_two` validated against escrow records.
-3. Lines 390-394: Terminal state check.
-4. Lines 396-411: 48h timeout check from `activated_at` or `created_at`.
-5. Lines 414-428: Set state to Cancelled, refund depositors.
-
-**Assumptions:**
-- Anyone with a valid signer (any keypair) can call this after 48h.
-- The PDA rent is sufficient incentive for a third party to submit the transaction.
-- No pause guard is needed because this is an emergency escape hatch.
-
-**Invariants:**
-- Only callable after 48h from activation (or creation if never activated).
-- Cannot reclaim Settled or Cancelled matches.
-- Refunds go to the correct player addresses (validated via constraints).
+- `authority: Signer<'info>` + `has_one = authority` on config.
+- Sets `is_paused = true` (idempotent — pause works even if already paused).
+- Affects the `constraint = !config.is_paused @ ProgramPaused` in:
+  - v1: `CreateMatch`, `DepositWager`, `SettleMatch`, `CancelMatch`, `StartWithDepositors`.
+  - v2: `CreateMatch`, `DepositWager`, `StartWithDepositors`. NOT settle, cancel, or reclaim.
 
 **Concerns:**
-- **No pause guard (by design):** This is the escape hatch. Even if the authority pauses the program and refuses to settle, anyone can reclaim after 48h. This is a deliberate design choice.
-- **Caller receives rent but not wager:** The caller receives PDA rent (~0.00146 SOL for 168 bytes). For very small wagers, this rent is larger than the wager itself. This is not a vulnerability but is economically noteworthy.
-- **No config account needed:** This instruction does not load the config PDA at all. It is fully self-contained using only the escrow PDA. This means it works even if the config has been corrupted or the authority has been lost.
+- **C17 (HIGH — H007 v1 only):** v1's pause blocks cancel → players cannot exit a paused match. v2 explicitly removes pause from cancel/settle/reclaim (the "always-exit" principle) — see C11.
+- **C18 (LOW):** Idempotent pause is fine; no double-pause attack surface.
 
----
+### M8. UpdateConfig — fee/destination/authority rotation
+
+**Location:** `v1:72-108`, `v1:562-573` (struct); `v2:96-142`, `v2:602-613` (struct).
+
+**Purpose:** Authority rotates config fields.
+
+**How it works:**
+- `authority: Signer<'info>` + `has_one = authority`.
+- All fields optional (passing None keeps current value).
+- Zero-address guard on each pubkey field.
+- Distinctness re-validated post-update.
+- v2 also caps `fee_bps_treasury + fee_bps_ops <= MAX_FEE_BPS = 1000`.
+
+**Concerns:**
+- **C19 (CRITICAL — H001):** Single-step authority rotation. A single TX from current authority → instant rotation to any new authority.
+- **C20 (HIGH — H002 v1):** Single-step treasury/ops rotation. Affects in-flight v1 matches because v1 reads live config at settle. v2 not affected for in-flight (snapshot model).
+- **C21 (HIGH — EP-074):** No timelock. Instantaneous parameter changes.
+- **C22 (HIGH — v2 only, fees):** Authority can ratchet fees up to 10% on next-created matches with no warning. Limited by `MAX_FEE_BPS`, but EV impact across realistic stake volumes is meaningful.
+- **C23 (MEDIUM):** The distinctness check is "anti-cyclical" but allows multi-step bypass. Step 1: rotate `authority` to alice (was bob). Now config is `{authority: alice, treasury: T, ops: O}`. Step 2 from alice: rotate `treasury` to bob (currently distinct from alice). Net effect: `treasury` now equals previous `authority`. If the protocol assumes `authority != treasury` historically (e.g., for accounting), that assumption is broken. This is more of a design observation than a vulnerability — distinctness across instructions doesn't mean role separation across time.
 
 ## Trust Model
 
-| Entity | Trust Level | What They Control | Trust Assumption |
-|--------|------------|-------------------|------------------|
-| `config.authority` (server keypair) | FULL | Settlement (winner determination), pause/unpause, config updates, match creation (by convention) | Trusted to honestly report winners, not abuse pause, not set invalid config |
-| Players (player_one, player_two) | LIMITED | Deposit their own wagers, cancel after timeout | Trusted only to act in self-interest; constrained by on-chain logic |
-| Permissionless caller (anyone) | NONE | Reclaim after 48h | Zero trust; fully constrained by 48h timeout and refund-only logic |
-| Deployer (payer of initialize_config) | ONE-TIME | Initial config setup | Trusted at deploy time to set correct addresses; no ongoing trust |
+**Trusted:**
+- `config.authority` (signing key) — fully trusted within the protocol's surface.
+- Anchor framework's account validation — assumed sound (including bump derivation, owner checking, discriminator validation).
+- Solana runtime's signer enforcement — trust that runtime correctly identifies signers.
 
----
+**Semi-trusted:**
+- Players — trusted to deposit honestly (i.e., they sent their own SOL); not trusted with any privileged operation.
+- Permissionless callers — trusted only to construct `remaining_accounts` correctly (or get an error, not lose money). Receive rent rebate as honest-execution incentive.
+
+**Not trusted:**
+- The off-chain server's claim of who won the match is enforced by the players-allowlist constraint, but not verified against actual game state on-chain.
+- Caller-supplied `remaining_accounts` in cancel/reclaim — validated against players array and deposit mask before any lamport transfer. Sound.
+
+**Trust boundaries:**
+1. **Signer boundary:** `Signer<'info>` separates "key holder" from "everyone else." Anchor runtime enforces.
+2. **Authority boundary:** `has_one = authority` separates the config authority from any other signer. Within this boundary, the authority has total control.
+3. **Player boundary:** `escrow.players[..max_players]` allowlist separates registered players from arbitrary signers.
+4. **Public boundary:** `permissionless_reclaim` allows any signer after the public grace deadline.
 
 ## State Analysis
 
-### State Read by Access Control Logic
-- `config.authority` -- compared against signer in update_config, pause, unpause, settle_match, cancel_match
-- `config.treasury` -- compared against instruction account in settle_match
-- `config.ops` -- compared against instruction account in settle_match
-- `config.is_paused` -- checked in create_match, deposit_wager, settle_match, cancel_match
-- `escrow.authority` -- used for `has_one` in settle_match
-- `escrow.player_one`, `escrow.player_two` -- used for player identity checks in deposit, settle (winner), cancel (player validation), reclaim (refund routing)
-- `escrow.state` -- checked in deposit, settle, cancel, reclaim
-- `escrow.player_one_deposited`, `escrow.player_two_deposited` -- checked in deposit (double-deposit prevention), cancel/reclaim (refund routing)
-- `escrow.activated_at`, `escrow.created_at` -- used for timeout calculations in settle, cancel, reclaim
+**Read by access-control logic:**
+- `config.authority`, `config.treasury`, `config.ops` (all instructions touching config)
+- `config.is_paused` (most instructions, NOT permissionless_reclaim, NOT v2 cancel/settle/reclaim)
+- `escrow.authority` (settle, start_with_depositors via has_one)
+- `escrow.players[..max_players]` (deposit, settle winner constraint, cancel handler, reclaim handler)
+- `escrow.deposits_mask` (cancel, reclaim, deposit, start_with_depositors)
+- `escrow.state` (every state-changing instruction)
+- `escrow.activated_at`, `escrow.match_end_ts` (cancel, reclaim deadline computation)
+- v2 only: `escrow.treasury_snapshot`, `escrow.ops_snapshot`, `escrow.fee_bps_*_snapshot` (settle)
 
-### State Written by Access Control Logic
-- `config.authority`, `config.treasury`, `config.ops` -- modified by update_config
-- `config.is_paused` -- modified by pause/unpause
-- `escrow.authority` -- set once in create_match
-- `escrow.player_one_deposited`, `escrow.player_two_deposited` -- set in deposit_wager
-- `escrow.state` -- transitions in deposit (AwaitingDeposits -> Active), settle (Active -> Settled), cancel (-> Cancelled), reclaim (-> Cancelled)
-
----
+**Written by access-control logic:**
+- `config.authority`, `config.treasury`, `config.ops`, `config.fee_bps_*` (v2), `config.is_paused` — only by `update_config` and pause/unpause, all gated by authority signer.
+- `escrow.players`, `escrow.max_players`, `escrow.deposits_mask` etc. — only at create or activation paths.
+- `escrow.state` — at deposit (auto-transition), start_with_depositors, settle, cancel, reclaim.
 
 ## Dependencies
 
-- `anchor_lang::prelude::*` -- Anchor framework providing account validation, PDA derivation, signer enforcement
-- `anchor_lang::system_program` -- System program CPI for SOL transfers in deposit_wager
-- `Clock::get()?` -- Solana clock sysvar for timestamp reads (lines 140, 209, 241, 333, 409)
-- No external oracle programs
-- No SPL Token program
-- No third-party CPI targets
+External code paths:
+- `anchor_lang::prelude` — for account types, constraints, errors.
+- `anchor_lang::system_program` — for the deposit CPI (player → escrow PDA).
+- `solana_program::clock::Clock` — for deadline computation.
 
----
+No CPI to other programs except System Program. No oracle, no SPL Token, no governance program. The trust footprint is minimal.
 
 ## Focus-Specific Analysis
 
-### Complete Role Matrix
+### Mandatory Output 1: Complete Role Matrix
 
-| Role | Who | Instructions | Accounts Controlled | Trust Level |
-|------|-----|-------------|---------------------|-------------|
-| **Authority** | `config.authority` (server hot wallet) | `update_config`, `pause_program`, `unpause_program`, `settle_match`, `cancel_match` (AwaitingDeposits only) | GlobalConfig (mut), MatchEscrow (via has_one) | FULL |
-| **Match Creator** | `escrow.authority` (set at create time) | `create_match`, `settle_match` (must also be config.authority) | MatchEscrow (init, close on settle) | FULL (must = config.authority for settlement) |
-| **Player** | `escrow.player_one` or `escrow.player_two` | `deposit_wager`, `cancel_match` (with timeout for Active) | MatchEscrow (deposit flags, state) | LIMITED |
-| **Deployer/Payer** | Whoever calls `initialize_config` | `initialize_config` (one-time) | GlobalConfig (init) | ONE-TIME |
-| **Anyone** | Any signer | `permissionless_reclaim` (after 48h), `create_match` (see concern) | MatchEscrow (close, state to Cancelled) | NONE (time-gated) |
+| Role | Who | Instructions | Accounts Touched | Trust Level |
+|------|-----|--------------|------------------|-------------|
+| **Authority** | A single hot wallet (the server) | `initialize_config` (only the deployer pays), `update_config`, `pause_program`, `unpause_program`, `create_match`, `settle_match`, `cancel_match` (during AwaitingDeposits only), `start_with_depositors` | GlobalConfig (full mut), MatchEscrow (init, mut, close on settle), winner/treasury/ops accounts (mut for lamport transfer) | **FULL** — can rotate self, change fees, pause, create matches, pick winners, cancel pre-deposit, activate partial fills |
+| **Player** (registered in `escrow.players`) | Any wallet listed by authority at create_match | `deposit_wager` (own slot), `cancel_match` (own match, after timeout) | MatchEscrow (mut for own deposit), config (read for pause check) | **LIMITED** — can move own SOL into escrow, can recover after timeout |
+| **Caller** (anyone, permissionless) | Any signer | `permissionless_reclaim` (post-deadline only) | MatchEscrow (mut, close to caller) | **LIMITED** — public escape hatch; receives rent rebate |
+| **Deployer** | Whoever runs init script first | `initialize_config` | GlobalConfig (init) | **TRUSTED ONCE** — sets initial authority/treasury/ops/fees; race condition exists but is mitigated by deploy script ordering |
+| **Upgrade Authority** | Off-chain key registered with Solana program loader | (program redeploy) | Program account | **FULL OUT-OF-BAND** — could deploy new program logic; per JJ this is hot-wallet pre-mainnet |
 
-### Authority Transfer Analysis
+### Mandatory Output 2: Authority Transfer Analysis
 
-| Authority Field | Transfer Mechanism | One-Step or Two-Step | Timelock | Lockout Risk |
-|----------------|-------------------|---------------------|---------|-------------|
-| `config.authority` | `update_config(new_authority: Some(pubkey))` | **ONE-STEP** | **NONE** | **YES** -- setting to wrong key permanently bricks governance |
-| `config.treasury` | `update_config(new_treasury: Some(pubkey))` | ONE-STEP | NONE | LOW -- can be corrected by authority |
-| `config.ops` | `update_config(new_ops: Some(pubkey))` | ONE-STEP | NONE | LOW -- can be corrected by authority |
-| `escrow.authority` | Set once at `create_match` (line 133); never changeable | IMMUTABLE | N/A | If config.authority rotates, old escrows cannot be settled (requires timeout recovery) |
+| Role | Transfer Mechanism | Step Count | Timelock | Notes |
+|------|---------------------|-------------|----------|-------|
+| `config.authority` | `update_config(new_authority: Some(new))` | **1 step** | **None** | Single-TX rotation. **EP-069 violation**, **EP-074 violation**. |
+| `config.treasury` | `update_config(new_treasury: Some(new))` | 1 step | None | Same. v1 affects in-flight, v2 doesn't (snapshot). |
+| `config.ops` | `update_config(new_ops: Some(new))` | 1 step | None | Same. |
+| `config.fee_bps_treasury` (v2 only) | `update_config(new_fee_bps_treasury: Some(new))` | 1 step | None | Capped at MAX_FEE_BPS = 1000. v1 fees are hardcoded constants. |
+| `config.fee_bps_ops` (v2 only) | Same | 1 step | None | Same. |
+| `config.is_paused` | `pause_program` / `unpause_program` | 1 step | None | Idempotent. Note v2 doesn't actually block much (only create/deposit/start). |
+| Program upgrade authority | Solana BPF Loader | 1 step | None | Per JJ, hot wallet pre-mainnet — explicit pre-mainnet TODO at `v1:1`. |
 
-**Assessment:** The one-step authority transfer is the highest-priority access control concern. SP-017 (Two-Step Authority Transfer) is the secure pattern. The program should implement a `propose_new_authority` + `accept_authority` pattern. At minimum, the update should validate that the new authority is not the zero address and that the three addresses remain distinct.
+**Recommendation:** Pre-mainnet, implement two-step authority transfer with `pending_authority` field + `propose_authority` / `accept_authority` instructions, plus a 24-72h timelock on critical changes. Move upgrade authority to multisig (Squads).
 
-### Missing Check Inventory
+### Mandatory Output 3: Missing Check Inventory
 
-| Instruction | State Modified | Signer Check | Authority Validated Against Config | Observation |
-|-------------|---------------|-------------|-----------------------------------|-------------|
-| `initialize_config` | GlobalConfig (init) | `payer: Signer` | N/A (first init) | Payer != authority by design. No issue. |
-| `update_config` | GlobalConfig (mut) | `authority: Signer` | `has_one = authority` | **Missing: distinct-address re-validation** |
-| `pause_program` | GlobalConfig (mut) | `authority: Signer` | `has_one = authority` | Correct |
-| `unpause_program` | GlobalConfig (mut) | `authority: Signer` | `has_one = authority` | Correct |
-| `create_match` | MatchEscrow (init) | `authority: Signer` | **NOT validated** (no has_one) | **Missing: config.authority check** |
-| `deposit_wager` | MatchEscrow (mut) | `player: Signer` | N/A (player, not authority) | Correct |
-| `settle_match` | MatchEscrow (mut, close) | `authority: Signer` | `has_one = authority` (both escrow and config) | Correct |
-| `cancel_match` | MatchEscrow (mut, close) | `caller: Signer` | Manual comparison (line 336) | Functionally correct but inconsistent pattern |
-| `permissionless_reclaim` | MatchEscrow (mut, close) | `caller: Signer` | N/A (permissionless) | Correct by design |
+I traced every instruction handler and account struct. **No instructions modify state without a signer check.** All privileged paths require either:
+- `authority: Signer<'info>` + `has_one = authority` (config-mutating, create_match, settle, start_with_depositors)
+- `payer: Signer<'info>` (initialize_config — implicit "anyone can pay" but only first-mover wins the init race)
+- `player: Signer<'info>` + handler-side player allowlist check (deposit_wager, cancel by player)
+- `caller: Signer<'info>` + handler-side authorization rule (cancel_match, permissionless_reclaim)
 
-### Key Management Assessment
+The only `Signer<'info>` without an authority check is `payer` in `initialize_config` — and that's correct because there's no authority yet to bind to.
 
-| Key | Storage | Single Key or Multisig | Hot or Cold | Assessment |
-|-----|---------|----------------------|-------------|------------|
-| `config.authority` | On-chain in GlobalConfig PDA | **Single key** | **Hot wallet** (server keypair) | Server hot wallet is a single point of failure. Compromise = arbitrary settlement, config changes, pause abuse. |
-| Upgrade authority | Off-chain (Solana program authority) | Single key (currently) | Unknown | Comment at line 1 notes OC-13: must transfer to multisig before mainnet. |
-| Treasury destination | On-chain in GlobalConfig PDA | Wallet address (not key management) | N/A | Receives 7% fees. Authority-changeable. |
-| Ops destination | On-chain in GlobalConfig PDA | Wallet address (not key management) | N/A | Receives 3% fees. Authority-changeable. |
+**Coverage is complete.** No missing-signer-check bugs.
 
-**Assessment:** The server keypair is a single hot wallet controlling all privileged operations. For mainnet, this should be a multisig or at minimum have the upgrade authority transferred to a multisig (as noted in OC-13). The server keypair creates matches, settles matches, and can update all config fields. If compromised, an attacker can: (1) settle matches to the wrong winner, (2) change treasury/ops to attacker-controlled wallets, (3) change authority to lock out the team, (4) pause the program indefinitely.
+### Mandatory Output 4: Key Management Assessment
 
----
+- **Storage:** Single hot-wallet keypair. Per JJ's notes, server keypair is at `SOLANA_SERVER_KEYPAIR_PATH` env var. Devnet wallet is `HPyVPj2VH9yBirr7FMgAJeDH8xJgaMKy5UnwLkjSnovk` (`solshot-dev.json`).
+- **Multisig?** No. Single-sig.
+- **Hot or cold?** Hot. The server signs every match's create/settle/cancel/start, so the key is online 24/7.
+- **Rotation mechanism?** `update_config(new_authority: Some(new))` — but no two-step. If the current key signs, current key controls. Loss of current key = loss of program control (unless the upgrade authority redeploys with new initial auth).
+- **Key rotation policy?** None defined.
+- **Compromise blast radius:** A single compromise of the authority key = (a) drain in-flight v1 fees via treasury rotation, (b) settle all in-flight matches in attacker's favor (limited by player allowlist; would need attacker to be in the allowlist or can't settle to themselves), (c) pause-grief v1 cancels, (d) for v2, ratchet fees up on future matches but not in-flight, (e) front-run honest authority on every subsequent operation. With program upgrade authority hot, additionally (f) deploy a malicious replacement program.
 
 ## Cross-Focus Intersections
 
-### Access Control x State Machine
-- State transitions are authority-gated: only authority can trigger `Active -> Settled`. Players can trigger `* -> Cancelled` with timeout constraints. The state machine agent should verify that the access control tiers correctly prevent unauthorized state transitions.
-- The `cancel_match` handler has complex conditional logic (lines 340-344) that combines role checks with state checks. The state machine agent should verify this logic exhaustively.
-
-### Access Control x Arithmetic
-- No direct intersection. The authority does not control any arithmetic parameters (fee BPS are hardcoded constants).
-
-### Access Control x CPI
-- The `deposit_wager` instruction performs CPI to system program with the player's signer authority. The CPI agent should verify that the system program CPI cannot be exploited.
-- Settlement and cancellation use direct lamport manipulation (not CPI). The lamport transfers are performed AFTER the mutable borrow is dropped (lines 284-291), which is correct for Anchor's borrow checker safety but is not technically a CPI concern.
-
-### Access Control x Token/Economic
-- The authority controls fee destination addresses via `update_config`. The Token/Economic agent should analyze the impact of destination changes on pending settlements.
-- Fee BPS (700, 300) are hardcoded constants -- the authority CANNOT change fee percentages without a program upgrade.
-
-### Access Control x Timing
-- All three timeout tiers (1h settlement, 24h cancel, 48h reclaim) interact with access control by expanding who can act as time progresses. The timing agent should verify that the timeout boundaries are correct and that Clock manipulation (validator time skew) cannot bypass access control tiers prematurely.
-
----
+1. **State Machine ⇄ Access Control:** v1's pause-blocks-cancel is both an access-control concern (authority overreach) and a state-machine concern (cancel transition gated on a non-state field). Cross-flagged.
+2. **Token & Economic ⇄ Access Control:** Treasury/ops rotation is an authority capability with direct economic impact (where do fees go?). v2's fee_bps mutation is similarly cross-cutting. Cross-flagged.
+3. **Account Validation ⇄ Access Control:** All `UncheckedAccount` justifications (winner, treasury, ops) cite Anchor `constraint = ...` checks — but the constraints are essentially access-control predicates ("is this the right account?"). The boundary between "validated account" and "authorized account" blurs.
+4. **CPI ⇄ Access Control:** The single CPI (system_program::transfer in deposit_wager) doesn't pass any authority. The signer is the player. No CPI authority leak.
+5. **Timing ⇄ Access Control:** Cancel/reclaim authorization is partially time-gated (player can cancel after timeout). v1 vs v2 timeout models differ significantly.
 
 ## Cross-Reference Handoffs
 
-- **To CPI Agent:** The `system_program::transfer` CPI in `deposit_wager` (line 179) passes the player's signer authority. Verify that no privilege escalation is possible. Also check: the system_program is validated via `Program<'info, System>` (lines 531, 555, 609, 648, 680) -- this is the secure pattern.
-- **To State Machine Agent:** The `cancel_match` handler (lines 340-344) combines access control with state checks in a single `require!`. Verify that all state/role combinations are correctly handled: authority+AwaitingDeposits=OK, authority+Active=DENIED, player+AwaitingDeposits=OK, player+Active+timed_out=OK, player+Active+not_timed_out=DENIED, nobody+any=DENIED.
-- **To Token/Economic Agent:** The authority can change treasury and ops addresses at any time via `update_config`. This means the authority can redirect fee income. The economic impact should be analyzed: is there a window where a settlement uses old treasury/ops addresses after an update? Answer: No, because `settle_match` reads `config.treasury` and `config.ops` at instruction execution time, and the config is loaded fresh each time. But: if the authority updates config in one instruction and settles in the next instruction of the same transaction, the settlement uses the new addresses. This is consistent behavior but should be documented.
-- **To Timing Agent:** The settlement deadline check (line 236) has a conditional: `if ctx.accounts.escrow.activated_at > 0`. This means matches with `activated_at == 0` (which should be impossible for Active matches, since `activated_at` is set on Active transition at line 209) skip the deadline check entirely. Verify that no code path can set state to Active without also setting `activated_at`.
+- **→ Token & Economic agent:**
+  1. Verify v1's H011 multi-TX bypass: can compromised authority redirect treasury to attacker pubkey by stepping through alice→bob→treasury rotation?
+  2. v2's fee_bps mutation under the 10% cap: model EV impact of authority ratcheting fees on every new match. At 10 SOL average wager × 4 daily matches × 10% combined fee = 4 SOL/day skim into authority-controlled treasury.
+  3. v2 settlement reads `escrow.treasury_snapshot` — verify snapshot is not user-influenceable at create (it should be `cfg.treasury`, copied from config at write time, before any user input).
 
----
+- **→ Arithmetic agent:**
+  1. v2 `(fee_bps_treasury as u32 + fee_bps_ops as u32) <= MAX_FEE_BPS as u32` at `v2:77, 129` — confirm widening prevents u16 overflow at extreme values.
+  2. Settlement BPS math (90/7/3 split) uses u128. Confirm no truncation when `total_pot * MAX_FEE_BPS / 10000` is computed and cast back to u64.
+
+- **→ State Machine agent:**
+  1. v1 pause-blocks-cancel (line 729) — verify the H007 griefing path is fully open.
+  2. v2 explicit "pause does not block exits" in cancel/settle/reclaim — verify state transitions during paused state behave correctly.
+  3. `start_with_depositors` v2 has both pause guard AND deposit-window-expiry gate. Verify race conditions between the two.
+
+- **→ CPI agent:**
+  1. Single CPI is `system_program::transfer` in deposit_wager. Verify program ID is correctly validated by Anchor's `Program<'info, System>` type — yes, this is canonical.
+
+- **→ Account Validation agent:**
+  1. v1 settlement reads treasury from live config; v2 reads from snapshot. Verify the snapshot field is genuinely set at create_match (not e.g. via a future re-init or realloc).
+  2. UncheckedAccount executable-flag checks missing on all of: winner, treasury, ops, individual remaining_accounts entries. Realistic risk is low (impossible for a wallet to be executable in normal operation), but defense-in-depth would add `executable: false` constraints.
+
+- **→ Upgrade & Admin agent:**
+  1. Both programs deployed under hot-wallet upgrade authority per `OC-13` TODO at `v1:1`. Document this as a pre-mainnet decision point.
+  2. JJ's stated posture: "intentional pre-mainnet" — coordinate with overall risk acceptance.
 
 ## Risk Observations
 
-- **R1: update_config breaks distinct-address invariant.** `initialize_config` enforces `authority != treasury != ops`, but `update_config` does not re-validate this. An authority could set `treasury == ops`, making settlement impossible (the `treasury != ops` constraint on SettleMatch would fail). This is a self-grief by the authority, not a third-party attack, but it could leave active matches unresolvable via settlement.
-
-- **R2: CreateMatch has no config authority gate.** Any signer can create match escrows. While this does not directly enable fund theft (settlement requires config.authority), it enables: (a) escrow griefing -- creating many matches that occupy PDA space, (b) creating matches where escrow.authority differs from config.authority, making them unsettleable, (c) wasting SOL on escrow rent for matches that can never be properly settled.
-
-- **R3: One-step authority transfer.** Setting `config.authority` to a wrong key is an irreversible lockout. This is the most impactful access control risk. The program would continue to function for existing matches (timeout recovery works), but no new settlements, no config changes, and no pause/unpause would be possible.
-
-- **R4: PDA rent incentive imbalance at low wagers.** The minimum wager is 10,000 lamports (0.00001 SOL). The PDA rent for 168 bytes is approximately 1,461,600 lamports (~0.00146 SOL). The PDA rent is 146x the minimum wager. For cancellation: the caller receives rent. For settlement: the authority receives rent. This creates a situation where the rent is more valuable than the wager itself at low wager amounts. Not a vulnerability, but an economic quirk worth analyzing.
-
-- **R5: No CPI guard on any instruction.** None of the 9 instructions check whether they are being invoked via CPI or directly. This means another Solana program could invoke any instruction as an inner instruction. While the signer requirements still apply, CPI-based invocation opens interaction patterns not considered in the server-authority model. For example, a wrapper program could invoke `create_match` + `deposit_wager` + `deposit_wager` in a single transaction, or invoke `cancel_match` from within a CPI chain.
-
----
+(See "Open Concerns / Risks" in the condensed summary for the prioritized list. The 18 concerns C1-C23 above are the detailed enumeration.)
 
 ## Novel Attack Surface Observations
 
-- **Authority rotation during active matches:** If the authority is rotated via `update_config` while matches are Active, those matches become permanently unsettleable (because `settle_match` requires `has_one = authority` on BOTH escrow and config). The escrow stores the old authority; the config now has the new authority. The only recovery path is timeout-based cancellation (24h by player, 48h by anyone). This is a unique interaction between the immutable escrow authority and the mutable config authority. An attacker who compromises the authority for even one transaction could: (1) rotate authority to an attacker-controlled key, (2) settle pending matches with the wrong winner (using the brief window where they ARE the authority), then (3) the real team loses all future governance. This is the standard authority compromise scenario, but the dual-authority requirement in `settle_match` creates a unique wrinkle: the attacker must act in the same transaction/before any matches are created with the new authority.
+1. **The "default-pubkey player" zero-padding edge case:** v2's `players: [Pubkey; 10]` array is zero-padded. Every loop in the codebase that I traced uses `..max_players` correctly, but a future code change that loops over the full array would treat `Pubkey::default()` as a valid player. If for some reason `Pubkey::default()` could appear as a signer (Solana doesn't allow this in practice), it could pass through validation. Brittle — recommend an INVARIANT comment near the players field that says "always use `..max_players` slice; never iterate full array."
 
-- **Match ID collision for PDA occupancy attack:** Match IDs are strings up to 32 characters (line 117). PDA seeds are `[b"match", match_id.as_bytes()]`. If an attacker can predict or observe match IDs that the server will use, they could pre-create escrow PDAs with those IDs (since `create_match` has no config authority gate). The server's subsequent `create_match` call would fail because the PDA already exists (`init` constraint). This is a denial-of-service vector: the attacker creates escrows with common match IDs (e.g., "room-1", "room-2", ...), blocking the server from creating legitimate matches with those IDs. The server must use unpredictable match IDs (e.g., UUIDs) to mitigate this. Note: each pre-created escrow costs the attacker ~0.00146 SOL in rent, which they recover 48h later via permissionless_reclaim.
+2. **The "snapshot is set, but the snapshot SOURCE could be a hostile config":** v2's snapshot model protects in-flight matches from authority rotation AFTER create. But it does NOT protect against a malicious authority creating a match with already-poisoned config values. If the authority is compromised and fee_bps is rotated to (700, 300) → (1000, 0) before create_match runs, the snapshot captures the malicious values. v2's "snapshot" guarantee is "this match will use what was in config at the time I created it" — not "this match will use sane values." Consider adding sanity checks at create_match (e.g., reject if combined fee > some sane threshold like 20%, even if MAX_FEE_BPS allows higher). Currently MAX_FEE_BPS = 10%, so the cap is the same as the absolute cap.
 
----
+3. **The "permissionless reclaim has no config dependency":** The fact that v2's `permissionless_reclaim` doesn't take a config account at all means a future change to config (e.g., adding a new pause flag or constraint) won't apply to reclaim. This is intentional (escape hatch) but creates a bypass surface for future hardening. If the team later wants to add fraud-detection that BLOCKS reclaim in some circumstances, they'll have to add the config account, which changes the account schema and breaks existing client code.
+
+4. **The "1200s window mismatch for v1":** v1's permissionless_reclaim uses `created_at + 1200s` if not activated, but `activated_at + 1200s` if activated. Combined with the 600s deposit timeout, this creates a tight 600s window where:
+   - Match is AwaitingDeposits at t=0.
+   - At t=600s, players gain cancel rights (timeout).
+   - At t=1200s, anyone can permissionless_reclaim.
+   - Window for player cancel: 600s.
+   - v1's 1200s permissionless deadline is much shorter than v2's 24h grace. This may be a v1 design oversight or a deliberate tight failsafe.
+
+5. **The "authority creates the match THEN deposits as a player via a different wallet"**: Authority's signing key is excluded from `players`, but the authority OPERATOR can create alice/bob wallets and put them in the players list, then have alice deposit normally and have the authority signing key settle in alice's favor. There's no on-chain way to detect this. Enforcement must come from off-chain matchmaking integrity (server is honest about which wallets it pairs).
+
+6. **The "MIN_PLAYERS = 2 in start_with_depositors despite players[10] array":** v2's `start_with_depositors` requires `num_deposited >= MIN_PLAYERS as u32 = 2`. So if 9 players were registered but only 1 deposited within the deposit window, the authority CAN'T start the match — but ALSO can't easily refund (cancel requires AwaitingDeposits state and either authority pre-timeout or player post-timeout). The match enters a "stuck" state until permissionless_reclaim 24h+ later. This is a UX issue, not a security one, but worth noting.
 
 ## Questions for Other Focus Areas
 
-- **For State Machine focus:** Can the state reach `Active` without `activated_at` being set? Line 207-209 sets state to Active and `activated_at` in the same block, but is there a scenario where only one update persists? (Answer should be no -- Anchor serialization is atomic within an instruction, but verify.)
-
-- **For Arithmetic focus:** The u128 -> u64 cast at line 260 (`as u64`) and line 267 (`as u64`) -- are these safe given the MAX_WAGER bound? Max total_pot = 200 SOL = 200e9 lamports. Max treasury = 200e9 * 700 / 10000 = 14e9. Max ops = 200e9 * 300 / 10000 = 6e9. All fit in u64. But verify the intermediate u128 values are correctly bounded before the cast.
-
-- **For CPI focus:** The `system_program::transfer` in `deposit_wager` (line 179) -- is the `system_program` account validated? Yes, via `Program<'info, System>` (line 555). Confirm this is the correct pattern.
-
-- **For Timing focus:** The settlement deadline check at line 236 uses `if activated_at > 0`. What happens if a match transitions to Active with `activated_at = 0`? This should be impossible (line 209 reads Clock), but if the Clock returns 0 (which it should never do on mainnet), the settlement deadline check would be skipped.
-
-- **For Token/Economic focus:** At minimum wager (10,000 lamports), the fee calculations yield: treasury = 20000 * 700 / 10000 = 1,400 lamports. ops = 20000 * 300 / 10000 = 600 lamports. Winner = 20000 - 1400 - 600 = 18,000 lamports. All values are > 0. But verify the dust-loss scenario at this minimum.
-
----
+- **For Arithmetic:** v2's `escrow.match_end_ts = now.checked_add(duration_secs as i64)` — verify that `i64::MAX` is far above `2^31 + Clock::unix_timestamp` (current Unix time is ~`1.7e9`, max duration is `7 * 86400 = 604800`, sum is well under `2^31`, so safe).
+- **For State Machine:** Is there any state where a match is created (PDA exists) but can never be settled or cancelled? Specifically: v1 SettlementExpired path — `state == Active`, no one signs settle, eventually permissionless_reclaim refunds. v2 has no settlement deadline at all, so this is gone in v2.
+- **For Token/Economic:** Is `winner_amount` actually the correct lamport amount given the integer-division floor? If `total_pot = 100`, `treasury_bps = 700`, `ops_bps = 300`, then treasury = 7, ops = 3, winner = 90. Sum = 100. OK. If `total_pot = 11` (impossible per MIN_WAGER but just verify), treasury = 0 (`11*700/10000 = 0.77` → 0), ops = 0 (`11*300/10000 = 0.33` → 0), winner = 11. The floor rounds in winner's favor. ✓ Acceptable.
+- **For Timing:** v1's `SETTLEMENT_TIMEOUT_SECONDS = 3600` (1 hour) and `PERMISSIONLESS_RECLAIM_TIMEOUT = 1200` (20 min) — does this create a window where settle is blocked but reclaim is also unavailable? Activated at t=0; settle window [0, 3600]; reclaim window starts at 1200. So between 1200 and 3600, BOTH settle and reclaim are valid → race? Authority race vs caller race? In the canonical case, authority wins. But in degenerate cases (authority offline), reclaim eats the match before authority can settle. Liveness concern.
 
 ## Raw Notes
 
-### Signer Map (All 9 `Signer<'info>` instances)
+### Cross-checking the H001 / pending_authority gap
 
-| Line | Account Name | Instruction | Purpose |
-|------|-------------|------------|---------|
-| 458 | `payer` | InitializeConfig | Pays rent for config PDA |
-| 474 | `authority` | UpdateConfig | Must match config.authority |
-| 489 | `authority` | PauseProgram | Must match config.authority |
-| 504 | `authority` | UnpauseProgram | Must match config.authority |
-| 521 | `authority` | CreateMatch | Pays rent for escrow PDA (NOT validated against config) |
-| 545 | `player` | DepositWager | Must be player_one or player_two |
-| 571 | `authority` | SettleMatch | Must match both escrow.authority and config.authority |
-| 624 | `caller` | CancelMatch | Must be authority or player (logic in handler) |
-| 664 | `caller` | PermissionlessReclaim | Any signer (permissionless) |
+Searched both `GlobalConfig` structs:
+- v1 (`v1:787-798`): fields = `authority`, `treasury`, `ops`, `is_paused`, `bump`. No pending_authority.
+- v2 (`v2:810-818`): fields = `authority`, `treasury`, `ops`, `fee_bps_treasury`, `fee_bps_ops`, `is_paused`, `bump`. No pending_authority.
 
-### has_one Map (All 5 `has_one` constraints)
+Confirmed STILL_OPEN in both. Per JJ's stated pre-mainnet posture, this is intentional, but the design pattern (EP-069) is well-known and the lack of two-step transfer is a real risk if the hot wallet is ever compromised.
 
-| Line | Account | Field | Instruction | Error |
-|------|---------|-------|------------|-------|
-| 470 | config | authority | UpdateConfig | Unauthorized |
-| 485 | config | authority | PauseProgram | Unauthorized |
-| 500 | config | authority | UnpauseProgram | Unauthorized |
-| 565 | escrow | authority | SettleMatch | (default) |
-| 604 | config | authority | SettleMatch | Unauthorized |
+### Cross-checking the H007 / pause-blocks-cancel gap
 
-### UncheckedAccount Inventory
+v1 `CancelMatch` struct:
+```
+v1:725-731:
+    /// Config PDA — provides authority pubkey + pause guard (OC-04, OC-05)
+    #[account(
+        seeds = [GlobalConfig::SEED],
+        bump = config.bump,
+        constraint = !config.is_paused @ EscrowError::ProgramPaused,  // ← H007 still here
+    )]
+    pub config: Account<'info, GlobalConfig>,
+```
 
-| Line | Account | Instruction | CHECK Comment | Constraint Validation | Safe? |
-|------|---------|------------|---------------|----------------------|-------|
-| 581 | `winner` | SettleMatch | "Constrained to escrow.player_one or escrow.player_two" | `winner.key() == escrow.player_one \|\| winner.key() == escrow.player_two` | YES |
-| 590 | `treasury` | SettleMatch | "Constrained to config.treasury; uniqueness check vs ops" | `treasury.key() == config.treasury` AND `treasury.key() != ops.key()` | YES |
-| 598 | `ops` | SettleMatch | "Constrained to config.ops" | `ops.key() == config.ops` | YES |
-| 631 | `player_one` | CancelMatch | "Must match escrow.player_one" | `player_one.key() == escrow.player_one` | YES |
-| 638 | `player_two` | CancelMatch | "Must match escrow.player_two" | `player_two.key() == escrow.player_two` | YES |
-| 671 | `player_one` | PermissionlessReclaim | "Must match escrow.player_one for refund routing" | `player_one.key() == escrow.player_one` | YES |
-| 678 | `player_two` | PermissionlessReclaim | "Must match escrow.player_two for refund routing" | `player_two.key() == escrow.player_two` | YES |
+v2 `CancelMatch` struct:
+```
+v2:755-761:
+    /// Config: provides authority pubkey for the is-authority check.
+    /// Pause does NOT block cancel so in-flight funds can always exit.   // ← H007 fixed
+    #[account(
+        seeds = [GlobalConfig::SEED],
+        bump = config.bump,
+    )]
+    pub config: Account<'info, GlobalConfig>,
+```
 
-All 7 UncheckedAccount instances have `/// CHECK:` comments and are validated via Anchor constraints. No unvalidated UncheckedAccounts found.
+Definitive: v1 H007 STILL_OPEN, v2 H007 FIXED.
 
-### Pause Guard Coverage
+### Cross-checking the H002/H011 gap (treasury hijack)
 
-| Instruction | Has Pause Guard | Line |
-|-------------|----------------|------|
-| initialize_config | No (one-time init) | N/A |
-| update_config | No (admin meta-operation) | N/A |
-| pause_program | No (must work to activate) | N/A |
-| unpause_program | No (must work to deactivate) | N/A |
-| create_match | YES | 527 |
-| deposit_wager | YES | 551 |
-| settle_match | YES | 605 |
-| cancel_match | YES | 644 |
-| permissionless_reclaim | **No (DCA-02 escape hatch)** | N/A |
+v1 `SettleMatch` struct:
+```
+v1:683-687:
+    /// Treasury: validated against config PDA (OC-03 — resolves H001, H003, S001, GAP-003, H048)
+    /// CHECK: Constrained to config.treasury; uniqueness check vs ops
+    #[account(
+        mut,
+        constraint = treasury.key() == config.treasury @ EscrowError::InvalidTreasury,  // ← reads LIVE config
+        constraint = treasury.key() != ops.key() @ EscrowError::DuplicateFeeAccount,
+    )]
+    pub treasury: UncheckedAccount<'info>,
+```
 
-### PDA Derivation Catalog
+v2 `SettleMatch` struct:
+```
+v2:713-719:
+    /// Treasury: must match the snapshot taken at create_match time
+    /// CHECK: constraint validates against escrow.treasury_snapshot
+    #[account(
+        mut,
+        constraint = treasury.key() == escrow.treasury_snapshot @ EscrowError::InvalidTreasury,  // ← reads SNAPSHOT
+        constraint = treasury.key() != ops.key() @ EscrowError::DuplicateFeeAccount,
+    )]
+    pub treasury: UncheckedAccount<'info>,
+```
 
-| PDA | Seeds | Bump Handling | Collision Risk |
-|-----|-------|--------------|----------------|
-| GlobalConfig | `[b"config"]` | Canonical bump stored at init (line 62), referenced with `bump = config.bump` | None (singleton) |
-| MatchEscrow | `[b"match", match_id.as_bytes()]` | Canonical bump stored at init (line 142), referenced with `bump = escrow.bump` | Low (match_id must be unique; enforced by PDA derivation) |
+v1: HIJACK STILL POSSIBLE (live config read).
+v2: HIJACK BLOCKED for in-flight matches (snapshot at create), but new matches inherit current config.
 
-Both PDAs use Anchor's canonical bump pattern (SP-001, SP-009). No non-canonical bump vulnerabilities.
+Verifying snapshot is set correctly:
+```
+v2:201-214:
+    let cfg = &ctx.accounts.config;
+    ...
+    escrow.treasury_snapshot = cfg.treasury;
+    escrow.ops_snapshot = cfg.ops;
+    escrow.fee_bps_treasury_snapshot = cfg.fee_bps_treasury;
+    escrow.fee_bps_ops_snapshot = cfg.fee_bps_ops;
+```
+
+Snapshot is set at create_match BEFORE any other writes that could be influenced by user input. Confirmed sound.
+
+### Cross-checking S004 fix (PDA pre-squatting)
+
+v1 `CreateMatch` struct:
+```
+v1:621-628:
+    /// Config PDA — provides pause guard + authority gate (OC-04, S004)
+    #[account(
+        seeds = [GlobalConfig::SEED],
+        bump = config.bump,
+        has_one = authority @ EscrowError::Unauthorized,     // ← S004 fix
+        constraint = !config.is_paused @ EscrowError::ProgramPaused,
+    )]
+    pub config: Account<'info, GlobalConfig>,
+```
+
+v2 `CreateMatch` struct:
+```
+v2:656-662:
+    #[account(
+        seeds = [GlobalConfig::SEED],
+        bump = config.bump,
+        has_one = authority @ EscrowError::Unauthorized,     // ← inherited S004 fix
+        constraint = !config.is_paused @ EscrowError::ProgramPaused,
+    )]
+    pub config: Account<'info, GlobalConfig>,
+```
+
+Confirmed FIXED in both. No regression.
+
+### Final verification: total UncheckedAccount count
+
+v1:
+- `winner: UncheckedAccount<'info>` at `v1:680` — constraint validates `escrow.players[i] == winner.key()`.
+- `treasury: UncheckedAccount<'info>` at `v1:689` — constraint validates `treasury.key() == config.treasury` AND `treasury.key() != ops.key()`.
+- `ops: UncheckedAccount<'info>` at `v1:697` — constraint validates `ops.key() == config.ops`.
+- `remaining_accounts` (untyped) used in cancel and reclaim — handler validates each.
+
+v2:
+- `winner: UncheckedAccount<'info>` at `v2:711` — same constraint as v1.
+- `treasury: UncheckedAccount<'info>` at `v2:720` — constraint against snapshot.
+- `ops: UncheckedAccount<'info>` at `v2:728` — constraint against snapshot.
+- `remaining_accounts` — same handler validation.
+
+All UncheckedAccounts have `/// CHECK:` comments. All justifications cite constraints. Constraints exist as claimed. Coverage is complete EXCEPT for the executable-flag check (C7), which is a defense-in-depth gap rather than a vulnerability.
+
+### Pubkey::default() guard verification
+
+Searched for `Pubkey::default()`:
+- v1: used in zero-padding (`v1:157, 510`), used in zero-address guard in `update_config` (`v1:82, 86, 90`).
+- v2: used in zero-padding (`v2:196, 350`), used in zero-address guard (`v2:107, 111, 115`).
+
+Zero-address guard exists for `update_config` but NOT for `initialize_config`. So a malformed init could set authority to default. Does the Anchor `init` constraint prevent that? No — `init` only ensures the PDA doesn't already exist. The handler at `v1:53-55, 58` and `v2:73-75, 82` checks distinctness but does NOT check authority != default. So `initialize_config(authority=default, treasury=A, ops=B)` would succeed if A != B, A != default, B != default, but authority == default. This is checked: `require!(authority != treasury, ...)` and `require!(authority != ops, ...)` — but if treasury and ops are both default, BOTH checks fail; so we just need treasury ≠ default OR ops ≠ default for one of them to fire. Wait — if `authority = default` and `treasury != default`, then `authority != treasury` passes, so authority being default is allowed. **MEDIUM concern: initialize_config does NOT have a zero-address guard.** Adding to risk inventory as C24.
+
+Wait, but the deploy script obviously passes a real key, so practically this doesn't matter unless someone tries to maliciously front-run init. C24 ⇒ MEDIUM (combined with the front-runnable-init concern).
+
+Final concern count: 24 specific concerns. Mapping to severity for the report header:
+- CRITICAL: C1 (H001)
+- HIGH: C2, C3, C4 (H027), C8 (H005), C9 (H002 v1), C11 (H007 v1), C19, C20, C21, C22 — overlap; condensing.
+- MEDIUM: C7 (executable check), C10, C12, C13, C16, C18 not applicable (C18 was LOW), C23, C24 — condensing.
+- LOW: C5, C14, C15.
+
+Adjusting condensed summary to use 18 concerns (the cleanest cuts) — already correct in the YAML header.

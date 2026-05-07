@@ -1,58 +1,93 @@
 # Attack Strategy Catalog
 
-**Project:** SolShot Escrow (solshot-escrow)
-**Generated:** 2026-02-23
-**Total Strategies:** 30 (Quick Tier)
+**Project:** SolShot Escrow (programs v1 + v2)
+**Generated:** 2026-05-07
+**Total Strategies:** 50 (+ supplementals to be added during investigation)
 
 ---
 
 ## Strategy Generation Sources
 
 This catalog was generated from:
-- 6 focus area context analyses (Access Control, Arithmetic, State Machine, CPI/External, Token/Economic, Timing/Ordering)
-- ARCHITECTURE.md unified synthesis
-- 128 Solana exploit patterns (EP-001 through EP-128)
-- Audit firm findings and bug bounty disclosures
+- 7 focus area context analyses (.audit/context/01..08-*.md)
+- Prior audit findings (15 RECHECK + 17 false-positive log entries from `.audit/HANDOVER.md`)
+- Solana exploit pattern catalog (PATTERNS_INDEX.md, ~128 EPs)
+- Codebase-specific novel observations from cross-agent convergence
+
+**Origin distribution:**
+- Novel: 23 (46% — well above 20% requirement)
+- RECHECK: 20 (verifying or re-investigating prior findings)
+- KB (EP-derived): 7
 
 ---
 
-## Strategy Index by Priority
+## Strategy Index by Category
 
-### Tier 1 — CRITICAL potential (5 strategies)
-- H001: One-Step Authority Transfer Takeover
-- H002: Fee Destination Hijack via update_config
-- H003: update_config Distinctness Bypass → Settlement DoS
-- H004: Same-Transaction PDA Close-and-Revive
-- H005: Authority Winner Selection Fraud
+### Access Control (10 strategies)
+- H001: H001 RECHECK — One-step authority transfer takeover (v1 + v2)
+- H002: H011 RECHECK — Treasury self-redirect via multi-TX rotation chain
+- H003: H005 RECHECK — Authority winner selection fraud (worse on v2 N-player)
+- H004: S004 RECHECK — Verify CreateMatch `has_one = authority` fix landed cleanly
+- H005: H008 RECHECK — Verify subsumed by S004 fix
+- H006: H014 RECHECK — Authority collusion to settle in favor of controlled wallet
+- H007: H027 RECHECK — Authority self-play via secondary wallet (design limitation)
+- H008: NOVEL — `initialize_config` race-init (any payer accepted, no zero-address guard)
+- H009: NOVEL — Pause-then-rotate-then-unpause attack chain (v1 freeze-during-coup)
+- H010: NOVEL — Authority can rotate config.authority to itself across 2 TXs
 
-### Tier 2 — HIGH potential (12 strategies)
-- H006: 23-Hour Dead Zone Fund Lockup Griefing
-- H007: Pause-as-Griefing Attack on Active Matches
-- H008: CreateMatch PDA Occupancy DoS
-- H009: Executable Account as Fee Destination (Silent Lamport Loss)
-- H010: Deposit Ordering Asymmetry Exploitation
-- H011: Config Treasury Self-Redirect
-- H012: Lamport Underflow on Cancel/Reclaim
-- H013: PDA Rent Extraction at Low Wagers
-- H014: Authority Collusion — Settle to Controlled Winner Wallet
-- H015: Concurrent Double-Deposit by Same Player
-- H016: AwaitingDeposits → Cancel Without Depositing (Rent Theft)
-- H017: Config State Read During Same-TX Mutation
+### Arithmetic (5 strategies)
+- H011: NOVEL — H028 v2: BPS poisoning via authority Layer-2 compromise
+- H012: H028 RECHECK on v1 — Verify dismissal still holds (constants only changeable via upgrade)
+- H013: H012 RECHECK — Lamport underflow on v2 N-player refund loop
+- H014: H019 RECHECK — Narrowing cast safety on v2 (10-player pot)
+- H015: NOVEL — Lamport credit overflow on destination accounts (defense-in-depth)
 
-### Tier 3 — MEDIUM-LOW potential (13 strategies)
-- H018: ZeroWager Dead Code Exploitation
-- H019: Narrowing Cast Overflow at Hypothetical MAX_WAGER Increase
-- H020: Clock Drift Exploitation at Settlement Deadline
-- H021: Permissionless Reclaim During Active Pause
-- H022: GlobalConfig Re-Initialization
-- H023: PDA Account Revival After Close
-- H024: Settlement Deadline Bypass via activated_at Path
-- H025: Match ID Collision for PDA Hijack
-- H026: Escrow PDA Lamport Inflation (Donation Attack)
-- H027: Authority Self-Play Bypass (OC-06)
-- H028: BPS Constant Manipulation via Upgrade
-- H029: Error Propagation in try_borrow_mut_lamports Chain
-- H030: Cancel from AwaitingDeposits Refund Logic
+### State Machine & Error Handling (7 strategies)
+- H016: H007 RECHECK — Pause-as-griefing on v1 cancel_match (still open)
+- H017: NOVEL — v1 silent-kick attack via `start_with_depositors` (no timing gate)
+- H018: NOVEL — v2 deposit_window edge collision at exactly `deposit_deadline`
+- H019: H022 RECHECK — GlobalConfig re-init blocked
+- H020: H023 RECHECK — PDA revival post-close yields fresh state
+- H021: H024 RECHECK — Settlement deadline bypass via activated_at
+- H022: H030 RECHECK — Cancel-from-AwaitingDeposits refund-all flow on v2
+
+### CPI & External / Refund Loop (7 strategies)
+- H023: NOVEL CRITICAL — Partial-refund theft via `close = caller` sweep (4 sites)
+- H024: NOVEL HIGH — Non-contiguous `deposits_mask` is permanently unrefundable
+- H025: H009 RECHECK — Executable-account fee destination (still open both versions)
+- H026: H026 RECHECK — Donation attack (lamport inflation to escrow)
+- H027: H029 RECHECK — Atomic-TX rollback under Anchor 0.32.1
+- H028: NOVEL — Pubkey::default() in zero-padded slots
+- H029: NOVEL — Asymmetric pot-vs-mask scaling (mask bits past max_players)
+
+### Token & Economic (5 strategies)
+- H030: H002 RECHECK — Fee destination hijack via update_config (v1 live read; v2 in-flight protected)
+- H031: H013 RECHECK — Rent extraction at low wagers (close=caller economics)
+- H032: NOVEL — BPS rotation ratcheting across matches within 10% cap
+- H033: NOVEL — start_with_depositors griefing via authority-chosen activation timing
+- H034: NOVEL — MIN_WAGER + extreme low BPS = silent zero fees (intentional waiver path)
+
+### Timing & Ordering (6 strategies)
+- H035: NOVEL CRITICAL — Settle-vs-cancel priority-fee race (H006 inverted)
+- H036: H006 RECHECK — Original 23h dead zone (verify resolved)
+- H037: H010 RECHECK — Deposit ordering asymmetry (v1 + v2)
+- H038: H020 RECHECK — Clock drift at v2 short-duration matches (60s minimum)
+- H039: NOVEL — v2 unbounded duration_secs lockup (8-day fund lockup possible)
+- H040: NOVEL — Stale 48-hour comment misleads operators (`v1:22-23`)
+
+### Upgrade & Admin (6 strategies)
+- H041: H016 RECHECK — close = caller rent theft (still open both)
+- H042: NOVEL — GlobalConfig has no close path (key-loss permanence)
+- H043: NOVEL — Idempotent pause emits no event (operational gap)
+- H044: NOVEL — Single hot wallet for Layer 1 + Layer 2 (verified live)
+- H045: NOVEL — Snapshot drift across update_config calls (audit trail gap)
+- H046: NOVEL — Layer-1 bytecode replacement risk (no governance)
+
+### Account Validation / Defense-in-Depth (4 strategies)
+- H047: NOVEL — UncheckedAccount no `is_writable` check at-program (relies on client)
+- H048: NOVEL — Permissionless reclaim caller cannot be `Pubkey::default()` validated only by runtime
+- H049: NOVEL — match_id PDA seed entropy (server-side CSPRNG dependency)
+- H050: S001/S002 RECHECK — Combined-attack chain status
 
 ---
 
@@ -60,1129 +95,1125 @@ This catalog was generated from:
 
 ---
 
-## H001: One-Step Authority Transfer Takeover
+## H001: H001 RECHECK — One-Step Authority Transfer Takeover
+
+**Category:** Access Control + Upgrade & Admin
+**Estimated Priority:** Tier 1 (CRITICAL)
+**Origin:** RECHECK (Feb H001 — CVSS 8.7)
+**Historical Precedent:** EP-068 (Raydium $4.4M, Step Finance $30-40M, Pump.fun $1.9M, Garden Finance $11M)
+
+### Hypothesis
+
+A single compromise of the application authority key results in immediate, irreversible takeover of either v1 or v2. No `pending_authority` field, no propose/accept flow, no timelock means an attacker can execute config rotation in the same transaction as fee redirect and settlement fraud.
+
+### Attack Vector
+
+1. Attacker obtains `config.authority` private key (phishing, .env leak, insider).
+2. TX 0: `update_config(new_authority = attacker_secondary, new_treasury = attacker_2, new_ops = attacker_3)` — rotates all three slots in one TX (zero-address guard fires only on default-pubkey).
+3. v2-specific TX 0b: also rotate `new_fee_bps_treasury = 999, new_fee_bps_ops = 1` (combined ≤ 1000, passes cap).
+4. TX 1+: settle in-flight v1 matches with controlled winner (via H003); for v2, settle existing snapshotted matches at original snapshot, then create new matches that snapshot the poisoned config.
+5. Permanent governance lockout once `new_authority` is rotated.
+
+### Target Code
+
+| File | Function | Lines | Relevance |
+|------|----------|-------|-----------|
+| `programs/solshot-escrow/src/lib.rs` | `update_config` | 72-108 | One-step rotation handler |
+| `programs/solshot-escrow/src/lib.rs` | GlobalConfig struct | 787-798 | No `pending_authority` field |
+| `programs/solshot-escrow-v2/src/lib.rs` | `update_config` | 96-142 | Same pattern |
+| `programs/solshot-escrow-v2/src/lib.rs` | GlobalConfig struct | 810-818 | Same gap |
+
+### Prerequisites
+- Authority key compromise.
+
+### Potential Impact
+**Severity:** CRITICAL
+- Financial: Up to entire pot of every in-flight v1 match (v1 reads live config) plus 10% of every NEW v2 match.
+- Users: All players currently in matches.
+- Protocol: Permanent governance lockout once authority rotated.
+
+### Investigation Approach
+1. Confirm `pending_authority` field absence in both `GlobalConfig` structs.
+2. Verify single-TX `update_config(new_authority = X)` succeeds when authority signs.
+3. Document JJ's intentional pre-mainnet posture per `Docs/PRIOR_AUDIT_DELTA.md`.
+4. Calibrate severity: CONFIRMED (the gap exists by design); document operational risk for the report.
+
+### Indicators of Vulnerability
+```rust
+// Single-TX rotation:
+if let Some(a) = new_authority {
+    require!(a != Pubkey::default(), EscrowError::InvalidAuthority);
+    cfg.authority = a;
+}
+```
+
+### Indicators of Safety
+```rust
+// What we'd want (not present):
+pub pending_authority: Option<Pubkey>,
+// + propose_authority + accept_authority instructions
+```
+
+---
+
+## H002: H011 RECHECK — Treasury Self-Redirect via Multi-TX Rotation Chain
+
+**Category:** Access Control + Token & Economic
+**Estimated Priority:** Tier 1 (HIGH)
+**Origin:** RECHECK (Feb H011 — CVSS 8.7)
+**Historical Precedent:** EP-068 fee-routing redirects (Vaultka 2024)
+
+### Hypothesis
+
+Even with the post-update distinctness check (`authority != treasury`, `treasury != ops`), an authority can multi-TX rotate to set treasury == authority's primary wallet by temporarily swapping authority through a secondary key.
+
+### Attack Vector
+
+1. Authority A1 calls `update_config(new_authority = A2)` — config now has `authority=A2, treasury=T_old, ops=O_old`.
+2. A2 calls `update_config(new_treasury = A1)` — passes distinctness because authority is currently A2 (so A1 != A2).
+3. A2 calls `update_config(new_authority = A1)` — passes because A1 != A1's-own-treasury... actually FAILS because authority would equal treasury.
+4. Refined chain: A1 → A2 → set treasury = A3 (A1's secondary) → set authority = A1 → distinctness OK because A3 ≠ A1 ≠ ops.
+5. Now A1 receives 7% of every settle via the A3 wallet it controls.
+
+### Target Code
+
+| File | Function | Lines | Relevance |
+|------|----------|-------|-----------|
+| `programs/solshot-escrow/src/lib.rs` | `update_config` | 72-108 (esp. 96-98 distinctness) | v1 — affects in-flight matches via live read at `lib.rs:686` |
+| `programs/solshot-escrow-v2/src/lib.rs` | `update_config` | 96-142 (esp. 125-127) | v2 — only affects NEW matches via snapshot |
+
+### Prerequisites
+- Authority key compromise.
+- Attacker controls multiple wallets.
+
+### Potential Impact
+**Severity:** HIGH
+- Financial: 7% of all v1 in-flight + future settlements; 7% of all v2 new matches.
+- Detection: silent — passes distinctness invariants.
+
+### Investigation Approach
+1. Walk the multi-TX rotation sequence and verify which combinations pass / fail the distinctness checks at v1:96-98 and v2:125-127.
+2. Identify which intermediate states are necessary.
+3. Verify v2's per-match snapshot prevents the in-flight redirect (treasury_snapshot is frozen at create_match).
+4. Severity: confirmed-conditional-on-authority-compromise.
+
+### Indicators of Vulnerability
+```rust
+// Distinctness only fires post-update, not across-history
+require!(cfg.authority != cfg.treasury, EscrowError::DuplicateFeeAccount);
+require!(cfg.treasury != cfg.ops, EscrowError::DuplicateFeeAccount);
+require!(cfg.authority != cfg.ops, EscrowError::DuplicateFeeAccount);
+```
+
+---
+
+## H003: H005 RECHECK — Authority Winner Selection Fraud
+
+**Category:** Access Control + Token & Economic
+**Estimated Priority:** Tier 1 (HIGH POTENTIAL)
+**Origin:** RECHECK (Feb H005)
+**Historical Precedent:** Garden Finance $11M (settlement authority abuse)
+
+### Hypothesis
+
+Authority freely chooses any pubkey in `escrow.players[0..max_players]` as the winner. Combined with authority's control over `create_match`, the authority can pre-register a controlled wallet as a player and always settle in its favor. v2's 10-player limit makes this 2.5× worse than v1's 4-player limit per single match.
+
+### Attack Vector
+
+1. Authority creates match with `players = [legit_p1, attacker_alt]` (or larger group).
+2. Match plays out off-chain.
+3. Regardless of game outcome, authority calls `settle_match(winner = attacker_alt)`.
+4. Pot's 90% goes to attacker_alt.
+
+### Target Code
+
+| File | Function | Lines | Relevance |
+|------|----------|-------|-----------|
+| `programs/solshot-escrow/src/lib.rs` | `settle_match` SettleMatch winner constraint | 676-679 | Validates winner ∈ players only |
+| `programs/solshot-escrow-v2/src/lib.rs` | settle_match winner constraint | 707-710 | Same pattern; 10-player ceiling |
+
+### Prerequisites
+- Authority is malicious or compromised.
+
+### Potential Impact
+**Severity:** HIGH
+- Financial: up to 90% × wager × 10 players = 900 SOL × 90% = 810 SOL per max v2 match.
+- Detection: requires off-chain monitoring of game outcomes.
+
+### Investigation Approach
+1. Confirm `winner` constraint is `players.contains(&winner.key())` only.
+2. Verify no on-chain proof of game outcome is required.
+3. Check `OC-06` author/player exclusion at v1:127-129, v2:188 — only excludes the SIGNING authority key, not derivatives.
+4. Status: STILL_OPEN by design.
+
+---
+
+## H004: S004 RECHECK — Verify CreateMatch `has_one = authority` Fix
 
 **Category:** Access Control
-**Estimated Priority:** Tier 1 (CRITICAL potential)
-**Historical Precedent:** EP-068 (Key Management — Raydium $4.4M, Pump.fun $1.9M, Step Finance $30-40M)
-**Origin:** KB (EP-068)
-**Requires:** [access-control-findings, state-machine-findings]
+**Estimated Priority:** Tier 1 (verification)
+**Origin:** RECHECK (Feb S004 — CVSS 9.3)
+**Historical Precedent:** Solend 2022 PDA-rent pattern
 
 ### Hypothesis
 
-An attacker who compromises the authority private key can immediately and irreversibly transfer authority to their own address via `update_config`, with no propose/accept pattern, timelock, or multisig requirement. Once transferred, the attacker controls all protocol operations.
-
-### Attack Vector
-
-1. Attacker compromises authority key (phishing, malware, leaked key)
-2. Attacker calls `update_config` with `new_authority = Some(attacker_pubkey)`
-3. Authority transfer is immediate — no delay, no second confirmation
-4. Attacker now controls: settlement (winner selection), fee destinations, pause/unpause
-5. Attacker settles all active matches to controlled wallets, redirects fees, pauses protocol
-
-### Target Code
-
-| File | Function | Lines | Relevance |
-|------|----------|-------|-----------|
-| `lib.rs` | `update_config` | 70-88 | Authority transfer logic |
-| `lib.rs` | `UpdateConfig` struct | 456-475 | Account validation |
-
-### Potential Impact
-
-**Severity if confirmed:** CRITICAL
-
-- Financial: Total TVL at risk (all active match escrows + future deposits)
-- Users affected: All active players
-- Protocol state: Complete protocol takeover
+Verify the Feb S004 fix (PDA Pre-Squatting DoS) landed cleanly in v1 AND was carried over correctly to v2.
 
 ### Investigation Approach
+1. Confirm `has_one = authority @ EscrowError::Unauthorized` on `CreateMatch.config` at v1:625.
+2. Confirm same constraint on v2 CreateMatch (per pre-scan: v2:659).
+3. Verify no regression: third-party signer cannot pass authority check.
+4. Status: spot-check says FIXED both. Confirm no subtle bypasses.
 
-1. **Check:** Does update_config have a propose/accept pattern for authority changes?
-   - Look for: Two-step transfer, timelock, or multisig requirement
-   - In: `lib.rs:70-88`
-2. **Check:** Can the authority transfer be reversed by the old authority?
-   - Look for: Any recovery mechanism or grace period
-   - In: `lib.rs` (all instructions)
-3. **Determine:**
-   - Vulnerable if: Single call transfers authority immediately
-   - Safe if: Two-step transfer or timelock exists
+### Target Code
+- v1:606-631 (CreateMatch struct), v2:642-664 (CreateMatch struct).
+
+### Indicators of Safety
+```rust
+#[account(
+    seeds = [b"config"],
+    bump = config.bump,
+    has_one = authority @ EscrowError::Unauthorized,
+    constraint = !config.is_paused @ EscrowError::ProgramPaused,
+)]
+pub config: Account<'info, GlobalConfig>,
+```
 
 ---
 
-## H002: Fee Destination Hijack via update_config
+## H005: H008 RECHECK — CreateMatch PDA Occupancy DoS
 
-**Category:** Access Control, Token/Economic
-**Estimated Priority:** Tier 1 (CRITICAL potential)
-**Historical Precedent:** EP-119 (UncheckedAccount fee destination — Raydium CP-Swap), EP-098 (rebalance/compound destination)
-**Origin:** KB (EP-119)
-**Requires:** [access-control-findings, token-economic-findings]
+**Category:** Access Control
+**Estimated Priority:** Tier 2 (verification)
+**Origin:** RECHECK (Feb H008)
 
 ### Hypothesis
 
-A compromised or malicious authority can redirect all settlement fees to attacker-controlled addresses by calling `update_config` to change treasury and ops addresses. No timelock or validation prevents this.
-
-### Attack Vector
-
-1. Attacker gains authority access (or authority acts maliciously)
-2. Calls `update_config` with `new_treasury = Some(attacker_wallet1)`, `new_ops = Some(attacker_wallet2)`
-3. All subsequent `settle_match` calls send 10% of pot to attacker wallets
-4. Players receive correct 90% — attack may go unnoticed
-
-### Target Code
-
-| File | Function | Lines | Relevance |
-|------|----------|-------|-----------|
-| `lib.rs` | `update_config` | 70-88 | Config change logic |
-| `lib.rs` | `settle_match` | 284-291 | Fee distribution |
-
-### Potential Impact
-
-**Severity if confirmed:** CRITICAL
-
-- Financial: 10% of all settled match pots (7% treasury + 3% ops)
-- Users affected: All players (indirectly — winner amounts correct, but protocol revenue stolen)
-- Protocol state: Ongoing fee drain until detected
+Subsumed by S004 fix — only authority can create matches. Verify no other path allows third-party PDA pre-squatting.
 
 ### Investigation Approach
-
-1. **Check:** Are treasury/ops changes subject to any delay or validation?
-   - Look for: Timelock, distinctness check, non-executable validation
-   - In: `lib.rs:70-88`
-2. **Check:** Is there any monitoring/event that would reveal the change?
-   - Look for: Anchor events or logs on config changes
-   - In: `lib.rs:70-88`
-3. **Determine:**
-   - Vulnerable if: Immediate treasury/ops update with no delay
-   - Safe if: Timelock or governance approval required
+1. Verify CreateMatch is the only instruction that `init`s a MatchEscrow PDA.
+2. Confirm only authority can sign create_match.
+3. Status: LIKELY FIXED both versions; flag any subtle workaround.
 
 ---
 
-## H003: update_config Distinctness Bypass → Settlement DoS
+## H006: H014 RECHECK — Authority Collusion to Settle in Favor of Controlled Wallet
 
-**Category:** Access Control, State Machine
-**Estimated Priority:** Tier 1 (CRITICAL potential)
-**Historical Precedent:** EP-033 (Logic/State Machine — invalid state transitions)
-**Origin:** KB (EP-033)
-**Requires:** [access-control-findings, state-machine-findings]
+**Category:** Access Control + Token & Economic
+**Estimated Priority:** Tier 1 (POTENTIAL)
+**Origin:** RECHECK (Feb H014)
 
 ### Hypothesis
 
-The `update_config` function does not re-validate that authority, treasury, and ops addresses are distinct (unlike `initialize_config`). Setting treasury == ops could cause settlement to fail (Anchor constraint requiring distinct writable accounts), permanently blocking settlement of all active matches.
-
-### Attack Vector
-
-1. Authority calls `update_config(new_treasury = Some(X), new_ops = Some(X))` where X is the same address
-2. `settle_match` passes treasury and ops as separate `UncheckedAccount` but both resolve to the same pubkey
-3. Anchor may reject the transaction because two writable accounts have the same key, or runtime may error on double borrow
-4. All settlement becomes impossible; matches can only be cancelled after 24h timeout
-
-### Target Code
-
-| File | Function | Lines | Relevance |
-|------|----------|-------|-----------|
-| `lib.rs` | `update_config` | 70-88 | Missing distinctness validation |
-| `lib.rs` | `initialize_config` | 35-55 | Has distinctness check (compare) |
-| `lib.rs` | `SettleMatch` struct | 576-600 | treasury and ops as separate accounts |
-
-### Potential Impact
-
-**Severity if confirmed:** CRITICAL
-
-- Financial: All active escrows locked until timeout (24h minimum)
-- Users affected: All active players (delayed refunds)
-- Protocol state: Settlement permanently broken until config fixed
+Authority pre-registers a wallet they control as a player at create_match, then settles in its favor (via H003). Distinct from H003 in that the attacker is the AUTHORITY operator deliberately, not just exploiting a compromised key.
 
 ### Investigation Approach
-
-1. **Check:** Does update_config enforce authority ≠ treasury ≠ ops?
-   - Look for: `require!()` with `!=` checks
-   - In: `lib.rs:70-88`
-2. **Check:** What happens in settle_match if treasury == ops?
-   - Look for: Anchor constraint behavior with duplicate writable accounts
-   - In: `lib.rs:576-600` (SettleMatch struct)
-3. **Determine:**
-   - Vulnerable if: No distinctness check in update_config AND settle fails with duplicate accounts
-   - Safe if: Either update_config validates or settle handles duplicates gracefully
+1. Verify create_match accepts arbitrary pubkeys in `players[]` (no liveness check).
+2. Verify authority/player exclusion (`OC-06`) only checks signing key, not derivatives.
+3. Document as design limitation.
 
 ---
 
-## H004: Same-Transaction PDA Close-and-Revive
+## H007: H027 RECHECK — Authority Self-Play Bypass via Secondary Wallet
 
-**Category:** State Machine
-**Estimated Priority:** Tier 1 (CRITICAL potential)
-**Historical Precedent:** EP-036 (Account close without ownership transfer), EP-040 (close without constraint)
+**Category:** Access Control
+**Estimated Priority:** Tier 2 (POTENTIAL — design limitation)
+**Origin:** RECHECK (Feb H027)
+
+### Hypothesis
+
+Authority operator uses a secondary wallet they control as a "player" — `OC-06` checks only the signing authority key, not derivatives.
+
+### Investigation Approach
+1. Locate `OC-06` author/player checks: v1:127-129, v2:186-188.
+2. Confirm checks compare against `ctx.accounts.authority.key()` only.
+3. Status: design limitation, not fixable without architectural change.
+
+---
+
+## H008: NOVEL — `initialize_config` Race-Init
+
+**Category:** Access Control + Upgrade & Admin
+**Estimated Priority:** Tier 2 (MEDIUM)
+**Origin:** Novel (EP-076 pattern)
+
+### Hypothesis
+
+`initialize_config` accepts any payer (`payer: Signer<'info>`); the `authority`, `treasury`, `ops` arguments are passed by the caller. If the deployer doesn't fire init in the same script as deploy, an attacker can race-init and set themselves as authority.
+
+### Attack Vector
+
+1. Attacker monitors mempool for new program deployment.
+2. Sees deploy TX land at slot N.
+3. Submits `initialize_config(authority = attacker, treasury = attacker, ops = attacker)` at slot N+1.
+4. Wins the race. Now controls the program.
+
+### Target Code
+- v1:47-65 + InitializeConfig struct at v1:544-559.
+- v2: equivalent at v2:73-94 + 587-600.
+
+### Investigation Approach
+1. Verify init has no constraint that authority == upgrade authority of the program.
+2. Verify no zero-address guard on init (only update has it).
+3. Document operational risk: deploy + init must be atomic via deploy script.
+
+### Indicators of Vulnerability
+```rust
+pub struct InitializeConfig<'info> {
+    pub payer: Signer<'info>,  // NO constraint binding payer to authority
+    ...
+}
+```
+
+---
+
+## H009: NOVEL — Pause-Then-Rotate-Then-Unpause Attack Chain
+
+**Category:** Access Control + State Machine + Upgrade & Admin
+**Estimated Priority:** Tier 2 (HIGH on v1 only)
 **Origin:** Novel
-**Requires:** [state-machine-findings, access-control-findings]
 
 ### Hypothesis
 
-If `settle_match` or `cancel_match` closes the escrow PDA (via Anchor's `close` attribute) and returns rent to a recipient, an attacker could include a `create_match` instruction in the same transaction to re-create the PDA at the same address, potentially extracting rent multiple times or resetting match state.
+On v1 (where pause blocks cancel), a compromised authority can: pause → rotate authority/config → unpause to perform a coup while preventing player exit.
 
-### Attack Vector
+### Attack Vector (v1)
 
-1. Attacker constructs a transaction with: [settle_match (closes PDA)] → [create_match (same match_id)]
-2. settle_match distributes funds and closes account
-3. create_match re-creates the PDA at the same address (same seeds)
-4. New escrow has fresh state, potentially allowing new deposits into a "ghost" match
+1. Authority calls `pause_program`. Pause blocks cancel/settle/start_with_depositors.
+2. Players in active matches cannot self-cancel during pause window.
+3. Authority calls `update_config(new_authority = attacker)`.
+4. Attacker calls `unpause_program`.
+5. Attacker can now settle all in-flight matches in their favor (H003 + H002 chain).
+
+v2 doesn't have this exact path (cancel/settle/reclaim are pause-immune in v2), but the partial-mitigation still applies for new matches.
 
 ### Target Code
-
-| File | Function | Lines | Relevance |
-|------|----------|-------|-----------|
-| `lib.rs` | `settle_match` | 277-305 | Account close via Anchor `close` |
-| `lib.rs` | `create_match` | 110-152 | PDA initialization with `init` |
-| `lib.rs` | `SettleMatch` struct | 576-600 | `close = authority` attribute |
-| `lib.rs` | `CreateMatch` struct | 500-530 | `init` attribute on escrow |
-
-### Potential Impact
-
-**Severity if confirmed:** CRITICAL
-
-- Financial: Rent extraction, potential state confusion leading to double payouts
-- Users affected: Match participants
-- Protocol state: PDA reuse creates inconsistent state
+- v1:112-122 (pause/unpause), 72-108 (update_config), all `!is_paused` constraints.
 
 ### Investigation Approach
-
-1. **Check:** Does Anchor's `init` constraint prevent re-initialization of a closed account in the same TX?
-   - Look for: Anchor `init` behavior with same-TX close/reopen
-   - In: Anchor framework behavior
-2. **Check:** Are the PDA seeds dependent on any data that changes between close and re-create?
-   - Look for: match_id reuse potential
-   - In: `lib.rs:500-530` (CreateMatch seeds)
-3. **Determine:**
-   - Vulnerable if: Same-TX PDA revival is possible with `init`
-   - Safe if: Anchor prevents re-initialization of recently-closed accounts in same TX
+1. Verify v1 pause guards on cancel/settle/start (yes per pre-scan).
+2. Verify v2 has removed these (yes per state-machine agent).
+3. Confirm permissionless_reclaim is callable during pause in both (yes — no config in struct).
+4. Severity: HIGH on v1 because of the freeze window.
 
 ---
 
-## H005: Authority Winner Selection Fraud
+## H010: NOVEL — Authority Self-Rotation to Itself Across 2 TXs
 
-**Category:** Token/Economic, Access Control
-**Estimated Priority:** Tier 1 (CRITICAL potential)
-**Historical Precedent:** Novel (game-specific centralization)
+**Category:** Access Control
+**Estimated Priority:** Tier 3 (LOW — likely benign)
 **Origin:** Novel
-**Requires:** [token-economic-findings, access-control-findings]
 
 ### Hypothesis
 
-The authority has unchecked power to select any winner in `settle_match`. A compromised or colluding authority could systematically select a controlled wallet as the winner, extracting 90% of all match pots.
+Investigate whether sequential `update_config` calls allow authority to revert to itself with a different role assignment, bypassing distinctness invariants.
+
+### Investigation Approach
+1. Walk through TX1 (rotate authority to A2) → TX2 (rotate treasury through A2 → A1) → TX3 (rotate authority back to A1).
+2. Confirm distinctness check at v1:96-98 / v2:125-127 catches each step.
+3. Likely safe but worth tracing carefully.
+
+---
+
+## H011: NOVEL — H028 v2: BPS Poisoning via Authority Layer-2 Compromise
+
+**Category:** Arithmetic + Token & Economic + Upgrade & Admin
+**Estimated Priority:** Tier 1 (HIGH)
+**Origin:** Novel (Feb H028 dismissal INVALIDATED on v2)
+
+### Hypothesis
+
+v2's `fee_bps_treasury` and `fee_bps_ops` are runtime-mutable via `update_config`. Authority can ratchet fees up to 10% combined (MAX_FEE_BPS=1000) on every NEW match without an upgrade. Per-match snapshot protects in-flight matches but NEW matches use the new BPS.
 
 ### Attack Vector
 
-1. Authority (or compromised server) creates matches via `create_match`
-2. Legitimate players deposit wagers
-3. Authority always calls `settle_match` with `winner = controlled_wallet`
-4. Controlled wallet receives 90% of pot for every match
-5. Combined with H002 (fee redirect), attacker gets 100% of all deposited funds
+1. Authority compromised. Attacker calls `update_config(new_fee_bps_treasury = 999, new_fee_bps_ops = 1)` → combined 1000 = passes cap.
+2. Authority creates new matches — each snapshots (999, 1) BPS.
+3. Each settle pays 9.99% to attacker-controlled treasury, 0.01% to attacker-controlled ops, 90% to "winner."
+4. After many matches, authority calls `update_config(new_fee_bps_treasury = 700, new_fee_bps_ops = 300)` — restores normal-looking BPS.
+5. Audit logs only reflect end-state config, not the duration of the high-BPS window.
 
 ### Target Code
 
 | File | Function | Lines | Relevance |
 |------|----------|-------|-----------|
-| `lib.rs` | `settle_match` | 228-305 | Winner parameter and constraint |
-| `lib.rs` | `SettleMatch` struct | 576-600 | Winner account validation |
+| `programs/solshot-escrow-v2/src/lib.rs` | `update_config` | 96-142 | Runtime BPS mutation (cap enforced) |
+| `programs/solshot-escrow-v2/src/lib.rs` | `create_match` snapshot | 211-214 | Snapshot writes use current cfg |
+| `programs/solshot-escrow-v2/src/lib.rs` | `settle_match` consumption | 396-425 | Reads snapshot, no re-validation |
+
+### Prerequisites
+- Authority key compromise.
+- (Or malicious authority deliberately ratcheting — within cap, this is "policy" not vulnerability.)
 
 ### Potential Impact
-
-**Severity if confirmed:** CRITICAL
-
-- Financial: 90% of all match pots (up to 200 SOL per match at max wager)
-- Users affected: All players (always lose)
-- Protocol state: Ongoing extraction until detected
+**Severity:** HIGH
+- Financial: extra 7% of every NEW match's pot (3% above default).
+- v2-specific: not present in v1.
 
 ### Investigation Approach
+1. Verify cap re-validation logic at v2:128-131.
+2. Trace whether create_match validates the snapshot values post-write (likely NOT — only update_config validates).
+3. Verify settle_match has no re-validation.
+4. Severity: HIGH given the ratcheting pattern + no timelock.
 
-1. **Check:** Is the winner parameter validated against match outcome/game state?
-   - Look for: Any on-chain game result verification
-   - In: `lib.rs:228-305`
-2. **Check:** Can the winner be set to an address that is NOT player_one or player_two?
-   - Look for: Constraint requiring winner ∈ {player_one, player_two}
-   - In: `lib.rs:576-600` (SettleMatch struct)
-3. **Determine:**
-   - Vulnerable if: Authority can freely choose winner with no on-chain verification
-   - Safe if: Winner must be one of the two depositing players (constraint check)
+### Indicators of Vulnerability
+```rust
+// In update_config — cap on update only
+require!((cfg.fee_bps_treasury as u32 + cfg.fee_bps_ops as u32) <= MAX_FEE_BPS as u32, ...);
+// Missing: same check at create_match post-snapshot AND at settle_match
+```
 
 ---
 
-## H006: 23-Hour Dead Zone Fund Lockup Griefing
+## H012: H028 RECHECK on v1 — BPS Constants Still Immutable Without Upgrade
 
-**Category:** Timing, State Machine
-**Estimated Priority:** Tier 2 (HIGH potential)
-**Historical Precedent:** EP-089 (Timestamp-based race conditions)
-**Origin:** KB (EP-089)
-**Requires:** [timing-ordering-findings, state-machine-findings]
+**Category:** Arithmetic + Upgrade & Admin
+**Estimated Priority:** Tier 3 (verification)
+**Origin:** RECHECK (Feb H028 v1 dismissal)
 
 ### Hypothesis
 
-After the 1-hour settlement deadline expires, the authority can no longer settle, but players cannot cancel until 24 hours. This creates a 23-hour window where funds are locked with no possible action. A malicious authority could intentionally not settle to grief players.
-
-### Attack Vector
-
-1. Both players deposit wagers, match becomes Active
-2. Authority intentionally does NOT settle within 1-hour window
-3. Settlement deadline expires — authority can no longer settle
-4. Players cannot cancel until 24h from activated_at
-5. Funds locked for 23 hours with no recourse
-
-### Target Code
-
-| File | Function | Lines | Relevance |
-|------|----------|-------|-----------|
-| `lib.rs` | `settle_match` | 236-244 | Settlement deadline check |
-| `lib.rs` | `cancel_match` | 329-333 | Cancel timeout check |
-
-### Potential Impact
-
-**Severity if confirmed:** HIGH
-
-- Financial: Temporary lockup of up to 200 SOL per match
-- Users affected: Both players in affected matches
-- Protocol state: Funds locked but eventually recoverable
+Confirm v1's `TREASURY_BPS = 700` and `OPS_BPS = 300` remain `const u64` and only changeable via Layer-1 program upgrade.
 
 ### Investigation Approach
-
-1. **Check:** What is the exact gap between settlement expiry and cancel availability?
-   - Look for: SETTLEMENT_TIMEOUT_SECONDS vs TIMEOUT_SECONDS values
-   - In: `lib.rs` constants
-2. **Determine:**
-   - Vulnerable if: Gap > 1 hour creates meaningful fund lockup
-   - Safe if: Gap is minimal or cancel is available immediately after settlement expires
+1. Read v1:15-17 — verify still `const u64`.
+2. Verify no instruction reads or writes these as runtime values.
+3. Status: dismissal HOLDS for v1.
 
 ---
 
-## H007: Pause-as-Griefing Attack on Active Matches
+## H013: H012 RECHECK — Lamport Underflow on v2 N-Player Refund Loop
 
-**Category:** Timing, Access Control
-**Estimated Priority:** Tier 2 (HIGH potential)
-**Historical Precedent:** Novel (specific pause/timeout interaction)
-**Origin:** Novel
-**Requires:** [timing-ordering-findings, access-control-findings]
+**Category:** Arithmetic + CPI
+**Estimated Priority:** Tier 2 (verification)
+**Origin:** RECHECK (Feb H012)
 
 ### Hypothesis
 
-A compromised authority can pause the program while active matches exist. Pause blocks settle_match AND cancel_match, but NOT permissionless_reclaim. This forces all active match participants to wait 48 hours for permissionless_reclaim, creating maximum fund lockup.
-
-### Attack Vector
-
-1. Attacker compromises authority key
-2. Multiple matches are in Active state with deposited funds
-3. Attacker calls `pause_program`
-4. settle_match is blocked (pause guard), cancel_match is blocked (pause guard)
-5. Only escape: permissionless_reclaim after 48h
-6. All active match funds locked for up to 48 hours
-
-### Target Code
-
-| File | Function | Lines | Relevance |
-|------|----------|-------|-----------|
-| `lib.rs` | `pause_program` | ~90-95 | Pause mechanism |
-| `lib.rs` | `settle_match` | ~605 | Pause guard |
-| `lib.rs` | `cancel_match` | ~644 | Pause guard |
-| `lib.rs` | `permissionless_reclaim` | (no pause guard) | Escape hatch |
-
-### Potential Impact
-
-**Severity if confirmed:** HIGH
-
-- Financial: Total TVL locked for 48 hours (all active escrows)
-- Users affected: All active match participants
-- Protocol state: Complete protocol freeze (except reclaim)
+Re-validate the Feb H012 dismissal on v2's refund-all flow with u16 mask + 10-player ceiling. Specifically: can `escrow.lamports -= wager` underflow when called with maximum N?
 
 ### Investigation Approach
-
-1. **Check:** Which instructions have pause guards?
-   - Look for: `require!(!config.is_paused, ...)` pattern
-   - In: All instruction handlers
-2. **Check:** Does permissionless_reclaim truly have no pause guard?
-   - Look for: Absence of pause check
-   - In: `PermissionlessReclaim` struct and handler
-3. **Determine:**
-   - Vulnerable if: Pause blocks settle+cancel but not reclaim (creating 48h lockup)
-   - Safe if: Either cancel is not pause-gated or reclaim timeout is shorter
+1. Verify per-iteration `bit_set` check prevents debiting beyond `count_ones × wager`.
+2. Verify `overflow-checks=true` in profile would catch any wrap.
+3. Compute: 10 × MAX_WAGER (100 SOL) = 1000 SOL = 10^12 lamports. Escrow PDA holds at most this much. Safe.
+4. Status: HOLDS on v2 with the same defense layers.
 
 ---
 
-## H008: CreateMatch PDA Occupancy DoS
-
-**Category:** Access Control, Resource/DoS
-**Estimated Priority:** Tier 2 (HIGH potential)
-**Historical Precedent:** EP-084 (Resource exhaustion DoS), EP-085 (unbounded allocation)
-**Origin:** KB (EP-084)
-**Requires:** [access-control-findings]
-
-### Hypothesis
-
-`create_match` is not authority-gated (missing `has_one = authority` on config in CreateMatch struct). Any signer can create matches, consuming PDA namespace slots and forcing rent payments. While the spammer pays rent, they can flood the system with unsettleable matches.
-
-### Attack Vector
-
-1. Attacker repeatedly calls `create_match` with many unique match_ids
-2. Each call creates a new PDA consuming on-chain storage
-3. Matches are unsettleable by config authority (escrow.authority ≠ config.authority)
-4. PDAs remain until 48h permissionless_reclaim timeout
-5. Attacker's rent is eventually reclaimable, but PDA space is occupied
-
-### Target Code
-
-| File | Function | Lines | Relevance |
-|------|----------|-------|-----------|
-| `lib.rs` | `create_match` | 110-152 | No authority check |
-| `lib.rs` | `CreateMatch` struct | 500-530 | Missing `has_one = authority` |
-
-### Potential Impact
-
-**Severity if confirmed:** HIGH
-
-- Financial: Attacker loses only rent (reclaimable after 48h)
-- Users affected: Potential confusion from spam matches
-- Protocol state: PDA namespace pollution
-
-### Investigation Approach
-
-1. **Check:** Does CreateMatch validate that the signer is the config authority?
-   - Look for: `has_one = authority` or signer check against config
-   - In: `lib.rs:500-530`
-2. **Determine:**
-   - Vulnerable if: Any signer can create matches
-   - Safe if: Authority check exists
-
----
-
-## H009: Executable Account as Fee Destination (Silent Lamport Loss)
-
-**Category:** CPI/External, Token/Economic
-**Estimated Priority:** Tier 2 (HIGH potential)
-**Historical Precedent:** EP-106 (Lamport manipulation to arbitrary account)
-**Origin:** KB (EP-106)
-**Requires:** [cpi-external-findings, token-economic-findings]
-
-### Hypothesis
-
-If `update_config` sets treasury or ops to an executable program address, the direct lamport credit (`try_borrow_mut_lamports` += amount) may silently fail or behave unexpectedly. The Solana runtime may discard the lamport write if the recipient is an executable account not owned by the program.
-
-### Attack Vector
-
-1. Compromised authority calls `update_config(new_treasury = Some(program_address))`
-2. `settle_match` attempts to credit lamports to the program address
-3. `try_borrow_mut_lamports` succeeds in the instruction's memory view
-4. Runtime may discard the write (program accounts have specific lamport rules)
-5. Treasury fees are effectively burned — 7% of each pot lost
-
-### Target Code
-
-| File | Function | Lines | Relevance |
-|------|----------|-------|-----------|
-| `lib.rs` | `update_config` | 70-88 | No executable/reserved check on addresses |
-| `lib.rs` | `settle_match` | 284-291 | Direct lamport credit to UncheckedAccount |
-| `lib.rs` | `SettleMatch` struct | 576-600 | Treasury/ops as UncheckedAccount |
-
-### Potential Impact
-
-**Severity if confirmed:** HIGH
-
-- Financial: 7-10% of each pot silently lost
-- Users affected: Protocol treasury (indirect user impact)
-- Protocol state: Ongoing fee loss until config corrected
-
-### Investigation Approach
-
-1. **Check:** Are treasury/ops validated as non-executable wallet addresses?
-   - Look for: `executable` field check or is_writable constraint
-   - In: `lib.rs:70-88` and `lib.rs:576-600`
-2. **Check:** What happens when `try_borrow_mut_lamports` credits an executable account?
-   - Look for: Solana runtime behavior on lamport credit to programs
-3. **Determine:**
-   - Vulnerable if: No executable check AND lamport credit fails silently
-   - Safe if: Runtime errors prevent silent loss or config validates addresses
-
----
-
-## H010: Deposit Ordering Asymmetry Exploitation
-
-**Category:** Timing
-**Estimated Priority:** Tier 2 (HIGH potential)
-**Historical Precedent:** EP-089 (Race conditions)
-**Origin:** KB (EP-089)
-**Requires:** [timing-ordering-findings]
-
-### Hypothesis
-
-The first depositor's funds are locked while waiting for the second depositor, who may never deposit. The first depositor must proactively cancel (after 24h timeout from created_at) to recover funds. An adversary could create matches, wait for one player to deposit, then never deposit themselves.
-
-### Attack Vector
-
-1. Match is created, adversary is player_two
-2. Player_one (victim) deposits wager
-3. Adversary never deposits
-4. Player_one's funds locked until 24h timeout from created_at
-5. Player_one must actively cancel to recover funds
-
-### Target Code
-
-| File | Function | Lines | Relevance |
-|------|----------|-------|-----------|
-| `lib.rs` | `deposit_wager` | 156-222 | Deposit logic, state transition |
-| `lib.rs` | `cancel_match` | 310-395 | Cancel from AwaitingDeposits |
-
-### Potential Impact
-
-**Severity if confirmed:** HIGH
-
-- Financial: Temporary lockup of victim's wager (up to 100 SOL) for 24h
-- Users affected: First depositor in each targeted match
-- Protocol state: Funds locked but eventually recoverable
-
-### Investigation Approach
-
-1. **Check:** Can cancel_match be called from AwaitingDeposits state?
-   - Look for: State check allowing AwaitingDeposits cancel
-   - In: `lib.rs:310-395`
-2. **Check:** What is the timeout reference for AwaitingDeposits cancel?
-   - Look for: Whether timeout is from created_at or some other reference
-   - In: `lib.rs:329-333`
-3. **Determine:**
-   - Vulnerable if: 24h timeout before first depositor can recover
-   - Safe if: Immediate cancel available or shorter timeout
-
----
-
-## H011: Config Treasury Self-Redirect
-
-**Category:** Token/Economic, Access Control
-**Estimated Priority:** Tier 2 (HIGH potential)
-**Historical Precedent:** EP-099 (Fee routing — Vaultka Critical)
-**Origin:** KB (EP-099)
-**Requires:** [token-economic-findings, access-control-findings]
-
-### Hypothesis
-
-Authority can set treasury == authority's own wallet via `update_config`, redirecting 7% of all settlement fees to themselves. Combined with ops redirect (H002), authority captures 10% of all pots beyond their operational role.
-
-### Attack Vector
-
-1. Authority calls `update_config(new_treasury = Some(authority_wallet))`
-2. All future settlements send 7% to authority's wallet
-3. Authority also sets ops to another controlled wallet for additional 3%
-
-### Target Code
-
-| File | Function | Lines | Relevance |
-|------|----------|-------|-----------|
-| `lib.rs` | `update_config` | 70-88 | Treasury/ops update |
-| `lib.rs` | `initialize_config` | 35-55 | Distinctness check (compare) |
-
-### Potential Impact
-
-**Severity if confirmed:** HIGH
-
-- Financial: 7-10% of all settlement pots
-- Users affected: Protocol stakeholders
-
-### Investigation Approach
-
-1. **Check:** Does update_config prevent setting treasury == authority?
-   - Look for: Cross-field validation
-   - In: `lib.rs:70-88`
-2. **Determine:**
-   - Vulnerable if: No distinctness check between authority and treasury/ops
-   - Safe if: Distinctness enforced
-
----
-
-## H012: Lamport Underflow on Cancel/Reclaim
+## H014: H019 RECHECK — Narrowing Cast Safety on v2 (10-player pot)
 
 **Category:** Arithmetic
-**Estimated Priority:** Tier 2 (HIGH potential)
-**Historical Precedent:** EP-015 (Unchecked arithmetic)
-**Origin:** KB (EP-015)
-**Requires:** [arithmetic-findings]
+**Estimated Priority:** Tier 3 (verification)
+**Origin:** RECHECK (Feb H019)
 
 ### Hypothesis
 
-If the escrow PDA's lamport balance is somehow reduced below the expected refund amount (e.g., due to rent adjustments or external lamport manipulation), the `try_borrow_mut_lamports` subtraction could underflow, causing the transaction to fail and permanently locking funds.
-
-### Attack Vector
-
-1. Escrow PDA created with rent + 2 * wager lamports
-2. Some mechanism reduces PDA balance below expected (rent changes, bugs)
-3. cancel_match or permissionless_reclaim attempts to refund wager_lamports
-4. Subtraction underflows → transaction fails
-5. Funds permanently stuck (cannot cancel, cannot reclaim)
-
-### Target Code
-
-| File | Function | Lines | Relevance |
-|------|----------|-------|-----------|
-| `lib.rs` | `cancel_match` | 359-366 | Lamport subtraction for refund |
-| `lib.rs` | `permissionless_reclaim` | 421-428 | Lamport subtraction for refund |
-
-### Potential Impact
-
-**Severity if confirmed:** HIGH
-
-- Financial: Permanently locked escrow funds
-- Users affected: Players in affected match
+Verify u128 → u64 narrowing at v2 settle is safe with 10-player pot scaling.
 
 ### Investigation Approach
-
-1. **Check:** Does the subtraction use checked arithmetic or can it underflow?
-   - Look for: `checked_sub` vs direct subtraction
-   - In: `lib.rs:359-366`, `lib.rs:421-428`
-2. **Check:** Can the PDA balance be reduced externally?
-   - Look for: Whether any instruction or external action can reduce PDA lamports
-3. **Determine:**
-   - Vulnerable if: Unchecked subtraction AND balance can be reduced
-   - Safe if: Checked arithmetic or balance is always sufficient
+1. Verify pot ceiling: 100 SOL × 10 = 10^12 lamports. u64::MAX = 1.8 × 10^19. Safe.
+2. Verify no other narrowing casts introduced in v2 (e.g., `start_with_depositors` math).
 
 ---
 
-## H013: PDA Rent Extraction at Low Wagers
+## H015: NOVEL — Lamport Credit Overflow on Destination Accounts
 
-**Category:** Token/Economic
-**Estimated Priority:** Tier 2 (HIGH potential)
-**Historical Precedent:** Novel (game-specific economic incentive)
+**Category:** Arithmetic + CPI
+**Estimated Priority:** Tier 3 (defense-in-depth)
 **Origin:** Novel
-**Requires:** [token-economic-findings]
 
 ### Hypothesis
 
-At minimum wager (10,000 lamports ≈ $0.002), the rent-exempt minimum for the escrow PDA (~1,500,000 lamports for typical Anchor account) vastly exceeds the wager. Authority pays rent at creation and recovers it at settlement via `close = authority`. If rent > wager, the authority has an economic incentive to create-and-settle matches purely for rent cycling.
+`**dest.try_borrow_mut_lamports()? += wager_lamports` uses bare `+=`. If a recipient already holds `existing + wager > u64::MAX`, panic in debug or wrap in release.
+
+### Investigation Approach
+1. Quantify: u64::MAX = 1.8 × 10^19 lamports = 1.8 × 10^10 SOL. Attacker would need accumulated 18 billion SOL. Impossible.
+2. Recommend `checked_add` for defense-in-depth.
+3. Status: practically unreachable; not a vulnerability under realistic conditions.
+
+---
+
+## H016: H007 RECHECK — Pause-as-Griefing on v1 cancel_match (Still Open)
+
+**Category:** State Machine + Access Control
+**Estimated Priority:** Tier 1 (HIGH on v1)
+**Origin:** RECHECK (Feb H007)
+
+### Hypothesis
+
+v1's `cancel_match` still has `constraint = !config.is_paused` at v1:729. Authority pause blocks player cancel until permissionless_reclaim opens at +1200s (20 min, NOT 48h as the stale comment claims).
+
+### Investigation Approach
+1. Confirm constraint at v1:729 still present.
+2. Confirm v2 cancel_match has no pause guard (per pre-scan).
+3. Compute lockup window: from pause to permissionless_reclaim availability. Is it bounded by `created_at + 1200s` or by pause-time + 1200s?
+4. Status: CONFIRMED still open in v1; FIXED in v2.
+
+---
+
+## H017: NOVEL — v1 Silent-Kick Attack via `start_with_depositors`
+
+**Category:** State Machine + Access Control
+**Estimated Priority:** Tier 1 (HIGH on v1)
+**Origin:** Novel (cross-flagged by State Machine agent)
+
+### Hypothesis
+
+v1's `start_with_depositors` has NO timing gate (only requires state == AwaitingDeposits and num_deposited >= 2). Authority can call it the moment 2 deposits land, silently kicking late-broadcasting players whose TXs are mid-flight.
 
 ### Attack Vector
 
-1. Authority creates match with MIN_WAGER (10,000 lamports), paying ~1.5M lamports rent
-2. Two players deposit 10,000 lamports each (20,000 total)
-3. Authority settles immediately: winner gets 18,000, treasury 1,400, ops 600
-4. Account closes → authority recovers ~1.5M rent
-5. Net: authority spent ~1.5M rent, recovered ~1.5M rent + 2,000 (treasury+ops if controlled)
+1. Match has max_players = 4. Players P1, P2 deposit. P3 broadcasts deposit TX (~400ms latency to leader).
+2. Authority observes P3's deposit in mempool.
+3. Authority front-runs with `start_with_depositors`. Compaction reduces max_players to 2; players[2,3] become Pubkey::default().
+4. P3's deposit_wager TX arrives, fails on `state == Active` check or on `position()` lookup not finding P3 in the now-shorter players list. P3 paid TX fees + lost a slot.
+
+v2 fixes this with `Clock::get >= deposit_deadline` gate at v2:336-339.
 
 ### Target Code
-
-| File | Function | Lines | Relevance |
-|------|----------|-------|-----------|
-| `lib.rs` | `CreateMatch` struct | 500-530 | Rent payer and `init` attribute |
-| `lib.rs` | `SettleMatch` struct | 576-600 | `close = authority` attribute |
-| `lib.rs` | constants | MIN_WAGER_LAMPORTS | Minimum wager value |
-
-### Potential Impact
-
-**Severity if confirmed:** HIGH (design concern, not exploit)
-
-- Financial: Minimal per-match, but incentive misalignment
-- Protocol state: Economic model not aligned at low wagers
+- v1:493-536 (start_with_depositors) — no timing gate.
+- v2:323-382 — has timing gate.
 
 ### Investigation Approach
-
-1. **Check:** Who pays rent at creation and who receives it at close?
-   - Look for: `payer` in CreateMatch, `close = ` in Settle/Cancel/Reclaim
-   - In: Account structs
-2. **Determine:**
-   - Concern if: Rent recovery creates perverse incentive at low wagers
-   - Non-issue if: MIN_WAGER is high enough relative to rent
+1. Verify v1 has no `Clock` check before allowing start_with_depositors.
+2. Confirm v2 gate at v2:336-339.
+3. Severity: HIGH on v1 (player loses TX fees + slot in race); FIXED in v2.
 
 ---
 
-## H014: Authority Collusion — Settle to Controlled Winner Wallet
+## H018: NOVEL — v2 Deposit-Window Edge Collision at `deposit_deadline`
 
-**Category:** Token/Economic, Access Control
-**Estimated Priority:** Tier 2 (HIGH potential)
-**Historical Precedent:** EP-094 (Single withdraw authority — Pump.fun $1.9M)
-**Origin:** KB (EP-094)
-**Requires:** [token-economic-findings, access-control-findings]
+**Category:** State Machine + Timing
+**Estimated Priority:** Tier 3 (MEDIUM)
+**Origin:** Novel
 
 ### Hypothesis
 
-The `settle_match` winner parameter is constrained to be either player_one or player_two. If the authority controls the game server and always assigns a colluding account as one of the players, they can systematically extract 90% of every pot.
+At exactly `T = deposit_deadline`, both `deposit_wager` (allows `<= deposit_deadline`) AND `start_with_depositors` (requires `>= deposit_deadline`) are valid. Non-deterministic ordering depending on Solana leader's TX selection.
+
+### Investigation Approach
+1. Verify both conditions are inclusive (`<=` and `>=`) at v2:260 and v2:337.
+2. Determine which TX wins in same-slot race.
+3. Document edge case; recommend tightening one bound to be exclusive.
+
+---
+
+## H019-H022: State Machine RECHECKs
+
+**H019: H022 — GlobalConfig re-init blocked.** Tier 3. Verify Anchor `init` constraint at v1:546-552, v2:587-593 rejects re-init.
+
+**H020: H023 — PDA revival post-close.** Tier 3. Verify close zeros data + reassigns ownership; revived PDA via init yields fresh state.
+
+**H021: H024 — Settlement deadline bypass via activated_at.** Tier 3. Verify v1 activated_at is always set in same atomic block as state=Active; v2 has no settlement deadline so question is moot.
+
+**H022: H030 — Cancel-from-AwaitingDeposits refund-all on v2.** Tier 2. Re-validate that v2's new refund-all flow handles partial-deposit cancellation correctly.
+
+---
+
+## H023: NOVEL CRITICAL — Partial-Refund Theft via `close = caller` Sweep
+
+**Category:** CPI + State Machine + Token & Economic
+**Estimated Priority:** Tier 1 (CRITICAL — needs PoC)
+**Origin:** Novel (cross-flagged by CPI and Token/Economic agents independently)
+
+### Hypothesis
+
+A malicious player at `players[0]` (or any player after their slot's deposit timeout / public reclaim grace) calls `cancel_match` (or `permissionless_reclaim`) with `remaining_accounts = [self_only]`. The loop refunds them once. Then Anchor's `close = caller` sweeps the PDA's remaining lamports (including un-refunded co-depositors' wagers) to the caller's account.
+
+**Worst case (v2 max match):** 9 × 100 SOL = 900 SOL stealable in a single TX.
 
 ### Attack Vector
 
-1. Authority controls the off-chain game server
-2. Server always pairs legitimate players with a bot/shill account
-3. Authority always settles with bot account as winner
-4. Bot extracts 90% of wager from every match
+1. Attacker is registered as `players[0]` in a v2 max match (10 players, 100 SOL each).
+2. All 10 players deposit. State = Active. activated_at set. match_end_ts = now + duration_secs.
+3. Wait for `match_end_ts` (or trigger pause-then-wait sequence).
+4. Attacker calls `cancel_match` with `remaining_accounts = [self_only]`:
+   - Loop iteration 0: bounds OK, bit 0 set, pubkey matches → debit escrow 100 SOL, credit attacker 100 SOL.
+   - Loop terminates (no more remaining_accounts).
+5. Anchor `close = caller` runs: drains PDA's remaining 900 SOL (9 un-refunded wagers) to caller's account, marks PDA as closed.
+6. Total received: 100 SOL refund + 900 SOL sweep = 1000 SOL = entire pot.
 
 ### Target Code
 
 | File | Function | Lines | Relevance |
 |------|----------|-------|-----------|
-| `lib.rs` | `settle_match` | 228-305 | Winner constraint |
-| `lib.rs` | `SettleMatch` struct | 576-600 | Winner validation |
+| `programs/solshot-escrow/src/lib.rs` | `cancel_match` loop | 391-410 | Loop + close=caller |
+| `programs/solshot-escrow/src/lib.rs` | CancelMatch struct | 711-735 | `close = caller` at 718 |
+| `programs/solshot-escrow/src/lib.rs` | `permissionless_reclaim` loop | 465-484 | Same pattern |
+| `programs/solshot-escrow/src/lib.rs` | PermissionlessReclaim struct | 736-754 | `close = caller` at 745 |
+| `programs/solshot-escrow-v2/src/lib.rs` | cancel_match loop | 502-518 | Same |
+| `programs/solshot-escrow-v2/src/lib.rs` | CancelMatch struct | 743-765 | `close = caller` at 748 |
+| `programs/solshot-escrow-v2/src/lib.rs` | permissionless_reclaim loop | 561-577 | Same |
+| `programs/solshot-escrow-v2/src/lib.rs` | PermissionlessReclaim struct | 768-782 | `close = caller` at 773 |
+
+### Prerequisites
+- Attacker is registered in `escrow.players[0]` (or first deposited slot).
+- Match is in a state where cancel or reclaim is callable (after timeout for cancel, after grace for reclaim).
+- For v2: match_end_ts has passed; for v1: timeout deadline has passed.
 
 ### Potential Impact
-
-**Severity if confirmed:** HIGH (design-level centralization)
-
-- Financial: 90% of all match pots
-- Users affected: All legitimate players
+**Severity if confirmed:** CRITICAL
+- Financial: Up to (max_players - 1) × wager_lamports per match. v2 max = 900 SOL.
+- Affects: every match in both v1 and v2.
+- Detection: post-fact only (TX is already final on-chain).
 
 ### Investigation Approach
+1. **PoC FIRST**: deploy to devnet (or LiteSVM) and attempt the attack. Read Anchor 0.32.1 close-handler source code to determine exact close-time lamport drain semantics.
+2. Verify whether Anchor's `close = caller` runs:
+   - (a) After all instruction handler logic completes
+   - (b) Drains ALL remaining lamports to the destination
+   - (c) Or whether it requires lamports == 0 first (would reject)
+3. If (a) + (b) hold, the attack works as described.
+4. **Counter-hypothesis to investigate:** Maybe Anchor's `Account<MatchEscrow>` deserialization at function entry locks the account with the current state (10 deposits worth of lamports). If the loop drains some + close drains rest, total still equals the original. The runtime invariant might be "lamports must equal expected_post_close" — verify this.
+5. **If confirmed CRITICAL:** propose fix (require `remaining_accounts.len() == count_ones(deposits_mask)` AND assert all bits in mask are matched in the loop, OR convert `close = caller` to manual rent-only drain + state preservation).
 
-1. **Check:** Is winner constrained to be player_one or player_two?
-   - Look for: Constraint on winner account in SettleMatch
-   - In: `lib.rs:576-600`
-2. **Check:** Is there any on-chain verification of game outcome?
-   - Look for: Signed game result, VRF, oracle
-3. **Determine:**
-   - Vulnerable if: Winner can be any address (not constrained to players)
-   - Partially safe if: Winner must be one of the players (but authority still picks)
+### Indicators of Vulnerability
+
+```rust
+// In cancel_match handler:
+for (i, account) in ctx.remaining_accounts.iter().enumerate() {
+    require!((deposits_mask >> i) & 1 == 1, ...);  // bit set check
+    require!(*account.key == players[i], ...);     // pubkey match
+    **escrow.try_borrow_mut_lamports()? -= wager_lamports;
+    **account.try_borrow_mut_lamports()? += wager_lamports;
+}
+// Loop terminates when remaining_accounts is exhausted —
+// IF count_ones(deposits_mask) > remaining_accounts.len(),
+// some deposited wagers stay in escrow.lamports.
+
+// Then Anchor's #[account(close = caller)] sweeps escrow → caller.
+```
+
+### Indicators of Safety
+
+```rust
+// What a fix would look like:
+require!(
+    ctx.remaining_accounts.len() == deposits_mask.count_ones() as usize,
+    EscrowError::InvalidPlayer
+);
+// PLUS verify each bit i in mask has a matching remaining_accounts[i].
+```
 
 ---
 
-## H015: Concurrent Double-Deposit by Same Player
+## H024: NOVEL HIGH — Non-Contiguous `deposits_mask` is Permanently Unrefundable
 
-**Category:** State Machine
-**Estimated Priority:** Tier 2 (HIGH potential)
-**Historical Precedent:** EP-033 (State machine inconsistency)
-**Origin:** KB (EP-033)
-**Requires:** [state-machine-findings]
+**Category:** CPI + State Machine
+**Estimated Priority:** Tier 1 (HIGH)
+**Origin:** Novel (CPI agent NOVEL-CPI-01)
 
 ### Hypothesis
 
-If a player submits two `deposit_wager` transactions in rapid succession (same slot or adjacent slots), both might pass the deposit flag check before either updates the flag. This could allow a single player to deposit twice, transitioning to Active state as both player_one and player_two.
+If `deposits_mask = 0b10` (player 1 deposited, player 0 didn't), no syntactically valid call sequence can refund player 1. Server logs as "UNRECOVERABLE."
+
+### Attack Vector / Failure Mode
+
+1. Match has 4 players. Player 1 (index 1) deposits first. Player 0 (index 0) never deposits.
+2. Deposit deadline expires.
+3. cancel_match invoked with `remaining_accounts = [players[1]]`:
+   - Loop iteration 0: bit_set check: `(0b10 >> 0) & 1 == 0` → fails on InvalidPlayer.
+4. cancel_match invoked with `remaining_accounts = [players[0], players[1]]`:
+   - Loop iteration 0: bit_set check: bit 0 of 0b10 is 0 → fails.
+5. cancel_match invoked with `remaining_accounts = [players[1]]`:
+   - Loop iteration 0: pubkey check: `players[1] != players[0]` → fails.
+6. No call sequence succeeds. Player 1's wager is locked permanently.
+
+### Target Code
+- All 4 refund loop sites (v1 cancel/reclaim, v2 cancel/reclaim).
+
+### Prerequisites
+- Production deposit ordering produces non-contiguous mask (any time Player N deposits before Player N-1 fails for any reason).
+
+### Potential Impact
+**Severity:** HIGH
+- Financial: per-match wager × N un-refunded slots.
+- Common occurrence: Player 0 fails to deposit while others succeed.
+
+### Investigation Approach
+1. Confirm by code inspection that the loop CANNOT skip indices.
+2. Verify server's claim of "UNRECOVERABLE" at `server/socket-io/main.js:484-489`.
+3. Construct test case: 2-player match, 0b10 mask, attempt all refund call shapes.
+4. Document fix: refactor loop to walk `0..max_players` and look up the corresponding `remaining_account` via index map.
+
+### Indicators of Vulnerability
+```rust
+// Loop can only handle contiguous prefix:
+for (i, account) in ctx.remaining_accounts.iter().enumerate() {
+    require!((deposits_mask >> i) & 1 == 1, ...);
+    // No skip mechanism — i increments monotonically from 0.
+}
+```
+
+---
+
+## H025: H009 RECHECK — Executable-Account Fee Destination
+
+**Category:** Account Validation + CPI
+**Estimated Priority:** Tier 2 (HIGH)
+**Origin:** RECHECK (Feb H009)
+
+### Hypothesis
+
+`treasury` and `ops` (and `winner`) are `UncheckedAccount`. No `!executable` constraint. If authority sets treasury or ops to an executable program account or sysvar, lamport credits via `try_borrow_mut_lamports` may silently succeed in-memory but be discarded at TX commit (per EP-106).
+
+### Investigation Approach
+1. grep `executable` in both lib.rs files — pre-scan reports zero matches.
+2. Confirm SettleMatch struct has no `!treasury.executable` or `!ops.executable` constraint.
+3. Verify Solana runtime behavior: does writing to a reserved/executable account silently succeed or panic?
+4. Recommend fix: `constraint = !treasury.executable @ EscrowError::InvalidTreasury`.
+
+---
+
+## H026: H026 RECHECK — Donation Attack (Lamport Inflation to Escrow)
+
+**Category:** CPI + Token & Economic
+**Estimated Priority:** Tier 3 (verification)
+**Origin:** RECHECK (Feb H026 NOT_VULNERABLE)
+
+### Hypothesis
+
+External actor donates lamports to escrow PDA. Authority gains via `close = authority` on settle (or any caller via `close = caller` on cancel/reclaim). Attacker loses money.
+
+### Investigation Approach
+1. Verify donation is economically irrational for attacker.
+2. Status: HOLDS in both versions.
+
+---
+
+## H027: H029 RECHECK — Atomic-TX Rollback Under Anchor 0.32.1
+
+**Category:** Error Handling + CPI
+**Estimated Priority:** Tier 3 (verification)
+**Origin:** RECHECK (Feb H029)
+
+### Hypothesis
+
+The 6 sequential `try_borrow_mut_lamports()?` calls in settle_match and the loop bodies in cancel/reclaim all use `?`. Verify Solana TX rollback restores all-or-nothing under Anchor 0.32.1.
+
+### Investigation Approach
+1. Verify atomic TX semantics unchanged in Anchor 0.32.1.
+2. Check no unexpected behavior with Anchor 0.30+ auto-resolution.
+
+---
+
+## H028: NOVEL — Pubkey::default() in Zero-Padded Slots
+
+**Category:** Account Validation
+**Estimated Priority:** Tier 3 (defensive)
+**Origin:** Novel
+
+### Hypothesis
+
+v1 `players: [Pubkey; 4]` is zero-padded with Pubkey::default() for unused slots. A future code change that loops over the full array (instead of `players[..max_players]`) would treat default as a valid player.
+
+### Investigation Approach
+1. Verify all current loops use bounded slice.
+2. Document as defensive concern — brittle pattern.
+
+---
+
+## H029: NOVEL — Asymmetric Pot-vs-Mask Scaling
+
+**Category:** Arithmetic + CPI
+**Estimated Priority:** Tier 3 (defensive)
+**Origin:** Novel (Arithmetic agent NOVEL-A2)
+
+### Hypothesis
+
+v2's u16 mask supports 16 bits but max_players ≤ 10. If `count_ones(mask)` could ever exceed `max_players` due to corrupted state, refund loop could over-debit escrow.
+
+### Investigation Approach
+1. Verify deposit_wager bit-set bounded by `player_index < max_players` via `position()` semantics.
+2. Verify no other instruction modifies mask.
+3. Status: structural invariant holds; flag for defensive coding review.
+
+---
+
+## H030: H002 RECHECK — Fee Destination Hijack via update_config
+
+**Category:** Token & Economic + Access Control
+**Estimated Priority:** Tier 1 (HIGH on v1)
+**Origin:** RECHECK (Feb H002)
+
+### Hypothesis
+
+v1 settle reads `config.treasury` and `config.ops` LIVE at v1:686-687. Authority key compromised mid-match → attacker rotates treasury/ops via update_config → next settle sends fees to attacker.
+
+v2 mitigates IN-FLIGHT matches via per-match snapshot at create. But NEW v2 matches created post-compromise still snapshot the poisoned config.
+
+### Investigation Approach
+1. Confirm v1:686-687 reads live config (not snapshot).
+2. Confirm v2:717,726 reads `escrow.treasury_snapshot` and `escrow.ops_snapshot`.
+3. Trace snapshot atomicity at v2:211-214.
+4. Severity: CONFIRMED on v1, EVOLVED on v2 (half-mitigation).
+
+---
+
+## H031: H013 RECHECK — Rent Extraction at Low Wagers
+
+**Category:** Token & Economic
+**Estimated Priority:** Tier 3 (verification)
+**Origin:** RECHECK (Feb H013)
+
+### Hypothesis
+
+`close = caller` on cancel/reclaim sends rent (~0.0036-0.0061 SOL) to caller, not original payer. At low wagers, the rent leakage may dominate the wager.
+
+### Investigation Approach
+1. Compute rent for v1 (232-byte escrow) and v2 (509-byte escrow per pre-scan SPACE).
+2. Confirm rent is paid by authority at create_match and not recovered on cancel/reclaim.
+3. Status: economic leakage but pot conservation holds.
+
+---
+
+## H032: NOVEL — BPS Rotation Ratcheting Across Matches
+
+**Category:** Token & Economic + Upgrade & Admin
+**Estimated Priority:** Tier 2 (HIGH)
+**Origin:** Novel
+
+### Hypothesis
+
+v2 authority can ratchet BPS across matches within the 10% cap with NO timelock. Authority could front-run a tournament with elevated BPS, take +3% extra, then revert before detection.
+
+### Investigation Approach
+1. Verify update_config can change BPS at any time without delay.
+2. Verify ConfigUpdated event is emitted but no timelock structure exists.
+3. Compute economic impact: +3% × volume = significant siphon over time.
+
+---
+
+## H033: NOVEL — start_with_depositors Griefing via Authority-Chosen Activation Timing
+
+**Category:** Token & Economic + Timing
+**Estimated Priority:** Tier 3 (MEDIUM — design concern)
+**Origin:** Novel
+
+### Hypothesis
+
+Authority's choice of WHEN to call start_with_depositors influences pot size. Authority could call at a moment that disadvantages a specific player (e.g., when the player is mid-deposit-broadcast).
+
+### Investigation Approach
+1. Verify v1 has no timing gate (silent-kick via H017).
+2. Verify v2's gate (must be after deposit_window) limits this attack.
+3. Document v2's residual griefing surface.
+
+---
+
+## H034: NOVEL — MIN_WAGER + Extreme Low BPS = Silent Zero Fees
+
+**Category:** Token & Economic
+**Estimated Priority:** Tier 3 (LOW)
+**Origin:** Novel
+
+### Hypothesis
+
+v2 authority can set `fee_bps_treasury = 0` and `fee_bps_ops = 0` — settle pays 100% to winner with no fee accrual. Combined with H011 (self-redirect), authority can subsidize matches where they control a player and tax matches where they're the treasury.
+
+### Investigation Approach
+1. Verify v2 cap allows 0/0 BPS (check distinctness only requires ≤ MAX, not > 0).
+2. Document as differential extraction surface.
+
+---
+
+## H035: NOVEL CRITICAL — Settle-vs-Cancel Priority-Fee Race
+
+**Category:** Timing + Token & Economic
+**Estimated Priority:** Tier 1 (HIGH)
+**Origin:** Novel (Timing agent — H006 inverted)
+
+### Hypothesis
+
+v1's current constants create a 50-minute window (T+601 to T+3600) where both settle (authority) and cancel (player) are simultaneously valid. A losing player can race-cancel via priority fees to deny legitimate settlement. v2 has the same architecture but the race window is the entire `match_end_ts` to `match_end_ts + 24h` interval.
 
 ### Attack Vector
 
-1. Match created with player_one = A, player_two = A (or player_one = A, player_two = B)
-2. Player A sends two deposit_wager TXs in same slot
-3. Both TXs read `player_one_deposited = false`
-4. Both TXs set `player_one_deposited = true` and transfer wager
-5. Second deposit overwrites first, or match transitions to Active with only one actual deposit
+1. Authority signals settle (e.g., off-chain prep for settle_match TX).
+2. Losing player observes the impending settle (mempool monitoring or off-chain signal).
+3. Losing player submits cancel_match TX with high priority fee.
+4. Solana's leader prioritizes higher-fee TXs.
+5. If cancel lands first: state = Cancelled, all players refunded (including loser), settle TX fails on InvalidState.
+6. Loser saved 100 SOL wager loss; cost ~$0.30 priority fee.
 
 ### Target Code
-
-| File | Function | Lines | Relevance |
-|------|----------|-------|-----------|
-| `lib.rs` | `deposit_wager` | 156-222 | Deposit flag check and update |
-
-### Potential Impact
-
-**Severity if confirmed:** HIGH
-
-- Financial: Potential double-deposit leading to incorrect state
-- Users affected: Match participants
+- v1:264-272 (settle deadline), 357-378 (cancel timeout), 442-456 (reclaim).
+- v2:387-454 (settle no deadline), 459-519 (cancel), 526-578 (reclaim).
 
 ### Investigation Approach
+1. Quantify race window:
+   - v1: from `activated_at + TIMEOUT_SECONDS = +600` to `activated_at + SETTLEMENT_TIMEOUT_SECONDS = +3600` for settle vs player cancel.
+   - v2: from `match_end_ts` onwards for settle vs player cancel.
+2. Confirm priority-fee bidding mechanics on Solana.
+3. Document mitigation: shorter cancel-after-activation window, or settle-first-in-block invariant.
 
-1. **Check:** Does the deposit flag check prevent same-slot double execution?
-   - Look for: Solana runtime behavior with duplicate account writes in same slot
-   - In: `lib.rs:156-222`
-2. **Check:** Can player_one == player_two in create_match?
-   - Look for: Distinctness constraint on players
-   - In: CreateMatch struct
-3. **Determine:**
-   - Vulnerable if: No runtime protection against same-slot double deposit
-   - Safe if: Solana runtime serializes writes to same account within a slot
+### Indicators of Vulnerability
+```rust
+// settle_match deadline (v1):
+require!(now <= activated_at + SETTLEMENT_TIMEOUT_SECONDS, ...);
+// cancel_match timeout (v1):
+let timeout_deadline = timeout_reference + TIMEOUT_SECONDS;
+let is_timed_out = now > timeout_deadline;
+// → window: timeout_deadline < now <= settlement_deadline
+//   (T+601 .. T+3600 in v1)
+```
 
 ---
 
-## H016: AwaitingDeposits → Cancel Without Depositing (Rent Theft)
-
-**Category:** State Machine, Token/Economic
-**Estimated Priority:** Tier 2 (HIGH potential)
-**Historical Precedent:** EP-040 (Close-related exploits)
-**Origin:** KB (EP-040)
-**Requires:** [state-machine-findings, token-economic-findings]
-
-### Hypothesis
-
-A player assigned to a match (player_one or player_two) might be able to call `cancel_match` from the AwaitingDeposits state without ever depositing, potentially claiming rent or disrupting the match for the other player who has deposited.
-
-### Attack Vector
-
-1. Match created with player_one = A, player_two = B
-2. Player A deposits wager
-3. Player B (without depositing) calls cancel_match after 24h
-4. cancel_match refunds depositors — Player A gets wager back
-5. Account closes — rent goes to... who? If attacker can claim rent, they profit
-
-### Target Code
-
-| File | Function | Lines | Relevance |
-|------|----------|-------|-----------|
-| `lib.rs` | `cancel_match` | 310-395 | Cancel from AwaitingDeposits |
-| `lib.rs` | `CancelMatch` struct | 630-660 | close attribute |
-
-### Potential Impact
-
-**Severity if confirmed:** HIGH (if rent exploitable)
-
-- Financial: Rent extraction per cancelled match
-- Protocol state: Match disruption
-
-### Investigation Approach
-
-1. **Check:** Who receives rent on cancel_match close?
-   - Look for: `close = ` attribute in CancelMatch struct
-   - In: `lib.rs:630-660`
-2. **Check:** Does cancel from AwaitingDeposits require the caller to have deposited?
-   - Look for: Deposit flag check in cancel logic
-3. **Determine:**
-   - Vulnerable if: Non-depositing player can cancel and claim rent
-   - Safe if: Cancel requires deposit or rent goes to authority/payer
-
----
-
-## H017: Config State Read During Same-TX Mutation
-
-**Category:** State Machine, Timing
-**Estimated Priority:** Tier 2 (HIGH potential)
-**Historical Precedent:** EP-111 (Mutable config PDA in fund-flow conditionals)
-**Origin:** KB (EP-111)
-**Requires:** [state-machine-findings, timing-ordering-findings]
-
-### Hypothesis
-
-If `update_config` and `settle_match` are composed in the same transaction, the config read by settle_match might see stale or mid-update state. An attacker could change treasury/ops addresses in the same TX as settlement, potentially redirecting fees.
-
-### Attack Vector
-
-1. Attacker constructs TX: [update_config(new_treasury=attacker)] → [settle_match]
-2. settle_match reads config AFTER update_config has modified it
-3. Fees go to attacker's new treasury address
-
-### Target Code
-
-| File | Function | Lines | Relevance |
-|------|----------|-------|-----------|
-| `lib.rs` | `update_config` | 70-88 | Config mutation |
-| `lib.rs` | `settle_match` | 228-305 | Config read for fee destinations |
-
-### Potential Impact
-
-**Severity if confirmed:** HIGH
-
-- Financial: Fee redirection in composed transactions
-
-### Investigation Approach
-
-1. **Check:** Can update_config and settle_match be composed in the same TX?
-   - Look for: Whether both instructions share the config account
-   - In: Both account structs
-2. **Check:** Does Solana runtime serialize instructions or share account state within a TX?
-   - Look for: Solana transaction execution model (instructions see prior instruction's writes)
-3. **Determine:**
-   - Vulnerable if: Second instruction sees first instruction's state changes
-   - Safe if: Authority needed for both (attacker already needs full access)
-
----
-
-## H018: ZeroWager Dead Code Exploitation
-
-**Category:** State Machine, Token/Economic
-**Estimated Priority:** Tier 3 (MEDIUM-LOW potential)
-**Historical Precedent:** EP-033 (State machine logic errors)
-**Origin:** KB (EP-033)
-**Requires:** [state-machine-findings, arithmetic-findings]
-
-### Hypothesis
-
-The `ZeroWager` error code exists in the codebase but may never trigger if wager validation occurs elsewhere. If a code path allows wager_lamports = 0, the BPS fee calculation would produce 0 for all recipients, and the match would have no economic purpose.
-
-### Target Code
-
-| File | Function | Lines | Relevance |
-|------|----------|-------|-----------|
-| `lib.rs` | `create_match` | 110-152 | Wager validation |
-| `lib.rs` | constants | MIN_WAGER_LAMPORTS | Minimum bound |
-
-### Potential Impact
-
-**Severity if confirmed:** MEDIUM
-
-- Economic: Zero-value matches waste on-chain resources
-
-### Investigation Approach
-
-1. **Check:** Is MIN_WAGER_LAMPORTS > 0 and enforced in create_match?
-2. **Determine:** Dead code if min wager check prevents zero wager
-
----
-
-## H019: Narrowing Cast Overflow at Hypothetical MAX_WAGER Increase
-
-**Category:** Arithmetic
-**Estimated Priority:** Tier 3 (MEDIUM-LOW potential)
-**Historical Precedent:** EP-020 (Truncation via `as` casts), EP-091 (Cetus $223M)
-**Origin:** KB (EP-020)
-**Requires:** [arithmetic-findings]
-
-### Hypothesis
-
-The `as u64` narrowing casts after u128 BPS calculations are safe at current MAX_WAGER (100 SOL), but if MAX_WAGER were increased (via upgrade), the intermediate u128 values might exceed u64 range, causing silent truncation.
-
-### Target Code
-
-| File | Function | Lines | Relevance |
-|------|----------|-------|-----------|
-| `lib.rs` | `settle_match` | 260, 265, 267 | `as u64` casts |
-
-### Potential Impact
-
-**Severity if confirmed:** MEDIUM (requires upgrade)
-
-- Financial: Fee calculation overflow → incorrect distribution
-
-### Investigation Approach
-
-1. **Check:** At what MAX_WAGER value do the `as u64` casts overflow?
-2. **Determine:** Safe if: MAX_WAGER is a compile-time constant that cannot be changed without redeployment
-
----
-
-## H020: Clock Drift Exploitation at Settlement Deadline
+## H036: H006 RECHECK — Original 23h Dead Zone
 
 **Category:** Timing
-**Estimated Priority:** Tier 3 (MEDIUM-LOW potential)
-**Historical Precedent:** EP-089 (Timestamp manipulation)
-**Origin:** KB (EP-089)
-**Requires:** [timing-ordering-findings]
+**Estimated Priority:** Tier 3 (verification)
+**Origin:** RECHECK (Feb H006)
 
 ### Hypothesis
 
-Solana's `Clock::get()?.unix_timestamp` has 1-2 second drift. At the exact settlement deadline boundary (activated_at + 3600 seconds), clock drift might allow settlement slightly after the intended 1-hour window, or block settlement slightly before.
-
-### Potential Impact
-
-**Severity if confirmed:** LOW — 1-2 second window is immaterial for 1-hour deadlines
+Verify the original H006 (23h dead zone where neither settle nor cancel works) has been replaced by the inverse race window (H035). Math has changed since Feb.
 
 ### Investigation Approach
-
-1. **Check:** Is the deadline check `<=` or `<`?
-2. **Determine:** Non-issue if: 1-2 second drift on 3600-second window
+1. Confirm constants: TIMEOUT_SECONDS=600, SETTLEMENT_TIMEOUT_SECONDS=3600 (current v1).
+2. Confirm in Feb constants were TIMEOUT=86400, SETTLEMENT=3600 (creating 23h gap).
+3. Verify the gap has inverted, not eliminated.
+4. Status: STATUS_CHANGED — new flaw replaces old.
 
 ---
 
-## H021: Permissionless Reclaim During Active Pause
+## H037: H010 RECHECK — Deposit Ordering Asymmetry
 
-**Category:** Timing, Access Control
-**Estimated Priority:** Tier 3 (MEDIUM-LOW potential)
-**Historical Precedent:** Novel (pause interaction)
+**Category:** Timing + Token & Economic
+**Estimated Priority:** Tier 3 (MEDIUM)
+**Origin:** RECHECK (Feb H010)
+
+### Hypothesis
+
+First depositor's funds locked while waiting for second. v1 partially mitigated via cancel-anytime in AwaitingDeposits. v2 explicitly bounds via deposit_window_secs.
+
+### Investigation Approach
+1. Verify v1 cancel timeout for AwaitingDeposits.
+2. Verify v2 hard deadline at v2:255-262.
+3. Status: PARTIAL — improvement in v2 but exposure remains.
+
+---
+
+## H038: H020 RECHECK — Clock Drift at v2 Short-Duration Matches
+
+**Category:** Timing
+**Estimated Priority:** Tier 3 (LOW-MED)
+**Origin:** RECHECK (Feb H020)
+
+### Hypothesis
+
+Validator clock drift of 1-2s is 1.6-3.3% of v2's MIN_DURATION_SECS=60. Material in adversarial bidding scenarios.
+
+### Investigation Approach
+1. Verify MIN_DURATION_SECS lower bound.
+2. Compute drift sensitivity at extreme values.
+3. Status: bumped from LOW to MEDIUM in v2 short-duration scenarios.
+
+---
+
+## H039: NOVEL — v2 Unbounded duration_secs Lockup (8-Day Fund Lock)
+
+**Category:** Timing + Access Control
+**Estimated Priority:** Tier 2 (HIGH)
 **Origin:** Novel
-**Requires:** [timing-ordering-findings, access-control-findings]
 
 ### Hypothesis
 
-`permissionless_reclaim` intentionally has no pause guard (DCA-02 escape hatch). During an emergency pause, funds continue flowing out via this path. An attacker who discovers a vulnerability might pause to prevent legitimate settlements while using reclaim to drain.
-
-### Potential Impact
-
-**Severity if confirmed:** MEDIUM — by design, but worth verifying intent
+Authority can set duration_secs up to MAX_DURATION_SECS=604800 (7 days). Plus 24h grace = 8 days fund lockup. Authority gets nothing economically but can stall the protocol.
 
 ### Investigation Approach
-
-1. **Check:** Is the lack of pause guard on permissionless_reclaim documented as intentional?
-2. **Determine:** By-design if: Comments or docs confirm escape hatch purpose
+1. Verify MAX_DURATION_SECS at v2:38-39.
+2. Verify reclaim deadline = `match_end_ts + 24h`.
+3. Compute total lockup horizon.
+4. Recommend tighter cap (e.g., 24h max for production).
 
 ---
 
-## H022: GlobalConfig Re-Initialization
+## H040: NOVEL — Stale 48-Hour Comment Misleads Operators
 
-**Category:** Access Control, Initialization
-**Estimated Priority:** Tier 3 (MEDIUM-LOW potential)
-**Historical Precedent:** EP-075 (Re-initialization attacks)
-**Origin:** KB (EP-075)
-**Requires:** [access-control-findings]
-
-### Hypothesis
-
-If `initialize_config` can be called again after the config PDA is already initialized, an attacker could re-initialize with their own authority, taking over the protocol.
-
-### Potential Impact
-
-**Severity if confirmed:** CRITICAL (but likely prevented by Anchor `init`)
-
-### Investigation Approach
-
-1. **Check:** Does initialize_config use Anchor `init` (which prevents re-init)?
-2. **Determine:** Safe if: Anchor `init` constraint on GlobalConfig PDA
-
----
-
-## H023: PDA Account Revival After Close
-
-**Category:** State Machine
-**Estimated Priority:** Tier 3 (MEDIUM-LOW potential)
-**Historical Precedent:** EP-036 (Account close revival)
-**Origin:** KB (EP-036)
-**Requires:** [state-machine-findings]
-
-### Hypothesis
-
-After an escrow PDA is closed (settle/cancel/reclaim), the account's data is zeroed. A subsequent `create_match` with the same match_id could re-create the PDA. In a future transaction (not same-TX as H004), this could create state confusion.
-
-### Potential Impact
-
-**Severity if confirmed:** MEDIUM
-
-### Investigation Approach
-
-1. **Check:** Does Anchor `init` prevent creating a PDA with a previously-used match_id (after close)?
-2. **Determine:** Likely safe — Anchor `init` creates fresh accounts, and closed PDAs can be re-initialized with new data
-
----
-
-## H024: Settlement Deadline Bypass via activated_at Path
-
-**Category:** Timing, State Machine
-**Estimated Priority:** Tier 3 (MEDIUM-LOW potential)
-**Historical Precedent:** EP-033 (Logic bypass)
-**Origin:** KB (EP-033)
-**Requires:** [timing-ordering-findings, state-machine-findings]
-
-### Hypothesis
-
-The settlement deadline check has a conditional: `if ctx.accounts.escrow.activated_at > 0`. If there's a path to Active state without setting activated_at, the deadline check would be skipped, allowing settlement at any time.
-
-### Potential Impact
-
-**Severity if confirmed:** HIGH (but all agents confirm activated_at is always set)
-
-### Investigation Approach
-
-1. **Check:** Is activated_at set on every AwaitingDeposits → Active transition?
-2. **Determine:** Safe if: No path to Active without setting activated_at (confirmed by agents 03 and 08)
-
----
-
-## H025: Match ID Collision for PDA Hijack
-
-**Category:** Access Control
-**Estimated Priority:** Tier 3 (MEDIUM-LOW potential)
-**Historical Precedent:** Novel (string-based PDA seeds)
+**Category:** Documentation / Error Handling
+**Estimated Priority:** Tier 3 (LOW)
 **Origin:** Novel
-**Requires:** [access-control-findings]
 
 ### Hypothesis
 
-PDA seeds are `["match", match_id.as_bytes()]`. If match_id is user-controlled and an attacker can predict or duplicate a match_id, they could create a PDA that collides with a legitimate match.
-
-### Potential Impact
-
-**Severity if confirmed:** MEDIUM
+`v1:22-23` says "48-hour permissionless reclaim timeout" but actual is 1200s = 20 min. Operators reading the comment plan for 48h windows.
 
 ### Investigation Approach
-
-1. **Check:** Is match_id user-controlled or server-generated?
-2. **Check:** Does Anchor `init` prevent creating a PDA that already exists?
-3. **Determine:** Safe if: PDA uniqueness is enforced by Anchor and match_id is server-generated
+1. Read v1:22-23.
+2. Verify actual constant value.
+3. Recommend fixing the comment.
 
 ---
 
-## H026: Escrow PDA Lamport Inflation (Donation Attack)
+## H041: H016 RECHECK — close = caller Rent Theft (Both)
 
-**Category:** Token/Economic
-**Estimated Priority:** Tier 3 (MEDIUM-LOW potential)
-**Historical Precedent:** Novel (donation-based economic manipulation)
+**Category:** State Machine + Token & Economic
+**Estimated Priority:** Tier 3 (LOW)
+**Origin:** RECHECK (Feb H016)
+
+### Hypothesis
+
+A non-depositing observer can race to call cancel after timeout (matching `is_player` test) and pocket the PDA rent reserve (~0.002 SOL).
+
+### Investigation Approach
+1. Confirm `close = caller` on cancel/reclaim in both versions.
+2. Compute rent value.
+3. Status: LOW per Feb; race surface remains.
+
+---
+
+## H042: NOVEL — GlobalConfig Has No Close Path (Key-Loss Permanence)
+
+**Category:** Upgrade & Admin
+**Estimated Priority:** Tier 2 (HIGH operational)
 **Origin:** Novel
-**Requires:** [token-economic-findings, cpi-external-findings]
 
 ### Hypothesis
 
-Anyone can transfer SOL to the escrow PDA via system transfer (outside the program). Extra lamports above 2*wager+rent would be swept to the `close` recipient (authority) on account close. This creates a donation → authority extraction path.
-
-### Potential Impact
-
-**Severity if confirmed:** LOW (attacker loses donated SOL, authority gains)
+No `close_config` instruction exists. If authority key is lost AND H001 stays open, GlobalConfig is permanently locked. Recovery requires Layer-1 program upgrade introducing a recover instruction — which itself requires upgrade-key access.
 
 ### Investigation Approach
-
-1. **Check:** What happens to excess lamports when the account is closed?
-2. **Determine:** Non-exploitable if: Only authority benefits (attacker loses money)
+1. grep for `close = ` near GlobalConfig usages.
+2. Verify no instruction can rotate authority without authority signing.
+3. Document operational risk.
 
 ---
 
-## H027: Authority Self-Play Bypass (OC-06)
+## H043: NOVEL — Idempotent Pause Emits No Event
 
-**Category:** Access Control
-**Estimated Priority:** Tier 3 (MEDIUM-LOW potential)
-**Historical Precedent:** Novel (game-specific constraint)
+**Category:** Upgrade & Admin
+**Estimated Priority:** Tier 3 (LOW operational)
 **Origin:** Novel
-**Requires:** [access-control-findings]
 
 ### Hypothesis
 
-OC-06 prevents authority from being a player. But authority could use a secondary wallet to play, then always settle in their favor. The on-chain constraint only checks `authority != player_one && authority != player_two` against the signing key.
-
-### Potential Impact
-
-**Severity if confirmed:** MEDIUM (design limitation, not code bug)
+`pause_program` and `unpause_program` are idempotent and emit no events. State changes cannot be tracked off-chain via event-replay.
 
 ### Investigation Approach
-
-1. **Check:** Does OC-06 exist and what exactly does it check?
-2. **Determine:** Design concern if: Authority can trivially use a different wallet
+1. Verify no Paused/Unpaused events at v1:112-122, v2:146-154.
+2. Recommend adding events for off-chain monitoring.
 
 ---
 
-## H028: BPS Constant Manipulation via Upgrade
+## H044: NOVEL — Single Hot Wallet for Layer 1 + Layer 2
 
-**Category:** Upgrade/Admin
-**Estimated Priority:** Tier 3 (MEDIUM-LOW potential)
-**Historical Precedent:** EP-079 (Upgrade-related vulnerabilities)
-**Origin:** KB (EP-079)
-**Requires:** [access-control-findings]
+**Category:** Upgrade & Admin + Access Control
+**Estimated Priority:** Tier 1 (CRITICAL operational)
+**Origin:** Novel (verified live)
 
 ### Hypothesis
 
-BPS constants (TREASURY_BPS=700, OPS_BPS=300) are hardcoded. If the program has an upgrade authority, the constants could be changed to redirect a larger percentage of pots.
-
-### Potential Impact
-
-**Severity if confirmed:** MEDIUM (requires upgrade authority)
+The same hot wallet `HPyV...nokv` holds both Solana-level upgrade authority and application-level config.authority for both v1 and v2. Single-key compromise = total protocol drainage AND ability to deploy malicious replacement bytecode.
 
 ### Investigation Approach
-
-1. **Check:** Is the program upgradeable? Is there an upgrade authority?
-2. **Determine:** Not applicable if: Program is immutable after deployment
+1. `solana program show <program_id>` for both v1 and v2 (verified by Upgrade/Admin agent).
+2. Verify deploy keypair == config init authority.
+3. Document for the report. Pre-mainnet decision per JJ.
 
 ---
 
-## H029: Error Propagation in try_borrow_mut_lamports Chain
+## H045: NOVEL — Snapshot Drift Across update_config Calls (Audit Trail Gap)
 
-**Category:** CPI/External, State Machine
-**Estimated Priority:** Tier 3 (MEDIUM-LOW potential)
-**Historical Precedent:** EP-046 (let _ = on CPI — silent error suppression)
-**Origin:** KB (EP-046)
-**Requires:** [cpi-external-findings, state-machine-findings]
+**Category:** Upgrade & Admin + Token & Economic
+**Estimated Priority:** Tier 3 (LOW operational)
+**Origin:** Novel
 
 ### Hypothesis
 
-`settle_match` performs three sequential lamport transfers (winner, treasury, ops). If the state is set to Settled before all transfers complete and one transfer fails, the state revert (due to transaction atomicity) might not be properly handled.
-
-### Potential Impact
-
-**Severity if confirmed:** MEDIUM
+v2 per-match BPS snapshot is taken at create_match. Different matches in flight may have different snapshots. There's no on-chain audit trail relating snapshot → config-version. Off-chain monitoring can't easily detect "this match was created with poisoned config."
 
 ### Investigation Approach
-
-1. **Check:** Is state set before or after all lamport transfers?
-2. **Check:** Do all transfers use `?` error propagation?
-3. **Determine:** Safe if: Solana TX atomicity ensures all-or-nothing (confirmed by agent 04)
+1. Verify create_match emits MatchCreated event with snapshot values.
+2. Identify any gap in event coverage.
+3. Recommend: include `config_version` field in snapshot.
 
 ---
 
-## H030: Cancel from AwaitingDeposits Refund Logic
+## H046: NOVEL — Layer-1 Bytecode Replacement Risk
 
-**Category:** State Machine, Token/Economic
-**Estimated Priority:** Tier 3 (MEDIUM-LOW potential)
-**Historical Precedent:** EP-033 (State machine edge cases)
-**Origin:** KB (EP-033)
-**Requires:** [state-machine-findings, token-economic-findings]
+**Category:** Upgrade & Admin
+**Estimated Priority:** Tier 1 (CRITICAL operational)
+**Origin:** Novel
 
 ### Hypothesis
 
-When cancel_match is called from AwaitingDeposits state (only one or zero deposits), the refund logic must correctly handle: (a) no deposits, (b) only player_one deposited, (c) only player_two deposited. Incorrect handling could lead to funds being sent to wrong recipient or stuck.
-
-### Potential Impact
-
-**Severity if confirmed:** MEDIUM
+Upgrade authority can deploy malicious replacement bytecode that drains all MatchEscrow PDAs in one TX. EP-083 pattern. No timelock, no notice period, no on-chain governance.
 
 ### Investigation Approach
+1. Verify upgrade authority has full control (BPF Loader Upgradeable defaults).
+2. Document as Layer-1 single-key risk.
+3. Pre-mainnet recommendation: transfer upgrade authority to multisig.
 
-1. **Check:** Does cancel_match check deposit flags before refunding?
-2. **Check:** Are all three cases (0, 1, or 2 deposits) handled correctly?
-3. **Determine:** Safe if: Each deposit flag is checked independently before refund
+---
+
+## H047: NOVEL — UncheckedAccount No `is_writable` Check At-Program
+
+**Category:** Account Validation
+**Estimated Priority:** Tier 3 (defense-in-depth)
+**Origin:** Novel
+
+### Hypothesis
+
+`remaining_accounts` writability is not enforced in-program. The lamport credit operation requires writability — Solana runtime would reject if not writable, but the program doesn't pre-check.
+
+### Investigation Approach
+1. Confirm Solana runtime rejects writes to non-writable accounts.
+2. Recommend adding `account.is_writable` check for fail-fast.
+
+---
+
+## H048: NOVEL — Permissionless Reclaim Caller Default-Pubkey
+
+**Category:** Account Validation
+**Estimated Priority:** Tier 3 (LOW)
+**Origin:** Novel
+
+### Hypothesis
+
+`permissionless_reclaim` doesn't explicitly check `caller != Pubkey::default()`. Solana runtime won't allow default-pubkey signer in practice, but combined with `close = caller`, the semantic intent leans on runtime guarantees.
+
+### Investigation Approach
+1. Verify Solana runtime rejects default-pubkey signers.
+2. Document defense-in-depth gap.
+
+---
+
+## H049: NOVEL — match_id PDA Seed Entropy
+
+**Category:** Account Validation + State Machine
+**Estimated Priority:** Tier 3 (cross-domain)
+**Origin:** Novel
+
+### Hypothesis
+
+match_id is a 4-character server-generated string (per project memory: "Server generates 4-character match ids"). 4 chars from a small alphabet = limited entropy. PDA seed collision possible if entropy < 32 bits.
+
+### Investigation Approach
+1. Identify match_id alphabet and length in server code.
+2. Compute collision probability.
+3. Status: server-side concern, but on-chain has no entropy check. Cross-handoff to DB scope.
+
+---
+
+## H050: S001/S002 RECHECK — Combined Attack Chain Status
+
+**Category:** Multi-domain
+**Estimated Priority:** Tier 1 (CRITICAL — chain)
+**Origin:** RECHECK (Feb S001 + S002)
+
+### Hypothesis
+
+Verify status of the original combined-attack chains:
+- **S001** = H001 + H002 + H005 (authority takeover + fee redirect + winner fraud).
+- **S002** = H003 + H007 (distinctness poison + pause double lock).
+
+### Investigation Approach
+1. Determine status of each component finding (H001, H002, H003, H005, H007).
+2. S001: H001 still open in both. H002 still open on v1, mitigated for in-flight on v2. H005 still open by design. **Chain still works on v1; partially mitigated on v2.**
+3. S002: H003 fixed in both (distinctness re-validated post-update). H007 still open on v1, fixed on v2. **Chain partially closed on v1; closed on v2.**
 
 ---
 
@@ -1192,121 +1223,71 @@ When cancel_match is called from AwaitingDeposits state (only one or zero deposi
 
 | Strategy A | Strategy B | Potential Combination |
 |------------|------------|----------------------|
-| H001 (Authority Takeover) | H002 (Fee Hijack) | Takeover enables total fee redirection |
-| H001 (Authority Takeover) | H005 (Winner Fraud) | Takeover enables systematic winner manipulation |
-| H001 (Authority Takeover) | H007 (Pause Griefing) | Takeover enables protocol freeze |
-| H003 (Distinctness DoS) | H006 (Dead Zone) | DoS forces all matches into 24h+ lockup |
-| H005 (Winner Fraud) | H014 (Collusion) | Both target authority's winner selection power |
-| H008 (PDA Spam) | H010 (Deposit Asymmetry) | Spam matches with intentional non-deposit |
-| H004 (PDA Revival) | H023 (Post-Close Revival) | Same attack class, different timing |
+| H001 | H002 | One-step rotation enables instant treasury redirect chain |
+| H001 | H003 | Authority compromise enables systematic winner fraud |
+| H001 | H011 | Authority compromise → BPS poisoning → 10% siphon (v2 only) |
+| H001 | H023 | Authority compromise → cancel-with-self trick to drain pots |
+| H016 | H035 | v1 pause + race window = compounded griefing |
+| H023 | H024 | Both attack the refund loop pattern; investigate together |
+| H025 | H047 | Both UncheckedAccount defense-in-depth gaps |
+| H011 | H032 | Configurable BPS attack surface — any-time mutation |
+| H017 | H033 | Authority compaction timing griefing patterns |
+| H035 | H039 | Timing-based griefing pairs |
 
 ### Investigation Priority Order
 
-**Tier 1 (Investigate First):**
-1. H001: Authority takeover — single most impactful attack if authority key is compromised
-2. H003: Distinctness bypass — could make all settlements impossible
-3. H004: PDA revival — if possible, enables rent extraction or state confusion
-4. H005: Winner fraud — fundamental centralization concern
-5. H002: Fee hijack — ongoing extraction without player-visible impact
+**Tier 1 (Investigate First — CRITICAL):**
 
-**Tier 2 (High Priority):**
-6-17. H006 through H017 in order listed
+1. **H023** — Partial-refund theft via close=caller. NEEDS PoC FIRST. If confirmed, this is the highest-impact finding in the audit.
+2. **H024** — Non-contiguous mask permanently unrefundable. Confirms a known fund-lock pattern.
+3. **H001** — One-step authority transfer (verify still open by design).
+4. **H050** — Combined chain status (touches H001, H002, H003, H007).
+5. **H035** — Settle-vs-cancel race (CRITICAL economic loss potential).
+6. **H011** — H028 invalidated on v2 (BPS poisoning path).
+7. **H030** — H002 verification (v1 live read still vulnerable).
+8. **H016** — H007 still open on v1.
+9. **H017** — v1 silent-kick attack (NEW novel finding).
+10. **H044** — Single hot wallet Layer 1 + Layer 2 (verified live).
+11. **H046** — Layer-1 bytecode replacement risk.
+12. **H004** — S004 fix verification.
 
-**Tier 3 (Standard):**
-18-30. H018 through H030 in order listed
+**Tier 2 (HIGH — Investigate Second):**
 
----
+13. **H002** — H011 self-redirect chain.
+14. **H003** — H005 winner fraud.
+15. **H006** — H014 collusion.
+16. **H013** — H012 v2 underflow re-validation.
+17. **H022** — H030 v2 refund-all flow.
+18. **H025** — H009 executable check.
+19. **H032** — BPS rotation ratcheting.
+20. **H039** — v2 unbounded duration.
+21. **H042** — GlobalConfig has no close path.
 
-## Supplemental Strategies
+**Tier 3 (MEDIUM-LOW — Investigate Last):**
 
-*Generated after Batch 1 investigation (H001-H005). Based on confirmed findings and incidental discoveries.*
-
-### S001: Combined Authority Takeover + Fee Redirect + Winner Fraud (Chain Attack)
-
-**Category:** Access Control, Token/Economic
-**Estimated Priority:** Tier 1 (CRITICAL potential)
-**Historical Precedent:** EP-068 chain (Step Finance $30-40M), H001+H002+H005 combination
-**Origin:** Novel (chain from Batch 1 findings)
-
-**Hypothesis:** A single authority key compromise enables a chained attack: (1) update_config to redirect treasury/ops to attacker wallets, (2) settle all active matches with attacker-controlled player as winner, (3) transfer authority to lock out recovery. Combined extraction: 100% of all deposited funds + permanent protocol takeover.
-
-**Attack Vector:**
-1. TX0: `update_config(new_treasury=attacker1, new_ops=attacker2)` — redirects 10% fees
-2. TX1-N: `settle_match(winner=colluding_player)` for all active matches — extracts 90% per match
-3. TX_final: `update_config(new_authority=attacker_key)` — locks out recovery
-
-**Target Code:** `lib.rs:70-89` (update_config), `lib.rs:228-305` (settle_match)
-**Requires:** [access-control-findings, token-economic-findings]
-
-### S002: Distinctness Poison + Pause Double Lock
-
-**Category:** State Machine, Access Control
-**Estimated Priority:** Tier 2 (HIGH potential)
-**Historical Precedent:** H003+H007 combination
-**Origin:** Novel (chain from Batch 1 findings)
-
-**Hypothesis:** A compromised authority can execute a two-step griefing attack: (1) set treasury == ops via update_config to break all settlement, then (2) pause the program. Now neither settle (broken by distinctness) nor cancel (blocked by pause) work. Only permissionless_reclaim after 48h remains as escape. Maximum fund lockup.
-
-**Attack Vector:**
-1. TX0: `update_config(new_treasury=X, new_ops=X)` — poisons config
-2. TX1: `pause_program` — blocks cancel_match
-3. All active matches locked for 48h until permissionless_reclaim
-
-**Target Code:** `lib.rs:70-89`, `lib.rs:90-95` (pause), settlement/cancel handlers
-**Requires:** [state-machine-findings, access-control-findings]
-
-### S003: Authority == Treasury Economic Consolidation
-
-**Category:** Token/Economic, Access Control
-**Estimated Priority:** Tier 2 (HIGH potential)
-**Historical Precedent:** EP-099 (Vaultka fee routing), H003 incidental discovery
-**Origin:** Novel (from H003 investigation)
-
-**Hypothesis:** Authority sets `treasury == authority_wallet` via update_config. Unlike treasury==ops (which breaks settlement), treasury==authority may succeed because the SettleMatch struct has separate constraints for treasury and authority accounts. This silently redirects 7% of all pots to the authority, creating hidden fee capture.
-
-**Attack Vector:**
-1. `update_config(new_treasury=authority_wallet)` — passes because update_config has no distinctness checks
-2. `settle_match` passes treasury=authority_wallet — constraint `treasury.key() == config.treasury` ✓
-3. Authority receives 7% fee on top of normal operational role
-
-**Target Code:** `lib.rs:70-89`, `lib.rs:583-598` (SettleMatch constraints)
-**Requires:** [token-economic-findings, access-control-findings]
-
-### S004: PDA Namespace Pre-Squatting DoS
-
-**Category:** Access Control, Resource/DoS
-**Estimated Priority:** Tier 2 (HIGH potential)
-**Historical Precedent:** EP-084 (Resource exhaustion), H004 incidental + H008 refinement
-**Origin:** Novel (from H004 investigation)
-
-**Hypothesis:** Because `create_match` lacks `has_one = authority`, an attacker can pre-create escrow PDAs using match_ids the server will use in the future. When the legitimate server tries to create a match with that ID, `init` fails (PDA already exists). Combined with cancel-after-24h for rent recovery, this is a sustainable DoS.
-
-**Attack Vector:**
-1. Attacker predicts or brute-forces server match_id patterns
-2. Creates escrow PDAs with those IDs (paying rent)
-3. Server `create_match` calls fail (PDA already exists)
-4. After 24h, attacker cancels to recover rent
-5. Repeat — sustainable DoS with zero net cost
-
-**Target Code:** `lib.rs:500-530` (CreateMatch struct, no authority check), match_id seed derivation
-**Requires:** [access-control-findings]
+Remaining strategies (H005, H007-H010, H012, H014-H015, H018-H021, H026-H029, H031, H033-H034, H036-H038, H040-H041, H043, H045, H047-H049).
 
 ---
 
 ## Statistics
 
-| Category | Count | Tier 1 | Tier 2 | Tier 3 | Novel |
-|----------|-------|--------|--------|--------|-------|
-| Access Control | 8 | 3 | 4 | 1 | 2 |
-| Arithmetic | 2 | 0 | 1 | 1 | 0 |
-| State Machine | 6 | 1 | 2 | 3 | 1 |
-| CPI & External | 2 | 0 | 1 | 1 | 0 |
-| Token & Economic | 7 | 2 | 3 | 2 | 2 |
-| Timing & Ordering | 5 | 0 | 2 | 3 | 2 |
-| Upgrade & Admin | 1 | 0 | 0 | 1 | 0 |
-| **TOTAL** | **30** | **5** | **12** | **13** | **7 (23%)** |
+| Category | Count | Tier 1 | Tier 2 | Tier 3 | Origin |
+|----------|-------|--------|--------|--------|--------|
+| Access Control | 10 | 4 | 3 | 3 | 7 RECHECK / 3 Novel |
+| Arithmetic | 5 | 1 | 1 | 3 | 3 RECHECK / 2 Novel |
+| State Machine | 7 | 2 | 1 | 4 | 4 RECHECK / 3 Novel |
+| CPI & External | 7 | 2 | 1 | 4 | 3 RECHECK / 4 Novel |
+| Token & Economic | 5 | 1 | 1 | 3 | 2 RECHECK / 3 Novel |
+| Timing & Ordering | 6 | 1 | 1 | 4 | 3 RECHECK / 3 Novel |
+| Upgrade & Admin | 6 | 2 | 1 | 3 | 1 RECHECK / 5 Novel |
+| Account Validation | 4 | 0 | 0 | 4 | 0 RECHECK / 4 Novel |
+| **TOTAL** | **50** | **13** | **9** | **28** | **23 RECHECK / 27 Novel (54%)** |
 
-Note: Some strategies span multiple categories. Counted once by primary category.
+---
+
+## Supplemental Strategies
+
+(Initially empty — populated after Phase 4 Batch 1 surfaces additional hypotheses.)
 
 ---
 
@@ -1314,19 +1295,28 @@ Note: Some strategies span multiple categories. Counted once by primary category
 
 ### General Guidance
 
-- Each strategy should be investigated independently
-- Reference ARCHITECTURE.md for context
-- Write findings to `.audit/findings/H{XXX}.md`
-- Don't skip strategies even if they seem unlikely
-- Note any discoveries that suggest NEW strategies
+- **H023 must be investigated FIRST.** It is the highest-impact novel finding and requires a PoC against Anchor 0.32.1's close-handler semantics. Do NOT assume the attack works — verify.
+- Reference `.audit/ARCHITECTURE.md` for the unified architectural context.
+- Reference `.audit/HANDOVER.md` Findings Digest + False Positive Log for prior-audit context.
+- Write findings to `.audit/findings/H{XXX}.md`.
+- Note any discoveries that suggest NEW strategies (add to Supplemental Strategies section).
+- Distinguish CONFIRMED (exploitable) from POTENTIAL (conditional on authority compromise) — the audit's report will calibrate severity differently for each.
 
 ### Status Definitions
 
-- **CONFIRMED**: Vulnerability exists and is exploitable
-- **POTENTIAL**: Could be vulnerable under specific conditions
-- **NOT VULNERABLE**: Protected against this attack
-- **NEEDS MANUAL REVIEW**: Couldn't determine, needs expert
+- **CONFIRMED**: Vulnerability exists and is exploitable as described.
+- **POTENTIAL**: Could be vulnerable under specific conditions (e.g., authority key compromise — common precondition in this audit).
+- **NOT VULNERABLE**: Protected against this attack; defense-in-depth holds.
+- **NEEDS MANUAL REVIEW**: Could not determine; needs JJ or domain expert.
+
+### Key Codebase Notes
+
+- v1 source: `programs/solshot-escrow/src/lib.rs` (962 LOC).
+- v2 source: `programs/solshot-escrow-v2/src/lib.rs` (1020 LOC).
+- Anchor 0.32.1 — auto-resolution rules apply (see `Docs/PRIOR_AUDIT_DELTA.md`).
+- BOK proptests at `programs/solshot-escrow/tests/bok_*.rs` cover v1 ONLY. v2 has no formal verification coverage.
+- Both programs deployed live to devnet: v1 = `4kzr...nH1`, v2 = `BVKX...G7N`.
 
 ---
 
-**This catalog is the input for Phase 4: Parallel Investigation**
+**This catalog is the input for Phase 4: Parallel Investigation.**

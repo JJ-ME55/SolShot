@@ -16,14 +16,21 @@ const TREASURY_BPS: u64 = 700;
 const OPS_BPS: u64 = 300;
 const BPS_DENOMINATOR: u64 = 10000;
 
-/// 10-minute timeout for deposit window (ESC-10 — higher no-show risk with more players)
-const TIMEOUT_SECONDS: i64 = 600;
+/// 1-hour timeout for deposit window AND post-activation player-cancel (ESC-10).
+/// Aligned with SETTLEMENT_TIMEOUT_SECONDS to eliminate the H035 settle-vs-cancel race window.
+/// (Previously 600s — created a 50-min race where losing player could priority-bid to deny settlement.)
+const TIMEOUT_SECONDS: i64 = 3600;
 
-/// 48-hour permissionless reclaim timeout (2x normal timeout) — DCA-02
-const PERMISSIONLESS_RECLAIM_TIMEOUT: i64 = TIMEOUT_SECONDS * 2; // 172800 seconds
+/// 2-hour permissionless reclaim timeout (2x normal timeout) — DCA-02.
+/// (Previously docstring claimed 48h but math gave 1200s — H040.)
+const PERMISSIONLESS_RECLAIM_TIMEOUT: i64 = TIMEOUT_SECONDS * 2; // 7200 seconds = 2 hours
 
 /// 1-hour settlement deadline after match activation (OC-07)
 const SETTLEMENT_TIMEOUT_SECONDS: i64 = 3600;
+
+/// Minimum deposit-window duration before authority may activate via start_with_depositors (H017 fix).
+/// Mirrors v2's deposit_window_secs gate — prevents silent-kick of in-flight depositors.
+const MIN_DEPOSIT_WINDOW_SECS: i64 = 600; // 10 minutes
 
 /// Minimum wager: 0.00001 SOL — ensures both fees are at least 1 lamport (OC-08)
 const MIN_WAGER_LAMPORTS: u64 = 10_000;
@@ -107,17 +114,26 @@ pub mod solshot_escrow {
         Ok(())
     }
 
-    /// Emergency pause — halts all economic instructions (OC-04).
+    /// Emergency pause — halts new commitments (create_match + deposit_wager).
+    /// In-flight funds can still exit via cancel/settle/reclaim (H016 fix).
     /// Can be called even when already paused (idempotent).
+    /// H043 fix: emits Paused event for off-chain monitoring.
     pub fn pause_program(ctx: Context<PauseProgram>) -> Result<()> {
         ctx.accounts.config.is_paused = true;
+        emit!(Paused {
+            authority: ctx.accounts.authority.key(),
+        });
         Ok(())
     }
 
-    /// Emergency unpause — resumes economic instructions (OC-04).
+    /// Emergency unpause — resumes new-commitment instructions.
     /// Can be called even when already unpaused (idempotent).
+    /// H043 fix: emits Unpaused event for off-chain monitoring.
     pub fn unpause_program(ctx: Context<UnpauseProgram>) -> Result<()> {
         ctx.accounts.config.is_paused = false;
+        emit!(Unpaused {
+            authority: ctx.accounts.authority.key(),
+        });
         Ok(())
     }
 
@@ -388,6 +404,14 @@ pub mod solshot_escrow {
             escrow.state = MatchState::Cancelled;
         } // mutable borrow dropped here
 
+        // H023 fix — require complete refund: caller must pass exactly one remaining_account per
+        // deposited bit, in player-index order. Without this gate, a malicious player could pass
+        // a partial array and have `close = caller` sweep un-refunded co-depositor wagers.
+        require!(
+            ctx.remaining_accounts.len() == deposits_mask.count_ones() as usize,
+            EscrowError::IncompleteRefund
+        );
+
         // ESC-08: Refund deposited players via remaining_accounts
         // Caller must pass deposited player accounts in player-index order
         for (i, account) in ctx.remaining_accounts.iter().enumerate() {
@@ -461,6 +485,12 @@ pub mod solshot_escrow {
             escrow.state = MatchState::Cancelled;
         } // mutable borrow dropped
 
+        // H023 fix — require complete refund: same check as cancel_match.
+        require!(
+            ctx.remaining_accounts.len() == deposits_mask.count_ones() as usize,
+            EscrowError::IncompleteRefund
+        );
+
         // ESC-09: Refund deposited players via remaining_accounts
         for (i, account) in ctx.remaining_accounts.iter().enumerate() {
             require!(i < max_players, EscrowError::InvalidPlayer);
@@ -494,6 +524,16 @@ pub mod solshot_escrow {
         require!(
             ctx.accounts.escrow.state == MatchState::AwaitingDeposits,
             EscrowError::MatchAlreadyStarted
+        );
+
+        // H017 fix — block silent-kick: enforce minimum deposit window before authority can compact.
+        // Mirrors v2's deposit_window_secs gate. Prevents authority from racing in-flight deposit TXs.
+        let deposit_deadline = ctx.accounts.escrow.created_at
+            .checked_add(MIN_DEPOSIT_WINDOW_SECS)
+            .ok_or(EscrowError::ArithmeticOverflow)?;
+        require!(
+            Clock::get()?.unix_timestamp >= deposit_deadline,
+            EscrowError::DepositWindowOpen
         );
 
         let num_deposited = ctx.accounts.escrow.deposits_mask.count_ones();
@@ -670,38 +710,43 @@ pub struct SettleMatch<'info> {
     pub authority: Signer<'info>,
 
     /// Winner: must be one of the N registered players (OC-02, ESC-07 — resolves H008, H002, S001)
-    /// CHECK: Constrained to one of escrow.players[0..max_players]
+    /// H025 fix: !executable guard prevents authority from snapshotting an executable account
+    /// as a fee/winner destination, which would silently burn lamports per EP-106.
+    /// CHECK: Constrained to one of escrow.players[0..max_players]; not executable
     #[account(
         mut,
         constraint = (0..escrow.max_players as usize)
             .any(|i| escrow.players[i] == winner.key())
-            @ EscrowError::InvalidWinner
+            @ EscrowError::InvalidWinner,
+        constraint = !winner.executable @ EscrowError::ExecutableNotAllowed,
     )]
     pub winner: UncheckedAccount<'info>,
 
     /// Treasury: validated against config PDA (OC-03 — resolves H001, H003, S001, GAP-003, H048)
-    /// CHECK: Constrained to config.treasury; uniqueness check vs ops
+    /// CHECK: Constrained to config.treasury; uniqueness check vs ops; not executable (H025)
     #[account(
         mut,
         constraint = treasury.key() == config.treasury @ EscrowError::InvalidTreasury,
         constraint = treasury.key() != ops.key() @ EscrowError::DuplicateFeeAccount,
+        constraint = !treasury.executable @ EscrowError::ExecutableNotAllowed,
     )]
     pub treasury: UncheckedAccount<'info>,
 
     /// Ops: validated against config PDA (OC-03)
-    /// CHECK: Constrained to config.ops
+    /// CHECK: Constrained to config.ops; not executable (H025)
     #[account(
         mut,
         constraint = ops.key() == config.ops @ EscrowError::InvalidOps,
+        constraint = !ops.executable @ EscrowError::ExecutableNotAllowed,
     )]
     pub ops: UncheckedAccount<'info>,
 
-    /// Config PDA — provides validated treasury/ops/authority pubkeys + pause guard (OC-04)
+    /// Config PDA — provides validated treasury/ops/authority pubkeys.
+    /// H016 fix: pause guard removed from settle so in-flight funds can always exit during pause.
     #[account(
         seeds = [GlobalConfig::SEED],
         bump = config.bump,
         has_one = authority @ EscrowError::Unauthorized,
-        constraint = !config.is_paused @ EscrowError::ProgramPaused,
     )]
     pub config: Account<'info, GlobalConfig>,
 
@@ -709,6 +754,7 @@ pub struct SettleMatch<'info> {
 }
 
 /// CancelMatch — refund deposited players via remaining_accounts (OC-04, OC-05, OC-07, OC-09, OC-10, ESC-08)
+/// H016 fix: pause guard removed so player escape hatch always works during pause.
 #[derive(Accounts)]
 pub struct CancelMatch<'info> {
     #[account(
@@ -722,11 +768,11 @@ pub struct CancelMatch<'info> {
     #[account(mut)]
     pub caller: Signer<'info>,
 
-    /// Config PDA — provides authority pubkey + pause guard (OC-04, OC-05)
+    /// Config PDA — provides authority pubkey for caller-is-authority check.
+    /// H016 fix: NO pause guard (pause must not lock player exits).
     #[account(
         seeds = [GlobalConfig::SEED],
         bump = config.bump,
-        constraint = !config.is_paused @ EscrowError::ProgramPaused,
     )]
     pub config: Account<'info, GlobalConfig>,
 
@@ -754,6 +800,9 @@ pub struct PermissionlessReclaim<'info> {
 }
 
 /// StartWithDepositors — authority activates match with partial deposits (ESC-11)
+/// H009 fix: pause guard removed so the partial-activation path is not blocked during pause —
+/// pairs with H016 fix on cancel_match (during pause, players can exit; authority can still settle).
+/// (Note: H017 is fixed in the handler body via MIN_DEPOSIT_WINDOW_SECS gate.)
 #[derive(Accounts)]
 pub struct StartWithDepositors<'info> {
     #[account(
@@ -766,12 +815,11 @@ pub struct StartWithDepositors<'info> {
 
     pub authority: Signer<'info>,
 
-    /// Config PDA — provides authority validation + pause guard
+    /// Config PDA — provides authority validation. H009 fix: NO pause guard.
     #[account(
         seeds = [GlobalConfig::SEED],
         bump = config.bump,
         has_one = authority @ EscrowError::Unauthorized,
-        constraint = !config.is_paused @ EscrowError::ProgramPaused,
     )]
     pub config: Account<'info, GlobalConfig>,
 }
@@ -906,6 +954,17 @@ pub struct ConfigUpdated {
     pub ops: Pubkey,
 }
 
+/// H043 fix: pause/unpause audit trail for off-chain monitoring
+#[event]
+pub struct Paused {
+    pub authority: Pubkey,
+}
+
+#[event]
+pub struct Unpaused {
+    pub authority: Pubkey,
+}
+
 // ─────────────────────────────────────────────
 // ERRORS
 // ─────────────────────────────────────────────
@@ -959,4 +1018,10 @@ pub enum EscrowError {
     TooManyPlayers,
     #[msg("Match has already started")]
     MatchAlreadyStarted,
+    #[msg("remaining_accounts must equal count_ones(deposits_mask) — partial refund not allowed")]
+    IncompleteRefund,
+    #[msg("Deposit window still open — wait for deposit deadline before activating partial match")]
+    DepositWindowOpen,
+    #[msg("Account must not be executable")]
+    ExecutableNotAllowed,
 }

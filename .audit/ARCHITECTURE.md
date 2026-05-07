@@ -1,18 +1,18 @@
 # Unified Architectural Understanding
 
-**Project:** SolShot Escrow (solshot-escrow)
-**Generated:** 2026-02-23
-**Source:** The Fortress Phase 2 Synthesis (6 context auditor summaries)
+**Project:** SolShot Escrow (programs v1 + v2)
+**Generated:** 2026-05-07
+**Source:** Stronghold of Security Phase 2 Synthesis (7 context auditors merged)
 
 ---
 
 ## Executive Summary
 
-SolShot Escrow is a single-file Anchor program (855 LOC) implementing a 1v1 wagered match escrow using native SOL. The program is architecturally simple: two players deposit equal wagers into a PDA, a server authority designates a winner, and the pot is split 90/7/3 (winner/treasury/ops) via BPS math. The program has no SPL token interactions, no oracle dependencies, no pool-based pricing, and a single CPI call to the System Program.
+SolShot ships two parallel Anchor programs that escrow native SOL for wagered tank-battle matches. **v1 (`programs/solshot-escrow/`, 962 LOC, deployed `4kzr...nH1`)** handles real-time 1v1-to-4-player matches and has been live-fire tested on devnet (first wagered settlement 2026-05-04). **v2 (`programs/solshot-escrow-v2/`, 1020 LOC, deployed `BVKX...G7N`)** handles asynchronous N-player (2-10) group-chat matches with longer windows; it has had 1 organic 3-player match auto-settle on devnet (2026-05-06) and **no prior audit coverage**. Both share the same on-chain trust model and CPI surface; they diverge sharply on timing, fee mutability, and pause-guard placement.
 
-From a security perspective, the program's attack surface is dominated by **centralization risk**, not code-level vulnerabilities. The server authority has unilateral power over: winner selection, fee destination addresses, match lifecycle (pause/unpause), and its own transfer (one-step, no propose/accept). The arithmetic is sound (u128 widening, checked ops, overflow-checks=true in Cargo.toml), the state machine is well-guarded (OC-10 state-before-transfer pattern), and the CPI surface is minimal. The primary concerns are: (1) one-step authority transfer enabling instant takeover, (2) update_config lacking distinctness re-validation, (3) a 23-hour dead zone between settlement expiry and player cancellation, and (4) the authority's total economic control without timelock or multisig.
+The protocol's security posture is dominated by two structural choices and one shared mechanism. **Choice 1**: a single hot wallet (`HPyV...nokv`) holds both Solana-level upgrade authority and application-level `config.authority` for both programs — verified live via `solana program show`. JJ has flagged this as an intentional pre-mainnet posture. **Choice 2**: settlement is server-authoritative — the authority key freely chooses the winner from the registered players list, with no on-chain proof of the game outcome. **Mechanism**: the `cancel_match` and `permissionless_reclaim` instructions both use `close = caller` and refund deposited players via `remaining_accounts.iter().enumerate()`. This refund pattern produced two independently flagged novel findings (NOVEL-CPI-01 and NOVEL-CPI-02 / NOVEL-TE-01) that may constitute a critical fund-theft path.
 
-The program is immune to flash loans, sandwich attacks, oracle manipulation, and reentrancy. The permissionless_reclaim instruction provides an effective escape hatch ensuring no funds are permanently stuck.
+v2 introduces a per-match snapshot of treasury / ops / fee_bps_treasury / fee_bps_ops captured atomically inside `create_match`. This is a real architectural mitigation: in-flight matches in v2 are immune to mid-match config rotation by a compromised authority. It does NOT mitigate winner-pick fraud, NEW matches created post-compromise, or Layer-1 bytecode replacement. v1 settle still reads live config, leaving in-flight matches exposed to the H001 → H002 chain. Net: v2's architecture is materially stronger for the fee-redirect attack class but inherits the rest of v1's centralization risks unchanged, and adds a new H028-class concern (configurable BPS reachable via Layer-2 compromise without an upgrade).
 
 ---
 
@@ -22,32 +22,45 @@ The program is immune to flash loans, sandwich attacks, oracle manipulation, and
 
 | Component | Purpose | Location | Security Role |
 |-----------|---------|----------|---------------|
-| GlobalConfig | Protocol settings (authority, treasury, ops, pause) | `lib.rs` PDA `["config"]` | Single authority controls all admin functions |
-| MatchEscrow | Per-match state (players, wager, deposits, state) | `lib.rs` PDA `["match", match_id]` | Holds deposited SOL, enforces lifecycle |
-| MatchState | 4-state enum lifecycle | `lib.rs` enum | Guards instruction access per state |
-| 9 Instructions | Full program API | `lib.rs:90-855` | Each instruction validates state + access |
+| `solshot_escrow` (v1) | 1v1 → N-player escrow with hardcoded BPS, real-time pace | `programs/solshot-escrow/src/lib.rs` (962 LOC) | Holds wager pots; settles 90/7/3 fixed split |
+| `solshot_escrow_v2` (v2) | N-player (2-10) escrow with configurable BPS, async pace | `programs/solshot-escrow-v2/src/lib.rs` (1020 LOC) | Same role; introduces per-match snapshot |
+| `GlobalConfig` PDA | Singleton admin record, seeds = `[b"config"]` | both programs | Holds authority/treasury/ops + (v2) fee_bps_treasury/ops + is_paused |
+| `MatchEscrow` PDA | Per-match escrow, seeds = `[b"match", match_id.as_bytes()]` | both programs | Holds player wagers + state machine; closes on settle/cancel |
 
 ### Data Flow Diagram
 
 ```
-Player A ─── deposit_wager ──→ MatchEscrow PDA ←── deposit_wager ─── Player B
-                                     │
-                            (both deposited)
-                                     │
-                              ┌──────┴──────┐
-                              ▼              ▼
-Authority ─ settle_match ─→ Split:      Player ─ cancel_match ─→ Refund:
-  90% → Winner                24h timeout      exact wager back
-  7%  → Treasury                                to each depositor
-  3%  → Ops wallet
-                              │              │
-                              ▼              ▼
-                        [Account closed]  [Account closed]
-                                     │
-                              ┌──────┘
-                              ▼
-Anyone ── permissionless_reclaim ──→ Refund (48h timeout)
+[Authority (server) signs create_match]
+             │
+             ▼
+   ┌────────────────────────┐
+   │ MatchEscrow PDA inits  │  ← v2 also writes treasury_snapshot,
+   │ state = AwaitingDeposits│    ops_snapshot, fee_bps_*_snapshot
+   └─────────┬──────────────┘
+             │
+   [Each player signs deposit_wager]
+             │
+             ▼
+   system_program::transfer(player → escrow PDA)
+   set bit in deposits_mask
+             │
+   [On full mask] state → Active, activated_at = now
+   v2 also: match_end_ts = activated_at + duration_secs
+             │
+       ┌─────┴─────────┬─────────────────────────┐
+       │               │                         │
+[Authority settles]  [Player cancels        [Anyone reclaims
+                      after timeout]         after grace deadline]
+       │               │                         │
+       ▼               ▼                         ▼
+  state=Settled   state=Cancelled         state=Cancelled
+  90/7/3 split    refund all deposited    refund all deposited
+  via direct      via remaining_accounts   via remaining_accounts
+  lamport math    loop + close=caller      loop + close=caller
+  + close=auth
 ```
+
+**The four `remaining_accounts.iter().enumerate()` refund sites are the single highest-risk surface in the codebase**, flagged independently by the CPI, State Machine, and Token/Economic agents.
 
 ---
 
@@ -57,33 +70,44 @@ Anyone ── permissionless_reclaim ──→ Refund (48h timeout)
 
 | Actor | Trust Level | Capabilities | Entry Points |
 |-------|-------------|--------------|--------------|
-| Authority (Server) | TRUSTED (centralized) | Configure protocol, create matches, settle matches, pause/unpause, transfer authority | initialize_config, update_config, pause_program, unpause_program, create_match, settle_match |
-| Player | PARTIAL | Deposit wager, cancel match (after timeout) | deposit_wager, cancel_match |
-| Anyone | UNTRUSTED | Reclaim stuck funds (after 48h) | permissionless_reclaim |
+| Anonymous (anyone) | UNTRUSTED | Trigger `permissionless_reclaim` after grace deadline; receive PDA rent reserve via `close = caller` | `permissionless_reclaim` |
+| Listed Player | PARTIAL | Deposit own wager (once); cancel own match after timeout | `deposit_wager`, `cancel_match` |
+| Authority (server hot wallet) | TRUSTED (single key) | Create matches; settle (pick winner); cancel AwaitingDeposits any time; pause; rotate config; (v2) rotate fee BPS within 10% cap; `start_with_depositors` partial activation | All admin instructions |
+| Solana Upgrade Authority (same wallet) | FULLY TRUSTED | Replace bytecode; close program | BPF Loader Upgradeable |
+| System Program | FULLY TRUSTED | SOL transfer for deposits | `deposit_wager` CPI only |
 
 ### Trust Boundaries
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      UNTRUSTED ZONE                          │
-│  - All instruction arguments (match_id, winner, wager)       │
-│  - All user-provided accounts (player wallets)               │
-│  - Clock timestamp (1-2s drift, immaterial for 1h+ windows)  │
-├─────────────────────────────────────────────────────────────┤
-│                    ANCHOR VALIDATION LAYER                    │
-│  - Program<'info, System> enforces System Program ID         │
-│  - has_one = authority on config-gated instructions           │
-│  - PDA seeds enforce account derivation ["match", match_id]  │
-│  - State enum guards (require!(escrow.state == ...))         │
-│  - Constraint expressions (player matching, deposit flags)   │
-├─────────────────────────────────────────────────────────────┤
-│                      TRUSTED ZONE                            │
-│  - GlobalConfig PDA (authority, treasury, ops, is_paused)    │
-│  - MatchEscrow PDA (validated state, stored pubkeys)         │
-│  - Hardcoded BPS constants (700, 300, 10000)                 │
-│  - Wager bounds (MIN=10,000, MAX=100,000,000,000 lamports)   │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│  LAYER 1 — SOLANA UPGRADE AUTHORITY                       │
+│    HPyV...nokv (hot wallet — same as Layer 2)             │
+│    Power: replace any bytecode, close program             │
+│    Safeguards: NONE (no timelock, no multisig)            │
+├──────────────────────────────────────────────────────────┤
+│  LAYER 2 — APPLICATION AUTHORITY (config.authority)       │
+│    HPyV...nokv (hot wallet — same as Layer 1)             │
+│    Power: rotate config / pause / settle / create / cancel│
+│            v2 also: rotate fee BPS up to 10% combined     │
+│    Safeguards: distinctness, zero-address guard on update │
+│                v2 per-match snapshot for in-flight        │
+│                NO timelock, NO propose/accept             │
+├──────────────────────────────────────────────────────────┤
+│  ON-CHAIN VALIDATION                                      │
+│    has_one = authority on every privileged path           │
+│    PDA seed re-derivation, Anchor init/close guarantees   │
+│    Bit-mask deposit dedup, state-monotonicity invariant   │
+├──────────────────────────────────────────────────────────┤
+│  PLAYER ZONE (allowlisted via escrow.players[])           │
+│    Sign own deposit; cancel own match after timeout       │
+├──────────────────────────────────────────────────────────┤
+│  PERMISSIONLESS ZONE                                      │
+│    permissionless_reclaim after grace deadline            │
+│    NO config account in struct (immune to pause)          │
+└──────────────────────────────────────────────────────────┘
 ```
+
+**Single-key risk:** A compromise of EITHER the upgrade authority OR the application authority is sufficient for total protocol drainage. Both currently resolve to the same hot wallet.
 
 ---
 
@@ -93,128 +117,195 @@ Anyone ── permissionless_reclaim ──→ Refund (48h timeout)
 
 | State | Location | Modified By | Read By | Invariants |
 |-------|----------|-------------|---------|------------|
-| GlobalConfig.authority | PDA ["config"] | initialize_config, update_config | All admin instructions | Must be a signer for admin ops |
-| GlobalConfig.treasury | PDA ["config"] | initialize_config, update_config | settle_match | Receives 7% BPS fee |
-| GlobalConfig.ops | PDA ["config"] | initialize_config, update_config | settle_match | Receives 3% BPS fee |
-| GlobalConfig.is_paused | PDA ["config"] | pause_program, unpause_program | create_match, deposit_wager, settle_match, cancel_match | NOT checked by permissionless_reclaim (by design) |
-| MatchEscrow.state | PDA ["match", id] | deposit_wager, settle_match, cancel_match, permissionless_reclaim | All match instructions | 4-state lifecycle, monotonic transitions only |
-| MatchEscrow.activated_at | PDA ["match", id] | deposit_wager (when both deposit) | settle_match, cancel_match, permissionless_reclaim | Set once, never modified |
-| MatchEscrow.created_at | PDA ["match", id] | create_match | cancel_match (AwaitingDeposits timeout ref) | Set once, never modified |
+| `GlobalConfig.authority` | both, `[b"config"]` | `update_config` (one-step) | `has_one` constraint everywhere | Always non-default; never == treasury || ops |
+| `GlobalConfig.treasury` / `ops` | both | `update_config` | v1: live in settle; v2: only at create_match (snapshotted) | Always pairwise distinct; never == authority |
+| `GlobalConfig.fee_bps_treasury` / `fee_bps_ops` | **v2 only** | `update_config` | only at create_match (snapshotted) | sum ≤ 1000 (10%) |
+| `GlobalConfig.is_paused` | both | pause_program / unpause_program (idempotent) | v1: cancel/settle/create/deposit/start; v2: create/deposit/start only | Bool flag; no event emitted |
+| `MatchEscrow.state` | both | deposit_wager (→Active), settle (→Settled), cancel/reclaim (→Cancelled), start_with_depositors (→Active) | Every match-lifecycle instruction | Settled/Cancelled terminal |
+| `MatchEscrow.deposits_mask` | both — u8 (v1) / u16 (v2) | deposit_wager only | settle/cancel/reclaim refund loops | Bits ≤ max_players; bit count ≤ MAX_PLAYERS |
+| `MatchEscrow.activated_at` | both | deposit_wager (full mask) / start_with_depositors | timeout calcs in cancel/reclaim | Always set in same atomic block as state=Active |
+| `MatchEscrow.match_end_ts` | **v2 only** | deposit_wager / start_with_depositors | reclaim deadline calc | = activated_at + duration_secs; never modified after |
+| `MatchEscrow.{treasury_snapshot, ops_snapshot, fee_bps_*_snapshot}` | **v2 only** | create_match ONLY (atomic with init) | settle_match | Immutable post-create; validated via account constraints at settle |
 
-### State Lifecycle
+### State Lifecycle (identical 4-state enum in v1 and v2)
 
 ```
-                create_match
-                     │
-                     ▼
-            ┌─────────────────┐
-            │ AwaitingDeposits │ ←── deposit_wager (1st player)
-            └────────┬────────┘
-                     │ deposit_wager (2nd player → activated_at set)
-                     ▼
-              ┌────────────┐
-              │   Active    │
-              └──┬───┬───┬──┘
-                 │   │   │
-    settle_match │   │   │ cancel_match (24h timeout)
-    (≤1h window) │   │   │
-                 ▼   │   ▼
-          ┌────────┐ │ ┌───────────┐
-          │Settled │ │ │ Cancelled │
-          └────────┘ │ └───────────┘
-                     │
-                     │ permissionless_reclaim (48h timeout)
-                     ▼
-              ┌───────────┐
-              │ Cancelled │
-              └───────────┘
-
-  Cancel from AwaitingDeposits: cancel_match (24h from created_at)
-  Cancel from Active: cancel_match (24h from activated_at)
-  Reclaim from any non-terminal: permissionless_reclaim (48h)
+                [create_match — authority-only]
+                            │
+                            ▼
+                  AwaitingDeposits ──────────────────┐
+                       │                              │
+       [deposit_wager  │                              │  [start_with_depositors]
+        — full mask]   │                              │   v1: anytime, ≥2 deposits
+                       │                              │   v2: ≥deposit_deadline + ≥2
+                       ▼                              ▼
+                     Active ←──────────────[same]────┘
+                       │
+        ┌──────────────┼──────────────────────┐
+        │              │                      │
+   [settle      [cancel_match           [permissionless_reclaim
+    _match]      — authority any        — anyone after grace]
+        │        time on AwaitingDep,        │
+        ▼        player after timeout]       ▼
+     Settled         │                    Cancelled
+   [TERMINAL]        ▼                   [TERMINAL]
+                  Cancelled
+                  [TERMINAL]
 ```
+
+**Pause guard divergence (the H007 fix):**
+
+| Instruction | v1 paused = blocked? | v2 paused = blocked? |
+|-------------|---------------------|---------------------|
+| create_match | YES | YES |
+| deposit_wager | YES | YES |
+| **settle_match** | **YES** | **NO** ← v2 fix |
+| **cancel_match** | **YES** | **NO** ← v2 fix |
+| permissionless_reclaim | NO (no config account in struct) | NO (no config account in struct) |
+| start_with_depositors | YES | YES |
 
 ---
 
 ## Key Mechanisms
 
-### Mechanism 1: BPS Fee Calculation (settle_match)
+### Mechanism 1: Per-Match Snapshot (v2 only)
 
-**Purpose:** Split the pot 90/7/3 between winner, treasury, and ops.
-
-**How it works:**
-1. Widen to u128: `total_pot_128 = (wager_lamports as u128).checked_mul(2)`
-2. Treasury: `(total_pot_128 * 700 / 10000) as u64`
-3. Ops: `(total_pot_128 * 300 / 10000) as u64`
-4. Winner: `total_pot - treasury - ops` (remainder strategy)
-
-**Security considerations:**
-- u128 widening prevents overflow at max wager (200 SOL * 700 = 1.4e14, safe in u128)
-- Remainder-to-winner prevents dust loss
-- `as u64` narrowing casts are safe ONLY because MAX_WAGER bounds the domain
-
-### Mechanism 2: Direct Lamport Manipulation (settle/cancel/reclaim)
-
-**Purpose:** Transfer SOL without CPI (only the single deposit uses CPI).
+**Purpose:** Decouple in-flight matches from runtime config rotation, mitigating mid-match fee redirect attacks.
 
 **How it works:**
-1. Set terminal state (Settled/Cancelled) — OC-10 pattern
-2. `try_borrow_mut_lamports()` on escrow PDA and recipient accounts
-3. Debit escrow, credit recipient(s)
+1. At `create_match` (`v2:201-219`), inside the same atomic block as `escrow.state = AwaitingDeposits`, the program copies the current `cfg.{treasury, ops, fee_bps_treasury, fee_bps_ops}` into the freshly-initialised escrow's `{treasury_snapshot, ops_snapshot, fee_bps_treasury_snapshot, fee_bps_ops_snapshot}` fields.
+2. `settle_match` reads from the snapshot fields exclusively (`v2:396-399`); the SettleMatch account constraints validate the supplied `treasury` / `ops` accounts against `escrow.treasury_snapshot` / `escrow.ops_snapshot` (`v2:717, 726`), NOT against live config.
+3. No instruction modifies the snapshot fields after create_match (verified via grep).
 
 **Security considerations:**
-- Recipients are `UncheckedAccount` — validated via `constraint` against stored pubkeys
-- No check that recipient is non-executable — if treasury/ops set to program address, lamport credit may silently fail
-- Transaction atomicity prevents partial transfers (any `?` error reverts all)
+- Atomic with create_match — no observable window where escrow exists with default snapshots.
+- Provides defense-in-depth against H001 → H002 chain on in-flight matches.
+- Does NOT protect: NEW matches created post-compromise (snapshot uses current — possibly poisoned — config), winner-pick fraud (H005), Layer-1 bytecode replacement.
+- Cap of 10% combined (MAX_FEE_BPS=1000) bounds blast radius even when authority is hostile.
 
-### Mechanism 3: Three-Tier Timeout Hierarchy
+### Mechanism 2: `remaining_accounts` Refund Loop
 
-**Purpose:** Ensure funds are never permanently stuck.
+**Purpose:** Refund N depositors with a single-instruction pattern that doesn't require named account slots per match-size.
+
+**How it works (4 sites: v1 cancel/reclaim, v2 cancel/reclaim):**
+```rust
+for (i, account) in ctx.remaining_accounts.iter().enumerate() {
+    require!(i < max_players, EscrowError::InvalidPlayer);              // bounds
+    require!((deposits_mask >> i) & 1 == 1, EscrowError::InvalidPlayer); // bit set
+    require!(*account.key == players[i], EscrowError::InvalidPlayer);    // pubkey match
+    **escrow.try_borrow_mut_lamports()? -= wager_lamports;
+    **account.try_borrow_mut_lamports()? += wager_lamports;
+}
+```
+
+Then Anchor's `close = caller` constraint sweeps any remaining lamports from the escrow PDA to the caller.
+
+**Security considerations:**
+- The loop's correctness invariant ("`remaining_accounts` is a contiguous prefix of deposited players in `players[i]` order") is enforced by THE CALLER, not by the program — only per-iteration validation runs.
+- **NOVEL-01 (HIGH):** Non-contiguous `deposits_mask` (e.g. 0b10) is permanently unrefundable — no syntactically valid call sequence works. Server logs as UNRECOVERABLE.
+- **NOVEL-02 (potentially CRITICAL):** A malicious player at slot 0 may call `cancel_match` (after timeout) with `remaining_accounts = [self]` only. Loop refunds them. `close = caller` then sweeps PDA's remaining lamports — including un-refunded co-depositors' wagers — to the caller. Worst case: 9 × 100 SOL = 900 SOL stealable from a v2 max match. **PoC required in Phase 4.**
+- No `!executable` check on destination accounts (H009 still open).
+- No `is_writable` enforced in-program; relies on client/server passing correct flags.
+- No checked_add on the lamport credit (`+= wager_lamports`); practically unreachable overflow.
+
+### Mechanism 3: Direct Lamport Mutation in `settle_match`
+
+**Purpose:** Distribute pot 90/7/3 from program-owned PDA to winner / treasury / ops.
 
 **How it works:**
-1. Settlement window: ≤1h from activated_at (authority-only)
-2. Player cancel: >24h from activated_at or created_at (either depositing player)
-3. Permissionless reclaim: >48h from activated_at or created_at (anyone)
+- v1 (`lib.rs:317-324`): three sequential `try_borrow_mut_lamports` debit/credit pairs against escrow → winner / treasury / ops, where treasury/ops pubkeys come from LIVE `config.{treasury, ops}` (constraint validated).
+- v2 (`lib.rs:434-441`): same pattern but reads `escrow.{treasury_snapshot, ops_snapshot}`.
+- BPS calc: `total_pot = wager × count_ones(mask)` (u128 widened); `treasury_amount = pot × treasury_bps / 10_000`; `ops_amount = pot × ops_bps / 10_000`; `winner_amount = pot - treasury_amount - ops_amount` (checked_sub, absorbs ≤ 2 lamports dust).
+- State (`Settled`) is written BEFORE lamport math (OC-10, EP-033 compliant).
+- `close = authority` recovers PDA rent.
 
 **Security considerations:**
-- Creates 23-hour dead zone between settlement expiry (1h) and player cancel (24h)
-- Pause mechanism blocks cancel_match but NOT permissionless_reclaim (escape hatch)
+- `winner` / `treasury` / `ops` are `UncheckedAccount` — no `!executable` check (H009 STILL OPEN both).
+- v1 reads live config — vulnerable to mid-match authority hijack (H002).
+- v2 reads snapshot — immune to mid-match hijack but vulnerable to BPS-poisoning at create-time if authority is hostile (H028-class new finding).
+- Lamport credits use bare `+=`, not `checked_add` (defense-in-depth gap).
+
+### Mechanism 4: One-Step Authority Rotation (no propose/accept)
+
+**Purpose:** Rotate config.authority / treasury / ops / (v2) fee_bps in a single TX.
+
+**How it works:**
+- `update_config` (v1:72-108, v2:96-142) takes `Option<Pubkey>` and `Option<u16>` arguments.
+- Each provided field updates atomically.
+- Distinctness re-validated post-update (v1:96-98, v2:125-127): `authority != treasury`, `authority != ops`, `treasury != ops`.
+- v2 also re-validates `(fee_bps_treasury + fee_bps_ops) <= MAX_FEE_BPS` (1000) at v2:128-131.
+- Zero-address guard: `a != Pubkey::default()` at v1:82, v2:107 (but this guard is missing from `initialize_config`).
+
+**Security considerations:**
+- **CRITICAL — H001 STILL OPEN both:** No `pending_authority` field, no two-step flow. Hot-wallet compromise = instant total takeover. Historical precedent: Raydium $4.4M, Step Finance $30-40M, Pump.fun $1.9M, Garden Finance $11M.
+- No timelock anywhere on the admin path.
+- Pause/unpause emits no event (operational gap).
+- ConfigUpdated event emitted but no `actor` field (only end-state).
+
+### Mechanism 5: Permissionless Reclaim Escape Hatch
+
+**Purpose:** Server-down failsafe — anyone can refund deposited players after grace deadline.
+
+**How it works:**
+- v1: callable after `created_at + 1200s` (or `activated_at + 1200s` if activated). Uses same loop pattern as cancel.
+- v2: callable after `match_end_ts + 24h` (or `deposit_deadline + 24h` if not activated).
+- Account struct has NO `config` slot — immune to pause.
+- `close = caller` rebases rent to whoever calls (incentive for any monitor to sweep).
+
+**Security considerations:**
+- Has the same NOVEL-02 exposure as `cancel_match` (caller can pass partial `remaining_accounts` and rent-sweep co-depositors' wagers).
+- Stale `lib.rs:22` comment claims "48-hour permissionless reclaim timeout" but actual is 1200s = 20 minutes — operators reading the comment will plan wrong response windows.
 
 ---
 
 ## External Dependencies
 
-### CPI Targets
+### CPI Targets (the entire CPI surface)
 
 | Program | Purpose | Validation | Trust Level |
 |---------|---------|------------|-------------|
-| System Program | SOL transfer (deposit_wager only) | `Program<'info, System>` | HIGH (native) |
+| System Program (`1111...1111`) | SOL transfer for `deposit_wager` ONLY | `Program<'info, System>` everywhere; auto-resolved by Anchor 0.32.1 | FULL |
 
-### Oracles/External Data
+That is the entire CPI surface. **No** `invoke()`, **no** `invoke_signed()`, **no** SPL Token, **no** Token-2022, **no** oracles, **no** governance program, **no** custom external programs. CPI depth is exactly 1.
 
-| Source | Data Type | Usage | Validation |
-|--------|-----------|-------|------------|
-| Clock Sysvar | unix_timestamp | Deadline enforcement (5 locations) | `Clock::get()` syscall (no injection risk) |
+### Oracles / External Data
+
+**None.** The protocol is pure native SOL with no price feeds.
 
 ---
 
 ## Access Control Summary
 
+### Role Hierarchy
+
+```
+   Solana Upgrade Authority (Layer 1)
+              │ same key (HPyV...nokv hot wallet)
+              ▼
+   config.authority (Layer 2)
+              │
+   ┌──────────┴──────────┐
+   │                     │
+Listed Player        Permissionless caller
+   │                     │
+(deposit_wager,        (permissionless_reclaim
+ cancel after timeout)  after grace)
+```
+
 ### Permission Matrix
 
-| Operation | Anyone | Player | Authority |
-|-----------|--------|--------|-----------|
-| initialize_config | - | - | Yes (one-time) |
-| update_config | - | - | Yes |
-| pause_program | - | - | Yes |
-| unpause_program | - | - | Yes |
-| create_match | Yes* | Yes* | Yes |
-| deposit_wager | - | Yes (matching player) | - |
-| settle_match | - | - | Yes (within 1h) |
-| cancel_match | - | Yes (after 24h) | - |
-| permissionless_reclaim | Yes (after 48h) | Yes (after 48h) | Yes (after 48h) |
-
-*create_match lacks `has_one = authority` — any signer can create, but matches created by non-authority are unsettleable.
+| Operation | Anonymous | Listed Player | Authority |
+|-----------|-----------|---------------|-----------|
+| `initialize_config` | ANY (race-init theoretical) | — | (one-time) |
+| `update_config` | — | — | YES (one-step) |
+| `pause_program` / `unpause_program` | — | — | YES |
+| `create_match` | — | — | YES |
+| `deposit_wager` | — | YES (own slot only) | — (excluded) |
+| `settle_match` | — | — | YES |
+| `cancel_match` (AwaitingDeposits) | — | YES (any time) | YES |
+| `cancel_match` (Active) | — | YES (after timeout) | — |
+| `permissionless_reclaim` | YES (after grace) | YES (after grace) | YES (after grace) |
+| `start_with_depositors` | — | — | YES |
 
 ---
 
@@ -223,100 +314,111 @@ Anyone ── permissionless_reclaim ──→ Refund (48h timeout)
 ### Value Flows
 
 ```
-Player A (wager) ──CPI──→ Escrow PDA ←──CPI── Player B (wager)
+Players → deposit_wager → Escrow PDA accumulates pot
                               │
-                     ┌────────┴────────┐
-                     │   SETTLEMENT    │
-                     │   (authority)   │
-                     └───┬───┬───┬────┘
-                         │   │   │
-               ┌─────────┘   │   └─────────┐
-               ▼             ▼             ▼
-          Winner (90%)  Treasury (7%)   Ops (3%)
-          + remainder   via config      via config
-          + rent
-
-         OR: CANCELLATION → each player gets exact wager back
-         OR: RECLAIM → each depositing player gets exact wager back
+                ┌─────────────┴─────────────┐
+                │                           │
+         settle_match                 cancel/reclaim
+                │                           │
+        ┌───────┼───────┐         per deposited slot:
+        │       │       │         escrow → players[i]
+   90% → 7% →  3% →  rent          (then close = caller
+   winner treasury ops              sweeps rent + any
+        ↓       ↓       ↓           residual lamports)
+                ↓
+            close = authority
+            (rent → authority)
 ```
 
 ### Fee Structure
 
-| Fee Type | Rate (BPS) | Collection Point | Destination |
-|----------|-----------|------------------|-------------|
-| Treasury | 700 (7%) | settle_match | config.treasury |
-| Operations | 300 (3%) | settle_match | config.ops |
-| Winner | 9000 (90%) + remainder | settle_match | winner account |
+| Version | Treasury BPS | Ops BPS | Mutability |
+|---------|--------------|---------|------------|
+| v1 | 700 (7%) hardcoded `const u64` | 300 (3%) hardcoded | Layer-1 upgrade only |
+| v2 | `cfg.fee_bps_treasury` (mutable, default likely 700) | `cfg.fee_bps_ops` (mutable, default likely 300) | Layer-2 authority via `update_config`; capped at MAX_FEE_BPS=1000 combined; per-match snapshot freezes for in-flight |
 
 ### Economic Invariants
 
-| Invariant | Where Enforced | Status |
-|-----------|---------------|--------|
-| total_distributed ≤ total_pot | Lines 270-274: remainder strategy | HOLDS |
-| winner + treasury + ops == total_pot | Lines 253-274: checked math | HOLDS |
-| Each player deposits/refunds exactly wager_lamports | Lines 179-188 / 358-367 | HOLDS |
-| Fees ≥ 1 lamport per recipient | MIN_WAGER=10,000 guarantees | HOLDS |
-| No value extraction beyond designed paths | All lamport movements in 5 instructions | HOLDS |
+1. **Pot conservation:** `winner_amount + treasury_amount + ops_amount == total_pot` (BOK Feb verified for v1; needs re-BOK for v2's configurable BPS).
+2. **Refund conservation:** `Σ(refund per deposited slot) == wager_lamports × count_ones(deposits_mask)` for cancel/reclaim. **HOLDS only if `remaining_accounts` is a contiguous prefix of deposited players** (NOVEL-01 if non-contiguous).
+3. **Pot ceiling:** `wager × max_players ≤ MAX_WAGER × MAX_PLAYERS = 100 SOL × 10 = 10^12 lamports`, well below u64::MAX.
+4. **Dust bound:** `≤ 2 lamports` per settle (two BPS floor divisions). BOK Feb verified for v1; needs re-BOK for v2.
+5. **Min wager:** ≥ 10_000 lamports — chosen for v1's 7%/3% split; verify still produces ≥ 1 lamport for fees under all valid v2 BPS pairs.
+6. **Fee cap (v2):** combined `fee_bps_treasury + fee_bps_ops ≤ MAX_FEE_BPS (1000)` — bounds authority extraction at 10% per match.
 
 ---
 
 ## High-Complexity Areas
 
-### Area 1: update_config Missing Distinctness Re-Validation
+### Area 1: `remaining_accounts` Refund Loop
 
-**Identified by:** Access Control (01), State Machine (03), Token/Economic (05)
-
-**Why complex:**
-- initialize_config enforces authority ≠ treasury ≠ ops
-- update_config allows arbitrary Pubkey changes without re-checking distinctness
-- Could set treasury == ops (settlement failure at account constraint), treasury == authority (fee redirection), or ops to executable account (silent lamport loss)
-
-**Key code:** `lib.rs:70-88`
-
-### Area 2: Authority Centralization
-
-**Identified by:** Access Control (01), State Machine (03), Token/Economic (05), Timing (08)
+**Identified by:** CPI agent (NOVEL-CPI-01, NOVEL-CPI-02), State Machine agent (H030 cross-handoff), Token/Economic agent (NOVEL-TE-01), Access Control agent (H016 re-evaluation)
 
 **Why complex:**
-- Single key controls: winner selection, fee destinations, pause/unpause, authority transfer
-- One-step authority transfer (no propose/accept pattern) — immediate, irreversible
-- No timelock on any configuration change
-- Authority cannot be a player (OC-06), preventing direct fund theft, but can always select winners
+- 4 separate sites (v1 cancel/reclaim, v2 cancel/reclaim) with structurally identical code.
+- Caller-controlled `remaining_accounts.len()` interacts with `close = caller` to potentially enable partial-refund theft.
+- Non-contiguous `deposits_mask` is unrefundable — fund-lock pattern.
+- Per-iteration validation is correct; the loop ENDS when `remaining_accounts` is exhausted, but `close = caller` then sweeps the rest.
 
-**Key code:** `lib.rs:56-88` (config management), `lib.rs:228-305` (settlement)
+**Key code:** `v1:391-419, 465-484; v2:502-518, 561-577` + close constraints at `v1:718, 745; v2:748, 773`
 
-### Area 3: 23-Hour Dead Zone
+### Area 2: v2 Configurable BPS Pipeline
 
-**Identified by:** State Machine (03), Timing (08)
+**Identified by:** Arithmetic agent (A02-A04, NOVEL-A1), Token/Economic agent (H028 verdict), Upgrade/Admin agent (Layer-2 mutation analysis)
 
 **Why complex:**
-- Settlement expires at 1h (authority can no longer settle)
-- Player cancel not available until 24h
-- 23 hours where Active match with deposits is stuck — neither party can act
-- Not permanently stuck (cancel available at 24h), but creates significant fund lockup
+- BPS values flow: `update_config` → live cfg → `create_match` snapshot → `settle_match` consumption.
+- Cap is enforced at update_config but NOT re-validated at settle.
+- Per-match snapshot is the architectural defense — atomic with create.
+- Authority can ratchet BPS across matches within the 10% cap with no timelock.
 
-**Key code:** `lib.rs:236-244` (settlement deadline), `lib.rs:329-333` (cancel timeout)
+**Key code:** `v2:96-142, 201-219, 396-425`
+
+### Area 3: v1 H006-Inverted / v2 Match-End Race Window
+
+**Identified by:** Timing & Ordering agent, Token/Economic agent (cross-handoff)
+
+**Why complex:**
+- v1's current constants (TIMEOUT_SECONDS=600, SETTLEMENT_TIMEOUT_SECONDS=3600) create a 50-minute window where settle_match (authority) and cancel_match (player) are simultaneously valid.
+- v2 has no settlement deadline; cancel becomes available at `match_end_ts`. Race is theoretically infinite.
+- Priority-fee bidding determines outcome.
+- Stale comment at `v1:22` claims 48-hour reclaim timeout — actual is 20 min.
+
+**Key code:** `v1:264-272, 357-378, 442-456; v2:387-454, 459-519, 526-578`
+
+### Area 4: Authority Hot-Wallet (Layer 1 + Layer 2)
+
+**Identified by:** Access Control agent, Upgrade/Admin agent, Token/Economic agent
+
+**Why complex:**
+- Single key holds upgrade authority AND application authority — verified live.
+- No `pending_authority`, no timelock, no propose/accept.
+- v2's per-match snapshot mitigates fee-redirect class for in-flight matches; H001 chain is otherwise unchanged.
+- No `close_config` instruction — key loss is permanent without Layer-1 upgrade.
 
 ---
 
 ## Cross-Cutting Concerns
 
-### Patterns Used Across Codebase
+### Patterns Used Across the Codebase
 
-| Pattern | Usage Count | Locations | Consistency |
-|---------|-------------|-----------|-------------|
-| OC-10: State-before-transfer | 3 | settle (L279), cancel (L355), reclaim (L417) | Consistent |
-| checked_add for timestamps | 5 | create, deposit, settle, cancel, reclaim | Consistent |
-| try_borrow_mut_lamports | 9 | settle (3x), cancel (2x), reclaim (2x) | Consistent |
-| Pause guard | 4 | create, deposit, settle, cancel | Consistent (reclaim excluded by design) |
-| Anchor has_one = authority | 6/9 | All admin instructions | Missing on CreateMatch |
+| Pattern | Usage | Consistency |
+|---------|-------|-------------|
+| `has_one = authority @ EscrowError::Unauthorized` | All admin-mutating + settle paths | Consistent |
+| `Signer<'info>` on payer/authority/player/caller | All instructions | Consistent |
+| `Clock::get()?.unix_timestamp` | All time reads | Consistent (no slot-based ordering) |
+| u128 widening for BPS math | Settle path both versions | Consistent |
+| `try_borrow_mut_lamports() ± amount` | All program-owned-PDA payouts | Consistent (no checked_add though) |
+| `close = X` (auth on settle, caller elsewhere) | Terminal instructions | Consistent intent — but creates NOVEL-02 surface |
+| State-write before lamport math (CEI / OC-10) | Settle, cancel, reclaim | Consistent |
 
 ### Shared Assumptions
 
-1. **Authority is honest and operational:** All match outcomes depend on authority settling correctly within 1h. No dispute mechanism exists.
-2. **Authority key is secure:** One-step transfer means a compromised key immediately transfers all protocol control.
-3. **Treasury/ops are valid wallet addresses:** No validation that fee destinations are non-executable, system-owned wallets.
-4. **Players will act to protect their funds:** Cancel and reclaim are player-initiated — no automatic refund mechanism.
+1. **`overflow-checks = true`** preserved in deployment build — verified at workspace `Cargo.toml:8-11`. Defense layer for unchecked arithmetic.
+2. **Authority is honest** about config values — there is no on-chain check preventing self-redirect via secondary wallets (H011 family).
+3. **Caller passes `remaining_accounts` correctly** in player-index order, contiguous prefix — REQUIRED by program logic but NOT enforced; non-contiguous = NOVEL-01.
+4. **Server uses unique match_id** (CSPRNG) — server-side concern; on-chain `init` rejects collisions.
+5. **No SPL Token, no oracles, no Token-2022 in scope** — confirmed pure native SOL.
 
 ---
 
@@ -326,56 +428,77 @@ Player A (wager) ──CPI──→ Escrow PDA ←──CPI── Player B (wage
 
 | Risk Level | Entry Point | Why This Risk |
 |------------|-------------|---------------|
-| HIGH | `update_config` | Changes authority, treasury, ops with no timelock or distinctness check |
-| HIGH | `settle_match` | Authority unilaterally selects winner — total economic control |
-| MEDIUM | `create_match` | Not authority-gated — PDA namespace spam possible |
-| MEDIUM | `cancel_match` | 24h delay creates timing asymmetry |
-| LOW | `deposit_wager` | Single CPI call, well-validated |
-| LOW | `permissionless_reclaim` | Intentional escape hatch, 48h delay |
+| **CRITICAL** | `cancel_match` + `permissionless_reclaim` | NOVEL-02 partial-refund theft (close=caller sweeps residual); affects both v1 and v2 |
+| **CRITICAL** | `update_config` | H001 instant authority rotation, no timelock; H011 self-redirect via multi-TX rotation |
+| HIGH | `settle_match` (v1) | Reads live config — H002 mid-match hijack still possible |
+| HIGH | `settle_match` (v2) | H028-class new finding — BPS poisoning via authority |
+| HIGH | `start_with_depositors` (v1) | NOVEL silent-kick (no timing gate) |
+| HIGH | `cancel_match` (v1) | H007 still open — pause-griefing path; settle-vs-cancel race window |
+| HIGH | `create_match` (v2) | Authority sets duration_secs / deposit_window_secs / BPS snapshot — unbounded discretion |
+| MEDIUM | `initialize_config` | Race-init theoretical (any payer accepted) |
+| MEDIUM | `permissionless_reclaim` | Race for rent reward; NOVEL-02 also applies |
 
-### Known Constraints
+### Known Constraints / Protections Observed
 
-- `overflow-checks = true` in Cargo.toml release profile: native arithmetic panics on overflow
-- `Program<'info, System>` on all CPI contexts: System Program ID enforced by Anchor
-- PDA seeds `["match", match_id]` with canonical bump: no seed manipulation
-- Terminal state set before any lamport transfer (OC-10): reentrancy mitigation
-- Wager bounds [10,000 .. 100,000,000,000] lamports: prevents zero-fee and overflow edge cases
-
-### Novel Attack Surface Observations
-
-1. **PDA rent incentive imbalance:** At minimum wager (10,000 lamports ≈ $0.002), the rent-exempt minimum for the escrow PDA (~0.0015 SOL) may exceed the wager itself. Authority pays rent at creation, recovers it at settlement. Economic incentive to create-and-settle matches for rent profit at low wagers.
-2. **Escrow PDA lamport inflation:** Anyone can send lamports to the escrow PDA via system transfer. Extra lamports above 2*wager+rent would be swept to the authority on account close. Potential for donation-based economic manipulation.
-3. **Match ID as string-based PDA seed:** The match_id is a string that becomes PDA seed bytes. Long or adversarial match_id strings could affect PDA derivation costs or create collisions if the string space is predictable.
+- `has_one = authority` widely applied — verified clean coverage.
+- S004 fix landed at v1:625, v2:659 (CreateMatch.config gated).
+- v2 CancelMatch / SettleMatch / PermissionlessReclaim deliberately omit pause guard — H007 fix in v2.
+- Distinctness re-validated post-update at v1:96-98, v2:125-127 — H003 fix.
+- v2 per-match snapshot atomic with create — defense for in-flight matches.
+- Anchor `init` blocks reinitialization — H022 holds.
+- `close` zeros data + reassigns ownership — PDA revival yields fresh state (H023 holds).
+- u128 widening + `checked_*` arithmetic + `overflow-checks=true` — three layers for arithmetic safety.
+- `Program<'info, System>` validated at every CPI declaration.
 
 ### Open Questions
 
-1. Is one-step authority transfer an intentional design choice or an oversight? (No propose/accept or timelock)
-2. Should the 23-hour dead zone be narrowed? (e.g., allow player cancel at 2h instead of 24h)
-3. Should create_match require authority? (Current behavior allows spam but spammer loses rent)
+1. **NOVEL-02 PoC**: Does `close = caller` actually sweep un-refunded lamports, or does Anchor's runtime drain logic reject this? **MUST be verified by Phase 4 PoC** — either via devnet test against live programs, or by reading Anchor 0.32.1 close-handler source code.
+2. **NOVEL-01 mitigation**: Is there an off-chain enforcement that prevents non-contiguous `deposits_mask` from arising in production? Server logs as UNRECOVERABLE — but is the right fix server-side ordering, or an on-chain refactor of the loop to support index maps?
+3. **v2 BPS individual cap**: The combined cap fires post-update via re-validation. Could a sequence of partial updates ever leave individual values > MAX_FEE_BPS while the combined sum stays ≤ MAX_FEE_BPS? Walk through the update sequence carefully in Phase 4.
+4. **Settle-vs-cancel race economic impact**: Quantify expected loss at MAX_WAGER (100 SOL) given priority-fee bidding mechanics.
+5. **`duration_secs` upper bound**: Should v2 cap be more restrictive than 7 days? Current authority discretion → 8-day fund lockup possible.
 
 ---
 
 ## Appendix: Focus Area Cross-References
 
-### Where Focus Areas Intersected
+### Where Focus Areas Intersected (high-value handoffs)
 
-| Focus A | Focus B | Intersection Point | Notes |
-|---------|---------|-------------------|-------|
-| Access Control (01) | Token/Economic (05) | update_config distinctness | Both flag missing re-validation |
-| Access Control (01) | Token/Economic (05) | create_match ungated | Both flag PDA spam risk |
-| State Machine (03) | Timing (08) | 23-hour dead zone | Both flag with consistent analysis |
-| State Machine (03) | CPI/External (04) | OC-10 state-before-transfer | Both confirm correct implementation |
-| Token/Economic (05) | CPI/External (04) | BPS fee → lamport transfer | Both confirm arithmetic soundness |
-| Timing (08) | State Machine (03) | Pause + active match = 48h lock | Both flag with consistent analysis |
+| Focus A | Focus B | Intersection Point |
+|---------|---------|-------------------|
+| CPI | Token/Economic | NOVEL-02 partial-refund theft — independently flagged by both |
+| CPI | State Machine | NOVEL-01 non-contiguous mask = stranded funds |
+| Arithmetic | Token/Economic | H028 invalidated on v2 — BPS pipeline |
+| Access Control | Upgrade/Admin | H001 single-key Layer 1 + Layer 2 |
+| State Machine | Timing | v1 H007 still open + H006 inverted to race window |
+| Access Control | Token/Economic | H011 self-redirect via secondary wallet |
+| Token/Economic | Upgrade/Admin | v2 BPS ratcheting within 10% cap |
+| Timing | State Machine | v2 deposit_window edge collision at deposit_deadline |
+| Arithmetic | CPI | Lamport credit overflow theoretical (defense-in-depth) |
 
-### Contradictions or Tensions
+### Convergent Findings (multi-agent agreement)
+
+| Finding | Flagged by |
+|---------|-----------|
+| **NOVEL Partial-refund theft (close=caller sweeps residual)** | CPI (NOVEL-CPI-02), Token/Economic (NOVEL-TE-01) |
+| **NOVEL Non-contiguous mask = unrefundable** | CPI (NOVEL-CPI-01), State Machine (cross-handoff) |
+| **H001 still open both versions** | Access Control, Upgrade/Admin (verified live), Token/Economic (root-cause cite) |
+| **H007 fixed in v2 only** | Access Control, State Machine, Timing, Upgrade/Admin |
+| **H028 invalidated on v2** | Arithmetic (A10), Token/Economic (#4), Upgrade/Admin (RECHECK verdict) |
+| **H009 still open both** | Access Control, CPI |
+| **H006 inverted, not resolved** | Timing (primary), Token/Economic (cross-handoff) |
+| **v1 silent-kick attack** | State Machine (primary) |
+| **Stale 48-hour comment** | Timing |
+| **No close_config / GlobalConfig permanent** | State Machine, Upgrade/Admin |
+
+### Contradictions / Tensions
 
 | Area | Observation A | Observation B | Resolution |
 |------|---------------|---------------|------------|
-| CPI (04) vs Economic (05) | "Direct lamport manipulation is safe" | "UncheckedAccount recipient could be executable" | Both correct — safe for valid wallets, edge case for misconfigured config |
-| State Machine (03) vs Timing (08) | "activated_at backward-compat guard is redundant" | "Settlement deadline check is sound" | Consistent — both agree guard is redundant-but-safe |
+| v2 cancel_match config validation | State Machine: "v2 CancelMatch struct does NOT validate has_one = authority" | Access Control: "config has_one = authority widely applied" | Resolved: v2's CancelMatch correctly omits has_one because both authority AND any depositor-after-timeout can call it; authority check happens in instruction body via `caller == config.authority`. NOT a vulnerability. |
+| Per-match snapshot scope | Token/Economic: "v2 mitigates fee redirect via snapshot" | Upgrade/Admin: "snapshot only protects in-flight; new matches use new BPS" | Both true — snapshot is half-mitigation. Document accurately. |
 
 ---
 
-**This document synthesizes findings from 6 parallel context audits.**
-**Use this as the foundation for attack strategy generation.**
+**This document synthesizes 7 parallel context audits + 1 archived prior audit + 1 quality gate validation.**
+**It is the foundation for `.audit/STRATEGIES.md` (Phase 3 attack hypothesis generation).**

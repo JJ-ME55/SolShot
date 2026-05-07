@@ -34,14 +34,16 @@ import React, { useMemo } from 'react';
 const TERRAIN_W = 1200;
 const TERRAIN_H = 800;
 
-// Bg theme colors — mirror the client `_bgThemes` in scenes/main/index.js
+// Bg theme colors — mirror the client `_bgThemes` in scenes/main/index.js.
+// Five distinct biomes; the duplicate "default = jungle" sixth entry was
+// retired. Old matches with backgroundIndex=5 stored on the doc fall back
+// to jungle via the (idx % length) modulo at the consumer.
 const BG_THEMES = [
-    { fill: '#0a1a0a', terrainTop: 'rgba(107,123,61,0.95)' }, // jungle
-    { fill: '#0a0f1a', terrainTop: 'rgba(190,200,210,0.95)' }, // arctic
-    { fill: '#1a140a', terrainTop: 'rgba(210,180,120,0.95)' }, // desert
-    { fill: '#0a0a0f', terrainTop: 'rgba(140,140,150,0.95)' }, // moon
-    { fill: '#1a0a0a', terrainTop: 'rgba(180,80,30,0.95)' },   // volcanic
-    { fill: '#0a1a0a', terrainTop: 'rgba(107,123,61,0.95)' },  // default = jungle
+    { fill: '#0a1a0a', terrainTop: 'rgba(107,123,61,0.95)' },  // 0 jungle
+    { fill: '#0a0f1a', terrainTop: 'rgba(190,200,210,0.95)' }, // 1 arctic
+    { fill: '#1a140a', terrainTop: 'rgba(210,180,120,0.95)' }, // 2 desert
+    { fill: '#0a0a0f', terrainTop: 'rgba(140,140,150,0.95)' }, // 3 moon
+    { fill: '#1a0a0a', terrainTop: 'rgba(180,80,30,0.95)' },   // 4 volcanic
 ];
 
 /** Decimate heightmap to a polyline path string. */

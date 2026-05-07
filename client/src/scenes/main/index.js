@@ -151,6 +151,21 @@ export class MainScene extends Scene {
     this.events.once('shutdown', () => this.shutdown());
     this.events.once('destroy', () => this.shutdown());
 
+    // Pre-populate the biome index from sceneData BEFORE createBackground +
+    // createTerrain run. Group-chat passes match.backgroundIndex through
+    // sceneData.backgroundIndex, but the original flow only read it later
+    // inside handleType3 (line ~1240) — by that point createTerrain had
+    // already drawn terrain layers using a RANDOM theme, and the second
+    // createBackground call only re-skinned the sky, not the terrain.
+    // Result: e.g. desert sky over green jungle layers.
+    //
+    // For 1v1 (gameType=4), sceneData.backgroundIndex is undefined; the
+    // terrainGenerated socket handler later sets it before redrawing
+    // terrain via setPath, so this branch is harmless on that path.
+    if (this.sceneData?.backgroundIndex !== undefined && this.sceneData?.backgroundIndex !== null) {
+      this._backgroundIndex = this.sceneData.backgroundIndex;
+    }
+
     this.createBackground();
     this.createBlastLayer();
     this.createPointsLayer();

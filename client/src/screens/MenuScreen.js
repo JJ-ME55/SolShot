@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useTelegram } from '../telegram/TelegramContext';
 import { useSolShotWallet } from '../wallet/WalletContext';
 import useIsMobile from '../hooks/useIsMobile';
+import useMyGamesBadge from '../hooks/useMyGamesBadge';
 import ScanBtn from '../components/design/ScanBtn';
 import DesignTopBar from '../components/design/TopBar';
 import TerrainSilhouette from '../components/design/Terrain';
@@ -15,6 +16,7 @@ function MenuScreen({ navigate }) {
   const isMobile = useIsMobile();
   const { shotBalance, balance: solBalance } = useSolShotWallet();
   const [onlineCount, setOnlineCount] = useState(247);
+  const myGames = useMyGamesBadge();
 
   const callsign = localStorage.getItem('solshot_handle') || 'OPERATIVE';
 
@@ -23,8 +25,25 @@ function MenuScreen({ navigate }) {
     return () => clearInterval(t);
   }, []);
 
+  // MY GAMES sub-label dynamically reflects active match state.
+  // Pending-turn cases lead with the 🎯 icon to draw the eye —
+  // async multi-chat players returning to solshot.gg should see at a
+  // glance whether they have a turn waiting.
+  const myGamesSub = (() => {
+    if (!myGames.loaded) return 'ASYNC GROUP-CHAT MATCHES';
+    if (myGames.awaitingTurn > 0) {
+      return `🎯 YOUR TURN · ${myGames.total} ACTIVE`;
+    }
+    if (myGames.total > 0) {
+      return `${myGames.total} ACTIVE · WAITING`;
+    }
+    return 'NO ACTIVE MATCHES';
+  })();
+
   const secondary = [
-    { id: 'aibot',    label: 'VS BOT',   sub: 'PRACTICE · NO STAKES · OFFLINE',  screen: 'ai-practice' },
+    { id: 'mygames',  label: 'MY GAMES', sub: myGamesSub,                       screen: 'mygames',
+      badge: myGames.awaitingTurn > 0 ? myGames.awaitingTurn : (myGames.total > 0 ? myGames.total : null),
+      badgeColor: myGames.awaitingTurn > 0 ? 'var(--accent, #c8a84a)' : 'var(--olive)' },
     { id: 'armory',   label: 'ARMORY',   sub: 'GEAR · PRESTIGE · LOADOUT',       screen: 'armory' },
     { id: 'barracks', label: 'BARRACKS', sub: 'STATS · LEADERBOARD',             screen: 'barracks' },
   ];
@@ -87,12 +106,20 @@ function MenuScreen({ navigate }) {
               clipPath: 'var(--clip-6)',
               cursor: 'pointer',
               textAlign: 'left',
-              display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', gap: 10,
+              display: 'grid', gridTemplateColumns: '1fr auto auto', alignItems: 'center', gap: 10,
             }}>
               <div>
                 <div style={{ fontFamily: 'var(--f-display)', fontSize: 15, letterSpacing: '0.18em', color: 'var(--bone)', textTransform: 'uppercase' }}>{b.label}</div>
                 <div style={{ fontFamily: 'var(--f-mono)', fontSize: 9, color: 'var(--olive)', letterSpacing: '0.2em', marginTop: 3 }}>{b.sub}</div>
               </div>
+              {b.badge != null ? (
+                <span style={{
+                  fontFamily: 'var(--f-mono)', fontSize: 11, fontWeight: 700, lineHeight: 1,
+                  color: 'var(--bg-deep)', background: b.badgeColor,
+                  padding: '4px 8px', borderRadius: 10, minWidth: 22, textAlign: 'center',
+                  letterSpacing: '0.05em',
+                }}>{b.badge}</span>
+              ) : null}
               <span style={{ fontFamily: 'var(--f-mono)', fontSize: 14, color: 'var(--olive)' }}>▸</span>
             </button>
           ))}
@@ -198,12 +225,19 @@ function MobileMenu({ navigate, callsign, shotBalance, solBalance, onlineCount, 
               background: 'var(--bg-raised)', color: 'var(--bone)',
               border: '1px solid var(--border)', clipPath: 'var(--clip-6)',
               cursor: 'pointer', textAlign: 'left',
-              display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', gap: 6,
+              display: 'grid', gridTemplateColumns: '1fr auto auto', alignItems: 'center', gap: 6,
             }}>
               <div>
                 <div style={{ fontFamily: 'var(--f-display)', fontSize: 12, letterSpacing: '0.18em', color: 'var(--bone)', lineHeight: 1, textTransform: 'uppercase' }}>{b.label}</div>
                 <div style={{ fontFamily: 'var(--f-mono)', fontSize: 7, color: 'var(--olive)', letterSpacing: '0.22em', marginTop: 2 }}>{b.sub}</div>
               </div>
+              {b.badge != null ? (
+                <span style={{
+                  fontFamily: 'var(--f-mono)', fontSize: 9, fontWeight: 700, lineHeight: 1,
+                  color: 'var(--bg-deep)', background: b.badgeColor,
+                  padding: '3px 6px', borderRadius: 8, minWidth: 18, textAlign: 'center',
+                }}>{b.badge}</span>
+              ) : null}
               <span style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--olive)' }}>▸</span>
             </button>
           ))}

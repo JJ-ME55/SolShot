@@ -13,7 +13,7 @@ SolShot is tank artillery built for Telegram group chats and the open web. Fire 
 - **Browser:** [solshot.gg](https://solshot.gg) — works in any modern browser, installable as a PWA
 - **Telegram:** [@SolShotGG_bot](https://t.me/SolShotGG_bot) — DM the bot or add it to any group chat
 
-<!-- TODO: screenshot of solshot.gg main menu (Deploy / Armory / Prestige / Barracks) -->
+<!-- TODO: screenshot of solshot.gg main menu (PLAY / MY GAMES with active-turn badge / Armory / Barracks) -->
 
 ---
 
@@ -24,9 +24,9 @@ SolShot is tank artillery built for Telegram group chats and the open web. Fire 
 **Practice mode pairs you against Shot Bot — SolShot's built-in AI opponent.** No matchmaking wait, no real opponent needed. You can practice any time.
 
 1. Open [solshot.gg](https://solshot.gg).
-2. Hit the orange **Deploy** button.
-3. Select **Practice vs Shot Bot** (in the AI Practice screen, pick your tank colour — white is reserved for Shot Bot).
-4. The match starts immediately. The Shop opens — you have 1,000 Gold to spend on weapons.
+2. Hit the orange **PLAY** button — this opens the lobby with mode tabs.
+3. Pick the **VS SHOT BOT** tab (leftmost). Pick your tank colour (white is reserved for Shot Bot).
+4. Hit **CREATE MATCH**. The match starts immediately — no opponent matchmaking. The Shop opens with 1,000 Gold.
 5. Take turns firing against Shot Bot. The bot picks weapons + aims based on the situation; expect it to whiff early shots and get sharper as the match goes on.
 
 No wallet. No wager. No real opponent required. Just tanks vs an AI that calibrates as it learns the field.

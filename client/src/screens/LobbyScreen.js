@@ -9,7 +9,12 @@ import { haptic } from '../telegram/haptic';
 import { EmptyState } from '../components/EmptyStates';
 
 /* ── match modes (mirrors server MATCH_MODES — Litepaper v2.1) ── */
+// vs_bot is client-side-only — there is no corresponding server MATCH_MODES
+// entry because the server handles AI matches via `createAIMatch` (separate
+// flow). Including it here lets us surface Shot Bot as a first-class mode
+// tab alongside the wagered options, which is the right player-mental-model.
 const MATCH_MODES = {
+  vs_bot:           { label: 'VS SHOT BOT',      wagerRange: [0, 0],          formats: [1],       color: 'var(--kh)', aiOpponent: true },
   practice:         { label: 'PRACTICE',         wagerRange: [0, 0],          formats: [1],       color: 'var(--kh)' },
   quick_match:      { label: 'QUICK MATCH',       wagerRange: [0.1, 0.1],      formats: [1, 3],    color: 'var(--sg)' },
   duel:             { label: 'DUEL',              wagerRange: [0.25, 0.5],     formats: [3, 5],    color: '#00ccff' },
@@ -545,6 +550,16 @@ function LobbyScreen({ navigate, screenData }) {
     setError(data?.reason || 'Failed to create room');
   });
 
+  /* ── socket: AI match shop phase (vs_bot mode) ──
+   * Server emits shopPhase immediately after createAIMatch — no opponent
+   * matchmaking, no deposit. Mirror AIPracticeScreen's listener so the
+   * lobby's VS SHOT BOT mode lands the user in shop directly. */
+  useSocket('shopPhase', (data) => {
+    if (matchMode === 'vs_bot') {
+      navigate('shop', { ...data, isAIMatch: true });
+    }
+  });
+
   /* ── socket: opponent left while waiting ── */
   useSocket('opponentLeft', () => {
     clearDepositState();
@@ -636,6 +651,16 @@ function LobbyScreen({ navigate, screenData }) {
     const name = getPlayerName();
     const color = TANK_COLORS[selectedColor].phaserHex;
     const wagerToSend = isCustomMode ? customWager : wager;
+
+    // VS SHOT BOT mode dispatches to the AI flow (createAIMatch) instead
+    // of the multiplayer createRoom path. Match starts immediately, no
+    // wager, no opponent matchmaking — same backend as AIPracticeScreen.
+    if (matchMode === 'vs_bot') {
+      window.socket.emit('createAIMatch', {
+        player: { name, color },
+      });
+      return;
+    }
 
     // Phase 3 — balance gate. If user picks a wagered match they
     // can't afford, open Privy's Apple/Google Pay funding modal instead
@@ -884,6 +909,19 @@ function LobbyScreen({ navigate, screenData }) {
                 textTransform: 'uppercase',
               }}>
                 FREE PRACTICE MODE
+              </div>
+            )}
+            {matchMode === 'vs_bot' && (
+              <div style={{
+                fontFamily: "'Share Tech Mono', monospace",
+                fontSize: 11,
+                color: 'var(--kh)',
+                opacity: 0.85,
+                letterSpacing: 2,
+                marginTop: 4,
+                textTransform: 'uppercase',
+              }}>
+                SOLO VS AI · NO STAKES · OFFLINE
               </div>
             )}
           </div>

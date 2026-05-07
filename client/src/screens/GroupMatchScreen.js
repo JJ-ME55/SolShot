@@ -78,7 +78,7 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
     // window.Telegram.WebApp.initDataUnsafe, deprecated since we removed
     // the telegram-web-app.js shim that broke Privy's modal). Falls back
     // to tgUser if a future Mini App context re-introduces it.
-    const { walletHandle } = useSolShotWallet();
+    const { walletHandle, isAuthenticated } = useSolShotWallet();
     const [match, setMatch] = useState(null);
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -90,11 +90,24 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
 
     const matchId = screenData.groupMatchId;
 
-    // Fetch match on mount + when matchId changes
+    // Fetch match on mount + when matchId/auth changes.
+    //
+    // Same race story as GroupDepositScreen: the H022 fix added an
+    // isAuthenticated gate to the server's `getGroupMatch` handler; deep
+    // links to this screen mount before Privy + wallet-adapter complete
+    // the `authenticate` handshake, so emitting immediately would bounce
+    // off auth_required. Defer the fetch until the socket is authed; the
+    // effect re-runs on isAuthenticated transition.
     useEffect(() => {
         if (!matchId || !window.socket) {
             setError('No match ID. Open this screen from a group-chat link.');
             setLoading(false);
+            return;
+        }
+        if (!isAuthenticated) {
+            // Stay in loading state — handshake hasn't completed yet.
+            // No listener attach needed; the effect will rerun once
+            // isAuthenticated flips true and we'll register + emit.
             return;
         }
 
@@ -103,7 +116,9 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
             if (payload?.error) {
                 setError(payload.error === 'not_found'
                     ? `Match ${matchId} no longer exists.`
-                    : 'Couldn\'t load match.');
+                    : payload.error === 'auth_required'
+                        ? 'Sign in to view this match.'
+                        : 'Couldn\'t load match.');
                 return;
             }
             if (payload?.match?.matchId === matchId) {
@@ -116,10 +131,11 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
         return () => {
             window.socket.off('groupMatchData', handler);
         };
-    }, [matchId]);
+    }, [matchId, isAuthenticated]);
 
     const refresh = () => {
         if (!matchId || !window.socket) return;
+        if (!isAuthenticated) return;
         setLoading(true);
         window.socket.emit('getGroupMatch', { matchId });
     };

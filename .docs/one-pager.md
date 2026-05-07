@@ -23,20 +23,20 @@ SolShot is a skill-based multiplayer artillery game (Pocket Tanks style) where p
 
 ## Why it matters
 
-**The wedge:** Telegram group chats are where crypto-native players already hang out. SolShot brings a real game into the chat window — async turns, self-updating lobby cards, bot-posted shot recaps — so the game happens in the group, not away from it.
+**The wedge:** Telegram group chats are where crypto-native players already hang out. SolShot brings a real game into the chat window — async turns, self-updating lobby cards, bot-posted shot recaps, in-chat trophy DMs after wins — so the game happens in the group, not away from it.
 
 **The vision:** SolShot is the first game on a bigger platform: a social-game layer for crypto group chats. Multiple game types (golf, darts, billiards, card battles) on the same async-turn-based backend, same SHOT economy, same chat surfaces. Telegram first, then Seekr Mobile, iMessage, and WhatsApp.
 
-**The moat:** Privy embedded wallets (email or Telegram OAuth, no seed phrases) make onboarding seamless for players who have never touched a Solana wallet. Frictionless entry into a wagered skill game — that combination is rare.
+**The moat:** Privy embedded wallets (email, Google, or Telegram OAuth — no seed phrases) make onboarding seamless for players who have never touched a Solana wallet. Frictionless entry into a wagered skill game — that combination is rare.
 
 ---
 
 ## How a match works
 
-1. **Lobby.** Host runs `/customgame` in any Telegram group. Bot posts a self-updating lobby card showing wager amount, player slots, and join status.
+1. **Lobby.** Host runs `/customgame` in any Telegram group. Bot walks through wager, player count, duration, turn timer, idle penalty, buybacks, quiet hours. Self-updating lobby card posts to chat.
 2. **Deposit.** When the lobby fills, the server creates the escrow PDA. Each player signs their own `deposit_wager` transaction — no custodial step. Pot accumulates inside the PDA on-chain.
 3. **Play.** Server advances turns, posts "Take your shot" pings in chat. Players tap the button, aim inside solshot.gg, fire. Server runs server-authoritative physics, broadcasts shot results, posts the recap back to chat.
-4. **Settle.** When one tank remains, the server calls `settle_match`. The contract distributes the pot 90 / 7 / 3 (winner / treasury / ops). Settlement TX and Solscan link post back to chat.
+4. **Settle.** When one tank remains, the server calls `settle_match`. The contract distributes the pot 90 / 7 / 3 (winner / treasury / ops). Settlement TX and Solscan link post back to chat. Winner gets a Trophy DM with a shareable card.
 
 Server runs all physics. Players only send angle + power + weapon. Nothing the client does can affect the outcome — there is nothing to hack on the client.
 
@@ -69,6 +69,45 @@ Server runs all physics. Players only send angle + power + weapon. Nothing the c
 | Web PWA | [solshot.gg](https://solshot.gg) |
 | Telegram bot | [@SolShotGG_bot](https://t.me/SolShotGG_bot) — `/play` to bind wallet, `/customgame` in any group |
 | iPhone | Safari → Share → Add to Home Screen (fullscreen PWA) |
+
+### Game modes
+
+| Mode | Wallet | Real-time? | Wager |
+|---|---|---|---|
+| **Practice vs Shot Bot** | none | yes — instant | free, no opponent matchmaking |
+| **Quick Match** | required | yes | 0.1 SOL · BO1 / BO3 |
+| **Duel** | required | yes | 0.25–0.5 SOL · BO3 / BO5 |
+| **High Roller** | required | yes | 1.0 SOL · BO3 / BO5 |
+| **Custom Challenge** | required | yes | host-set · BO1 / BO3 / BO5, deep-link to a friend |
+| **Group-chat (`/customgame`)** | required | no — async | host-set, 4h / 12h / 24h turn timers |
+
+**Shot Bot** is SolShot's built-in AI opponent — server-side probabilistic aiming with calibration, picks weapons situationally, gets sharper as the match progresses. Means anyone can drop in and play with zero matchmaking wait.
+
+### Game features
+
+Everything below is shipped and live on devnet today.
+
+| Feature | What it does | Code |
+|---|---|---|
+| **Callsign lock-in** | First-time onboarding picks a 3–12 char handle, profanity-filtered, locked forever | `client/src/components/HandleModal.js` |
+| **Privy auth** | Embedded Solana wallet via email, Google, or Telegram OAuth — no seed phrase | `client/src/wallet/` |
+| **Custom Challenges** | Generate a 5-char challenge code → Satori-rendered Duel Card → share to TG → friend taps to accept | `server/services/challenge/DuelChallengeCard.js`, `client/src/screens/ChallengeAcceptScreen.js` |
+| **Career Card** | 1080×608 share image: callsign, tier badge, rank, W/L, K/D, MVP weapon, 10-match recent form | `server/services/challenge/CareerStatsCard.js` |
+| **Trophy DMs** | Bot DMs winner a 1080×1080 trophy share card after every settle (1v1 + group) | `server/services/challenge/victoryDm.js`, `TrophyShareCard.js` |
+| **My Games** | Multi-match home screen for active group-chat matches with turn timers | `client/src/screens/MyGamesScreen.js` |
+| **Share to Telegram** | One-tap share buttons throughout post-match flow + native TG inline-share | `client/src/components/TelegramShare.js` |
+| **Referrals** | 25 SHOT to inviter + 25 SHOT to invitee on first wagered match. Self-referral guard, one-shot, treasury-subsidised | `server/services/referrals.js` |
+| **Leaderboard** | Global wins board, top 10 in-bot (`/leaderboard`) + full UI in app | `server/services/bot.js` |
+| **Cosmetics / Armory** | 28 items across 5 categories (PATTERN / TRAIL / BLAST / SKIN / KILL) | `client/src/screens/ArmoryScreen.js` |
+| **Tank customization** | Barracks screen for colour, equipped cosmetics, loadout | `client/src/screens/BarracksScreen.js` |
+| **Live SHOT/SOL price** | Jupiter-pulled price ticker in the header bar across all non-game screens | `client/src/components/ShotPriceTicker.js` |
+| **iOS PWA install** | Native-looking banner walks Safari users through Add to Home Screen | `client/src/components/IosInstallBanner.js` |
+| **TG WebView guard** | Auto-detects Telegram in-app browser on iPhone, prompts "Open in Browser" for Privy | `client/src/components/TgWebViewBanner.js` |
+| **Wind physics** | Per-round horizontal wind ([-60, +60] px/s²), HUD indicator | `server/services/physics.js` |
+| **Group-chat config** | `/customgame` wizard: wager, max players, duration (12h/3d/7d), turn timer (4h/12h/24h), idle penalty, buybacks, quiet hours | `server/services/groupchat/configFlow.js` |
+| **Quiet hours** | Configurable nightly window (default 11pm–7am UTC) pauses turn timers | `server/services/groupchat/quietHours.js` |
+| **Buybacks** | Optional per-match: eliminated players pay 2/3/5/8/13× wager to re-enter at 50% HP | `server/services/groupchat/configFlow.js` |
+| **Responsible Gaming** | 18+ notice + Terms / Privacy footer on every screen | `client/src/components/ResponsibleGaming.js` |
 
 ---
 
@@ -112,7 +151,17 @@ Higher-complexity SOS findings (re-entrancy patterns, full formal verification) 
 - Resolve remaining deferred SOS findings (re-entrancy, formal verification pass)
 - Mainnet escrow deploy + end-to-end mainnet smoke test
 - Bot rate-limiting + abuse handling for public Telegram exposure
-- Leaderboard + match history on-chain indexer
+- On-chain match-history indexer for richer leaderboards
+
+**Coming soon (designed, not yet shipped)**
+
+| Feature | What it adds | Status |
+|---|---|---|
+| **Consumables** | Burn small amounts of SHOT for in-match boosts (Tactical Scope, Smoke Screen, Reinforced Armor, etc). Lasts 5 matches, all SHOT burned permanently. | Service scaffolded (`server/services/consumables.js`), v1 ships Overcharge only |
+| **Tournaments** | Bracketed multi-round events with guaranteed prize pools and SHOT bonuses | Designed |
+| **SHOT buybacks** | Treasury-funded protocol buyback — uses a slice of fees to repurchase + burn SHOT from open markets | Designed |
+| **Multi-day marathon modes** | Group-chat turn timers beyond 24h. Capped at 24h today post-SOS H039 hardening; longer modes planned post-mainnet once stuck-match recovery is fully load-tested. | Lobby UI ready, server cap remains 24h |
+| **Expanded leaderboard** | Per-mode boards, weekly resets, season-based prestige rewards | Designed |
 
 **First 3 partner game types**
 
@@ -136,7 +185,11 @@ All three share the same SHOT economy, Telegram bot, and Privy wallet stack.
 | **159 / 159** | BOK math property tests passing |
 | **10M SHOT** | Fixed supply, mint authority burned |
 | **20 weapons** | 15 base + 5 prestige across BO1 / BO3 / BO5 formats |
+| **28 cosmetics** | 5 categories (PATTERN / TRAIL / BLAST / SKIN / KILL) |
+| **3 auth methods** | Privy: email, Google, Telegram OAuth — no seed phrase |
+| **3 share cards** | Trophy (post-win) + Career (stats) + Duel (challenge call-out) — all server-rendered Satori |
 | **3 safety layers** | Server settle → player cancel → permissionless reclaim (24h) |
+| **25 SHOT** | Two-sided referral reward — both inviter and invitee |
 
 ---
 
@@ -147,12 +200,13 @@ All three share the same SHOT economy, Telegram bot, and Privy wallet stack.
 | **Web** | [solshot.gg](https://solshot.gg) — works on desktop and mobile |
 | **Telegram** | DM [@SolShotGG_bot](https://t.me/SolShotGG_bot) → `/play`, then `/customgame` in any group chat |
 | **iPhone** | Safari → Share → Add to Home Screen for fullscreen |
+| **Refer a friend** | DM `/refer` to the bot — both earn 25 SHOT on their first wagered match |
 | **Contribute** | [github.com/JJ-ME55/SolShot](https://github.com/JJ-ME55/SolShot) — MIT, open to PRs |
 
 ---
 
 ## Team
 
-Solo founder. Built with AI assistance. Three security audits, two shipped fix bundles, one working wagered game on devnet. Full stack delivered: React + Phaser 3 PWA, Express + Socket.IO server, two Anchor programs, SHOT token, Telegram bot, Privy wallet integration, MongoDB Atlas, domain registered.
+Solo founder. Built with AI assistance. Three security audits, two shipped fix bundles, one working wagered game on devnet. Full stack delivered: React + Phaser 3 PWA, Express + Socket.IO server, two Anchor programs, SHOT token, Telegram bot with 14 commands (`/play`, `/customgame`, `/leaderboard`, `/refer`, `/mygames`, etc.), Privy wallet integration, MongoDB Atlas, Satori-rendered share cards, domain registered.
 
 *SolShot is a skill-based game. Players are responsible for compliance with local regulations regarding wagering. This document is not financial advice.*

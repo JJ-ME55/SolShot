@@ -78,7 +78,7 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
     // window.Telegram.WebApp.initDataUnsafe, deprecated since we removed
     // the telegram-web-app.js shim that broke Privy's modal). Falls back
     // to tgUser if a future Mini App context re-introduces it.
-    const { walletHandle, isAuthenticated } = useSolShotWallet();
+    const { walletHandle, isAuthenticated, login } = useSolShotWallet();
     const [match, setMatch] = useState(null);
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -87,6 +87,12 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
     // Aim state lifted from FireControls so BattlefieldPreview can render
     // a live trajectory predictor on every slider change.
     const [aim, setAim] = useState({ angle: 45, power: 60 });
+    // Defensive timeout: if isAuthenticated doesn't flip true within 5s,
+    // surface an explicit "Sign in" CTA instead of leaving the user on an
+    // infinite loading skeleton. Closes the new-user-bind gap where the
+    // Privy → socket auth handshake stalls and the H022 race-fix early-
+    // returns the effect forever. Triggered from AJVD post-mortem May 8.
+    const [authTimeout, setAuthTimeout] = useState(false);
     // Hold the Phaser scene mounted for ~4s after settlement so the killing
     // shot's trajectory + impact + KO animation actually play. Without this,
     // useFullScene flips false the instant match.state transitions
@@ -149,6 +155,20 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
         setLoading(true);
         window.socket.emit('getGroupMatch', { matchId });
     };
+
+    // 5-second auth-timeout watchdog. Fires if isAuthenticated stays false
+    // long enough to suggest the handshake has stalled rather than just
+    // being slow. The fallback render below uses authTimeout to swap the
+    // loading skeleton for a Sign In CTA. Cancelled if isAuthenticated
+    // flips true before the timer fires (or if the component unmounts).
+    useEffect(() => {
+        if (isAuthenticated) {
+            setAuthTimeout(false);
+            return;
+        }
+        const timer = setTimeout(() => setAuthTimeout(true), 5000);
+        return () => clearTimeout(timer);
+    }, [isAuthenticated]);
 
     // Active→settled transition: keep the Phaser scene alive for ~4s so the
     // killing shot's animation can play, and surface the VICTORY/DEFEAT
@@ -233,6 +253,72 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
     }, [matchId]);
 
     if (loading) {
+        // Auth-timeout fallback: if isAuthenticated stayed false long enough
+        // for the watchdog to fire, the Privy → socket handshake has stalled.
+        // Surface an explicit Sign In CTA instead of leaving the user on an
+        // infinite skeleton. Triggered from the AJVD post-mortem (May 8) where
+        // mlbob landed via the Take Your Shot deep link without a bound wallet
+        // and got stuck on the loading state.
+        if (authTimeout && !isAuthenticated) {
+            return (
+                <div style={styles.fullPage}>
+                    <div style={{
+                        padding: '40px 24px',
+                        display: 'flex', flexDirection: 'column', gap: 16,
+                        alignItems: 'center', textAlign: 'center',
+                    }}>
+                        <div style={{
+                            fontFamily: 'var(--f-display)', fontSize: 18,
+                            color: 'var(--bone)', letterSpacing: '0.18em',
+                        }}>
+                            SIGN IN TO VIEW MATCH
+                        </div>
+                        <div style={{
+                            fontFamily: 'var(--f-mono)', fontSize: 12,
+                            color: 'var(--olive)', letterSpacing: '0.1em',
+                            maxWidth: 360, lineHeight: 1.5,
+                        }}>
+                            Match #{matchId} is waiting for you. Sign in with
+                            your wallet to take your turn.
+                        </div>
+                        <button
+                            onClick={() => login?.()}
+                            style={{
+                                fontFamily: 'var(--f-display)', fontSize: 13,
+                                letterSpacing: '0.18em',
+                                padding: '12px 24px',
+                                background: 'var(--accent)',
+                                color: 'var(--bg-deep)',
+                                border: 'none', cursor: 'pointer',
+                                clipPath: 'polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px))',
+                            }}
+                        >
+                            SIGN IN
+                        </button>
+                        <button
+                            onClick={() => navigate('menu')}
+                            style={{
+                                fontFamily: 'var(--f-mono)', fontSize: 10,
+                                color: 'var(--olive)', letterSpacing: '0.2em',
+                                background: 'transparent', border: 'none',
+                                cursor: 'pointer', padding: '6px 12px',
+                                textDecoration: 'underline',
+                            }}
+                        >
+                            ← BACK TO MENU
+                        </button>
+                        <div style={{
+                            fontFamily: 'var(--f-mono)', fontSize: 9,
+                            color: 'var(--muted)', letterSpacing: '0.2em',
+                            maxWidth: 320, lineHeight: 1.5, marginTop: 12,
+                        }}>
+                            First time? DM /play to @SolShotGG_bot
+                            in Telegram to set up your wallet.
+                        </div>
+                    </div>
+                </div>
+            );
+        }
         // Skeleton: header bar + a few stacked rows roughly shaped like
         // the lobby/active/settled content. Reserves the layout slot so
         // there's no jump when the match doc lands.

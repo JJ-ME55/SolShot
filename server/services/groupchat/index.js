@@ -356,51 +356,59 @@ async function handleJoinCallback(ctx) {
         return ctx.answerCbQuery(`You're already in match #${conflict.matchId} in this chat.`, { show_alert: true });
     }
 
-    // Wagered: require a linked wallet BEFORE adding to the lobby. Without
-    // this, the lobby could fill with un-walletted players and beginWagered-
-    // DepositPhase would fail on chain (or refuse to call createMatchEscrow).
+    // Both wagered AND free matches require a linked wallet BEFORE adding
+    // to the lobby. Reasons:
+    //   - Wagered: lobby could fill with un-walletted players and
+    //     beginWageredDepositPhase would fail on chain (or refuse to call
+    //     createMatchEscrow).
+    //   - Free: player still needs identity to play the Mini App. Without
+    //     a bound wallet, the GroupMatchScreen can't resolve `myPlayer`
+    //     and the user lands on an infinite loading skeleton (AJVD bug
+    //     post-mortem May 8 — mlbob got added to a free match, opened the
+    //     Take Your Shot link with no bound wallet, got stuck).
+    //
+    // Same chat message + Link Wallet button pattern for both. Single
+    // recovery path the chat surfaces in-band.
     let walletAddress = null;
-    if (match.config?.type === 'wagered') {
-        const user = await lookupUserByTelegramId(ctx.from.id);
-        if (!user?.walletAddress) {
-            // Private alert (popup just for them — fast feedback)
-            await ctx.answerCbQuery(
-                "Your wallet isn't linked yet. Tap the chat link to set up.",
-                { show_alert: true }
+    const user = await lookupUserByTelegramId(ctx.from.id);
+    if (!user?.walletAddress) {
+        // Private alert (popup just for them — fast feedback)
+        await ctx.answerCbQuery(
+            "Your wallet isn't linked yet. Tap the chat link to set up.",
+            { show_alert: true }
+        );
+        // Public chat message tagging the player so everyone in the
+        // group can see who's holding things up + the fix is one tap
+        // away in the chat itself. Per JJ: surface issues in chat
+        // so players correct them collaboratively without leaving.
+        //
+        // Mention format `@${username}` only works if user has a
+        // public username; fall back to first_name link with their
+        // tg user id (Telegram renders this as a tappable mention
+        // even without a username).
+        const handle = ctx.from?.username
+            ? `@${ctx.from.username}`
+            : `<a href="tg://user?id=${ctx.from.id}">${ctx.from?.first_name || 'player'}</a>`;
+        try {
+            await ctx.telegram.sendMessage(
+                ctx.chat.id,
+                `⚠️ ${handle} can't join — wallet not linked.\n\nOne tap to fix: link your wallet in the bot, then tap Join again.`,
+                {
+                    parse_mode: 'HTML',
+                    reply_markup: {
+                        inline_keyboard: [[{
+                            text: '🔗 Link Wallet (Telegram)',
+                            url: 'https://t.me/SolShotGG_bot?start=link',
+                        }]],
+                    },
+                }
             );
-            // Public chat message tagging the player so everyone in the
-            // group can see who's holding things up + the fix is one tap
-            // away in the chat itself. Per JJ: surface issues in chat
-            // so players correct them collaboratively without leaving.
-            //
-            // Mention format `@${username}` only works if user has a
-            // public username; fall back to first_name link with their
-            // tg user id (Telegram renders this as a tappable mention
-            // even without a username).
-            const handle = ctx.from?.username
-                ? `@${ctx.from.username}`
-                : `<a href="tg://user?id=${ctx.from.id}">${ctx.from?.first_name || 'player'}</a>`;
-            try {
-                await ctx.telegram.sendMessage(
-                    ctx.chat.id,
-                    `⚠️ ${handle} can't join — wallet not linked.\n\nOne tap to fix: link your wallet in the bot, then tap Join again.`,
-                    {
-                        parse_mode: 'HTML',
-                        reply_markup: {
-                            inline_keyboard: [[{
-                                text: '🔗 Link Wallet (Telegram)',
-                                url: 'https://t.me/SolShotGG_bot?start=link',
-                            }]],
-                        },
-                    }
-                );
-            } catch (err) {
-                console.warn('[group-chat] join-rejection chat post failed:', err.message);
-            }
-            return;
+        } catch (err) {
+            console.warn('[group-chat] join-rejection chat post failed:', err.message);
         }
-        walletAddress = user.walletAddress;
+        return;
     }
+    walletAddress = user.walletAddress;
 
     const tankColor = pickAvailableTankColor(match.players);
     const slot = buildPlayerSlot(ctx.from, tankColor);

@@ -350,7 +350,7 @@ function LobbyScreen({ navigate, screenData }) {
   const countdownRef = useRef(null);
 
   // CS-04: Use context hook instead of window.solWallet
-  const { signAndSendEscrowDeposit, walletAddress, balance: solBalance, fundWallet } = useSolShotWallet();
+  const { signAndSendEscrowDeposit, walletAddress, balance: solBalance, fundWallet, login } = useSolShotWallet();
 
   // Derived: available wagers + formats for current mode
   const modeConfig = MATCH_MODES[matchMode];
@@ -699,7 +699,24 @@ function LobbyScreen({ navigate, screenData }) {
       return;
     }
 
-    // Phase 3 — balance gate. If user picks a wagered match they
+    // Phase 3a — sign-in gate. Wagered modes need a bound wallet before
+    // anything else. If the user got this far without signing in, open
+    // Privy's login modal directly instead of falling through to the
+    // balance gate (which surfaced a misleading "Insufficient SOL"
+    // error to a layman who actually has no wallet to be insufficient
+    // in). AJVD QA pass May 8 — judges hitting the wagered tab cold
+    // would see the wrong error. Login modal is the right CTA.
+    if (wagerToSend > 0 && !walletAddress) {
+      if (login) {
+        await login();
+      }
+      // After login() returns the user has either signed in (walletAddress
+      // populates on next render) or cancelled the modal. Either way bail
+      // here and let them tap Find again — clean state.
+      return;
+    }
+
+    // Phase 3b — balance gate. If user picks a wagered match they
     // can't afford, open Privy's Apple/Google Pay funding modal instead
     // of letting the deposit silently fail. We add a small buffer
     // (0.005 SOL) for transaction fees on top of the wager.
@@ -712,7 +729,7 @@ function LobbyScreen({ navigate, screenData }) {
       const suggested = Math.max(0.05, Math.ceil(shortfall * 20) / 20); // round up to nearest 0.05
       const opened = await fundWallet({ amount: suggested.toFixed(2) });
       if (!opened) {
-        setError('Insufficient SOL to wager. Add SOL via /wallet or fund your address directly.');
+        setError('Insufficient SOL to wager. Add SOL via your wallet menu or fund your address directly.');
         return;
       }
       // After Privy's modal closes, re-check balance via refresh and
@@ -780,6 +797,16 @@ function LobbyScreen({ navigate, screenData }) {
 
     const name = getPlayerName();
     const color = TANK_COLORS[selectedColor].phaserHex;
+
+    // Sign-in gate (mirrors createRoom). Wagered joins need a bound wallet
+    // first — open Privy login modal instead of falling through to the
+    // balance gate's misleading "Insufficient SOL" error.
+    if (wager > 0 && !walletAddress) {
+      if (login) {
+        await login();
+      }
+      return;
+    }
 
     // Phase 3 — same balance gate as createRoom. If joining a wagered
     // room without enough SOL, surface the funding modal instead of
@@ -1138,7 +1165,7 @@ function LobbyScreen({ navigate, screenData }) {
               <div>
                 <div style={mobileModeSectionLabel}>TANK COLOR</div>
                 <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                  {TANK_COLORS.map((c, i) => {
+                  {TANK_COLORS.filter((c) => !(matchMode === 'vs_bot' && c.name === 'WHITE')).map((c, i) => {
                     const isClaimed = claimedColors.includes(c.phaserHex);
                     return (
                       <div
@@ -1709,11 +1736,11 @@ function LobbyScreen({ navigate, screenData }) {
             </div>
           ) : null}
 
-          {/* Color Picker */}
+          {/* Color Picker — white reserved for Shot Bot in vs_bot mode */}
           <div>
             <div style={s.sectionLabel}>TANK COLOR</div>
             <div style={s.colorRow}>
-              {TANK_COLORS.map((c, i) => {
+              {TANK_COLORS.filter((c) => !(matchMode === 'vs_bot' && c.name === 'WHITE')).map((c, i) => {
                 const isClaimed = claimedColors.includes(c.phaserHex);
                 return (
                   <div

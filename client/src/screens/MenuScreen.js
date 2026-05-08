@@ -15,15 +15,14 @@ function MenuScreen({ navigate }) {
   const { isTelegram, user: tgUser } = useTelegram();
   const isMobile = useIsMobile();
   const { shotBalance, balance: solBalance } = useSolShotWallet();
-  const [onlineCount, setOnlineCount] = useState(247);
   const myGames = useMyGamesBadge();
 
   const callsign = localStorage.getItem('solshot_handle') || 'OPERATIVE';
 
-  useEffect(() => {
-    const t = setInterval(() => setOnlineCount(c => Math.max(180, Math.min(320, c + Math.floor(Math.random() * 9) - 4))), 2400);
-    return () => clearInterval(t);
-  }, []);
+  // (Removed: a fake "ONLINE COUNT" placeholder that randomised between
+  // 180-320. Misled users about real activity and showed "MAINNET BETA"
+  // when the product is on devnet. Replaced below with a factual
+  // "DEVNET" badge. AJVD QA pass May 8.)
 
   // MY GAMES sub-label dynamically reflects active match state.
   // Pending-turn cases lead with the 🎯 icon to draw the eye —
@@ -49,7 +48,7 @@ function MenuScreen({ navigate }) {
   ];
 
   if (isMobile) {
-    return <MobileMenu navigate={navigate} callsign={callsign} shotBalance={shotBalance || 0} solBalance={solBalance || 0} onlineCount={onlineCount} secondary={secondary} />;
+    return <MobileMenu navigate={navigate} callsign={callsign} shotBalance={shotBalance || 0} solBalance={solBalance || 0} secondary={secondary} />;
   }
 
   return (
@@ -139,9 +138,9 @@ function MenuScreen({ navigate }) {
           HOW TO PLAY →
         </div>
 
-        {/* Online counter */}
+        {/* Network badge — factual, no fake online count */}
         <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--muted)', letterSpacing: '0.2em' }}>
-          <span style={{ color: '#7fd060' }}>●</span> {onlineCount} ONLINE · MAINNET BETA
+          <span style={{ color: '#7fd060' }}>●</span> DEVNET
         </div>
       </div>
 
@@ -151,7 +150,7 @@ function MenuScreen({ navigate }) {
 }
 
 /* ═══ MOBILE LANDSCAPE LAYOUT ═══ */
-function MobileMenu({ navigate, callsign, shotBalance, solBalance, onlineCount, secondary }) {
+function MobileMenu({ navigate, callsign, shotBalance, solBalance, secondary }) {
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', background: 'var(--bg-deep)' }}>
       {/* Grid bg */}
@@ -206,12 +205,12 @@ function MobileMenu({ navigate, callsign, shotBalance, solBalance, onlineCount, 
                           background: 'repeating-linear-gradient(90deg, var(--muted) 0 8px, transparent 8px 14px)', opacity: 0.6 }} />
           </div>
 
-          {/* Online counter */}
+          {/* Network badge — factual, no fake online count */}
           <div style={{
             position: 'absolute', bottom: 4, left: '50%', transform: 'translateX(-50%)',
             fontFamily: 'var(--f-mono)', fontSize: 8, color: 'var(--muted)', letterSpacing: '0.2em', whiteSpace: 'nowrap',
           }}>
-            <span style={{ color: '#7fd060' }}>●</span> {onlineCount} ONLINE
+            <span style={{ color: '#7fd060' }}>●</span> DEVNET
           </div>
         </div>
 

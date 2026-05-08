@@ -280,10 +280,29 @@ export function getRoundPlacement(matchState) {
         matchState.damageDealtTotal[pid] = (matchState.damageDealtTotal[pid] || 0) + (scores[pid] || 0);
     });
 
-    // Backward compat: update roundWins for 1st place (preserves disconnect logic in main.js)
+    // Backward compat: update roundWins for 1st place (preserves disconnect
+    // logic in main.js).
+    //
+    // Idempotency guard added in the May 8 QA pass — getRoundPlacement is
+    // called from THREE different code paths in main.js (turn-timeout
+    // forfeit, AI fire flow, regular fire flow). For most matches only one
+    // path fires, but a tightly-timed sequence (e.g. fire kills opponent
+    // AND turn timeout fires concurrently) could call it twice for the
+    // same round end. The bug surfaced as JJ's BO1 match showing
+    // "won 2 rounds" when only 1 round was actually won. The
+    // _lastRoundWinsApplied marker tracks the highest currentRound value
+    // we've already incremented for, so re-entry within the same round is
+    // a no-op. placementPoints / damageDealtTotal above are accumulators —
+    // they're allowed to re-add — but roundWins is a counter that should
+    // increment exactly once per round resolution.
     if (ranked[0]) {
         if (!matchState.roundWins) matchState.roundWins = {};
-        matchState.roundWins[ranked[0]] = (matchState.roundWins[ranked[0]] || 0) + 1;
+        const currentRound = matchState.currentRound ?? 0;
+        const lastApplied = matchState._lastRoundWinsApplied ?? -1;
+        if (currentRound > lastApplied) {
+            matchState.roundWins[ranked[0]] = (matchState.roundWins[ranked[0]] || 0) + 1;
+            matchState._lastRoundWinsApplied = currentRound;
+        }
     }
 
     return ranked; // [1st, 2nd, 3rd, 4th]

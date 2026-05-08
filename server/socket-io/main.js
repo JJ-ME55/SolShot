@@ -3199,13 +3199,21 @@ const mainsocket = (io) => {
                 return
             }
             try {
+                // Filter out users without a real callsign — legacy test docs
+                // that predate HandleModal lock-in had no `handle`, which surfaced
+                // as a stack of "UNKNOWN" rows on the public board (AJVD QA pass
+                // May 8). Mirror getTopPlayers() in users.js for consistency
+                // between in-app leaderboard and `/leaderboard` bot reply.
                 const top = await User.find(
-                    { 'stats.matchesPlayed': { $gte: 1 } },
+                    {
+                        'stats.matchesPlayed': { $gte: 1 },
+                        handle: { $exists: true, $nin: [null, ''] },
+                    },
                     { handle: 1, 'stats.wins': 1, 'stats.losses': 1, 'stats.matchesPlayed': 1, 'stats.totalDamage': 1, 'stats.bestWinStreak': 1 }
                 ).sort({ 'stats.wins': -1, 'stats.matchesPlayed': 1 }).limit(20).lean()
 
                 const players = top.map(u => ({
-                    callsign: u.handle || 'UNKNOWN',
+                    callsign: u.handle,
                     wins: u.stats?.wins || 0,
                     losses: u.stats?.losses || 0,
                     matches: u.stats?.matchesPlayed || 0,

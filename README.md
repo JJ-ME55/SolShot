@@ -32,7 +32,7 @@ Both settle pots atomically with a 90/7/3 split (winner, treasury, ops). All spl
 
 SolShot today is artillery in a Telegram group chat. The roadmap is to become the **social-game layer for crypto group chats**: multiple games (golf, billiards, darts, card battles) on the same backend, multiple chat surfaces (Telegram, then Seekr Mobile, iMessage, WhatsApp), a shared SHOT economy, and an open SDK so other developers can ship group-chat-native wagered games on the same infrastructure.
 
-Artillery is the wedge. Group-chat-native gaming is the prize. See [`Docs/`](Docs/) for the litepaper and product spec.
+Artillery is the wedge. Group-chat-native gaming is the prize. See the [litepaper](Docs/SolShot_Litepaper_v2.2.md) and the [SHOT token model](Docs/SHOT_TOKEN_MODEL.md) for the full spec.
 
 ## On-chain proof
 

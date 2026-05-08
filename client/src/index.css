@@ -498,3 +498,20 @@ input[type="range"]:disabled::-moz-range-thumb {
   border-color: var(--border-hot) !important;
   background: rgba(232,164,48,0.05) !important;
 }
+
+/* iOS long-press text-highlight suppression on interactive controls.
+   AJVD QA pass May 8 — JJ flagged that holding the angle/power slider
+   triggers iOS long-press selection (highlights the bar/text), creating
+   an off-putting visual artifact during scrubbing. Suppress on:
+     - all range inputs (the actual sliders)
+     - any element opted in via class .no-select (HUD chrome wrappers)
+   Standard text remains selectable. */
+input[type="range"],
+.no-select {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}

@@ -144,12 +144,18 @@ export default function DesignTopBar({
             fontSize: isMobile ? 10 : 13,
             color: 'var(--bone)',
             letterSpacing: '0.1em',
+            // lineHeight 1.25 prevents descender clipping on letters
+            // like P/p/y/g — JJ's QA pass May 8 flagged "tops of P
+            // on perryperalta" getting cut off.
+            lineHeight: 1.25,
+            paddingBottom: 1,
           }}>{callsign}</div>
           <div style={{
             fontFamily: 'var(--f-mono)',
             fontSize: isMobile ? 7 : 9,
             color: 'var(--olive)',
             letterSpacing: '0.2em',
+            lineHeight: 1.3,
           }}>{tier} · LVL {level}</div>
         </div>
       </div>

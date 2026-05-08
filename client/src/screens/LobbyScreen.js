@@ -1008,14 +1008,16 @@ function LobbyScreen({ navigate, screenData }) {
           background: 'var(--bg-deep)', display: 'flex', flexDirection: 'column',
           // Safari mobile clips into the URL/notch area — pad the top by the
           // device safe-area inset so the header isn't cropped on iPhones.
-          paddingTop: 'env(safe-area-inset-top, 0px)',
+          // Plus a fallback 8px so non-iOS landscape browsers also have
+          // breathing room.
+          paddingTop: 'max(8px, env(safe-area-inset-top, 0px))',
         }}>
-          {/* Header strip — minimum 10px top padding so the DEPLOY title and
-              MENU button aren't visually flush with the viewport edge on
-              mobile Safari (was 5px → "DEPOLY" cropped on JJ's phone). */}
+          {/* Header strip — bumped to 14px top after JJ's second QA pass
+              still showed cropping on the DEPLOY title. lineHeight 1.4 on
+              the title gives descender + ascender room (was 1.1, then 0.95). */}
           <div style={{
             display: 'grid', gridTemplateColumns: 'auto 1fr auto', alignItems: 'center', gap: 8,
-            padding: '10px 12px 6px', borderBottom: '1px solid var(--border)',
+            padding: '14px 12px 8px', borderBottom: '1px solid var(--border)',
             flexShrink: 0,
           }}>
             <button
@@ -1028,7 +1030,7 @@ function LobbyScreen({ navigate, screenData }) {
             >← MENU</button>
             <div style={{
               fontFamily: 'var(--f-display)', fontSize: 18, color: 'var(--bone)',
-              letterSpacing: '0.18em', textAlign: 'center', lineHeight: 1.1,
+              letterSpacing: '0.18em', textAlign: 'center', lineHeight: 1.4,
             }}>DEPLOY</div>
             <div style={{
               fontFamily: 'var(--f-mono)', fontSize: 8, color: 'var(--olive)',

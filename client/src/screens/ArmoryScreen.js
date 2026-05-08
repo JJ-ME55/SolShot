@@ -129,29 +129,19 @@ function DetailPanel({ item, owned, equipped, shotBalance, buying, feedback, onB
           fontFamily: 'var(--f-display)', fontSize: 14, letterSpacing: '0.18em',
           cursor: 'pointer',
         }}>{isEquipped ? 'UNEQUIP' : 'EQUIP'}</button>
-      ) : isShotItem ? (
-        <button
-          onClick={canAfford && !buying ? () => onBuy(item.id) : undefined}
-          disabled={!canAfford || buying}
-          style={{
-            width: '100%', marginTop: 14, padding: 14,
-            background: canAfford ? 'var(--accent)' : 'var(--muted)',
-            color: '#0e1209',
-            border: '1px solid ' + (canAfford ? 'var(--accent-hot)' : 'var(--border)'),
-            clipPath: 'var(--clip-6)',
-            fontFamily: 'var(--f-display)', fontSize: 14, letterSpacing: '0.18em',
-            cursor: canAfford && !buying ? 'pointer' : 'default',
-            opacity: !canAfford || buying ? 0.6 : 1,
-          }}>
-          {buying ? 'PROCESSING…' : canAfford ? `BURN ${cost} SHOT` : 'INSUFFICIENT SHOT'}
-        </button>
       ) : (
+        // Cosmetic purchases are scaffolded but not all assets/equip
+        // pipelines are fully wired up. Disable the buy button across
+        // every non-owned item with a COMING SOON stamp so users
+        // (and judges) don't tap into a half-shipped flow. Price text
+        // above this button stays visible — JJ wants the prices left
+        // intact, just the action button gated. AJVD QA pass May 8.
         <button disabled style={{
           width: '100%', marginTop: 14, padding: 14,
           background: 'var(--muted)', color: '#0e1209',
           border: '1px solid var(--border)', clipPath: 'var(--clip-6)',
           fontFamily: 'var(--f-display)', fontSize: 14, letterSpacing: '0.18em',
-          opacity: 0.6,
+          opacity: 0.6, cursor: 'default',
         }}>COMING SOON</button>
       )}
 

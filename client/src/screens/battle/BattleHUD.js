@@ -178,22 +178,30 @@ function TurnPill({ isPlayerTurn, players, currentPlayerIndex, turnTimer }) {
 /** Wind chip — small icon top-right */
 function WindChipMobile({ wind }) {
   const dir = wind > 0 ? '▸' : wind < 0 ? '◂' : '·';
+  // Wind indicator beefed up after JJ's QA pass May 8 — was tucked in
+  // the corner with low-hierarchy text and players were missing it.
+  // Larger arrow + brighter accent value + tighter chip framing make
+  // the wind reading impossible to overlook at a glance, without
+  // moving it out of its current flex slot.
   return (
     <div style={{
-      padding: '3px 8px',
-      background: 'rgba(10,12,8,0.55)',
+      padding: '5px 12px',
+      background: 'rgba(10,12,8,0.7)',
       backdropFilter: 'blur(10px)',
       WebkitBackdropFilter: 'blur(10px)',
-      border: '1px solid rgba(232,216,154,0.2)',
+      border: '1px solid var(--accent)',
       clipPath: 'var(--clip-6)',
-      display: 'flex', alignItems: 'center', gap: 6,
-      fontFamily: 'var(--f-mono)', fontSize: 9,
+      display: 'flex', alignItems: 'center', gap: 8,
+      fontFamily: 'var(--f-mono)',
       color: 'var(--bone)', letterSpacing: '0.15em',
       pointerEvents: 'none',
+      boxShadow: '0 0 12px rgba(218, 138, 40, 0.25)',
     }}>
-      <span style={{ color: 'var(--olive)', fontSize: 7, letterSpacing: '0.2em' }}>WIND</span>
-      <span style={{ color: 'var(--accent)' }}>{dir}</span>
-      <span>{Math.abs(wind || 0).toFixed(0)}</span>
+      <span style={{ color: 'var(--olive)', fontSize: 8, letterSpacing: '0.25em' }}>WIND</span>
+      <span style={{ color: 'var(--accent)', fontSize: 16, lineHeight: 1, fontWeight: 'bold' }}>{dir}</span>
+      <span style={{ color: 'var(--accent)', fontSize: 13, fontFamily: 'var(--f-display)', letterSpacing: '0.05em' }}>
+        {Math.abs(wind || 0).toFixed(0)}
+      </span>
     </div>
   );
 }

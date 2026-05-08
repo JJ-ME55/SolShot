@@ -1008,6 +1008,83 @@ export class MainScene extends Scene {
     }
   };
 
+  // ── New-player training: full trajectory dotted preview ──
+  //
+  // For VS Shot Bot mode only, and only for the first 3 shots a player
+  // takes in a match. Renders a small black dotted arc from the turret
+  // through the predicted landing zone so brand-new players can see how
+  // angle, power, and wind interact before they commit a shot. After
+  // the 3rd shot the preview disappears — it's a learning aid, not a
+  // permanent crutch. JJ's QA pass May 8.
+
+  _isVsBotMatch = () => {
+    return (this.sceneData?.players || []).some(
+      p => typeof p.socketId === 'string' && p.socketId.startsWith('ai-bot-')
+    );
+  };
+
+  _renderTrainingPreview = () => {
+    this._clearTrainingPreview();
+
+    if (!this._isVsBotMatch()) return;
+
+    // Shots-fired counter is incremented on every fire (handleFireFromReact).
+    // Training preview shows for the first three shots only.
+    if ((this._myTrainingShots ?? 0) >= 3) return;
+
+    const myTank = this.myPlayerIndex >= 0 ? this.tanks[this.myPlayerIndex] : null;
+    if (!myTank?.turret || !myTank.active) return;
+
+    // Server-mirrored physics simulation (matches _renderScopePreview).
+    const angle = myTank.turret.rotation;
+    const power = myTank.power || 60;
+    const wind = this.wind || 0;
+    const velocity = power * 8;
+    const rotation = angle - Math.PI / 2;
+    let vx = velocity * Math.cos(rotation);
+    let vy = velocity * Math.sin(rotation);
+    let x = myTank.turret.x;
+    let y = myTank.turret.y;
+    const gravity = 300;
+    const dt = 1 / 60;
+
+    const points = [];
+    for (let step = 0; step < 600; step++) {
+      vy += gravity * dt;
+      vx += wind * dt;
+      x += vx * dt;
+      y += vy * dt;
+      points.push({ x, y });
+      if (y > 800 || x < 0 || x > 1422) break;
+    }
+
+    if (points.length < 4) return;
+
+    // Sample evenly along the FULL trajectory (vs the 1/3 sampling in
+    // tactical-scope mode). 12 dots over the arc reads as a connected
+    // dotted line from turret to landing zone.
+    this._trainingDots = [];
+    const dotCount = 12;
+    for (let i = 0; i < dotCount; i++) {
+      const idx = Math.floor((points.length - 1) * (i / (dotCount - 1)));
+      const p = points[idx];
+      // Black-ish dot with low alpha — visible but not dominant.
+      // Slightly larger near the impact end so the eye lands there.
+      const radius = i >= dotCount - 3 ? 4 : 2.5;
+      const dot = this.add.circle(p.x, p.y, radius, 0x000000, 0.55);
+      dot.setStrokeStyle(1, 0xffffff, 0.4);
+      dot.setDepth(10);
+      this._trainingDots.push(dot);
+    }
+  };
+
+  _clearTrainingPreview = () => {
+    if (this._trainingDots) {
+      this._trainingDots.forEach(d => { try { d.destroy(); } catch (_) {} });
+      this._trainingDots = [];
+    }
+  };
+
   // ── Tactical Scope: trajectory preview dots (first 1/3 of arc) ──
 
   _renderScopePreview = () => {
@@ -2231,8 +2308,10 @@ export class MainScene extends Scene {
   // keyboard handlers. They must emit the same socket events the originals did.
 
   handleFireFromReact = () => {
-    // Clear scope preview on fire
+    // Clear preview overlays on fire
     this._clearScopePreview();
+    this._clearTrainingPreview();
+    this._myTrainingShots = (this._myTrainingShots ?? 0) + 1;
 
     // Determine the active tank: in multiplayer use myPlayerIndex, in practice use activeTank
     const myTank = this.myPlayerIndex >= 0
@@ -2305,6 +2384,7 @@ export class MainScene extends Scene {
       if (socket) socket.emit('powerChange', { power: v });
     }
     this._renderScopePreview();
+    this._renderTrainingPreview();
   };
 
   handleAngleFromReact = (v) => {
@@ -2315,6 +2395,7 @@ export class MainScene extends Scene {
     const radians = Phaser.Math.DegToRad(v) - Math.PI / 2;
     myTank.turret.setRelativeRotation(radians - myTank.rotation);
     this._renderScopePreview();
+    this._renderTrainingPreview();
   };
 
   handleWeaponSelectFromReact = (idx) => {

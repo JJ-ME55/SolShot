@@ -359,7 +359,9 @@ A TOCTOU guard claims the transaction signature immediately before async verific
 
 ## 10 // SECURITY & AUDIT POSTURE
 
-Most hackathon submissions ship with zero security audits. SolShot ran three independent audits before public flip. All findings are published openly with file-and-line evidence and a fix-or-defer disposition for every item.
+Most hackathon submissions ship with zero adversarial security review. SolShot ran three independent audit passes before public flip using the Solana Vibes Kit (SVK), a set of structured audit skills published openly on GitHub by Solana builder MetalegBob. The methodology has been validated against professional human audits on Solana protocols in production: human auditors run on the same codebases subsequently confirmed the findings the SVK passes had already surfaced. The audit reports linked below are the direct outputs of that methodology, with full transparency on both what was fixed and what's deferred.
+
+All findings are published openly with file-and-line evidence and a fix-or-defer disposition for every item.
 
 ### The Three Audits
 
@@ -470,7 +472,7 @@ SolShot's roadmap is to become the social-game layer for crypto group chats. The
 **Distribution surfaces beyond Telegram:**
 
 1. Telegram (live)
-2. Solana Mobile (Seeker dApp Store, planned post-Frontier)
+2. Solana Mobile (Seekr dApp Store, planned post-Frontier)
 3. iMessage (planned, native iOS extension)
 4. WhatsApp (Cloud API integration, designed)
 

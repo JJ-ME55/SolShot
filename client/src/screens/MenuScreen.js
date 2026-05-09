@@ -78,13 +78,18 @@ function MenuScreen({ navigate }) {
       }} />
 
       {/* Top bar — Dynamic wallet provisions automatically, no connect step */}
+      {/* badgeSrc deliberately omitted while tier is UNRANKED — earlier code
+          hardcoded the Bronze badge alongside an UNRANKED label which was
+          internally inconsistent (PrestigeScreen showed UNRANKED greyed out
+          but the TopBar showed Bronze). Once a real prestige tier system is
+          wired through to MenuScreen, conditionally pass the matching badge
+          here. JJ QA pass May 9. */}
       <DesignTopBar
         callsign={callsign}
         tier="UNRANKED"
         level={1}
         shotBalance={shotBalance || 0}
         solBalance={solBalance || 0}
-        badgeSrc="/assets/images/badges/badge-bronze.png"
       />
 
       {/* Hero content */}
@@ -185,7 +190,8 @@ function MobileMenu({ navigate, callsign, shotBalance, solBalance, secondary, st
         borderBottom: '1px solid var(--border)',
       }}>
         <div style={{ justifySelf: 'start', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <img src="/assets/images/badges/badge-bronze.png" style={{ width: 22, height: 22, filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.5))' }} alt="rank" />
+          {/* Bronze badge image removed — was inconsistent with UNRANKED
+              label. Same fix as DesignTopBar. JJ QA May 9. */}
           <div>
             <div style={{ fontFamily: 'var(--f-sec)', fontSize: 11, color: 'var(--bone)', letterSpacing: '0.08em', lineHeight: 1 }}>{callsign}</div>
             <div style={{ fontFamily: 'var(--f-mono)', fontSize: 7, color: 'var(--olive)', letterSpacing: '0.25em', marginTop: 3 }}>UNRANKED · LVL 1</div>

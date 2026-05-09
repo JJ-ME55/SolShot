@@ -131,9 +131,14 @@ export default function DesignTopBar({
       position: 'relative', zIndex: 3,
       display: 'grid', gridTemplateColumns: '1fr auto 1fr',
       alignItems: 'center',
-      padding: isMobile ? '12px 12px 8px' : '14px 28px',
+      padding: isMobile ? '20px 12px 10px' : '14px 28px',
       borderBottom: '1px solid var(--border)',
-      paddingTop: isMobile ? 'max(12px, env(safe-area-inset-top, 0px))' : '14px',
+      // Hard 20px floor on mobile padding-top so there's a visible gap
+      // between Safari's URL bar and the wordmark even in landscape
+      // (where env(safe-area-inset-top) resolves to 0). JJ QA: top of D
+      // in "Demon" was being swallowed by the URL bar — needed
+      // noticeable background line between the chrome and our header.
+      paddingTop: isMobile ? 'max(20px, env(safe-area-inset-top, 0px))' : '14px',
     }}>
       <div style={{ justifySelf: 'start', display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 10 }}>
         {badgeSrc && (

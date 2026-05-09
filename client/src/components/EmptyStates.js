@@ -149,6 +149,23 @@ export const ICONS = {
             <line x1="11" y1="13" x2="13" y2="13" {...stroke({ opacity: 0.7 })} />
         </g>
     ),
+    // compass — horizontal-movement indicator (◂ tank ▸). Used by the
+    // MOVE step in the tutorial overlay. Pixel grid keeps it crisp
+    // against the field-manual stroke style.
+    compass: (
+        <g>
+            {/* Left arrowhead */}
+            <path d="M 6 12 L 9 9 L 9 11 L 11 11 L 11 13 L 9 13 L 9 15 Z" {...stroke()} />
+            {/* Right arrowhead */}
+            <path d="M 18 12 L 15 9 L 15 11 L 13 11 L 13 13 L 15 13 L 15 15 Z" {...stroke()} />
+            {/* Tank silhouette in the middle (turret + body + treads) */}
+            <rect x="11" y="14" width="2" height="2" {...px()} />
+            <rect x="10" y="16" width="4" height="2" {...stroke()} />
+            <rect x="11.25" y="13" width="1.5" height="1.5" {...px({ opacity: 0.6 })} />
+            {/* Ground line */}
+            <line x1="4" y1="20" x2="20" y2="20" {...stroke({ strokeDasharray: '1.5 1.5', opacity: 0.5 })} />
+        </g>
+    ),
 };
 
 export function Icon({ name, size = 56, color = 'var(--olive)', style = {} }) {

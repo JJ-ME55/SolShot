@@ -44,6 +44,12 @@ const STEPS = [
         accent: 'ARMAMENT',
     },
     {
+        icon: 'compass',
+        title: 'MOVE',
+        body: 'TANK STUCK? RE-POSITION WITH A / D ON KEYBOARD OR THE ◂ ▸ BUTTONS ON MOBILE. EACH TURN GIVES YOU A FEW STEPS — SPEND THEM TO DODGE OR CLOSE THE GAP.',
+        accent: 'MANEUVER',
+    },
+    {
         icon: 'radar',
         title: 'FIRE',
         body: 'COMMIT THE SHOT WITH SPACE BAR OR THE FIRE BUTTON. IMPACT DAMAGE EARNS GOLD; LANDED KILLS EARN A BONUS. GO TO WORK.',

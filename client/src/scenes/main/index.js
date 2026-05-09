@@ -585,6 +585,17 @@ export class MainScene extends Scene {
     // Flash "YOUR TURN!" when it becomes the local player's turn
     if (this.currentPlayerIndex === this.myPlayerIndex && !this._isSpectating) {
       this._flashYourTurn();
+      // Fire the first-shot trajectory preview as soon as the local
+      // player's turn begins, so the gauge is visible without them
+      // having to nudge a slider first. The render method itself is
+      // gated to the first shot only — calling it on every turn is a
+      // no-op after that.
+      this._renderTrainingPreview();
+    } else {
+      // Not our turn — make sure no stale preview dots linger over the
+      // opponent's shot (e.g. if the local player's turn ended via
+      // timeout without firing).
+      this._clearTrainingPreview();
     }
   };
 
@@ -1008,31 +1019,33 @@ export class MainScene extends Scene {
     }
   };
 
-  // ── New-player training: full trajectory dotted preview ──
+  // ── First-shot training: full trajectory dotted preview ──
   //
-  // For VS Shot Bot mode only, and only for the first 3 shots a player
-  // takes in a match. Renders a small black dotted arc from the turret
-  // through the predicted landing zone so brand-new players can see how
-  // angle, power, and wind interact before they commit a shot. After
-  // the 3rd shot the preview disappears — it's a learning aid, not a
-  // permanent crutch. JJ's QA pass May 8.
-
-  _isVsBotMatch = () => {
-    return (this.sceneData?.players || []).some(
-      p => typeof p.socketId === 'string' && p.socketId.startsWith('ai-bot-')
-    );
-  };
+  // Shows on the FIRST shot of every match for every player, regardless
+  // of mode (VS Bot, 1v1, group-chat, custom). Gives a free read on
+  // where the shell is going to land before they commit, so brand-new
+  // players can ballpark opponent distance + see how angle / power /
+  // wind interact. Disappears after they fire — it's a learning aid,
+  // not a permanent crutch. JJ pre-submission ask, May 9.
+  //
+  // Originally gated to VS Shot Bot only with a 3-shot limit. JJ's
+  // call: extend it to all modes but tighten to first shot only so it
+  // stays a "first impression" gauge rather than a competitive crutch.
 
   _renderTrainingPreview = () => {
     this._clearTrainingPreview();
 
-    if (!this._isVsBotMatch()) return;
-
     // Shots-fired counter is incremented on every fire (handleFireFromReact).
-    // Training preview shows for the first three shots only.
-    if ((this._myTrainingShots ?? 0) >= 3) return;
+    // Training preview shows for the very first shot only.
+    if ((this._myTrainingShots ?? 0) >= 1) return;
 
-    const myTank = this.myPlayerIndex >= 0 ? this.tanks[this.myPlayerIndex] : null;
+    // Pick the local controllable tank — falls back to activeTank for the
+    // local-sandbox (gameType 4) path where myPlayerIndex isn't set, so
+    // the preview shows in EVERY mode (vs bot, 1v1, group-chat, custom,
+    // local practice).
+    const myTank = this.myPlayerIndex >= 0
+      ? this.tanks[this.myPlayerIndex]
+      : this.tanks[(this.activeTank || 1) - 1];
     if (!myTank?.turret || !myTank.active) return;
 
     // Server-mirrored physics simulation (matches _renderScopePreview).

@@ -8,6 +8,7 @@ import BattleHUD from './battle/BattleHUD';
 import ExitMenu from './battle/ExitMenu';
 import Modal from '../components/Modal';
 import TutorialOverlay from '../components/TutorialOverlay';
+import MovementHint from '../components/MovementHint';
 import { useSolShotWallet } from '../wallet/WalletContext';
 import { haptic } from '../utils/haptic';
 
@@ -381,6 +382,18 @@ function BattleScreen({ navigate, screenData }) {
       {/* First-match tutorial briefing — auto-dismisses after seen once,
           persisted in localStorage. No-op on subsequent matches. */}
       {phaserReady && <TutorialOverlay storageKey="solshot.tutorial.battle" />}
+
+      {/* In-battle A / D movement reminder — fires once per device on
+          the first turn the player gets, separate from the tutorial so
+          existing users (who've already dismissed the briefing) still
+          get nudged. JJ pre-submission ask, May 9. */}
+      {phaserReady && (
+        <MovementHint
+          active={!!gameState.isPlayerTurn}
+          gameMode={undefined}
+          storageKey="solshot.hint.movement.v1"
+        />
+      )}
 
       {/* Exit Menu */}
       {showExit && (

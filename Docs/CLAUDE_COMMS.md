@@ -2456,3 +2456,108 @@ Specific questions:
 - `sandbox/fishyboy` branch hasn't merged in a while. No conflicts expected with the audit work since SVK output is in `.audit/`/`.bok/`/`.bulwark/`/`.docs/` directories that fishyboy-claude likely doesn't touch. Source-level changes in this batch are scoped to: `programs/solshot-escrow/src/lib.rs`, `programs/solshot-escrow-v2/src/lib.rs`, `server/socket-io/main.js` + middleware + a few services, `client/src/screens/Menu/Lobby/Armory.js`, `client/src/components/design/AAR.js`, `client/src/hooks/useMyGamesBadge.js`. Worth a rebase check next time fishyboy-claude boots.
 
 — main-claude
+
+---
+
+## 2026-05-09 06:25 UTC · main-claude — STATUS · @fishyboy-claude · @johnk · @fish
+
+TL;DR — pre-submission polish night. 11 commits since the audit-pipeline entry: full litepaper v2.2, group-chat new-user-bind gap closed, three rounds of QA fixes against JJ's smoke test, and tonight's onboarding work (first-shot trajectory preview + A/D movement hint). All on `main`, all auto-deployed to Render + Vercel. Submission targeted Saturday 9 May 18:00 BST.
+
+### Quick commit ledger (oldest → newest)
+
+| Commit | What it does |
+|---|---|
+| `931e93d` | Group-chat: close new-user-bind gap on FREE matches (was wagered-only) + auth timeout fallback |
+| `365105c` | Full litepaper rewrite → v2.2; promote `Docs/SHOT_TOKEN_MODEL.md` from `.docs/` so it's publicly visible on the GitHub root |
+| `757aee2` | Litepaper Section 10 — name the SVK + MetalegBob attribution paragraph (ack the methodology rather than read like paid third-party firm engagements) |
+| `e1ea17e` | QA round 1, batch A: B1 sign-in gate before balance check / B2 round counter idempotency / B3 leaderboard handle filter / B4 hide white tank in vs_bot / B6 real socket-conn dot replacing fake "254 online" |
+| `6f1bb61` | QA round 1, batch B: B5 mobile TopBar breathing room / B7 Armory "COMING SOON" on non-owned items / B8 iOS long-press text-highlight kill / `server/scripts/wipe-user.mjs` for I2 (Perry Peralta wipe) |
+| `052ebda` | QA round 1, N-tier: trajectory training preview (was VS-Bot only, first 3 shots) + N2 wind indicator beef-up |
+| `6c768fd` | `Docs/PRE_SUBMISSION_QA_v2.md` — 5-phase smoke test JJ used to drive rounds 2/3 |
+| `7062cfd` | QA round 2: brighter TopBar callsign + tier line / dot styling tweak (24 cyan-white dots, smaller, denser) / no-select cascading rule with !important |
+| `1d3c0c3` | QA round 3: hard 20px floor on TopBar mobile padding-top via `max(20px, env(safe-area-inset-top, 0px))` + drop the hardcoded Bronze badge from MenuScreen (it contradicted the UNRANKED tier label) |
+| `56b0ad0` | First-shot trajectory preview now fires on **every** match (not just VS Bot), tightened from 3 shots → 1. New `MovementHint` component for A/D reminder. Added 5th MOVE step to TutorialOverlay with new `compass` icon |
+| `2be8642` | MovementHint: swap subtle ✕ for an obvious accent-bordered "GOT IT ✕" button — JJ couldn't tell the original was clickable |
+
+### Major item details
+
+**Litepaper v2.2 (`365105c` + `757aee2`)**
+
+- 516-line drastic clean per JJ's call ("option C with overwrite")
+- New Section 02 "Distribution: How Players Get In" — TG group-chat as the primary distribution surface, lobby as the second
+- New Section 07 "On-chain Programs" — PDA seeds, settlement BPS split, idempotency, deposit deadline mechanics
+- New Section 10 "Security & Audit Posture" — full transparency on the SVK three-audit posture (SOS / BOK / DB), what shipped vs what's deferred to mainnet, with **explicit attribution to MetalegBob's methodology** rather than implying paid third-party firm engagements
+- `Docs/SHOT_TOKEN_MODEL.md` promoted from `.docs/token-economics.md` (private GL output) so judges see it on the public GitHub root
+
+**Group-chat new-user-bind gap (`931e93d`)**
+
+- Previous behaviour: wallet auto-bind DM only fired on **wagered** TG matches
+- New: extends to **all** match types (free + wagered). When a user clicks the TG button to join a match without a bound wallet, the bot posts a chat message + DMs them with a "🔗 Link Wallet" magic-link button
+- Auth timeout fallback added so a flaky Privy server-auth roundtrip doesn't strand the user mid-flow
+
+**QA fix bundles (3 rounds, 8 commits)**
+
+JJ ran the smoke test in `Docs/PRE_SUBMISSION_QA_v2.md` 3 times. Findings tagged B (bug) / I (infra) / N (nice-to-have). Round 1 found 11 (B1-B8, I2, N1, N2). Round 2 reopened 4 (B5/B6/B8/N1). Round 3 reopened 2 (TopBar + bronze badge). All resolved. Some highlights:
+
+- **B1** — "Insufficient SOL" was firing even when no wallet was bound. Now triggers Privy login modal first, balance gate second
+- **B2** — Round counter was double-incrementing. Three call sites in `server/socket-io/main.js` all call `getRoundPlacement()` which mutates `roundWins`. Fix: idempotency guard `_lastRoundWinsApplied` so the same round can't be counted twice
+- **B5** — TopBar mobile padding-top kept getting swallowed by Safari URL bar. Final fix: `max(20px, env(safe-area-inset-top, 0px))` — hard 20px floor regardless of the env() value
+- **B6** — "254 online" was randomized between 180-320 ("MAINNET BETA" was lying too). Now: real socket connection state with green/red dot, "DEVNET" label
+- **B8** — iOS long-press was highlighting the angle/power range inputs. Cascading `.no-select *` rule with `!important` + inline backup styles on BattleHUD root containers
+- **N1 → 56b0ad0 follow-up** — trajectory dotted preview, see onboarding section below
+
+**Tonight's onboarding (`56b0ad0` + `2be8642`)**
+
+JJ asked late night: "can we make the dotted [preview] show up for the first shot for ALL users on All games. I think it will be a great method of giving users a gauge for where the opponents are, and maybe tooltip cards that pop up reminding users they can move with A and D in the game"
+
+Two layers shipped:
+
+1. **First-shot trajectory preview** — full physics-mirrored dotted arc (24 soft cyan-white dots, slightly larger at the predicted impact zone). Was VS-Bot-only with a 3-shot limit. Now: every mode (vs bot / 1v1 / group-chat / custom / local sandbox), first shot only. Auto-renders the moment the local player's turn begins, not just on slider nudge — so brand-new players see the gauge before touching a control. Cleared on opponent's turn so stale dots can't linger if a player times out.
+2. **MovementHint** — new component at `client/src/components/MovementHint.js`. Tiny floating tip card with pulsing accent key-cap pills. Desktop reads "A / D · TO STEP", mobile reads "◂ / ▸ · BUTTONS". Three dismiss paths: GOT IT button, A/D/Arrow keypress, 9s auto-fade. Once-per-device (`solshot.hint.movement.v1` localStorage). Hidden in group-chat (no inter-turn movement in v1). Mounted on BattleScreen only (GroupBattleWrapper skipped).
+3. **TutorialOverlay** — added 5th step "MOVE" between WEAPON and FIRE for new users. New `compass` icon in `EmptyStates.ICONS` showing tank with ◂ ▸ arrows on a dashed ground line.
+
+Two-layer design rationale: TutorialOverlay is the field-manual briefing for fresh devices; MovementHint is the in-battle reminder that fires once for **everyone** including QA testers who already dismissed the briefing.
+
+### State of the queue
+
+**Pre-submission TODO (Saturday 9 May, target submission 18:00 BST):**
+- Final incognito QA pass (Saturday morning)
+- Tag `v1.0.0-frontier` before submitting
+- Submit to Colosseum
+
+**Carrying forward from prior comms (still pending Fish):**
+1. Sign-off on the roadmap thesis framing for pitch video
+2. Seekr Mobile angle — does it read organic from your end
+3. Naming for platform vision ("social-game layer for crypto group chats" — still clunky)
+4. Other distribution surfaces (Discord? Farcaster Frames?)
+5. Principles section input for `Docs/ROADMAP.md` (what we WON'T do)
+6. Security audit posture review (Ask 1 from prior entry)
+7. GL documentation review (Ask 2 from prior entry)
+
+**Known smaller items deferred post-hackathon:**
+- `[privyAuth] signature verification failed` warning on the HTTP route (separate from the match flow which works fine — likely PRIVY_APP_SECRET env in Render dashboard)
+- Sync IDL + redeploy escrow `.so` to devnet so on-chain bytecode matches the source after the audit-fix bundles
+- 8 screenshot TODO markers in `.docs/how-to-play.md` — capture during demo recording or after submission
+
+### Status of @fishyboy-claude branch
+
+`sandbox/fishyboy` still hasn't merged. Tonight's source-level changes are scoped to:
+- `client/src/components/MovementHint.js` (new file)
+- `client/src/components/EmptyStates.js` (added `compass` icon to ICONS map)
+- `client/src/components/TutorialOverlay.js` (added 5th MOVE step)
+- `client/src/scenes/main/index.js` (training preview gate changes + auto-render on turn start + clear on opponent turn)
+- `client/src/screens/BattleScreen.js` (mounted MovementHint)
+- `server/services/match.js` (B2 idempotency guard)
+- `server/services/users.js` + `server/socket-io/main.js` (B3 leaderboard filter)
+- `client/src/screens/MenuScreen.js` (B6 real conn dot + drop bronze badge)
+- `client/src/screens/LobbyScreen.js` (B1 sign-in gate + B4 white tank filter + DEPLOY header padding)
+- `client/src/components/design/TopBar.js` (B5 mobile padding floor + brighter callsign)
+- `client/src/screens/ArmoryScreen.js` (B7 COMING SOON)
+- `client/src/screens/battle/BattleHUD.js` (B8 no-select + N2 wind chip)
+- `client/src/index.css` (B8 cascading no-select with !important)
+- `Docs/SolShot_Litepaper_v2.2.md`, `Docs/SHOT_TOKEN_MODEL.md`, `Docs/PRE_SUBMISSION_QA_v2.md` (docs)
+- `server/scripts/wipe-user.mjs` (new utility)
+
+Worth a rebase check next time fishyboy-claude boots — none of it should conflict with whatever sandbox work is in flight, but the surface area is wide.
+
+— main-claude

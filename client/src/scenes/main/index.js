@@ -1060,19 +1060,26 @@ export class MainScene extends Scene {
 
     if (points.length < 4) return;
 
-    // Sample evenly along the FULL trajectory (vs the 1/3 sampling in
-    // tactical-scope mode). 12 dots over the arc reads as a connected
-    // dotted line from turret to landing zone.
+    // Sample evenly along the FULL trajectory at HIGH density so the dots
+    // read as a connected line, not isolated points. 24 dots feels
+    // continuous without being a solid line. Per JJ QA pass May 9:
+    // smaller dots, denser, different colour than black so it doesn't
+    // clash with bullets / dark backgrounds (moon, volcanic).
+    //
+    // Colour choice: soft cyan-white (0xb0e8e0) — high enough contrast
+    // against all 5 biomes (jungle, arctic, desert, moon, volcanic),
+    // doesn't clash with any tank colour (no team uses cyan-white),
+    // and reads as "tech HUD overlay" rather than "real shell". Low
+    // alpha keeps it subtle.
     this._trainingDots = [];
-    const dotCount = 12;
+    const dotCount = 24;
     for (let i = 0; i < dotCount; i++) {
       const idx = Math.floor((points.length - 1) * (i / (dotCount - 1)));
       const p = points[idx];
-      // Black-ish dot with low alpha — visible but not dominant.
-      // Slightly larger near the impact end so the eye lands there.
-      const radius = i >= dotCount - 3 ? 4 : 2.5;
-      const dot = this.add.circle(p.x, p.y, radius, 0x000000, 0.55);
-      dot.setStrokeStyle(1, 0xffffff, 0.4);
+      // Smaller dots all the way through. Last 2 dots slightly larger
+      // so the eye lands on the predicted impact zone.
+      const radius = i >= dotCount - 2 ? 2.2 : 1.4;
+      const dot = this.add.circle(p.x, p.y, radius, 0xb0e8e0, 0.55);
       dot.setDepth(10);
       this._trainingDots.push(dot);
     }

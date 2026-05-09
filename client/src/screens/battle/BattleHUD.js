@@ -707,7 +707,13 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
     const bottomInset = 'max(16px, env(safe-area-inset-bottom, 16px))';
 
     return (
-      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 10 }}>
+      <div className="no-select" style={{
+        position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 10,
+        WebkitTouchCallout: 'none',
+        WebkitUserSelect: 'none',
+        userSelect: 'none',
+        WebkitTapHighlightColor: 'transparent',
+      }}>
         {/* TOP-LEFT: forfeit ✕ */}
         {!isGroupChat && (
           <div style={{ position: 'absolute', top: topInset, left: sideInsetL, zIndex: 13 }}>
@@ -869,7 +875,14 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
   const is1v1 = players.length <= 2;
 
   return (
-    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 10, display: 'flex', flexDirection: 'column' }}>
+    <div className="no-select" style={{
+      position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 10,
+      display: 'flex', flexDirection: 'column',
+      WebkitTouchCallout: 'none',
+      WebkitUserSelect: 'none',
+      userSelect: 'none',
+      WebkitTapHighlightColor: 'transparent',
+    }}>
       <div style={{
         background: 'rgba(14,18,9,0.92)',
         borderBottom: '1px solid rgba(61,74,47,0.6)',

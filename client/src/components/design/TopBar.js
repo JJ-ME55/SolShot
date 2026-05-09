@@ -118,21 +118,30 @@ export default function DesignTopBar({
   // Mobile landscape phone (390px tall): the desktop padding 14/28 +
   // wordmark fontSize 38 eats ~60px of header. Halve everything for
   // mobile so the rest of the screen has breathing room.
+  //
+  // QA pass May 9: top bar text was reading as muted/cramped against
+  // Safari's URL bar on iPhone. Brightened the dim text colours
+  // (callsign now full bone with subtle text-shadow, tier line moved
+  // from --olive to a brighter mid-tone for legibility), bumped the
+  // mobile vertical padding from 6px to 12px so the wordmark and side
+  // chips have visible breathing room from the chrome above. Scoped
+  // to TopBar only so we don't touch text colours globally.
   return (
     <div style={{
       position: 'relative', zIndex: 3,
       display: 'grid', gridTemplateColumns: '1fr auto 1fr',
       alignItems: 'center',
-      padding: isMobile ? '6px 12px' : '14px 28px',
+      padding: isMobile ? '12px 12px 8px' : '14px 28px',
       borderBottom: '1px solid var(--border)',
+      paddingTop: isMobile ? 'max(12px, env(safe-area-inset-top, 0px))' : '14px',
     }}>
       <div style={{ justifySelf: 'start', display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 10 }}>
         {badgeSrc && (
           <img
             src={badgeSrc}
             style={{
-              width: isMobile ? 20 : 28,
-              height: isMobile ? 20 : 28,
+              width: isMobile ? 22 : 28,
+              height: isMobile ? 22 : 28,
               filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))',
             }}
             alt="rank"
@@ -141,19 +150,19 @@ export default function DesignTopBar({
         <div>
           <div style={{
             fontFamily: 'var(--f-sec)',
-            fontSize: isMobile ? 10 : 13,
+            fontSize: isMobile ? 11 : 13,
             color: 'var(--bone)',
             letterSpacing: '0.1em',
-            // lineHeight 1.25 prevents descender clipping on letters
-            // like P/p/y/g — JJ's QA pass May 8 flagged "tops of P
-            // on perryperalta" getting cut off.
             lineHeight: 1.25,
             paddingBottom: 1,
+            textShadow: '0 1px 2px rgba(0,0,0,0.6)',
           }}>{callsign}</div>
           <div style={{
             fontFamily: 'var(--f-mono)',
-            fontSize: isMobile ? 7 : 9,
-            color: 'var(--olive)',
+            fontSize: isMobile ? 8 : 9,
+            // Brighter than --olive so tier+level reads cleanly against
+            // dark BG — was getting lost on iPhone landscape.
+            color: 'rgba(196,166,93,0.85)',
             letterSpacing: '0.2em',
             lineHeight: 1.3,
           }}>{tier} · LVL {level}</div>
@@ -161,8 +170,12 @@ export default function DesignTopBar({
       </div>
       <div style={{
         fontFamily: 'var(--f-display)',
-        fontSize: isMobile ? 18 : 38,
-        letterSpacing: '0.04em', lineHeight: 1, userSelect: 'none',
+        // Bumped mobile size from 18 → 22 so the wordmark stops feeling
+        // squished against the URL bar. Subtle text-shadow gives it
+        // depth against varied backgrounds. JJ QA pass May 9.
+        fontSize: isMobile ? 22 : 38,
+        letterSpacing: '0.04em', lineHeight: 1.1, userSelect: 'none',
+        textShadow: '0 1px 3px rgba(0,0,0,0.7)',
       }}>
         <span style={{ color: 'var(--bone)' }}>SOL</span>
         <span style={{ color: 'var(--accent)' }}>SHOT</span>
@@ -172,7 +185,7 @@ export default function DesignTopBar({
         display: 'flex', alignItems: 'center',
         gap: isMobile ? 6 : 10,
         fontFamily: 'var(--f-mono)',
-        fontSize: isMobile ? 9 : 11,
+        fontSize: isMobile ? 10 : 11,
         letterSpacing: '0.15em',
       }}>
         {connected ? (

@@ -19,10 +19,27 @@ function MenuScreen({ navigate }) {
 
   const callsign = localStorage.getItem('solshot_handle') || 'OPERATIVE';
 
-  // (Removed: a fake "ONLINE COUNT" placeholder that randomised between
-  // 180-320. Misled users about real activity and showed "MAINNET BETA"
-  // when the product is on devnet. Replaced below with a factual
-  // "DEVNET" badge. AJVD QA pass May 8.)
+  // Real socket-connection status drives the DEVNET dot colour. Green
+  // when the websocket is connected to the server, red when it's down.
+  // Replaces the previous fake online counter with actual functionality.
+  // QA pass May 9.
+  const [isConnected, setIsConnected] = useState(
+    typeof window !== 'undefined' && window.socket?.connected
+  );
+  useEffect(() => {
+    const sock = window.socket;
+    if (!sock) return;
+    const onConnect = () => setIsConnected(true);
+    const onDisconnect = () => setIsConnected(false);
+    setIsConnected(sock.connected);
+    sock.on('connect', onConnect);
+    sock.on('disconnect', onDisconnect);
+    return () => {
+      sock.off('connect', onConnect);
+      sock.off('disconnect', onDisconnect);
+    };
+  }, []);
+  const statusColor = isConnected ? '#7fd060' : '#cf4646';
 
   // MY GAMES sub-label dynamically reflects active match state.
   // Pending-turn cases lead with the 🎯 icon to draw the eye —
@@ -48,7 +65,7 @@ function MenuScreen({ navigate }) {
   ];
 
   if (isMobile) {
-    return <MobileMenu navigate={navigate} callsign={callsign} shotBalance={shotBalance || 0} solBalance={solBalance || 0} secondary={secondary} />;
+    return <MobileMenu navigate={navigate} callsign={callsign} shotBalance={shotBalance || 0} solBalance={solBalance || 0} secondary={secondary} statusColor={statusColor} isConnected={isConnected} />;
   }
 
   return (
@@ -140,7 +157,7 @@ function MenuScreen({ navigate }) {
 
         {/* Network badge — factual, no fake online count */}
         <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--muted)', letterSpacing: '0.2em' }}>
-          <span style={{ color: '#7fd060' }}>●</span> DEVNET
+          <span style={{ color: statusColor }} title={isConnected ? 'Connected to server' : 'Disconnected — reconnecting…'}>●</span> DEVNET
         </div>
       </div>
 
@@ -150,7 +167,7 @@ function MenuScreen({ navigate }) {
 }
 
 /* ═══ MOBILE LANDSCAPE LAYOUT ═══ */
-function MobileMenu({ navigate, callsign, shotBalance, solBalance, secondary }) {
+function MobileMenu({ navigate, callsign, shotBalance, solBalance, secondary, statusColor = '#7fd060', isConnected = true }) {
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', background: 'var(--bg-deep)' }}>
       {/* Grid bg */}
@@ -210,7 +227,7 @@ function MobileMenu({ navigate, callsign, shotBalance, solBalance, secondary }) 
             position: 'absolute', bottom: 4, left: '50%', transform: 'translateX(-50%)',
             fontFamily: 'var(--f-mono)', fontSize: 8, color: 'var(--muted)', letterSpacing: '0.2em', whiteSpace: 'nowrap',
           }}>
-            <span style={{ color: '#7fd060' }}>●</span> DEVNET
+            <span style={{ color: statusColor }} title={isConnected ? 'Connected to server' : 'Disconnected — reconnecting…'}>●</span> DEVNET
           </div>
         </div>
 

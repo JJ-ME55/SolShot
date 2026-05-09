@@ -187,25 +187,38 @@ export default function MovementHint({
                     </div>
                 </div>
 
-                {/* Dismiss ✕ */}
+                {/* Manual dismiss — clearly labelled GOT IT button so the
+                    player has an obvious "kill this tip" affordance. JJ
+                    QA: the original tiny ✕ wasn't reading as clickable. */}
                 <button
                     type="button"
                     onClick={dismiss}
                     aria-label="Dismiss movement tip"
                     style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: 'var(--olive)',
-                        fontFamily: 'var(--f-mono)',
-                        fontSize: 12,
+                        background: 'rgba(232,164,48,0.10)',
+                        border: '1px solid var(--accent)',
+                        color: 'var(--accent)',
+                        fontFamily: 'var(--f-display)',
+                        fontSize: 11,
+                        letterSpacing: '0.18em',
                         lineHeight: 1,
                         cursor: 'pointer',
-                        padding: '2px 4px',
-                        marginTop: -4,
-                        alignSelf: 'flex-start',
+                        padding: '7px 11px',
+                        clipPath: 'polygon(0 0, calc(100% - 5px) 0, 100% 5px, 100% 100%, 5px 100%, 0 calc(100% - 5px))',
+                        transition: 'background 0.15s, color 0.15s',
+                        alignSelf: 'center',
+                        flexShrink: 0,
+                    }}
+                    onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'var(--accent)';
+                        e.currentTarget.style.color = 'var(--bg-deep)';
+                    }}
+                    onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'rgba(232,164,48,0.10)';
+                        e.currentTarget.style.color = 'var(--accent)';
                     }}
                 >
-                    ✕
+                    GOT IT ✕
                 </button>
             </div>
         </div>

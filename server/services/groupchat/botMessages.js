@@ -60,6 +60,71 @@ export function formatTurnPing(match) {
     return `🎯 ${mention(player)} — your move\nMatch #${escapeHtml(match.matchId)} · turn ${match.turnNumber + 1}`;
 }
 
+// ─── Turn chaser ────────────────────────────────────────────────────────
+
+/**
+ * Posted at 25% / 50% / 75% of the WAKING-time turn deadline when a
+ * player still hasn't moved. Three escalating tones — "gentle nudge"
+ * at 25%, "halfway reminder" at 50%, "last call" at 75%. The hours
+ * remaining figure is best-effort: it counts wall-clock from now to
+ * the configured deadline (already quiet-hours-aware via the deadline
+ * Date the scheduler computes), rounded to a whole hour for short
+ * matches and a useful display for longer ones.
+ *
+ * @param {object} match
+ * @param {number} fraction - 0.25 | 0.50 | 0.75
+ * @param {Date}   deadline - The actual final deadline Date for this turn
+ */
+export function formatTurnChaser(match, fraction, deadline) {
+    const player = match.players[match.currentPlayerIndex];
+    if (!player) return '';
+
+    const remainingMs = Math.max(0, deadline.getTime() - Date.now());
+    const remainingLabel = formatRemaining(remainingMs);
+
+    if (fraction <= 0.25) {
+        // 25% — gentlest tone. Friendly nudge.
+        return [
+            `⏳ ${mention(player)} — your shot's still pending`,
+            `<i>~${remainingLabel} left to fire before the idle penalty kicks in.</i>`,
+        ].join('\n');
+    }
+
+    if (fraction <= 0.50) {
+        // 50% — halfway reminder. Slightly more pointed.
+        return [
+            `⏰ ${mention(player)} — halfway through your turn`,
+            `<i>~${remainingLabel} left. Take your shot when you can.</i>`,
+        ].join('\n');
+    }
+
+    // 75% — last call. Clear that the deadline is close.
+    return [
+        `🚨 ${mention(player)} — last call`,
+        `<i>~${remainingLabel} left before idle penalty + missed-turn strike.</i>`,
+    ].join('\n');
+}
+
+/**
+ * Format a duration in ms as a chat-friendly remaining time:
+ *   ≥ 1h:    "3h" / "1h 20m" — round half-hours up to nearest 5min
+ *   < 1h:    "45m" / "12m"
+ *   < 1m:    "<1m"
+ */
+function formatRemaining(ms) {
+    if (ms < 60 * 1000) return '<1m';
+    const totalMinutes = Math.floor(ms / (60 * 1000));
+    if (totalMinutes < 60) return `${totalMinutes}m`;
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (minutes === 0) return `${hours}h`;
+    // Round minutes to nearest 5 for nicer display ("1h 20m" not "1h 23m")
+    const roundedMinutes = Math.round(minutes / 5) * 5;
+    if (roundedMinutes === 0) return `${hours}h`;
+    if (roundedMinutes === 60) return `${hours + 1}h`;
+    return `${hours}h ${roundedMinutes}m`;
+}
+
 // ─── Idle penalty ───────────────────────────────────────────────────────
 
 /**

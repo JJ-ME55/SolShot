@@ -65,6 +65,7 @@ function takeShotKeyboard(matchId) {
 // ─── Module wiring ──────────────────────────────────────────────────────
 
 scheduler.setOnTimeout(handleIdleTimeout);
+scheduler.setOnChaser(handleChaserPing);
 
 // In-memory map of one-shot timers that fire when a quiet-hours window
 // ENDS, so the bot can post a "resumed" announcement + re-ping the player.
@@ -460,6 +461,49 @@ export async function handleIdleTimeout(matchId) {
 
     // Advance to next player
     await advanceTurn(match);
+}
+
+/**
+ * Called by the scheduler when a 25/50/75% chaser timer fires. Posts a
+ * gentle nudge to the chat tagging the active player. No HP penalty,
+ * no DB mutation — pure reminder.
+ *
+ * Defensive: re-fetches the match and validates that the same turn is
+ * still active (matchId + turnNumber + currentPlayerIndex match what
+ * we expected). If the player already moved or the match settled, we
+ * silently skip — the chaser was racing the action.
+ *
+ * Quiet hours are already baked into the chaser's fire time by the
+ * scheduler (computeTurnDeadline walks waking-time), but we belt-and-
+ * brace: if the post would land inside a quiet window for ANY reason
+ * (e.g. clock drift, config changed mid-turn), we skip.
+ */
+export async function handleChaserPing(matchId, fraction) {
+    const match = await GroupMatch.findOne({ matchId });
+    if (!match || match.state !== 'active') return;
+    if (!match.turnStartedAt) return;
+
+    // Belt-and-brace quiet-hours guard. computeTurnDeadline already
+    // pushes the chaser past quiet windows, but if config flipped
+    // since scheduling we don't want to ping at 3am.
+    const now = new Date();
+    if (nextResumeTime(now, match.config)) return;
+
+    const player = match.players[match.currentPlayerIndex];
+    if (!player || player.eliminated) return;
+
+    // The actual final deadline — used by the formatter to render the
+    // remaining-time line. computeTurnDeadline accounts for any quiet
+    // hours between now and the deadline.
+    const deadline = scheduler.deadlineFor(match);
+    if (!deadline) return;
+
+    const text = botMessages.formatTurnChaser(match, fraction, deadline);
+    if (!text) return;
+
+    await postToChat(match.chatId, text, {
+        reply_markup: takeShotKeyboard(match.matchId),
+    });
 }
 
 /**

@@ -315,7 +315,7 @@ SHOT is the utility token of the SolShot ecosystem. It is earned exclusively thr
 | Team | 1,000,000 | 10% | Team wallet, no vesting | Development, infrastructure, operations |
 | Initial Liquidity | 500,000 | 5% | Meteora DAMM v2 pool | Secondary market trading |
 
-70% to rewards is the largest allocation by design. SolShot's thesis is that the people who play the game should own the majority of supply. The heavy reward weighting makes "play to earn" credible rather than decorative.
+70% to rewards is the largest allocation by design. SolShot's thesis is that the people who play the game should own the majority of supply. The heavy reward weighting makes "play to earn" credible.
 
 ### Emission Mechanics
 
@@ -325,7 +325,7 @@ For full emission tables, milestone schedule, anti-farming protections, deflatio
 
 ### Sell Discipline (Team Allocation)
 
-The 1M team allocation is unlocked at launch with no vesting schedule. This is documented honestly rather than obscured. Vesting contracts create a false sense of security; anyone with access to the upgrade authority could circumvent vesting in multiple ways, and SolShot's authority key is held by the engineering lead (the structural single-key risk is named openly in Section 10). SolShot opts for transparency: the team has full discretion governed by public commitment rather than unenforceable smart contract constraints.
+The 1M team allocation is unlocked at launch with no vesting schedule. This is documented openly. Vesting contracts create a false sense of security; anyone with access to the upgrade authority could circumvent vesting in multiple ways, and SolShot's authority key is held by the engineering lead (the structural single-key risk is named openly in Section 10). SolShot opts for transparency: the team has full discretion governed by public commitment, not by smart-contract constraints that the upgrade-authority holder could circumvent anyway.
 
 The team commits to a maximum sell rate of 10% of the team allocation per week, sold into volume rather than against thin liquidity. This is a public commitment, not an on-chain guarantee. Anyone can monitor the team wallet on-chain and verify compliance. Deviation would be immediately visible.
 
@@ -341,7 +341,7 @@ The team commits to a maximum sell rate of 10% of the team allocation per week, 
 | Platinum | 2,500 SHOT | 4,400 SHOT | Chain Reaction | 300 |
 | Diamond | 4,000 SHOT | 8,400 SHOT | Pineapple | 640 |
 
-Reaching Diamond requires earning and burning 8,400 SHOT, representing hundreds of hours of gameplay. This ensures high-prestige players are genuinely experienced, not just wealthy.
+Reaching Diamond requires earning and burning 8,400 SHOT, representing hundreds of hours of gameplay. High-prestige players have genuinely put in the hours.
 
 ### Burn Verification
 

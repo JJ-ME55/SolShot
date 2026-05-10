@@ -4,7 +4,7 @@
 
 No live, skill-based SOL wagering game exists on Solana.
 
-The Solana gaming ecosystem is full of ambitious projects. Most follow the same pattern: large token launches, NFT-gated access, play-to-earn reward loops, and years-long development timelines. Many remain on testnet or exist primarily as whitepapers. Almost none let you wager real SOL on the outcome of a skill-based match -- today, on devnet, with trustless settlement.
+The Solana gaming ecosystem is full of ambitious projects. Most follow the same pattern: large token launches, NFT-gated access, play-to-earn reward loops, and years-long development timelines. Many remain on testnet or exist primarily as whitepapers. Almost none let you wager real SOL on the outcome of a skill-based match - today, on devnet, with trustless settlement.
 
 That gap is where SolShot sits.
 
@@ -15,7 +15,7 @@ That gap is where SolShot sits.
 | | Star Atlas | Aurory | Genopets | Typical Solana Game | **SolShot** |
 |---|---|---|---|---|---|
 | **Model** | Space MMO, play-to-earn | Turn-based RPG, NFT-focused | Move-to-earn + gaming | NFT/P2E-driven | Skill-based SOL wagering |
-| **Mainnet status** | Partial (showroom modules) | Live (PvE focus) | Live (step tracking) | Testnet or whitepaper | **Live -- full game loop** |
+| **Mainnet status** | Partial (showroom modules) | Live (PvE focus) | Live (step tracking) | Testnet or whitepaper | **Live - full game loop** |
 | **Token model** | Dual-token, inflationary | Inflationary rewards | Inflationary rewards | Inflationary | **10M fixed, mint burned** |
 | **Wagering** | No direct wagering | No direct wagering | No direct wagering | No direct wagering | **Trustless PDA escrow** |
 | **Revenue split** | In-game economy | NFT marketplace fees | Token ecosystem | Varies | **90/7/3 on-chain split** |
@@ -35,15 +35,15 @@ SolShot is not a reward-farming loop. Players wager SOL on 1v1 artillery matches
 
 ### 2. Live, not a whitepaper
 
-The game is deployed on Solana devnet, with mainnet flip pending the audit-fix redeploy. Escrow program on-chain. SHOT token minted, mint authority burned. 20 weapons balanced and playable. 4 match modes running. Judges can open [solshot.gg](https://solshot.gg) and play a match right now. Most competition entries are prototypes or roadmap documents -- SolShot is a shipped product.
+The game is deployed on Solana devnet, with mainnet flip pending the audit-fix redeploy. Escrow program on-chain. SHOT token minted, mint authority burned. 20 weapons balanced and playable. 4 match modes running. Judges can open [solshot.gg](https://solshot.gg) and play a match right now. Most competition entries are prototypes or roadmap documents - SolShot is a shipped product.
 
 ### 3. Trustless escrow, not custodial
 
-Player funds go into a PDA derived from the match room ID. The on-chain program enforces the 90/7/3 split, verifies recipients, and settles atomically. The server keypair is an authorized trigger, not an authorized destination -- a compromised key cannot redirect funds. Three independent safety layers (server recovery, player cancel, permissionless reclaim) ensure funds are never permanently locked.
+Player funds go into a PDA derived from the match room ID. The on-chain program enforces the 90/7/3 split, verifies recipients, and settles atomically. The server keypair is an authorized trigger, not an authorized destination - a compromised key cannot redirect funds. Three independent safety layers (server recovery, player cancel, permissionless reclaim) ensure funds are never permanently locked.
 
 ### 4. Deflationary token, not inflationary
 
-10M SHOT. Fixed. Mint authority burned -- supply can only decrease. Prestige burns are the primary sink: 8,400 SHOT to reach Diamond tier. 1,000 Diamond players would burn nearly the entire supply. Early players are rewarded with genuine scarcity. This is the opposite of the inflationary reward-token model that dominates Solana gaming.
+10M SHOT. Fixed. Mint authority burned - supply can only decrease. Prestige burns are the primary sink: 8,400 SHOT to reach Diamond tier. 1,000 Diamond players would burn nearly the entire supply. Early players are rewarded with genuine scarcity. This is the opposite of the inflationary reward-token model that dominates Solana gaming.
 
 ### 5. Security-audited, not trust-me
 
@@ -59,4 +59,4 @@ SolShot fills that gap with a concrete thesis: **the server owns the physics, th
 
 Two-person team - JJ on the engineering, Fish on product / strategy / design. AI-augmented build. Three security audits. Live on devnet at [solshot.gg](https://solshot.gg); mainnet pending audit-fix redeploy.
 
-Skill-based SOL wagering -- live, not a demo.
+Skill-based SOL wagering - live, not a demo.

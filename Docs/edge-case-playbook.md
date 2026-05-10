@@ -10,7 +10,7 @@ Every scenario below resolves to one of two fund outcomes: **correct settlement*
 
 ## Three-Layer Fund Safety Net
 
-Before diving into scenarios, it is essential to understand the defense-in-depth architecture that underpins every recovery path. SolShot enforces three independent layers of fund protection, each a fallback for the one above:
+SolShot enforces three independent layers of fund protection, each a fallback for the one above:
 
 | Layer | Mechanism | Trigger | Who Can Call | Timeframe |
 |-------|-----------|---------|--------------|-----------|

@@ -303,7 +303,7 @@ Risk: MEDIUM. Changes the auth model in ways that affect every authenticated use
 
 The H023 on-chain fix (requiring `remaining_accounts.len() == count_ones(on-chain deposits_mask)`) landed in the SOS fix bundle and is confirmed correct by the BOK suite. But it introduced a NEW failure mode in the server (DB H014): the server builds `remaining_accounts` from its own off-chain state (`wagerStates[roomId].deposits` for v1; Mongo `player.initialDepositTx` for v2), not from the on-chain `deposits_mask`. If these diverge - due to a crash, a missed confirmation, or any network jitter - the server will construct an array whose length does not match the on-chain mask, causing `IncompleteRefund` reverts. The SOL is then stuck until the 2-hour (v1) or 24-hour (v2) permissionless reclaim window expires.
 
-Additionally: two async code paths that mutate settled/deposit state have race conditions (DB H015, H016). The self-damage sign-erasure in 1v1 (DB H017) is a game-design issue with a trivial fix.
+Two async code paths that mutate settled/deposit state have race conditions (DB H015, H016). The self-damage sign-erasure in 1v1 (DB H017) is a game-design issue with a trivial fix.
 
 Cross-reference: DB H013 (already fixed - refundWager no longer fails-open), H014, H015, H016, H017, H037, H040.
 
@@ -551,13 +551,13 @@ After each `npm update`, run `npm audit` and confirm the targeted CVEs are clear
 - **v1 program (`solshot-escrow`, 4kzrDpV9...)** - wired to the 1v1 lobby flow (Quick Match / Duel / High Roller / Custom Challenge). Real-time socket-room cadence, 10-min turn timer, 10-minute reconnect window. Both players must remain connected.
 - **v2 program (`solshot-escrow-v2`, BVKXLU...)** - wired to the group-chat flow. Server-persistent state (Mongo + on-chain), 12h default turn timer, no live-connection requirement. Players can close the tab and come back.
 
-The two programs have **identical 10-instruction surfaces** with the same logic, same settlement BPS, same PDA derivation, same authority model. The only structural difference: v1 caps at 4 players (`[Pubkey; 4]`), v2 supports up to 10 (`[Pubkey; 10]`). Functionally, **v2 is a superset of v1 and handles the 1v1 case identically.**
+The two programs have identical 10-instruction surfaces with the same logic, same settlement BPS, same PDA derivation, same authority model. The only structural difference: v1 caps at 4 players (`[Pubkey; 4]`), v2 supports up to 10 (`[Pubkey; 10]`). Functionally, v2 is a superset of v1 and handles the 1v1 case identically.
 
-**Why we shipped two.** v1 was the original 1v1 escrow (Feb 2026). When group-chat needed bigger player rosters in May 2026, the safer move was a fresh v2 program rather than mutating v1's compiled bytecode mid-flight. Result: two programs, two match-flows, partially overlapping surface area. Documented honestly here rather than hidden.
+**Why we shipped two.** v1 was the original 1v1 escrow (Feb 2026). When group-chat needed bigger player rosters in May 2026, the safer move was a fresh v2 program rather than mutating v1's compiled bytecode mid-flight. Result: two programs, two match-flows, partially overlapping surface area.
 
 **Why this is the right consolidation.** SolShot has **materially evolved into an async product.** Most of the recent traffic - group-chat matches, mobile users who minimise tabs, players whose phones lock between turns - needs the v2 server-persistent state model. The v1 real-time-session model fights modern browser/PWA reality: minimise = tab background = socket close = forfeit. That's not a winning UX in 2026.
 
-The fix is **one program, one match-flow, async-first.**
+The fix is one program, one match-flow, async-first.
 
 #### 6.9.1 Code migration
 
@@ -593,7 +593,7 @@ This is a **band-aid, not a fix.** The right fix is the full migration above. Ba
 
 #### 6.9.5 Why this matters strategically
 
-The v2-everywhere migration moves SolShot's identity from "TG Mini App with a real-time arcade vibe" to "**async-first social-game system that lives wherever your group chat lives.**" That repositioning lines up with the roadmap thesis (`Docs/ROADMAP.md`) - same wallet, same SHOT economy, same Anchor program across multiple game types and multiple chat surfaces. **Async-first is the architectural prerequisite for that vision.** Real-time-session-tied is not.
+The v2-everywhere migration moves SolShot's identity from "TG Mini App with a real-time arcade vibe" to "async-first social-game system that lives wherever your group chat lives." That repositioning lines up with the roadmap thesis (`Docs/ROADMAP.md`) - same wallet, same SHOT economy, same Anchor program across multiple game types and multiple chat surfaces. Async-first is the architectural prerequisite for that vision; real-time-session-tied is not.
 
 ---
 

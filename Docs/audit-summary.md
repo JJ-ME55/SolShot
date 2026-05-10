@@ -1,6 +1,6 @@
 # SolShot Audit Summary
 
-**Generated:** 2026-05-07
+**Date:** 2026-05-07
 **Intended audience:** Hackathon judges + future contributors
 **Purpose:** One-stop overview of all three audits SolShot has run. Read this before diving into the full reports.
 

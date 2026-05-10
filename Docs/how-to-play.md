@@ -7,7 +7,7 @@ status: current
 
 # How to Play SolShot
 
-SolShot is tank artillery built for Telegram group chats and the open web. Fire shots, destroy terrain, wager SOL on the outcome. Matches are server-authoritative, outcomes settle on-chain, and you don't need to know what any of that means to play.
+SolShot is a tank artillery game built for Telegram group chats and the open web. Fire shots, destroy terrain, wager SOL on the outcome. Matches are server-authoritative, outcomes settle on-chain, and you don't need to know what any of that means to play.
 
 **Where to play:**
 - **Browser:** [solshot.gg](https://solshot.gg). Works in any modern browser, installable as a PWA.
@@ -27,11 +27,11 @@ SolShot is tank artillery built for Telegram group chats and the open web. Fire 
 2. Hit the orange **PLAY** button. The lobby opens with mode tabs.
 3. Pick the **VS SHOT BOT** tab (leftmost). Pick your tank colour (white is reserved for Shot Bot).
 4. Hit **CREATE MATCH**. The match starts immediately. No opponent matchmaking. The Shop opens with 1,000 Gold.
-5. Take turns firing against Shot Bot. The bot picks weapons and aims based on the situation. Expect it to whiff early shots and get sharper as the match goes on.
+5. Take turns firing against Shot Bot. The bot picks weapons and aims based on the situation. Expect it to miss early shots and get sharper as the match goes on.
 
 No wallet. No wager. No real opponent required. Just tanks against an AI that calibrates as it learns the field.
 
-**About Shot Bot:** server-side AI that uses probabilistic aiming with calibration. Random luck per shot, but it's improving from one shot to the next. Don't expect a fixed difficulty curve. You'll get whiffs and clutch hits in the same match. Practice mode milestones still earn SHOT (at 25% the wagered rate), so prestige progression works here too.
+**About Shot Bot:** server-side AI that uses probabilistic aiming with calibration. Random luck per shot, but it's improving from one shot to the next. Don't expect a fixed difficulty curve. You'll see misses and clutch hits in the same match. Practice mode milestones still earn SHOT (at 25% the wagered rate), so prestige progression works here too.
 
 <!-- TODO: screenshot of a Practice match vs Shot Bot, mid-firing -->
 
@@ -61,7 +61,7 @@ Best for a Telegram group with friends.
 2. In any Telegram group where **@SolShotGG_bot** has been added, type `/customgame`.
 3. The bot walks you through wager amount, player count, match duration, turn timer, idle penalty, buybacks, and quiet hours.
 4. A lobby card appears in the group chat. Players tap **Join**.
-5. When the lobby fills, each player gets a DM with a link to deposit and play.
+5. When the lobby is full, each player gets a DM with a link to deposit and play.
 6. Turns run on a configurable timer (4h / 12h / 24h options). Tap "Take Your Shot" whenever it's your turn.
 7. Last tank standing wins. SOL settles on-chain automatically. The winner gets a Trophy DM with a shareable card.
 
@@ -147,7 +147,7 @@ Both players must deposit within **1 hour**. If one player doesn't deposit in ti
 
 The Shop opens before each round. You start with **1,000 Gold** and buy weapons from a roster of 20. The free Single Shot is always available, but spending gold on better weapons is how you win.
 
-You can buy multiple weapons per Shop phase. Build a loadout.
+You can buy multiple weapons per Shop phase. Pick a few that cover different ranges, blast sizes and damage profiles, that mix is your loadout for the round.
 
 ### 4. Battle
 
@@ -158,7 +158,7 @@ Turns alternate. On each turn:
 - Choose a **weapon**
 - Fire
 
-The server calculates trajectory, impact, damage, and terrain destruction. You have **10 minutes per turn** in 1v1 lobby matches (group-chat matches set their own turn timer - default 12 hours, host-configurable). Miss your turn and it auto-advances. Miss three turns in a row and you forfeit the match.
+The server calculates trajectory, impact, damage, and terrain destruction. You have **10 minutes per turn** in 1v1 lobby matches (group-chat matches set their own turn timer - default 12 hours, host-configurable). Miss your turn and it auto-advances. Miss **3** turns in a row and you forfeit the match.
 
 <!-- TODO: screenshot of BattleScreen mid-turn with angle/power/weapon HUD visible -->
 
@@ -365,11 +365,11 @@ SolShot has **15 base weapons** across six tiers, plus **5 prestige-exclusive we
 | Skipper | Tactical | 350G | Bounces across the terrain surface. Great for trick shots. |
 | 3 Shot | Tactical | 400G | Three projectiles fan out mid-air. |
 | Spider | Tactical | 400G | Splits into crawling sub-munitions on proximity. |
-| Heatseeker | Tactical | 500G | Homes toward the opponent. Guided forgiveness. |
+| Heatseeker | Tactical | 500G | Homes toward the opponent. Forgives loose aim. |
 | Napalm | Rare | 600G | Burns an area, melts terrain. Damage over time. |
 | Pile Driver | Rare | 600G | Drills down through terrain. 6 sequential blasts. |
 | Sniper Rifle | Rare | 700G | Pinpoint 1px blast. 100 damage on a direct hit. Miss by a pixel, deal zero. |
-| Big Shot | Rare | 700G | Huge blast radius. Maximum aim forgiveness, lower damage. |
+| Big Shot | Rare | 700G | Huge blast radius. Easiest aim in the game, lower damage to balance. |
 | Ground Hog | Epic | 900G | Tunnels through terrain, emerges under the target, detonates. |
 | Jackhammer | Epic | 1,000G | Drills vertically into terrain. 5 chain blasts. |
 | Hail Storm | Epic | 1,200G | Rains projectiles over a wide area. |
@@ -510,7 +510,7 @@ Wind affects your projectile horizontally and changes every round. Check the win
 
 ### Buy Multiple Weapons
 
-The Shop isn't "pick one weapon and go." You can buy several. A loadout of Heatseeker + Dirt Ball + 3 Shot gives you guided damage, terrain defence and spread coverage. One weapon is a plan. Three weapons are a strategy.
+The Shop isn't "pick one weapon and go." You can buy several. A loadout of Heatseeker + Dirt Ball + 3 Shot gives you a homing shot, terrain defence and spread coverage. One weapon is a plan. Three weapons are a strategy.
 
 ### Save Gold in Multi-Round Matches
 

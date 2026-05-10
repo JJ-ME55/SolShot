@@ -434,7 +434,7 @@ npm CVEs (`socket.io-parser` DoS, `path-to-regexp` ReDoS, `handlebars` JS inject
 - ✅ First N-player group-chat match settled organically on-chain (May 6)
 - ✅ SHOT token mint live, mint authority burned
 - ✅ Prestige burn flow with on-chain verification
-- ✅ Telegram bot with 14 commands (`/play`, `/customgame`, `/leaderboard`, `/refer`, `/mygames`, `/stats`, `/help`, etc.)
+- ✅ Telegram bot with 18 commands (`/play`, `/customgame`, `/leaderboard`, `/refer`, `/mygames`, `/stats`, `/help`, etc.)
 - ✅ Privy embedded wallet integration (email, Google, Telegram OAuth)
 - ✅ Custom Challenge with 5-char shortcode and Satori-rendered Duel Card
 - ✅ Career Card and Trophy DM, both server-rendered Satori at 1080×608 / 1080×1080

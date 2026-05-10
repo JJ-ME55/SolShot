@@ -321,8 +321,9 @@ controls. This is DB H009, deferred to mainnet Bundle 2.
 7. Server tracks confirmations in escrowDepositConfirm handler
    → when both confirmed: emits 'escrowActive', match proceeds
 8. Match runs (turn-based physics, server-authoritative)
-   → 60s turn timer; auto-advance on timeout
-   → disconnect/reconnect 30s grace window
+   → 10-minute turn timer (1v1 lobby); auto-advance on timeout
+   → disconnect/reconnect 10-minute grace window
+   → group-chat matches use config.turnTimerMs (default 12h, host-set)
 9. Last tank alive → server calls settle_match(winner, matchId)
    → 90/7/3 split distributed atomically on-chain
    → 'matchEnd' emitted to clients with TX link

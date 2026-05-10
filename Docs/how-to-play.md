@@ -158,7 +158,7 @@ Turns alternate. On each turn:
 - Choose a **weapon**
 - Fire
 
-The server calculates trajectory, impact, damage, and terrain destruction. You have **60 seconds per turn**. Miss your turn and it auto-advances. Miss three turns in a row and you forfeit the match.
+The server calculates trajectory, impact, damage, and terrain destruction. You have **10 minutes per turn** in 1v1 lobby matches (group-chat matches set their own turn timer — default 12 hours, host-configurable). Miss your turn and it auto-advances. Miss three turns in a row and you forfeit the match.
 
 <!-- TODO: screenshot of BattleScreen mid-turn with angle/power/weapon HUD visible -->
 

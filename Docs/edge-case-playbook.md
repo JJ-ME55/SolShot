@@ -232,11 +232,11 @@ The on-chain `settle_match` instruction enforces `SETTLEMENT_TIMEOUT_SECONDS = 3
 
 ### Scenario 13: Turn Timeout Cascade (AFK Player)
 
-**Trigger:** A player stops taking turns during an active match. Each turn has a 60-second timeout (`TURN_TIMEOUT_MS = 60000`).
+**Trigger:** A player stops taking turns during an active 1v1 lobby match. Each turn has a 10-minute timeout (`TURN_TIMEOUT_MS = 600000`). Group-chat matches use their own per-config turn timer (default 12 hours, host-set).
 
 **What the system does:**
 
-1. After 60 seconds of inactivity, the server auto-advances the turn and tracks consecutive timeouts per player.
+1. After the turn timer elapses, the server auto-advances the turn and tracks consecutive timeouts per player.
 2. After 3 consecutive timeouts by the same player, the match ends via the forfeit rule.
 3. The opponent is declared the winner. Settlement proceeds normally (90/7/3 split).
 

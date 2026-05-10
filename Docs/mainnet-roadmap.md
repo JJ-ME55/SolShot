@@ -37,7 +37,7 @@ SolShot reached a milestone on 2026-05-04: the first end-to-end wagered match se
 
 - 🟡 ~50 findings deferred to this hardening roadmap (16 SOS + ~30 DB)
 - 🟡 Single hot wallet `HPyVPj2VH9yBirr7FMgAJeDH8xJgaMKy5UnwLkjSnovk` currently holds BOTH upgrade authority AND application authority for BOTH programs — one key compromise = total protocol drainage
-- 🟡 Source-level fixes for SOS + DB audits are in source but devnet redeploy of compiled `.so` files is pending verification; the live devnet programs at `4kzrDpV9JxjE27AMg4PQXzGuge9MEYQEFznSPvkBtnH1` (v1) and `BVKXq8DJJCQQFaZUDCCPjBFiNXUvCTuuHi3iUQB33G7N` (v2) are running pre-fix-bundle bytecode
+- 🟡 Source-level fixes for SOS + DB audits are in source but devnet redeploy of compiled `.so` files is pending verification; the live devnet programs at `4kzrDpV9JxjE27AMg4PQXzGuge9MEYQEFznSPvkBtnH1` (v1) and `BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N` (v2) are running pre-fix-bundle bytecode
 - 🟡 BOK verification is HIGH-CONFIDENCE PROBABILISTIC, not PROVEN (Kani unavailable on Windows — requires WSL2)
 - 🟡 H024 (non-contiguous `deposits_mask`) still requires authority cooperation to rescue; refund loop redesign deferred
 
@@ -135,7 +135,7 @@ solana program set-upgrade-authority \
   --new-upgrade-authority <squads-multisig-pubkey>
 
 solana program set-upgrade-authority \
-  BVKXq8DJJCQQFaZUDCCPjBFiNXUvCTuuHi3iUQB33G7N \
+  BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N \
   --new-upgrade-authority <squads-multisig-pubkey>
 ```
 

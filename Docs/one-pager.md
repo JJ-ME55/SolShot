@@ -207,6 +207,6 @@ All three share the same SHOT economy, Telegram bot and Privy wallet stack.
 
 ## Team
 
-Two-person team — JJ on engineering, Fish on product. Built with AI assistance. Three security audits, two shipped fix bundles, one working wagered game on devnet. Full stack delivered: React + Phaser 3 PWA, Express + Socket.IO server, two Anchor programs, SHOT token, Telegram bot with 14 commands (`/play`, `/customgame`, `/leaderboard`, `/refer`, `/mygames`, etc.), Privy wallet integration, MongoDB Atlas, Satori-rendered share cards, domain registered.
+Two-person team — JJ on engineering, Fish on product. Built with AI assistance. Three security audits, two shipped fix bundles, one working wagered game on devnet. Full stack delivered: React + Phaser 3 PWA, Express + Socket.IO server, two Anchor programs, SHOT token, Telegram bot with 18 commands (`/play`, `/customgame`, `/leaderboard`, `/refer`, `/mygames`, `/stats`, etc.), Privy wallet integration, MongoDB Atlas, Satori-rendered share cards, domain registered.
 
 *SolShot is a skill-based game. Players are responsible for compliance with local regulations regarding wagering. This document is not financial advice.*

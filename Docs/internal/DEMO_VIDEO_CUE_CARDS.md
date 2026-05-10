@@ -103,7 +103,7 @@ If you slip on one, **don't apologise on camera**. Note it mentally, finish the 
 
 # Section 3 · 1:30–2:05 · Audits + security posture (35s)
 
-**On screen:** `.docs/audit-summary.md` audit overview table
+**On screen:** `Docs/audit-summary.md` audit overview table
 
 **Talking points:**
 

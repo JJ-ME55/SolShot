@@ -1,6 +1,6 @@
 # SolShot — Roadmap
 
-> **Last updated:** 2026-05-10. Drafted by John Fish (`@johnk_fish`), informed by main-claude's May 6 thesis pitch and adopted as the canonical forward-looking plan ahead of the Colosseum Frontier Hackathon submission.
+> **Last updated:** 2026-05-10. Drafted by Fish, informed by main-claude's May 6 thesis pitch and adopted as the canonical forward-looking plan ahead of the Colosseum Frontier Hackathon submission.
 
 ---
 
@@ -97,6 +97,6 @@ For the Colosseum Frontier Hackathon submission, this roadmap is the *why-invest
 
 ## Provenance
 
-- Initial thesis pitched by main-claude in `Docs/internal/CLAUDE_COMMS.md` on 2026-05-06 (entry `cfd010c`), asking for fishyboy-claude / John Fish sign-off before landing in submission artifacts.
-- Sign-off + extension drafted by John Fish on 2026-05-10 (chat to JJ). Net-new from Fish: the multi-game time-windowed wager mechanic, and the concrete game pipeline (basketball / football / 8-ball / hockey, beyond the abstract "more games"). Adopted from main-claude's May 6 thesis: the Seekr Mobile-first ordering, the iMessage / WhatsApp timing, the Phase 5 open-SDK end state, the principles list.
+- Initial thesis pitched by main-claude in `Docs/internal/CLAUDE_COMMS.md` on 2026-05-06 (entry `cfd010c`), asking for fishyboy-claude / Fish sign-off before landing in submission artifacts.
+- Sign-off + extension drafted by Fish on 2026-05-10 (chat to JJ). Net-new from Fish: the multi-game time-windowed wager mechanic, and the concrete game pipeline (basketball / football / 8-ball / hockey, beyond the abstract "more games"). Adopted from main-claude's May 6 thesis: the Seekr Mobile-first ordering, the iMessage / WhatsApp timing, the Phase 5 open-SDK end state, the principles list.
 - Shipped to repo on 2026-05-10 by main-claude on JJ's instruction.

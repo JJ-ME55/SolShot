@@ -1054,7 +1054,7 @@ Selected based on ecosystem (`solana-offchain`) + protocol types (`game-server`,
 - Stacked-audit handover: `C:/Users/johnk/SolShot/.bulwark/HANDOVER.md`
 - Audit state: `C:/Users/johnk/SolShot/.bulwark/STATE.json`
 - Hot spots map: `C:/Users/johnk/SolShot/.bulwark/HOT_SPOTS.md`
-- Cross-skill: SOS `.audit/FINAL_REPORT.md` + BOK `.bok/reports/2026-05-07-report.md` + GL `.docs/`
+- Cross-skill: SOS `.audit/FINAL_REPORT.md` + BOK `.bok/reports/2026-05-07-report.md` + GL `Docs/`
 - Remediation log: `C:/Users/johnk/SolShot/Docs/internal/REMEDIATION_DECISIONS.md`
 
 ---

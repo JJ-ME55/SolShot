@@ -222,7 +222,7 @@ This two-path model ensures that the majority of SHOT supply flows to active pla
 
 The team allocation is **unlocked at launch with no vesting schedule**. This is a deliberate choice, documented honestly rather than obscured.
 
-**Why no vesting:** Vesting contracts create a false sense of security. Anyone with access to the upgrade authority could circumvent a vesting contract in multiple ways, and SolShot's authority key is currently held by a single engineering lead (the structural single-key risk is documented openly in [`security-model.md`](../.docs/security-model.md)). Rather than implementing a mechanism that looks protective but is not, SolShot opts for transparency: the team has full discretion over their allocation, governed by public commitment rather than unenforceable smart contract constraints.
+**Why no vesting:** Vesting contracts create a false sense of security. Anyone with access to the upgrade authority could circumvent a vesting contract in multiple ways, and SolShot's authority key is currently held by a single engineering lead (the structural single-key risk is documented openly in [`security-model.md`](../Docs/security-model.md)). Rather than implementing a mechanism that looks protective but is not, SolShot opts for transparency: the team has full discretion over their allocation, governed by public commitment rather than unenforceable smart contract constraints.
 
 **Sell discipline:** The team commits to a maximum sell rate of 10% of the team allocation per week, sold into volume rather than against thin liquidity. This means:
 

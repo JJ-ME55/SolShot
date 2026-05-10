@@ -702,4 +702,4 @@ For the full mainnet roadmap including timelines, see `Docs/mainnet-roadmap.md` 
 - `.bok/reports/2026-05-07-report.md` — math invariant verification results
 - `Docs/internal/PRIOR_AUDIT_DELTA.md` — what changed Feb → May 2026
 - `Docs/SolShot_Litepaper_v2.0.md` — product and token economy spec
-- `.docs/` — companion architecture decision records (ADRs)
+- `Docs/` — companion architecture decision records (ADRs)

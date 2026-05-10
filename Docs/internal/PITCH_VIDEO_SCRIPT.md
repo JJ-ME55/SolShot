@@ -137,5 +137,5 @@ Done. Hard out.
 
 - **v1 → v2 reframe:** JJ flagged the actual Colosseum brief on 2026-05-10 — "Nothing fancy required. We're interested in how you think and communicate." That brief disqualifies the polished one-person pitch v1 was structured around.
 - **Wedge insight (Beat 2 + Beat 4):** [main-claude] May 6 thesis pitch (commit `cfd010c`)
-- **Multi-game catalogue (Beat 4):** John Fish roadmap draft 2026-05-10
+- **Multi-game catalogue (Beat 4):** Fish roadmap draft 2026-05-10
 - **"Skip the part where we slow down to fundraise":** main-claude May 6 thesis (verbatim)

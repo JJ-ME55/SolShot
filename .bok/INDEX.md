@@ -10,7 +10,7 @@
 - **Files with math signals:** 2 (both source files)
 - **Math regions identified:** 14 (across 6 categories)
 - **Kani available:** NO (degraded mode — same posture as Feb)
-- **GL docs available:** YES (Feb 2026 run at `.docs/`)
+- **GL docs available:** YES (Feb 2026 run at `Docs/`)
 - **SOS findings available:** YES (Audit #2 at `.audit/`)
 
 ## Verification Mode
@@ -154,7 +154,7 @@ NEW in v2. Audit #2 H011 documented as REGRESSION of Feb H028 dismissal.
 - **H040 fixed** — comment integrity I-TIME-4 (no funds at risk; doc-quality invariant).
 - **H018 fixed** — v2 deposit_wager bound `<` strict (closes at-deadline edge collision; affects I-TIME-2 strict ordering).
 
-**From GL docs (`.docs/`):**
+**From GL docs (`Docs/`):**
 
 - `token-economics.md` describes the 90/7/3 split intent — invariants I-FEE-1..5 align with documented intent.
 - `edge-case-playbook.md` covers cancel/reclaim flows — invariants I-REF-1..4 match documented behavior.

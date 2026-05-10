@@ -1,6 +1,6 @@
 # SolShot — Folder Guide
 
-> Last updated: 2026-05-10 (post pre-submission reorg).
+> Last updated: 2026-05-10 (post-merge: `.docs/` content folded into `Docs/`).
 
 This guide explains every top-level directory and the front-of-house / back-of-house split. If you're a new contributor or a hackathon judge, **read [`README.md`](README.md) first** — it's the proper landing doc with curated links into the most relevant material.
 
@@ -10,7 +10,7 @@ This guide explains every top-level directory and the front-of-house / back-of-h
 
 | Tier | Where | Who reads it |
 |---|---|---|
-| **Front of house** | `README.md`, `Docs/` (root), `.docs/`, `.audit/`, `.bok/`, `.bulwark/` | Judges, contributors, new players |
+| **Front of house** | `README.md`, `Docs/`, `.audit/`, `.bok/`, `.bulwark/` | Judges, contributors, new players |
 | **Back of house** | `Docs/internal/` | The dev team |
 | **Archived** | `_archive/superseded-docs/` | Historical reference only |
 
@@ -33,17 +33,28 @@ SolShot/
 ├── tests/                        # Anchor TypeScript test suite
 ├── tools/                        # One-shot scripts (terrain bake, stat-card preview)
 │
-├── Docs/                         # Public-facing project docs (front of house)
-│   ├── SolShot_Litepaper_v2.2.md  # Canonical spec
-│   ├── SolShot_Litepaper_v2.2.pdf # Litepaper PDF export (same content as the .md)
-│   ├── SHOT_TOKEN_MODEL.md        # Token model (distribution, emissions, burns)
-│   ├── blog/                      # Marketing copy ready to publish
-│   └── internal/                  # Team operations — see "Back of house" below
+├── Docs/                         # All public-facing project docs
+│   ├── README.md                 # Doc-index (auto-renders when you click into Docs/)
+│   ├── one-pager.md              # 90-second pitch
+│   ├── how-to-play.md            # Player guide
+│   ├── ROADMAP.md                # Forward-looking 5-phase plan
+│   ├── SolShot_Litepaper_v2.2.md # Canonical project spec
+│   ├── SolShot_Litepaper_v2.2.pdf# Same content, share-friendly format
+│   ├── SHOT_TOKEN_MODEL.md       # Token economics
+│   ├── architecture.md           # System architecture
+│   ├── security-model.md         # Trust boundaries + key custody
+│   ├── audit-summary.md          # Summary across the three audits
+│   ├── mainnet-roadmap.md        # Remediation bundles before mainnet
+│   ├── crypto-explainer.md       # Crypto-newcomer onboarding
+│   ├── competitive-landscape.md  # Market positioning
+│   ├── deployment-sequence.md    # Deploy runbook
+│   ├── edge-case-playbook.md     # Operational edge cases
+│   ├── blog/                     # Marketing copy ready to publish
+│   └── internal/                 # Team operations — see "Back of house" below
 │
 ├── .audit/                       # SVK on-chain audit (SOS) output
 ├── .bok/                         # SVK math-invariants audit (BOK) output
 ├── .bulwark/                     # SVK off-chain audit (DB) output
-├── .docs/                        # SVK Grand Library (GL) output (architecture, one-pager, etc.)
 │
 ├── Assets/                       # Game assets (logos, badges, weapon icons, screenshots)
 ├── dapp-store/                   # Solana dApp Store listing config
@@ -52,56 +63,35 @@ SolShot/
 
 ---
 
-## The four SVK audit folders
+## The three SVK audit folders
 
-These look unusual at the root because they're tool-generated outputs. Naming convention is set by the [Solana Vibes Kit](https://github.com/MetalegBob) — keeping the dot-prefix makes them easy to grep and easy to regenerate via `/SOS:scan`, `/BOK:scan`, `/DB:scan`, `/GL:survey`.
+These look unusual at the root because they're tool-generated outputs. Naming convention is set by the [Solana Vibes Kit](https://github.com/MetalegBob) — keeping the dot-prefix makes them easy to grep and easy to regenerate via `/SOS:scan`, `/BOK:scan`, `/DB:scan`.
 
 | Folder | What it is | Headline file |
 |---|---|---|
 | `.audit/` | SOS — on-chain Anchor program audit | `.audit/FINAL_REPORT.md` |
 | `.bok/` | BOK — math invariants (settlement, fees, refunds), 159 verification tests | `.bok/reports/...` |
 | `.bulwark/` | DB — off-chain server audit (auth, signing, Privy integration) | `.bulwark/FINAL_REPORT.md` |
-| `.docs/` | GL — Grand Library project documentation pipeline | `.docs/one-pager.md`, `.docs/how-to-play.md`, `.docs/audit-summary.md`, `.docs/mainnet-roadmap.md` |
+
+The Grand Library skill (`/GL:survey`) historically wrote to `.docs/`. As of the 2026-05-10 pre-submission cleanup, those outputs were merged into `Docs/` so all public-facing markdown lives in one place. Future GL refreshes write directly into `Docs/`.
 
 The `*-history/` siblings (`.audit-history/`, `.bulwark-history/`) and the `.planning/`, `.claude/`, `.agents/` directories are **gitignored**. They exist on disk for the dev team but never get committed.
 
 ---
 
-## Front of house — what judges and contributors read
+## Front of house — `Docs/`
 
-### `Docs/` (root)
+All public-facing project documentation. Order to read it in:
 
-| File | Purpose |
-|---|---|
-| `SolShot_Litepaper_v2.2.md` | Canonical project spec — vision, distribution, on-chain programs, security posture, what we're shipping vs deferring |
-| `SolShot_Litepaper_v2.2.pdf` | Litepaper PDF export for sharing (same content as the .md, share-friendly format) |
-| `SHOT_TOKEN_MODEL.md` | SHOT token economics — distribution, emissions, burns, scarcity analysis |
+1. `Docs/one-pager.md` — start here
+2. `Docs/how-to-play.md` — player guide
+3. `Docs/ROADMAP.md` — forward-looking plan
+4. `Docs/SolShot_Litepaper_v2.2.md` — full project spec
+5. `Docs/SHOT_TOKEN_MODEL.md` — token economics
 
-### `Docs/blog/`
+Plus deeper-context companions: `architecture.md`, `security-model.md`, `audit-summary.md`, `mainnet-roadmap.md`, `crypto-explainer.md`, `competitive-landscape.md`, `deployment-sequence.md`, `edge-case-playbook.md`.
 
-Polished marketing copy ready to publish.
-
-| File | Purpose |
-|---|---|
-| `BLOG_WHAT_IS_SOLSHOT.md` | Explainer post: what SolShot is |
-| `BLOG_HOW_WAGERING_WORKS.md` | Explainer post: how on-chain wagering and settlement work |
-
-### `.docs/` — Grand Library output
-
-The GL pipeline produces these. They're current as of the May 7 refresh.
-
-| File | Purpose |
-|---|---|
-| `one-pager.md` | 90-second pitch |
-| `how-to-play.md` | Player guide (every match type, every weapon) |
-| `architecture.md` | System architecture |
-| `security-model.md` | Security model and trust boundaries |
-| `audit-summary.md` | Top-line summary across all three audits |
-| `mainnet-roadmap.md` | Remediation bundles required before mainnet |
-| `crypto-explainer.md` | Crypto-newcomer onboarding |
-| `competitive-landscape.md` | Market positioning |
-| `deployment-sequence.md` | Deploy order for mainnet |
-| `edge-case-playbook.md` | Operational edge cases |
+`Docs/blog/` holds polished marketing copy ready to publish (`BLOG_WHAT_IS_SOLSHOT.md`, `BLOG_HOW_WAGERING_WORKS.md`).
 
 ---
 
@@ -115,9 +105,9 @@ Includes:
 - **Audit fix decisions:** `REMEDIATION_DECISIONS.md`, `DB_REMEDIATION_DECISIONS.md`, `PRIOR_AUDIT_DELTA.md`
 - **Internal audits:** `AUDIT_2026-05-06_iOS_render_regression.md`, `MOBILE_AUDIT_2026-05-08.md`
 - **QA + ops:** `PRE_SUBMISSION_QA_v2.md`, `EXECUTION_CHECKLIST_audit_sweep.md`
-- **Demo recording:** `DEMO_VIDEO_CUE_CARDS.md`, `DEMO_VIDEO_SCRIPT_v2.md`
+- **Demo + pitch recording:** `DEMO_VIDEO_CUE_CARDS.md`, `DEMO_VIDEO_SCRIPT_v2.md`, `PITCH_VIDEO_SCRIPT.md`, `PITCH_VIDEO_CUE_CARDS.md`
 - **Setup guides:** `TELEGRAM_PLAN.md`, `TELEGRAM_SETUP.md`, `DAPP_STORE_SETUP.md`, `SOLSHOT_DISCORD_PLAN.md`
-- **Launch ops (current era):** `MASTER_LAUNCH_PLAN.md`, `LAUNCH_CHECKLIST.md`, `SOLSHOT_P1_LAUNCH.md`, `HACKATHON_SCOPE.md`, `solshot_frontier_execution_plan.md`
+- **Launch ops (current era):** `MASTER_LAUNCH_PLAN.md`, `LAUNCH_CHECKLIST.md`, `SOLSHOT_P1_LAUNCH.md`, `HACKATHON_SCOPE.md`, `solshot_frontier_execution_plan.md`, `TODO.md`
 - **Specs (current era):** `SOLSHOT_STAT_CARD_SPEC.md`, `SOLSHOT_SEEKER_AND_4PLAYER_BRIEF.md`, `SOLSHOT_ASSET_MASTER_v2.md`, `SolShot_Weapon_Rebalance_Spec_v2.md`, `GROUP_CHAT_MODE.md`
 - **Prompts:** `SOLSHOT_GPT_ART_PROMPTS.md`, `STARTER_PROMPTS.md`
 - **Briefs:** `briefs/proofreading-guide-remove-ai-tells.md`
@@ -135,10 +125,10 @@ Subfolders:
 - `wallet-research/` — wallet architecture research artefacts (Privy was picked + shipped)
 - `escrow-research/` — N-player escrow research artefacts (escrow-v2 was built + shipped)
 - `audio-briefs/` — one-shot music selection tool + briefs
-- `gl-decisions-feb24/` — Grand Library Feb 24 stub files (superseded by May 7 refresh)
+- `gl-decisions-feb24/` — Grand Library Feb 24 stub files (superseded by May 7 refresh, then folded into `Docs/` in the May 10 merge)
 - `old-plans/` — dated planning docs whose work has shipped
 
-Plus loose files: `SOLSHOT_CODEBASE_AUDIT.md`, `SOLSHOT_REACT_MIGRATION_SPEC.md`, `SESSION_HANDOFF_2026-04-30.md`, `TOMORROW.md`, `solshot_v5.jsx`, `solshot-landing-v2.html`.
+Plus loose files: `SOLSHOT_CODEBASE_AUDIT.md`, `SOLSHOT_REACT_MIGRATION_SPEC.md`, `SESSION_HANDOFF_2026-04-30.md`, `solshot_v5.jsx`, `solshot-landing-v2.html`.
 
 ---
 
@@ -154,8 +144,9 @@ Plus loose files: `SOLSHOT_CODEBASE_AUDIT.md`, `SOLSHOT_REACT_MIGRATION_SPEC.md`
 
 ## Conventions for future contributors
 
-1. **New public-facing doc?** → `Docs/` root or appropriate `.docs/` GL doc.
+1. **New public-facing doc?** → drop it in `Docs/` directly.
 2. **New team-only doc?** → `Docs/internal/`.
 3. **Doc went stale?** → move to `_archive/superseded-docs/` (don't delete — preserves history).
-4. **Audit re-run?** → SVK skills write to `.audit/`, `.bok/`, `.bulwark/`, `.docs/`. Don't move those paths or the skills will recreate them.
-5. **Don't track local agent state.** `.claude/`, `.planning/`, `.agents/`, `*-history/` are gitignored for a reason.
+4. **Audit re-run?** → SOS / BOK / DB skills write to `.audit/`, `.bok/`, `.bulwark/`. Don't move those paths or the skills will recreate them.
+5. **GL re-run?** → as of the May 10 merge, GL outputs land directly in `Docs/`. If a future GL run writes to `.docs/` again (skill regression), re-run the merge.
+6. **Don't track local agent state.** `.claude/`, `.planning/`, `.agents/`, `*-history/` are gitignored for a reason.

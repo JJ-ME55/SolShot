@@ -421,7 +421,7 @@ npm CVEs (`socket.io-parser` DoS, `path-to-regexp` ReDoS, `handlebars` JS inject
 - `.bok/reports/2026-05-07-report.md` — BOK math verification, 41 invariants, 159 tests, per-function findings
 - `Docs/internal/REMEDIATION_DECISIONS.md` — SOS fix-vs-defer disposition log
 - `Docs/internal/DB_REMEDIATION_DECISIONS.md` — DB fix-vs-defer disposition log
-- `.docs/audit-summary.md` — single-page overview, all three audits combined
+- `Docs/audit-summary.md` — single-page overview, all three audits combined
 
 ---
 

@@ -64,7 +64,7 @@ This script focuses entirely on what the pitch video CAN'T show: the technical p
 
 **Should be at ~1:30 now.**
 
-→ switch to `.docs/audit-summary.md`
+→ switch to `Docs/audit-summary.md`
 
 **KEY PHRASES YOU MUST GET RIGHT:**
 - "**Two** Anchor programs" (NOT "single")
@@ -76,7 +76,7 @@ This script focuses entirely on what the pitch video CAN'T show: the technical p
 
 ## Section 3 — Audits + security posture (1:30–2:05) — 35s
 
-**On screen:** `.docs/audit-summary.md` showing the audit overview table
+**On screen:** `Docs/audit-summary.md` showing the audit overview table
 
 **Jamie:**
 
@@ -149,7 +149,7 @@ The Telegram windows are GONE because there's no user-flow narration. Simpler se
 | 2 | `Ctrl+2` | `https://solshot.gg` | Brief flash of the Menu in section 1 |
 | 3 | `Ctrl+3` | `https://github.com/JJ-ME55/SolShot/blob/main/programs/solshot-escrow-v2/src/lib.rs` | v2 program, scrolled to top |
 | 4 | `Ctrl+4` | `https://explorer.solana.com/tx/4wgAXhapUmyv3afnchSNs2ZXCPWYZH77YqhScQmATPZNQHHmggttzbrNhvk5npwEJmG16wYeyC6js4vgY35YkL6G?cluster=devnet` | B4GN settle TX |
-| 5 | `Ctrl+5` | `https://github.com/JJ-ME55/SolShot/blob/main/.docs/audit-summary.md` | Audit overview table near the top |
+| 5 | `Ctrl+5` | `https://github.com/JJ-ME55/SolShot/blob/main/Docs/audit-summary.md` | Audit overview table near the top |
 | 6 | `Ctrl+6` | `https://github.com/JJ-ME55/SolShot/blob/main/README.md` | README — for the stack section |
 | 7 | `Ctrl+7` | Canva closing slide → Present | Logo + URL + handle |
 

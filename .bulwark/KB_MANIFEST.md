@@ -61,7 +61,7 @@ Each auditor agent loads:
 ### Cross-skill loads (always)
 - `.audit/FINAL_REPORT.md` (SOS Audit #2 — for off-chain implications of on-chain findings)
 - `.bok/results/summary.md` (BOK Audit #2 — verified math invariants)
-- `.docs/` (GL spec oracle — intended behavior)
+- `Docs/` (GL spec oracle — intended behavior)
 
 ### Stacked-audit loads
 - `.bulwark/HANDOVER.md` — RECHECK + VERIFY tags per finding

@@ -2,7 +2,7 @@
 
 **Generated:** 2026-05-07 by `/DB:strategize`
 **Synthesized from:** 22 context auditor outputs at `.bulwark/context/`
-**Cross-skill inputs:** `.audit/` (SOS Audit #2), `.bok/reports/2026-05-07-report.md`, `.docs/` (GL Feb 2026)
+**Cross-skill inputs:** `.audit/` (SOS Audit #2), `.bok/reports/2026-05-07-report.md`, `Docs/` (GL Feb 2026)
 **Stacked on:** `.bulwark-history/2026-02-24-ecfd03b/` (Audit #1 — 70 confirmed)
 
 ---

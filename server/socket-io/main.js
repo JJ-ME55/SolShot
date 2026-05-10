@@ -393,7 +393,7 @@ const SHOP_DURATION = 30; // seconds
 // time a player backgrounded for a notification. 2026-05-10 band-aid:
 // bump to 10 minutes so the reconnect window matches the new turn timer
 // below. Real fix is migrating 1v1 onto the v2 async-state model
-// (tracked in .docs/mainnet-roadmap.md as the v2-everywhere bundle).
+// (tracked in Docs/mainnet-roadmap.md as the v2-everywhere bundle).
 const RECONNECT_WINDOW_MS = 10 * 60 * 1000; // 10 min reconnect window
 
 // Tracks active socket IDs per TG user. Used purely as a debug signal —

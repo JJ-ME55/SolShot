@@ -166,7 +166,7 @@ If pass, host runs `/startmatch` (or wait for lobby fill). Match progresses norm
    - SHOT token model: `Docs/SHOT_TOKEN_MODEL.md` → renders, distribution table visible
 3. Click into the B4GN settlement TX link in the README → Solscan loads, Balance Changes show 2.7 / 0.21 / 0.09 split.
 4. Open `Docs/SolShot_Litepaper_v2.1.md` — should 404 (deleted).
-5. Open `.docs/audit-summary.md` — renders cleanly.
+5. Open `Docs/audit-summary.md` — renders cleanly.
 
 **Pass:** All links work, no broken references, no stale docs visible.
 
@@ -214,7 +214,7 @@ If Phase C fails, the wagered group-chat onboarding has a bug that judges will h
 
 Two small additions worth making to keep the public docs in sync with the actual flow:
 
-### 1. `.docs/how-to-play.md` — Setting Up Your Wallet section
+### 1. `Docs/how-to-play.md` — Setting Up Your Wallet section
 
 Add a one-liner under "Steps via Telegram":
 

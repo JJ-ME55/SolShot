@@ -11,7 +11,7 @@ This document is the single source of truth for what needs to happen between the
 - **DB (Dinh's Bulwark) Audit #2** — off-chain stack (Express + Socket.IO + Telegraf + React + Mongo + Privy). Full report: `.bulwark/FINAL_REPORT.md`. Remediation decisions: `Docs/internal/DB_REMEDIATION_DECISIONS.md`.
 - **BOK (Book of Knowledge) Audit #2** — math invariant verification of both programs (41 invariants, 159 tests). Full report: `.bok/reports/2026-05-07-report.md`.
 
-Operational deployment steps (the sequenced commands for the actual mainnet flip) live in `.docs/deployment-sequence.md`.
+Operational deployment steps (the sequenced commands for the actual mainnet flip) live in `Docs/deployment-sequence.md`.
 
 ---
 
@@ -572,7 +572,7 @@ The fix is **one program, one match-flow, async-first.**
 
 7. **Devnet:** after grace period (~24h to let any in-flight v1 matches finish), run `solana program close 4kzrDpV9JxjE27AMg4PQXzGuge9MEYQEFznSPvkBtnH1` to recover ~1.77 SOL of program rent.
 8. **Mainnet:** v1 is **never** deployed to mainnet. Only v2 ships. The litepaper Section 7 and `Docs/SolShot_Litepaper_v2.2.md` are updated to reflect "one Anchor program (escrow-v2)" as the canonical state.
-9. **Audit cross-references** in `.audit/`, `.bok/`, `.bulwark/`, `.docs/` are updated where they cite v1 as a present-tense artifact. Historical citations (e.g. "the Feb audit covered the v1 program") stay as-is — they're factual about a moment in time.
+9. **Audit cross-references** in `.audit/`, `.bok/`, `.bulwark/`, `Docs/` are updated where they cite v1 as a present-tense artifact. Historical citations (e.g. "the Feb audit covered the v1 program") stay as-is — they're factual about a moment in time.
 
 #### 6.9.3 Pre-band-aid (shipped 2026-05-10)
 
@@ -621,7 +621,7 @@ This checklist must pass on devnet before mainnet deployment begins. Each item m
 
 ## Section 8 — Mainnet Deployment Sequence
 
-The operational commands and rollback procedures for the mainnet flip are in `.docs/deployment-sequence.md`. This section provides the high-level order of operations.
+The operational commands and rollback procedures for the mainnet flip are in `Docs/deployment-sequence.md`. This section provides the high-level order of operations.
 
 **Pre-flight (day before):**
 1. Freeze devnet — no code changes after smoke test passes
@@ -646,7 +646,7 @@ The operational commands and rollback procedures for the mainnet flip are in `.d
 - Program: cannot rollback on-chain state, but can pause via `pause_program` to prevent new matches; in-flight matches can still settle/cancel
 - If a critical bug is discovered post-launch: pause both programs immediately via `pause_program` instruction; communicate to users; coordinate refund via `cancel_match` for all active matches; plan hotfix and redeploy via Squads proposal
 
-See `.docs/deployment-sequence.md` for exact commands.
+See `Docs/deployment-sequence.md` for exact commands.
 
 ---
 

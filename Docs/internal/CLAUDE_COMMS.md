@@ -2409,11 +2409,11 @@ TL;DR — full audit pipeline shipped. Asking Fish + Fish-Claude for an outside 
 
 **Ask 1 — Security audit posture review.** Time: 30-45 min.
 
-- Read `.docs/audit-summary.md` (tldr of all 3 audits, 338 lines)
+- Read `Docs/audit-summary.md` (tldr of all 3 audits, 338 lines)
 - Read `Docs/internal/REMEDIATION_DECISIONS.md` (SOS fix-vs-defer, ~250 lines)
 - Read `Docs/internal/DB_REMEDIATION_DECISIONS.md` (DB fix-vs-defer, ~300 lines)
 - Sample 3-5 specific findings from `.audit/findings/` and `.bulwark/context/` to spot-check evidence quality
-- Read `.docs/mainnet-roadmap.md` (sequenced bundles, ~750 lines)
+- Read `Docs/mainnet-roadmap.md` (sequenced bundles, ~750 lines)
 
 Specific questions:
 - Are any of the deferred-to-mainnet items underestimated risk? Did we wave anything off too easily?
@@ -2424,8 +2424,8 @@ Specific questions:
 
 **Ask 2 — GL documentation review.** Time: 45-60 min.
 
-- Skim all 13 docs in `.docs/` (5,442 lines total — see manifest at `.docs/DOC_MANIFEST.md`)
-- Deep-read `.docs/one-pager.md`, `.docs/how-to-play.md`, `.docs/architecture.md`, `.docs/audit-summary.md`
+- Skim all 13 docs in `Docs/` (5,442 lines total — see manifest at `.docs/DOC_MANIFEST.md`)
+- Deep-read `Docs/one-pager.md`, `Docs/how-to-play.md`, `Docs/architecture.md`, `Docs/audit-summary.md`
 
 Specific questions:
 - Is the **player-facing** story tight? `how-to-play.md` had 3 refresh passes; is it now coherent or stitched-together?
@@ -2453,7 +2453,7 @@ Specific questions:
 
 ### Status of @fishyboy-claude branch
 
-- `sandbox/fishyboy` branch hasn't merged in a while. No conflicts expected with the audit work since SVK output is in `.audit/`/`.bok/`/`.bulwark/`/`.docs/` directories that fishyboy-claude likely doesn't touch. Source-level changes in this batch are scoped to: `programs/solshot-escrow/src/lib.rs`, `programs/solshot-escrow-v2/src/lib.rs`, `server/socket-io/main.js` + middleware + a few services, `client/src/screens/Menu/Lobby/Armory.js`, `client/src/components/design/AAR.js`, `client/src/hooks/useMyGamesBadge.js`. Worth a rebase check next time fishyboy-claude boots.
+- `sandbox/fishyboy` branch hasn't merged in a while. No conflicts expected with the audit work since SVK output is in `.audit/`/`.bok/`/`.bulwark/`/`Docs/` directories that fishyboy-claude likely doesn't touch. Source-level changes in this batch are scoped to: `programs/solshot-escrow/src/lib.rs`, `programs/solshot-escrow-v2/src/lib.rs`, `server/socket-io/main.js` + middleware + a few services, `client/src/screens/Menu/Lobby/Armory.js`, `client/src/components/design/AAR.js`, `client/src/hooks/useMyGamesBadge.js`. Worth a rebase check next time fishyboy-claude boots.
 
 — main-claude
 
@@ -2468,7 +2468,7 @@ TL;DR — pre-submission polish night. 11 commits since the audit-pipeline entry
 | Commit | What it does |
 |---|---|
 | `931e93d` | Group-chat: close new-user-bind gap on FREE matches (was wagered-only) + auth timeout fallback |
-| `365105c` | Full litepaper rewrite → v2.2; promote `Docs/SHOT_TOKEN_MODEL.md` from `.docs/` so it's publicly visible on the GitHub root |
+| `365105c` | Full litepaper rewrite → v2.2; promote `Docs/SHOT_TOKEN_MODEL.md` from `Docs/` so it's publicly visible on the GitHub root |
 | `757aee2` | Litepaper Section 10 — name the SVK + MetalegBob attribution paragraph (ack the methodology rather than read like paid third-party firm engagements) |
 | `e1ea17e` | QA round 1, batch A: B1 sign-in gate before balance check / B2 round counter idempotency / B3 leaderboard handle filter / B4 hide white tank in vs_bot / B6 real socket-conn dot replacing fake "254 online" |
 | `6f1bb61` | QA round 1, batch B: B5 mobile TopBar breathing room / B7 Armory "COMING SOON" on non-owned items / B8 iOS long-press text-highlight kill / `server/scripts/wipe-user.mjs` for I2 (Perry Peralta wipe) |
@@ -2537,7 +2537,7 @@ Two-layer design rationale: TutorialOverlay is the field-manual briefing for fre
 **Known smaller items deferred post-hackathon:**
 - `[privyAuth] signature verification failed` warning on the HTTP route (separate from the match flow which works fine — likely PRIVY_APP_SECRET env in Render dashboard)
 - Sync IDL + redeploy escrow `.so` to devnet so on-chain bytecode matches the source after the audit-fix bundles
-- 8 screenshot TODO markers in `.docs/how-to-play.md` — capture during demo recording or after submission
+- 8 screenshot TODO markers in `Docs/how-to-play.md` — capture during demo recording or after submission
 
 ### Status of @fishyboy-claude branch
 

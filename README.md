@@ -30,9 +30,11 @@ Both settle pots atomically with a 90/7/3 split (winner, treasury, ops). All spl
 
 ## Vision
 
-SolShot today is artillery in a Telegram group chat. The roadmap is to become the **social-game layer for crypto group chats**: multiple games (golf, billiards, darts, card battles) on the same backend, multiple chat surfaces (Telegram, then Seekr Mobile, iMessage, WhatsApp), a shared SHOT economy, and an open SDK so other developers can ship group-chat-native wagered games on the same infrastructure.
+SolShot today is artillery in a Telegram group chat. Tomorrow it's the **social-game layer for crypto group chats** — multiple games on one shared on-chain economy, deployed across Telegram, Seekr Mobile, iMessage, and WhatsApp, with an open SDK so other devs can ship group-chat-native wagered games on the same infrastructure.
 
-Artillery is the wedge. Group-chat-native gaming is the prize. See the [litepaper](Docs/SolShot_Litepaper_v2.2.md) and the [SHOT token model](Docs/SHOT_TOKEN_MODEL.md) for the full spec.
+Artillery is the wedge. Group-chat-native gaming is the prize.
+
+See the full forward-looking plan in [`Docs/ROADMAP.md`](Docs/ROADMAP.md) (5 phases, principles, multi-game time-windowed wager mechanic), or the [litepaper](Docs/SolShot_Litepaper_v2.2.md) and [SHOT token model](Docs/SHOT_TOKEN_MODEL.md) for the full spec.
 
 ## 📚 Documentation
 
@@ -42,6 +44,7 @@ Start here, in order of depth:
 |---|---|---|
 | [`.docs/one-pager.md`](.docs/one-pager.md) | The 90-second pitch | 2 min |
 | [`.docs/how-to-play.md`](.docs/how-to-play.md) | Player guide — every match type, every weapon | 10 min |
+| [`Docs/ROADMAP.md`](Docs/ROADMAP.md) | Forward-looking plan — 5 phases, multi-platform expansion, open-SDK end state | 5 min |
 | [`Docs/SolShot_Litepaper_v2.2.md`](Docs/SolShot_Litepaper_v2.2.md) | Full project spec — vision, distribution, on-chain programs, security posture | 20 min |
 | [`Docs/SHOT_TOKEN_MODEL.md`](Docs/SHOT_TOKEN_MODEL.md) | SHOT token model — distribution, emissions, burns, scarcity analysis | 10 min |
 

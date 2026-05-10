@@ -25,7 +25,6 @@ This folder (`Docs/`) is the **public-facing project documentation**. Internal t
 - [`mainnet-roadmap.md`](./mainnet-roadmap.md) - sequenced remediation bundles required before mainnet
 - [`crypto-explainer.md`](./crypto-explainer.md) - onboarding for crypto-newcomer readers
 - [`competitive-landscape.md`](./competitive-landscape.md) - market positioning
-- [`deployment-sequence.md`](./deployment-sequence.md) - deploy order for the mainnet flip
 - [`edge-case-playbook.md`](./edge-case-playbook.md) - operational edge cases
 
 ---

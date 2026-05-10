@@ -47,7 +47,6 @@ SolShot/
 │   ├── mainnet-roadmap.md        # Remediation bundles before mainnet
 │   ├── crypto-explainer.md       # Crypto-newcomer onboarding
 │   ├── competitive-landscape.md  # Market positioning
-│   ├── deployment-sequence.md    # Deploy runbook
 │   ├── edge-case-playbook.md     # Operational edge cases
 │   ├── blog/                     # Marketing copy ready to publish
 │   └── internal/                 # Team operations — see "Back of house" below
@@ -89,7 +88,7 @@ All public-facing project documentation. Order to read it in:
 4. `Docs/SolShot_Litepaper_v2.2.md` — full project spec
 5. `Docs/SHOT_TOKEN_MODEL.md` — token economics
 
-Plus deeper-context companions: `architecture.md`, `security-model.md`, `audit-summary.md`, `mainnet-roadmap.md`, `crypto-explainer.md`, `competitive-landscape.md`, `deployment-sequence.md`, `edge-case-playbook.md`.
+Plus deeper-context companions: `architecture.md`, `security-model.md`, `audit-summary.md`, `mainnet-roadmap.md`, `crypto-explainer.md`, `competitive-landscape.md`, `edge-case-playbook.md`.
 
 `Docs/blog/` holds polished marketing copy ready to publish (`BLOG_WHAT_IS_SOLSHOT.md`, `BLOG_HOW_WAGERING_WORKS.md`).
 
@@ -106,7 +105,7 @@ Includes:
 - **Internal audits:** `AUDIT_2026-05-06_iOS_render_regression.md`, `MOBILE_AUDIT_2026-05-08.md`
 - **QA + ops:** `PRE_SUBMISSION_QA_v2.md`, `EXECUTION_CHECKLIST_audit_sweep.md`
 - **Demo + pitch recording:** `DEMO_VIDEO_CUE_CARDS.md`, `DEMO_VIDEO_SCRIPT_v2.md`, `PITCH_VIDEO_SCRIPT.md`, `PITCH_VIDEO_CUE_CARDS.md`
-- **Setup guides:** `TELEGRAM_PLAN.md`, `TELEGRAM_SETUP.md`, `DAPP_STORE_SETUP.md`, `SOLSHOT_DISCORD_PLAN.md`
+- **Setup + deploy guides:** `TELEGRAM_PLAN.md`, `TELEGRAM_SETUP.md`, `DAPP_STORE_SETUP.md`, `SOLSHOT_DISCORD_PLAN.md`, `deployment-sequence.md`
 - **Launch ops (current era):** `MASTER_LAUNCH_PLAN.md`, `LAUNCH_CHECKLIST.md`, `SOLSHOT_P1_LAUNCH.md`, `HACKATHON_SCOPE.md`, `solshot_frontier_execution_plan.md`, `TODO.md`
 - **Specs (current era):** `SOLSHOT_STAT_CARD_SPEC.md`, `SOLSHOT_SEEKER_AND_4PLAYER_BRIEF.md`, `SOLSHOT_ASSET_MASTER_v2.md`, `SolShot_Weapon_Rebalance_Spec_v2.md`, `GROUP_CHAT_MODE.md`
 - **Prompts:** `SOLSHOT_GPT_ART_PROMPTS.md`, `STARTER_PROMPTS.md`

@@ -11,7 +11,7 @@ This document is the single source of truth for what needs to happen between the
 - **DB (Dinh's Bulwark) Audit #2** - off-chain stack (Express + Socket.IO + Telegraf + React + Mongo + Privy). Full report: `.bulwark/FINAL_REPORT.md`. Remediation decisions: the DB remediation log.
 - **BOK (Book of Knowledge) Audit #2** - math invariant verification of both programs (41 invariants, 159 tests). Full report: `.bok/reports/2026-05-07-report.md`.
 
-Operational deployment steps (the sequenced commands for the actual mainnet flip) live in `Docs/deployment-sequence.md`.
+Operational deployment steps (the sequenced commands for the actual mainnet flip) live in the deployment runbook (internal).
 
 ---
 
@@ -621,7 +621,7 @@ This checklist must pass on devnet before mainnet deployment begins. Each item m
 
 ## Section 8 - Mainnet Deployment Sequence
 
-The operational commands and rollback procedures for the mainnet flip are in `Docs/deployment-sequence.md`. This section provides the high-level order of operations.
+The operational commands and rollback procedures for the mainnet flip are in the deployment runbook (internal). This section provides the high-level order of operations.
 
 **Pre-flight (day before):**
 1. Freeze devnet - no code changes after smoke test passes
@@ -646,7 +646,7 @@ The operational commands and rollback procedures for the mainnet flip are in `Do
 - Program: cannot rollback on-chain state, but can pause via `pause_program` to prevent new matches; in-flight matches can still settle/cancel
 - If a critical bug is discovered post-launch: pause both programs immediately via `pause_program` instruction; communicate to users; coordinate refund via `cancel_match` for all active matches; plan hotfix and redeploy via Squads proposal
 
-See `Docs/deployment-sequence.md` for exact commands.
+See the deployment runbook (internal) for exact commands.
 
 ---
 

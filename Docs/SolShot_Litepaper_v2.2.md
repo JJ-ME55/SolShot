@@ -325,7 +325,7 @@ For full emission tables, milestone schedule, anti-farming protections, deflatio
 
 ### Sell Discipline (Team Allocation)
 
-The 1M team allocation is unlocked at launch with no vesting schedule. This is documented honestly rather than obscured. Vesting contracts create a false sense of security; a solo founder with access to the upgrade authority could circumvent vesting in multiple ways. SolShot opts for transparency: the team has full discretion governed by public commitment rather than unenforceable smart contract constraints.
+The 1M team allocation is unlocked at launch with no vesting schedule. This is documented honestly rather than obscured. Vesting contracts create a false sense of security; anyone with access to the upgrade authority could circumvent vesting in multiple ways, and SolShot's authority key is held by the engineering lead (the structural single-key risk is named openly in Section 10). SolShot opts for transparency: the team has full discretion governed by public commitment rather than unenforceable smart contract constraints.
 
 The team commits to a maximum sell rate of 10% of the team allocation per week, sold into volume rather than against thin liquidity. This is a public commitment, not an on-chain guarantee. Anyone can monitor the team wallet on-chain and verify compliance. Deviation would be immediately visible.
 

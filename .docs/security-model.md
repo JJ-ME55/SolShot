@@ -431,7 +431,7 @@ The on-chain escrow program (Anchor 0.32.1) manages the full lifecycle of a wage
 
 ## Authority Model
 
-SolShot is operated by a solo founder. The escrow program's authority key is a single server keypair (`HPyVPj2VH9yBirr7FMgAJeDH8xJgaMKy5UnwLkjSnovk`) that holds both Solana program upgrade authority and application-level escrow authority.
+SolShot is operated as a small team with single-key custody. The escrow program's authority key is a single server keypair (`HPyVPj2VH9yBirr7FMgAJeDH8xJgaMKy5UnwLkjSnovk`), held by the engineering lead (JJ), that holds both Solana program upgrade authority and application-level escrow authority. This is the structural risk — not the team size — and the security model is built around the key, not the org chart.
 
 This is stated plainly because honesty reads better than obfuscation.
 

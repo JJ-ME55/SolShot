@@ -75,6 +75,6 @@ The Solana gaming landscape has no shortage of ambition. What it lacks is a live
 
 SolShot fills that gap with a concrete thesis: **the server owns the physics, the chain owns the money, neither player nor operator can cheat either.**
 
-Solo founder. Built with AI. Three security audits. Live on mainnet at [solshot.gg](https://solshot.gg).
+Two-person team — JJ on the engineering, John Fish on product / strategy / design. AI-augmented build. Three security audits. Live on devnet at [solshot.gg](https://solshot.gg); mainnet pending audit-fix redeploy.
 
 Skill-based SOL wagering -- live, not a demo.

@@ -12,7 +12,7 @@ network: devnet
 
 Operational procedures for deploying and managing the SolShot stack: Anchor escrow programs (v1 + v2), Express/Socket.IO server, and React/Phaser client.
 
-**Audience:** Solo founder. Not polished documentation — a step-by-step reference for when you are at the terminal before a launch.
+**Audience:** Engineering lead at the terminal (JJ). Not polished documentation — a step-by-step reference for when you are running the deploy commands before a launch.
 
 ---
 

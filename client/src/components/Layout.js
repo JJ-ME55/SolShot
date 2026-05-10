@@ -4,6 +4,7 @@ import { TxToastHost } from './TxToast';
 import WelcomeModal from './WelcomeModal';
 import TgWebViewBanner from './TgWebViewBanner';
 import IosInstallBanner from './IosInstallBanner';
+import FeedbackButton from './FeedbackButton';
 
 /* dApp browser detection banner — shown when wallet-injected mobile browser locks portrait */
 function DAppBrowserBanner() {
@@ -220,11 +221,16 @@ function Layout({ children }) {
       {/* Global toast host — listens for `solshot:toast` window events
           so any screen can fire showToast(...) without prop drilling. */}
       <TxToastHost />
-      {/* First-sign-in welcome — fires once when isFreshSignIn flips
+      {/* First-sign-in welcome - fires once when isFreshSignIn flips
           true, prompts the user to fund 0.05 SOL via Apple/Google Pay.
           Self-gates via localStorage so dismiss persists across
           refreshes. */}
       <WelcomeModal />
+      {/* Floating feedback / bug-report button (bottom-left). Hidden
+          during active battles to avoid overlapping the FIRE button.
+          Posts to /api/feedback on the server, writes to Mongo
+          Feedback collection for triage. */}
+      <FeedbackButton />
     </>
   );
 }

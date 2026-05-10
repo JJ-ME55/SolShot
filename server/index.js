@@ -275,6 +275,65 @@ app.post('/api/csp-report', express.json({ type: 'application/csp-report' }), (r
     res.status(204).end();
 });
 
+// ─── Feedback / bug-report endpoint ──────────────────────────────────────
+//
+// Public, low-friction reporting from the in-game feedback button. No auth
+// required. Rate limited to 5 per IP per hour to keep abuse manageable.
+// Writes to the Feedback collection in Mongo for human triage.
+//
+// POST body: { message, kind?, contextHint?, handle?, walletAddress? }
+//
+// Response: { ok: true } on success, { ok: false, error } on validation
+// failure or DB miss.
+const feedbackLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,    // 1 hour
+    max: 5,                       // 5 reports per IP per hour
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { ok: false, error: 'rate_limited' },
+});
+app.post('/api/feedback', feedbackLimiter, async (req, res) => {
+    try {
+        const { message, kind, contextHint, handle, walletAddress } = req.body || {};
+
+        // Minimum validation - everything else has Mongoose schema enforcement
+        if (typeof message !== 'string' || message.trim().length === 0) {
+            return res.status(400).json({ ok: false, error: 'message_required' });
+        }
+        if (message.length > 2000) {
+            return res.status(400).json({ ok: false, error: 'message_too_long' });
+        }
+        const allowedKinds = ['bug', 'feedback', 'idea'];
+        const safeKind = allowedKinds.includes(kind) ? kind : 'feedback';
+
+        // Hash IP rather than storing it raw - lets us spot abuse without
+        // building a PII pile. crypto-import lazy so the route stays fast
+        // when DB is offline.
+        const { createHash } = await import('crypto');
+        const rawIp = (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').toString().split(',')[0].trim();
+        const ipHash = rawIp ? createHash('sha256').update(rawIp).digest('hex').slice(0, 16) : '';
+
+        const Feedback = (await import('./models/Feedback.js')).default;
+        const doc = await Feedback.create({
+            message: message.trim(),
+            kind: safeKind,
+            contextHint: typeof contextHint === 'string' ? contextHint.slice(0, 1000) : '',
+            handle: typeof handle === 'string' ? handle.slice(0, 32) : '',
+            walletAddress: typeof walletAddress === 'string' ? walletAddress.slice(0, 64) : '',
+            userAgent: (req.headers['user-agent'] || '').toString().slice(0, 500),
+            ip: ipHash,
+        });
+
+        // Greppable log line for ops triage. Includes the doc id so we
+        // can pull the full record from Mongo without scanning logs.
+        console.log(`[Feedback] ${safeKind} id=${doc._id} from=${doc.handle || ipHash || 'anon'} len=${doc.message.length}`);
+        return res.json({ ok: true });
+    } catch (err) {
+        console.warn('[Feedback] failed:', err?.message || err);
+        return res.status(500).json({ ok: false, error: 'server_error' });
+    }
+});
+
 
 // ─── Challenge endpoints (Phase 3 — Telegram Mini App) ───────────────────
 //

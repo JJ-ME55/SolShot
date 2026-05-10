@@ -57,7 +57,6 @@ We ran three audit pipelines from the [Solana Vibes Kit](https://github.com/Meta
 | **SOS** | On-chain Anchor programs (vulnerability surface) | [`.audit/FINAL_REPORT.md`](.audit/FINAL_REPORT.md) |
 | **BOK** | Math invariants (settlement, fees, refunds) - 159 verification tests passing | [`.bok/reports/`](.bok/reports/) |
 | **DB** | Off-chain server (auth, signing, Privy integration) | [`.bulwark/FINAL_REPORT.md`](.bulwark/FINAL_REPORT.md) |
-| **GL** | Documentation pipeline (architecture, security model, mainnet roadmap) | [`Docs/`](Docs/) |
 
 Top-line summary: [`Docs/audit-summary.md`](Docs/audit-summary.md). Mainnet remediation roadmap: [`Docs/mainnet-roadmap.md`](Docs/mainnet-roadmap.md).
 
@@ -192,14 +191,14 @@ SolShot/
 │   │                             # security model, audit summary, blog/, etc.)
 │   ├── README.md                     # Doc-index that auto-renders on click
 │   ├── blog/                         # Blog drafts (ready to publish)
-│   └── internal/                     # Team operations (back of house)
+│   └── internal/                     # Internal team working docs
 ├── .audit/                       # SVK on-chain audit (SOS) output
 ├── .bok/                         # SVK math-invariants audit (BOK) output
 ├── .bulwark/                     # SVK off-chain audit (DB) output
 └── _archive/                     # Superseded docs and historical artefacts
 ```
 
-All public docs live in `Docs/`. Back-of-house team operations live in `Docs/internal/`. SVK audit pipelines write to the three dot-folders at root. Anything stale or superseded lives in `_archive/`.
+All public docs live in `Docs/`. Internal team working docs live in `Docs/internal/`. SVK audit pipelines write to the three dot-folders at root. Anything stale or superseded lives in `_archive/`.
 
 ## Contributing
 

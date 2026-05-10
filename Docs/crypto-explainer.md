@@ -1,26 +1,3 @@
----
-doc_id: crypto-explainer
-title: "How Wagering Works"
-wave: 2
-status: current
-date: 2026-05-07
-decisions_referenced:
-  - crypto-explainer/D1
-  - crypto-explainer/D2
-  - crypto-explainer/D3
-  - crypto-explainer/D4
-  - crypto-explainer/D5
-  - escrow-flow/D1
-  - escrow-flow/D2
-  - escrow-flow/D3
-  - escrow-flow/D4
-  - escrow-flow/D7
-  - security-posture/D6
-  - security-posture/D8
-  - security-posture/D12
-  - architecture/D1
----
-
 # How Wagering Works
 
 Your SOL goes into a locked vault. Winner takes 90%.
@@ -123,7 +100,7 @@ Match ends. Server triggers settlement. One transaction: winner gets 90%, treasu
 
 ### "What if I disconnect?"
 
-The 30-second reconnect window is currently **disabled** for 1v1 matches. If you disconnect, the match resolves immediately based on who was winning:
+The 10-minute reconnect window is currently **disabled** for 1v1 matches. If you disconnect, the match resolves immediately based on who was winning:
 
 - **One player is ahead** (more HP remaining, or leading on rounds won): That player wins the pot. If you're losing and you walk away, you lose.
 - **Match is perfectly tied** (same HP, same rounds won): Both players get a full refund. Nobody wins, nobody loses.
@@ -182,7 +159,7 @@ Group-chat matches (started with `/customgame` in a Telegram group) use the same
 
 **The vault works the same way.** Each player deposits their wager. The pot scales with the number of depositors. Settlement splits 90/7/3 to winner/treasury/ops.
 
-**The timeline is different.** Instead of a 60-second per-turn timer, group-chat matches allow up to 12 hours per turn. Matches can run over multiple days. The on-chain escrow holds funds for the full duration.
+**The timeline is different.** Instead of a 10-minute per-turn timer, group-chat matches allow up to 12 hours per turn. Matches can run over multiple days. The on-chain escrow holds funds for the full duration.
 
 **Idle auto-forfeit.** If a player misses 3 consecutive turns without firing, they are automatically forfeited from the match. The match continues with the remaining players. Their wager stays in the pot.
 
@@ -242,8 +219,8 @@ Three independent security analyses ran before mainnet:
 
 All findings, severity ratings and fix decisions are published openly:
 
-- On-chain findings: `.audit/` and `Docs/internal/REMEDIATION_DECISIONS.md`
-- Off-chain findings: `.bulwark/` and `Docs/internal/DB_REMEDIATION_DECISIONS.md`
+- On-chain findings: `.audit/` and the SOS remediation log
+- Off-chain findings: `.bulwark/` and the DB remediation log
 - Math invariants: `.bok/`
 
 SolShot is currently on devnet. Before mainnet with real funds, additional hardening is required (primarily authority key management). That work is documented and planned. Nothing is hidden.
@@ -283,7 +260,7 @@ On-chain operations add about 2-3 seconds total per match: less than 2 seconds f
 | What does the winner get? | 90% of the total pot, sent directly to their wallet. |
 | What's the fee? | 10% (7% treasury, 3% operations). |
 | Do I need a Phantom wallet? | No. Privy creates an embedded wallet when you sign in with email, Google, or Telegram. |
-| What if I disconnect in a 1v1? | The player in the lead wins. If perfectly tied, both get refunded. The 30s reconnect window is currently disabled. |
+| What if I disconnect in a 1v1? | The player in the lead wins. If perfectly tied, both get refunded. The 10-minute reconnect window is currently disabled. |
 | What if the server crashes? | Your SOL is safe. Three independent recovery paths ensure funds are never permanently locked. |
 | How long until I can self-recover funds? | 2 hours for 1v1 matches. 24 hours after match-end for group-chat matches. |
 | How long does settlement take? | About 2 seconds. |

@@ -1,18 +1,6 @@
----
-doc_id: deployment-sequence
-title: "SolShot Deployment Runbook"
-status: current
-requires: ["architecture-decisions", "escrow-flow-decisions", "security-posture-decisions"]
-sources: ["escrow-flow", "security-posture", "token-economics", "architecture", "REMEDIATION_DECISIONS", "DB_REMEDIATION_DECISIONS"]
-last_updated: 2026-05-07
-network: devnet
----
-
 # SolShot Deployment Runbook
 
-Operational procedures for deploying and managing the SolShot stack: Anchor escrow programs (v1 + v2), Express/Socket.IO server, and React/Phaser client.
-
-**Audience:** Engineering lead at the terminal (JJ). Not polished documentation - a step-by-step reference for when you are running the deploy commands before a launch.
+Operational reference for deploying and managing the SolShot stack: Anchor escrow programs (v1 + v2), Express/Socket.IO server, and React/Phaser client. Step-by-step commands for engineering use during launch and post-launch operations.
 
 ---
 
@@ -107,7 +95,7 @@ Winner amount is the remainder (`total - treasury - ops`) to prevent dust loss f
 
 ### First 3-Player Group-Chat Auto-Settle - 2026-05-06
 
-- Settlement TX: [`4ja8VKp...`](https://solscan.io/tx/4ja8VKp?cluster=devnet) _(expand short TX ID when referencing)_
+- Settlement TX: [`4ja8VKp...`](https://solscan.io/tx/4ja8VKp?cluster=devnet)
 - Notes: N-player v2 path. Auto-settle triggered by server on game end.
 
 ---
@@ -906,7 +894,7 @@ When the program ID changes (fresh deploy), update all of these:
 
 ### Appendix D - Deferred-to-Mainnet Finding Summary
 
-Audit findings explicitly deferred to pre-mainnet bundles. Full details in `Docs/internal/REMEDIATION_DECISIONS.md` (SOS on-chain) and `Docs/internal/DB_REMEDIATION_DECISIONS.md` (off-chain).
+Audit findings explicitly deferred to pre-mainnet bundles. Full details in the SOS remediation log (SOS on-chain) and the DB remediation log (off-chain).
 
 **Must-fix before mainnet:**
 - SOS H001 - one-step authority transfer (no propose/accept)

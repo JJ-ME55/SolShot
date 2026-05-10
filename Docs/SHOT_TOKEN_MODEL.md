@@ -1,19 +1,3 @@
----
-doc_id: token-economics
-title: "SHOT Token Model"
-wave: 2
-status: draft
-decisions_referenced:
-  - token-economics/D1
-  - token-economics/D2
-  - token-economics/D3
-  - token-economics/D4
-  - token-economics/D5
-  - token-economics/D6
-  - token-economics/D7
-  - competition-pitch/D3
----
-
 # SHOT Token Model
 
 > 10 million fixed supply. Mint authority burned. Supply can only decrease.
@@ -42,7 +26,7 @@ The entire 10M supply is allocated at genesis. There are no future emissions fro
 |------------|--------|------------|---------|---------|
 | **Reward Pool** | 7,000,000 | 70% | Locked in PDA on-chain | Milestone-gated emissions to players |
 | **Treasury** | 1,500,000 | 15% | Squads multisig | Ecosystem development, partnerships, liquidity incentives |
-| **Team** | 1,000,000 | 10% | Founder wallet, unlocked at launch | Development, infrastructure, operations |
+| **Team** | 1,000,000 | 10% | Team wallet, unlocked at launch | Development, infrastructure, operations |
 | **Initial Liquidity** | 500,000 | 5% | Meteora DAMM V2 pool | DEX liquidity for secondary market trading |
 
 **Why 70% to rewards:** Most tokens flow to players, not insiders. The reward pool is the largest allocation by far because SolShot's thesis is that the people who play the game should own the majority of the token supply. The heavy reward allocation makes the "play to earn" promise credible rather than decorative.
@@ -208,7 +192,7 @@ This two-path model ensures that the majority of SHOT supply flows to active pla
 | **Initial Liquidity** | 500,000 SHOT (5% of supply) paired with SOL |
 | **Access** | Any Solana swap interface via Jupiter routing |
 
-**Meteora DAMM V2** provides concentrated liquidity with automatic rebalancing. This was selected over Raydium (referenced in litepaper v2.0 but now outdated) for its superior capital efficiency and dynamic fee structure.
+**Meteora DAMM V2** provides concentrated liquidity with automatic rebalancing. This was selected for its superior capital efficiency and dynamic fee structure.
 
 **Jupiter aggregation** ensures that SHOT is discoverable and tradeable from any Solana wallet or DEX frontend. Players do not need to navigate directly to Meteora -- Jupiter routes through the best available pool automatically.
 

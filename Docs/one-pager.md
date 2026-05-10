@@ -1,11 +1,3 @@
----
-doc_id: one-pager
-title: "SolShot One-Pager"
-updated: 2026-05-07
-network: devnet
-status: live
----
-
 # SolShot
 
 ### Artillery duels in your Telegram group chat. Wager SOL. Settle on-chain.
@@ -27,7 +19,7 @@ SolShot is a skill-based multiplayer artillery game (Pocket Tanks style) where p
 
 **The vision.** SolShot is the first game on a bigger platform: a social-game layer for crypto group chats. Multiple game types (golf, darts, billiards, card battles) on the same async-turn-based backend, with the same SHOT economy across the same chat surfaces. Telegram first, then Seekr Mobile, iMessage and WhatsApp.
 
-**The moat.** Privy embedded wallets (email, Google or Telegram OAuth, no seed phrases) make onboarding straightforward for players who have never touched a Solana wallet. Frictionless entry into a wagered skill game is a rare combination.
+**The moat.** Privy embedded wallets (email, Google or Telegram OAuth, no seed phrases) make onboarding straightforward for players who have never touched a Solana wallet.
 
 ---
 
@@ -113,7 +105,7 @@ Everything below is shipped and live on devnet today.
 
 ## Audit transparency
 
-Three independent audits ran before mainnet. Most hackathon submissions have zero. We shipped all of them with remediation logs included.
+Three independent audits ran ahead of mainnet. Most hackathon submissions have zero. We shipped all of them with remediation logs included.
 
 ### The three audits
 
@@ -125,22 +117,21 @@ Three independent audits ran before mainnet. Most hackathon submissions have zer
 
 ### What was fixed
 
-Two fix bundles shipped to `main`:
+Three fix bundles shipped to `main`:
 
-- **Commit `7296e95`.** 9 of 50 SOS findings applied: settle-authority checks, fee math precision, lamport overflow guards, CSPRNG for room IDs, terrain seeds and spawn positions, `helmet` plus `express-rate-limit`, create-room throttle.
-- **Commit `5f2acec`.** BOK Audit #2 verification suite added. 159 tests passing, confirming all escrow math invariants hold (90/7/3 split, pot = wager × depositor count, lamport rounding).
-- **Commit `348f109`.** DB fix bundle: authentication hardening, rate limiting, input validation improvements.
+- **SOS fix bundle.** 9 of 50 SOS findings applied: settle-authority checks, fee math precision, lamport overflow guards, CSPRNG for room IDs, terrain seeds and spawn positions, helmet plus express-rate-limit, create-room throttle.
+- **BOK verification suite.** 159 tests passing, confirming all escrow math invariants hold (90/7/3 split, pot = wager × depositor count, lamport rounding).
+- **DB fix bundle.** Authentication hardening, rate limiting, input validation improvements.
 
 ### What was deferred
 
-Higher-complexity SOS findings (re-entrancy patterns, full formal verification) are logged with rationale in `Docs/internal/REMEDIATION_DECISIONS.md`. Nothing was quietly dropped. Every finding has a disposition.
+Higher-complexity SOS findings (re-entrancy patterns, full formal verification) are logged with rationale in the remediation log alongside each audit report. Nothing was quietly dropped. Every finding has a disposition.
 
 ### Audit output documents
 
-- `Docs/SOS_FINAL_REPORT.md`. Full 50-finding SOS report.
+- `.audit/FINAL_REPORT.md`. Full SOS report.
 - `.bulwark/FINAL_REPORT.md`. DB final report.
 - `.bok/results/summary.md`. BOK math verification summary.
-- `Docs/internal/REMEDIATION_DECISIONS.md`. Finding-by-finding disposition log.
 
 ---
 

@@ -1,20 +1,3 @@
----
-doc_id: edge-case-playbook
-title: "Edge Case & Recovery Playbook"
-status: current
-created: 2026-02-24
-updated: 2026-05-07
-sources:
-  - escrow-flow-decisions
-  - crypto-explainer-decisions
-  - security-posture-decisions
-  - architecture-decisions
-  - sos-audit-2-final-report
-  - db-audit-2-final-report
-  - Docs/internal/REMEDIATION_DECISIONS.md
-  - Docs/internal/DB_REMEDIATION_DECISIONS.md
----
-
 # Edge Case & Recovery Playbook
 
 SolShot handles real SOL in real-time multiplayer matches. This document catalogs every failure mode we have identified, what the system does in response, what the player sees, and where the funds end up. The governing design principle:
@@ -48,9 +31,9 @@ At no point in any scenario can funds be permanently locked. If the server vanis
 **What the system does:**
 
 1. The server detects the Socket.IO disconnect event immediately.
-2. A 30-second reconnect window opens (`RECONNECT_WINDOW_MS = 30000`). The server stores Player A's session in `pendingReconnects` keyed by wallet address.
-3. If Player A reconnects within 30 seconds, their new socket is mapped to the old player slot. The match resumes seamlessly. Opponent sees a "reconnected" notification.
-4. If the 30-second window expires without reconnect, the server fires `cleanupRoom` with reason `reconnect_timeout`.
+2. A 10-minute reconnect window opens (`RECONNECT_WINDOW_MS = 600000`). The server stores Player A's session in `pendingReconnects` keyed by wallet address.
+3. If Player A reconnects within the window, their new socket is mapped to the old player slot. The match resumes seamlessly. Opponent sees a "reconnected" notification.
+4. If the window expires without reconnect, the server fires `cleanupRoom` with reason `reconnect_timeout`.
 5. The server evaluates game state using a tiered decision chain: round wins first, then HP, then score.
 6. Because Player B is ahead, Player B is declared the winner.
 7. The server transitions the match to `settling` state (preventing double-settlement) and calls `settleMatchEscrow` with Player B's wallet as the winner.
@@ -58,7 +41,7 @@ At no point in any scenario can funds be permanently locked. If the server vanis
 **What the players see:**
 
 - Player A (disconnected): sees nothing during the window. If they return to the app later, they see a loss result.
-- Player B (remaining): sees an "opponent disconnected" banner with a 30-second countdown, followed by a win screen with settlement confirmation.
+- Player B (remaining): sees an "opponent disconnected" banner with a countdown, followed by a win screen with settlement confirmation.
 
 **Funds outcome:** Standard settlement - Player B receives 90% of the pot. Treasury receives 7%. Ops receives 3%. PDA is closed.
 
@@ -70,7 +53,7 @@ At no point in any scenario can funds be permanently locked. If the server vanis
 
 **What the system does:**
 
-1. Same 30-second reconnect window as Scenario 1.
+1. Same 10-minute reconnect window as Scenario 1.
 2. If no reconnect, the server evaluates the tiered decision chain (`roundWins -> HP -> scores`).
 3. Because Player A was ahead, Player A is declared the winner despite being the one who disconnected.
 
@@ -89,7 +72,7 @@ At no point in any scenario can funds be permanently locked. If the server vanis
 
 **What the system does:**
 
-1. Same 30-second reconnect window.
+1. Same 10-minute reconnect window.
 2. If no reconnect, the server evaluates the decision chain: rounds equal, HP equal, scores equal.
 3. The `shouldRefund` flag is set to `true`.
 4. The server calls `cancelMatchEscrow` instead of `settleMatchEscrow`, refunding both players their full wager.
@@ -167,9 +150,9 @@ At no point in any scenario can funds be permanently locked. If the server vanis
 
 **What the system does:**
 
-1. Two disconnect events fire in rapid succession. Each triggers its own 30-second reconnect window.
-2. If one player reconnects within 30 seconds, the match can continue (the other player's timer is still running).
-3. If neither reconnects within 30 seconds, the first timer to expire triggers `cleanupRoom` with `reconnect_timeout`.
+1. Two disconnect events fire in rapid succession. Each triggers its own 10-minute reconnect window.
+2. If one player reconnects within the window, the match can continue (the other player's timer is still running).
+3. If neither reconnects within the window, the first timer to expire triggers `cleanupRoom` with `reconnect_timeout`.
 4. The server evaluates game state using the same decision chain (round wins, HP, score). Settlement or refund proceeds normally.
 5. The second disconnect timer fires but finds the room already removed - it no-ops safely.
 
@@ -319,7 +302,7 @@ The on-chain `settle_match` instruction enforces `SETTLEMENT_TIMEOUT_SECONDS = 3
 
 **What the player sees:** The deposit or action modal may hang or show an error. On wagered matches, the 2-minute deposit timeout fires and refunds the opponent if they had already deposited.
 
-**Workaround (NOW):** The client-side auth-reset-on-reconnect flow handles automatic re-authentication. If the player dismisses the re-auth prompt or it fails, they must manually refresh the app, re-authenticate with Privy, and rejoin. The reconnect window (30 seconds) may have already elapsed, so the match may be resolved before they can return.
+**Workaround (NOW):** The client-side auth-reset-on-reconnect flow handles automatic re-authentication. If the player dismisses the re-auth prompt or it fails, they must manually refresh the app, re-authenticate with Privy, and rejoin. The reconnect window may have already elapsed, so the match may be resolved before they can return.
 
 **Long-term fix:** Proactive session refresh before match start; extend deposit window with explicit "signing in" state in the UI. Bundle C.
 
@@ -569,9 +552,9 @@ These properties hold across every scenario in this document:
 
 | # | Scenario | Resolution | Funds Outcome |
 |---|----------|------------|---------------|
-| 1 | Disconnect mid-match (opponent winning) | 30s reconnect window, then forfeit to leader | 90/7/3 settlement to leader |
-| 2 | Disconnect mid-match (disconnector winning) | 30s reconnect window, then settlement to leader | 90/7/3 settlement to disconnected player |
-| 3 | Disconnect mid-match (tied) | 30s reconnect window, then refund | Full refund to both |
+| 1 | Disconnect mid-match (opponent winning) | 10-minute reconnect window, then forfeit to leader | 90/7/3 settlement to leader |
+| 2 | Disconnect mid-match (disconnector winning) | 10-minute reconnect window, then settlement to leader | 90/7/3 settlement to disconnected player |
+| 3 | Disconnect mid-match (tied) | 10-minute reconnect window, then refund | Full refund to both |
 | 4 | Disconnect during funding | 2-min deposit timeout, cancel escrow | Full refund to depositor (if any) |
 | 5 | Server crash mid-match | Settle on last known state at restart | 90/7/3 or refund if tied |
 | 6 | Server crash during settlement | MongoDB `settling` state + on-chain state check prevents double-settle; retry on restart | Correct 90/7/3 settlement (exactly once) |
@@ -611,4 +594,4 @@ The following edge cases have no current workaround beyond documentation and mon
 | SOS H024 + DB H014 | Non-contiguous mask + server desync compound | ACCEPT; authority rescue path documented above | SOS Bundle 2 + DB Bundle 3 |
 | SOS H044 / DB H012 | Single hot wallet for upgrade + application authority | ACCEPT; Squads multisig migration pre-mainnet | SOS Bundle 1 / DB Bundle 2 |
 
-For full attack walkthroughs and CVSS scores, see `.audit/FINAL_REPORT.md` (SOS on-chain audit) and `.bulwark/FINAL_REPORT.md` (DB off-chain audit). For the remediation decision log, see `Docs/internal/REMEDIATION_DECISIONS.md` and `Docs/internal/DB_REMEDIATION_DECISIONS.md`.
+For full attack walkthroughs and CVSS scores, see `.audit/FINAL_REPORT.md` (SOS on-chain audit) and `.bulwark/FINAL_REPORT.md` (DB off-chain audit). For the remediation decision log, see the SOS remediation log and the DB remediation log.

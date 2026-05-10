@@ -312,7 +312,7 @@ SHOT is the utility token of the SolShot ecosystem. It is earned exclusively thr
 |---|---|---|---|---|
 | Reward Pool | 7,000,000 | 70% | On-chain PDA | Milestone-gated emissions to players |
 | Treasury | 1,500,000 | 15% | Squads multisig | Ecosystem development, partnerships, liquidity |
-| Team | 1,000,000 | 10% | Founder wallet, no vesting | Development, infrastructure, operations |
+| Team | 1,000,000 | 10% | Team wallet, no vesting | Development, infrastructure, operations |
 | Initial Liquidity | 500,000 | 5% | Meteora DAMM v2 pool | Secondary market trading |
 
 70% to rewards is the largest allocation by design. SolShot's thesis is that the people who play the game should own the majority of supply. The heavy reward weighting makes "play to earn" credible rather than decorative.
@@ -375,15 +375,15 @@ All findings are published openly with file-and-line evidence and a fix-or-defer
 
 Two fix bundles shipped to `main` before submission.
 
-**SOS fix bundle (commit `7296e95`).** 9 of 50 findings applied. Settle-authority hardening (`has_one = authority` on CreateMatch.config), fee math precision, lamport overflow guards, CSPRNG for room IDs and terrain seeds and spawn positions, helmet + express-rate-limit, create-room throttle. Closes the partial-refund theft path that could have stolen up to 900 SOL per maximum group-chat match.
+**SOS fix bundle.** 9 of 50 findings applied. Settle-authority hardening (`has_one = authority` on CreateMatch.config), fee math precision, lamport overflow guards, CSPRNG for room IDs and terrain seeds and spawn positions, helmet + express-rate-limit, create-room throttle. Closes the partial-refund theft path that could have stolen up to 900 SOL per maximum group-chat match.
 
-**DB fix bundle (commit `348f109`).** 16 of 113 findings applied. Privy/TG identity bridge verification (closes the H120 cross-skill chain), `requirePrivyAuth` hard-503 in production when secrets missing, `refundWager` proper failure propagation, auth gates on six previously-unguarded socket events (`shoot`, `acceptChallenge`, `declineChallenge`, `clientDebugLog`, `getGroupMatch`, `/api/challenge/:code/cancel`), turn-sequence nonce required, `DebugAuthOverlay` removed from production builds, Mongoose `runValidators` global, CSP origins migrated from Dynamic to Privy, `express-rate-limit` IPv6 bypass patched, timing-safe admin key compare.
+**DB fix bundle.** 16 of 113 findings applied. Privy/TG identity bridge verification (closes the H120 cross-skill chain), `requirePrivyAuth` hard-503 in production when secrets missing, `refundWager` proper failure propagation, auth gates on six previously-unguarded socket events (`shoot`, `acceptChallenge`, `declineChallenge`, `clientDebugLog`, `getGroupMatch`, `/api/challenge/:code/cancel`), turn-sequence nonce required, `DebugAuthOverlay` removed from production builds, Mongoose `runValidators` global, CSP origins migrated from Dynamic to Privy, `express-rate-limit` IPv6 bypass patched, timing-safe admin key compare.
 
-**BOK verification suite (commit `5f2acec`).** 159 property tests across 41 invariants verify that all SOS fix-bundle constants are non-regressive. 90/7/3 split holds, pot equals wager × deposits for every valid combination, lamport rounding stays under 2 lamports across the full BPS surface. The post-fix code passes every math invariant.
+**BOK verification suite.** 159 property tests across 41 invariants verify that all SOS fix-bundle constants are non-regressive. 90/7/3 split holds, pot equals wager × deposits for every valid combination, lamport rounding stays under 2 lamports across the full BPS surface. The post-fix code passes every math invariant.
 
 ### What Was Deferred to Mainnet
 
-Higher-complexity findings are documented openly in `Docs/internal/REMEDIATION_DECISIONS.md` and `Docs/internal/DB_REMEDIATION_DECISIONS.md`. Honest disclosure of what's still open.
+Higher-complexity findings are documented openly in the SOS remediation log and the DB remediation log. Honest disclosure of what's still open.
 
 **Bundle A - Pre-mainnet must-fix (small, deferred for sequencing):**
 
@@ -404,7 +404,7 @@ npm CVEs (`socket.io-parser` DoS, `path-to-regexp` ReDoS, `handlebars` JS inject
 
 **Bundle D - Cross-audit mainnet hardening:**
 
-- H120 - Cross-skill compound (DB Privy fail-open + SOS one-step authority rotation). DB H002 closed at the entry point in commit `348f109`; broader authority-hardening design tracked here.
+- H120 - Cross-skill compound (DB Privy fail-open + SOS one-step authority rotation). DB H002 closed at the entry point; broader authority-hardening design tracked here.
 - H011 / H082 - Escrow keypair zeroisation reverted. Depends on web3.js change OR architectural rotation policy.
 - H084 - `@privy-io/server-auth` deprecated. Migrate to `@privy-io/node`.
 
@@ -419,8 +419,8 @@ npm CVEs (`socket.io-parser` DoS, `path-to-regexp` ReDoS, `handlebars` JS inject
 - `.audit/FINAL_REPORT.md` - SOS full report, all 50 findings with CVSS scores and attack walkthroughs
 - `.bulwark/FINAL_REPORT.md` - DB full report, all 113 findings with file:line evidence
 - `.bok/reports/2026-05-07-report.md` - BOK math verification, 41 invariants, 159 tests, per-function findings
-- `Docs/internal/REMEDIATION_DECISIONS.md` - SOS fix-vs-defer disposition log
-- `Docs/internal/DB_REMEDIATION_DECISIONS.md` - DB fix-vs-defer disposition log
+- the SOS remediation log - SOS fix-vs-defer disposition log
+- the DB remediation log - DB fix-vs-defer disposition log
 - `Docs/audit-summary.md` - single-page overview, all three audits combined
 
 ---
@@ -490,9 +490,9 @@ All share the same SHOT economy, the same Privy wallet stack, the same async-tur
 - **Twitter:** @SolShotGG
 - **Discord:** discord.gg/solshot
 
-### Founders
+### Team
 
-**Jamie Abrahams** - Founder. Product, architecture, security audits, on-chain implementation. AI-augmented build with Claude Code: directed the Anchor work, ran the audit pipeline, owns the product calls.
+**Jamie Abrahams** - Founder. Product, architecture, security audits, on-chain implementation.
 
 **Fish** - Co-founder. Product narrative, video, community, growth.
 

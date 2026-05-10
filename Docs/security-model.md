@@ -1,27 +1,10 @@
----
-doc_id: security-model
-title: "SolShot Security Posture"
-version: 2.0
-status: current
-date: 2026-05-07
-audience: judges, players, contributors
-codebase_refs:
-  - "7296e95 (SOS fix bundle - on-chain)"
-  - "5f2acec (BOK verification suite - tests)"
-  - "348f109 (DB fix bundle - off-chain)"
-audits:
-  - "SOS Audit #2 - 2026-05-07 (50 findings, 9 fixed)"
-  - "BOK Audit #2 - 2026-05-07 (41 invariants, 159/159 tests passing)"
-  - "DB Audit #2 - 2026-05-07 (~113 findings, 16 fixed)"
----
-
 # Security Posture
 
 > **The server owns the physics. The chain owns the money. Neither player nor operator can cheat either.**
 
 SolShot is a 1v1–10-player artillery game where real SOL is wagered through on-chain escrow. The security architecture enforces a hard boundary: the server is authoritative over gameplay (physics, turns, damage), while the Solana blockchain is authoritative over funds (deposits, payouts, refunds). The escrow program's Anchor constraints guarantee that funds can only move to addresses registered at match creation - even a compromised server key cannot redirect funds to an unregistered wallet.
 
-This document reflects the state after three independent security analyses (May 2026 round) and the remediation commits that followed. Twenty-five findings were fixed across two source commits (`7296e95`, `348f109`); approximately fifty findings are explicitly deferred to the pre-mainnet hardening pass.
+This document reflects the state after three independent security analyses (May 2026 round) and the remediation commits that followed. Twenty-five findings were fixed across two source commits (the SOS fix commit, the DB fix commit); approximately fifty findings are explicitly deferred to the pre-mainnet hardening pass.
 
 **Current verdict (all three auditors):** safe for hackathon devnet use; not yet safe for mainnet deployment with real funds. Bundles 1–4 in the roadmap section must land first.
 
@@ -116,10 +99,10 @@ Three independent analyses were performed in May 2026, stacked on the February 2
 ### SOS (Stronghold of Security) - On-Chain Programs
 
 **Scope:** `programs/solshot-escrow/src/lib.rs` (v1, 962 LOC) + `programs/solshot-escrow-v2/src/lib.rs` (v2, 1020 LOC)
-**Ref at audit:** `226c0cd` | **Post-fix ref:** `7296e95`
+**Ref at audit:** the audit baseline | **Post-fix ref:** the SOS fix commit
 **Methodology:** 6 parallel context auditors (access control, arithmetic, state machine, CPI, token economics, timing), 50 attack hypotheses.
 
-| Severity | Total | Fixed in `7296e95` | Deferred |
+| Severity | Total | Fixed in the SOS fix commit | Deferred |
 |----------|-------|--------------------|---------|
 | CRITICAL | 4 | 1 (H023) | 3 (H001, H044, H046) |
 | HIGH | 14 | 8 | 6 |
@@ -129,15 +112,15 @@ Three independent analyses were performed in May 2026, stacked on the February 2
 
 **Headline finding (H023 - CRITICAL, CVSS 9.3):** Partial-refund theft via `close = caller` sweep. Any registered player (or anyone for `permissionless_reclaim`) could call cancel/reclaim with a partial `remaining_accounts` array; Anchor's exit hook would sweep all un-refunded co-depositor wagers to the caller. Up to 900 SOL stealable per v2 max match in a single TX. **Fixed:** `require!(remaining_accounts.len() == count_ones(deposits_mask))` added at all four refund-loop sites in both programs.
 
-**Other critical findings:** H001 (one-step authority transfer), H044 (single hot wallet for Layer-1 upgrade + Layer-2 application authority), H046 (Layer-1 bytecode replacement with no timelock). All three deferred to the pre-mainnet authority hardening bundle (acknowledged by JJ).
+**Other critical findings:** H001 (one-step authority transfer), H044 (single hot wallet for Layer-1 upgrade + Layer-2 application authority), H046 (Layer-1 bytecode replacement with no timelock). All three deferred to the pre-mainnet authority hardening bundle .
 
-**Remediation decisions:** `Docs/internal/REMEDIATION_DECISIONS.md`
+**Remediation decisions:** the SOS remediation log
 
 ---
 
 ### BOK (Book of Knowledge) - Math Invariant Verification
 
-**Scope:** Both programs at post-fix-bundle commit `7296e95`
+**Scope:** Both programs at post-fix-bundle commit the SOS fix commit
 **Methodology:** Proptest (randomized, thousands of inputs per invariant) + compile-time `const_assert` + source-grep. Kani unavailable on Windows - verification tier is HIGH-CONFIDENCE PROBABILISTIC, not PROVEN.
 
 | Metric | Count |
@@ -168,19 +151,19 @@ Three independent analyses were performed in May 2026, stacked on the February 2
 ### DB (Dinh's Bulwark) - Off-Chain Server + Client + Bot
 
 **Scope:** Express + Socket.IO + Telegraf server, React + Phaser client, Privy embedded wallets, MongoDB, Vercel/Render infrastructure (~84,270 LOC across 142 files)
-**Ref at audit:** `5f2acec` | **Post-fix ref:** `348f109`
+**Ref at audit:** the BOK verification commit | **Post-fix ref:** the DB fix commit
 **Methodology:** 22 parallel domain-specific context auditors, 5 batches, combination analysis for multi-step chains.
 
-| Severity | Total | Fixed in `348f109` | Deferred |
+| Severity | Total | Fixed in the DB fix commit | Deferred |
 |----------|-------|---------------------|---------|
 | CRITICAL | 23 | 6 (H001, H002, H013, H018, H019, H020+H022+H023+H026+H031) | 17 |
 | HIGH | 40 | 10 (H032, H035, H041, H055, H072, H083 + related) | 30 |
 | MEDIUM | 30 | 0 | 30 |
 | LOW | 20 | 0 | 20 |
 
-**Headline finding (H120 - cross-skill chain):** SOS-deferred H001 (one-step authority transfer) + DB H002 (Privy `requirePrivyAuth` fails-open when `PRIVY_APP_SECRET` is absent from `render.yaml`) compose into: valid Privy account → bind victim TG ID → assume victim session → trigger one-step authority rotation → drain treasury. Both pieces required; this finding disappears once either H001 is fixed (SOS Bundle 1) or H002 stays closed (already fixed in `348f109`).
+**Headline finding (H120 - cross-skill chain):** SOS-deferred H001 (one-step authority transfer) + DB H002 (Privy `requirePrivyAuth` fails-open when `PRIVY_APP_SECRET` is absent from `render.yaml`) compose into: valid Privy account → bind victim TG ID → assume victim session → trigger one-step authority rotation → drain treasury. Both pieces required; this finding disappears once either H001 is fixed (SOS Bundle 1) or H002 stays closed (already fixed in the DB fix commit).
 
-**Other critical findings fixed in `348f109`:**
+**Other critical findings fixed in the DB fix commit:**
 - H001: `link-from-privy-telegram` now validates `telegramUserId` against Privy `getUser()` claims
 - H013: `refundWager()` cancel CPI errors now propagate - no more silent fail-open
 - H018/H019/H020/H022: `shoot`, `acceptChallenge`, `declineChallenge`, `clientDebugLog`, `getGroupMatch` all require auth
@@ -188,7 +171,7 @@ Three independent analyses were performed in May 2026, stacked on the February 2
 - H031: `DebugAuthOverlay` gated on `NODE_ENV !== 'production'`
 - H083: Admin key compare uses `crypto.timingSafeEqual`
 
-**Remediation decisions:** `Docs/internal/DB_REMEDIATION_DECISIONS.md`
+**Remediation decisions:** the DB remediation log
 
 ---
 
@@ -206,7 +189,7 @@ Three independent analyses were performed in May 2026, stacked on the February 2
 | Per-match snapshot atomic (v2): BPS/treasury/ops locked at create | VERIFIED | BOK I-CAP-3, Code-read |
 | Settle reads snapshot only (v2): no live config read at settle time | VERIFIED | BOK I-CAP-4, Code-read |
 | BPS combined cap ≤ 1000 (10%) enforced at init + update | VERIFIED | BOK I-CAP-1/2, Proptest |
-| Fee destinations not executable (LP-106 defense) | ENFORCED | `constraint = !X.executable` on all 6 UncheckedAccount fee destinations |
+| Fee destinations not executable (EP-106 defense) | ENFORCED | `constraint = !X.executable` on all 6 UncheckedAccount fee destinations |
 | Winner must be registered player at creation | ENFORCED | Anchor `has_one` constraint |
 | Players are distinct wallets; authority cannot be player | ENFORCED | `require!` constraints at `create_match` |
 | No double-deposit (bit collision prevention) | ENFORCED | `(mask >> idx) & 1 == 0` check in `deposit_wager` |
@@ -216,7 +199,7 @@ Three independent analyses were performed in May 2026, stacked on the February 2
 
 | Invariant | Status | Evidence |
 |-----------|--------|---------|
-| Auth required for all state-mutating events | **PARTIAL** (post-fix improvement) | `requireAuth` on `shoot`, `acceptChallenge`, `declineChallenge`, `clientDebugLog`, `getGroupMatch` - FIXED in `348f109`; `confirmDeposit` overwrite race still open (H016 deferred) |
+| Auth required for all state-mutating events | **PARTIAL** (post-fix improvement) | `requireAuth` on `shoot`, `acceptChallenge`, `declineChallenge`, `clientDebugLog`, `getGroupMatch` - FIXED in the DB fix commit; `confirmDeposit` overwrite race still open (H016 deferred) |
 | TG identity bound to verified Privy claims | **ENFORCED** (post-H001-fix) | `link-from-privy-telegram` validates against `getUser()` |
 | `refundWager()` failure propagates to caller | **ENFORCED** (post-H013-fix) | Cancel CPI errors no longer fail-open |
 | Settlement winner is alive player in match | **ENFORCED** | Mongoose validation + on-chain Anchor constraint |
@@ -370,7 +353,7 @@ Closes: DB H030, H034, H047; completes SOS H003 research.
 
 **v2 posture (production target):** `pause_program` halts only `create_match` and `deposit_wager`. Active matches can still `settle_match`, `cancel_match`, and `permissionless_reclaim` while paused - pause does not block in-flight exits. This is intentional: players can always exit a paused program.
 
-**v1 posture (post-H016 fix):** Same. Pause guards were removed from v1's `cancel_match`, `settle_match`, and `start_with_depositors` in commit `7296e95`, bringing v1 into alignment with v2.
+**v1 posture (post-H016 fix):** Same. Pause guards were removed from v1's `cancel_match`, `settle_match`, and `start_with_depositors` in commit the SOS fix commit, bringing v1 into alignment with v2.
 
 Pause state is now observable: `pause_program` and `unpause_program` emit `Paused`/`Unpaused` events on-chain (post-H043 fix).
 
@@ -459,7 +442,7 @@ This is stated plainly because honesty reads better than obfuscation.
 
 ## Mathematical Verification Summary
 
-The BOK audit verified 66 invariants across two audit rounds (25 in Feb 2026, 41 in May 2026) with zero violations across 159 test runs. All nine fix-bundle constants from commit `7296e95` were verified non-regressive.
+The BOK audit verified 66 invariants across two audit rounds (25 in Feb 2026, 41 in May 2026) with zero violations across 159 test runs. All nine fix-bundle constants from commit the SOS fix commit were verified non-regressive.
 
 **Key properties proven probabilistically (Proptest):**
 
@@ -486,4 +469,4 @@ SolShot is a skill-based game. Outcomes are determined by player decisions withi
 
 ---
 
-*Security posture assessed at commits `7296e95` (SOS fix bundle), `5f2acec` (BOK test suite), `348f109` (DB fix bundle). Three independent analyses (SOS + BOK + DB). 25 findings fixed. ~50 deferred to mainnet hardening bundles 1–4. 159/159 mathematical invariant tests passing. Zero active on-chain CRITICAL or HIGH findings post-fix-bundle.*
+*Security posture assessed at commits the SOS fix commit (SOS fix bundle), the BOK verification commit (BOK test suite), the DB fix commit (DB fix bundle). Three independent analyses (SOS + BOK + DB). 25 findings fixed. ~50 deferred to mainnet hardening bundles 1–4. 159/159 mathematical invariant tests passing. Zero active on-chain CRITICAL or HIGH findings post-fix-bundle.*

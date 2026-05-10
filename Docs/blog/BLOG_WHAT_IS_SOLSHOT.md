@@ -4,7 +4,7 @@
 
 ---
 
-SolShot is a browser-based multiplayer artillery game where you wager real SOL against opponents in 1v1 tank battles. Two players, destructible terrain, 13 weapons and real money on the line.
+SolShot is a browser-based multiplayer artillery game where you wager real SOL against opponents in 1v1 tank battles. Two players, destructible terrain, 15 weapons and real money on the line.
 
 If you grew up playing Pocket Tanks, Scorched Earth or Worms, the gameplay will feel instantly familiar. Adjust your angle and power, pick a weapon, fire. Terrain deforms with every explosion, positions shift, and the battlefield reshapes around you. The player who lands more hits wins.
 
@@ -14,7 +14,7 @@ The difference: every match can be played for real stakes.
 
 You connect your Solana wallet and choose a wager tier from 0.01 SOL up to 0.5 SOL. Both players deposit into an on-chain escrow smart contract before the first shot is fired. No one (not you, not your opponent, not us) can touch those funds until the match ends.
 
-Before combat starts, you enter the weapon shop. Every player gets 1,000 Gold to spend. The shop has 13 weapons across 6 tiers, from the free Single Shot (infinite ammo, small blast) to the legendary Crazy Ivan (2,500 Gold, fifteen random explosions). Your budget forces real choices: do you stack cheap tactical weapons for volume, or save Gold for one massive strike?
+Before combat starts, you enter the weapon shop. Every player gets 1,000 Gold to spend. The shop has 15 weapons across 6 tiers, from the free Single Shot (infinite ammo, small blast) to the legendary Crazy Ivan (2,500 Gold, fifteen random explosions). Your budget forces real choices: do you stack cheap tactical weapons for volume, or save Gold for one massive strike?
 
 Then you fight. Turn by turn, adjusting angle, power and weapon selection. Wind shifts between rounds. Terrain crumbles under explosions. Tanks reposition as the ground beneath them collapses.
 
@@ -32,7 +32,7 @@ Playing matches earns you progress toward milestones: your first match, 10 wins,
 
 SHOT cannot be purchased from us. You earn it by playing, or you buy it from other players on Raydium. The total supply is fixed at 10 million and the mint authority has been burned. No more SHOT will ever be created.
 
-The only thing you can do with SHOT (besides trade it) is burn it for prestige. Burning 200 SHOT promotes you to Bronze and unlocks the Homing Missile. Burning 500 more gets you to Silver with Chain Reaction. All the way up to Diamond at 4,000 SHOT, which unlocks the Mountain Mover.
+The only thing you can do with SHOT (besides trade it) is burn it for prestige. Burning 200 SHOT promotes you to Bronze and unlocks the Homing Missile. Burning 500 more gets you to Silver with the Cruiser. All the way up to Diamond at 4,000 SHOT, which unlocks the Pineapple.
 
 Burns are permanent. Tokens are destroyed. Supply decreases. Your rank is proof of hundreds of hours of gameplay, not a purchase.
 
@@ -46,4 +46,4 @@ Practice matches are free. You can learn every weapon, experiment with loadouts,
 
 ---
 
-**Deploy now at solshot.gg**
+**Play now at solshot.gg**

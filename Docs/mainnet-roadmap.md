@@ -7,8 +7,8 @@
 
 This document is the single source of truth for what needs to happen between the current devnet build and a mainnet launch with real funds. It draws from three audits completed on 2026-05-07:
 
-- **SOS (Stronghold of Security) Audit #2** - on-chain programs v1 + v2 (`programs/solshot-escrow/`, `programs/solshot-escrow-v2/`). Full report: `.audit/FINAL_REPORT.md`. Remediation decisions: `Docs/internal/REMEDIATION_DECISIONS.md`.
-- **DB (Dinh's Bulwark) Audit #2** - off-chain stack (Express + Socket.IO + Telegraf + React + Mongo + Privy). Full report: `.bulwark/FINAL_REPORT.md`. Remediation decisions: `Docs/internal/DB_REMEDIATION_DECISIONS.md`.
+- **SOS (Stronghold of Security) Audit #2** - on-chain programs v1 + v2 (`programs/solshot-escrow/`, `programs/solshot-escrow-v2/`). Full report: `.audit/FINAL_REPORT.md`. Remediation decisions: the SOS remediation log.
+- **DB (Dinh's Bulwark) Audit #2** - off-chain stack (Express + Socket.IO + Telegraf + React + Mongo + Privy). Full report: `.bulwark/FINAL_REPORT.md`. Remediation decisions: the DB remediation log.
 - **BOK (Book of Knowledge) Audit #2** - math invariant verification of both programs (41 invariants, 159 tests). Full report: `.bok/reports/2026-05-07-report.md`.
 
 Operational deployment steps (the sequenced commands for the actual mainnet flip) live in `Docs/deployment-sequence.md`.
@@ -22,12 +22,12 @@ SolShot reached a milestone on 2026-05-04: the first end-to-end wagered match se
 **What is solid today:**
 
 - ✅ Three independent audits complete (SOS + BOK + DB), all dated 2026-05-07
-- ✅ ~25 findings fixed across two source commits (`7296e95` SOS fix bundle + `348f109` DB fix bundle)
+- ✅ ~25 findings fixed across two source commits (one SOS fix bundle, one DB fix bundle)
 - ✅ All 159 BOK math tests passing - zero conservation breaks, zero overflow/underflow violations, zero deadline-ordering inversions across 41 invariants on both programs
 - ✅ SOS CRITICAL H023 (partial-refund theft, worst-case 900 SOL per match) - fixed in source; length check enforced at all four refund-loop sites; regression suite in place
 - ✅ npm vulnerabilities down 33% server-side and 64% client-side vs. Feb baseline
 - ✅ First wagered match settled on devnet (May 4, 2026)
-- ✅ Helm middleware, CORS scoping, rate limiting, CSPRNG for room IDs all in place
+- ✅ Helmet middleware, CORS scoping, rate limiting, CSPRNG for room IDs all in place
 - ✅ Source maps disabled in production; `qs` prototype-pollution CVE patched
 - ✅ Auth fixes: Privy/TG identity bridge verification, `requirePrivyAuth` fail-closed in prod, legacy relay auth gaps closed for `shoot` / `acceptChallenge` / `declineChallenge` / `clientDebugLog` / `getGroupMatch`
 - ✅ `DebugAuthOverlay` stripped from production builds
@@ -177,7 +177,7 @@ Create `Docs/KEY_MANAGEMENT.md`:
 
 H042: `GlobalConfig` has no close path. If the `config.authority` key is lost before the two-step rotation (Step 1c) is in place, the config is permanently locked - new matches cannot be created, and the program can only be recovered by redeploying a new binary (via the Squads upgrade authority).
 
-After Step 1c is live, add a `guardian_authority: Option<Pubkey>` field and a `propose_recovery` instruction with a 7-day timelock. The guardian is a cold-stored key controlled by JJ, distinct from all operational keys. If `config.authority` is lost, the guardian can trigger recovery after 7 days of on-chain visibility.
+After Step 1c is live, add a `guardian_authority: Option<Pubkey>` field and a `propose_recovery` instruction with a 7-day timelock. The guardian is a cold-stored key controlled by the team, distinct from all operational keys. If `config.authority` is lost, the guardian can trigger recovery after 7 days of on-chain visibility.
 
 This is lower urgency than 1a–1h but should land before mainnet if feasible.
 
@@ -301,7 +301,7 @@ Risk: MEDIUM. Changes the auth model in ways that affect every authenticated use
 
 ### 5.1 Problem statement
 
-The H023 on-chain fix (requiring `remaining_accounts.len() == count_ones(on-chain deposits_mask)`) landed in commit `7296e95` and is confirmed correct by the BOK suite. But it introduced a NEW failure mode in the server (DB H014): the server builds `remaining_accounts` from its own off-chain state (`wagerStates[roomId].deposits` for v1; Mongo `player.initialDepositTx` for v2), not from the on-chain `deposits_mask`. If these diverge - due to a crash, a missed confirmation, or any network jitter - the server will construct an array whose length does not match the on-chain mask, causing `IncompleteRefund` reverts. The SOL is then stuck until the 2-hour (v1) or 24-hour (v2) permissionless reclaim window expires.
+The H023 on-chain fix (requiring `remaining_accounts.len() == count_ones(on-chain deposits_mask)`) landed in the SOS fix bundle and is confirmed correct by the BOK suite. But it introduced a NEW failure mode in the server (DB H014): the server builds `remaining_accounts` from its own off-chain state (`wagerStates[roomId].deposits` for v1; Mongo `player.initialDepositTx` for v2), not from the on-chain `deposits_mask`. If these diverge - due to a crash, a missed confirmation, or any network jitter - the server will construct an array whose length does not match the on-chain mask, causing `IncompleteRefund` reverts. The SOL is then stuck until the 2-hour (v1) or 24-hour (v2) permissionless reclaim window expires.
 
 Additionally: two async code paths that mutate settled/deposit state have race conditions (DB H015, H016). The self-damage sign-erasure in 1v1 (DB H017) is a game-design issue with a trivial fix.
 
@@ -377,7 +377,7 @@ This closes DB H015.
 
 In `server/services/physics.js`, the damage calculation uses `Math.abs(rawDamage)` unconditionally. In a 1v1 match, if a player fires at themselves, the damage is applied in the correct direction but `Math.abs` may erase a negative sign that represents self-damage being deducted from the opponent's HP rather than the shooter's - this depends on how `rawDamage` is signed and how `applyDamage` is called.
 
-Decision required before fixing (make it in code comments or in `Docs/internal/DECISIONS.md`):
+Decision required before fixing (make it in code comments or in the project decisions log):
 
 - Option A: **Disallow self-fire** - if `tank.id === shooter.id`, return early with no damage. Clean; avoids the sign question entirely.
 - Option B: **Allow self-fire, fix sign** - ensure `Math.abs` is not applied when the target is the shooter; self-damage reduces the shooter's own HP by the weapon's damage value.
@@ -544,11 +544,11 @@ After each `npm update`, run `npm audit` and confirm the targeted CVEs are clear
 
 ### 6.9 Architectural cleanup - v2 protocol everywhere (async-first)
 
-**Status:** Tracked, scheduled for execution after the Colosseum submission. Tagged 2026-05-10 by JJ as the immediate post-hackathon priority. Lower security risk than Bundles 1–3, higher product impact: it consolidates SolShot onto a single async-state architecture and retires the legacy real-time-only flow.
+**Status:** Tracked, scheduled for execution after the Colosseum submission. Tagged 2026-05-10 as the immediate post-hackathon priority. Lower security risk than Bundles 1–3, higher product impact: it consolidates SolShot onto a single async-state architecture and retires the legacy real-time-only flow.
 
 **Background.** SolShot ships with two on-chain programs and two parallel match-flows:
 
-- **v1 program (`solshot-escrow`, 4kzrDpV9...)** - wired to the 1v1 lobby flow (Quick Match / Duel / High Roller / Custom Challenge). Real-time socket-room cadence, 60s turn timer, 30s reconnect window. Both players must remain connected.
+- **v1 program (`solshot-escrow`, 4kzrDpV9...)** - wired to the 1v1 lobby flow (Quick Match / Duel / High Roller / Custom Challenge). Real-time socket-room cadence, 10-min turn timer, 10-minute reconnect window. Both players must remain connected.
 - **v2 program (`solshot-escrow-v2`, BVKXLU...)** - wired to the group-chat flow. Server-persistent state (Mongo + on-chain), 12h default turn timer, no live-connection requirement. Players can close the tab and come back.
 
 The two programs have **identical 10-instruction surfaces** with the same logic, same settlement BPS, same PDA derivation, same authority model. The only structural difference: v1 caps at 4 players (`[Pubkey; 4]`), v2 supports up to 10 (`[Pubkey; 10]`). Functionally, **v2 is a superset of v1 and handles the 1v1 case identically.**
@@ -599,10 +599,10 @@ The v2-everywhere migration moves SolShot's identity from "TG Mini App with a re
 
 ## Section 7 - Pre-Mainnet Smoke Test Checklist
 
-This checklist must pass on devnet before mainnet deployment begins. Each item must be signed off by JJ.
+This checklist must pass on devnet before mainnet deployment begins. Each item must be signed off by the engineering lead.
 
 - [ ] **All four bundles deployed to devnet** - programs redeployed (v1 + v2), server redeployed to Render, client redeployed to Vercel. Verify deployed bytecode matches post-bundle-1 source via `solana program dump + sha256sum`.
-- [ ] **Upgrade authority verified** - `solana program show 4kzrDpV9...` and `BVKXq8DJ...` both show Squads multisig as upgrade authority. Old hot wallet shows no authority.
+- [ ] **Upgrade authority verified** - `solana program show 4kzrDpV9...` and `BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N` both show Squads multisig as upgrade authority. Old hot wallet shows no authority.
 - [ ] **Full match lifecycle test (1v1 wagered)** - create match → both players deposit → settle → verify 90/7/3 split on-chain. Run 3 consecutive matches without error.
 - [ ] **Concurrent deposit test** - simulate two players depositing simultaneously using two test clients. Verify `confirmDeposit` `findOneAndUpdate` fix (Step 3c) prevents DB desync. Confirm both `initialDepositTx` fields are populated correctly.
 - [ ] **Concurrent settle test** - trigger `handleShot`, `handleForfeit`, and `handleIdleTimeout` concurrently using a test harness. Confirm only one settles; others return cleanly.
@@ -626,7 +626,7 @@ The operational commands and rollback procedures for the mainnet flip are in `Do
 **Pre-flight (day before):**
 1. Freeze devnet - no code changes after smoke test passes
 2. Back up all environment variables and keypairs to cold storage
-3. Notify team: deployment window opens at [time]
+3. Notify team: deployment window opens at the agreed launch time
 4. Confirm Squads multisig members are available to co-sign the upgrade authority transfers
 
 **Deployment order:**
@@ -637,7 +637,7 @@ The operational commands and rollback procedures for the mainnet flip are in `Do
 5. Rotate config.authority to app-authority keypair on mainnet (same as devnet Step 1f)
 6. Deploy server to Render (mainnet env vars: `SOLANA_NETWORK=mainnet-beta`, `SOLANA_RPC_URL=<mainnet-helius>`, new keypair paths)
 7. Deploy client to Vercel (mainnet env vars: `REACT_APP_ESCROW_PROGRAM_ID`, `REACT_APP_SHOT_TOKEN_MINT`)
-8. Smoke test: one manual 0.01 SOL wagered match from JJ's wallet → verify settlement on-chain
+8. Smoke test: one manual 0.01 SOL wagered match from the team wallet → verify settlement on-chain
 9. Open to users
 
 **Rollback procedure:**
@@ -688,7 +688,7 @@ These items require explicit decisions before or shortly after mainnet launch. T
 
 Decision: Option A (remove `generateToken`) or Option B (implement real JWT verify)?
 
-Recommendation: Option A for launch. Document the decision in `Docs/internal/DECISIONS.md`. If a JWT-based auth model is desired post-launch for mobile clients or third-party API access, implement it as a new feature rather than reviving the dead plumbing.
+Recommendation: Option A for launch. Document the decision in the project decisions log. If a JWT-based auth model is desired post-launch for mobile clients or third-party API access, implement it as a new feature rather than reviving the dead plumbing.
 
 **10.2 Match-cancel atomicity on multi-dyno Render deployments**
 
@@ -698,7 +698,7 @@ For launch (single Render dyno), this is not a problem. For scale:
 - Option A: Redis distributed lock (Redlock algorithm)
 - Option B: Rely purely on DB atomicity (Step 3d) and handle the on-chain error gracefully - if the second settlement attempt gets `InvalidAccountState` back from the program (match already settled), treat it as success
 
-Document the chosen approach in `Docs/internal/DECISIONS.md` before scaling past one dyno.
+Document the chosen approach in the project decisions log before scaling past one dyno.
 
 **10.3 SHOT token economics finalization**
 
@@ -798,5 +798,5 @@ The critical path is: Bundle 1 (Anchor changes + devnet deployment) → Bundle 3
 
 ---
 
-*Generated from: `Docs/internal/REMEDIATION_DECISIONS.md` (Section 5), `Docs/internal/DB_REMEDIATION_DECISIONS.md` (Section 4), `.audit/FINAL_REPORT.md`, `.bulwark/FINAL_REPORT.md`, `.bok/reports/2026-05-07-report.md`.*  
+*Generated from: the SOS remediation log (Section 5), the DB remediation log (Section 4), `.audit/FINAL_REPORT.md`, `.bulwark/FINAL_REPORT.md`, `.bok/reports/2026-05-07-report.md`.*  
 *Last updated: 2026-05-07.*

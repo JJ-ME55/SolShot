@@ -1,6 +1,6 @@
 # SolShot - Roadmap
 
-> **Last updated:** 2026-05-10. Drafted by Fish, informed by main-claude's May 6 thesis pitch and adopted as the canonical forward-looking plan ahead of the Colosseum Frontier Hackathon submission.
+> **Last updated:** 2026-05-10
 
 ---
 

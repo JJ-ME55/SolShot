@@ -1,10 +1,3 @@
----
-doc_id: how-to-play
-title: "How to Play SolShot"
-date: 2026-05-07
-status: current
----
-
 # How to Play SolShot
 
 SolShot is a tank artillery game built for Telegram group chats and the open web. Fire shots, destroy terrain, wager SOL on the outcome. Matches are server-authoritative, outcomes settle on-chain, and you don't need to know what any of that means to play.
@@ -13,7 +6,6 @@ SolShot is a tank artillery game built for Telegram group chats and the open web
 - **Browser:** [solshot.gg](https://solshot.gg). Works in any modern browser, installable as a PWA.
 - **Telegram:** [@SolShotGG_bot](https://t.me/SolShotGG_bot). DM the bot or add it to any group chat.
 
-<!-- TODO: screenshot of solshot.gg main menu (PLAY / MY GAMES with active-turn badge / Armory / Barracks) -->
 
 ---
 
@@ -33,7 +25,6 @@ No wallet. No wager. No real opponent required. Just tanks against an AI that ca
 
 **About Shot Bot:** server-side AI that uses probabilistic aiming with calibration. Random luck per shot, but it's improving from one shot to the next. Don't expect a fixed difficulty curve. You'll see misses and clutch hits in the same match. Practice mode milestones still earn SHOT (at 25% the wagered rate), so prestige progression works here too.
 
-<!-- TODO: screenshot of a Practice match vs Shot Bot, mid-firing -->
 
 ---
 
@@ -49,7 +40,6 @@ You need a wallet bound once (see "Setting Up Your Wallet" below). After that:
 
 Alternatively, if a friend sends you a Custom Challenge link, tap it to land directly in their lobby. (See "Custom Challenges" below.)
 
-<!-- TODO: screenshot of LobbyScreen with mode tabs (Quick Match / Duel / High Roller / Custom) selected -->
 
 ---
 
@@ -82,7 +72,6 @@ The 12-character cap is deliberate: it's the maximum width that survives Telegra
 
 (Code: `client/src/components/HandleModal.js`, validation in `client/src/utils/handleValidation.js`.)
 
-<!-- TODO: screenshot of HandleModal "PICK A NAME" step -->
 
 ---
 
@@ -160,7 +149,6 @@ Turns alternate. On each turn:
 
 The server calculates trajectory, impact, damage, and terrain destruction. You have **10 minutes per turn** in 1v1 lobby matches (group-chat matches set their own turn timer - default 12 hours, host-configurable). Miss your turn and it auto-advances. Miss **3** turns in a row and you forfeit the match.
 
-<!-- TODO: screenshot of BattleScreen mid-turn with angle/power/weapon HUD visible -->
 
 ### 5. Round End
 
@@ -193,7 +181,6 @@ The challenge code expires in 24 hours if no one accepts. You can cancel any tim
 
 (Code: `client/src/screens/LobbyScreen.js` create flow, `client/src/screens/ChallengeAcceptScreen.js` accept flow, `server/services/challenge/DuelChallengeCard.js` Satori card render.)
 
-<!-- TODO: screenshot of a rendered Duel Challenge Card with two callsigns and wager -->
 
 ---
 
@@ -214,7 +201,6 @@ Pull it up from your profile, share it to Telegram, or post it anywhere. The car
 
 (Code: `server/services/challenge/CareerStatsCard.js` design, `server/services/challenge/careerCardProps.js` data shaping.)
 
-<!-- TODO: screenshot of a Career Card with callsign + tier badge + recent form row -->
 
 ---
 
@@ -237,7 +223,6 @@ You can forward the card straight into the group chat where the match was posted
 
 (Code: `server/services/challenge/victoryDm.js` dispatch, `server/services/challenge/TrophyShareCard.js` design.)
 
-<!-- TODO: screenshot of a Trophy DM in a Telegram chat -->
 
 ---
 
@@ -260,7 +245,6 @@ If you're in zero matches, the screen pitches `/customgame` with a one-tap deep 
 
 (Code: `client/src/screens/MyGamesScreen.js`, server handler `getMyGroupMatches`.)
 
-<!-- TODO: screenshot of MyGamesScreen with 2-3 active match cards -->
 
 ---
 
@@ -485,7 +469,6 @@ But prestige doesn't guarantee wins. Every prestige weapon can be countered with
 
 Practice mode milestones earn SHOT at a reduced rate (25%), so you can still progress without wagering. It just takes longer.
 
-<!-- TODO: screenshot of PrestigeScreen showing the burn flow + Bronze→Diamond ladder -->
 
 ---
 

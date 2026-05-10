@@ -42,9 +42,7 @@ Three independent audit pipelines from the [Solana Vibes Kit](https://github.com
 
 The condensed summary lives here in `Docs/`: [`audit-summary.md`](./audit-summary.md) · [`mainnet-roadmap.md`](./mainnet-roadmap.md).
 
-Fix-vs-defer decision logs for items the audits flagged:
-- SOS: [`internal/REMEDIATION_DECISIONS.md`](./internal/REMEDIATION_DECISIONS.md)
-- DB: [`internal/DB_REMEDIATION_DECISIONS.md`](./internal/DB_REMEDIATION_DECISIONS.md)
+For each finding, the per-audit reports linked above record what was fixed in the post-audit bundles and what was deferred to the mainnet hardening roadmap.
 
 ---
 
@@ -56,7 +54,7 @@ Fix-vs-defer decision logs for items the audits flagged:
 
 ## 🛠 Internal team docs (not curated for outside readers)
 
-[`./internal/`](./internal/) holds team-facing artefacts: comms log between agents, decision history, open questions, the demo + pitch video scripts, audit fix-decision logs, internal specs, planning. Useful for contributors who join the project; not intended as public reading material.
+[`./internal/`](./internal/) holds team-facing working docs. Useful context for contributors; not curated for public reading.
 
 ---
 

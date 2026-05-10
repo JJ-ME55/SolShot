@@ -8,7 +8,7 @@
 
 ## TL;DR
 
-Three independent audits ran in parallel on 2026-05-07: Stronghold of Security (SOS #2) analyzed the on-chain Anchor escrow programs; Book of Knowledge (BOK #2) ran math invariant verification on both programs; Dinh's Bulwark (DB #2) covered the full off-chain stack (Express + Socket.IO + React + Privy + MongoDB, 142 files / ~84 k LOC). Roughly 25 findings were fixed across two commits (`7296e95` SOS, `348f109` DB); roughly 50 additional findings were explicitly deferred with documented rationale, a written mainnet plan, and a file:line reference for every item. Nothing was silently dismissed. The cross-skill H120 finding - where SOS deferred H001 (one-step authority rotation) composed with DB H002 (Privy fail-open) into a production-blocking compound - was caught only because both audits ran simultaneously; DB H002 is now closed.
+Three independent audits ran in parallel on 2026-05-07: Stronghold of Security (SOS #2) analyzed the on-chain Anchor escrow programs; Book of Knowledge (BOK #2) ran math invariant verification on both programs; Dinh's Bulwark (DB #2) covered the full off-chain stack (Express + Socket.IO + React + Privy + MongoDB, 142 files / ~84 k LOC). Roughly 25 findings were fixed across two commits (the SOS fix commit SOS, the DB fix commit DB); roughly 50 additional findings were explicitly deferred with documented rationale, a written mainnet plan, and a file:line reference for every item. Nothing was silently dismissed. The cross-skill H120 finding - where SOS deferred H001 (one-step authority rotation) composed with DB H002 (Privy fail-open) into a production-blocking compound - was caught only because both audits ran simultaneously; DB H002 is now closed.
 
 ---
 
@@ -16,9 +16,9 @@ Three independent audits ran in parallel on 2026-05-07: Stronghold of Security (
 
 | Audit | Tool | Scope | Date | Headline counts | Status | Full report |
 |---|---|---|---|---|---|---|
-| **#1 SOS** | Stronghold of Security | On-chain Anchor programs v1 + v2 (1,982 LOC) | 2026-05-07 | 50 total: 4 CRIT / 14 HIGH / 4 MED / 6 LOW + 18 NOT_VULNERABLE + 4 STATUS_CHANGED + 4 doc-only | 9 fixed in `7296e95`; 16 deferred to mainnet; 22 not vulnerable or doc-only | `.audit/FINAL_REPORT.md` |
-| **#2 BOK** | Book of Knowledge | Math invariants - both programs (v1 962 LOC + v2 1020 LOC) | 2026-05-07 | 41 invariants verified; 159 / 159 tests passing; 0 violations; 6 math regions, 14 sub-regions | Tests landed in `5f2acec`; all 9 SOS fix-bundle constants verified non-regressive | `.bok/reports/2026-05-07-report.md` |
-| **#3 DB** | Dinh's Bulwark | Off-chain: Express + Socket.IO + Telegraf + React + Phaser + Privy + MongoDB + Vercel/Render | 2026-05-07 | 113 findings: 23 CRIT / 40 HIGH / 30 MED / 20 LOW + 6 NOT_VULNERABLE + cross-skill H120 chain | 16 fixed in `348f109`; ~30 deferred to mainnet bundles A–D | `.bulwark/FINAL_REPORT.md` |
+| **#1 SOS** | Stronghold of Security | On-chain Anchor programs v1 + v2 (1,982 LOC) | 2026-05-07 | 50 total: 4 CRIT / 14 HIGH / 4 MED / 6 LOW + 18 NOT_VULNERABLE + 4 STATUS_CHANGED + 4 doc-only | 9 fixed in the SOS fix commit; 16 deferred to mainnet; 22 not vulnerable or doc-only | `.audit/FINAL_REPORT.md` |
+| **#2 BOK** | Book of Knowledge | Math invariants - both programs (v1 962 LOC + v2 1020 LOC) | 2026-05-07 | 41 invariants verified; 159 / 159 tests passing; 0 violations; 6 math regions, 14 sub-regions | Tests landed in the BOK verification commit; all 9 SOS fix-bundle constants verified non-regressive | `.bok/reports/2026-05-07-report.md` |
+| **#3 DB** | Dinh's Bulwark | Off-chain: Express + Socket.IO + Telegraf + React + Phaser + Privy + MongoDB + Vercel/Render | 2026-05-07 | 113 findings: 23 CRIT / 40 HIGH / 30 MED / 20 LOW + 6 NOT_VULNERABLE + cross-skill H120 chain | 16 fixed in the DB fix commit; ~30 deferred to mainnet bundles A–D | `.bulwark/FINAL_REPORT.md` |
 
 ### What the programs actually do (context for judges)
 
@@ -34,9 +34,9 @@ The server holds the `config.authority` keypair and is the only entity that can 
 
 ## What Was Fixed in This Commit Set
 
-Fix bundles were applied in two sequential commits: `7296e95` carries the SOS on-chain fixes; `348f109` carries the DB off-chain fixes. Both compile clean (`cargo check` / `node --check`).
+Fix bundles were applied in two sequential commits: the SOS fix commit carries the SOS on-chain fixes; the DB fix commit carries the DB off-chain fixes. Both compile clean (`cargo check` / `node --check`).
 
-### SOS fix bundle - 9 findings (commit `7296e95`)
+### SOS fix bundle - 9 findings (commit the SOS fix commit)
 
 | ID | Severity | Description | Location |
 |---|---|---|---|
@@ -50,7 +50,7 @@ Fix bundles were applied in two sequential commits: `7296e95` carries the SOS on
 | **H040** | LOW | Stale doc-comment claimed 48-hour reclaim timeout - updated to reflect correct 2-hour math (`TIMEOUT_SECONDS * 2 = 7200`). Operators reading the code now plan correct monitoring windows. | v1 `lib.rs` constants |
 | **H043** | LOW | Idempotent pause emits no event (operational monitoring gap) - added `Paused` and `Unpaused` events in both programs with authority pubkey; off-chain monitoring can now event-replay pause state changes. | v1 + v2 handlers + event definitions |
 
-### DB fix bundle - 16 findings (commit `348f109`)
+### DB fix bundle - 16 findings (commit the DB fix commit)
 
 | ID | Severity | Description | Location |
 |---|---|---|---|
@@ -75,13 +75,13 @@ Fix bundles were applied in two sequential commits: `7296e95` carries the SOS on
 
 ## What Was Deferred and Why
 
-Deferrals are organized by the bundle roadmap in `Docs/internal/REMEDIATION_DECISIONS.md` (SOS) and `Docs/internal/DB_REMEDIATION_DECISIONS.md` (DB).
+Deferrals are organized by the bundle roadmap in the SOS remediation log (SOS) and the DB remediation log (DB).
 
 ### SOS deferrals
 
-**Authority key model - intentional pre-mainnet posture, acknowledged by JJ**
+**Authority key model - intentional pre-mainnet posture, acknowledged by the team**
 
-The current architecture uses a single hot wallet (`HPyVPj2VH9yBirr7FMgAJeDH8xJgaMKy5UnwLkjSnovk`) for both the Solana BPF Loader upgrade authority and the application-level `config.authority` on both programs (verified live via `solana program show` 2026-05-06). JJ has formally acknowledged this as an explicit pre-mainnet decision in `Docs/internal/PRIOR_AUDIT_DELTA.md`. Blast radius is gated on compromise of one key - not open access - but the consequence of compromise is total.
+The current architecture uses a single hot wallet (`HPyVPj2VH9yBirr7FMgAJeDH8xJgaMKy5UnwLkjSnovk`) for both the Solana BPF Loader upgrade authority and the application-level `config.authority` on both programs (verified live via `solana program show` 2026-05-06). JJ has formally acknowledged this as an explicit pre-mainnet decision in the prior-audit delta record. Blast radius is gated on compromise of one key - not open access - but the consequence of compromise is total.
 
 | ID | Title | Rationale | Mainnet plan |
 |---|---|---|---|
@@ -125,13 +125,13 @@ These are protocol design properties, not code bugs. The server selects the matc
 
 - **H003 - JWT generated but never verified server-side.** `verifyToken()` was correctly removed as dead code in Phase 4 hardening, but `generateToken()` still runs and emits a token to clients who never use it. This implies an auth model that doesn't exist. Decision needed: implement real JWT verification on every state-mutating socket event, or remove `generateToken` entirely and document that auth is purely socket-flag-based (`client.isAuthenticated`).
 - **H004 - Auth signature 5-min replay window.** `verifyAuthMessage()` checks that a wallet signature's embedded timestamp is within 5 minutes but maintains no store of consumed signatures. The same signed message is reusable on any new socket within the window. Fix: add an in-memory (or Redis) `Set<signature>` with 5-minute TTL eviction. The state management approach (per-process vs cross-process) deserves deliberate design before mainnet.
-- **H012 - Single keypair for upgrade + application authority.** Same finding as SOS H044/H046, confirmed from the DB side. Pre-mainnet posture per JJ. Fix is Squads multisig migration coordinated with SOS Bundle 1.
+- **H012 - Single keypair for upgrade + application authority.** Same finding as SOS H044/H046, confirmed from the DB side. Pre-mainnet posture, accepted by the team. Fix is Squads multisig migration coordinated with SOS Bundle 1.
 - **H017 - Self-damage `Math.abs` sign erasure (1v1 physics).** The physics handler applies `Math.abs` to damage values, erasing the sign distinction between hits and self-hits. A game-design decision is needed first: should self-fire be allowed and at what damage coefficient? Once decided, the code fix is approximately 3 lines.
 - **H030 - `escrowDepositStatus` PII broadcast.** The server emits full wallet pubkeys to ALL room members on every deposit confirmation. Wallet pubkeys are pseudonymous but linking them to TG user IDs creates a trackable identity chain. Fix: strip the wallet field from the broadcast and emit only `{playerIndex, confirmed}` boolean flags.
 
 **Bundle C - Defensive cleanup (~25 items)**
 
-npm CVEs (`socket.io-parser` DoS, `path-to-regexp` ReDoS, `handlebars` JS injection, `bigint-buffer` overflow); Vercel client zero security headers; `unsafe-inline` in client CSP; magic-link token in URL query param; single unmonitored RPC endpoint with no retry on 429; `Math.random` in group match IDs and challenge shortcodes; `nodemon` in production dependencies; per-socket throttle resets on reconnect; `/health` endpoint exposing `activeConnections`; Telegram bot lacks queue/backoff for `sendMessage`; and ~15 additional Tier 3 defensive items. Full list at `Docs/internal/DB_REMEDIATION_DECISIONS.md` Section 2, Bundle C.
+npm CVEs (`socket.io-parser` DoS, `path-to-regexp` ReDoS, `handlebars` JS injection, `bigint-buffer` overflow); Vercel client zero security headers; `unsafe-inline` in client CSP; magic-link token in URL query param; single unmonitored RPC endpoint with no retry on 429; `Math.random` in group match IDs and challenge shortcodes; `nodemon` in production dependencies; per-socket throttle resets on reconnect; `/health` endpoint exposing `activeConnections`; Telegram bot lacks queue/backoff for `sendMessage`; and ~15 additional Tier 3 defensive items. Full list at the DB remediation log Section 2, Bundle C.
 
 **Bundle D - Cross-audit mainnet hardening**
 
@@ -152,15 +152,15 @@ This is the single most consequential finding of the May 2026 audit cycle and il
 
 **The chain, step by step:**
 
-1. **SOS Audit #2** deferred **H001** (one-step authority transfer). Rationale: requires authority key compromise to exploit; hot-wallet risk model; acceptable pre-mainnet posture per JJ's explicit decision. Status: deferred, no code change.
+1. **SOS Audit #2** deferred **H001** (one-step authority transfer). Rationale: requires authority key compromise to exploit; hot-wallet risk model; acceptable pre-mainnet posture per explicit team decision. Status: deferred, no code change.
 
-2. **DB Audit #2** found **H002** (`requirePrivyAuth({required:true})` fails-open when `PRIVY_APP_SECRET` is absent). Verified: `render.yaml` does NOT include `PRIVY_APP_SECRET`. On a live deploy without that env var, the middleware calls `next()` unconditionally even with `required:true`. The `/api/wallet/link-from-privy-telegram` endpoint is fully ungated. DB fix bundle closed H002 in `348f109` (`server/services/privyAuth.js:64-83`).
+2. **DB Audit #2** found **H002** (`requirePrivyAuth({required:true})` fails-open when `PRIVY_APP_SECRET` is absent). Verified: `render.yaml` does NOT include `PRIVY_APP_SECRET`. On a live deploy without that env var, the middleware calls `next()` unconditionally even with `required:true`. The `/api/wallet/link-from-privy-telegram` endpoint is fully ungated. DB fix bundle closed H002 in the DB fix commit (`server/services/privyAuth.js:64-83`).
 
 3. **The composition** (H120): with H002 open on a misconfigured deploy, an attacker with any valid Privy account can POST to `/api/wallet/link-from-privy-telegram` with a victim's `telegramUserId` (H001 of DB audit), have the server bind that TG ID to the attacker's wallet, then use the wallet-auth backfill path (H006) to assume victim's identity across all group-chat Socket.IO events. From there, the SOS-deferred H001 (one-step authority rotation) becomes reachable if the compromised session can invoke server-side admin paths - enabling treasury drain in the worst case. DB Audit #2 labelled this compound **H120 CRITICAL**.
 
 **Why neither audit alone catches it:** SOS sees H001 as "requires authority key compromise - acceptable." DB sees H002 as "close the ungated entry point." Only the cross-audit synthesis surfaces that H001's acceptable-because-gated framing depended on the gate (H002) actually working.
 
-**Current status:** H002 is closed in `348f109`. H001 remains deferred (acceptable posture: authority key compromise required). H120 is tracked in `Docs/internal/DB_REMEDIATION_DECISIONS.md` Section 2, Bundle D as a mainnet note: the SOS Bundle 1 authority hardening (propose/accept + timelock + Squads multisig) should be designed in coordination with the DB identity-chain fixes so they land atomically.
+**Current status:** H002 is closed in the DB fix commit. H001 remains deferred (acceptable posture: authority key compromise required). H120 is tracked in the DB remediation log Section 2, Bundle D as a mainnet note: the SOS Bundle 1 authority hardening (propose/accept + timelock + Squads multisig) should be designed in coordination with the DB identity-chain fixes so they land atomically.
 
 ---
 
@@ -193,7 +193,7 @@ The Feb DB verdict was "not safe for production deployment with real funds in it
 
 ## BOK Math Verification - What Was Proved
 
-BOK Audit #2 ran against both programs at git ref `7296e95` (post-SOS-fix-bundle). 41 invariants across 14 math regions, 159 tests, zero violations. The BOK suite acts as a regression guard confirming that the 9 SOS fixes did not introduce any arithmetic bugs.
+BOK Audit #2 ran against both programs at git ref the SOS fix commit (post-SOS-fix-bundle). 41 invariants across 14 math regions, 159 tests, zero violations. The BOK suite acts as a regression guard confirming that the 9 SOS fixes did not introduce any arithmetic bugs.
 
 **Verification tool breakdown:**
 
@@ -289,16 +289,16 @@ Pass `--stacked` to indicate a prior run exists; the pipeline loads prior verdic
 
 **Key files for contributors:**
 
-- `Docs/internal/PRIOR_AUDIT_DELTA.md` - Feb → May delta context document; defines the net-new audit surface and status of every Feb finding before the new runs started.
-- `Docs/internal/REMEDIATION_DECISIONS.md` - SOS fix-vs-defer decision log with file:line evidence for every finding.
-- `Docs/internal/DB_REMEDIATION_DECISIONS.md` - DB fix-vs-defer decision log, same structure.
+- the prior-audit delta record - Feb → May delta context document; defines the net-new audit surface and status of every Feb finding before the new runs started.
+- the SOS remediation log - SOS fix-vs-defer decision log with file:line evidence for every finding.
+- the DB remediation log - DB fix-vs-defer decision log, same structure.
 - `.audit/FINAL_REPORT.md` - Full SOS report: CVSS table, per-finding attack walkthroughs, coverage map, knowledge base references.
 - `.bulwark/FINAL_REPORT.md` - Full DB report: 113 findings with file:line evidence, category breakdown, and comparison table vs Feb.
 - `.bok/reports/2026-05-07-report.md` - Full BOK report: 41 invariants, 159 tests, per-function findings table, assurance map by tier.
 - `programs/solshot-escrow/tests/bok_*.rs` - v1 Proptest suites (91 tests across 4 files: `bok_proptest_fee.rs`, `bok_proptest_refund.rs`, `bok_proptest_timestamp.rs`, `bok_space.rs`).
 - `programs/solshot-escrow-v2/tests/bok_*.rs` - v2 Proptest suites (68 tests across 4 matching files).
-- `Docs/internal/REMEDIATION_DECISIONS.md` Section 5 - SOS mainnet hardening roadmap (4 bundles with sequencing).
-- `Docs/internal/DB_REMEDIATION_DECISIONS.md` Section 4 - DB mainnet hardening roadmap (4 bundles; composes with SOS bundles).
+- the SOS remediation log Section 5 - SOS mainnet hardening roadmap (4 bundles with sequencing).
+- the DB remediation log Section 4 - DB mainnet hardening roadmap (4 bundles; composes with SOS bundles).
 
 **Note on BOK test architecture:** BOK tests use a local-reimplementation pattern instead of importing Anchor sources, because the Anchor framework requires the BPF toolchain (unavailable in standard `cargo test`). The reimplementations at `bok_proptest_fee.rs` and `bok_proptest_refund.rs` mirror the on-chain math functions line-for-line. `const _: () = assert!(...)` compile-time assertions verify that constants in the tests match the deployed program constants.
 

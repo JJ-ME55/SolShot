@@ -1,28 +1,10 @@
----
-doc_id: competitive-landscape
-title: "Why SolShot (Competitive Landscape)"
-wave: 4
-status: draft
-decisions_referenced:
-  - competition-pitch/D1
-  - competition-pitch/D2
-  - competition-pitch/D3
-  - competition-pitch/D5
-  - architecture/D1
-  - token-economics/D1
-  - token-economics/D6
-  - security-posture/D3
-  - escrow-flow/D3
-  - escrow-flow/D5
----
-
 # Why SolShot
 
 ## The Gap
 
 No live, skill-based SOL wagering game exists on Solana.
 
-The Solana gaming ecosystem is full of ambitious projects. Most follow the same pattern: large token launches, NFT-gated access, play-to-earn reward loops, and years-long development timelines. Many remain on testnet or exist primarily as whitepapers. Almost none let you wager real SOL on the outcome of a skill-based match -- today, on mainnet, with trustless settlement.
+The Solana gaming ecosystem is full of ambitious projects. Most follow the same pattern: large token launches, NFT-gated access, play-to-earn reward loops, and years-long development timelines. Many remain on testnet or exist primarily as whitepapers. Almost none let you wager real SOL on the outcome of a skill-based match -- today, on devnet, with trustless settlement.
 
 That gap is where SolShot sits.
 
@@ -53,7 +35,7 @@ SolShot is not a reward-farming loop. Players wager SOL on 1v1 artillery matches
 
 ### 2. Live, not a whitepaper
 
-The game is deployed on Solana mainnet. Escrow program on-chain. SHOT token minted, mint authority burned. 20 weapons balanced and playable. 4 match modes running. Judges can open [solshot.gg](https://solshot.gg) and play a match right now. Most competition entries are prototypes or roadmap documents -- SolShot is a shipped product.
+The game is deployed on Solana devnet, with mainnet flip pending the audit-fix redeploy. Escrow program on-chain. SHOT token minted, mint authority burned. 20 weapons balanced and playable. 4 match modes running. Judges can open [solshot.gg](https://solshot.gg) and play a match right now. Most competition entries are prototypes or roadmap documents -- SolShot is a shipped product.
 
 ### 3. Trustless escrow, not custodial
 

@@ -67,7 +67,7 @@ Total out: 200,000,000 lamports. Exactly matches total in. No rounding leakage.
 ## Edge Cases
 
 **What if I disconnect?**
-You get a 30-second window to reconnect. If you do not return, you forfeit the match and your opponent receives the pot.
+You get a 10-minute window to reconnect. If you do not return, you forfeit the match and your opponent receives the pot.
 
 **What if the server crashes?**
 The escrow contract has a timeout mechanism. If no settlement instruction is received within a defined window, either player can trigger a refund that returns both deposits.
@@ -76,7 +76,7 @@ The escrow contract has a timeout mechanism. If no settlement instruction is rec
 The match is cancelled and the escrow refunds both players.
 
 **Can SolShot steal my wager?**
-No. The settlement instruction requires a valid match result signed by the server authority. The server cannot settle in favor of a wallet that was not a participant. The contract code is open-source and can be audited by anyone. Before mainnet launch, we will have the contract audited by a third-party security firm.
+No. The settlement instruction requires a valid match result signed by the server authority. The server cannot settle in favor of a wallet that was not a participant. The contract code is open-source and can be audited by anyone. Three independent security audits (SOS on-chain, BOK math invariants, DB off-chain) ran across the on-chain programs, server, and math layer ahead of public launch. Reports are in the repo.
 
 ## Why Not Just Use a Server Wallet?
 
@@ -102,4 +102,4 @@ Your match history in the Barracks shows every wagered match with the settlement
 
 Questions about wagering? Join our Discord at discord.gg/solshot.
 
-**Deploy now at solshot.gg**
+**Play now at solshot.gg**

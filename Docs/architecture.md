@@ -1,25 +1,3 @@
----
-doc_id: architecture
-title: "System Architecture"
-date: 2026-05-07
-status: post-audit, devnet-stable
-programs:
-  escrow_v1: "4kzrDpV9JxjE27AMg4PQXzGuge9MEYQEFznSPvkBtnH1"
-  escrow_v2: "BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N"
-  global_config_pda: "92wnuoauqtxkkxDu22fBWGZMBjfNmvSXfKrsJ8nrfSU4"
-  shot_token_mint: "4NnYBycLLo8acgbkLz2SyCXd3KU8jgHQLEmrVypi5VLd"
-decisions_referenced:
-  - architecture/D1
-  - architecture/D2
-  - architecture/D3
-  - architecture/D4
-  - escrow-flow/D1
-  - escrow-flow/D7
-  - security-posture/D2
-  - security-posture/D7
-  - security-posture/D8
----
-
 # System Architecture
 
 > The server owns the physics. The chain owns the money. Neither player nor operator can cheat either.
@@ -137,7 +115,7 @@ results; they do not compute physics or verify game state.
 | `client/src/wallet/WalletContext.js` | Privy wallet adapter; `signAndSendEscrowDeposit()`, `signAndBurnShot()` |
 | `client/src/data/weapons.js` | 15 base weapons |
 | `client/src/data/tiers.js` | Prestige tiers (Bronze→Diamond), 5 prestige weapons |
-| `client/src/App.js` | Top-level router; disconnect/reconnect overlay; 30s reconnect window |
+| `client/src/App.js` | Top-level router; disconnect/reconnect overlay; 10-minute reconnect window |
 | `client/config-overrides.js` | CRA webpack overrides (Solana polyfills) |
 
 **Tech:** React 18, Phaser 3.55 (canvas mode, 16:9 native / 1422×800), Privy embedded wallets,
@@ -448,7 +426,7 @@ State written `Settled` before lamport math (CEI / OC-10 compliant).
 
 **In-memory (server/socket-io/main.js):**
 - `rooms[roomId]` - live 1v1 match state (players, physics, gold, turn order)
-- `pendingReconnects[walletAddress]` - 30s reconnect window state
+- `pendingReconnects[walletAddress]` - 10-minute reconnect window state
 - `turnTimers[roomId]` - active turn timer references
 - `wagerStates[roomId].deposits` - which sockets have confirmed escrow deposit
 
@@ -598,9 +576,9 @@ Three formal audits ran in May 2026. Reports and remediation decisions are cross
 ### SOS Audit #2 (Stronghold of Security - on-chain)
 
 **Report:** `.audit/FINAL_REPORT.md`  
-**Decisions:** `Docs/internal/REMEDIATION_DECISIONS.md`
+**Decisions:** the SOS remediation log
 
-9 findings fixed in source (`7296e95`):
+9 findings fixed in source (SOS fix bundle):
 
 | ID | Fix |
 |----|-----|
@@ -615,15 +593,15 @@ Three formal audits ran in May 2026. Reports and remediation decisions are cross
 | H043 | Pause emits no event - `Paused`/`Unpaused` events added with authority pubkey |
 
 Deferred (16 findings): primarily the H001 authority-key family (one-step transfer, no timelock,
-single hot wallet) and server-as-authority design limitations. See `Docs/internal/REMEDIATION_DECISIONS.md`
+single hot wallet) and server-as-authority design limitations. See the SOS remediation log
 Section 2 for full rationale.
 
 ### DB Audit #2 (Dinh's Bulwark - off-chain)
 
 **Report:** `.bulwark/FINAL_REPORT.md`  
-**Decisions:** `Docs/internal/DB_REMEDIATION_DECISIONS.md`
+**Decisions:** the DB remediation log
 
-16 findings fixed in source (`348f109`):
+16 findings fixed in source (DB fix bundle):
 
 | ID | Fix |
 |----|-----|
@@ -645,13 +623,13 @@ Section 2 for full rationale.
 | H083 | Admin key timing-unsafe compare - replaced with `crypto.timingSafeEqual` |
 
 Deferred (~30 findings across Bundles A–D): wallet rotation gap, confirmDeposit race, JWT audit,
-double-settle race, Vercel security headers. See `Docs/internal/DB_REMEDIATION_DECISIONS.md` Section 2.
+double-settle race, Vercel security headers. See the DB remediation log Section 2.
 
 ### BOK Audit #2 (Book of Knowledge - math invariants)
 
 **Report:** `.bok/reports/2026-05-07-report.md`
 
-159 tests passing (`5f2acec`). Math invariants verified on v1 + v2 escrow programs:
+159 tests passing (BOK verification suite). Math invariants verified on v1 + v2 escrow programs:
 - Pot conservation (90/7/3 sums to pot for all valid deposit masks)
 - Refund conservation (cancel sum == deposit sum for contiguous masks)
 - Dust bound (≤ 2 lamports per settle from BPS floor divisions)
@@ -690,7 +668,7 @@ cycle.
 - Commit-reveal or VRF-based winner selection (removes server-as-authority trust assumption)
 - On-chain dispute mechanism for game-outcome challenges
 
-For the full mainnet roadmap including timelines, see `Docs/mainnet-roadmap.md` (forthcoming).
+For the full mainnet roadmap including timelines, see `Docs/mainnet-roadmap.md`.
 
 ---
 
@@ -698,9 +676,9 @@ For the full mainnet roadmap including timelines, see `Docs/mainnet-roadmap.md` 
 
 - `.audit/ARCHITECTURE.md` - on-chain trust model (SOS #2 synthesis)
 - `.bulwark/ARCHITECTURE.md` - off-chain trust model (DB #2 synthesis)
-- `Docs/internal/REMEDIATION_DECISIONS.md` - SOS finding decisions and mainnet bundle plan
-- `Docs/internal/DB_REMEDIATION_DECISIONS.md` - DB finding decisions and mainnet bundle plan
+- the SOS remediation log - SOS finding decisions and mainnet bundle plan
+- the DB remediation log - DB finding decisions and mainnet bundle plan
 - `.bok/reports/2026-05-07-report.md` - math invariant verification results
-- `Docs/internal/PRIOR_AUDIT_DELTA.md` - what changed Feb → May 2026
-- `Docs/SolShot_Litepaper_v2.0.md` - product and token economy spec
+- the prior-audit delta record - what changed Feb → May 2026
+- `Docs/SolShot_Litepaper_v2.2.md` - product and token economy spec
 - `Docs/` - companion architecture decision records (ADRs)

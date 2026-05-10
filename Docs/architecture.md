@@ -34,7 +34,7 @@ decisions_referenced:
 SolShot is a multiplayer artillery game with on-chain SOL escrow for wagered matches. Players fire
 shots through a browser PWA or inside Telegram group chats, wagering SOL on the outcome. The server
 is the authoritative physics and game-state engine; it cannot redirect funds. Two Anchor programs on
-Solana enforce correct settlement math and recipients — the winner gets 90%, treasury 7%, ops 3%,
+Solana enforce correct settlement math and recipients - the winner gets 90%, treasury 7%, ops 3%,
 split atomically on-chain with no off-chain accounting.
 
 ```
@@ -72,14 +72,14 @@ TG group chat (host runs /customgame)
 
 Server keeps live match state in MongoDB and reconciles to chain at settle time. The chain is
 authoritative for funds; MongoDB is authoritative for game state. Discrepancies are recoverable
-via the permissionless reclaim path — any player can self-refund 24 hours after match end if the
+via the permissionless reclaim path - any player can self-refund 24 hours after match end if the
 server never settled.
 
 ---
 
 ## Components
 
-### 1. Server — Express + Socket.IO + Telegraf
+### 1. Server - Express + Socket.IO + Telegraf
 
 **Purpose:** Single source of truth for game physics, match state, and escrow authority.
 
@@ -107,21 +107,21 @@ server never settled.
 
 **Group-chat service files (`server/services/groupchat/`):**
 
-- `lifecycle.js` — match state transitions (lobby → awaiting_deposits → active → settled/cancelled)
-- `scheduler.js` — turn timer enforcement (12-hour default), idle timeout
-- `configFlow.js` — in-chat config wizard for wager / player count
-- `lobbyCard.js` — self-updating Telegram lobby message
-- `botMessages.js` — outbound TG message templates
-- `quietHours.js` — per-group quiet hours config
-- `lobbyWatchdog.js` — boot-recovery sweep for stuck lobbies
-- `index.js` — barrel export
+- `lifecycle.js` - match state transitions (lobby → awaiting_deposits → active → settled/cancelled)
+- `scheduler.js` - turn timer enforcement (12-hour default), idle timeout
+- `configFlow.js` - in-chat config wizard for wager / player count
+- `lobbyCard.js` - self-updating Telegram lobby message
+- `botMessages.js` - outbound TG message templates
+- `quietHours.js` - per-group quiet hours config
+- `lobbyWatchdog.js` - boot-recovery sweep for stuck lobbies
+- `index.js` - barrel export
 
 **Tech:** Node.js 20, Express 4, Socket.IO 4, Telegraf 4, Mongoose 9.x, Anchor SDK 0.32.1, `bn.js`
-(imported directly — Anchor 0.32.1 breaking change).
+(imported directly - Anchor 0.32.1 breaking change).
 
 ---
 
-### 2. Client — React + Phaser PWA
+### 2. Client - React + Phaser PWA
 
 **Purpose:** Input collection, physics rendering, wallet transaction signing. Clients render
 results; they do not compute physics or verify game state.
@@ -147,7 +147,7 @@ results; they do not compute physics or verify game state.
 
 ---
 
-### 3. Bot — Telegram via Telegraf
+### 3. Bot - Telegram via Telegraf
 
 **Purpose:** Group-chat match creation and async turn coordination. Renders lobby cards and turn
 prompts directly in Telegram group chats. Sends magic-link DMs for wallet binding.
@@ -168,7 +168,7 @@ binds Privy wallet to TG identity in MongoDB.
 
 ---
 
-### 4. On-chain v1 — `solshot-escrow` (1v1, real-time)
+### 4. On-chain v1 - `solshot-escrow` (1v1, real-time)
 
 **Purpose:** SOL escrow for real-time wagered duels (2–4 players). Handles Quick Match, Duel,
 High Roller, and Custom Challenge match modes.
@@ -183,10 +183,10 @@ High Roller, and Custom Challenge match modes.
 - Wager bounds: 10,000 lamports min, 100 SOL max
 - Players: 2–4 (stored as `[Pubkey; 4]` array, `max_players: u8`)
 - Deposit dedup: `deposits_mask: u8` bitmap
-- Settlement split: 700/300 BPS treasury/ops hardcoded as `const u64` — immutable without Layer-1
+- Settlement split: 700/300 BPS treasury/ops hardcoded as `const u64` - immutable without Layer-1
   upgrade
 - Fee destinations: read from **live** `GlobalConfig` at settle time (v1 is not immune to
-  mid-match config rotation — this is H002, deferred to mainnet Bundle 1)
+  mid-match config rotation - this is H002, deferred to mainnet Bundle 1)
 - PDA seeds: `["match", match_id.as_bytes()]`
 - Permissionless reclaim: `created_at + 7200s` (2 hours after SOS H035 fix)
 - `cancel_match` / `settle_match`: NOT blocked by pause (H016 fix applied, mirrors v2 posture)
@@ -200,7 +200,7 @@ High Roller, and Custom Challenge match modes.
 
 ---
 
-### 5. On-chain v2 — `solshot-escrow-v2` (N-player, async) — NEW
+### 5. On-chain v2 - `solshot-escrow-v2` (N-player, async) - NEW
 
 **Purpose:** SOL escrow for async Telegram group-chat matches. Designed for chat-paced cadence
 (12-hour turn timers, multi-day matches) with 2–10 players.
@@ -224,7 +224,7 @@ High Roller, and Custom Challenge match modes.
 | Match duration | n/a (real-time) | `duration_secs` up to 24h (H039 fix; was 7 days) |
 | Deposit window | n/a | `deposit_window_secs` up to 24h |
 | Permissionless reclaim | `2 × TIMEOUT_SECONDS` | `match_end_ts + 24h` |
-| Pause blocks cancel/settle | YES (v1 pre-fix) | NO — in-flight exits always allowed |
+| Pause blocks cancel/settle | YES (v1 pre-fix) | NO - in-flight exits always allowed |
 | Deposit deadline edge | inclusive | exclusive (H018 fix) |
 
 **Per-match snapshot semantics (critical for trust model):**  
@@ -233,11 +233,11 @@ fee_bps_ops}` into `MatchEscrow.{treasury_snapshot, ops_snapshot, fee_bps_treasu
 fee_bps_ops_snapshot}`. `settle_match` reads exclusively from the snapshot; account constraints
 validate supplied fee destinations against snapshot values (not live config). This means in-flight
 v2 matches are immune to mid-match config rotation. New matches created after a compromise would
-use the poisoned config — this is the remaining exposure (H028-class, deferred).
+use the poisoned config - this is the remaining exposure (H028-class, deferred).
 
 **Key files for v2 server integration:**
-- `server/services/escrow-v2.js` — Anchor program wrapper
-- `server/services/groupchat/lifecycle.js` — creates PDA, confirms deposits, settles
+- `server/services/escrow-v2.js` - Anchor program wrapper
+- `server/services/groupchat/lifecycle.js` - creates PDA, confirms deposits, settles
 
 **First N-player organic settlement:** 2026-05-06, 3-player match, TX
 `4ja8VKpZJnQek8xakFWqByyRJ6qG9U7iWeFwqiiZVKGhemVfnWLDLiJYuMdjoN9tKptCxE1Dkzx5d9ZE6D3NqtL1`
@@ -246,7 +246,7 @@ use the poisoned config — this is the remaining exposure (H028-class, deferred
 
 ---
 
-### 6. Database — MongoDB
+### 6. Database - MongoDB
 
 **Purpose:** Authoritative store for game state, user profiles, group match lifecycle, challenges,
 and referrals.
@@ -257,22 +257,22 @@ and referrals.
 
 | Schema | Key fields |
 |--------|-----------|
-| `User` | `tgId`, `walletAddress` (stale after Privy rotation — DB H009, deferred), `gold`, `prestige`, `stats` |
+| `User` | `tgId`, `walletAddress` (stale after Privy rotation - DB H009, deferred), `gold`, `prestige`, `stats` |
 | `Match` (1v1) | `matchId`, `players[]`, `state`, `wager`, `escrowPda`, `winner` |
 | `GroupMatch` | `matchId`, `state`, `players[]`, `wager`, `escrowPda`, `currentTurn`, `depositMask` |
 | `Challenge` | `code`, `challengerWallet`, `challengerTgUserId`, `wager` |
 
 **Notes:**
-- `mongoose.set('runValidators', true)` set globally (DB H032 fix) — schema enums enforced on all
+- `mongoose.set('runValidators', true)` set globally (DB H032 fix) - schema enums enforced on all
   update paths
-- `GroupMatch.matchId` uses `Math.random()` currently (entropy gap — DB H089, Bundle C)
+- `GroupMatch.matchId` uses `Math.random()` currently (entropy gap - DB H089, Bundle C)
 - No at-rest encryption on MongoDB Atlas free tier (documented limitation)
 
 **Hosting:** MongoDB Atlas, connected via `MONGODB_URI` env var.
 
 ---
 
-### 7. Wallet — Privy Embedded
+### 7. Wallet - Privy Embedded
 
 **Purpose:** Wallet custody and transaction signing for players. Replaced Dynamic (prior stack) as
 of the Privy migration (May 2026).
@@ -293,20 +293,20 @@ of the Privy migration (May 2026).
    to TG identity in MongoDB.
 
 **Transaction signing:**
-- `signAndSendEscrowDeposit(base64Tx)` — deserializes server-built TX, signs via Privy, confirms,
+- `signAndSendEscrowDeposit(base64Tx)` - deserializes server-built TX, signs via Privy, confirms,
   notifies server via `escrowDepositConfirm` socket event
-- `signAndBurnShot(burnAmount)` — builds SPL burn IX client-side, signs via Privy
+- `signAndBurnShot(burnAmount)` - builds SPL burn IX client-side, signs via Privy
 
 **Known gap:** Wallet rotation is not tracked. If Privy re-provisions a wallet (SDK upgrade or
 user action), `users.walletAddress` in MongoDB is never updated. Settlement at
-`lifecycle.js:~851` reads the stale address — funds would land at a wallet the user no longer
+`lifecycle.js:~851` reads the stale address - funds would land at a wallet the user no longer
 controls. This is DB H009, deferred to mainnet Bundle 2.
 
 ---
 
 ## Data Flows
 
-### Flow 1 — Wagered 1v1 Deposit → Settle
+### Flow 1 - Wagered 1v1 Deposit → Settle
 
 ```
 1. Player opens solshot.gg, authenticates via Privy
@@ -329,7 +329,7 @@ controls. This is DB H009, deferred to mainnet Bundle 2.
    → 'matchEnd' emitted to clients with TX link
 ```
 
-### Flow 2 — Wagered Group-Chat Deposit → Settle (NEW)
+### Flow 2 - Wagered Group-Chat Deposit → Settle (NEW)
 
 ```
 1. Host runs /customgame in TG group chat
@@ -365,7 +365,7 @@ controls. This is DB H009, deferred to mainnet Bundle 2.
    → settlement TX posted to TG group chat
 ```
 
-### Flow 3 — Magic-Link Wallet Bind via TG Bot (NEW)
+### Flow 3 - Magic-Link Wallet Bind via TG Bot (NEW)
 
 ```
 1. User DMs /play to @SolShotGG_bot
@@ -379,13 +379,13 @@ controls. This is DB H009, deferred to mainnet Bundle 2.
    Body: { privyToken, telegramUserId }
 7. server/services/privyAuth.js verifies Privy JWT
    → getUser() lookup confirms telegramUserId matches Privy session's actual
-     linked TG account (DB H001 fix — returns 403 on mismatch)
+     linked TG account (DB H001 fix - returns 403 on mismatch)
 8. walletLinkTokens.js:redeemLinkToken(token, tgId) validates token
 9. User.walletAddress = privy.wallet.address → saved to MongoDB
 10. Bot DMs confirmation; user can now join wagered matches
 ```
 
-### Flow 4 — Cancel / Refund (H023 length-check requirement)
+### Flow 4 - Cancel / Refund (H023 length-check requirement)
 
 ```
 Cancel triggered by: player timeout, server forfeits, lobby-fill failure
@@ -393,11 +393,11 @@ Cancel triggered by: player timeout, server forfeits, lobby-fill failure
 1. Server calls cancel_match or permissionless_reclaim
 2. CRITICAL (H023 fix): on-chain requires
    remaining_accounts.len() == deposits_mask.count_ones()
-   — passing fewer accounts reverts with IncompleteRefund
+   - passing fewer accounts reverts with IncompleteRefund
 3. Server builds remaining_accounts from:
    v1: wagerStates[roomId].deposits map (in-memory)
    v2: GroupMatch.players[].initialDepositTx in MongoDB
-4. [GAP — DB H014]: server reads its own state, NOT on-chain deposits_mask.
+4. [GAP - DB H014]: server reads its own state, NOT on-chain deposits_mask.
    If Mongo desyncs from chain (crash + reconnect), refund reverts on-chain;
    server reports success: true; SOL stranded until 24h permissionless reclaim.
 5. On-chain refund loop iterates deposited slots, credits each player
@@ -410,12 +410,12 @@ Cancel triggered by: player timeout, server forfeits, lobby-fill failure
 
 ### On-chain (per-match PDA + global config)
 
-**GlobalConfig PDA** — seeds: `[b"config"]`  
+**GlobalConfig PDA** - seeds: `[b"config"]`  
 One per program. Holds `authority`, `treasury`, `ops`, `is_paused`, and (v2 only)
-`fee_bps_treasury`, `fee_bps_ops`. Mutated only by `update_config` (one-step, no timelock — H001,
+`fee_bps_treasury`, `fee_bps_ops`. Mutated only by `update_config` (one-step, no timelock - H001,
 deferred).
 
-**MatchEscrow PDA** — seeds: `["match", match_id.as_bytes()]`  
+**MatchEscrow PDA** - seeds: `["match", match_id.as_bytes()]`  
 One per match. Created by authority (`create_match`). Key state fields:
 
 | Field | v1 | v2 |
@@ -427,11 +427,11 @@ One per match. Created by authority (`create_match`). Key state fields:
 | `wager_lamports` | `u64` | `u64` |
 | `created_at` | `i64` | `i64` |
 | `activated_at` | `i64` (set on full mask or start_with_depositors) | same |
-| `match_end_ts` | — | `i64` = `activated_at + duration_secs` |
-| `treasury_snapshot` | — | `Pubkey` (frozen at create) |
-| `ops_snapshot` | — | `Pubkey` (frozen at create) |
-| `fee_bps_treasury_snapshot` | — | `u16` (frozen at create) |
-| `fee_bps_ops_snapshot` | — | `u16` (frozen at create) |
+| `match_end_ts` | - | `i64` = `activated_at + duration_secs` |
+| `treasury_snapshot` | - | `Pubkey` (frozen at create) |
+| `ops_snapshot` | - | `Pubkey` (frozen at create) |
+| `fee_bps_treasury_snapshot` | - | `u16` (frozen at create) |
+| `fee_bps_ops_snapshot` | - | `u16` (frozen at create) |
 
 **Pot calculation:** `total_pot = wager_lamports × count_ones(deposits_mask)`  
 (u128 widened to prevent overflow; `overflow-checks = true` in Cargo workspace)
@@ -447,31 +447,31 @@ State written `Settled` before lamport math (CEI / OC-10 compliant).
 ### Off-chain (Mongo + in-memory match state)
 
 **In-memory (server/socket-io/main.js):**
-- `rooms[roomId]` — live 1v1 match state (players, physics, gold, turn order)
-- `pendingReconnects[walletAddress]` — 30s reconnect window state
-- `turnTimers[roomId]` — active turn timer references
-- `wagerStates[roomId].deposits` — which sockets have confirmed escrow deposit
+- `rooms[roomId]` - live 1v1 match state (players, physics, gold, turn order)
+- `pendingReconnects[walletAddress]` - 30s reconnect window state
+- `turnTimers[roomId]` - active turn timer references
+- `wagerStates[roomId].deposits` - which sockets have confirmed escrow deposit
 
 **MongoDB (persistent):**
-- `User` — identity binding (tgId ↔ walletAddress), gold, prestige
-- `Match` — 1v1 match lifecycle + escrow reference
-- `GroupMatch` — async group match, current turn, deposit state, player list
-- `Challenge` — open challenges with wager / expiry
+- `User` - identity binding (tgId ↔ walletAddress), gold, prestige
+- `Match` - 1v1 match lifecycle + escrow reference
+- `GroupMatch` - async group match, current turn, deposit state, player list
+- `Challenge` - open challenges with wager / expiry
 
 **Consistency model:** MongoDB is the source of truth for historical match state. In-memory state
 is rebuilt on reconnect / server restart via MongoDB reconciliation. The on-chain mask is not
-currently re-read before constructing cancel `remaining_accounts` (DB H014 gap — deferred to
+currently re-read before constructing cancel `remaining_accounts` (DB H014 gap - deferred to
 Bundle 3).
 
 ### Snapshot semantics (v2 only)
 
 v2 captures `GlobalConfig.{treasury, ops, fee_bps_*}` at `create_match` time atomically. The
-capture is immutable post-creation — no instruction modifies the snapshot fields after init.
+capture is immutable post-creation - no instruction modifies the snapshot fields after init.
 `settle_match` validates supplied fee destination accounts against snapshot values via Anchor
 constraints, preventing config rotation from affecting settled amounts for in-flight matches.
 
 This does NOT protect newly created matches post-compromise, and does NOT prevent winner-pick fraud
-(server is trusted to select the legitimate winner — H003, deferred to Bundle 4).
+(server is trusted to select the legitimate winner - H003, deferred to Bundle 4).
 
 ---
 
@@ -513,8 +513,8 @@ From `.bulwark/ARCHITECTURE.md` Section 2:
 ├──────────────────────────────────────────────────────────────────┤
 │ ZONE 3: MATCH PARTICIPANT (per-match scope)                      │
 │ → Can fire, deposit, forfeit, purchase weapon for that match     │
-│ [GAP] shoot legacy relay no auth — FIXED DB H018                 │
-│ [GAP] acceptChallenge/declineChallenge no auth — FIXED DB H019   │
+│ [GAP] shoot legacy relay no auth - FIXED DB H018                 │
+│ [GAP] acceptChallenge/declineChallenge no auth - FIXED DB H019   │
 ├──────────────────────────────────────────────────────────────────┤
 │ ZONE 4: SERVER AUTHORITY (Escrow signer)                         │
 │ → Signs settle/cancel/create on-chain                            │
@@ -528,13 +528,13 @@ From `.audit/ARCHITECTURE.md` Section 3:
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  LAYER 1 — SOLANA UPGRADE AUTHORITY                           │
-│    HPyV...nokv (hot wallet — same as Layer 2)                 │
+│  LAYER 1 - SOLANA UPGRADE AUTHORITY                           │
+│    HPyV...nokv (hot wallet - same as Layer 2)                 │
 │    Power: replace any bytecode, close program                 │
 │    Safeguards: NONE (no timelock, no multisig)                │
 ├──────────────────────────────────────────────────────────────┤
-│  LAYER 2 — APPLICATION AUTHORITY (config.authority)          │
-│    HPyV...nokv (hot wallet — same as Layer 1)                 │
+│  LAYER 2 - APPLICATION AUTHORITY (config.authority)          │
+│    HPyV...nokv (hot wallet - same as Layer 1)                 │
 │    Power: rotate config / pause / settle / create / cancel    │
 │           v2 also: rotate fee BPS up to 10% combined         │
 │    Safeguards: distinctness guards, zero-address guard,       │
@@ -553,7 +553,7 @@ From `.audit/ARCHITECTURE.md` Section 3:
 ├──────────────────────────────────────────────────────────────┤
 │  PERMISSIONLESS ZONE                                          │
 │    permissionless_reclaim after grace deadline                │
-│    NO config account in struct — immune to pause              │
+│    NO config account in struct - immune to pause              │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -595,7 +595,7 @@ commit-reveal or VRF-based winner selection (SOS H003/H005, deferred to Bundle 4
 
 Three formal audits ran in May 2026. Reports and remediation decisions are cross-referenced below.
 
-### SOS Audit #2 (Stronghold of Security — on-chain)
+### SOS Audit #2 (Stronghold of Security - on-chain)
 
 **Report:** `.audit/FINAL_REPORT.md`  
 **Decisions:** `Docs/internal/REMEDIATION_DECISIONS.md`
@@ -604,21 +604,21 @@ Three formal audits ran in May 2026. Reports and remediation decisions are cross
 
 | ID | Fix |
 |----|-----|
-| H023 | Partial-refund theft via `close=caller` — `remaining_accounts.len()` check added to all 4 refund loops |
+| H023 | Partial-refund theft via `close=caller` - `remaining_accounts.len()` check added to all 4 refund loops |
 | H016 + H009 | Pause removed from v1 `cancel_match` / `settle_match` / `start_with_depositors` |
-| H017 | v1 `start_with_depositors` silent-kick — 600s deposit-window gate added |
-| H035 | Settle-vs-cancel race — v1 `TIMEOUT_SECONDS` bumped 600 → 3600 |
-| H039 | v2 unbounded `duration_secs` — `MAX_DURATION_SECS` reduced from 7 days to 24h |
-| H018 | v2 deposit-window edge collision — deadline check changed from `<=` to `<` |
-| H025 | UncheckedAccount fee destinations — `!executable` constraints added to all 6 |
-| H040 | Stale 48h comment — corrected to 2h |
-| H043 | Pause emits no event — `Paused`/`Unpaused` events added with authority pubkey |
+| H017 | v1 `start_with_depositors` silent-kick - 600s deposit-window gate added |
+| H035 | Settle-vs-cancel race - v1 `TIMEOUT_SECONDS` bumped 600 → 3600 |
+| H039 | v2 unbounded `duration_secs` - `MAX_DURATION_SECS` reduced from 7 days to 24h |
+| H018 | v2 deposit-window edge collision - deadline check changed from `<=` to `<` |
+| H025 | UncheckedAccount fee destinations - `!executable` constraints added to all 6 |
+| H040 | Stale 48h comment - corrected to 2h |
+| H043 | Pause emits no event - `Paused`/`Unpaused` events added with authority pubkey |
 
 Deferred (16 findings): primarily the H001 authority-key family (one-step transfer, no timelock,
 single hot wallet) and server-as-authority design limitations. See `Docs/internal/REMEDIATION_DECISIONS.md`
 Section 2 for full rationale.
 
-### DB Audit #2 (Dinh's Bulwark — off-chain)
+### DB Audit #2 (Dinh's Bulwark - off-chain)
 
 **Report:** `.bulwark/FINAL_REPORT.md`  
 **Decisions:** `Docs/internal/DB_REMEDIATION_DECISIONS.md`
@@ -627,27 +627,27 @@ Section 2 for full rationale.
 
 | ID | Fix |
 |----|-----|
-| H001 | Privy/TG identity bridge — `getUser()` lookup verifies `telegramUserId` against Privy session |
-| H002 | `requirePrivyAuth({required:true})` fails-open — 503 when secret missing |
-| H013 | `refundWager()` fails-open — errors now propagate |
-| H018 | `shoot` legacy relay no auth — `requireAuth` + turn-ownership check added |
-| H019 | `acceptChallenge`/`declineChallenge` no auth — `requireAuth` added |
-| H020 | `clientDebugLog` unauthenticated log injection — auth gate added |
-| H022 | `getGroupMatch` no auth — auth gate added |
-| H023 | `/api/challenge/:code/cancel` unauthenticated — caller identity required |
-| H026 | Turn-sequence nonce optional — `data.seq` now required |
-| H031 | DebugAuthOverlay in production — `NODE_ENV !== 'production'` guard added |
-| H032 | `runValidators: true` missing — set globally via `mongoose.set()` |
-| H035 | Dead Dynamic origins in server CSP — replaced with Privy origins |
-| H041 | express-rate-limit IPv6 bypass — bumped to 8.5.1 |
-| H055 | `/teststats` no admin guard in production — `NODE_ENV` + `ADMIN_TELEGRAM_IDS` check |
-| H072 | `matchId` operator injection — strict type check added |
-| H083 | Admin key timing-unsafe compare — replaced with `crypto.timingSafeEqual` |
+| H001 | Privy/TG identity bridge - `getUser()` lookup verifies `telegramUserId` against Privy session |
+| H002 | `requirePrivyAuth({required:true})` fails-open - 503 when secret missing |
+| H013 | `refundWager()` fails-open - errors now propagate |
+| H018 | `shoot` legacy relay no auth - `requireAuth` + turn-ownership check added |
+| H019 | `acceptChallenge`/`declineChallenge` no auth - `requireAuth` added |
+| H020 | `clientDebugLog` unauthenticated log injection - auth gate added |
+| H022 | `getGroupMatch` no auth - auth gate added |
+| H023 | `/api/challenge/:code/cancel` unauthenticated - caller identity required |
+| H026 | Turn-sequence nonce optional - `data.seq` now required |
+| H031 | DebugAuthOverlay in production - `NODE_ENV !== 'production'` guard added |
+| H032 | `runValidators: true` missing - set globally via `mongoose.set()` |
+| H035 | Dead Dynamic origins in server CSP - replaced with Privy origins |
+| H041 | express-rate-limit IPv6 bypass - bumped to 8.5.1 |
+| H055 | `/teststats` no admin guard in production - `NODE_ENV` + `ADMIN_TELEGRAM_IDS` check |
+| H072 | `matchId` operator injection - strict type check added |
+| H083 | Admin key timing-unsafe compare - replaced with `crypto.timingSafeEqual` |
 
 Deferred (~30 findings across Bundles A–D): wallet rotation gap, confirmDeposit race, JWT audit,
 double-settle race, Vercel security headers. See `Docs/internal/DB_REMEDIATION_DECISIONS.md` Section 2.
 
-### BOK Audit #2 (Book of Knowledge — math invariants)
+### BOK Audit #2 (Book of Knowledge - math invariants)
 
 **Report:** `.bok/reports/2026-05-07-report.md`
 
@@ -668,25 +668,25 @@ requires WSL2 setup.
 The following hardening bundles are required before mainnet. Each is a separate PR + audit-verify
 cycle.
 
-**Bundle 1 — Authority hardening** (closes SOS H001, H002, H030, H032, H042; DB H003, H004, H012)
+**Bundle 1 - Authority hardening** (closes SOS H001, H002, H030, H032, H042; DB H003, H004, H012)
 - `pending_authority` field + `propose_authority` / `accept_authority` instructions (both programs)
 - 24h timelock on `update_config` for treasury / ops / fee_bps changes
 - Migrate Layer 1 (upgrade authority) to Squads M-of-N multisig
 - Separate server keypair from upgrade authority
 
-**Bundle 2 — Wallet & Identity** (closes DB H009, H010, H014, H015, H016)
+**Bundle 2 - Wallet & Identity** (closes DB H009, H010, H014, H015, H016)
 - `updateWalletForTgUser()` with versioned audit trail (wallet rotation tracking)
 - On-chain `deposits_mask` read before building `remaining_accounts` in cancel paths
 - Atomic `confirmDeposit` via `$elemMatch` + `findOneAndUpdate`
 - Double-settle race: convert `checkAndSettle()` to atomic `findOneAndUpdate({state:'active'},{state:'settled'})`
 
-**Bundle 3 — Off-chain hardening** (closes DB H049, H060, H089; SOS H049)
+**Bundle 3 - Off-chain hardening** (closes DB H049, H060, H089; SOS H049)
 - `match_id` entropy: `crypto.randomBytes(8)` = 16 hex chars + Mongo unique index
 - Vercel security headers (`frame-ancestors`, HSTS, Permissions-Policy via `client/vercel.json`)
 - RPC fallback endpoint + exponential backoff on 429
 - Bundle C npm CVEs: socket.io-parser, path-to-regexp, handlebars transitive
 
-**Bundle 4 — Long-term protocol research** (addresses SOS H003, H005)
+**Bundle 4 - Long-term protocol research** (addresses SOS H003, H005)
 - Commit-reveal or VRF-based winner selection (removes server-as-authority trust assumption)
 - On-chain dispute mechanism for game-outcome challenges
 
@@ -696,11 +696,11 @@ For the full mainnet roadmap including timelines, see `Docs/mainnet-roadmap.md` 
 
 ## Cross-References
 
-- `.audit/ARCHITECTURE.md` — on-chain trust model (SOS #2 synthesis)
-- `.bulwark/ARCHITECTURE.md` — off-chain trust model (DB #2 synthesis)
-- `Docs/internal/REMEDIATION_DECISIONS.md` — SOS finding decisions and mainnet bundle plan
-- `Docs/internal/DB_REMEDIATION_DECISIONS.md` — DB finding decisions and mainnet bundle plan
-- `.bok/reports/2026-05-07-report.md` — math invariant verification results
-- `Docs/internal/PRIOR_AUDIT_DELTA.md` — what changed Feb → May 2026
-- `Docs/SolShot_Litepaper_v2.0.md` — product and token economy spec
-- `Docs/` — companion architecture decision records (ADRs)
+- `.audit/ARCHITECTURE.md` - on-chain trust model (SOS #2 synthesis)
+- `.bulwark/ARCHITECTURE.md` - off-chain trust model (DB #2 synthesis)
+- `Docs/internal/REMEDIATION_DECISIONS.md` - SOS finding decisions and mainnet bundle plan
+- `Docs/internal/DB_REMEDIATION_DECISIONS.md` - DB finding decisions and mainnet bundle plan
+- `.bok/reports/2026-05-07-report.md` - math invariant verification results
+- `Docs/internal/PRIOR_AUDIT_DELTA.md` - what changed Feb → May 2026
+- `Docs/SolShot_Litepaper_v2.0.md` - product and token economy spec
+- `Docs/` - companion architecture decision records (ADRs)

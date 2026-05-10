@@ -1,6 +1,6 @@
-# SolShot — Documentation Index
+# SolShot - Documentation Index
 
-Welcome. If you're a Colosseum judge, contributor, or someone investigating SolShot — **start with the root [`README.md`](../README.md) first**, then come here for the documents in depth.
+Welcome. If you're a Colosseum judge, contributor, or someone investigating SolShot - **start with the root [`README.md`](../README.md) first**, then come here for the documents in depth.
 
 This folder (`Docs/`) is the **public-facing project documentation**. Internal team artefacts (planning, comms, demo scripts, audit decision logs) live in [`Docs/internal/`](./internal/) and are not curated for outside readers.
 
@@ -10,23 +10,23 @@ This folder (`Docs/`) is the **public-facing project documentation**. Internal t
 
 | # | Doc | Time |
 |---|---|---|
-| 1 | [**One-pager**](./one-pager.md) — the 90-second pitch | 2 min |
-| 2 | [**How to play**](./how-to-play.md) — every match type, every weapon, full player guide | 10 min |
-| 3 | [**Roadmap**](./ROADMAP.md) — forward-looking 5-phase plan, multi-game / multi-platform / open SDK | 5 min |
-| 4 | [**Litepaper**](./SolShot_Litepaper_v2.2.md) — full project spec (vision, distribution, on-chain programs, security posture) | 20 min |
-| 4b | [Litepaper PDF](./SolShot_Litepaper_v2.2.pdf) — same content, share-friendly format | 20 min |
-| 5 | [**SHOT token model**](./SHOT_TOKEN_MODEL.md) — distribution, emissions, burns, scarcity analysis | 10 min |
+| 1 | [**One-pager**](./one-pager.md) - the 90-second pitch | 2 min |
+| 2 | [**How to play**](./how-to-play.md) - every match type, every weapon, full player guide | 10 min |
+| 3 | [**Roadmap**](./ROADMAP.md) - forward-looking 5-phase plan, multi-game / multi-platform / open SDK | 5 min |
+| 4 | [**Litepaper**](./SolShot_Litepaper_v2.2.md) - full project spec (vision, distribution, on-chain programs, security posture) | 20 min |
+| 4b | [Litepaper PDF](./SolShot_Litepaper_v2.2.pdf) - same content, share-friendly format | 20 min |
+| 5 | [**SHOT token model**](./SHOT_TOKEN_MODEL.md) - distribution, emissions, burns, scarcity analysis | 10 min |
 
 ## 🛡 Deeper context (still public)
 
-- [`architecture.md`](./architecture.md) — system architecture
-- [`security-model.md`](./security-model.md) — security model and trust boundaries
-- [`audit-summary.md`](./audit-summary.md) — top-line summary across the three audits
-- [`mainnet-roadmap.md`](./mainnet-roadmap.md) — sequenced remediation bundles required before mainnet
-- [`crypto-explainer.md`](./crypto-explainer.md) — onboarding for crypto-newcomer readers
-- [`competitive-landscape.md`](./competitive-landscape.md) — market positioning
-- [`deployment-sequence.md`](./deployment-sequence.md) — deploy order for the mainnet flip
-- [`edge-case-playbook.md`](./edge-case-playbook.md) — operational edge cases
+- [`architecture.md`](./architecture.md) - system architecture
+- [`security-model.md`](./security-model.md) - security model and trust boundaries
+- [`audit-summary.md`](./audit-summary.md) - top-line summary across the three audits
+- [`mainnet-roadmap.md`](./mainnet-roadmap.md) - sequenced remediation bundles required before mainnet
+- [`crypto-explainer.md`](./crypto-explainer.md) - onboarding for crypto-newcomer readers
+- [`competitive-landscape.md`](./competitive-landscape.md) - market positioning
+- [`deployment-sequence.md`](./deployment-sequence.md) - deploy order for the mainnet flip
+- [`edge-case-playbook.md`](./edge-case-playbook.md) - operational edge cases
 
 ---
 
@@ -36,9 +36,9 @@ Three independent audit pipelines from the [Solana Vibes Kit](https://github.com
 
 | Audit | Scope | Headline report |
 |---|---|---|
-| **SOS** — on-chain | Anchor program vulnerability surface | [`../.audit/FINAL_REPORT.md`](../.audit/FINAL_REPORT.md) |
-| **BOK** — math | Settlement / fee / refund invariants — 159 verification tests passing | [`../.bok/reports/`](../.bok/reports/) |
-| **DB** — off-chain | Auth / signing / Privy integration / server hardening | [`../.bulwark/FINAL_REPORT.md`](../.bulwark/FINAL_REPORT.md) |
+| **SOS** - on-chain | Anchor program vulnerability surface | [`../.audit/FINAL_REPORT.md`](../.audit/FINAL_REPORT.md) |
+| **BOK** - math | Settlement / fee / refund invariants - 159 verification tests passing | [`../.bok/reports/`](../.bok/reports/) |
+| **DB** - off-chain | Auth / signing / Privy integration / server hardening | [`../.bulwark/FINAL_REPORT.md`](../.bulwark/FINAL_REPORT.md) |
 
 The condensed summary lives here in `Docs/`: [`audit-summary.md`](./audit-summary.md) · [`mainnet-roadmap.md`](./mainnet-roadmap.md).
 
@@ -50,7 +50,7 @@ Fix-vs-defer decision logs for items the audits flagged:
 
 ## 📝 Blog drafts
 
-[`./blog/`](./blog/) — ready-to-publish marketing copy ("What is SolShot?", "How wagering works")
+[`./blog/`](./blog/) - ready-to-publish marketing copy ("What is SolShot?", "How wagering works")
 
 ---
 
@@ -64,9 +64,9 @@ Fix-vs-defer decision logs for items the audits flagged:
 
 | Folder | What it is |
 |---|---|
-| [`../.audit/`](../.audit/) | SOS on-chain audit — context, strategies, findings |
-| [`../.bok/`](../.bok/) | BOK math invariants audit — proofs, proptest results, summary |
-| [`../.bulwark/`](../.bulwark/) | DB off-chain audit — context, strategies, findings |
+| [`../.audit/`](../.audit/) | SOS on-chain audit - context, strategies, findings |
+| [`../.bok/`](../.bok/) | BOK math invariants audit - proofs, proptest results, summary |
+| [`../.bulwark/`](../.bulwark/) | DB off-chain audit - context, strategies, findings |
 | [`../_archive/`](../_archive/) | Superseded / historical docs (pre-pivot specs, retired research, prior-version artefacts). Nothing here reflects current state. |
 
 For the full repo tree explanation, see the root [`FOLDER_GUIDE.md`](../FOLDER_GUIDE.md).

@@ -348,10 +348,10 @@ Reaching Diamond requires earning and burning 8,400 SHOT, representing hundreds 
 The server performs five checks before crediting a prestige burn:
 
 1. **Transaction exists** and has reached `confirmed` commitment on Solana.
-2. **Replay protection** — the transaction signature has not been used for a previous prestige burn.
-3. **Correct mint** — the burn instruction targets the SHOT token mint specifically.
-4. **Correct signer** — the burn was authorised by the player's wallet.
-5. **Correct amount** — the burned amount matches or exceeds the required prestige tier cost.
+2. **Replay protection** - the transaction signature has not been used for a previous prestige burn.
+3. **Correct mint** - the burn instruction targets the SHOT token mint specifically.
+4. **Correct signer** - the burn was authorised by the player's wallet.
+5. **Correct amount** - the burned amount matches or exceeds the required prestige tier cost.
 
 A TOCTOU guard claims the transaction signature immediately before async verification begins, preventing concurrent verification of the same burn. Verified signatures persist to MongoDB so replay protection survives server restarts.
 
@@ -385,28 +385,28 @@ Two fix bundles shipped to `main` before submission.
 
 Higher-complexity findings are documented openly in `Docs/internal/REMEDIATION_DECISIONS.md` and `Docs/internal/DB_REMEDIATION_DECISIONS.md`. Honest disclosure of what's still open.
 
-**Bundle A — Pre-mainnet must-fix (small, deferred for sequencing):**
+**Bundle A - Pre-mainnet must-fix (small, deferred for sequencing):**
 
-- H014 — H023 fix-bundle ↔ server desync. The on-chain refund path requires `count_ones(deposits_mask)` to match `remaining_accounts.len()`. Server builds the array from off-chain state. Fix requires fetching on-chain mask before refund builder. Cross-audit boundary defect.
-- H016 — Concurrent `confirmDeposit` doc overwrite. Two simultaneous deposit confirmations both follow `findOne → mutate → save()`. Refactor to atomic `findOneAndUpdate` with `$elemMatch` guard.
-- H015 — Group-chat double-settle race. Three async paths (`handleShot`, `handleForfeit`, `handleIdleTimeout`) each call `checkAndSettle()` on stale in-memory doc. Convert settle to atomic `findOneAndUpdate({state:'active'},{state:'settled'})`.
-- H009 / H010 — Wallet rotation gap. Privy can re-provision; server retains stale binding. Fix is semantically delicate. Add `updateWalletForTgUser()` with versioned audit trail.
+- H014 - H023 fix-bundle ↔ server desync. The on-chain refund path requires `count_ones(deposits_mask)` to match `remaining_accounts.len()`. Server builds the array from off-chain state. Fix requires fetching on-chain mask before refund builder. Cross-audit boundary defect.
+- H016 - Concurrent `confirmDeposit` doc overwrite. Two simultaneous deposit confirmations both follow `findOne → mutate → save()`. Refactor to atomic `findOneAndUpdate` with `$elemMatch` guard.
+- H015 - Group-chat double-settle race. Three async paths (`handleShot`, `handleForfeit`, `handleIdleTimeout`) each call `checkAndSettle()` on stale in-memory doc. Convert settle to atomic `findOneAndUpdate({state:'active'},{state:'settled'})`.
+- H009 / H010 - Wallet rotation gap. Privy can re-provision; server retains stale binding. Fix is semantically delicate. Add `updateWalletForTgUser()` with versioned audit trail.
 
-**Bundle B — Architectural pre-mainnet (design changes):**
+**Bundle B - Architectural pre-mainnet (design changes):**
 
-- H001 (SOS) — One-step authority transfer. No `pending_authority` propose/accept. Acknowledged hot-wallet risk. Fix: add `propose_authority` + `accept_authority` requiring co-sign.
-- H044 (SOS) — Single hot wallet for upgrade authority and application authority. Migrate upgrade authority to Squads M-of-N multisig before mainnet.
-- H003 / H004 (DB) — JWT generated but never verified server-side; auth signature 5-min replay window with no consumed-signature store. Decide: implement real JWT verification or remove `generateToken` entirely.
+- H001 (SOS) - One-step authority transfer. No `pending_authority` propose/accept. Acknowledged hot-wallet risk. Fix: add `propose_authority` + `accept_authority` requiring co-sign.
+- H044 (SOS) - Single hot wallet for upgrade authority and application authority. Migrate upgrade authority to Squads M-of-N multisig before mainnet.
+- H003 / H004 (DB) - JWT generated but never verified server-side; auth signature 5-min replay window with no consumed-signature store. Decide: implement real JWT verification or remove `generateToken` entirely.
 
-**Bundle C — Defensive cleanup (~25 items):**
+**Bundle C - Defensive cleanup (~25 items):**
 
 npm CVEs (`socket.io-parser` DoS, `path-to-regexp` ReDoS, `handlebars` JS injection); Vercel client zero security headers; `unsafe-inline` in client CSP; magic-link token in URL query param; single unmonitored RPC endpoint with no retry on 429; `Math.random` in challenge shortcodes; `nodemon` in production deps. Apply per-finding when convenient.
 
-**Bundle D — Cross-audit mainnet hardening:**
+**Bundle D - Cross-audit mainnet hardening:**
 
-- H120 — Cross-skill compound (DB Privy fail-open + SOS one-step authority rotation). DB H002 closed at the entry point in commit `348f109`; broader authority-hardening design tracked here.
-- H011 / H082 — Escrow keypair zeroisation reverted. Depends on web3.js change OR architectural rotation policy.
-- H084 — `@privy-io/server-auth` deprecated. Migrate to `@privy-io/node`.
+- H120 - Cross-skill compound (DB Privy fail-open + SOS one-step authority rotation). DB H002 closed at the entry point in commit `348f109`; broader authority-hardening design tracked here.
+- H011 / H082 - Escrow keypair zeroisation reverted. Depends on web3.js change OR architectural rotation policy.
+- H084 - `@privy-io/server-auth` deprecated. Migrate to `@privy-io/node`.
 
 ### Verdict
 
@@ -416,12 +416,12 @@ npm CVEs (`socket.io-parser` DoS, `path-to-regexp` ReDoS, `handlebars` JS inject
 
 ### Where to Read the Full Reports
 
-- `.audit/FINAL_REPORT.md` — SOS full report, all 50 findings with CVSS scores and attack walkthroughs
-- `.bulwark/FINAL_REPORT.md` — DB full report, all 113 findings with file:line evidence
-- `.bok/reports/2026-05-07-report.md` — BOK math verification, 41 invariants, 159 tests, per-function findings
-- `Docs/internal/REMEDIATION_DECISIONS.md` — SOS fix-vs-defer disposition log
-- `Docs/internal/DB_REMEDIATION_DECISIONS.md` — DB fix-vs-defer disposition log
-- `Docs/audit-summary.md` — single-page overview, all three audits combined
+- `.audit/FINAL_REPORT.md` - SOS full report, all 50 findings with CVSS scores and attack walkthroughs
+- `.bulwark/FINAL_REPORT.md` - DB full report, all 113 findings with file:line evidence
+- `.bok/reports/2026-05-07-report.md` - BOK math verification, 41 invariants, 159 tests, per-function findings
+- `Docs/internal/REMEDIATION_DECISIONS.md` - SOS fix-vs-defer disposition log
+- `Docs/internal/DB_REMEDIATION_DECISIONS.md` - DB fix-vs-defer disposition log
+- `Docs/audit-summary.md` - single-page overview, all three audits combined
 
 ---
 
@@ -465,9 +465,9 @@ SolShot's roadmap is to become the social-game layer for crypto group chats. The
 
 **Next three games designed for the same primitive:**
 
-1. **Darts** — nearest to bullseye wins, same wager + settle infrastructure
-2. **Golf** — fewest shots wins, multi-player async cadence is a natural fit
-3. **Card Battles** — deck-building with SHOT-gated prestige cards
+1. **Darts** - nearest to bullseye wins, same wager + settle infrastructure
+2. **Golf** - fewest shots wins, multi-player async cadence is a natural fit
+3. **Card Battles** - deck-building with SHOT-gated prestige cards
 
 **Distribution surfaces beyond Telegram:**
 
@@ -492,9 +492,9 @@ All share the same SHOT economy, the same Privy wallet stack, the same async-tur
 
 ### Founders
 
-**Jamie Abrahams** — Founder. Product, architecture, security audits, on-chain implementation. AI-augmented build with Claude Code: directed the Anchor work, ran the audit pipeline, owns the product calls.
+**Jamie Abrahams** - Founder. Product, architecture, security audits, on-chain implementation. AI-augmented build with Claude Code: directed the Anchor work, ran the audit pipeline, owns the product calls.
 
-**Fish** — Co-founder. Product narrative, video, community, growth.
+**Fish** - Co-founder. Product narrative, video, community, growth.
 
 ### Treasury Usage
 

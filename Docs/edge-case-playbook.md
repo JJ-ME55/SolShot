@@ -39,7 +39,7 @@ At no point in any scenario can funds be permanently locked. If the server vanis
 
 ---
 
-## Category 1 — Gameplay Disconnects & Timeouts
+## Category 1 - Gameplay Disconnects & Timeouts
 
 ### Scenario 1: Player Disconnects Mid-Match (Opponent Is Winning)
 
@@ -60,7 +60,7 @@ At no point in any scenario can funds be permanently locked. If the server vanis
 - Player A (disconnected): sees nothing during the window. If they return to the app later, they see a loss result.
 - Player B (remaining): sees an "opponent disconnected" banner with a 30-second countdown, followed by a win screen with settlement confirmation.
 
-**Funds outcome:** Standard settlement — Player B receives 90% of the pot. Treasury receives 7%. Ops receives 3%. PDA is closed.
+**Funds outcome:** Standard settlement - Player B receives 90% of the pot. Treasury receives 7%. Ops receives 3%. PDA is closed.
 
 ---
 
@@ -79,7 +79,7 @@ At no point in any scenario can funds be permanently locked. If the server vanis
 - Player A (disconnected, winning): receives settlement to their wallet. If they return to the app, they see a win result.
 - Player B (remaining, losing): sees the "opponent disconnected" countdown, then a loss screen with the settlement confirmation showing funds went to Player A.
 
-**Funds outcome:** Standard settlement — Player A (disconnected but winning) receives 90%. This prevents the exploit where a losing player intentionally disconnects to deny the leader their payout.
+**Funds outcome:** Standard settlement - Player A (disconnected but winning) receives 90%. This prevents the exploit where a losing player intentionally disconnects to deny the leader their payout.
 
 ---
 
@@ -96,7 +96,7 @@ At no point in any scenario can funds be permanently locked. If the server vanis
 
 **What the players see:**
 
-- Player B (remaining): sees the disconnect countdown, then a "match cancelled — refund issued" message.
+- Player B (remaining): sees the disconnect countdown, then a "match cancelled - refund issued" message.
 - Player A (disconnected): receives their full wager back to their wallet.
 
 **Funds outcome:** Full refund to both players. PDA is closed. No fees charged.
@@ -117,8 +117,8 @@ At no point in any scenario can funds be permanently locked. If the server vanis
 
 **What the players see:**
 
-- Player B (deposited): sees a "deposit timeout — refund issued" message. Their SOL is returned in full.
-- Player A (disconnected, did not deposit): loses nothing — they never deposited.
+- Player B (deposited): sees a "deposit timeout - refund issued" message. Their SOL is returned in full.
+- Player A (disconnected, did not deposit): loses nothing - they never deposited.
 
 **Funds outcome:** Full refund to Player B. Player A never deposited, so they lose nothing. PDA is closed.
 
@@ -132,7 +132,7 @@ At no point in any scenario can funds be permanently locked. If the server vanis
 
 1. Both players lose their Socket.IO connections immediately.
 2. The match state in MongoDB reflects the last persisted state (status `battle` with player scores, HP, and round data).
-3. **No resume.** This is a deliberate design decision — resuming a crashed match requires reconnecting both players, restoring exact game state, and syncing clocks, which introduces unacceptable complexity.
+3. **No resume.** This is a deliberate design decision - resuming a crashed match requires reconnecting both players, restoring exact game state, and syncing clocks, which introduces unacceptable complexity.
 4. **Layer 1 (Server Recovery):** When the server restarts, it queries MongoDB for matches in `battle` or `settling` states. For each, it evaluates last known game state and settles to the player who was winning at the time of the crash.
 5. If game state was genuinely even at crash time, the server issues a refund via `cancelMatchEscrow`.
 
@@ -171,7 +171,7 @@ At no point in any scenario can funds be permanently locked. If the server vanis
 2. If one player reconnects within 30 seconds, the match can continue (the other player's timer is still running).
 3. If neither reconnects within 30 seconds, the first timer to expire triggers `cleanupRoom` with `reconnect_timeout`.
 4. The server evaluates game state using the same decision chain (round wins, HP, score). Settlement or refund proceeds normally.
-5. The second disconnect timer fires but finds the room already removed — it no-ops safely.
+5. The second disconnect timer fires but finds the room already removed - it no-ops safely.
 
 **Funds outcome:** Settlement to the leader, or full refund if tied.
 
@@ -209,7 +209,7 @@ After the applicable grace window, anyone can call `permissionless_reclaim`. The
 
 **What about the settlement deadline?**
 
-The on-chain `settle_match` instruction enforces `SETTLEMENT_TIMEOUT_SECONDS = 3600` (v1, post-fix). After 1 hour from match activation, the server can no longer settle — only cancel or await permissionless reclaim. This prevents a compromised server from settling a stale match days later with a fabricated winner.
+The on-chain `settle_match` instruction enforces `SETTLEMENT_TIMEOUT_SECONDS = 3600` (v1, post-fix). After 1 hour from match activation, the server can no longer settle - only cancel or await permissionless reclaim. This prevents a compromised server from settling a stale match days later with a fabricated winner.
 
 **Funds outcome:** Full refund to both players via whichever layer activates first.
 
@@ -226,7 +226,7 @@ The on-chain `settle_match` instruction enforces `SETTLEMENT_TIMEOUT_SECONDS = 3
 3. The deposit never lands on-chain. From the server's perspective, this player simply never deposited.
 4. The 2-minute deposit timeout fires. The server cancels the escrow and refunds the other player (if they deposited).
 
-**Funds outcome:** Player A never deposited, so they lose nothing. Player B receives a full refund. The server authority keypair pays all settlement and cancellation transaction fees — players never pay fees for settlement.
+**Funds outcome:** Player A never deposited, so they lose nothing. Player B receives a full refund. The server authority keypair pays all settlement and cancellation transaction fees - players never pay fees for settlement.
 
 ---
 
@@ -274,25 +274,25 @@ The on-chain `settle_match` instruction enforces `SETTLEMENT_TIMEOUT_SECONDS = 3
 1. The `is_paused` flag is set on the GlobalConfig PDA.
 2. All new-commitment instructions (`create_match`, `deposit_wager`) check `!config.is_paused` and fail with `ProgramPaused`.
 3. **v2 posture (post-fix):** `cancel_match`, `settle_match`, and `start_with_depositors` do NOT check the pause flag on v2. In-flight funds can always exit.
-4. **v1 posture (post-fix):** Same — v1 pause guard was removed from `CancelMatch`, `SettleMatch`, and `StartWithDepositors` structs in the 2026-05-07 fix bundle (H016/H009 fix). Both programs now share the v2 posture.
-5. **Permissionless reclaim is NOT gated by the pause flag** on either version. This is deliberate — the emergency pause cannot lock funds permanently.
+4. **v1 posture (post-fix):** Same - v1 pause guard was removed from `CancelMatch`, `SettleMatch`, and `StartWithDepositors` structs in the 2026-05-07 fix bundle (H016/H009 fix). Both programs now share the v2 posture.
+5. **Permissionless reclaim is NOT gated by the pause flag** on either version. This is deliberate - the emergency pause cannot lock funds permanently.
 6. After the emergency is resolved, the operator calls `unpause_program` and normal operation resumes. Both events now emit `Paused`/`Unpaused` events on-chain for monitoring.
 
 **Funds outcome:** Funds are temporarily blocked from new entry but can still exit. Permissionless reclaim at the applicable grace window is the absolute backstop regardless of pause state.
 
 ---
 
-## Category 2 — Authentication & Identity
+## Category 2 - Authentication & Identity
 
 ### Edge Case A1: Wallet Rotation (Privy Re-Provisioning)
 
 **What goes wrong:** Settlement goes to a wallet the user no longer controls.
 
-**Root cause:** `server/services/users.js:91` — the wallet address is stored with `if (walletAddress && !existingByTg.walletAddress)` — only writes if currently null, never updates. Privy can silently re-provision an embedded wallet (SDK upgrade, account recovery, key rotation). DB retains the stale address. Settlement at `lifecycle.js:851` reads from DB and settles to the old address.
+**Root cause:** `server/services/users.js:91` - the wallet address is stored with `if (walletAddress && !existingByTg.walletAddress)` - only writes if currently null, never updates. Privy can silently re-provision an embedded wallet (SDK upgrade, account recovery, key rotation). DB retains the stale address. Settlement at `lifecycle.js:851` reads from DB and settles to the old address.
 
 **Diagnose:**
-- Log pattern: search server logs for `"settling to wallet"` — compare the wallet printed against the player's current Privy dashboard wallet.
-- Query: `db.users.findOne({telegramUserId: VICTIM_TG_ID})` — check `walletAddress` against what Privy's dashboard shows.
+- Log pattern: search server logs for `"settling to wallet"` - compare the wallet printed against the player's current Privy dashboard wallet.
+- Query: `db.users.findOne({telegramUserId: VICTIM_TG_ID})` - check `walletAddress` against what Privy's dashboard shows.
 - On-chain: use `solana account <PDA>` to confirm where the SOL went.
 
 **Workaround (NOW):**
@@ -301,7 +301,7 @@ The on-chain `settle_match` instruction enforces `SETTLEMENT_TIMEOUT_SECONDS = 3
 3. If the stale wallet still has the SOL (settlement has not yet occurred), reach out to the player and have them use the old wallet to receive it, or coordinate with Privy to confirm key custody.
 4. If settlement already went to the stale address and the player no longer controls it, this is an unrecovered loss on v1. Document and escalate.
 
-**Long-term fix:** Bundle B — `updateWalletForTgUser()` helper with versioned audit trail; Privy SDK event listener for wallet rotation. Timeline: pre-mainnet.
+**Long-term fix:** Bundle B - `updateWalletForTgUser()` helper with versioned audit trail; Privy SDK event listener for wallet rotation. Timeline: pre-mainnet.
 
 **Pre-mainnet status:** ACCEPT with monitoring. Document and flag every case where `walletAddress` is set on a non-null existing record.
 
@@ -347,17 +347,17 @@ The on-chain `settle_match` instruction enforces `SETTLEMENT_TIMEOUT_SECONDS = 3
 
 ---
 
-## Category 3 — Refund & Settlement Failures
+## Category 3 - Refund & Settlement Failures
 
-### Edge Case R1: Refund Failure — H023 Desync (DB H014)
+### Edge Case R1: Refund Failure - H023 Desync (DB H014)
 
 **What goes wrong:** `cancel_match` (or `permissionless_reclaim`) is called on-chain but reverts with `IncompleteRefund`. Server reports the cancel succeeded. Funds remain locked in the escrow PDA.
 
-**Root cause:** `server/services/lifecycle.js:896-910` and `server/socket-io/main.js:433-512`. The SOS H023 on-chain fix requires `remaining_accounts.len() == count_ones(deposits_mask)` on-chain. But the server builds `remaining_accounts` from off-chain state (`wagerStates[roomId].deposits` for v1; `player.initialDepositTx` for v2), NOT from the on-chain `deposits_mask`. Any desync — server restart, partial memory loss, race condition in `confirmDeposit` — causes the array to be too short. The on-chain length-check then fires `IncompleteRefund` and reverts. Server's `refundWager()` then falls through to `{success:true}` anyway (DB H013), masking the failure.
+**Root cause:** `server/services/lifecycle.js:896-910` and `server/socket-io/main.js:433-512`. The SOS H023 on-chain fix requires `remaining_accounts.len() == count_ones(deposits_mask)` on-chain. But the server builds `remaining_accounts` from off-chain state (`wagerStates[roomId].deposits` for v1; `player.initialDepositTx` for v2), NOT from the on-chain `deposits_mask`. Any desync - server restart, partial memory loss, race condition in `confirmDeposit` - causes the array to be too short. The on-chain length-check then fires `IncompleteRefund` and reverts. Server's `refundWager()` then falls through to `{success:true}` anyway (DB H013), masking the failure.
 
 **Diagnose:**
 - Log pattern: search for `IncompleteRefund` in server logs.
-- Query on-chain: `solana account <ESCROW_PDA>` — if it still exists and has lamports after a reported refund, the cancel reverted.
+- Query on-chain: `solana account <ESCROW_PDA>` - if it still exists and has lamports after a reported refund, the cancel reverted.
 - Cross-check: compare `deposits_mask` (on-chain, decimal bit count) against `remaining_accounts.length` in the cancel TX.
 
 **Workaround (NOW):**
@@ -368,7 +368,7 @@ The on-chain `settle_match` instruction enforces `SETTLEMENT_TIMEOUT_SECONDS = 3
 3. If the `deposits_mask` is contiguous, the authority can call `start_with_depositors` first to ensure the mask state is clean, then `cancel_match` with the correct full `remaining_accounts` array built from on-chain mask.
 4. After the grace window, `permissionless_reclaim` will work regardless because it's callable by anyone.
 
-**Long-term fix:** Bundle A — `getEscrowState(matchId)` call before refund builder; use on-chain `deposits_mask` as source of truth, not off-chain state.
+**Long-term fix:** Bundle A - `getEscrowState(matchId)` call before refund builder; use on-chain `deposits_mask` as source of truth, not off-chain state.
 
 ---
 
@@ -378,43 +378,43 @@ The on-chain `settle_match` instruction enforces `SETTLEMENT_TIMEOUT_SECONDS = 3
 
 **Root cause:** `programs/solshot-escrow/src/lib.rs:393-410` (v1), `programs/solshot-escrow-v2/src/lib.rs:502-518` (v2). The refund loop uses `enumerate()` to generate monotonic indices `i=0,1,2,...`. Each step requires `(deposits_mask >> i) & 1 == 1`. If `deposits_mask = 0b0010` (player 1 deposited, player 0 did not), the loop fails at `i=0` regardless of what accounts are passed, because bit 0 is unset.
 
-This arises any time a higher-indexed player deposits before a lower-indexed one — a 50% chance in a 2-player match under normal network latency variation. The H023 fix (requiring `remaining_accounts.len() == count_ones(mask)`) closes the theft angle but does not help with the stuck-funds angle.
+This arises any time a higher-indexed player deposits before a lower-indexed one - a 50% chance in a 2-player match under normal network latency variation. The H023 fix (requiring `remaining_accounts.len() == count_ones(mask)`) closes the theft angle but does not help with the stuck-funds angle.
 
 **Diagnose:**
 - Server log: search for `"UNRECOVERABLE"` and `"non_contiguous_deposits"` in `cancelEscrowSafely()`.
-- Compute: `mask.toString(2)` — look for any `0` bit below the highest set bit (e.g., `0b1010` has a gap at bit 1).
+- Compute: `mask.toString(2)` - look for any `0` bit below the highest set bit (e.g., `0b1010` has a gap at bit 1).
 
 **Workaround (NOW):**
 1. **Authority-driven rescue path:** The authority calls `start_with_depositors` while the match is still in `AwaitingDeposits` state. This instruction compacts deposited slots to contiguous positions starting at index 0 and sets state to `Active`.
 2. After compaction, `deposits_mask` is contiguous (e.g., `0b0001`), so the standard cancel or reclaim path works once the timeout elapses.
-3. **Timing constraint (v1):** `start_with_depositors` now has a `MIN_DEPOSIT_WINDOW_SECS = 600` gate — must wait at least 10 minutes from `created_at` before calling (H017 fix).
+3. **Timing constraint (v1):** `start_with_depositors` now has a `MIN_DEPOSIT_WINDOW_SECS = 600` gate - must wait at least 10 minutes from `created_at` before calling (H017 fix).
 4. **Timing constraint (v2):** Must call after `deposit_deadline` has elapsed.
 5. After compaction and the subsequent Active timeout, either player or the permissionless reclaim window will refund correctly.
 6. If the authority is unavailable, funds are stranded until the permissionless reclaim window (v1: 2h; v2: match_end + 24h). At that point `permissionless_reclaim` with correct `remaining_accounts` (built from the compacted on-chain mask) will work.
 
-**Long-term fix:** Bundle 2 (SOS) / Bundle A (DB) — refactor refund loop to accept caller-supplied `player_indices: Vec<u8>` so non-contiguous masks can be refunded without authority rescue. Requires IDL + client + server changes.
+**Long-term fix:** Bundle 2 (SOS) / Bundle A (DB) - refactor refund loop to accept caller-supplied `player_indices: Vec<u8>` so non-contiguous masks can be refunded without authority rescue. Requires IDL + client + server changes.
 
 ---
 
-## Category 4 — Match Lifecycle (Group-Chat Specific)
+## Category 4 - Match Lifecycle (Group-Chat Specific)
 
 ### Edge Case M1: Group-Chat Double-Settle Race (DB H015)
 
 **What goes wrong:** Win credit appears twice in player stats, OR the settlement transaction is submitted twice (second one fails on-chain with `AlreadySettled` / `InvalidState`).
 
-**Root cause:** `server/services/groupchat/lifecycle.js:804, 1039`. Three async paths (`handleShot`, `handleForfeit`, `handleIdleTimeout`) each call `checkAndSettle()`. The function reads `match.state !== 'active'` from the in-memory Mongoose document. Under concurrent execution, both callers can pass the guard before either save completes. The on-chain program rejects the second TX with `InvalidState`, but the server has already emitted double `matchSettled` and double `pushMatchHistory` events — stats are double-credited.
+**Root cause:** `server/services/groupchat/lifecycle.js:804, 1039`. Three async paths (`handleShot`, `handleForfeit`, `handleIdleTimeout`) each call `checkAndSettle()`. The function reads `match.state !== 'active'` from the in-memory Mongoose document. Under concurrent execution, both callers can pass the guard before either save completes. The on-chain program rejects the second TX with `InvalidState`, but the server has already emitted double `matchSettled` and double `pushMatchHistory` events - stats are double-credited.
 
 **Diagnose:**
 - Log pattern: search for duplicate `matchSettled` events for the same `matchId` within a short time window.
-- DB check: `db.matches.findOne({matchId: X})` — if `state === 'settled'` but there are two `pushMatchHistory` records, double-credit occurred.
-- On-chain: check TX history for the PDA — a second failed settle TX will appear.
+- DB check: `db.matches.findOne({matchId: X})` - if `state === 'settled'` but there are two `pushMatchHistory` records, double-credit occurred.
+- On-chain: check TX history for the PDA - a second failed settle TX will appear.
 
 **Workaround (NOW):**
 1. Identify the affected player(s) via duplicate `pushMatchHistory` records.
 2. Run the reconcile script (once written) to correct stats. Manual correction for now: `db.users.updateOne({..}, {$inc: {wins: -1, totalWinnings: -AMOUNT}})`.
-3. On-chain SOL is safe — the second settle TX failed, so funds were only transferred once.
+3. On-chain SOL is safe - the second settle TX failed, so funds were only transferred once.
 
-**Long-term fix:** Bundle A — convert `checkAndSettle()` to use `findOneAndUpdate({state:'active'},{state:'settling'})` as a compare-and-swap gate. If the returned document is null (another caller already transitioned state), abort cleanly.
+**Long-term fix:** Bundle A - convert `checkAndSettle()` to use `findOneAndUpdate({state:'active'},{state:'settling'})` as a compare-and-swap gate. If the returned document is null (another caller already transitioned state), abort cleanly.
 
 ---
 
@@ -426,24 +426,24 @@ This arises any time a higher-indexed player deposits before a lower-indexed one
 
 **Diagnose:**
 - Log pattern: search for `confirmDeposit` events for the same `matchId` arriving within milliseconds of each other.
-- DB check: `db.matches.findOne({matchId: X}).players` — count how many have non-null `initialDepositTx`.
-- On-chain: check the PDA's `deposits_mask` — if it shows 2 deposits but DB shows 1, the overwrite occurred.
+- DB check: `db.matches.findOne({matchId: X}).players` - count how many have non-null `initialDepositTx`.
+- On-chain: check the PDA's `deposits_mask` - if it shows 2 deposits but DB shows 1, the overwrite occurred.
 
 **Workaround (NOW):**
-1. Cancel the match and recreate: server admin can call `cancelMatchEscrow` for the stalled PDA (the on-chain state is healthy — both deposits landed). Both players receive full refunds.
+1. Cancel the match and recreate: server admin can call `cancelMatchEscrow` for the stalled PDA (the on-chain state is healthy - both deposits landed). Both players receive full refunds.
 2. The players then recreate the group match from scratch.
 
-**Long-term fix:** Bundle A — refactor `confirmDeposit` to use `findOneAndUpdate` with `$set` on the specific player array slot: `findOneAndUpdate({_id: X, 'players.idx.tx': null}, {$set: {'players.idx.tx': txSig}})`. Returns null on duplicate — idempotent and race-safe.
+**Long-term fix:** Bundle A - refactor `confirmDeposit` to use `findOneAndUpdate` with `$set` on the specific player array slot: `findOneAndUpdate({_id: X, 'players.idx.tx': null}, {$set: {'players.idx.tx': txSig}})`. Returns null on duplicate - idempotent and race-safe.
 
 ---
 
-## Category 5 — RPC & Network
+## Category 5 - RPC & Network
 
 ### Edge Case N1: Single RPC Failure (DB H049)
 
 **What goes wrong:** Balance checks, deposit confirmations, and settlement calls all fail simultaneously. Server queues failures in the `failedSettlements` Map. If the RPC outage persists long enough, retry exhaustion occurs and matches are left to the on-chain grace windows.
 
-**Root cause:** `server/services/solana.js` uses a single `Connection` pointed at one RPC endpoint (no fallback). Any outage — Helius downtime, RPC rate limiting, temporary Solana mainnet congestion — causes all Solana calls to fail.
+**Root cause:** `server/services/solana.js` uses a single `Connection` pointed at one RPC endpoint (no fallback). Any outage - Helius downtime, RPC rate limiting, temporary Solana mainnet congestion - causes all Solana calls to fail.
 
 **Diagnose:**
 - Log pattern: bursts of `Error: failed to send transaction`, `429 Too Many Requests`, or `FetchError` in server logs, all arriving within the same short window.
@@ -458,7 +458,7 @@ This arises any time a higher-indexed player deposits before a lower-indexed one
    - Layer 3: permissionless reclaim after grace window.
 4. For any match that has exceeded 5 retry attempts, manually trigger via the admin endpoint once RPC recovers.
 
-**Long-term fix:** Bundle C (DB) — add fallback RPC endpoint and health check. Rotate connections on failure. Use exponential backoff on transient errors. Timeline: pre-mainnet.
+**Long-term fix:** Bundle C (DB) - add fallback RPC endpoint and health check. Rotate connections on failure. Use exponential backoff on transient errors. Timeline: pre-mainnet.
 
 ---
 
@@ -466,19 +466,19 @@ This arises any time a higher-indexed player deposits before a lower-indexed one
 
 **What goes wrong:** RPC calls fail silently with `429 Too Many Requests`. No retry logic exists. Dependent operations (balance check, deposit confirmation, settlement) fail and may not surface clearly in logs.
 
-**Root cause:** `server/services/solana.js` — all RPC calls go out immediately with no backoff wrapper. Under load (many concurrent matches confirming deposits), the free-tier RPC rate limit is hit.
+**Root cause:** `server/services/solana.js` - all RPC calls go out immediately with no backoff wrapper. Under load (many concurrent matches confirming deposits), the free-tier RPC rate limit is hit.
 
 **Diagnose:**
 - Log pattern: `429` or `rate limit` in RPC response error text.
 - Timing: correlates with match-creation spikes or high-concurrency periods.
 
-**Workaround (NOW):** Same as N1 above — monitor `failedSettlements`, rely on retry loop and on-chain grace windows.
+**Workaround (NOW):** Same as N1 above - monitor `failedSettlements`, rely on retry loop and on-chain grace windows.
 
-**Long-term fix:** Bundle C — exponential backoff wrapper around all `connection.send*` / `connection.get*` calls. Consider upgrading to a paid RPC tier before mainnet.
+**Long-term fix:** Bundle C - exponential backoff wrapper around all `connection.send*` / `connection.get*` calls. Consider upgrading to a paid RPC tier before mainnet.
 
 ---
 
-## Category 6 — Database
+## Category 6 - Database
 
 ### Edge Case D1: MongoDB Connection Drop (DB H039)
 
@@ -489,18 +489,18 @@ This arises any time a higher-indexed player deposits before a lower-indexed one
 **Diagnose:**
 - Log pattern: no Mongoose errors initially. After the buffer timeout (~30 seconds), logs will show `MongoNetworkError` or `buffering timed out after X ms`.
 - Check MongoDB Atlas / MongoDB host status page.
-- Server health endpoint: `GET /health` — if it returns but match operations are stuck, the DB is buffering.
+- Server health endpoint: `GET /health` - if it returns but match operations are stuck, the DB is buffering.
 
 **Workaround (NOW):**
 1. Restart the server. On reconnect, Mongoose flushes its buffer and attempts to resume normal operation.
 2. If the MongoDB outage persists, no match state changes are persisted. Matches in memory continue, but crashes during the outage result in unrecoverable memory loss.
 3. Any in-flight settlements that required DB writes (status transitions, history records) will need manual reconciliation after DB recovery.
 
-**Long-term fix:** Bundle C — set `bufferCommands: false` and add explicit Mongoose reconnect handling with error event listeners. Surface DB connection health to `/health` endpoint. Consider MongoDB Atlas connection resilience best practices.
+**Long-term fix:** Bundle C - set `bufferCommands: false` and add explicit Mongoose reconnect handling with error event listeners. Surface DB connection health to `/health` endpoint. Consider MongoDB Atlas connection resilience best practices.
 
 ---
 
-## Category 7 — Server Operations
+## Category 7 - Server Operations
 
 ### Edge Case O1: Server Keypair Rotation
 
@@ -516,14 +516,14 @@ This arises any time a higher-indexed player deposits before a lower-indexed one
 4. **Replace the keypair file.** Update the `SOLANA_SERVER_KEYPAIR_PATH` file on the server host, OR update the `SOLANA_KEYPAIR_JSON` environment variable in Render's dashboard with the new keypair JSON.
 5. **Call `update_config` on-chain** using the OLD authority keypair (the one being rotated out), setting the new authority to the new pubkey. This is a single transaction updating the GlobalConfig PDA. Format: `update_config { new_authority: NEW_PUBKEY }`.
 6. **Restart the server.** The new keypair is now the recognized `config.authority`. New matches will settle correctly.
-7. **Verify** by checking the GlobalConfig PDA: `solana account 92wnuoauqtxkkxDu22fBWGZMBjfNmvSXfKrsJ8nrfSU4` — confirm the `authority` field matches the new pubkey.
+7. **Verify** by checking the GlobalConfig PDA: `solana account 92wnuoauqtxkkxDu22fBWGZMBjfNmvSXfKrsJ8nrfSU4` - confirm the `authority` field matches the new pubkey.
 
 **Important constraints:**
-- No on-chain rotation is possible without calling `update_config` with the OLD keypair first (H001 is still open — there is no two-step propose/accept mechanism). This means you must not lose the old keypair before completing the rotation.
+- No on-chain rotation is possible without calling `update_config` with the OLD keypair first (H001 is still open - there is no two-step propose/accept mechanism). This means you must not lose the old keypair before completing the rotation.
 - After rotation, existing escrow PDAs (if any) continue to work because the program reads `config.authority` at execution time, not at PDA creation time.
 - `update_config` itself has no timelock pre-mainnet (H002/H032 deferred). The rotation takes effect immediately.
 
-**Long-term fix:** Bundle 1 (SOS) — add `propose_authority` + `accept_authority` instructions with a 24h timelock on config changes. Timeline: pre-mainnet.
+**Long-term fix:** Bundle 1 (SOS) - add `propose_authority` + `accept_authority` instructions with a 24h timelock on config changes. Timeline: pre-mainnet.
 
 ---
 
@@ -531,10 +531,10 @@ This arises any time a higher-indexed player deposits before a lower-indexed one
 
 **What goes wrong:** Telegram `sendMessage` calls are silently dropped. Players in group-chat matches don't receive match notifications, deposit prompts, or result messages. The server believes messages were sent.
 
-**Root cause:** `server/services/bot.js` — `bot.telegram.sendMessage()` is called directly with no queue or backoff. Under load (many active group matches), the Telegram Bot API's per-bot rate limit (30 messages/second, 20 messages/minute to the same chat) is hit and requests return 429 without triggering any server-side error handling.
+**Root cause:** `server/services/bot.js` - `bot.telegram.sendMessage()` is called directly with no queue or backoff. Under load (many active group matches), the Telegram Bot API's per-bot rate limit (30 messages/second, 20 messages/minute to the same chat) is hit and requests return 429 without triggering any server-side error handling.
 
 **Diagnose:**
-- Log pattern: `429 Too Many Requests` in bot service logs (if logged — currently they may be swallowed).
+- Log pattern: `429 Too Many Requests` in bot service logs (if logged - currently they may be swallowed).
 - Symptom: players report not receiving messages but match state progresses normally on server.
 - Correlation: appears under high-concurrency group chat usage.
 
@@ -543,7 +543,7 @@ This arises any time a higher-indexed player deposits before a lower-indexed one
 2. If messages are being dropped, the only immediate workaround is to reduce concurrent group match volume or manually send critical information (e.g., deposit TX) via a separate channel.
 3. Players can still interact via the web app even if Telegram notifications fail.
 
-**Long-term fix:** Bundle C — wrap `bot.telegram.sendMessage` with a queue and exponential backoff (e.g., `p-queue` or a simple in-process ring buffer). Rate-limit per chat independently to respect Telegram's per-chat limits.
+**Long-term fix:** Bundle C - wrap `bot.telegram.sendMessage` with a queue and exponential backoff (e.g., `p-queue` or a simple in-process ring buffer). Rate-limit per chat independently to respect Telegram's per-chat limits.
 
 ---
 
@@ -587,7 +587,7 @@ These properties hold across every scenario in this document:
 | A1 | Wallet rotation (Privy re-provision) | Manual DB update; ACCEPT pre-mainnet | Settlement may go to stale wallet; manual recovery |
 | A2 | Privy session expired mid-match | Client re-auth flow; deposit timeout refunds opponent | Full refund if deposit missed |
 | A3 | TG WebView vs standalone Safari | Degrade gracefully; direct to default browser | No funds at risk; UX degradation |
-| R1 | Refund failure — H023 desync | Wait for permissionless reclaim grace window; authority can rescue via start_with_depositors | Full refund after grace window |
+| R1 | Refund failure - H023 desync | Wait for permissionless reclaim grace window; authority can rescue via start_with_depositors | Full refund after grace window |
 | R2 | Non-contiguous deposit mask | Authority calls start_with_depositors to compact, then cancel; or wait for permissionless reclaim | Full refund after rescue or grace window |
 | M1 | Group-chat double-settle race | On-chain rejects second settle; stats need manual reconcile | SOL settled once correctly; stats reconcile needed |
 | M2 | Group-chat confirmDeposit overwrite | Cancel + recreate match | Full refund; match restartable |
@@ -599,7 +599,7 @@ These properties hold across every scenario in this document:
 
 ---
 
-## Deferred Edge Cases — Pre-Mainnet Required
+## Deferred Edge Cases - Pre-Mainnet Required
 
 The following edge cases have no current workaround beyond documentation and monitoring. They are all deferred to pre-mainnet hardening bundles.
 

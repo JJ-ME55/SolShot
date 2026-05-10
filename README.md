@@ -30,7 +30,7 @@ Both settle pots atomically with a 90/7/3 split (winner, treasury, ops). All spl
 
 ## Vision
 
-SolShot today is artillery in a Telegram group chat. Tomorrow it's the **social-game layer for crypto group chats** — multiple games on one shared on-chain economy, deployed across Telegram, Seekr Mobile, iMessage, and WhatsApp, with an open SDK so other devs can ship group-chat-native wagered games on the same infrastructure.
+SolShot today is artillery in a Telegram group chat. Tomorrow it's the **social-game layer for crypto group chats** - multiple games on one shared on-chain economy, deployed across Telegram, Seekr Mobile, iMessage, and WhatsApp, with an open SDK so other devs can ship group-chat-native wagered games on the same infrastructure.
 
 Artillery is the wedge. Group-chat-native gaming is the prize.
 
@@ -43,10 +43,10 @@ Start here, in order of depth:
 | Doc | Purpose | Time |
 |---|---|---|
 | [`Docs/one-pager.md`](Docs/one-pager.md) | The 90-second pitch | 2 min |
-| [`Docs/how-to-play.md`](Docs/how-to-play.md) | Player guide — every match type, every weapon | 10 min |
-| [`Docs/ROADMAP.md`](Docs/ROADMAP.md) | Forward-looking plan — 5 phases, multi-platform expansion, open-SDK end state | 5 min |
-| [`Docs/SolShot_Litepaper_v2.2.md`](Docs/SolShot_Litepaper_v2.2.md) | Full project spec — vision, distribution, on-chain programs, security posture | 20 min |
-| [`Docs/SHOT_TOKEN_MODEL.md`](Docs/SHOT_TOKEN_MODEL.md) | SHOT token model — distribution, emissions, burns, scarcity analysis | 10 min |
+| [`Docs/how-to-play.md`](Docs/how-to-play.md) | Player guide - every match type, every weapon | 10 min |
+| [`Docs/ROADMAP.md`](Docs/ROADMAP.md) | Forward-looking plan - 5 phases, multi-platform expansion, open-SDK end state | 5 min |
+| [`Docs/SolShot_Litepaper_v2.2.md`](Docs/SolShot_Litepaper_v2.2.md) | Full project spec - vision, distribution, on-chain programs, security posture | 20 min |
+| [`Docs/SHOT_TOKEN_MODEL.md`](Docs/SHOT_TOKEN_MODEL.md) | SHOT token model - distribution, emissions, burns, scarcity analysis | 10 min |
 
 ### Audit posture
 
@@ -55,7 +55,7 @@ We ran three audit pipelines from the [Solana Vibes Kit](https://github.com/Meta
 | Audit | Scope | Report |
 |---|---|---|
 | **SOS** | On-chain Anchor programs (vulnerability surface) | [`.audit/FINAL_REPORT.md`](.audit/FINAL_REPORT.md) |
-| **BOK** | Math invariants (settlement, fees, refunds) — 159 verification tests passing | [`.bok/reports/`](.bok/reports/) |
+| **BOK** | Math invariants (settlement, fees, refunds) - 159 verification tests passing | [`.bok/reports/`](.bok/reports/) |
 | **DB** | Off-chain server (auth, signing, Privy integration) | [`.bulwark/FINAL_REPORT.md`](.bulwark/FINAL_REPORT.md) |
 | **GL** | Documentation pipeline (architecture, security model, mainnet roadmap) | [`Docs/`](Docs/) |
 
@@ -63,7 +63,7 @@ Top-line summary: [`Docs/audit-summary.md`](Docs/audit-summary.md). Mainnet reme
 
 ### Blog drafts
 
-Marketing copy ready for publication: [`Docs/blog/`](Docs/blog/) — what SolShot is, how wagering works.
+Marketing copy ready for publication: [`Docs/blog/`](Docs/blog/) - what SolShot is, how wagering works.
 
 ## On-chain proof
 

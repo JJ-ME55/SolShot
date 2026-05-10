@@ -6,20 +6,20 @@ status: current
 date: 2026-05-07
 audience: judges, players, contributors
 codebase_refs:
-  - "7296e95 (SOS fix bundle — on-chain)"
-  - "5f2acec (BOK verification suite — tests)"
-  - "348f109 (DB fix bundle — off-chain)"
+  - "7296e95 (SOS fix bundle - on-chain)"
+  - "5f2acec (BOK verification suite - tests)"
+  - "348f109 (DB fix bundle - off-chain)"
 audits:
-  - "SOS Audit #2 — 2026-05-07 (50 findings, 9 fixed)"
-  - "BOK Audit #2 — 2026-05-07 (41 invariants, 159/159 tests passing)"
-  - "DB Audit #2 — 2026-05-07 (~113 findings, 16 fixed)"
+  - "SOS Audit #2 - 2026-05-07 (50 findings, 9 fixed)"
+  - "BOK Audit #2 - 2026-05-07 (41 invariants, 159/159 tests passing)"
+  - "DB Audit #2 - 2026-05-07 (~113 findings, 16 fixed)"
 ---
 
 # Security Posture
 
 > **The server owns the physics. The chain owns the money. Neither player nor operator can cheat either.**
 
-SolShot is a 1v1–10-player artillery game where real SOL is wagered through on-chain escrow. The security architecture enforces a hard boundary: the server is authoritative over gameplay (physics, turns, damage), while the Solana blockchain is authoritative over funds (deposits, payouts, refunds). The escrow program's Anchor constraints guarantee that funds can only move to addresses registered at match creation — even a compromised server key cannot redirect funds to an unregistered wallet.
+SolShot is a 1v1–10-player artillery game where real SOL is wagered through on-chain escrow. The security architecture enforces a hard boundary: the server is authoritative over gameplay (physics, turns, damage), while the Solana blockchain is authoritative over funds (deposits, payouts, refunds). The escrow program's Anchor constraints guarantee that funds can only move to addresses registered at match creation - even a compromised server key cannot redirect funds to an unregistered wallet.
 
 This document reflects the state after three independent security analyses (May 2026 round) and the remediation commits that followed. Twenty-five findings were fixed across two source commits (`7296e95`, `348f109`); approximately fifty findings are explicitly deferred to the pre-mainnet hardening pass.
 
@@ -31,11 +31,11 @@ This document reflects the state after three independent security analyses (May 
 
 Every SOL deposited into a SolShot match has three independent recovery mechanisms. If one path is blocked, the next activates automatically.
 
-**Path 1 — Server Recovery.** Under normal operation the server settles the match within minutes. If settlement fails (network congestion, RPC timeout) the server retries via `cancelMatchEscrow`, refunding all players in full. Settlement failures propagate to callers — they are never silently swallowed (post-DB-H013 fix).
+**Path 1 - Server Recovery.** Under normal operation the server settles the match within minutes. If settlement fails (network congestion, RPC timeout) the server retries via `cancelMatchEscrow`, refunding all players in full. Settlement failures propagate to callers - they are never silently swallowed (post-DB-H013 fix).
 
-**Path 2 — Player Cancellation.** If the server is unresponsive, any registered player can cancel the match directly on-chain. In v1 this is available after 1 hour; in v2 it is available after the `deposit_window` expires. The `cancel_match` instruction refunds each depositor to their registered wallet. No server involvement is required.
+**Path 2 - Player Cancellation.** If the server is unresponsive, any registered player can cancel the match directly on-chain. In v1 this is available after 1 hour; in v2 it is available after the `deposit_window` expires. The `cancel_match` instruction refunds each depositor to their registered wallet. No server involvement is required.
 
-**Path 3 — Permissionless Reclaim.** If both the server and the players are unavailable, anyone can trigger a full refund by calling `permissionless_reclaim`. In v1 this activates after 2 hours (`TIMEOUT_SECONDS * 2 = 7200s`, post-H035/H040 fix); in v2 after 24 hours + the match duration. This requires no authority key and no player signature. The caller receives the PDA rent lamports as an economic incentive to clean up stale escrows.
+**Path 3 - Permissionless Reclaim.** If both the server and the players are unavailable, anyone can trigger a full refund by calling `permissionless_reclaim`. In v1 this activates after 2 hours (`TIMEOUT_SECONDS * 2 = 7200s`, post-H035/H040 fix); in v2 after 24 hours + the match duration. This requires no authority key and no player signature. The caller receives the PDA rent lamports as an economic incentive to clean up stale escrows.
 
 No SOL can be permanently locked. The on-chain program enforces these timeouts with `Clock::get()?.unix_timestamp` checks against `activated_at` and `created_at` timestamps stored in the escrow account.
 
@@ -49,29 +49,29 @@ No SOL can be permanently locked. The on-chain program enforces these timeouts w
 |-------|-------------|-------|
 | **Anonymous visitor** | Untrusted | Any HTTP/WebSocket client; no credentials |
 | **Authenticated player** | Zone 1–3 | Has Privy session OR Telegram HMAC; identity confirmed to Zone 2 after wallet bind |
-| **Server (application)** | Zone 4 | Holds `HPyVPj2VH9yBirr7FMgAJeDH8xJgaMKy5UnwLkjSnovk` — application + upgrade authority |
+| **Server (application)** | Zone 4 | Holds `HPyVPj2VH9yBirr7FMgAJeDH8xJgaMKy5UnwLkjSnovk` - application + upgrade authority |
 | **Privy custody layer** | External trusted | Manages embedded wallet key material; trusted for key custody, not for identity claims |
-| **Solana RPC** | External trusted | Single unmonitored endpoint (acknowledged gap — Bundle 1 adds fallback) |
+| **Solana RPC** | External trusted | Single unmonitored endpoint (acknowledged gap - Bundle 1 adds fallback) |
 | **MongoDB Atlas** | External trusted | Stores user, match, challenge, referral state; free tier has no at-rest encryption |
 
 ### Trust Zones (from DB Audit #2 architecture synthesis)
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│ ZONE 0 — PUBLIC INTERNET (UNTRUSTED)                              │
+│ ZONE 0 - PUBLIC INTERNET (UNTRUSTED)                              │
 │ Any HTTP client, WebSocket connector, or TG webhook               │
 │ → CORS + helmet + rate-limit (comprehensive post-Feb hardening)   │
 └──────────────────────────┬───────────────────────────────────────┘
                            ↓
 ┌──────────────────────────────────────────────────────────────────┐
-│ ZONE 1 — AUTHENTICATED CLIENT                                     │
+│ ZONE 1 - AUTHENTICATED CLIENT                                     │
 │ Holds TG HMAC verification OR Privy session JWT                   │
 │ GAP: client.isAuthenticated is an in-memory socket flag;         │
 │       JWT generated but not verified server-side (H003 deferred) │
 └──────────────────────────┬───────────────────────────────────────┘
                            ↓ tgIdFor() resolution
 ┌──────────────────────────────────────────────────────────────────┐
-│ ZONE 2 — VERIFIED IDENTITY (TG ID + Wallet)                       │
+│ ZONE 2 - VERIFIED IDENTITY (TG ID + Wallet)                       │
 │ Server knows caller's TG ID and wallet pubkey                     │
 │ POST-FIX: H001 Privy/TG bridge now validates telegramUserId       │
 │            against Privy getUser() claims                         │
@@ -79,14 +79,14 @@ No SOL can be permanently locked. The on-chain program enforces these timeouts w
 └──────────────────────────┬───────────────────────────────────────┘
                            ↓ match-participant authz
 ┌──────────────────────────────────────────────────────────────────┐
-│ ZONE 3 — MATCH PARTICIPANT (per-match scope)                      │
+│ ZONE 3 - MATCH PARTICIPANT (per-match scope)                      │
 │ Can: deposit, fire, forfeit, purchase weapon, confirm deposit     │
 │ POST-FIX: shoot relay (H018), acceptChallenge (H019),            │
 │            clientDebugLog (H020), getGroupMatch (H022) now auth'd │
 └──────────────────────────┬───────────────────────────────────────┘
                            ↓
 ┌──────────────────────────────────────────────────────────────────┐
-│ ZONE 4 — SERVER AUTHORITY (Escrow signer)                         │
+│ ZONE 4 - SERVER AUTHORITY (Escrow signer)                         │
 │ Holds solshot-dev.json keypair                                    │
 │ Signs on behalf of game state to settle/cancel/create on-chain   │
 │ Same key holds Solana program upgrade authority (v1 + v2)         │
@@ -113,7 +113,7 @@ No SOL can be permanently locked. The on-chain program enforces these timeouts w
 
 Three independent analyses were performed in May 2026, stacked on the February 2026 round. Each targets a distinct layer.
 
-### SOS (Stronghold of Security) — On-Chain Programs
+### SOS (Stronghold of Security) - On-Chain Programs
 
 **Scope:** `programs/solshot-escrow/src/lib.rs` (v1, 962 LOC) + `programs/solshot-escrow-v2/src/lib.rs` (v2, 1020 LOC)
 **Ref at audit:** `226c0cd` | **Post-fix ref:** `7296e95`
@@ -125,9 +125,9 @@ Three independent analyses were performed in May 2026, stacked on the February 2
 | HIGH | 14 | 8 | 6 |
 | MEDIUM | 4 | 0 | 4 |
 | LOW | 6 | 0 | 6 |
-| NOT_VULNERABLE | 18 | — | — |
+| NOT_VULNERABLE | 18 | - | - |
 
-**Headline finding (H023 — CRITICAL, CVSS 9.3):** Partial-refund theft via `close = caller` sweep. Any registered player (or anyone for `permissionless_reclaim`) could call cancel/reclaim with a partial `remaining_accounts` array; Anchor's exit hook would sweep all un-refunded co-depositor wagers to the caller. Up to 900 SOL stealable per v2 max match in a single TX. **Fixed:** `require!(remaining_accounts.len() == count_ones(deposits_mask))` added at all four refund-loop sites in both programs.
+**Headline finding (H023 - CRITICAL, CVSS 9.3):** Partial-refund theft via `close = caller` sweep. Any registered player (or anyone for `permissionless_reclaim`) could call cancel/reclaim with a partial `remaining_accounts` array; Anchor's exit hook would sweep all un-refunded co-depositor wagers to the caller. Up to 900 SOL stealable per v2 max match in a single TX. **Fixed:** `require!(remaining_accounts.len() == count_ones(deposits_mask))` added at all four refund-loop sites in both programs.
 
 **Other critical findings:** H001 (one-step authority transfer), H044 (single hot wallet for Layer-1 upgrade + Layer-2 application authority), H046 (Layer-1 bytecode replacement with no timelock). All three deferred to the pre-mainnet authority hardening bundle (acknowledged by JJ).
 
@@ -135,10 +135,10 @@ Three independent analyses were performed in May 2026, stacked on the February 2
 
 ---
 
-### BOK (Book of Knowledge) — Math Invariant Verification
+### BOK (Book of Knowledge) - Math Invariant Verification
 
 **Scope:** Both programs at post-fix-bundle commit `7296e95`
-**Methodology:** Proptest (randomized, thousands of inputs per invariant) + compile-time `const_assert` + source-grep. Kani unavailable on Windows — verification tier is HIGH-CONFIDENCE PROBABILISTIC, not PROVEN.
+**Methodology:** Proptest (randomized, thousands of inputs per invariant) + compile-time `const_assert` + source-grep. Kani unavailable on Windows - verification tier is HIGH-CONFIDENCE PROBABILISTIC, not PROVEN.
 
 | Metric | Count |
 |--------|-------|
@@ -151,12 +151,12 @@ Three independent analyses were performed in May 2026, stacked on the February 2
 
 **Key invariants verified:**
 
-- `winner + treasury + ops == total_pot` — pot conservation holds for all valid inputs (v1 hardcoded 90/7/3; v2 configurable BPS)
-- Dust ≤ 2 lamports — rounding residual is bounded and goes to winner, never lost
-- u128 widening lossless — no overflow in BPS fee calculation
-- H023 regression — partial-`remaining_accounts` attack correctly rejected (I-REF-1, I-REF-5)
-- Monotonic deadline ordering — deposit → activation → settlement/reclaim windows are strictly ordered
-- Per-match snapshot atomicity — v2 BPS/treasury/ops locked at `create_match`, settle reads only snapshot
+- `winner + treasury + ops == total_pot` - pot conservation holds for all valid inputs (v1 hardcoded 90/7/3; v2 configurable BPS)
+- Dust ≤ 2 lamports - rounding residual is bounded and goes to winner, never lost
+- u128 widening lossless - no overflow in BPS fee calculation
+- H023 regression - partial-`remaining_accounts` attack correctly rejected (I-REF-1, I-REF-5)
+- Monotonic deadline ordering - deposit → activation → settlement/reclaim windows are strictly ordered
+- Per-match snapshot atomicity - v2 BPS/treasury/ops locked at `create_match`, settle reads only snapshot
 - Fix-bundle constants verified non-regressive: TIMEOUT 600→3600, RECLAIM 1200→7200, MIN_DEPOSIT_WINDOW=600 (NEW), MAX_DURATION 7d→24h
 
 **Verification gap (mainnet requirement):** Kani formal proofs for I-FEE-1/2/3/4 and I-CAP-1/2 require WSL2. Full-lifecycle LiteSVM test for zero-leakage invariant (I-CUSTOM-1) deferred to mainnet hardening.
@@ -165,7 +165,7 @@ Three independent analyses were performed in May 2026, stacked on the February 2
 
 ---
 
-### DB (Dinh's Bulwark) — Off-Chain Server + Client + Bot
+### DB (Dinh's Bulwark) - Off-Chain Server + Client + Bot
 
 **Scope:** Express + Socket.IO + Telegraf server, React + Phaser client, Privy embedded wallets, MongoDB, Vercel/Render infrastructure (~84,270 LOC across 142 files)
 **Ref at audit:** `5f2acec` | **Post-fix ref:** `348f109`
@@ -178,11 +178,11 @@ Three independent analyses were performed in May 2026, stacked on the February 2
 | MEDIUM | 30 | 0 | 30 |
 | LOW | 20 | 0 | 20 |
 
-**Headline finding (H120 — cross-skill chain):** SOS-deferred H001 (one-step authority transfer) + DB H002 (Privy `requirePrivyAuth` fails-open when `PRIVY_APP_SECRET` is absent from `render.yaml`) compose into: valid Privy account → bind victim TG ID → assume victim session → trigger one-step authority rotation → drain treasury. Both pieces required; this finding disappears once either H001 is fixed (SOS Bundle 1) or H002 stays closed (already fixed in `348f109`).
+**Headline finding (H120 - cross-skill chain):** SOS-deferred H001 (one-step authority transfer) + DB H002 (Privy `requirePrivyAuth` fails-open when `PRIVY_APP_SECRET` is absent from `render.yaml`) compose into: valid Privy account → bind victim TG ID → assume victim session → trigger one-step authority rotation → drain treasury. Both pieces required; this finding disappears once either H001 is fixed (SOS Bundle 1) or H002 stays closed (already fixed in `348f109`).
 
 **Other critical findings fixed in `348f109`:**
 - H001: `link-from-privy-telegram` now validates `telegramUserId` against Privy `getUser()` claims
-- H013: `refundWager()` cancel CPI errors now propagate — no more silent fail-open
+- H013: `refundWager()` cancel CPI errors now propagate - no more silent fail-open
 - H018/H019/H020/H022: `shoot`, `acceptChallenge`, `declineChallenge`, `clientDebugLog`, `getGroupMatch` all require auth
 - H026: `data.seq` turn nonce is now mandatory (was optional)
 - H031: `DebugAuthOverlay` gated on `NODE_ENV !== 'production'`
@@ -216,14 +216,14 @@ Three independent analyses were performed in May 2026, stacked on the February 2
 
 | Invariant | Status | Evidence |
 |-----------|--------|---------|
-| Auth required for all state-mutating events | **PARTIAL** (post-fix improvement) | `requireAuth` on `shoot`, `acceptChallenge`, `declineChallenge`, `clientDebugLog`, `getGroupMatch` — FIXED in `348f109`; `confirmDeposit` overwrite race still open (H016 deferred) |
+| Auth required for all state-mutating events | **PARTIAL** (post-fix improvement) | `requireAuth` on `shoot`, `acceptChallenge`, `declineChallenge`, `clientDebugLog`, `getGroupMatch` - FIXED in `348f109`; `confirmDeposit` overwrite race still open (H016 deferred) |
 | TG identity bound to verified Privy claims | **ENFORCED** (post-H001-fix) | `link-from-privy-telegram` validates against `getUser()` |
 | `refundWager()` failure propagates to caller | **ENFORCED** (post-H013-fix) | Cancel CPI errors no longer fail-open |
 | Settlement winner is alive player in match | **ENFORCED** | Mongoose validation + on-chain Anchor constraint |
 | Turn-sequence nonce required (replay prevention) | **ENFORCED** (post-H026-fix) | `data.seq` mandatory at `server/socket-io/main.js:3711` |
-| Wallet rotation updates DB before settlement | **VIOLATED — deferred** | H009: `users.js:91` only sets wallet if null; Privy re-provision not detected |
-| Group-chat double-settle prevented | **VIOLATED — deferred** | H015: `checkAndSettle()` race; H016: `confirmDeposit` overwrite |
-| Server reads on-chain `deposits_mask` for refund builder | **VIOLATED — deferred** | H014: server uses in-memory state; desync causes `IncompleteRefund` on-chain |
+| Wallet rotation updates DB before settlement | **VIOLATED - deferred** | H009: `users.js:91` only sets wallet if null; Privy re-provision not detected |
+| Group-chat double-settle prevented | **VIOLATED - deferred** | H015: `checkAndSettle()` race; H016: `confirmDeposit` overwrite |
+| Server reads on-chain `deposits_mask` for refund builder | **VIOLATED - deferred** | H014: server uses in-memory state; desync causes `IncompleteRefund` on-chain |
 
 ---
 
@@ -247,7 +247,7 @@ These are deliberate architectural choices accepted for the hackathon/devnet pha
 
 ### Server as Winner Selector (SOS H003)
 
-The server calls `settle_match` designating the winner from the two registered players. There is no on-chain proof of game outcome. A compromised server key could settle matches in favor of a colluding wallet — it still cannot redirect funds outside the registered player set, but it can influence which registered player wins.
+The server calls `settle_match` designating the winner from the two registered players. There is no on-chain proof of game outcome. A compromised server key could settle matches in favor of a colluding wallet - it still cannot redirect funds outside the registered player set, but it can influence which registered player wins.
 
 **Accepted because:** commit-reveal or VRF-based winner selection requires significant protocol redesign. **Economic bound:** winner still receives 90% of pot; maximum extraction per compromised match = (losing player's wager) × 0.9. Mainnet plan: on-chain oracle or commit-reveal mechanism.
 
@@ -275,21 +275,21 @@ The 5-minute replay window on auth signatures is not blocked by a consumed-signa
 
 This section summarizes work landed across the May 2026 audit fix bundles plus the Phase 4/6 hardening passes that preceded the audit.
 
-### Phase 4 — Secrets Management
+### Phase 4 - Secrets Management
 
 - Centralized `keys.js` module for all keypair loading with documented zeroization approach
-- `JWT_SECRET` production guard — server fails fast if unset in production
+- `JWT_SECRET` production guard - server fails fast if unset in production
 - Admin key gate for sensitive endpoints
 - SIGHUP-triggered credential reload without server restart
 
-### Phase 6 — Token Economy Hardening
+### Phase 6 - Token Economy Hardening
 
 - MongoDB persistence for SHOT-burn deduplication sets (was in-memory, lost on restart)
 - Fail-hard startup if emission state is inconsistent
 
 ### Infrastructure and Auth
 
-- `helmet` middleware with CSP, HSTS, frameguard, noSniff — fully deployed
+- `helmet` middleware with CSP, HSTS, frameguard, noSniff - fully deployed
 - CORS scoped to allowed origins; dead Dynamic SDK origins replaced with Privy origins in CSP (post-H035-fix)
 - `express-rate-limit` (bumped to 8.5.1, closing IPv6 bypass CVE)
 - Auth gates added to `shoot`, `acceptChallenge`, `declineChallenge`, `clientDebugLog`, `getGroupMatch` (post-DB fix bundle)
@@ -305,45 +305,45 @@ This section summarizes work landed across the May 2026 audit fix bundles plus t
 
 ### On-Chain
 
-- H023 (CRITICAL): partial-refund theft closed — length-check at all 4 refund-loop sites
-- H016/H009: pause guards removed from v1 `cancel_match`/`settle_match`/`start_with_depositors` — pause no longer blocks in-flight exits
+- H023 (CRITICAL): partial-refund theft closed - length-check at all 4 refund-loop sites
+- H016/H009: pause guards removed from v1 `cancel_match`/`settle_match`/`start_with_depositors` - pause no longer blocks in-flight exits
 - H017: v1 `start_with_depositors` timing gate (MIN_DEPOSIT_WINDOW_SECS = 600)
-- H035: v1 TIMEOUT_SECONDS 600 → 3600 — cancel/settle race window eliminated
+- H035: v1 TIMEOUT_SECONDS 600 → 3600 - cancel/settle race window eliminated
 - H039: v2 MAX_DURATION_SECS 7 days → 24 hours
 - H018: v2 deposit_deadline strict `<` check (edge collision eliminated)
 - H025: executable-account `!executable` constraint on all fee destinations
-- H043: `Paused`/`Unpaused` events added — operational pause state now observable on-chain
+- H043: `Paused`/`Unpaused` events added - operational pause state now observable on-chain
 
 ---
 
 ## Mainnet Hardening Roadmap
 
-The following bundles must land before mainnet deployment with real funds. Each can be a separate PR + audit-verify cycle. Order matters — Bundle 1 is a prerequisite for safely deploying Bundle 2.
+The following bundles must land before mainnet deployment with real funds. Each can be a separate PR + audit-verify cycle. Order matters - Bundle 1 is a prerequisite for safely deploying Bundle 2.
 
-### Bundle 1 — Authority Hardening
+### Bundle 1 - Authority Hardening
 
 Closes: SOS H001, H002, H030, H032, H042, H044, H046; DB H003, H004, H011, H012; reduces blast radius of H003/H006/H007/H011.
 
 1. Add `pending_authority: Option<Pubkey>` to both `GlobalConfig` structs
 2. Add `propose_authority` + `accept_authority` instructions (new authority must sign accept)
-3. Add `last_config_update_ts` + `CONFIG_TIMELOCK_SECS = 86400` — pending BPS/address changes take effect only after 24h delay
+3. Add `last_config_update_ts` + `CONFIG_TIMELOCK_SECS = 86400` - pending BPS/address changes take effect only after 24h delay
 4. Migrate Layer-1 upgrade authority to Squads M-of-N multisig before mainnet deploy
 5. Separate the application authority key from the upgrade authority key
 6. Add `propose_recovery` + guardian mechanism for key-loss recovery (closes H042)
 7. Add RPC fallback endpoint + health check + exponential backoff wrapper (DB H049/H050)
 8. WSL2 + Kani for PROVEN verification tier on fee/pot math invariants
 
-### Bundle 2 — Wallet and Identity
+### Bundle 2 - Wallet and Identity
 
 Closes: DB H009, H010, H014, H015, H016; reduces H120 compound chain risk.
 
-1. `updateWalletForTgUser()` helper with versioned audit trail — detects Privy re-provision events
+1. `updateWalletForTgUser()` helper with versioned audit trail - detects Privy re-provision events
 2. Reconcile script: sweep existing DB users for stale wallet addresses
 3. `confirmDeposit` refactored to `findOneAndUpdate` with `$set: {'players.$.initialDepositTx': txSig}` under `$elemMatch` (closes H016 overwrite race)
 4. Group-chat `checkAndSettle()` converted to `findOneAndUpdate({state:'active'},{state:'settled'})` atomic (closes H015 double-settle race)
-5. Off-chain refund builder reads on-chain `deposits_mask` before constructing `remaining_accounts` (closes H014 SOS/DB boundary desync — eliminates `IncompleteRefund` revert risk)
+5. Off-chain refund builder reads on-chain `deposits_mask` before constructing `remaining_accounts` (closes H014 SOS/DB boundary desync - eliminates `IncompleteRefund` revert risk)
 
-### Bundle 3 — Refund Loop Refactor
+### Bundle 3 - Refund Loop Refactor
 
 Closes: SOS H024 (non-contiguous mask permanently unrefundable); improves H023 server-side correctness.
 
@@ -352,14 +352,14 @@ Closes: SOS H024 (non-contiguous mask permanently unrefundable); improves H023 s
 3. Devnet test: simulate non-contiguous mask scenario (currently logged as `UNRECOVERABLE`)
 4. Bump match_id entropy: `crypto.randomBytes(8)` = 16 hex chars + Mongoose `unique: true` (closes SOS H049 / DB H060)
 
-### Bundle 4 — Client, Headers, and Long-Term Protocol
+### Bundle 4 - Client, Headers, and Long-Term Protocol
 
 Closes: DB H030, H034, H047; completes SOS H003 research.
 
 1. Vercel `client/vercel.json` security headers: `frame-ancestors`, `X-Frame-Options`, HSTS, Permissions-Policy (closes DB H034)
-2. Strip wallet pubkeys from `escrowDepositStatus` broadcast — emit only `{playerIndex, confirmed}` (closes DB H030 PII leak)
-3. Move magic-link token to URL fragment `#linkToken=...` — never server-logged (closes DB H047)
-4. Commit-reveal or VRF-based winner selection — removes server trust from settlement path entirely (closes SOS H003 design limitation)
+2. Strip wallet pubkeys from `escrowDepositStatus` broadcast - emit only `{playerIndex, confirmed}` (closes DB H030 PII leak)
+3. Move magic-link token to URL fragment `#linkToken=...` - never server-logged (closes DB H047)
+4. Commit-reveal or VRF-based winner selection - removes server trust from settlement path entirely (closes SOS H003 design limitation)
 5. On-chain dispute mechanism for game-outcome challenges
 
 ---
@@ -368,7 +368,7 @@ Closes: DB H030, H034, H047; completes SOS H003 research.
 
 ### Pause Protocol
 
-**v2 posture (production target):** `pause_program` halts only `create_match` and `deposit_wager`. Active matches can still `settle_match`, `cancel_match`, and `permissionless_reclaim` while paused — pause does not block in-flight exits. This is intentional: players can always exit a paused program.
+**v2 posture (production target):** `pause_program` halts only `create_match` and `deposit_wager`. Active matches can still `settle_match`, `cancel_match`, and `permissionless_reclaim` while paused - pause does not block in-flight exits. This is intentional: players can always exit a paused program.
 
 **v1 posture (post-H016 fix):** Same. Pause guards were removed from v1's `cancel_match`, `settle_match`, and `start_with_depositors` in commit `7296e95`, bringing v1 into alignment with v2.
 
@@ -391,8 +391,8 @@ Authority keys can be rotated without disrupting active matches. The `update_con
 
 ### Full Incident Response Sequence
 
-1. **Pause.** Authority calls `pause_program` on both v1 and v2 — halts new commitments (create + deposit). Idempotent. Active match exits continue.
-2. **Server halt.** Stop the server process — prevents new match creation and settlement requests. Active WebSocket connections terminate.
+1. **Pause.** Authority calls `pause_program` on both v1 and v2 - halts new commitments (create + deposit). Idempotent. Active match exits continue.
+2. **Server halt.** Stop the server process - prevents new match creation and settlement requests. Active WebSocket connections terminate.
 3. **Assess.** Determine whether the keypair is compromised. If yes, immediately move to step 4; if no, investigate the incident and resume.
 4. **Key rotation.** Generate new keypair, call `update_config` with new authority. New authority takes effect for all subsequent operations.
 5. **Permissionless reclaim backstop.** Even if the authority key is lost, every escrow PDA becomes reclaimable by anyone after the timeout. Players' funds return to their registered wallets.
@@ -424,14 +424,14 @@ The on-chain escrow program (Anchor 0.32.1) manages the full lifecycle of a wage
 
 **Fee model:**
 - v1: hardcoded 90/7/3 (winner/treasury/ops). Immutable without redeploy.
-- v2: configurable BPS from GlobalConfig, snapshotted atomically at `create_match`. Settle reads only the snapshot — live config changes do not affect in-flight matches.
+- v2: configurable BPS from GlobalConfig, snapshotted atomically at `create_match`. Settle reads only the snapshot - live config changes do not affect in-flight matches.
 - Dust (≤ 2 lamports per BOK verification) goes to winner, never lost.
 
 ---
 
 ## Authority Model
 
-SolShot is operated as a small team with single-key custody. The escrow program's authority key is a single server keypair (`HPyVPj2VH9yBirr7FMgAJeDH8xJgaMKy5UnwLkjSnovk`), held by the engineering lead (JJ), that holds both Solana program upgrade authority and application-level escrow authority. This is the structural risk — not the team size — and the security model is built around the key, not the org chart.
+SolShot is operated as a small team with single-key custody. The escrow program's authority key is a single server keypair (`HPyVPj2VH9yBirr7FMgAJeDH8xJgaMKy5UnwLkjSnovk`), held by the engineering lead (JJ), that holds both Solana program upgrade authority and application-level escrow authority. This is the structural risk - not the team size - and the security model is built around the key, not the org chart.
 
 This is stated plainly because honesty reads better than obfuscation.
 
@@ -450,7 +450,7 @@ This is stated plainly because honesty reads better than obfuscation.
 **Mitigations in place:**
 - Key material loaded via centralized `keys.js` module
 - SIGHUP-triggered credential reload available without server restart
-- `ConfigUpdated` event emitted on every config change — on-chain audit trail
+- `ConfigUpdated` event emitted on every config change - on-chain audit trail
 - `Paused`/`Unpaused` events emitted for operational monitoring
 
 **v2 improvement over v1:** Per-match BPS snapshot means the H001→H002 fee-redirect chain (rotate treasury mid-match to redirect settlement) is closed for v2 in-flight matches. v1 still reads live config at settle time and carries H030 (fee destination hijack) as a deferred HIGH finding.
@@ -476,13 +476,13 @@ The BOK audit verified 66 invariants across two audit rounds (25 in Feb 2026, 41
 | Compaction mask always contiguous prefix | PASSED |
 | u128 widening: no overflow for any valid wager × 10 players × max BPS | PASSED |
 
-**Verification mode:** HIGH-CONFIDENCE PROBABILISTIC (Proptest). Kani formal proofs required for PROVEN tier on mainnet — depends on WSL2 availability.
+**Verification mode:** HIGH-CONFIDENCE PROBABILISTIC (Proptest). Kani formal proofs required for PROVEN tier on mainnet - depends on WSL2 availability.
 
 ---
 
 ## Regulatory Disclaimer
 
-SolShot is a skill-based game. Outcomes are determined by player decisions within a physics simulation — projectile angle, power, weapon selection, and positioning. Players are responsible for compliance with local regulations regarding skill-based competition and digital asset wagering in their jurisdiction.
+SolShot is a skill-based game. Outcomes are determined by player decisions within a physics simulation - projectile angle, power, weapon selection, and positioning. Players are responsible for compliance with local regulations regarding skill-based competition and digital asset wagering in their jurisdiction.
 
 ---
 

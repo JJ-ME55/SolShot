@@ -24,7 +24,6 @@ If a doc isn't worth a stranger reading, it lives in `Docs/internal/`. If a doc 
 SolShot/
 ├── README.md                     # Project overview + curated doc index
 ├── LICENSE                       # MIT
-├── TODO.md                       # Active task list
 ├── FOLDER_GUIDE.md               # This file
 ├── Anchor.toml, Cargo.toml/.lock, package.json, tsconfig.json, render.yaml
 │
@@ -36,7 +35,7 @@ SolShot/
 │
 ├── Docs/                         # Public-facing project docs (front of house)
 │   ├── SolShot_Litepaper_v2.2.md  # Canonical spec
-│   ├── SOLSHOT_LITEPAPER.pdf      # Litepaper PDF export
+│   ├── SolShot_Litepaper_v2.2.pdf # Litepaper PDF export (same content as the .md)
 │   ├── SHOT_TOKEN_MODEL.md        # Token model (distribution, emissions, burns)
 │   ├── blog/                      # Marketing copy ready to publish
 │   └── internal/                  # Team operations — see "Back of house" below
@@ -75,7 +74,7 @@ The `*-history/` siblings (`.audit-history/`, `.bulwark-history/`) and the `.pla
 | File | Purpose |
 |---|---|
 | `SolShot_Litepaper_v2.2.md` | Canonical project spec — vision, distribution, on-chain programs, security posture, what we're shipping vs deferring |
-| `SOLSHOT_LITEPAPER.pdf` | Litepaper PDF export for sharing |
+| `SolShot_Litepaper_v2.2.pdf` | Litepaper PDF export for sharing (same content as the .md, share-friendly format) |
 | `SHOT_TOKEN_MODEL.md` | SHOT token economics — distribution, emissions, burns, scarcity analysis |
 
 ### `Docs/blog/`

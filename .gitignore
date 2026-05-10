@@ -56,6 +56,7 @@ BATTLE/
 .claude/
 .planning/
 .design-canvas.state.json
+.mcp.json
 
 # Old design exploration prototypes (not the live build)
 /src/

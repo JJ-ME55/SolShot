@@ -8,7 +8,7 @@
  *   - Per (wallet/tgUserId, chatId) — one active match per chat per player
  *   - Persisted state-by-event so server restarts don't kill matches
  *
- * Spec: Docs/GROUP_CHAT_MODE.md v0.2 (decisions log).
+ * Spec: Docs/internal/GROUP_CHAT_MODE.md v0.2 (decisions log).
  *
  * Identity model: free-mode players are keyed on `telegramUserId`
  * (no wallet required). Wagered-mode players also have `walletAddress`

@@ -7,8 +7,8 @@
 
 This document is the single source of truth for what needs to happen between the current devnet build and a mainnet launch with real funds. It draws from three audits completed on 2026-05-07:
 
-- **SOS (Stronghold of Security) Audit #2** — on-chain programs v1 + v2 (`programs/solshot-escrow/`, `programs/solshot-escrow-v2/`). Full report: `.audit/FINAL_REPORT.md`. Remediation decisions: `Docs/REMEDIATION_DECISIONS.md`.
-- **DB (Dinh's Bulwark) Audit #2** — off-chain stack (Express + Socket.IO + Telegraf + React + Mongo + Privy). Full report: `.bulwark/FINAL_REPORT.md`. Remediation decisions: `Docs/DB_REMEDIATION_DECISIONS.md`.
+- **SOS (Stronghold of Security) Audit #2** — on-chain programs v1 + v2 (`programs/solshot-escrow/`, `programs/solshot-escrow-v2/`). Full report: `.audit/FINAL_REPORT.md`. Remediation decisions: `Docs/internal/REMEDIATION_DECISIONS.md`.
+- **DB (Dinh's Bulwark) Audit #2** — off-chain stack (Express + Socket.IO + Telegraf + React + Mongo + Privy). Full report: `.bulwark/FINAL_REPORT.md`. Remediation decisions: `Docs/internal/DB_REMEDIATION_DECISIONS.md`.
 - **BOK (Book of Knowledge) Audit #2** — math invariant verification of both programs (41 invariants, 159 tests). Full report: `.bok/reports/2026-05-07-report.md`.
 
 Operational deployment steps (the sequenced commands for the actual mainnet flip) live in `.docs/deployment-sequence.md`.
@@ -377,7 +377,7 @@ This closes DB H015.
 
 In `server/services/physics.js`, the damage calculation uses `Math.abs(rawDamage)` unconditionally. In a 1v1 match, if a player fires at themselves, the damage is applied in the correct direction but `Math.abs` may erase a negative sign that represents self-damage being deducted from the opponent's HP rather than the shooter's — this depends on how `rawDamage` is signed and how `applyDamage` is called.
 
-Decision required before fixing (make it in code comments or in `Docs/DECISIONS.md`):
+Decision required before fixing (make it in code comments or in `Docs/internal/DECISIONS.md`):
 
 - Option A: **Disallow self-fire** — if `tank.id === shooter.id`, return early with no damage. Clean; avoids the sign question entirely.
 - Option B: **Allow self-fire, fix sign** — ensure `Math.abs` is not applied when the target is the shooter; self-damage reduces the shooter's own HP by the weapon's damage value.
@@ -635,7 +635,7 @@ These items require explicit decisions before or shortly after mainnet launch. T
 
 Decision: Option A (remove `generateToken`) or Option B (implement real JWT verify)?
 
-Recommendation: Option A for launch. Document the decision in `Docs/DECISIONS.md`. If a JWT-based auth model is desired post-launch for mobile clients or third-party API access, implement it as a new feature rather than reviving the dead plumbing.
+Recommendation: Option A for launch. Document the decision in `Docs/internal/DECISIONS.md`. If a JWT-based auth model is desired post-launch for mobile clients or third-party API access, implement it as a new feature rather than reviving the dead plumbing.
 
 **10.2 Match-cancel atomicity on multi-dyno Render deployments**
 
@@ -645,7 +645,7 @@ For launch (single Render dyno), this is not a problem. For scale:
 - Option A: Redis distributed lock (Redlock algorithm)
 - Option B: Rely purely on DB atomicity (Step 3d) and handle the on-chain error gracefully — if the second settlement attempt gets `InvalidAccountState` back from the program (match already settled), treat it as success
 
-Document the chosen approach in `Docs/DECISIONS.md` before scaling past one dyno.
+Document the chosen approach in `Docs/internal/DECISIONS.md` before scaling past one dyno.
 
 **10.3 SHOT token economics finalization**
 
@@ -745,5 +745,5 @@ The critical path is: Bundle 1 (Anchor changes + devnet deployment) → Bundle 3
 
 ---
 
-*Generated from: `Docs/REMEDIATION_DECISIONS.md` (Section 5), `Docs/DB_REMEDIATION_DECISIONS.md` (Section 4), `.audit/FINAL_REPORT.md`, `.bulwark/FINAL_REPORT.md`, `.bok/reports/2026-05-07-report.md`.*  
+*Generated from: `Docs/internal/REMEDIATION_DECISIONS.md` (Section 5), `Docs/internal/DB_REMEDIATION_DECISIONS.md` (Section 4), `.audit/FINAL_REPORT.md`, `.bulwark/FINAL_REPORT.md`, `.bok/reports/2026-05-07-report.md`.*  
 *Last updated: 2026-05-07.*

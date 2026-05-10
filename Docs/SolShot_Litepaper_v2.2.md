@@ -383,7 +383,7 @@ Two fix bundles shipped to `main` before submission.
 
 ### What Was Deferred to Mainnet
 
-Higher-complexity findings are documented openly in `Docs/REMEDIATION_DECISIONS.md` and `Docs/DB_REMEDIATION_DECISIONS.md`. Honest disclosure of what's still open.
+Higher-complexity findings are documented openly in `Docs/internal/REMEDIATION_DECISIONS.md` and `Docs/internal/DB_REMEDIATION_DECISIONS.md`. Honest disclosure of what's still open.
 
 **Bundle A — Pre-mainnet must-fix (small, deferred for sequencing):**
 
@@ -419,8 +419,8 @@ npm CVEs (`socket.io-parser` DoS, `path-to-regexp` ReDoS, `handlebars` JS inject
 - `.audit/FINAL_REPORT.md` — SOS full report, all 50 findings with CVSS scores and attack walkthroughs
 - `.bulwark/FINAL_REPORT.md` — DB full report, all 113 findings with file:line evidence
 - `.bok/reports/2026-05-07-report.md` — BOK math verification, 41 invariants, 159 tests, per-function findings
-- `Docs/REMEDIATION_DECISIONS.md` — SOS fix-vs-defer disposition log
-- `Docs/DB_REMEDIATION_DECISIONS.md` — DB fix-vs-defer disposition log
+- `Docs/internal/REMEDIATION_DECISIONS.md` — SOS fix-vs-defer disposition log
+- `Docs/internal/DB_REMEDIATION_DECISIONS.md` — DB fix-vs-defer disposition log
 - `.docs/audit-summary.md` — single-page overview, all three audits combined
 
 ---

@@ -135,7 +135,7 @@ A single compromise of the application authority key results in immediate, irrev
 ### Investigation Approach
 1. Confirm `pending_authority` field absence in both `GlobalConfig` structs.
 2. Verify single-TX `update_config(new_authority = X)` succeeds when authority signs.
-3. Document JJ's intentional pre-mainnet posture per `Docs/PRIOR_AUDIT_DELTA.md`.
+3. Document JJ's intentional pre-mainnet posture per `Docs/internal/PRIOR_AUDIT_DELTA.md`.
 4. Calibrate severity: CONFIRMED (the gap exists by design); document operational risk for the report.
 
 ### Indicators of Vulnerability
@@ -1313,7 +1313,7 @@ Remaining strategies (H005, H007-H010, H012, H014-H015, H018-H021, H026-H029, H0
 
 - v1 source: `programs/solshot-escrow/src/lib.rs` (962 LOC).
 - v2 source: `programs/solshot-escrow-v2/src/lib.rs` (1020 LOC).
-- Anchor 0.32.1 — auto-resolution rules apply (see `Docs/PRIOR_AUDIT_DELTA.md`).
+- Anchor 0.32.1 — auto-resolution rules apply (see `Docs/internal/PRIOR_AUDIT_DELTA.md`).
 - BOK proptests at `programs/solshot-escrow/tests/bok_*.rs` cover v1 ONLY. v2 has no formal verification coverage.
 - Both programs deployed live to devnet: v1 = `4kzr...nH1`, v2 = `BVKX...G7N`.
 

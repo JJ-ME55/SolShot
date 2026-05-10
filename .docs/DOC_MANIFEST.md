@@ -82,10 +82,10 @@ status: refresh_complete
 | Privacy Policy | `Docs/SOLSHOT_PRIVACY_POLICY.md` | Legal |
 | Terms of Service | `Docs/SOLSHOT_TERMS_OF_SERVICE.md` | Legal |
 | Press Kit | `Docs/SOLSHOT_PRESS_KIT.md` | Media assets |
-| Launch Checklist | `Docs/LAUNCH_CHECKLIST.md` | Pre-launch tasks |
-| Prior audit delta | `Docs/PRIOR_AUDIT_DELTA.md` | Feb → May audit context (NEW since refresh) |
-| SOS audit decisions | `Docs/REMEDIATION_DECISIONS.md` | SOS fix-vs-defer log (NEW since refresh) |
-| DB audit decisions | `Docs/DB_REMEDIATION_DECISIONS.md` | DB fix-vs-defer log (NEW since refresh) |
+| Launch Checklist | `Docs/internal/LAUNCH_CHECKLIST.md` | Pre-launch tasks |
+| Prior audit delta | `Docs/internal/PRIOR_AUDIT_DELTA.md` | Feb → May audit context (NEW since refresh) |
+| SOS audit decisions | `Docs/internal/REMEDIATION_DECISIONS.md` | SOS fix-vs-defer log (NEW since refresh) |
+| DB audit decisions | `Docs/internal/DB_REMEDIATION_DECISIONS.md` | DB fix-vs-defer log (NEW since refresh) |
 | SOS Audit Report | `.audit/FINAL_REPORT.md` | On-chain security audit (refreshed 2026-05-06) |
 | DB Audit Report | `.bulwark/FINAL_REPORT.md` | Off-chain security audit (refreshed 2026-05-07) |
 | BOK Audit Report | `.bok/reports/2026-05-07-report.md` | Math verification (refreshed 2026-05-07) |

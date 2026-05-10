@@ -131,7 +131,7 @@ Three independent analyses were performed in May 2026, stacked on the February 2
 
 **Other critical findings:** H001 (one-step authority transfer), H044 (single hot wallet for Layer-1 upgrade + Layer-2 application authority), H046 (Layer-1 bytecode replacement with no timelock). All three deferred to the pre-mainnet authority hardening bundle (acknowledged by JJ).
 
-**Remediation decisions:** `Docs/REMEDIATION_DECISIONS.md`
+**Remediation decisions:** `Docs/internal/REMEDIATION_DECISIONS.md`
 
 ---
 
@@ -188,7 +188,7 @@ Three independent analyses were performed in May 2026, stacked on the February 2
 - H031: `DebugAuthOverlay` gated on `NODE_ENV !== 'production'`
 - H083: Admin key compare uses `crypto.timingSafeEqual`
 
-**Remediation decisions:** `Docs/DB_REMEDIATION_DECISIONS.md`
+**Remediation decisions:** `Docs/internal/DB_REMEDIATION_DECISIONS.md`
 
 ---
 

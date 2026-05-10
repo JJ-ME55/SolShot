@@ -11,8 +11,8 @@ sources:
   - architecture-decisions
   - sos-audit-2-final-report
   - db-audit-2-final-report
-  - Docs/REMEDIATION_DECISIONS.md
-  - Docs/DB_REMEDIATION_DECISIONS.md
+  - Docs/internal/REMEDIATION_DECISIONS.md
+  - Docs/internal/DB_REMEDIATION_DECISIONS.md
 ---
 
 # Edge Case & Recovery Playbook
@@ -611,4 +611,4 @@ The following edge cases have no current workaround beyond documentation and mon
 | SOS H024 + DB H014 | Non-contiguous mask + server desync compound | ACCEPT; authority rescue path documented above | SOS Bundle 2 + DB Bundle 3 |
 | SOS H044 / DB H012 | Single hot wallet for upgrade + application authority | ACCEPT; Squads multisig migration pre-mainnet | SOS Bundle 1 / DB Bundle 2 |
 
-For full attack walkthroughs and CVSS scores, see `.audit/FINAL_REPORT.md` (SOS on-chain audit) and `.bulwark/FINAL_REPORT.md` (DB off-chain audit). For the remediation decision log, see `Docs/REMEDIATION_DECISIONS.md` and `Docs/DB_REMEDIATION_DECISIONS.md`.
+For full attack walkthroughs and CVSS scores, see `.audit/FINAL_REPORT.md` (SOS on-chain audit) and `.bulwark/FINAL_REPORT.md` (DB off-chain audit). For the remediation decision log, see `Docs/internal/REMEDIATION_DECISIONS.md` and `Docs/internal/DB_REMEDIATION_DECISIONS.md`.

@@ -112,7 +112,7 @@
   "cross_skill": {
     "sos_available": true,
     "sos_audit_path": ".audit/",
-    "sos_summary": "SOS Audit #2 complete (commit 7296e95). 50 findings: 4 CRIT/14 HIGH/4 MED/6 LOW + 22 NOT_VULNERABLE. 9 fixed in source. Documented at Docs/REMEDIATION_DECISIONS.md.",
+    "sos_summary": "SOS Audit #2 complete (commit 7296e95). 50 findings: 4 CRIT/14 HIGH/4 MED/6 LOW + 22 NOT_VULNERABLE. 9 fixed in source. Documented at Docs/internal/REMEDIATION_DECISIONS.md.",
     "bok_available": true,
     "bok_audit_path": ".bok/",
     "bok_summary": "BOK Audit #2 complete (commit 5f2acec). 41 invariants verified, 159/159 tests passing. All 9 fix-bundle constants non-regressive.",

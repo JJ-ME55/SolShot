@@ -75,13 +75,13 @@ Fix bundles were applied in two sequential commits: `7296e95` carries the SOS on
 
 ## What Was Deferred and Why
 
-Deferrals are organized by the bundle roadmap in `Docs/REMEDIATION_DECISIONS.md` (SOS) and `Docs/DB_REMEDIATION_DECISIONS.md` (DB).
+Deferrals are organized by the bundle roadmap in `Docs/internal/REMEDIATION_DECISIONS.md` (SOS) and `Docs/internal/DB_REMEDIATION_DECISIONS.md` (DB).
 
 ### SOS deferrals
 
 **Authority key model — intentional pre-mainnet posture, acknowledged by JJ**
 
-The current architecture uses a single hot wallet (`HPyVPj2VH9yBirr7FMgAJeDH8xJgaMKy5UnwLkjSnovk`) for both the Solana BPF Loader upgrade authority and the application-level `config.authority` on both programs (verified live via `solana program show` 2026-05-06). JJ has formally acknowledged this as an explicit pre-mainnet decision in `Docs/PRIOR_AUDIT_DELTA.md`. Blast radius is gated on compromise of one key — not open access — but the consequence of compromise is total.
+The current architecture uses a single hot wallet (`HPyVPj2VH9yBirr7FMgAJeDH8xJgaMKy5UnwLkjSnovk`) for both the Solana BPF Loader upgrade authority and the application-level `config.authority` on both programs (verified live via `solana program show` 2026-05-06). JJ has formally acknowledged this as an explicit pre-mainnet decision in `Docs/internal/PRIOR_AUDIT_DELTA.md`. Blast radius is gated on compromise of one key — not open access — but the consequence of compromise is total.
 
 | ID | Title | Rationale | Mainnet plan |
 |---|---|---|---|
@@ -131,7 +131,7 @@ These are protocol design properties, not code bugs. The server selects the matc
 
 **Bundle C — Defensive cleanup (~25 items)**
 
-npm CVEs (`socket.io-parser` DoS, `path-to-regexp` ReDoS, `handlebars` JS injection, `bigint-buffer` overflow); Vercel client zero security headers; `unsafe-inline` in client CSP; magic-link token in URL query param; single unmonitored RPC endpoint with no retry on 429; `Math.random` in group match IDs and challenge shortcodes; `nodemon` in production dependencies; per-socket throttle resets on reconnect; `/health` endpoint exposing `activeConnections`; Telegram bot lacks queue/backoff for `sendMessage`; and ~15 additional Tier 3 defensive items. Full list at `Docs/DB_REMEDIATION_DECISIONS.md` Section 2, Bundle C.
+npm CVEs (`socket.io-parser` DoS, `path-to-regexp` ReDoS, `handlebars` JS injection, `bigint-buffer` overflow); Vercel client zero security headers; `unsafe-inline` in client CSP; magic-link token in URL query param; single unmonitored RPC endpoint with no retry on 429; `Math.random` in group match IDs and challenge shortcodes; `nodemon` in production dependencies; per-socket throttle resets on reconnect; `/health` endpoint exposing `activeConnections`; Telegram bot lacks queue/backoff for `sendMessage`; and ~15 additional Tier 3 defensive items. Full list at `Docs/internal/DB_REMEDIATION_DECISIONS.md` Section 2, Bundle C.
 
 **Bundle D — Cross-audit mainnet hardening**
 
@@ -160,7 +160,7 @@ This is the single most consequential finding of the May 2026 audit cycle and il
 
 **Why neither audit alone catches it:** SOS sees H001 as "requires authority key compromise — acceptable." DB sees H002 as "close the ungated entry point." Only the cross-audit synthesis surfaces that H001's acceptable-because-gated framing depended on the gate (H002) actually working.
 
-**Current status:** H002 is closed in `348f109`. H001 remains deferred (acceptable posture: authority key compromise required). H120 is tracked in `Docs/DB_REMEDIATION_DECISIONS.md` Section 2, Bundle D as a mainnet note: the SOS Bundle 1 authority hardening (propose/accept + timelock + Squads multisig) should be designed in coordination with the DB identity-chain fixes so they land atomically.
+**Current status:** H002 is closed in `348f109`. H001 remains deferred (acceptable posture: authority key compromise required). H120 is tracked in `Docs/internal/DB_REMEDIATION_DECISIONS.md` Section 2, Bundle D as a mainnet note: the SOS Bundle 1 authority hardening (propose/accept + timelock + Squads multisig) should be designed in coordination with the DB identity-chain fixes so they land atomically.
 
 ---
 
@@ -289,16 +289,16 @@ Pass `--stacked` to indicate a prior run exists; the pipeline loads prior verdic
 
 **Key files for contributors:**
 
-- `Docs/PRIOR_AUDIT_DELTA.md` — Feb → May delta context document; defines the net-new audit surface and status of every Feb finding before the new runs started.
-- `Docs/REMEDIATION_DECISIONS.md` — SOS fix-vs-defer decision log with file:line evidence for every finding.
-- `Docs/DB_REMEDIATION_DECISIONS.md` — DB fix-vs-defer decision log, same structure.
+- `Docs/internal/PRIOR_AUDIT_DELTA.md` — Feb → May delta context document; defines the net-new audit surface and status of every Feb finding before the new runs started.
+- `Docs/internal/REMEDIATION_DECISIONS.md` — SOS fix-vs-defer decision log with file:line evidence for every finding.
+- `Docs/internal/DB_REMEDIATION_DECISIONS.md` — DB fix-vs-defer decision log, same structure.
 - `.audit/FINAL_REPORT.md` — Full SOS report: CVSS table, per-finding attack walkthroughs, coverage map, knowledge base references.
 - `.bulwark/FINAL_REPORT.md` — Full DB report: 113 findings with file:line evidence, category breakdown, and comparison table vs Feb.
 - `.bok/reports/2026-05-07-report.md` — Full BOK report: 41 invariants, 159 tests, per-function findings table, assurance map by tier.
 - `programs/solshot-escrow/tests/bok_*.rs` — v1 Proptest suites (91 tests across 4 files: `bok_proptest_fee.rs`, `bok_proptest_refund.rs`, `bok_proptest_timestamp.rs`, `bok_space.rs`).
 - `programs/solshot-escrow-v2/tests/bok_*.rs` — v2 Proptest suites (68 tests across 4 matching files).
-- `Docs/REMEDIATION_DECISIONS.md` Section 5 — SOS mainnet hardening roadmap (4 bundles with sequencing).
-- `Docs/DB_REMEDIATION_DECISIONS.md` Section 4 — DB mainnet hardening roadmap (4 bundles; composes with SOS bundles).
+- `Docs/internal/REMEDIATION_DECISIONS.md` Section 5 — SOS mainnet hardening roadmap (4 bundles with sequencing).
+- `Docs/internal/DB_REMEDIATION_DECISIONS.md` Section 4 — DB mainnet hardening roadmap (4 bundles; composes with SOS bundles).
 
 **Note on BOK test architecture:** BOK tests use a local-reimplementation pattern instead of importing Anchor sources, because the Anchor framework requires the BPF toolchain (unavailable in standard `cargo test`). The reimplementations at `bok_proptest_fee.rs` and `bok_proptest_refund.rs` mirror the on-chain math functions line-for-line. `const _: () = assert!(...)` compile-time assertions verify that constants in the tests match the deployed program constants.
 

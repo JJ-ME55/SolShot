@@ -242,8 +242,8 @@ Three independent security analyses ran before mainnet:
 
 All findings, severity ratings and fix decisions are published openly:
 
-- On-chain findings: `.audit/` and `Docs/REMEDIATION_DECISIONS.md`
-- Off-chain findings: `.bulwark/` and `Docs/DB_REMEDIATION_DECISIONS.md`
+- On-chain findings: `.audit/` and `Docs/internal/REMEDIATION_DECISIONS.md`
+- Off-chain findings: `.bulwark/` and `Docs/internal/DB_REMEDIATION_DECISIONS.md`
 - Math invariants: `.bok/`
 
 SolShot is currently on devnet. Before mainnet with real funds, additional hardening is required (primarily authority key management). That work is documented and planned. Nothing is hidden.

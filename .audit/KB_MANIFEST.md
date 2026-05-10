@@ -75,4 +75,4 @@ Each agent loads its **focus manifest** (lists individual pattern files to read 
 
 ## Stacked-Audit Notes
 
-This audit is a **second iteration** building on the Feb 2026 audit. Verification agents are SKIPPED because both source files are NEW or MAJOR-MODIFIED. Phase 1 will treat both files as fresh inputs while keeping the Feb finding catalog and the false-positive log as priors. The companion document `Docs/PRIOR_AUDIT_DELTA.md` captures spot-checked status of the most critical Feb findings against current code.
+This audit is a **second iteration** building on the Feb 2026 audit. Verification agents are SKIPPED because both source files are NEW or MAJOR-MODIFIED. Phase 1 will treat both files as fresh inputs while keeping the Feb finding catalog and the false-positive log as priors. The companion document `Docs/internal/PRIOR_AUDIT_DELTA.md` captures spot-checked status of the most critical Feb findings against current code.

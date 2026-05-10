@@ -40,16 +40,21 @@ Marketing/
 Handoffs/
 BATTLE/
 
-# Solana Vibes Kit audit artifact dirs — generated per-run, never commit
-.audit/
-.bok/
-.bulwark/
+# Solana Vibes Kit audit artifact dirs — these stay TRACKED (.audit/, .bok/,
+# .bulwark/, .docs/) because they're the audit evidence judges read. Their
+# per-run history archives are NOT tracked — they piled up at every audit
+# run and cluttered the root with hundreds of stale files.
+.audit-history/
+.bulwark-history/
+.bok-history/
 .anchor/
 
-# Local agent / planning state
+# Local agent / planning state — never tracked. .planning/ + .claude/ were
+# previously committed by accident; they're untracked now and shouldn't
+# come back.
 .agents/
-.claude/scheduled_tasks.lock
-.claude/skills/
+.claude/
+.planning/
 .design-canvas.state.json
 
 # Old design exploration prototypes (not the live build)

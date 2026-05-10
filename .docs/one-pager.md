@@ -133,14 +133,14 @@ Two fix bundles shipped to `main`:
 
 ### What was deferred
 
-Higher-complexity SOS findings (re-entrancy patterns, full formal verification) are logged with rationale in `Docs/REMEDIATION_DECISIONS.md`. Nothing was quietly dropped. Every finding has a disposition.
+Higher-complexity SOS findings (re-entrancy patterns, full formal verification) are logged with rationale in `Docs/internal/REMEDIATION_DECISIONS.md`. Nothing was quietly dropped. Every finding has a disposition.
 
 ### Audit output documents
 
 - `Docs/SOS_FINAL_REPORT.md`. Full 50-finding SOS report.
 - `.bulwark/FINAL_REPORT.md`. DB final report.
 - `.bok/results/summary.md`. BOK math verification summary.
-- `Docs/REMEDIATION_DECISIONS.md`. Finding-by-finding disposition log.
+- `Docs/internal/REMEDIATION_DECISIONS.md`. Finding-by-finding disposition log.
 
 ---
 

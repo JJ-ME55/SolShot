@@ -29,7 +29,7 @@
 - Previous audit: #1 (2026-02-23 @ `ecfd03b`) — 12 confirmed + 5 potential findings, archived at `.audit-history/2026-02-23-ecfd03b/`
 - Massive rewrite detected (>70% of files NEW or MAJOR-MODIFIED). Verification agents skipped; previous findings are priors only, not auto-translated.
 - See `.audit/HANDOVER.md` for the previous-findings digest, false-positive log, and architecture snapshot.
-- See `Docs/PRIOR_AUDIT_DELTA.md` for spot-checked status of the most critical Feb findings against current code.
+- See `Docs/internal/PRIOR_AUDIT_DELTA.md` for spot-checked status of the most critical Feb findings against current code.
 
 ## Last Updated
 

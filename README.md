@@ -34,6 +34,34 @@ SolShot today is artillery in a Telegram group chat. The roadmap is to become th
 
 Artillery is the wedge. Group-chat-native gaming is the prize. See the [litepaper](Docs/SolShot_Litepaper_v2.2.md) and the [SHOT token model](Docs/SHOT_TOKEN_MODEL.md) for the full spec.
 
+## 📚 Documentation
+
+Start here, in order of depth:
+
+| Doc | Purpose | Time |
+|---|---|---|
+| [`.docs/one-pager.md`](.docs/one-pager.md) | The 90-second pitch | 2 min |
+| [`.docs/how-to-play.md`](.docs/how-to-play.md) | Player guide — every match type, every weapon | 10 min |
+| [`Docs/SolShot_Litepaper_v2.2.md`](Docs/SolShot_Litepaper_v2.2.md) | Full project spec — vision, distribution, on-chain programs, security posture | 20 min |
+| [`Docs/SHOT_TOKEN_MODEL.md`](Docs/SHOT_TOKEN_MODEL.md) | SHOT token model — distribution, emissions, burns, scarcity analysis | 10 min |
+
+### Audit posture
+
+We ran three audit pipelines from the [Solana Vibes Kit](https://github.com/MetalegBob) before submission. All reports are in this repo:
+
+| Audit | Scope | Report |
+|---|---|---|
+| **SOS** | On-chain Anchor programs (vulnerability surface) | [`.audit/FINAL_REPORT.md`](.audit/FINAL_REPORT.md) |
+| **BOK** | Math invariants (settlement, fees, refunds) — 159 verification tests passing | [`.bok/reports/`](.bok/reports/) |
+| **DB** | Off-chain server (auth, signing, Privy integration) | [`.bulwark/FINAL_REPORT.md`](.bulwark/FINAL_REPORT.md) |
+| **GL** | Documentation pipeline (architecture, security model, mainnet roadmap) | [`.docs/`](.docs/) |
+
+Top-line summary: [`.docs/audit-summary.md`](.docs/audit-summary.md). Mainnet remediation roadmap: [`.docs/mainnet-roadmap.md`](.docs/mainnet-roadmap.md).
+
+### Blog drafts
+
+Marketing copy ready for publication: [`Docs/blog/`](Docs/blog/) — what SolShot is, how wagering works.
+
 ## On-chain proof
 
 | Component | Devnet address |
@@ -109,8 +137,8 @@ The server keeps live match state in MongoDB and reconciles to the chain at sett
 - ✅ **1v1 wagered devnet**: first match settled on-chain May 4. Quick Match flow exercised.
 - ✅ **N-player wagered group-chat devnet**: first organic 3-player match auto-settled May 6. Async chat-paced loop verified end-to-end.
 - ✅ **SHOT token devnet**: mint live, mint authority burned, prestige burn verification on-chain.
-- 🟡 **Audit pass**: SOS (vulnerability), BOK (math invariants) and DB (off-chain) audits scheduled before mainnet.
-- 🟡 **Mainnet**: pending audit feedback.
+- ✅ **Audit pass complete**: SOS (on-chain) + BOK (math invariants, 159 tests) + DB (off-chain) all run end-to-end pre-submission. Reports in [`.audit/`](.audit/), [`.bok/`](.bok/), [`.bulwark/`](.bulwark/). Summary: [`.docs/audit-summary.md`](.docs/audit-summary.md).
+- 🟡 **Mainnet**: targeted post-hackathon. Roadmap of remediation bundles in [`.docs/mainnet-roadmap.md`](.docs/mainnet-roadmap.md).
 
 ## Local development
 
@@ -156,8 +184,19 @@ SolShot/
 │   └── solshot-escrow-v2/        # v2 Anchor program (N-player)
 ├── tools/                        # One-shot scripts (terrain bake, stat-card preview)
 ├── tests/                        # Anchor TypeScript tests
-└── Docs/                         # Litepaper, audits, architecture, briefs
+├── Docs/                         # Public-facing docs
+│   ├── SolShot_Litepaper_v2.2.md     # Canonical spec
+│   ├── SHOT_TOKEN_MODEL.md           # Token model
+│   ├── blog/                         # Blog drafts (ready to publish)
+│   └── internal/                     # Team operations (back of house)
+├── .audit/                       # SVK on-chain audit (SOS) output
+├── .bok/                         # SVK math-invariants audit (BOK) output
+├── .bulwark/                     # SVK off-chain audit (DB) output
+├── .docs/                        # SVK Grand Library (GL) output — one-pager, how-to-play, etc.
+└── _archive/                     # Superseded docs and historical artefacts
 ```
+
+Front-of-house docs live at the top of `Docs/` plus the four SVK audit folders. Back-of-house team operations (planning docs, demo scripts, internal audits, comms) live in `Docs/internal/`. Anything stale or superseded lives in `_archive/`.
 
 ## Contributing
 

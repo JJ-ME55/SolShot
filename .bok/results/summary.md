@@ -116,4 +116,4 @@
 2. **LiteSVM end-to-end test** for I-CUSTOM-1 (full lifecycle zero-leakage). Currently decomposed via constituent invariants but a single test would be stronger.
 3. **Runtime CPI-trace test** for I-CUSTOM-2 (CPI lockdown). Currently source-grep only.
 
-These are documented in `Docs/REMEDIATION_DECISIONS.md` Section 5 — Mainnet Hardening Roadmap.
+These are documented in `Docs/internal/REMEDIATION_DECISIONS.md` Section 5 — Mainnet Hardening Roadmap.

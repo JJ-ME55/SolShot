@@ -46,7 +46,7 @@ topics_remaining: []
   - **DB Audit #2** (off-chain server + client + bot): 113 findings → 16 fixed in commit `348f109`
 - ~50 findings deferred to mainnet hardening, organized into Bundles A/B/C/D in `.docs/mainnet-roadmap.md`
 - Full audit summary: `.docs/audit-summary.md`
-- Fix-vs-defer logs: `Docs/REMEDIATION_DECISIONS.md` (SOS), `Docs/DB_REMEDIATION_DECISIONS.md` (DB)
+- Fix-vs-defer logs: `Docs/internal/REMEDIATION_DECISIONS.md` (SOS), `Docs/internal/DB_REMEDIATION_DECISIONS.md` (DB)
 
 ## Decisions (carried from Feb 2026 + May 2026 refresh)
 - [refresh-2026-05-07] Audit transparency is a core deliverable — full audit reports + remediation decision logs published in repo

@@ -597,7 +597,7 @@ Three formal audits ran in May 2026. Reports and remediation decisions are cross
 ### SOS Audit #2 (Stronghold of Security — on-chain)
 
 **Report:** `.audit/FINAL_REPORT.md`  
-**Decisions:** `Docs/REMEDIATION_DECISIONS.md`
+**Decisions:** `Docs/internal/REMEDIATION_DECISIONS.md`
 
 9 findings fixed in source (`7296e95`):
 
@@ -614,13 +614,13 @@ Three formal audits ran in May 2026. Reports and remediation decisions are cross
 | H043 | Pause emits no event — `Paused`/`Unpaused` events added with authority pubkey |
 
 Deferred (16 findings): primarily the H001 authority-key family (one-step transfer, no timelock,
-single hot wallet) and server-as-authority design limitations. See `Docs/REMEDIATION_DECISIONS.md`
+single hot wallet) and server-as-authority design limitations. See `Docs/internal/REMEDIATION_DECISIONS.md`
 Section 2 for full rationale.
 
 ### DB Audit #2 (Dinh's Bulwark — off-chain)
 
 **Report:** `.bulwark/FINAL_REPORT.md`  
-**Decisions:** `Docs/DB_REMEDIATION_DECISIONS.md`
+**Decisions:** `Docs/internal/DB_REMEDIATION_DECISIONS.md`
 
 16 findings fixed in source (`348f109`):
 
@@ -644,7 +644,7 @@ Section 2 for full rationale.
 | H083 | Admin key timing-unsafe compare — replaced with `crypto.timingSafeEqual` |
 
 Deferred (~30 findings across Bundles A–D): wallet rotation gap, confirmDeposit race, JWT audit,
-double-settle race, Vercel security headers. See `Docs/DB_REMEDIATION_DECISIONS.md` Section 2.
+double-settle race, Vercel security headers. See `Docs/internal/DB_REMEDIATION_DECISIONS.md` Section 2.
 
 ### BOK Audit #2 (Book of Knowledge — math invariants)
 
@@ -697,9 +697,9 @@ For the full mainnet roadmap including timelines, see `Docs/mainnet-roadmap.md` 
 
 - `.audit/ARCHITECTURE.md` — on-chain trust model (SOS #2 synthesis)
 - `.bulwark/ARCHITECTURE.md` — off-chain trust model (DB #2 synthesis)
-- `Docs/REMEDIATION_DECISIONS.md` — SOS finding decisions and mainnet bundle plan
-- `Docs/DB_REMEDIATION_DECISIONS.md` — DB finding decisions and mainnet bundle plan
+- `Docs/internal/REMEDIATION_DECISIONS.md` — SOS finding decisions and mainnet bundle plan
+- `Docs/internal/DB_REMEDIATION_DECISIONS.md` — DB finding decisions and mainnet bundle plan
 - `.bok/reports/2026-05-07-report.md` — math invariant verification results
-- `Docs/PRIOR_AUDIT_DELTA.md` — what changed Feb → May 2026
+- `Docs/internal/PRIOR_AUDIT_DELTA.md` — what changed Feb → May 2026
 - `Docs/SolShot_Litepaper_v2.0.md` — product and token economy spec
 - `.docs/` — companion architecture decision records (ADRs)

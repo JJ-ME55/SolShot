@@ -906,7 +906,7 @@ When the program ID changes (fresh deploy), update all of these:
 
 ### Appendix D — Deferred-to-Mainnet Finding Summary
 
-Audit findings explicitly deferred to pre-mainnet bundles. Full details in `Docs/REMEDIATION_DECISIONS.md` (SOS on-chain) and `Docs/DB_REMEDIATION_DECISIONS.md` (off-chain).
+Audit findings explicitly deferred to pre-mainnet bundles. Full details in `Docs/internal/REMEDIATION_DECISIONS.md` (SOS on-chain) and `Docs/internal/DB_REMEDIATION_DECISIONS.md` (off-chain).
 
 **Must-fix before mainnet:**
 - SOS H001 — one-step authority transfer (no propose/accept)

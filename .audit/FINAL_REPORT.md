@@ -17,7 +17,7 @@ SolShot Escrow comprises two parallel Anchor programs holding native SOL for wag
 
 The audit produced **50 confirmed/categorized findings** spanning 8 EP categories, with **4 CRITICAL** items dominating the risk surface. The headline finding — **H023 partial-refund theft via `close = caller` sweep** — is a structural fund-theft path verified against the Anchor 0.32.1 `close()` runtime source (`anchor-lang-0.32.1/src/common.rs:6-15`). It allows any registered player (or, in `permissionless_reclaim`, any wallet) to call cancel/reclaim with a partial `remaining_accounts` array and have Anchor's exit hook sweep all un-refunded co-depositor wagers to the caller. **Worst case: 900 SOL stolen per v2 max match.** This finding affects all four refund-loop sites in both programs and was independently flagged by the CPI agent (NOVEL-CPI-02) and the Token/Economic agent (NOVEL-TE-01).
 
-The other three CRITICAL findings reflect SolShot's pre-mainnet hot-wallet posture (acknowledged by JJ in `Docs/PRIOR_AUDIT_DELTA.md` and `OC-13` at `v1:1`): **H001** (one-step authority rotation with no propose/accept), **H044** (single hot wallet `HPyV…nokv` holds both Layer-1 upgrade authority AND Layer-2 application authority — verified live via `solana program show` 2026-05-06), and **H046** (Layer-1 bytecode replacement risk with no timelock or multisig). All three collapse to a single-key dependency: any compromise of `HPyV…nokv` enables total protocol drainage by either layer, with no on-chain recovery path. JJ's stated position: "introduce propose/accept + timelock, or accept the risk" before mainnet.
+The other three CRITICAL findings reflect SolShot's pre-mainnet hot-wallet posture (acknowledged by JJ in `Docs/internal/PRIOR_AUDIT_DELTA.md` and `OC-13` at `v1:1`): **H001** (one-step authority rotation with no propose/accept), **H044** (single hot wallet `HPyV…nokv` holds both Layer-1 upgrade authority AND Layer-2 application authority — verified live via `solana program show` 2026-05-06), and **H046** (Layer-1 bytecode replacement risk with no timelock or multisig). All three collapse to a single-key dependency: any compromise of `HPyV…nokv` enables total protocol drainage by either layer, with no on-chain recovery path. JJ's stated position: "introduce propose/accept + timelock, or accept the risk" before mainnet.
 
 The audit also identified meaningful **architectural improvements in v2**: per-match snapshot of treasury/ops/BPS at `create_match` (atomic, immutable post-create) genuinely protects in-flight matches from mid-match config rotation — the H001→H002 fee-redirect chain is closed for v2 in-flight matches. Pause guards have been removed from v2's `cancel_match` and `settle_match`, closing the v1 H007 pause-griefing window. The `start_with_depositors` instruction now has a deposit-deadline gate, eliminating the v1 silent-kick attack (H017). However, v2 introduces three new attack surfaces: configurable BPS opens H011 (Layer-2-only fee poisoning, REGRESSION of Feb H028 dismissal), unbounded `duration_secs` enables H039 (8-day fund lockup), and the absence of a settlement deadline expands H035's settle-vs-cancel race window from v1's 50 minutes to v2's 24 hours.
 
@@ -193,7 +193,7 @@ This section explicitly classifies each Feb audit finding's status in the May co
 | Feb ID | Feb Severity | May Status | May ID | Notes |
 |--------|--------------|------------|--------|-------|
 | **S004** | CRITICAL (CVSS 9.3) | **RESOLVED** | H004 | Fix landed at `v1:625` and `v2:659` (`has_one = authority` on `CreateMatch.config`). Re-validated this audit. |
-| **H001** | CRITICAL (CVSS 8.7) | **RECURRENT** | H001 | Still open by design. JJ acknowledged in `Docs/PRIOR_AUDIT_DELTA.md`. |
+| **H001** | CRITICAL (CVSS 8.7) | **RECURRENT** | H001 | Still open by design. JJ acknowledged in `Docs/internal/PRIOR_AUDIT_DELTA.md`. |
 | **H002** | HIGH (CVSS 8.7) | **RECURRENT v1, EVOLVED v2** | H030 | v1 still vulnerable (live config read at `v1:686, 695`). v2 mitigates in-flight via per-match snapshot at `v2:211-214`. |
 | **H003** | HIGH (CVSS 8.7) | **RESOLVED** | H010 | Distinctness re-validated post-update at `v1:96-98` and `v2:125-127`. Verified clean. |
 | **H005** | HIGH | **RECURRENT** | H003 | Authority winner-pick fraud — design limitation; v2 raises blast radius to 900 SOL/match (2.5× v1). |
@@ -219,7 +219,7 @@ This section explicitly classifies each Feb audit finding's status in the May co
 
 **S004 (Feb CRITICAL) → RESOLVED:** Confirmed via `has_one = authority` at `programs/solshot-escrow/src/lib.rs:625` (v1 CreateMatch struct) and `programs/solshot-escrow-v2/src/lib.rs:659` (v2 CreateMatch struct). Authoritarian on-chain check is now enforced. (See H004 finding.)
 
-**H001 (Feb CRITICAL) → RECURRENT:** Code structurally unchanged. v1: `lib.rs:72-108` still applies authority directly with no pending field. v2: `lib.rs:96-142` identical pattern. JJ's posture per `Docs/PRIOR_AUDIT_DELTA.md`: intentional pre-mainnet hot-wallet model.
+**H001 (Feb CRITICAL) → RECURRENT:** Code structurally unchanged. v1: `lib.rs:72-108` still applies authority directly with no pending field. v2: `lib.rs:96-142` identical pattern. JJ's posture per `Docs/internal/PRIOR_AUDIT_DELTA.md`: intentional pre-mainnet hot-wallet model.
 
 **H002 (Feb HIGH) → RECURRENT v1, EVOLVED v2:** v1 settle still reads live config (verified at `v1:686`); per-match snapshot in v2 (`v2:211-214`) mitigates in-flight matches; new matches created post-compromise still inherit poisoned config. Severity downgrades to MEDIUM for v2-new-matches, HIGH for v1-all-matches.
 
@@ -372,7 +372,7 @@ The single hot wallet `HPyVPj2VH9yBirr7FMgAJeDH8xJgaMKy5UnwLkjSnovk` holds:
 - **Layer 1**: Solana-level upgrade authority for both `4kzr…nH1` (v1) and `BVKX…G7N` (v2)
 - **Layer 2**: Application-level `GlobalConfig.authority` for both programs
 
-A single private-key compromise unlocks **both** layers simultaneously. There is NO on-chain instruction that separates or cross-validates the two authorities — by design, per JJ's pre-mainnet posture (documented in `OC-13` at `v1:1` and `Docs/PRIOR_AUDIT_DELTA.md`).
+A single private-key compromise unlocks **both** layers simultaneously. There is NO on-chain instruction that separates or cross-validates the two authorities — by design, per JJ's pre-mainnet posture (documented in `OC-13` at `v1:1` and `Docs/internal/PRIOR_AUDIT_DELTA.md`).
 
 #### Attack Scenario
 

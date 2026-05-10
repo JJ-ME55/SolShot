@@ -73,7 +73,7 @@ For mainnet hardening, recommend:
 1. Set up WSL2 + Kani for PROVEN-tier verification of the fee/pot math invariants.
 2. Add LiteSVM-based runtime simulation tests for the 6 LiteSVM-flagged invariants (I-CAP-3, I-CAP-4, I-CAP-5, I-CUSTOM-1, plus the snapshot-atomicity and CPI-lockdown checks).
 
-Both deferred items are tracked in `Docs/REMEDIATION_DECISIONS.md` Section 5 (Mainnet Hardening Roadmap).
+Both deferred items are tracked in `Docs/internal/REMEDIATION_DECISIONS.md` Section 5 (Mainnet Hardening Roadmap).
 
 ## Comparison to Feb 2026 BOK Run
 

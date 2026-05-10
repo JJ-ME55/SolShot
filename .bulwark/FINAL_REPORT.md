@@ -205,7 +205,7 @@ The most consequential combination is **H120 (cross-skill chain)**: SOS Audit #2
 - **Severity:** CRITICAL (RECURRENT — Feb H044)
 - **File:line:** `programs/.../target/deploy/*.json` + Render `SOLANA_KEYPAIR_JSON`
 - **Status:** CONFIRMED (acknowledged pre-mainnet posture)
-- **Description:** Same hot wallet `HPyVPj2VH9yBirr7FMgAJeDH8xJgaMKy5UnwLkjSnovk` is BOTH Solana program upgrade authority AND application `config.authority`. This is documented in `Docs/REMEDIATION_DECISIONS.md` Section 2.1 as deferred to mainnet. Compound with H120 — see Section 5.
+- **Description:** Same hot wallet `HPyVPj2VH9yBirr7FMgAJeDH8xJgaMKy5UnwLkjSnovk` is BOTH Solana program upgrade authority AND application `config.authority`. This is documented in `Docs/internal/REMEDIATION_DECISIONS.md` Section 2.1 as deferred to mainnet. Compound with H120 — see Section 5.
 - **Fix (mainnet-required):** Migrate Layer 1 (upgrade authority) to a Squads multisig; rotate `config.authority` to a separate hot/multisig.
 
 ### 3.3 Financial / Refund (5 findings)
@@ -795,7 +795,7 @@ The SOS programs (post fix-bundle commit `7296e95`) are robust on-chain. The off
 
 The headline cross-boundary finding is **H120**, composing SOS Audit #2's deferred H001 with DB Audit #2's H002:
 
-- **SOS H001 (deferred to mainnet, per `Docs/REMEDIATION_DECISIONS.md` Section 2.1):** One-step authority transfer with no propose/accept and no timelock. Acknowledged pre-mainnet posture — "introduce propose/accept + timelock, or accept the risk."
+- **SOS H001 (deferred to mainnet, per `Docs/internal/REMEDIATION_DECISIONS.md` Section 2.1):** One-step authority transfer with no propose/accept and no timelock. Acknowledged pre-mainnet posture — "introduce propose/accept + timelock, or accept the risk."
 - **DB H002:** `requirePrivyAuth({required:true})` becomes a no-op when `PRIVY_APP_SECRET` is missing. The current `render.yaml` does not include this secret.
 
 Composition: an attacker on a fresh deploy (or any deploy where the secret is absent) achieves session takeover via H001+H006 chain → triggers SOS-deferred authority rotation → drains treasury. This is the most consequential single chain in the audit because it composes "intentional pre-mainnet posture" from both skills into a working mainnet-blocking compound.
@@ -918,7 +918,7 @@ Total Bundle B: 2-3 weeks.
 
 ### Bundle D: Cross-skill mainnet hardening (~10 items; coordinate with SOS team)
 
-Document in `Docs/REMEDIATION_DECISIONS.md` Section 5 or new `Docs/DB_REMEDIATION_DECISIONS.md`.
+Document in `Docs/internal/REMEDIATION_DECISIONS.md` Section 5 or new `Docs/internal/DB_REMEDIATION_DECISIONS.md`.
 
 | Item | Owner | Notes |
 |------|-------|-------|
@@ -1055,7 +1055,7 @@ Selected based on ecosystem (`solana-offchain`) + protocol types (`game-server`,
 - Audit state: `C:/Users/johnk/SolShot/.bulwark/STATE.json`
 - Hot spots map: `C:/Users/johnk/SolShot/.bulwark/HOT_SPOTS.md`
 - Cross-skill: SOS `.audit/FINAL_REPORT.md` + BOK `.bok/reports/2026-05-07-report.md` + GL `.docs/`
-- Remediation log: `C:/Users/johnk/SolShot/Docs/REMEDIATION_DECISIONS.md`
+- Remediation log: `C:/Users/johnk/SolShot/Docs/internal/REMEDIATION_DECISIONS.md`
 
 ---
 

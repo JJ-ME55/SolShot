@@ -321,7 +321,7 @@ SHOT is the utility token of the SolShot ecosystem. It is earned exclusively thr
 
 SHOT emits from the 7M reward pool based on one-time gameplay milestones. There is no passive accrual, staking yield, or daily login bonus. The maximum monthly emission is capped at 5% of the remaining pool, creating an asymptotic curve where early players receive higher rates than late entrants.
 
-For full emission tables, milestone schedule, anti-farming protections, deflationary scarcity analysis, and DEX/liquidity details, see [`Docs/SHOT_TOKEN_MODEL.md`](SHOT_TOKEN_MODEL.md) (which is the public-facing version of `.docs/token-economics.md`).
+For full emission tables, milestone schedule, anti-farming protections, deflationary scarcity analysis, and DEX/liquidity details, see [`Docs/SHOT_TOKEN_MODEL.md`](SHOT_TOKEN_MODEL.md).
 
 ### Sell Discipline (Team Allocation)
 

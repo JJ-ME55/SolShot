@@ -387,7 +387,14 @@ async function handleSettlementFailure(roomId, room, ws, error) {
 }
 
 const SHOP_DURATION = 30; // seconds
-const RECONNECT_WINDOW_MS = 30000; // 30 seconds to reconnect
+// SolShot is now a materially async product — long matches across hours,
+// users minimise tabs, phones lock, group-chat matches sit overnight. The
+// old 30s window predates that reality and was killing 1v1 matches every
+// time a player backgrounded for a notification. 2026-05-10 band-aid:
+// bump to 10 minutes so the reconnect window matches the new turn timer
+// below. Real fix is migrating 1v1 onto the v2 async-state model
+// (tracked in .docs/mainnet-roadmap.md as the v2-everywhere bundle).
+const RECONNECT_WINDOW_MS = 10 * 60 * 1000; // 10 min reconnect window
 
 // Tracks active socket IDs per TG user. Used purely as a debug signal —
 // when the same TG account is open from multiple devices simultaneously,
@@ -397,7 +404,12 @@ const RECONNECT_WINDOW_MS = 30000; // 30 seconds to reconnect
 // the other look broken (e.g. TG Web flips shopComplete=true, iOS
 // reads stale copy and skips shop). No behavioural impact.
 const socketsByTgId = new Map();
-const TURN_TIMEOUT_MS = 60000;     // 60 seconds per turn
+// 1v1-lobby turn timer. Was 60s — too tight in a world where
+// notifications, app switching, and phone-locks happen mid-turn.
+// Bumped to 10 min on 2026-05-10 so a player who minimises briefly
+// doesn't auto-forfeit. Group-chat matches use their own per-match
+// turn timer (config.turnTimerMs in GroupMatch model, default 12h).
+const TURN_TIMEOUT_MS = 10 * 60 * 1000;  // 10 minutes per turn
 
 // O2: Debounced room broadcast — batch multiple room changes within 100ms
 let broadcastTimer = null;

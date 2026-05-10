@@ -100,7 +100,11 @@ function BattleScreen({ navigate, screenData }) {
   const [error, setError] = useState(null);
   const [disconnectCountdown, setDisconnectCountdown] = useState(null);
   const countdownRef = useRef(null);
-  const [turnTimer, setTurnTimer] = useState(60);
+  // Turn-timer default in seconds. Bumped from 60s to 600s (10 min)
+  // on 2026-05-10 to match the server-side TURN_TIMEOUT_MS — see
+  // server/socket-io/main.js. Async-friendly cadence; a player who
+  // minimises briefly doesn't auto-forfeit any more.
+  const [turnTimer, setTurnTimer] = useState(600);
   const turnTimerRef = useRef(null);
 
   const isMobile = useIsMobile();
@@ -210,11 +214,12 @@ function BattleScreen({ navigate, screenData }) {
     }
   });
 
-  /* -- Turn timer: 60s countdown, resets on turn change -- */
+  /* -- Turn timer: 10-min countdown (was 60s pre-2026-05-10), resets on turn change -- */
   useEffect(() => {
     if (!phaserReady) return;
-    // Reset to 60 whenever the turn changes
-    setTurnTimer(60);
+    // Reset to 10 min whenever the turn changes — matches server
+    // TURN_TIMEOUT_MS at server/socket-io/main.js. Async-friendly.
+    setTurnTimer(600);
     if (turnTimerRef.current) clearInterval(turnTimerRef.current);
     turnTimerRef.current = setInterval(() => {
       setTurnTimer((prev) => (prev > 0 ? prev - 1 : 0));

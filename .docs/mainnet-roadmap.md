@@ -542,6 +542,59 @@ These can be landed as a single PR:
 
 After each `npm update`, run `npm audit` and confirm the targeted CVEs are cleared.
 
+### 6.9 Architectural cleanup — v2 protocol everywhere (async-first)
+
+**Status:** Tracked, scheduled for execution after the Colosseum submission. Tagged 2026-05-10 by JJ as the immediate post-hackathon priority. Lower security risk than Bundles 1–3, higher product impact: it consolidates SolShot onto a single async-state architecture and retires the legacy real-time-only flow.
+
+**Background.** SolShot ships with two on-chain programs and two parallel match-flows:
+
+- **v1 program (`solshot-escrow`, 4kzrDpV9...)** — wired to the 1v1 lobby flow (Quick Match / Duel / High Roller / Custom Challenge). Real-time socket-room cadence, 60s turn timer, 30s reconnect window. Both players must remain connected.
+- **v2 program (`solshot-escrow-v2`, BVKXLU...)** — wired to the group-chat flow. Server-persistent state (Mongo + on-chain), 12h default turn timer, no live-connection requirement. Players can close the tab and come back.
+
+The two programs have **identical 10-instruction surfaces** with the same logic, same settlement BPS, same PDA derivation, same authority model. The only structural difference: v1 caps at 4 players (`[Pubkey; 4]`), v2 supports up to 10 (`[Pubkey; 10]`). Functionally, **v2 is a superset of v1 and handles the 1v1 case identically.**
+
+**Why we shipped two.** v1 was the original 1v1 escrow (Feb 2026). When group-chat needed bigger player rosters in May 2026, the safer move was a fresh v2 program rather than mutating v1's compiled bytecode mid-flight. Result: two programs, two match-flows, partially overlapping surface area. Documented honestly here rather than hidden.
+
+**Why this is the right consolidation.** SolShot has **materially evolved into an async product.** Most of the recent traffic — group-chat matches, mobile users who minimise tabs, players whose phones lock between turns — needs the v2 server-persistent state model. The v1 real-time-session model fights modern browser/PWA reality: minimise = tab background = socket close = forfeit. That's not a winning UX in 2026.
+
+The fix is **one program, one match-flow, async-first.**
+
+#### 6.9.1 Code migration
+
+1. **Server: route 1v1 lobby through v2.** `server/services/solana.js` currently imports `escrow.js` (v1 bindings) for `createMatchEscrow / settleMatchEscrow / cancelMatchEscrow / depositWager / startWithDepositors`. Switch the imports to `escrow-v2.js`. Same function signatures, same return shape (verified during DB audit).
+2. **Server: collapse the lobby match-flow onto group-chat-style state.** New `GroupMatch.config.type = 'live-1v1'` variant with `turnTimerMs: 600000` (10 min, matching the band-aid below) and `quietHoursEnabled: false`. Lobby creation goes through `lifecycle.startMatch` instead of the bespoke `socket-io/main.js` lobby code path.
+3. **Client: 1v1 uses `GroupMatchScreen`** (or a slimmer 1v1 fork of it) — turn-based "Take your shot" UX with a fast cadence so the live-feel is preserved through quick turns, not through brittle socket persistence. Live opponent-aim broadcasts remain available *if both players are connected*, but match state isn't dependent on it.
+4. **`MATCH_ESCROW_PROGRAM_ID` env var → v2 address.** Update `.env` references on Render and `client/.env` references on Vercel.
+5. **IDL path consolidation.** Drop `server/idl/solshot_escrow.json`; use `solshot_escrow_v2.json` everywhere.
+6. **Remove `server/services/escrow.js` once no caller imports it.** Keep the file in `_archive/old-services/` for reference.
+
+#### 6.9.2 v1 program retirement
+
+7. **Devnet:** after grace period (~24h to let any in-flight v1 matches finish), run `solana program close 4kzrDpV9JxjE27AMg4PQXzGuge9MEYQEFznSPvkBtnH1` to recover ~1.77 SOL of program rent.
+8. **Mainnet:** v1 is **never** deployed to mainnet. Only v2 ships. The litepaper Section 7 and `Docs/SolShot_Litepaper_v2.2.md` are updated to reflect "one Anchor program (escrow-v2)" as the canonical state.
+9. **Audit cross-references** in `.audit/`, `.bok/`, `.bulwark/`, `.docs/` are updated where they cite v1 as a present-tense artifact. Historical citations (e.g. "the Feb audit covered the v1 program") stay as-is — they're factual about a moment in time.
+
+#### 6.9.3 Pre-band-aid (shipped 2026-05-10)
+
+Ahead of this full migration, two constants were bumped on `main` to make the v1 1v1 flow survivable in the meantime:
+
+- `TURN_TIMEOUT_MS`: 60s → **10 min** (server/socket-io/main.js)
+- `RECONNECT_WINDOW_MS`: 30s → **10 min** (server/socket-io/main.js)
+- `BattleScreen` initial turn-timer: 60 → 600s (client UI matches the new server cadence)
+
+This is a **band-aid, not a fix.** The right fix is the full migration above. Band-aid stays in place until 6.9.1 ships.
+
+#### 6.9.4 Effort and risk
+
+- **Engineering effort:** ~6–10 hours of focused work, mostly on server/services/solana.js + the lobby flow refactor in socket-io/main.js + the BattleScreen → GroupMatchScreen unification.
+- **Test surface:** existing BOK math-invariant tests (159 passing) target v1's PDA layout. v2's matching tests need to cover the same surface — most invariants are mechanically the same, but the test harness needs re-pointing. Estimate ~4 hours.
+- **Risk:** medium. Touches the wagered match flow which IS the demo-critical path. Best executed on a feature branch with full smoke-test coverage before merging to main. A live concurrent migration with in-flight matches is unsafe; recommend a maintenance window where new matches are blocked, in-flight matches drain, then deploy.
+- **Sequencing:** runs *after* Bundles 1–3 ship (authority hardening, wallet/identity, refund/settle correctness). Those harden the v2 program's security surface before we shift ALL traffic onto it.
+
+#### 6.9.5 Why this matters strategically
+
+The v2-everywhere migration moves SolShot's identity from "TG Mini App with a real-time arcade vibe" to "**async-first social-game system that lives wherever your group chat lives.**" That repositioning lines up with the roadmap thesis (`Docs/ROADMAP.md`) — same wallet, same SHOT economy, same Anchor program across multiple game types and multiple chat surfaces. **Async-first is the architectural prerequisite for that vision.** Real-time-session-tied is not.
+
 ---
 
 ## Section 7 — Pre-Mainnet Smoke Test Checklist

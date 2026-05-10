@@ -48,26 +48,15 @@
          gives you the same console + network + DOM tools as a floating
          widget. Tap the floating button bottom-right to open. -->
     <script>
-      (function () {
-        try {
-          var qs = new URLSearchParams(window.location.search);
-          var enabled = qs.get('debug') === '1' || (window.localStorage && localStorage.getItem('solshot_debug') === '1');
-          if (qs.get('debug') === '1' && window.localStorage) {
-            // Persist so reloads don't lose the debug tool.
-            try { localStorage.setItem('solshot_debug', '1'); } catch (e) {}
-          }
-          if (qs.get('debug') === '0' && window.localStorage) {
-            try { localStorage.removeItem('solshot_debug'); } catch (e) {}
-            return;
-          }
-          if (enabled) {
-            var s = document.createElement('script');
-            s.src = 'https://cdn.jsdelivr.net/npm/eruda';
-            s.onload = function () { try { window.eruda && window.eruda.init(); } catch (e) {} };
-            document.head.appendChild(s);
-          }
-        } catch (e) { /* swallow — debug console must never break prod */ }
-      })();
+      // Eruda mobile devtools removed pre-submission (2026-05-10) — was
+      // surfacing a grey gear icon in the bottom-left for any user whose
+      // localStorage had a stale `solshot_debug=1` flag (set once via
+      // ?debug=1 and never cleared). Belt-and-brace: if any user still
+      // has that flag, also clear it so DebugAuthOverlay (which uses a
+      // separate `solshotDebug` camelCase key) is unaffected.
+      try {
+        if (window.localStorage) localStorage.removeItem('solshot_debug');
+      } catch (e) { /* ignore — never break prod */ }
     </script>
     <!-- iOS PWA / fullscreen launch:
            apple-mobile-web-app-capable=yes — when launched from Home Screen,

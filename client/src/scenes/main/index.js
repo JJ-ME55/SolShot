@@ -2369,12 +2369,24 @@ export class MainScene extends Scene {
             weaponId: weaponObj.id,
           });
         } else {
+          // Fire from the TURRET TIP, not the tank body. Previously we
+          // sent {myTank.x, myTank.y} which is the body center, ~15px
+          // below the turret pivot — the server then started the
+          // trajectory from there, so the projectile visually came out
+          // of the bottom of the tank instead of the barrel. JJ QA
+          // pre-submission. Within the server's 100px/50px tolerance
+          // band so this is a drop-in upgrade. Group-chat doesn't
+          // accept a position override yet (server pulls turret pos
+          // from match.players[idx]) so this only matters here.
+          const startPos = myTank.turret
+            ? { x: myTank.turret.x, y: myTank.turret.y }
+            : { x: myTank.x, y: myTank.y };
           socket.emit('fire', {
             angle: angle,
             power: myTank.power,
             weaponId: weaponObj.id,
             seq: this._turnSeq,
-            position: { x: myTank.x, y: myTank.y },
+            position: startPos,
           });
         }
 

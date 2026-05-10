@@ -70,7 +70,7 @@ function AppInner() {
   // walletHandle comes from server after auth and is the authoritative
   // callsign for this wallet (locked once set). When present, we sync
   // it into App's `handle` state so HandleModal doesn't re-prompt.
-  const { walletHandle, setWalletHandle: persistWalletHandle, walletAddress } = useSolShotWallet();
+  const { walletHandle, setWalletHandle: persistWalletHandle, walletAddress, stableUid } = useSolShotWallet();
 
   // Identity policy A — TG username is canonical (TG users only).
   // Browser/email users now use the WALLET-anchored handle from server
@@ -139,19 +139,37 @@ function AppInner() {
     }
   }, [walletAddress, walletHandle, persistWalletHandle]);
 
-  // Phase 28: Send practice identity to server on socket connect
+  // Phase 28: Send practice identity to server on socket connect.
+  //
+  // Identity priority (orphan-account fix, 2026-05-10):
+  //   1. stableUid from Privy (`tg_<id>` for TG-linked, `did:privy:…` for
+  //      email-only) — deterministic per Privy account, survives cache
+  //      clears.
+  //   2. localStorage `solshot_uid` — cached from a prior session.
+  //   3. Skip — no identity yet.
+  //
+  // Previously this used localStorage exclusively, which spawned orphan
+  // User docs whenever a returning user's localStorage was cleared (new
+  // browser, incognito, cache wipe). Fish ended up with 4 User docs
+  // because of that pattern.
   useEffect(() => {
     const sock = window.socket;
     if (!sock) return;
     const sendIdentity = () => {
-      const uid = localStorage.getItem('solshot_uid');
+      const uid = stableUid || localStorage.getItem('solshot_uid');
       const h = localStorage.getItem('solshot_handle');
-      if (uid) sock.emit('registerIdentity', { uid, handle: h });
+      if (uid) {
+        // Sync the stable uid back to localStorage so legacy code paths
+        // that still read solshot_uid stay consistent.
+        if (stableUid) localStorage.setItem('solshot_uid', stableUid);
+        sock.emit('registerIdentity', { uid, handle: h });
+      }
     };
     sock.on('connect', sendIdentity);
     if (sock.connected) sendIdentity();
     return () => sock.off('connect', sendIdentity);
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stableUid]);
 
   // Telegram deep link routing.
   // startapp=<param> arrives in start_param. Bot commands send these:

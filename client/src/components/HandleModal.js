@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import Button from './Button';
 import { validateHandle } from '../utils/handleValidation';
+import { useSolShotWallet } from '../wallet/WalletContext';
 
 const s = {
   overlay: {
@@ -118,6 +119,13 @@ function HandleModal({ onComplete }) {
   const [input, setInput] = useState('');
   const [error, setError] = useState(null);
   const [logoFailed, setLogoFailed] = useState(false);
+  // stableUid is `tg_<id>` (TG-linked Privy user) or `did:privy:…` (email/
+  // other Privy user). Either way it's deterministic per Privy account
+  // and survives browser cache clears, so re-confirming the modal in a
+  // new session lands on the SAME User doc instead of minting a new one.
+  // Falls back to crypto.randomUUID() only if Privy hasn't authenticated
+  // yet (rare — modal is normally gated on Privy state higher up).
+  const { stableUid } = useSolShotWallet();
 
   const result = validateHandle(input);
 
@@ -140,11 +148,14 @@ function HandleModal({ onComplete }) {
   }, [input]);
 
   const handleConfirm = useCallback(() => {
-    const uid = crypto.randomUUID();
+    // Prefer the stable Privy-derived uid so cache clears + new browser
+    // sessions don't spawn orphan User docs. crypto.randomUUID is the
+    // last-resort fallback (Privy not authenticated yet — should be rare).
+    const uid = stableUid || crypto.randomUUID();
     localStorage.setItem('solshot_handle', result.sanitized);
     localStorage.setItem('solshot_uid', uid);
     onComplete(result.sanitized, uid);
-  }, [result.sanitized, onComplete]);
+  }, [result.sanitized, onComplete, stableUid]);
 
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'Enter' && result.valid) handleLockIn();

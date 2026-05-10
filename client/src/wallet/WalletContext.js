@@ -886,6 +886,34 @@ function SolShotWalletInner({ children }) {
 
     const activeSource = privyWallet ? 'privy' : null;
 
+    // Stable identity uid for the User-doc registration flow. Order of
+    // preference (most stable → least):
+    //   1. tg_<id>          — Privy user has Telegram linked. Same uid we
+    //                          generate from Mini App initData on App.js
+    //                          line 116, so a TG-Mini-App user and a
+    //                          web-Privy-TG-OAuth user collapse to the
+    //                          same User doc.
+    //   2. privyUser.id     — Stable per Privy account (e.g. did:privy:cltz…),
+    //                          persists across sessions / browsers / cache
+    //                          clears. Email-only users hit this branch.
+    //   3. null             — No identity yet; HandleModal / App.js must
+    //                          fall back to a random UUID until Privy
+    //                          authenticates. Pre-orphan-fix behaviour.
+    //
+    // The orphan-account bug (2026-05-10): HandleModal was minting a fresh
+    // crypto.randomUUID() per session, which created a new User doc every
+    // time a user came back from a different browser / cache clear. Fish
+    // had four docs (one TG, three orphans). This stable uid kills that
+    // creation-by-cache-miss pattern at the source.
+    const stableUid = useMemo(() => {
+        if (!privyAuthed || !privyUser) return null;
+        const tgId = privyUser?.telegram?.telegramUserId
+            || privyUser?.linkedAccounts?.find?.((a) => a.type === 'telegram')?.telegramUserId;
+        if (tgId) return `tg_${tgId}`;
+        if (privyUser?.id) return privyUser.id;
+        return null;
+    }, [privyAuthed, privyUser]);
+
     const value = useMemo(() => ({
         balance,
         refreshBalance,
@@ -923,6 +951,10 @@ function SolShotWalletInner({ children }) {
         source: activeSource,
         privyReady,
         privyAuthed,
+        // Stable identity uid (see definition above). Consumed by App.js
+        // and HandleModal to avoid minting orphan User docs on every
+        // browser session.
+        stableUid,
         // Read by <DebugAuthOverlay> when ?debug=1
         debug: {
             source: activeSource,
@@ -942,6 +974,7 @@ function SolShotWalletInner({ children }) {
         recoveryStatus, linkEmailRecovery, linkTelegramRecovery,
         walletHandle, setWalletHandle,
         activeSource, privyReady, privyAuthed, privyWalletsReady, publicKey, privyWallet,
+        stableUid,
     ]);
 
     return (

@@ -1441,6 +1441,18 @@ const mainsocket = (io) => {
             if (isProfane(clean)) clean = 'Player' + uid.slice(0, 4)
             playerUids[client.id] = { uid, handle: clean }
 
+            // Orphan-account fix (2026-05-10): if the client is sending us
+            // a `tg_<id>` uid (from Privy with TG-linked account, or from
+            // Mini App initData), parse the TG id back out so we can
+            // stamp it on the User doc + collapse against any existing
+            // TG-keyed record. Without this, a user who logs in via
+            // web-Privy-TG-OAuth and a user who enters via TG Mini App
+            // end up on two separate User docs even though they're the
+            // same human.
+            const tgIdFromUid = (uid.startsWith('tg_') && /^tg_(\d+)$/.test(uid))
+                ? parseInt(uid.slice(3), 10)
+                : null;
+
             // Upsert user record in DB (fire-and-forget). Important
             // detail: we DO NOT overwrite an existing handle on a doc
             // that's already wallet-bound. Once a wallet has a handle,
@@ -1450,32 +1462,41 @@ const mainsocket = (io) => {
             // lastActive only. For uid-only / unbound docs, normal
             // upsert behaviour preserved.
             if (isDbConnected()) {
-                User.findOne({ uid }, { handle: 1, walletAddress: 1 })
-                    .lean()
-                    .then((existing) => {
-                        const isWalletBoundWithHandle = existing?.walletAddress && existing?.handle;
-                        const update = isWalletBoundWithHandle
-                            ? { lastActive: new Date() }
-                            : { handle: clean, lastActive: new Date() };
-                        return User.findOneAndUpdate(
-                            { uid },
-                            { $set: update },
-                            { upsert: true }
-                        );
-                    })
-                    .catch(err => console.error('[Identity] upsert error:', err.message))
-
-                // Link Telegram identity if this is a TG-validated socket and no wallet
-                // is connected yet (bot commands can still look this user up by
-                // ctx.from.id even before they ever connect a wallet).
-                if (client.telegramUser?.id) {
+                // If we can extract a TG id from the uid, prefer the
+                // canonical merge path (linkTelegramIdentity walks
+                // telegramUserId → walletAddress → uid in priority
+                // order and consumes orphans). This is what was missing
+                // for Privy-TG-OAuth users — Mini App users always had
+                // it via client.telegramUser.id, but web-OAuth users
+                // came through with no TG initData and got orphaned.
+                const tgId = tgIdFromUid || client.telegramUser?.id || null;
+                if (tgId) {
                     linkTelegramIdentity({
-                        telegramUserId: client.telegramUser.id,
+                        telegramUserId: tgId,
                         walletAddress: authenticatedWallets[client.id] || null,
                         uid,
                         handle: clean,
-                        username: client.telegramUser.username || null,
+                        username: client.telegramUser?.username || null,
+                        firstName: client.telegramUser?.first_name || null,
                     }).catch((err) => console.warn('[Identity] linkTelegramIdentity failed:', err.message));
+                } else {
+                    // No TG id available (email-only Privy user, or
+                    // legacy random-UUID localStorage uid). Plain
+                    // uid-keyed upsert — no orphan promotion possible.
+                    User.findOne({ uid }, { handle: 1, walletAddress: 1 })
+                        .lean()
+                        .then((existing) => {
+                            const isWalletBoundWithHandle = existing?.walletAddress && existing?.handle;
+                            const update = isWalletBoundWithHandle
+                                ? { lastActive: new Date() }
+                                : { handle: clean, lastActive: new Date() };
+                            return User.findOneAndUpdate(
+                                { uid },
+                                { $set: update },
+                                { upsert: true }
+                            );
+                        })
+                        .catch(err => console.error('[Identity] upsert error:', err.message))
                 }
             }
         })

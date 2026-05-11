@@ -99,7 +99,7 @@ function ShotExplainer({ isOpen, onClose }) {
           <div style={styles.point}>
             <span style={styles.bullet}>02</span>
             <span style={styles.pointText}>
-              {'Burn SHOT to unlock prestige tiers — Bronze, Silver, Gold, Platinum, Diamond.'}
+              {'Burn SHOT to unlock prestige tiers: Bronze, Silver, Gold, Platinum, Diamond.'}
             </span>
           </div>
           <div style={styles.point}>

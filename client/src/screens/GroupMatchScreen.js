@@ -241,7 +241,7 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
                 window.dispatchEvent(new CustomEvent('solshot:toast', {
                     detail: {
                         message: payload.refunded
-                            ? 'Match cancelled — deposits refunded on-chain.'
+                            ? 'Match cancelled. Deposits refunded on-chain.'
                             : 'Match cancelled by host.',
                         kind: 'info',
                     },
@@ -552,7 +552,7 @@ export default function GroupMatchScreen({ navigate, screenData = {} }) {
 
 function Header({ match, onMenu, onRefresh }) {
     const stateLabel = {
-        lobby: 'OPEN — WAITING FOR PLAYERS',
+        lobby: 'OPEN · WAITING FOR PLAYERS',
         active: 'IN PROGRESS',
         settled: 'COMPLETE',
         cancelled: 'CANCELLED',
@@ -658,7 +658,7 @@ function LobbyFooter({ match, myPlayer }) {
         <div style={styles.footerBlock}>
             <div style={styles.footerLine}>
                 {myPlayer
-                    ? "You're in — host will start the match shortly."
+                    ? "You're in. Host will start the match shortly."
                     : "Open the lobby card in chat to join."}
             </div>
             <div style={styles.footerSub}>

@@ -1056,7 +1056,7 @@ function EliminationOverlay({ placement, onLeave }) {
         fontFamily: 'var(--f-mono)', fontSize: 14, lineHeight: 1,
         background: 'transparent', border: 'none', color: 'var(--olive)',
         cursor: 'pointer', padding: '4px 8px',
-      }} title="Hide — keep spectating" aria-label="Dismiss elimination overlay">×</button>
+      }} title="Hide and keep spectating" aria-label="Dismiss elimination overlay">×</button>
 
       <div style={{ fontFamily: 'var(--f-display)', fontSize: 20, color: 'var(--bone)', letterSpacing: 3 }}>YOU PLACED {ordinal(placement)}</div>
       <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--kh)', letterSpacing: 2, opacity: 0.6 }}>SPECTATING...</div>

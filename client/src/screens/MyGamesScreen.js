@@ -82,7 +82,7 @@ export default function MyGamesScreen({ navigate }) {
             setLoading(false);
             if (payload?.error) {
                 setError(payload.error === 'no_identity'
-                    ? 'No Telegram identity — open via the bot link.'
+                    ? 'No Telegram identity. Open via the bot link.'
                     : 'Couldn\'t load your matches.');
                 setMatches([]);
                 return;

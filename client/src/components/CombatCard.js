@@ -402,7 +402,7 @@ function CombatCard({ handle, rank, wallet, stats, onClose }) {
       if (navigator.clipboard && window.ClipboardItem) {
         try {
           await navigator.clipboard.write([new window.ClipboardItem({ 'image/png': blob })]);
-          setFeedback('COPIED — READY TO PASTE');
+          setFeedback('COPIED · READY TO PASTE');
           setFeedbackOk(true);
           return;
         } catch { /* fall through to download */ }

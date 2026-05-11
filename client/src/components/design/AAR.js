@@ -128,7 +128,7 @@ export default function AARScreen({ navigate, screenData, isWin }) {
       lines.push(`Just won ${winnerPayout.toFixed(3)} SOL on @SolShotGG`);
       lines.push(`${myName.toUpperCase()} ${score} ${oppName.toUpperCase()} · ${myDmg} DMG · MVP: ${sig}`);
       if (settlementUrl) lines.push(settlementUrl);
-      lines.push('solshot.gg — artillery duels on Solana');
+      lines.push('solshot.gg · artillery duels on Solana');
     } else if (isWin) {
       lines.push(`${result} · ${myName.toUpperCase()} ${score} ${oppName.toUpperCase()} · ${myDmg} DMG · ${sig}`);
       lines.push('solshot.gg');
@@ -158,7 +158,7 @@ export default function AARScreen({ navigate, screenData, isWin }) {
     if (navigator.share) {
       try {
         await navigator.share({
-          title: isWin ? 'SolShot — VICTORY' : 'SolShot — Match Result',
+          title: isWin ? 'SolShot · VICTORY' : 'SolShot · Match Result',
           text,
           // Don't pass `url` separately — embedding the Solscan link in
           // text reads better in TG/Twitter previews than a bare URL.

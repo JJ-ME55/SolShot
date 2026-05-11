@@ -159,7 +159,7 @@ export default function GroupBattleWrapper({ match, onMatchUpdate, fillMode = fa
         if (!window.confirm(confirmMsg)) return;
         const sock = window.socket;
         if (!sock || !sock.connected) {
-            try { window.alert('Connection lost — refresh and try again.'); } catch (_) {}
+            try { window.alert('Connection lost. Refresh and try again.'); } catch (_) {}
             return;
         }
         sock.emit('forfeitGroupMatch', { matchId: match.matchId });

@@ -266,8 +266,8 @@ function ArmoryScreen({ navigate }) {
               {tab === 'SOL' ? (
                 <EmptyState
                   icon="lock"
-                  title="SOL SHOP — COMING SOON"
-                  body="DIRECT SOL COSMETIC PURCHASES OPEN AFTER PHASE 2. UNTIL THEN: $SHOT BURNS UNLOCK COSMETICS VIA PRESTIGE."
+                  title="SOL SHOP COMING SOON"
+                  body="DIRECT SOL PURCHASES UNLOCK SOON. UNTIL THEN, BURN $SHOT VIA PRESTIGE TO UNLOCK COSMETICS."
                   primaryCTA={{ label: 'OPEN $SHOT TAB', onClick: () => setTab('SHOT') }}
                 />
               ) : (
@@ -371,8 +371,8 @@ function ArmoryScreen({ navigate }) {
                 {tab === 'SOL' ? (
                   <EmptyState
                     icon="lock"
-                    title="SOL SHOP — COMING SOON"
-                    body="DIRECT SOL COSMETIC PURCHASES OPEN AFTER PHASE 2. UNTIL THEN: $SHOT BURNS UNLOCK COSMETICS VIA PRESTIGE."
+                    title="SOL SHOP COMING SOON"
+                    body="DIRECT SOL PURCHASES UNLOCK SOON. UNTIL THEN, BURN $SHOT VIA PRESTIGE TO UNLOCK COSMETICS."
                     primaryCTA={{ label: 'OPEN $SHOT TAB', onClick: () => setTab('SHOT') }}
                   />
                 ) : (

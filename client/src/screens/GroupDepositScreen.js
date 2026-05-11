@@ -61,13 +61,13 @@ export default function GroupDepositScreen({ navigate, screenData = {} }) {
     // ── 1. Fetch match info on mount + listen for live deposit-status broadcasts
     useEffect(() => {
         if (!matchId) {
-            setError('No match ID — bad deep link.');
+            setError('No match ID. Bad deep link.');
             setPhase('error');
             return;
         }
         const sock = window.socket;
         if (!sock) {
-            setError('Not connected — refresh and try again.');
+            setError('Not connected. Refresh and try again.');
             setPhase('error');
             return;
         }

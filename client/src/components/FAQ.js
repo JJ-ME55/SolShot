@@ -5,22 +5,22 @@ const FAQ_SECTIONS = [
   {
     id: 'how-to-play',
     question: 'How do I play?',
-    answer: 'SolShot is a turn-based artillery game. Adjust your angle and power, then fire! Take turns with your opponent until one tank is destroyed. Each match, you pick 10 weapons from a random selection.',
+    answer: "SolShot is a turn-based artillery game. Adjust angle and power, then fire to destroy your opponent's tank. Every match starts with the free Single Shot, and you buy more weapons each round using gold earned from dealing damage and winning rounds.",
   },
   {
     id: 'weapons',
     question: 'How do weapons work?',
-    answer: 'You get 20 weapons to choose from at the start of each match \u2014 pick your best 10. Each weapon has different damage, blast radius, and special effects. More weapons coming soon!',
+    answer: '15 base weapons plus 5 prestige-locked weapons. They range from precise (Sniper Rifle, 100 damage on direct hit) to chaotic (Crazy Ivan, 15 random explosions). Buy them each round with gold.',
   },
   {
     id: 'shot-token',
     question: 'What is SHOT?',
-    answer: 'SHOT is the SolShot game token. Details on earning and using SHOT are coming soon!',
+    answer: "SHOT is SolShot's prestige currency. Earn it by hitting in-game milestones like your first wagered match, win streaks, and damage records. Burn it to unlock prestige tiers and their exclusive weapons. Fixed supply: 10M, mint authority burned.",
   },
   {
     id: 'prestige',
     question: 'What are prestige tiers?',
-    answer: 'There are 5 prestige tiers: Bronze, Silver, Gold, Platinum, and Diamond. Each tier unlocks exclusive weapons and cosmetics. Details on advancing tiers coming soon!',
+    answer: 'Five tiers: Bronze, Silver, Gold, Platinum, Diamond. Each unlocks an exclusive weapon (Homing Missile, Cruiser, Tommy Gun, Chain Reaction, Pineapple). You burn SHOT to advance. Reaching Diamond requires burning 8,400 SHOT total.',
   },
   {
     id: 'wagering',
@@ -30,12 +30,12 @@ const FAQ_SECTIONS = [
   {
     id: 'wallets',
     question: 'Which wallets work?',
-    answer: 'Sign in with email, Google, or Telegram via Privy \u2014 your Solana wallet is created for you. Existing Phantom, Solflare, or Backpack users can also connect.',
+    answer: 'Sign in with email, Google, or Telegram via Privy. Your Solana wallet is created for you. Existing Phantom, Solflare, or Backpack users can also connect.',
   },
   {
     id: 'mobile',
     question: 'Best experience on mobile?',
-    answer: 'Use Chrome or Safari in landscape mode for the best experience. Wallet dApp browsers are locked to portrait \u2014 open solshot.gg directly in your mobile browser instead.',
+    answer: 'Use Chrome or Safari in landscape mode for the best experience. Wallet dApp browsers are locked to portrait, so open solshot.gg directly in your mobile browser instead.',
   },
 ];
 

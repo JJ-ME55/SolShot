@@ -233,7 +233,7 @@ function FeedbackModal({ onClose }) {
                     placeholder={
                         kind === 'bug' ? 'What broke? What did you expect? What actually happened?' :
                         kind === 'idea' ? "What's the idea? What would it unlock?" :
-                        'Tell us anything — what works, what doesnt, what we should know.'
+                        "Tell us anything: what works, what doesn't, what we should know."
                     }
                     disabled={submitting}
                     rows={5}

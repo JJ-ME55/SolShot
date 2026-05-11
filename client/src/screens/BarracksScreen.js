@@ -191,10 +191,10 @@ function BarracksScreen({ navigate }) {
     // otherwise just copy the Mini App URL so they can view in TG.
     const fallbackUrl = 'https://t.me/SolShotGG_bot/play?startapp=stats';
     if (navigator.share) {
-      navigator.share({ title: 'SolShot — my stats', url: fallbackUrl }).catch(() => {});
+      navigator.share({ title: 'SolShot stats', url: fallbackUrl }).catch(() => {});
     } else if (navigator.clipboard) {
       navigator.clipboard.writeText(fallbackUrl).catch(() => {});
-      setShareError('Link copied — open in Telegram to share the card.');
+      setShareError('Link copied. Open in Telegram to share the card.');
       setTimeout(() => setShareError(null), 2500);
     }
   };
@@ -208,7 +208,7 @@ function BarracksScreen({ navigate }) {
       const code = inviteUrl.split('rf_')[1] || '';
       tg.switchInlineQuery('rf_' + code, ['users', 'groups']);
     } else if (navigator.share) {
-      navigator.share({ title: 'SolShot', text: 'Come play SolShot — both of us earn 25 SHOT', url: inviteUrl }).catch(() => {});
+      navigator.share({ title: 'SolShot', text: 'Come play SolShot, both of us earn 25 SHOT', url: inviteUrl }).catch(() => {});
     } else {
       navigator.clipboard.writeText(inviteUrl)
         .then(() => { setInviteCopied(true); setTimeout(() => setInviteCopied(false), 1800); })
@@ -409,7 +409,7 @@ function BarracksScreen({ navigate }) {
                     background: 'transparent', color: 'var(--bone)',
                     border: '1px solid var(--border)', clipPath: 'var(--clip-6)',
                     fontFamily: 'var(--f-display)', fontSize: 11, letterSpacing: '0.18em', cursor: 'pointer',
-                  }}>{isMaxed ? 'OPEN PRESTIGE' : 'OPEN PRESTIGE — BURN SHOT'}</button>
+                  }}>{isMaxed ? 'OPEN PRESTIGE' : 'OPEN PRESTIGE · BURN SHOT'}</button>
                 </div>
               );
             })()}

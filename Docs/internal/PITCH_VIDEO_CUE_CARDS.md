@@ -1,110 +1,135 @@
-# Pitch Video — 6-Bullet Cue Card
+# Pitch Video — Q&A Cue Card (v3)
 
-**Format:** Zoom call, JJ + Fish, 2-min hard cap. Open this in a second window. **Don't read from it.** Glance only.
+**Zoom call, JJ + Fish, 2-min cap.** Open on second screen. **Glance only — don't read.**
 
-Full script: [`PITCH_VIDEO_SCRIPT.md`](./PITCH_VIDEO_SCRIPT.md). This is just the memory jog.
+Full script: [`PITCH_VIDEO_SCRIPT.md`](./PITCH_VIDEO_SCRIPT.md).
 
 ---
 
 ## 60-second pre-flight
 
-- [ ] Wired headphones in, mic level checked
-- [ ] Lighting on faces (window or lamp), no backlight
-- [ ] Plain background, no logos / bookshelves on display
-- [ ] Both webcams active, Zoom gallery view ON, side-by-side
-- [ ] Recording locally (not cloud) for quality
-- [ ] Phone on silent, Slack/Mail closed
-- [ ] Take a breath — you've built this together for months. Just talk.
+- [ ] Headphones in, mic level checked
+- [ ] Lighting on faces (window/lamp), no backlight
+- [ ] Plain background, no logos
+- [ ] Zoom gallery view ON, both webcams active
+- [ ] Recording locally
+- [ ] Phone silent, Slack/Mail closed
+- [ ] Breathe. Two friends, a Zoom call, a thing you built together.
 
 ---
 
-## The 6 beats
+## The 4 anchors to hit
+
+| Anchor | Lands in beat | One-line cue |
+|---|---|---|
+| **Why this?** | Beat 2 (Fish) | Group chats are where attention lives now. Nobody's built wagered skill games inside the chat itself. |
+| **Why now?** | Beat 2 (Fish) | Quiet markets, shot attention spans, nostalgia for skill games. Async-turn cadence fits the chat. |
+| **Why us?** | Beat 3 (JJ) | Gamers AND degens. The gap is invisible to either pure tribe. We've lived in both. |
+| **Where next?** | Beat 4 (JJ) | Monopolise the gap. Not just SolShot — a whole group-chat arcade. |
+
+---
+
+## The 5 beats
 
 ### 1 · INTROS · 0:00 → 0:20
-**JJ leads → hands to Fish**
+**Both. Natural. No script.**
 
-- Name + handle (matches GitHub commits)
-- One line on what each of you does day-to-day
-- Natural handoff, no formal "and now my co-founder…"
-
----
-
-### 2 · WHAT WE BUILT · 0:20 → 0:45
-**JJ leads, Fish adds colour**
-
-- Plain words: artillery duels in your TG group chat, async turns, wager SOL, last tank wins, settled on-chain
-- Live now — solshot.gg, `@SolShotGG_bot`
-- Fish chimes in: nobody's done multiplayer wagered crypto inside a TG chat. **Async fits the chat. Real-time fights it.**
+- Name + what you actually do
+- No "co-founder" / "founder" language
+- Eye contact across the screen, soft handoff
 
 ---
 
-### 3 · WHY US — JJ · 0:45 → 1:05
-**JJ on point**
+### 2 · "WHY DO YOU THINK WE BUILT THIS?" · 0:20 → 0:55
+**JJ asks. Casual, almost jokey. Undersell it.**
 
-- Built it solo from scratch in ~3 months, architecture through to live wagered matches on devnet
-- Live in TG trench/whale chats — designing for people you talk to every day, not an imagined user
-- Three audits passed before mainnet — on-chain, math invariants, off-chain. All transparent in the repo.
+> "So why do YOU think we built this?"
 
----
+**Fish lands TWO anchors in one breath:**
 
-### 4 · WHY US — FISH · 1:05 → 1:25
-**Fish on point**
+- **Why this** → group chats = where attention lives now. Nobody's built wagered gaming *inside* the chat.
+- **Why now** → markets dry. Attention spans shot. Nostalgia for Pocket Tanks / Worms. Async turn cadence fits chat perfectly.
 
-- The product / strategy / design half — joined when JJ already had a working core
-- Joint commit history — already shipping together for months
-- Specific things you brought (your call on what to claim — don't oversell)
-
-**Tie-line either of you can land:** *"We're not pitching what we'd build if you funded us. We're pitching what we already built."*
+**Don't separate the two.** They flow together. JJ nods + reacts in real-time.
 
 ---
 
-### 5 · WHERE THIS GOES · 1:25 → 1:50
-**Whoever's natural — likely Fish leads, JJ anchors**
+### 3 · "AND WHY US?" · 0:55 → 1:30
+**Fish flips it. Short, direct.**
 
-- Artillery is the wedge · group-chat-native gaming is the category
-- Telegram first → Seekr Mobile → iMessage → WhatsApp
-- Same backend, same SHOT economy, multiple games on top
-- JJ anchors: *"Adding a chat surface or a new game isn't a rewrite. It's an addition."* — say it conversationally, NOT quoted
+> "And why us, then? Why are we the ones building this?"
 
----
+**JJ lands "why us":**
 
-### 6 · CLOSE · 1:50 → 2:00
-**Whoever's been on point most recently**
+- Lifelong gamer — grew up on the artillery genre
+- Lived in the trench/whale side of crypto — that's the audience
+- Fish brings the product + design + story brain
+- The gap nobody else sees: gaming people don't speak crypto, crypto people don't speak gaming. We do both.
 
-- "Mainnet's a week or two out"
-- "We're applying because we want to **skip the part where we slow down to fundraise**"
-- "SolShot.gg, code's open on GitHub"
-- "Thanks for watching"
-- Hard out
+**Optional anchor line if it lands naturally:**
+> "We're not pitching what we'd build if you funded us. We're pitching what we already built."
 
 ---
 
-## If you freeze
+### 4 · "SO WHERE DOES THIS GO?" · 1:30 → 1:55
+**JJ rolls his "why us" answer naturally into the vision.**
 
-Don't restart. Cover lines either of you can deploy:
+**JJ lands "where next":**
 
-- *"Yeah and the other thing about that…"* → keep going
-- *"Sorry let me put it this way…"* → re-state the point
-- *"JJ, you wanted to add to that?"* / *"Fish, your take?"* → buy 3 seconds, hand off
+- SolShot's the wedge. Artillery is the first game.
+- Bet is the whole group-chat arcade: golf, 8-ball, basketball, hockey, darts. Same wallet, same SHOT, same async loop.
+- Then Seekr Mobile, iMessage, WhatsApp. Adding a chat surface = an addition, not a rebuild.
+- *"We want to monopolise the gap we see. Nobody else is building this."*
 
-Two-second pauses are fine. Long silences are fine if you're nodding. Re-recording 6 times until perfect is what KILLS this video.
+**Fish riffs in (optional moat line):**
+> "Single-game wagers compete on game quality. Multi-game async wagers across a friend group is *infrastructure*. That's the moat."
 
 ---
 
-## What to NEVER do
+### 5 · CLOSE · 1:55 → 2:00
+**Whoever's most recent. Direct.**
+
+> "Mainnet's a week or two out. We're applying because we want to skip the part where we slow down to fundraise. SolShot.gg, code's open. Thanks for watching."
+
+**Hard out.**
+
+---
+
+## The 2 questions to land verbatim
+
+These prompts hold the whole conversation together. Improvise the answers, but land these:
+
+1. **JJ to Fish:** *"So why do YOU think we built this?"* (the "lol" tone is key)
+2. **Fish to JJ:** *"And why us, then?"* (short, no preamble)
+
+---
+
+## If one of you freezes
+
+Cover lines either of you can throw out:
+
+- *"Yeah, and the other thing about that…"* → keep going
+- *"Sorry let me put it differently…"* → re-state
+- *"What do you reckon?"* / *"You take it?"* → hand off, buy 3 seconds
+
+Two-second pauses are fine. Re-recording 6 times to "get it perfect" is what kills the format.
+
+---
+
+## NEVER
 
 - ❌ Read from a script
-- ❌ Open a deck / pitch slides behind you
-- ❌ Say "as a founder…" / "we strongly believe…" / "TAM" / "primitives" / "category-defining"
-- ❌ Sit silent + frozen-face while the other is talking — nod, "yeah", react
-- ❌ Add B-roll, music, or graphics. Polish hurts. Colosseum said *"Nothing fancy required."*
+- ❌ Open a deck behind you
+- ❌ "As a founder…" / "we strongly believe…" / "TAM" / "primitives"
+- ❌ Sit silent + frozen-face while the other talks
+- ❌ Music, B-roll, captions, transitions. Polish hurts here.
 
 ---
 
-## Three things to remember
+## Three to remember
 
-1. **The format is the message.** Two people on Zoom = team that already works together. The dynamic is the proof.
-2. **Beat 3 + 4 (Why Us) is the heart of the video.** 40 seconds combined — judges score this hardest.
+1. **The questions are the format.** "Why do YOU think we built this?" and "And why us?" — these two prompts hold the conversation together.
+2. **Beat 2 is a 2-for-1.** Fish lands why-this AND why-now together. They're tied. Don't separate them.
 3. **Take it twice. Second take's the keeper.** Don't fall in love with take one.
 
 ---

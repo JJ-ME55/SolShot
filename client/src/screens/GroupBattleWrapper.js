@@ -127,6 +127,19 @@ export default function GroupBattleWrapper({ match, onMatchUpdate, fillMode = fa
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [match?.matchId]);
 
+    // Battle-active flag mirror of BattleScreen's. FeedbackButton hides
+    // itself while this is true so the floating '?' doesn't stack on
+    // top of the move cluster + weapon strip in the bottom-left of
+    // mobile group-chat matches.
+    useEffect(() => {
+        window.__solshotInBattle = true;
+        window.dispatchEvent(new Event('solshot:battle-state'));
+        return () => {
+            window.__solshotInBattle = false;
+            window.dispatchEvent(new Event('solshot:battle-state'));
+        };
+    }, []);
+
     // Forfeit handler — confirms with the user, then emits forfeitGroupMatch
     // to the server. Server marks the player eliminated (HP=0), advances
     // turn, and posts to chat. If the firer's forfeit makes them the last

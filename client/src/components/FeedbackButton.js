@@ -25,25 +25,17 @@ export default function FeedbackButton() {
     const [open, setOpen] = useState(false);
     const [hidden, setHidden] = useState(false);
 
-    // Hide during active battle / group-battle to avoid overlapping the
-    // FIRE button. Watch pathname for changes since SPA routing doesn't
-    // remount this component.
+    // Hide during active battles to avoid overlapping the FIRE button
+    // and the bottom-left move cluster + weapon strip on mobile.
+    // SolShot routes are state-driven (not path-driven) so URL pathname
+    // can't tell us a match is running. Both BattleScreen and
+    // GroupBattleWrapper set `window.__solshotInBattle = true` on mount
+    // and dispatch a `solshot:battle-state` event on transition.
     useEffect(() => {
-        const check = () => {
-            const p = window.location.pathname || '';
-            setHidden(p.startsWith('/battle') || p.startsWith('/group-battle') || p.startsWith('/match'));
-        };
+        const check = () => setHidden(!!window.__solshotInBattle);
         check();
-        // SPA: no native pathname-change event, so listen for popstate +
-        // a custom event our router dispatches when it navigates. Falls
-        // back to a low-frequency interval so we still notice non-event
-        // routing changes.
-        window.addEventListener('popstate', check);
-        const t = setInterval(check, 1500);
-        return () => {
-            window.removeEventListener('popstate', check);
-            clearInterval(t);
-        };
+        window.addEventListener('solshot:battle-state', check);
+        return () => window.removeEventListener('solshot:battle-state', check);
     }, []);
 
     if (hidden) return null;

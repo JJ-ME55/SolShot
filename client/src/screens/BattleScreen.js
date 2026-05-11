@@ -122,6 +122,21 @@ function BattleScreen({ navigate, screenData }) {
     };
   }, []);
 
+  // Battle-active flag for global overlays (FeedbackButton hides itself
+  // when this is true to avoid overlapping the FIRE button + A/D move
+  // cluster on mobile). Window-scoped because the FeedbackButton lives
+  // outside this component tree (mounted at Layout level). URL-based
+  // detection doesn't work here: SolShot routes are state-driven, not
+  // path-driven, so the path stays "/" through a match.
+  useEffect(() => {
+    window.__solshotInBattle = true;
+    window.dispatchEvent(new Event('solshot:battle-state'));
+    return () => {
+      window.__solshotInBattle = false;
+      window.dispatchEvent(new Event('solshot:battle-state'));
+    };
+  }, []);
+
   // CS-04: Use context hook instead of window.solWallet
   const { signAndSendEscrowDeposit } = useSolShotWallet();
 

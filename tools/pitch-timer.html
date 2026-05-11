@@ -224,6 +224,10 @@
     transform: translateX(-50%);
     text-align: center;
     z-index: 11;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
   }
   .hackathon-label {
     font-family: var(--f-mono);
@@ -232,7 +236,12 @@
     color: var(--kh);
     opacity: 0.7;
     text-transform: uppercase;
-    margin-bottom: 4px;
+  }
+  .hackathon-logo {
+    height: 28px;
+    width: auto;
+    opacity: 0.9;
+    filter: drop-shadow(0 1px 3px rgba(0,0,0,0.7));
   }
   .hackathon-name {
     font-family: var(--f-display);
@@ -245,6 +254,15 @@
   .hackathon-name .frontier {
     color: var(--bone);
     opacity: 0.85;
+  }
+  .frontier-suffix {
+    font-family: var(--f-mono);
+    font-size: 10px;
+    letter-spacing: 0.32em;
+    color: var(--olive);
+    opacity: 0.8;
+    text-transform: uppercase;
+    margin-top: 2px;
   }
 
   /* Hide cursor when fullscreen-ish */
@@ -287,7 +305,14 @@
 
 <div class="hackathon">
   <div class="hackathon-label">Submission Window</div>
-  <div class="hackathon-name">COLOSSEUM <span class="frontier">FRONTIER</span></div>
+  <img
+    src="../Assets/colosseum-logo.png"
+    alt="Colosseum"
+    class="hackathon-logo"
+    onerror="this.style.display='none'; document.getElementById('hackathon-fallback').style.display='block';"
+  />
+  <div id="hackathon-fallback" class="hackathon-name" style="display:none;">COLOSSEUM <span class="frontier">FRONTIER</span></div>
+  <div class="frontier-suffix">Frontier</div>
 </div>
 
 <script>

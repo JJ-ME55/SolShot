@@ -312,7 +312,7 @@ SHOT is the utility token of the SolShot ecosystem. It is earned exclusively thr
 |---|---|---|---|---|
 | Reward Pool | 7,000,000 | 70% | On-chain PDA | Milestone-gated emissions to players |
 | Treasury | 1,500,000 | 15% | Squads multisig | Ecosystem development, partnerships, liquidity |
-| Team | 1,000,000 | 10% | Team wallet, no vesting | Development, infrastructure, operations |
+| Team | 1,000,000 | 10% | Team wallet, 6-week linear vest | Development, infrastructure, operations |
 | Initial Liquidity | 500,000 | 5% | Meteora DAMM v2 pool | Secondary market trading |
 
 70% to rewards is the largest allocation by design. SolShot's thesis is that the people who play the game should own the majority of supply. The heavy reward weighting makes "play to earn" credible.
@@ -325,9 +325,9 @@ For full emission tables, milestone schedule, anti-farming protections, deflatio
 
 ### Sell Discipline (Team Allocation)
 
-The 1M team allocation is unlocked at launch with no vesting schedule. This is documented openly. Vesting contracts create a false sense of security; anyone with access to the upgrade authority could circumvent vesting in multiple ways, and SolShot's authority key is held by the engineering lead (the structural single-key risk is named openly in Section 10). SolShot opts for transparency: the team has full discretion governed by public commitment, not by smart-contract constraints that the upgrade-authority holder could circumvent anyway.
+The 1M team allocation vests linearly over **6 weeks** from launch, at roughly 166,667 SHOT per week. This is a public commitment rather than a smart-contract constraint, and that distinction is deliberate. Contract-enforced vesting can create a false sense of security; anyone with upgrade-authority access could circumvent it, and SolShot's authority key is held by the engineering lead (the structural single-key risk is named openly in Section 10). A contract-vesting clause that the authority can bypass would be theatre. SolShot opts for the honest framing instead: a 6-week schedule, governed by public commitment and on-chain observability.
 
-The team commits to a maximum sell rate of 10% of the team allocation per week, sold into volume rather than against thin liquidity. This is a public commitment, not an on-chain guarantee. Anyone can monitor the team wallet on-chain and verify compliance. Deviation would be immediately visible.
+Layered on top, the team commits to a maximum sell rate of 10% of the unlocked balance per week, sold into volume rather than against thin liquidity. Both the 6-week vest and the 10% weekly sell cap are public commitments, not on-chain guarantees. Anyone can monitor the team wallet on-chain and verify compliance. Deviation would be immediately visible.
 
 ---
 

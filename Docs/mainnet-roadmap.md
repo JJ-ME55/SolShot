@@ -702,10 +702,9 @@ Document the chosen approach in the project decisions log before scaling past on
 
 **10.3 SHOT token economics finalization**
 
-The SHOT mint authority is burned (10M supply, fixed). Liquidity strategy is TBD:
+The SHOT mint authority is burned (10M supply, fixed). The 1M team allocation vests linearly over 6 weeks from launch as a public commitment (see `SHOT_TOKEN_MODEL.md` for full detail). The remaining liquidity strategy items are TBD:
 - When does the first liquidity pool open? On which DEX?
 - What is the initial LP seed amount?
-- Is there a vesting cliff for the 8.5M dev wallet balance?
 - What is the burn schedule for prestige tiers, and does it interact with the fixed supply in ways that affect long-term token price?
 
 None of these affect the on-chain security model, but they affect user trust and must be documented before mainnet.

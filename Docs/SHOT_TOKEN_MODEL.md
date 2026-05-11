@@ -26,7 +26,7 @@ The entire 10M supply is allocated at genesis. There are no future emissions fro
 |------------|--------|------------|---------|---------|
 | **Reward Pool** | 7,000,000 | 70% | Locked in PDA on-chain | Milestone-gated emissions to players |
 | **Treasury** | 1,500,000 | 15% | Squads multisig | Ecosystem development, partnerships, liquidity incentives |
-| **Team** | 1,000,000 | 10% | Team wallet, unlocked at launch | Development, infrastructure, operations |
+| **Team** | 1,000,000 | 10% | Team wallet, 6-week linear vest | Development, infrastructure, operations |
 | **Initial Liquidity** | 500,000 | 5% | Meteora DAMM V2 pool | DEX liquidity for secondary market trading |
 
 **Why 70% to rewards:** Most tokens flow to players, not insiders. The reward pool is the largest allocation by far because SolShot's thesis is that the people who play the game should own the majority of the token supply. The heavy reward allocation makes the "play to earn" promise credible.
@@ -204,17 +204,13 @@ This two-path model ensures that the majority of SHOT supply flows to active pla
 
 ### Team Allocation: 1M SHOT (10%)
 
-The team allocation is unlocked at launch with no vesting schedule. This is a deliberate choice, documented openly.
+The team allocation vests linearly over **6 weeks** from launch, at a rate of approximately 166,667 SHOT per week. This is a public commitment, not a smart-contract constraint, and that distinction is deliberate.
 
-**Why no vesting:** Vesting contracts create a false sense of security. Anyone with access to the upgrade authority could circumvent a vesting contract, and SolShot's authority key is currently held by a single engineering lead (the structural single-key risk is named openly in [`security-model.md`](./security-model.md)). The team has full discretion over the allocation, governed by public commitment, not by smart-contract constraints that the upgrade-authority holder could bypass anyway.
+**Why public commitment rather than on-chain vesting:** Vesting contracts can create a false sense of security. Anyone with upgrade-authority access to a program could circumvent contract-enforced vesting, and SolShot's authority key is currently held by a single engineering lead (the structural single-key risk is named openly in [`security-model.md`](./security-model.md)). A contract-vesting clause that the upgrade authority can bypass would be theatre. The team chose the honest framing instead: a 6-week schedule, governed by public commitment and on-chain observability, with no pretence that the schedule is unbypassable.
 
-**Sell discipline:** The team commits to a maximum sell rate of 10% of the team allocation per week, sold into volume rather than against thin liquidity. This means:
+**Sell discipline within the vested portion:** As each weekly tranche unlocks, the team commits to a maximum sell rate of 10% of the unlocked team balance per week, sold into volume rather than against thin liquidity. This is layered on top of the 6-week vest, not a replacement for it.
 
-- Week 1 maximum: 100,000 SHOT
-- Week 2 maximum: 90,000 SHOT (10% of remaining 900K)
-- And so on, declining
-
-This is a **public commitment, not an on-chain guarantee**. It is observable: anyone can monitor the team wallet and verify compliance. Deviation would be immediately visible and would destroy the trust the project depends on. That reputational backstop is the real enforcement mechanism.
+This is a **public commitment, not an on-chain guarantee**. It is observable: anyone can monitor the team wallet and verify compliance with both the 6-week unlock schedule and the 10% weekly sell cap. Deviation would be immediately visible and would destroy the trust the project depends on. That reputational backstop is the real enforcement mechanism.
 
 ### Treasury: 1.5M SHOT (15%)
 

@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SolShot — Pitch Video Timer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-deep: #0e1209;
+    --bg-raised: #14180c;
+    --bone: #e8e4d0;
+    --olive: #b8a88a;
+    --kh: #6b7355;
+    --accent: #e8a430;
+    --gg: #14F195;
+    --red: #cf4646;
+    --f-display: 'Black Ops One', cursive;
+    --f-mono: 'Share Tech Mono', monospace;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg-deep);
+    color: var(--bone);
+    font-family: var(--f-mono);
+    margin: 0;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* Scanline overlay for CRT feel */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      rgba(0,0,0,0) 0px,
+      rgba(0,0,0,0) 2px,
+      rgba(0,0,0,0.06) 2px,
+      rgba(0,0,0,0.06) 4px
+    );
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  /* Subtle vignette */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.6) 100%);
+    pointer-events: none;
+    z-index: 9;
+  }
+
+  .wordmark {
+    font-family: var(--f-display);
+    font-size: clamp(32px, 5vw, 56px);
+    letter-spacing: 0.04em;
+    line-height: 1;
+    margin-bottom: 8px;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.7);
+  }
+  .wordmark .sol { color: var(--bone); }
+  .wordmark .shot { color: var(--accent); }
+
+  .sublabel {
+    font-family: var(--f-mono);
+    font-size: 11px;
+    letter-spacing: 0.32em;
+    color: var(--olive);
+    margin-bottom: 50px;
+    text-transform: uppercase;
+  }
+
+  .timer-wrap {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .timer {
+    font-family: var(--f-display);
+    font-size: clamp(120px, 22vw, 260px);
+    letter-spacing: 0.02em;
+    line-height: 1;
+    color: var(--gg);
+    text-shadow: 0 0 40px var(--gg), 0 0 80px rgba(20, 241, 149, 0.25);
+    transition: color 0.3s, text-shadow 0.3s;
+    font-variant-numeric: tabular-nums;
+  }
+  .timer.warning {
+    color: var(--accent);
+    text-shadow: 0 0 40px var(--accent), 0 0 80px rgba(232, 164, 48, 0.30);
+  }
+  .timer.critical {
+    color: var(--red);
+    text-shadow: 0 0 40px var(--red), 0 0 80px rgba(207, 70, 70, 0.30);
+    animation: crit-pulse 0.6s ease-in-out infinite;
+  }
+  .timer.done {
+    color: var(--red);
+    text-shadow: 0 0 40px var(--red), 0 0 80px rgba(207, 70, 70, 0.45);
+    animation: crit-pulse 0.4s ease-in-out infinite;
+  }
+  @keyframes crit-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+  }
+
+  .progress-track {
+    width: clamp(280px, 50vw, 580px);
+    height: 4px;
+    background: rgba(232, 216, 154, 0.12);
+    margin-top: 24px;
+    margin-bottom: 8px;
+    position: relative;
+    overflow: hidden;
+  }
+  .progress-fill {
+    position: absolute;
+    inset: 0;
+    background: var(--gg);
+    transform-origin: left;
+    transition: transform 0.3s linear, background 0.3s;
+    box-shadow: 0 0 10px var(--gg);
+  }
+  .progress-fill.warning {
+    background: var(--accent);
+    box-shadow: 0 0 10px var(--accent);
+  }
+  .progress-fill.critical {
+    background: var(--red);
+    box-shadow: 0 0 10px var(--red);
+  }
+
+  .beat-markers {
+    width: clamp(280px, 50vw, 580px);
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--f-mono);
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    color: var(--kh);
+    margin-bottom: 36px;
+    text-transform: uppercase;
+  }
+  .beat-markers span {
+    flex: 1;
+    text-align: center;
+    border-left: 1px solid rgba(232, 216, 154, 0.10);
+    padding-top: 4px;
+  }
+  .beat-markers span:first-child { border-left: none; }
+
+  .controls {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 80px;
+  }
+  button {
+    background: rgba(232, 164, 48, 0.10);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-family: var(--f-display);
+    font-size: 14px;
+    letter-spacing: 0.18em;
+    padding: 12px 28px;
+    cursor: pointer;
+    clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px));
+    transition: background 0.15s, color 0.15s;
+    text-transform: uppercase;
+  }
+  button:hover {
+    background: var(--accent);
+    color: var(--bg-deep);
+  }
+  button.primary {
+    background: var(--accent);
+    color: var(--bg-deep);
+  }
+  button.primary:hover {
+    background: var(--bone);
+    border-color: var(--bone);
+  }
+
+  .shortcuts {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    font-family: var(--f-mono);
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    color: var(--kh);
+    text-align: right;
+    opacity: 0.5;
+    z-index: 11;
+  }
+  .shortcuts kbd {
+    display: inline-block;
+    background: rgba(232,216,154,0.08);
+    border: 1px solid rgba(232,216,154,0.20);
+    padding: 1px 6px;
+    margin: 0 2px;
+    font-family: var(--f-mono);
+    font-size: 10px;
+    color: var(--olive);
+  }
+
+  /* Bottom hackathon block */
+  .hackathon {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+    z-index: 11;
+  }
+  .hackathon-label {
+    font-family: var(--f-mono);
+    font-size: 9px;
+    letter-spacing: 0.32em;
+    color: var(--kh);
+    opacity: 0.7;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .hackathon-name {
+    font-family: var(--f-display);
+    font-size: 18px;
+    letter-spacing: 0.16em;
+    color: var(--accent);
+    text-shadow: 0 1px 3px rgba(0,0,0,0.7);
+    text-transform: uppercase;
+  }
+  .hackathon-name .frontier {
+    color: var(--bone);
+    opacity: 0.85;
+  }
+
+  /* Hide cursor when fullscreen-ish */
+  @media (max-height: 700px) {
+    .wordmark { margin-bottom: 4px; }
+    .sublabel { margin-bottom: 30px; }
+    .controls { margin-bottom: 60px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="shortcuts">
+  <kbd>SPACE</kbd> start/pause<br>
+  <kbd>R</kbd> reset
+</div>
+
+<div class="wordmark"><span class="sol">SOL</span><span class="shot">SHOT</span></div>
+<div class="sublabel">◆ Pitch Video · 2:00 Cap ◆</div>
+
+<div class="timer-wrap">
+  <div class="timer" id="timer">2:00</div>
+  <div class="progress-track">
+    <div class="progress-fill" id="progress-fill"></div>
+  </div>
+  <div class="beat-markers">
+    <span>INTROS</span>
+    <span>WHY THIS</span>
+    <span>WHY US</span>
+    <span>VISION</span>
+    <span>CLOSE</span>
+  </div>
+</div>
+
+<div class="controls">
+  <button id="startBtn" class="primary">START</button>
+  <button id="pauseBtn">PAUSE</button>
+  <button id="resetBtn">RESET</button>
+</div>
+
+<div class="hackathon">
+  <div class="hackathon-label">Submission Window</div>
+  <div class="hackathon-name">COLOSSEUM <span class="frontier">FRONTIER</span></div>
+</div>
+
+<script>
+  const TOTAL_SECONDS = 120;
+  let remaining = TOTAL_SECONDS;
+  let interval = null;
+  let running = false;
+  let beepedAt = new Set();
+
+  const timerEl = document.getElementById('timer');
+  const fillEl = document.getElementById('progress-fill');
+  const startBtn = document.getElementById('startBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+  const resetBtn = document.getElementById('resetBtn');
+
+  // Web Audio for beeps
+  let audioCtx = null;
+  function beep(freq, duration, volume = 0.15) {
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.frequency.value = freq;
+      osc.type = 'sine';
+      gain.gain.setValueAtTime(volume, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+      osc.start();
+      osc.stop(audioCtx.currentTime + duration);
+    } catch (e) { /* ignore */ }
+  }
+
+  function render() {
+    const m = Math.floor(Math.max(0, remaining) / 60);
+    const s = Math.max(0, remaining) % 60;
+    timerEl.textContent = `${m}:${s.toString().padStart(2, '0')}`;
+
+    // Color states
+    timerEl.classList.remove('warning', 'critical', 'done');
+    fillEl.classList.remove('warning', 'critical');
+
+    if (remaining <= 0) {
+      timerEl.classList.add('done');
+    } else if (remaining <= 10) {
+      timerEl.classList.add('critical');
+      fillEl.classList.add('critical');
+    } else if (remaining <= 30) {
+      timerEl.classList.add('warning');
+      fillEl.classList.add('warning');
+    }
+
+    // Progress bar (fills from full -> empty as time runs out)
+    const pct = Math.max(0, remaining) / TOTAL_SECONDS;
+    fillEl.style.transform = `scaleX(${pct})`;
+  }
+
+  function tick() {
+    remaining--;
+
+    // Beep cues at milestones
+    if (remaining === 90 && !beepedAt.has(90)) {
+      // End of intro section
+      beep(440, 0.08);
+      beepedAt.add(90);
+    } else if (remaining === 30 && !beepedAt.has(30)) {
+      // 30s warning - 'wrap it up' cue
+      beep(660, 0.12);
+      beepedAt.add(30);
+    } else if (remaining === 10 && !beepedAt.has(10)) {
+      // 10s critical
+      beep(880, 0.15);
+      beepedAt.add(10);
+    } else if (remaining === 0 && !beepedAt.has(0)) {
+      // Time's up - longer tone
+      beep(220, 0.4, 0.20);
+      beepedAt.add(0);
+      clearInterval(interval);
+      running = false;
+      startBtn.textContent = 'START';
+      startBtn.classList.add('primary');
+    }
+
+    render();
+  }
+
+  function start() {
+    if (running || remaining <= 0) return;
+    running = true;
+    // Resume audio context if it was suspended
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    interval = setInterval(tick, 1000);
+    startBtn.textContent = 'RUNNING';
+    startBtn.classList.remove('primary');
+  }
+
+  function pause() {
+    running = false;
+    clearInterval(interval);
+    startBtn.textContent = remaining > 0 ? 'RESUME' : 'START';
+    startBtn.classList.add('primary');
+  }
+
+  function reset() {
+    running = false;
+    clearInterval(interval);
+    remaining = TOTAL_SECONDS;
+    beepedAt = new Set();
+    startBtn.textContent = 'START';
+    startBtn.classList.add('primary');
+    render();
+  }
+
+  startBtn.addEventListener('click', start);
+  pauseBtn.addEventListener('click', pause);
+  resetBtn.addEventListener('click', reset);
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'Space') {
+      e.preventDefault();
+      if (running) {
+        pause();
+      } else {
+        start();
+      }
+    } else if (e.key === 'r' || e.key === 'R') {
+      reset();
+    }
+  });
+
+  render();
+</script>
+
+</body>
+</html>

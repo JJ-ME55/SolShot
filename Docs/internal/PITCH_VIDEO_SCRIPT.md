@@ -1,6 +1,10 @@
-# SolShot Pitch Video — 2-min Zoom Conversation (v3)
+# SolShot Pitch Video — 2-min Zoom Conversation (v4)
 
-**Format:** Zoom recording, two webcams side-by-side, podcast vibe. You're talking to each other, not to the camera. Hard 2-min cap, aim 1:55.
+**Format:** Zoom call, both with cameras OFF (PFPs visible in the thumbnail strip), one person screen-shares solshot.gg with a vs Shot Bot match running quietly in the background. Audio is the Q&A conversation. Hard 2-min cap, aim 1:55.
+
+**Why no faces:** the demo video already has Fish's voiceover over 3 mins of structured product walkthrough. Two video formats with talking-heads on top would be redundant. Pitch differentiates by being conversational + audio-led, with ambient gameplay as the visual layer.
+
+**Why screen-share over static PFPs:** two static profile pictures for 2 minutes reads as low effort. A casual vs Shot Bot match running in the background provides visual interest without competing for attention — the audio Q&A is still the substance.
 
 **Brief from Colosseum (verbatim):**
 > "Separate from the demo video — introduce yourselves, tell us what you're building, and tell us why you're the people to build it. Nothing fancy required. **We're interested in how you think and communicate.** YouTube, Loom, or Vimeo. Up to 2 minutes."

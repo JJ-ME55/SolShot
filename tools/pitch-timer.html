@@ -44,14 +44,17 @@
 
   .wordmark {
     font-family: var(--f-display);
-    font-size: clamp(28px, 4.5vw, 48px);
-    letter-spacing: 0.04em;
+    font-size: clamp(56px, 9vw, 120px);
+    letter-spacing: 0.05em;
     line-height: 1;
-    margin-bottom: 80px;
-    text-shadow: 0 2px 6px rgba(0,0,0,0.7);
+    margin-bottom: 60px;
+    text-shadow: 0 3px 10px rgba(0,0,0,0.8);
   }
   .wordmark .sol { color: var(--bone); }
-  .wordmark .shot { color: var(--accent); }
+  .wordmark .shot {
+    color: var(--accent);
+    text-shadow: 0 0 30px rgba(232, 164, 48, 0.35), 0 3px 10px rgba(0,0,0,0.8);
+  }
 
   .timer {
     font-family: var(--f-display);
@@ -139,24 +142,25 @@
 
   .hackathon {
     position: fixed;
-    bottom: 32px;
+    bottom: 48px;
     left: 50%;
     transform: translateX(-50%);
     z-index: 11;
   }
   .hackathon-logo {
-    height: 22px;
+    height: clamp(38px, 5vw, 56px);
     width: auto;
-    opacity: 0.75;
-    filter: drop-shadow(0 1px 3px rgba(0,0,0,0.7));
+    opacity: 0.92;
+    filter: drop-shadow(0 2px 6px rgba(0,0,0,0.7));
   }
   .hackathon-fallback {
     font-family: var(--f-display);
-    font-size: 14px;
-    letter-spacing: 0.18em;
+    font-size: clamp(28px, 3.5vw, 44px);
+    letter-spacing: 0.22em;
     color: var(--bone);
-    opacity: 0.7;
+    opacity: 0.9;
     text-transform: uppercase;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.7);
   }
 </style>
 </head>

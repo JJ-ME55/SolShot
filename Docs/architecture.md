@@ -53,6 +53,16 @@ authoritative for funds; MongoDB is authoritative for game state. Discrepancies 
 via the permissionless reclaim path - any player can self-refund 24 hours after match end if the
 server never settled.
 
+### Why server-authoritative, not ephemeral rollups
+
+Server-authoritative physics with on-chain settlement is a deliberate choice over ephemeral
+rollups. Artillery is async turn-based: matches run over hours or days at chat pace, not
+milliseconds. Ephemeral rollups solve sub-second latency for real-time games. Settlement-only
+on-chain is the right fit for asynchronous skill PvP, and keeps the trust model simple: the
+server cannot redirect funds, the chain cannot be made to settle to a wallet not in
+`escrow.players[]`, and the permissionless reclaim path closes the loop if the server ever
+goes dark.
+
 ---
 
 ## Components

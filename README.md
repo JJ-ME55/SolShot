@@ -32,7 +32,7 @@ Both settle pots atomically with a 90/7/3 split (winner, treasury, ops). All spl
 
 SolShot today is artillery in a Telegram group chat. Tomorrow it's the **social-game layer for crypto group chats** - multiple games on one shared on-chain economy, deployed across Telegram, Seekr Mobile, iMessage, and WhatsApp, with an open SDK so other devs can ship group-chat-native wagered games on the same infrastructure.
 
-Artillery is the wedge. Group-chat-native gaming is the prize.
+Artillery is the wedge. Group-chat-native gaming is the prize. The group chat is the distribution. The game has to hold up on its own merit.
 
 See the full forward-looking plan in [`Docs/ROADMAP.md`](Docs/ROADMAP.md) (5 phases, principles, multi-game time-windowed wager mechanic), or the [litepaper](Docs/SolShot_Litepaper_v2.2.md) and [SHOT token model](Docs/SHOT_TOKEN_MODEL.md) for the full spec.
 
@@ -49,6 +49,8 @@ Start here, in order of depth:
 | [`Docs/SHOT_TOKEN_MODEL.md`](Docs/SHOT_TOKEN_MODEL.md) | SHOT token model - distribution, emissions, burns, scarcity analysis | 10 min |
 
 ### Audit posture
+
+SolShot is an AI-augmented build. Claude Code wrote most of the implementation under direct engineering supervision. Because the codebase moved fast, we ran three independent adversarial audits before submission. Two fix bundles have shipped to `main`. Every finding is documented with a disposition.
 
 We ran three audit pipelines from the [Solana Vibes Kit](https://github.com/MetalegBob) before submission. All reports are in this repo:
 
@@ -124,6 +126,8 @@ TG group chat (host runs /customgame)
 
 The server keeps live match state in MongoDB and reconciles to the chain at settle time. The chain is authoritative for funds; Mongo is authoritative for game state. If the two ever diverge, the permissionless reclaim path lets any player refund themselves 24h after match end without server involvement.
 
+Server-authoritative physics with on-chain settlement is a deliberate choice for async chat-paced play. See [`Docs/architecture.md`](Docs/architecture.md) for the rationale vs ephemeral-rollup alternatives.
+
 ## Tech stack
 
 | Layer | Choice |
@@ -141,6 +145,11 @@ The server keeps live match state in MongoDB and reconciles to the chain at sett
 - ✅ **SHOT token devnet**: mint live, mint authority burned, prestige burn verification on-chain.
 - ✅ **Audit pass complete**: SOS (on-chain) + BOK (math invariants, 159 tests) + DB (off-chain) all run end-to-end pre-submission. Reports in [`.audit/`](.audit/), [`.bok/`](.bok/), [`.bulwark/`](.bulwark/). Summary: [`Docs/audit-summary.md`](Docs/audit-summary.md).
 - 🟡 **Mainnet**: targeted post-hackathon. Roadmap of remediation bundles in [`Docs/mainnet-roadmap.md`](Docs/mainnet-roadmap.md).
+
+**Live signal (as of 11 May 2026):**
+- Wagered matches settled on devnet across the week of 4-10 May. TX links above show the first 1v1 (4 May) and the first organic N-player auto-settle (6 May). The v1 and v2 programs have logged 140+ successful on-chain interactions since launch. Click through the program addresses above for the full Solscan history.
+- Playtesters running real matches: Demon, StraightShooter, Jules, Dingz, Kamisama, BananaGun.
+- Twitter relaunched 3 May with daily build-in-public posts.
 
 ## Local development
 

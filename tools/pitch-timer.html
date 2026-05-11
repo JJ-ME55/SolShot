@@ -5,7 +5,7 @@
 <title>SolShot — Pitch Timer</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Share+Tech+Mono&family=Inter:wght@800&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg-deep: #0e1209;
@@ -146,21 +146,14 @@
     left: 50%;
     transform: translateX(-50%);
     z-index: 11;
-  }
-  .hackathon-logo {
     height: clamp(38px, 5vw, 56px);
-    width: auto;
     opacity: 0.92;
     filter: drop-shadow(0 2px 6px rgba(0,0,0,0.7));
   }
-  .hackathon-fallback {
-    font-family: var(--f-display);
-    font-size: clamp(28px, 3.5vw, 44px);
-    letter-spacing: 0.22em;
-    color: var(--bone);
-    opacity: 0.9;
-    text-transform: uppercase;
-    text-shadow: 0 2px 6px rgba(0,0,0,0.7);
+  .hackathon svg {
+    height: 100%;
+    width: auto;
+    display: block;
   }
 </style>
 </head>
@@ -179,14 +172,32 @@
   <button id="resetBtn">RESET</button>
 </div>
 
-<div class="hackathon">
-  <img
-    src="../Assets/colosseum-logo.png"
-    alt="Colosseum"
-    class="hackathon-logo"
-    onerror="this.style.display='none'; document.getElementById('hackathon-fallback').style.display='block';"
-  />
-  <div id="hackathon-fallback" class="hackathon-fallback" style="display:none;">COLOSSEUM</div>
+<div class="hackathon" aria-label="Colosseum">
+  <svg viewBox="0 0 1320 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Colosseum">
+    <!-- Column icon: capital, architrave, fluted shaft, base -->
+    <g fill="#ffffff">
+      <!-- Capital (top wide piece) -->
+      <rect x="14" y="22" width="138" height="22" rx="1"/>
+      <!-- Architrave (narrower line beneath capital) -->
+      <rect x="28" y="50" width="110" height="8"/>
+      <!-- Fluted shaft (3 vertical bars with gaps) -->
+      <rect x="36" y="68" width="20" height="120"/>
+      <rect x="73" y="68" width="20" height="120"/>
+      <rect x="110" y="68" width="20" height="120"/>
+      <!-- Base -->
+      <rect x="14" y="194" width="138" height="22" rx="1"/>
+    </g>
+    <!-- COLOSSEUM wordmark -->
+    <text
+      x="208"
+      y="178"
+      font-family="'Inter', 'Helvetica Neue', Arial, sans-serif"
+      font-size="200"
+      font-weight="800"
+      fill="#ffffff"
+      letter-spacing="-4"
+    >COLOSSEUM</text>
+  </svg>
 </div>
 
 <script>

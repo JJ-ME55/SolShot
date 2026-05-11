@@ -30,7 +30,7 @@ const FAQ_SECTIONS = [
   {
     id: 'wallets',
     question: 'Which wallets work?',
-    answer: 'Any Solana wallet that supports Wallet Adapter \u2014 Phantom, Solflare, Backpack, and more. Wallet features coming soon!',
+    answer: 'Sign in with email, Google, or Telegram via Privy \u2014 your Solana wallet is created for you. Existing Phantom, Solflare, or Backpack users can also connect.',
   },
   {
     id: 'mobile',

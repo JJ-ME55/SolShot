@@ -25,7 +25,7 @@ const FAQ_SECTIONS = [
   {
     id: 'wagering',
     question: 'How does wagering work?',
-    answer: 'In Duel and High Roller modes, you wager SOL against your opponent. Wagers are held in a trustless on-chain escrow. Winners receive 90% of the pot, with 7% to treasury and 3% to operations.',
+    answer: 'In Wagered mode, you stake SOL (0.1 / 0.25 / 0.5 / 1) against your opponent. Stakes are held in a trustless on-chain escrow. Winners receive 90% of the pot, with 7% to treasury and 3% to operations.',
   },
   {
     id: 'wallets',

@@ -14,9 +14,12 @@ import ScanBtn from '../components/design/ScanBtn';
  *
  * Option A simplification (2026-05-07): the legacy QUICK_MATCH / DUEL /
  * HIGH_ROLLER tabs are collapsed into a single WAGERED mode with a wager
- * picker. The legacy mode names are preserved as wager-tier labels +
- * derived server-side via `legacyModeForWager()` so the matchmaking-queue
- * segmentation (server keys queues by matchMode:matchLength) is unchanged.
+ * picker. The legacy mode names are still derived server-side via
+ * `legacyModeForWager()` so the matchmaking-queue segmentation (server
+ * keys queues by matchMode:matchLength) is unchanged. The UI used to
+ * surface those names as wager-tier subtitles but the labels are no
+ * longer shown — the SOL amount is self-explanatory and the duplicate
+ * "DUEL" on two tiers (0.25 + 0.5) read as a bug.
  *
  * vs_bot is client-side-only — server handles AI via `createAIMatch`.
  */
@@ -30,8 +33,9 @@ const MODE_KEYS = Object.keys(MATCH_MODES);
 
 /* ── wager-tier metadata for the WAGERED mode ──
  * Each tier carries: amount, legacy mode (sent to server for queue
- * segmentation), valid formats (BO1/BO3/BO5 — preserves server validation),
- * and a label that keeps the marketing name for casual recognition. */
+ * segmentation) and valid formats (BO1/BO3/BO5 — preserves server
+ * validation). Marketing labels are kept on the records for any consumer
+ * that still wants them, but the lobby UI no longer renders them. */
 const WAGER_TIERS = [
   { amount: 0.1,  legacyMode: 'quick_match', formats: [1, 3],    label: 'QUICK MATCH' },
   { amount: 0.25, legacyMode: 'duel',        formats: [3, 5],    label: 'DUEL' },
@@ -1124,19 +1128,15 @@ function LobbyScreen({ navigate, screenData }) {
                 <div>
                   <div style={mobileModeSectionLabel}>WAGER</div>
                   <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-                    {availableWagers.map(tier => {
-                      const tierMeta = matchMode === 'wagered' ? WAGER_TIERS.find(t => t.amount === tier) : null;
-                      return (
-                        <button
-                          key={tier}
-                          onClick={() => { setWager(tier); if (tier > 0 && !localStorage.getItem('solshot_escrow_seen')) setShowEscrow(true); }}
-                          style={{ ...mobileChipStyle(wager === tier, 'var(--sg)'), display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}
-                        >
-                          <span>{tier === 0 ? 'FREE' : tier + ' SOL'}</span>
-                          {tierMeta && <span style={{ fontSize: 7, opacity: 0.75, letterSpacing: '0.12em', marginTop: 1 }}>{tierMeta.label}</span>}
-                        </button>
-                      );
-                    })}
+                    {availableWagers.map(tier => (
+                      <button
+                        key={tier}
+                        onClick={() => { setWager(tier); if (tier > 0 && !localStorage.getItem('solshot_escrow_seen')) setShowEscrow(true); }}
+                        style={mobileChipStyle(wager === tier, 'var(--sg)')}
+                      >
+                        {tier === 0 ? 'FREE' : tier + ' SOL'}
+                      </button>
+                    ))}
                   </div>
                 </div>
               ) : (
@@ -1704,36 +1704,20 @@ function LobbyScreen({ navigate, screenData }) {
               <div style={s.sectionLabel}>WAGER</div>
               <div style={s.sublabel}>SOL STAKE PER MATCH</div>
               <div style={s.wagerRow}>
-                {availableWagers.map((tier) => {
-                  // For WAGERED mode, surface the legacy tier label as a
-                  // subtitle so casual players who learned the names from
-                  // the litepaper still see them.
-                  const tierMeta = matchMode === 'wagered'
-                    ? WAGER_TIERS.find(t => t.amount === tier)
-                    : null;
-                  return (
-                    <div
-                      key={tier}
-                      style={s.wagerBtn(wager === tier)}
-                      onClick={() => {
-                        setWager(tier);
-                        if (tier > 0 && !localStorage.getItem('solshot_escrow_seen')) {
-                          setShowEscrow(true);
-                        }
-                      }}
-                    >
-                      <div>{tier === 0 ? 'FREE' : tier + ' SOL'}</div>
-                      {tierMeta && (
-                        <div style={{
-                          fontSize: 8,
-                          opacity: 0.75,
-                          letterSpacing: '0.15em',
-                          marginTop: 2,
-                        }}>{tierMeta.label}</div>
-                      )}
-                    </div>
-                  );
-                })}
+                {availableWagers.map((tier) => (
+                  <div
+                    key={tier}
+                    style={s.wagerBtn(wager === tier)}
+                    onClick={() => {
+                      setWager(tier);
+                      if (tier > 0 && !localStorage.getItem('solshot_escrow_seen')) {
+                        setShowEscrow(true);
+                      }
+                    }}
+                  >
+                    {tier === 0 ? 'FREE' : tier + ' SOL'}
+                  </div>
+                ))}
               </div>
             </div>
           ) : null}

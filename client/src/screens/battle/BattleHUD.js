@@ -861,15 +861,28 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
           min={5} max={100} color="#e8d89a" disabled={disabled}
         />
 
-        {/* BOTTOM-LEFT: weapons + move cluster */}
+        {/* MID-LEFT, next to ANG slider: move cluster.
+            Was stacked under the ANG slider at bottom-left, which on shorter
+            landscape viewports (mobile Chrome with its URL bar) collided
+            with the slider track. Now sits beside the slider, vertically
+            centered on the same line. Left thumb reaches both without
+            either occluding the other. */}
+        <div style={{
+          position: 'absolute',
+          top: '38%', transform: 'translateY(-50%)',
+          left: `calc(${sideInsetL} + 44px)`,
+          zIndex: 12,
+        }}>
+          <MoveCluster bridge={bridge} disabled={disabled} moveSteps={moveSteps} />
+        </div>
+
+        {/* BOTTOM-LEFT: weapon strip */}
         <div style={{
           position: 'absolute',
           bottom: bottomInset,
           left: sideInsetL,
           zIndex: 12,
-          display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start',
         }}>
-          <MoveCluster bridge={bridge} disabled={disabled} moveSteps={moveSteps} />
           <WeaponIconStrip
             weapons={weapons}
             currentWeaponIndex={currentWeaponIndex}
@@ -878,10 +891,12 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
           />
         </div>
 
-        {/* BOTTOM-LEFT corner: gold readout (tiny, decorative) */}
+        {/* BOTTOM-LEFT corner: gold readout (tiny, decorative).
+            Offset now matches the weapon strip alone (~46 px) since the
+            move cluster moved up beside the slider. */}
         <div style={{
           position: 'absolute',
-          bottom: `calc(${bottomInset} + 84px)`,
+          bottom: `calc(${bottomInset} + 46px)`,
           left: sideInsetL,
           fontFamily: 'var(--f-mono)', fontSize: 8,
           color: 'rgba(184,168,138,0.5)',

@@ -49,15 +49,33 @@ export const WEAPON_DATA = {
 // Physics constants matching client
 const DEFAULT_GRAVITY = 300;
 const POWER_FACTOR = 8;
-// Canvas dimensions — 16:9 native (1422 × 800). Was 1200 × 800 (3:2) prior
-// to 2026-05-06; widened to fill phone landscape viewports edge-to-edge
-// without letterbox, while preserving the 800px height so existing
-// trajectory + blast tunings stay valid (peak arcs comfortably fit).
-// Tank spawn positions auto-distribute across the new width via the
-// `width` parameter to generateTankPositions(). Heightmap snapshot
-// bandwidth grows ~18% per shot — negligible.
-const TERRAIN_WIDTH = 1422;
-const TERRAIN_HEIGHT = 800;  // full screen height — terrain canvas is now full height
+// World dimensions — wider than any common phone landscape aspect so
+// each device can render its own viewport-shaped window without
+// letterboxing. Was 1422 × 800 (16:9) prior to 2026-05-12 — see
+// Docs/internal/ADR_VARIABLE_VIEWPORT.md for the rationale.
+//
+// Tank spawns and movement are still bounded to the central 1422-wide
+// SAFE_BAND so every common landscape device (16:9 desktop, 19.5:9
+// phone, 21:9 phone) sees every tank on screen. The wider sides give
+// wider-aspect phones extra peripheral terrain to render — same world
+// for every player, just a wider window of it on wider phones.
+const TERRAIN_WIDTH = 1956;          // canonical world width (22:9 aspect)
+const TERRAIN_HEIGHT = 800;          // full screen height
+const SAFE_BAND_WIDTH = 1422;        // central band where tanks live (16:9 aspect)
+const SAFE_BAND_OFFSET = Math.floor((TERRAIN_WIDTH - SAFE_BAND_WIDTH) / 2);  // 267
+
+// Re-exported for socket handlers that need to clamp player positions
+// to the safe band. Importers should rely on these named exports rather
+// than hard-coding 267 / 1689 — the band may move if the world width
+// changes again in the future.
+export const WORLD_BOUNDS = {
+    WORLD_WIDTH: TERRAIN_WIDTH,
+    WORLD_HEIGHT: TERRAIN_HEIGHT,
+    SAFE_BAND_WIDTH,
+    SAFE_BAND_OFFSET,
+    SAFE_BAND_MIN_X: SAFE_BAND_OFFSET,
+    SAFE_BAND_MAX_X: SAFE_BAND_OFFSET + SAFE_BAND_WIDTH - 1,  // inclusive max
+};
 const PHYSICS_DT = 1 / 60;  // 60fps physics step
 const MAX_TRAJECTORY_STEPS = 3000; // safety cap (~50 seconds of flight)
 
@@ -463,11 +481,18 @@ function seededRandom(seed) {
  * @param {number} width - Terrain width in pixels (default TERRAIN_WIDTH)
  * @returns {Array<{x: number, y: number}>} Array of N positions
  */
-export function generateTankPositions(heightmap, N = 2, width = TERRAIN_WIDTH) {
+export function generateTankPositions(heightmap, N = 2, width = SAFE_BAND_WIDTH, offset = SAFE_BAND_OFFSET) {
+    // Spawn distribution math runs on the SAFE_BAND_WIDTH (1422 by default)
+    // and is then offset into world coordinates by SAFE_BAND_OFFSET so every
+    // tank lands inside the central band that all common landscape viewports
+    // render fully on screen. Callers that don't care about the band can
+    // pass width = TERRAIN_WIDTH, offset = 0 to fall back to the old
+    // "spawn anywhere in the world" behaviour.
     if (N === 2) {
-        // Preserve original 2-player behavior exactly for backward compat
-        const hostX = Math.floor(width * 0.2 + (crypto.randomInt(1000) / 1000) * width * 0.15);
-        const playerX = Math.floor(width * 0.65 + (crypto.randomInt(1000) / 1000) * width * 0.15);
+        // Preserve original 2-player behaviour: hostX in [20%, 35%] of band,
+        // playerX in [65%, 80%] of band, then offset to world coords.
+        const hostX = offset + Math.floor(width * 0.2 + (crypto.randomInt(1000) / 1000) * width * 0.15);
+        const playerX = offset + Math.floor(width * 0.65 + (crypto.randomInt(1000) / 1000) * width * 0.15);
         // Tank shape is drawn in the top half of its 24px canvas; with default
         // center origin the visible bottom aligns with the sprite position.
         // Offset 0 = tank bottom sits exactly on terrain surface.
@@ -476,7 +501,7 @@ export function generateTankPositions(heightmap, N = 2, width = TERRAIN_WIDTH) {
             { x: playerX, y: heightmap[playerX] },
         ];
     }
-    // N > 2: divide [10%, 90%] into N equal zones
+    // N > 2: divide [10%, 90%] of band into N equal zones, then offset
     const usableStart = Math.floor(width * 0.1);
     const usableWidth = Math.floor(width * 0.8);
     const zoneWidth = Math.floor(usableWidth / N);
@@ -485,7 +510,7 @@ export function generateTankPositions(heightmap, N = 2, width = TERRAIN_WIDTH) {
         const zoneStart = usableStart + i * zoneWidth;
         const innerStart = Math.floor(zoneStart + zoneWidth * 0.2);
         const innerWidth = Math.floor(zoneWidth * 0.6);
-        const x = Math.min(width - 1, innerStart + Math.floor(crypto.randomInt(Math.max(1, innerWidth))));
+        const x = offset + Math.min(width - 1, innerStart + Math.floor(crypto.randomInt(Math.max(1, innerWidth))));
         positions.push({ x, y: heightmap[x] });
     }
     return positions;

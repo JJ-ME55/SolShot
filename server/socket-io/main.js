@@ -4,7 +4,7 @@ import { getShotPrice, startPricePolling } from '../services/jupiter-price.js';
 import logger from '../services/logger.js';
 import Match from '../models/Match.js';
 import User from '../models/User.js';
-import { processShot, generateTerrain, generateTankPositions, generateWind, WEAPON_DATA, decayWalls } from '../services/physics.js';
+import { processShot, generateTerrain, generateTankPositions, generateWind, WEAPON_DATA, decayWalls, WORLD_BOUNDS } from '../services/physics.js';
 import { createMatchState, validateAction, transitionState, getNextTurn, isRoundOver, isMatchOver, getRoundPlacement, PLACEMENT_POINTS, resetForNextRound, MATCH_STATES } from '../services/match.js';
 import { initGold, getBalance, earnGold, spendGold, awardKillBonus, awardRoundWinBonus, awardPlacementGold } from '../services/gold.js';
 import { WEAPON_CATALOG, PRESTIGE_WEAPONS, getWeapon, getWeaponCost, getAllLaunchWeapons } from '../models/Weapon.js';
@@ -926,7 +926,7 @@ const mainsocket = (io) => {
         const tanks = room.players
             .filter(p => p.pos && ms.alive[p.socketId])
             .map(p => ({ id: p.socketId, x: p.pos.x, y: p.pos.y, width: 40, height: 30 }));
-        const terrain = room.heightmap || new Array(1200).fill(400);
+        const terrain = room.heightmap || new Array(WORLD_BOUNDS.WORLD_WIDTH).fill(400);
 
         const result = processShot({
             angle, power, weaponId,
@@ -3822,7 +3822,7 @@ const mainsocket = (io) => {
                 .map(p => ({ id: p.socketId, x: p.pos.x, y: p.pos.y, width: 40, height: 30 }))
 
             // Get terrain heightmap (from room or default)
-            const terrain = room.heightmap || new Array(1200).fill(400)
+            const terrain = room.heightmap || new Array(WORLD_BOUNDS.WORLD_WIDTH).fill(400)
 
             trackShot()
 
@@ -4440,7 +4440,13 @@ const mainsocket = (io) => {
             // >>> 0 ensures unsigned interpretation
             const seed32 = parseInt(fullSeed.slice(0, 8), 16) >>> 0;
 
-            const { path, heightmap } = generateTerrain(1200, 800, seed32)
+            // Use generateTerrain defaults — world width = TERRAIN_WIDTH
+            // (currently 1956 per Docs/internal/ADR_VARIABLE_VIEWPORT.md),
+            // height = TERRAIN_HEIGHT (800). The hardcoded (1200, 800) here
+            // pre-dated the 16:9 widen on 2026-05-06 and the variable-
+            // viewport widen on 2026-05-12; using defaults keeps the 1v1
+            // path consistent with the N-player path in groupchat/lifecycle.
+            const { path, heightmap } = generateTerrain(undefined, undefined, seed32)
             const wind = generateWind()
             // Pick a random background theme (0-4) — five distinct biomes
             // (jungle / arctic / desert / moon / volcanic). The 6th client-
@@ -4454,8 +4460,11 @@ const mainsocket = (io) => {
             room.wind = wind
             // Persist for post-match trophy card biome name
             room.backgroundIndex = backgroundIndex
-            // N-player: generate positions for all players and assign to room.players[i].pos
-            const positions = generateTankPositions(heightmap, room.players.length, 1200)
+            // N-player: generate positions for all players and assign to room.players[i].pos.
+            // Defaults spawn within SAFE_BAND_WIDTH (1422) offset into the
+            // wider world by SAFE_BAND_OFFSET (267) so every common landscape
+            // viewport renders every tank on screen.
+            const positions = generateTankPositions(heightmap, room.players.length)
             room.players.forEach((p, i) => {
                 p.pos = positions[i]
             })
@@ -4591,9 +4600,12 @@ const mainsocket = (io) => {
             if (!data || typeof data !== 'object') return
             const { x, y } = data
             if (!Number.isFinite(x) || !Number.isFinite(y)) return
-            // Clamp to valid bounds
-            const clampedX = Math.min(1199, Math.max(0, x))
-            const clampedY = Math.min(800, Math.max(0, y))
+            // Clamp to the central SAFE_BAND so tanks stay inside the area
+            // every common landscape viewport renders on screen. Was
+            // (1199, 800) pre-2026-05-12 — used a 1200-wide world before
+            // the variable-viewport widen.
+            const clampedX = Math.min(WORLD_BOUNDS.SAFE_BAND_MAX_X, Math.max(WORLD_BOUNDS.SAFE_BAND_MIN_X, x))
+            const clampedY = Math.min(WORLD_BOUNDS.WORLD_HEIGHT, Math.max(0, y))
             var room = findRoom(client.roomId)
             if (!room) return
             // SA-04: Distance validation during battle — reject teleportation (DB: H034, H035)

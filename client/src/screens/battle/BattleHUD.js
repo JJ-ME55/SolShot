@@ -228,6 +228,14 @@ function EdgeSlider({ side, label, unit, value, onChange, min, max, color, disab
   const [localValue, setLocalValue] = React.useState(value);
   const trackRef = React.useRef(null);
   const dragEndTimerRef = React.useRef(null);
+  // Timestamp of the last touch event on this slider. Used to suppress the
+  // synthetic mousedown that iOS Safari fires ~300 ms after touchend for
+  // legacy click-compatibility. Without this guard, a synthetic mousedown
+  // lands on the track with clientY at the element midpoint, calling
+  // handle() with rel = trackH/2 -> value snaps to the middle of the range
+  // (90 deg on ANG, ~53 on PWR). The "magnet to mid-range" snap users
+  // reported on iPhone first-move is this exact pattern.
+  const lastTouchTimeRef = React.useRef(0);
 
   // Pull from broadcast only when the user isn't dragging
   React.useEffect(() => {
@@ -310,10 +318,22 @@ function EdgeSlider({ side, label, unit, value, onChange, min, max, color, disab
 
       <div
         ref={trackRef}
-        onMouseDown={(e) => startDrag(e.clientY)}
+        onMouseDown={(e) => {
+          // Ignore synthetic mousedown that iOS Safari dispatches after a
+          // real touch sequence (~300 ms window). See lastTouchTimeRef
+          // comment above for the symptom this guards against.
+          if (Date.now() - lastTouchTimeRef.current < 600) return;
+          startDrag(e.clientY);
+        }}
         onMouseMove={(e) => { if (e.buttons === 1) handle(e.clientY); }}
-        onTouchStart={(e) => startDrag(e.touches[0].clientY)}
-        onTouchMove={(e) => handle(e.touches[0].clientY)}
+        onTouchStart={(e) => {
+          lastTouchTimeRef.current = Date.now();
+          startDrag(e.touches[0].clientY);
+        }}
+        onTouchMove={(e) => {
+          lastTouchTimeRef.current = Date.now();
+          handle(e.touches[0].clientY);
+        }}
         style={{
           position: 'relative',
           width: 28, height: trackH,

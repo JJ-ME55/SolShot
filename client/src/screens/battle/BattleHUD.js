@@ -207,28 +207,89 @@ function WindChipMobile({ wind }) {
 }
 
 
-/** Vertical edge slider — thin transparent track, big touch target */
+/** Vertical edge slider — thin transparent track, big touch target.
+ *
+ *  During a drag we hold the slider's value in local state and only sync
+ *  back from the `value` prop when the user is NOT actively interacting.
+ *  Without this, on slower devices (iPhone Safari especially) the Phaser
+ *  → bridge → React render loop lags behind a quick drag-and-release and
+ *  the thumb snaps to whatever stale broadcast value lands first after
+ *  the user lifts. The 250 ms post-release hold gives the server time to
+ *  catch up and confirm the user's last value before the broadcast is
+ *  trusted again. Game state is unaffected — `onChange` still propagates
+ *  the latest value immediately to the bridge / Phaser / server.
+ */
 function EdgeSlider({ side, label, unit, value, onChange, min, max, color, disabled }) {
   const trackH = 170;
   const safeMin = min ?? 0;
   const safeMax = max ?? 100;
-  const v = Math.max(safeMin, Math.min(safeMax, value ?? safeMin));
+
+  const [isDragging, setIsDragging] = React.useState(false);
+  const [localValue, setLocalValue] = React.useState(value);
+  const trackRef = React.useRef(null);
+  const dragEndTimerRef = React.useRef(null);
+
+  // Pull from broadcast only when the user isn't dragging
+  React.useEffect(() => {
+    if (!isDragging) setLocalValue(value);
+  }, [value, isDragging]);
+
+  // Clear the post-release timer on unmount so we don't setState on a
+  // dead component
+  React.useEffect(() => () => {
+    if (dragEndTimerRef.current) clearTimeout(dragEndTimerRef.current);
+  }, []);
+
+  const v = Math.max(safeMin, Math.min(safeMax, localValue ?? safeMin));
   const pct = (v - safeMin) / (safeMax - safeMin || 1);
   const thumbY = (1 - pct) * trackH;
-  const trackRef = React.useRef(null);
 
-  const handle = (clientY) => {
+  const handle = React.useCallback((clientY) => {
     if (disabled || !trackRef.current) return;
     const r = trackRef.current.getBoundingClientRect();
     const rel = Math.max(0, Math.min(r.height, clientY - r.top));
     const np = 1 - rel / r.height;
-    onChange(Math.round(safeMin + np * (safeMax - safeMin)));
-  };
+    const next = Math.round(safeMin + np * (safeMax - safeMin));
+    setLocalValue(next);
+    onChange(next);
+  }, [disabled, onChange, safeMin, safeMax]);
+
+  const startDrag = React.useCallback((clientY) => {
+    if (disabled) return;
+    if (dragEndTimerRef.current) {
+      clearTimeout(dragEndTimerRef.current);
+      dragEndTimerRef.current = null;
+    }
+    setIsDragging(true);
+    handle(clientY);
+  }, [disabled, handle]);
+
+  const endDrag = React.useCallback(() => {
+    dragEndTimerRef.current = setTimeout(() => {
+      setIsDragging(false);
+      dragEndTimerRef.current = null;
+    }, 250);
+  }, []);
+
+  // Document-level release listeners so the drag ends cleanly even if the
+  // pointer leaves the track before release.
+  React.useEffect(() => {
+    if (!isDragging) return undefined;
+    const onUp = () => endDrag();
+    document.addEventListener('mouseup', onUp);
+    document.addEventListener('touchend', onUp);
+    document.addEventListener('touchcancel', onUp);
+    return () => {
+      document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('touchend', onUp);
+      document.removeEventListener('touchcancel', onUp);
+    };
+  }, [isDragging, endDrag]);
 
   return (
     <div style={{
       position: 'absolute',
-      top: '50%', transform: 'translateY(-50%)',
+      top: '38%', transform: 'translateY(-50%)',
       [side]: side === 'left' ? 8 : 8,
       zIndex: 11, pointerEvents: 'auto',
       display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
@@ -249,9 +310,9 @@ function EdgeSlider({ side, label, unit, value, onChange, min, max, color, disab
 
       <div
         ref={trackRef}
-        onMouseDown={(e) => handle(e.clientY)}
+        onMouseDown={(e) => startDrag(e.clientY)}
         onMouseMove={(e) => { if (e.buttons === 1) handle(e.clientY); }}
-        onTouchStart={(e) => handle(e.touches[0].clientY)}
+        onTouchStart={(e) => startDrag(e.touches[0].clientY)}
         onTouchMove={(e) => handle(e.touches[0].clientY)}
         style={{
           position: 'relative',

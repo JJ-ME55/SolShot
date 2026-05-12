@@ -173,7 +173,15 @@ export class Tank extends GameObjects.Sprite {
 
 
     randomPos = () => {
-        var initX = Math.ceil(Math.random() * this.terrain.width / 1.0)
+        // Clamp to the central safe band so the tank is always visible on
+        // every common landscape viewport. Matches the server-side
+        // SAFE_BAND_OFFSET / SAFE_BAND_WIDTH constants in
+        // server/services/physics.js — see Docs/internal/ADR_VARIABLE_VIEWPORT.md.
+        // For local-sandbox (type 4) modes that don't get server-pushed
+        // positions, this keeps tanks inside the visible band on every device.
+        const SAFE_BAND_WIDTH = 1422
+        const SAFE_BAND_OFFSET = Math.floor((this.terrain.width - SAFE_BAND_WIDTH) / 2)
+        var initX = SAFE_BAND_OFFSET + Math.ceil(Math.random() * SAFE_BAND_WIDTH)
         var initY;
         for (let y = 0; y < this.scene.terrain.height; y++) {
             if (this.scene.terrain.getPixel(initX, y).alpha > 0) {

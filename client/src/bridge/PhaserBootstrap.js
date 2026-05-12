@@ -40,13 +40,18 @@ function startBattle(container, sceneData, bridge) {
   // shot) trigger Canvas2D's slow GPU-readback path on iOS Safari, which
   // is the root of the rAF throttling we observed (`[Violation]
   // requestAnimationFrame handler took <N>ms` × 23 in JJ's earlier log).
-  // Canvas dims: 1422 × 800 = 16:9 native. Phone landscape fills width
-  // edge-to-edge with no letterbox; desktop 16:9 monitors fill natively.
-  // Match server/services/physics.js TERRAIN_WIDTH / TERRAIN_HEIGHT —
-  // server-authoritative heightmap is sized to these dims, so they MUST
-  // stay in lockstep. Was 1200 × 800 (3:2) prior to 2026-05-06.
+  // Canvas dims: 1956 × 800 = 22:9 native (wider than any common phone
+  // landscape aspect). Phaser ENVELOP scale fills the device viewport,
+  // cropping the canvas sides on narrower viewports so each device
+  // shows its own aspect-ratio window of the wider world. See
+  // Docs/internal/ADR_VARIABLE_VIEWPORT.md for the full design.
+  //
+  // Must match server/services/physics.js TERRAIN_WIDTH / TERRAIN_HEIGHT
+  // — server-authoritative heightmap is sized to these dims, so they
+  // MUST stay in lockstep. Was 1422 × 800 (16:9) prior to 2026-05-12
+  // and 1200 × 800 (3:2) prior to 2026-05-06.
   const customCanvas = document.createElement('canvas');
-  customCanvas.width = 1422;
+  customCanvas.width = 1956;
   customCanvas.height = 800;
   try {
     customCanvas.getContext('2d', { willReadFrequently: true });
@@ -56,7 +61,7 @@ function startBattle(container, sceneData, bridge) {
     type: Phaser.CANVAS,
     canvas: customCanvas,
     parent: container,
-    width: 1422,
+    width: 1956,
     height: 800,
     backgroundColor: '#000000',
     physics: {
@@ -67,7 +72,12 @@ function startBattle(container, sceneData, bridge) {
       },
     },
     scale: {
-      mode: Phaser.Scale.FIT,
+      // ENVELOP scales the canvas to MAX(viewportW/canvasW, viewportH/canvasH)
+      // so it fills the viewport, cropping whichever axis exceeds. On all
+      // common landscape phones (aspect < 22:9), this crops the canvas
+      // sides — each phone sees its own aspect-ratio window of the
+      // central world, with the safe-band tanks always visible.
+      mode: Phaser.Scale.ENVELOP,
       autoCenter: Phaser.Scale.CENTER_BOTH,
     },
     render: {

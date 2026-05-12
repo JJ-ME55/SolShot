@@ -546,15 +546,21 @@ function MoveCluster({ bridge, disabled, moveSteps }) {
     userSelect: 'none',
   });
 
-  // Vertical stack — was horizontal but the wide row clipped the player's
-  // tank when its X happened to overlap the cluster's X (most common
-  // when terrain peaks centre-left). Stacking vertically collapses the
-  // cluster width from ~200px to ~50px so it tucks against the left
-  // edge under the angle slider without intruding into the play area.
-  // Each button keeps its native horizontal text orientation.
+  // Compact horizontal row. Previous iterations cycled through:
+  //   1. wide horizontal cluster (~200 px) — clipped the player's tank
+  //      when terrain peaked centre-left
+  //   2. vertical stack (~50 wide × 95 tall) — collapsed width, but the
+  //      height collided with the ANG edge slider on short landscape
+  //      viewports (mobile Chrome, where the URL bar steals vertical room)
+  //   3. floating mid-left beside the slider — solved the collision but
+  //      hovered awkwardly in the play area
+  // This row is anchored at the bottom-left above the weapon strip, ~28
+  // px tall × ~110 px wide. Narrow enough that tank-clipping is rare,
+  // anchored to the corner so it never floats, and out of the slider's
+  // vertical track so the full ANG range stays reachable.
   return (
     <div style={{
-      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+      display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 4,
       padding: '4px 6px',
       background: 'rgba(10,12,8,0.55)',
       backdropFilter: 'blur(10px)',
@@ -881,28 +887,19 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
           min={5} max={100} color="#e8d89a" disabled={disabled}
         />
 
-        {/* MID-LEFT, next to ANG slider: move cluster.
-            Was stacked under the ANG slider at bottom-left, which on shorter
-            landscape viewports (mobile Chrome with its URL bar) collided
-            with the slider track. Now sits beside the slider, vertically
-            centered on the same line. Left thumb reaches both without
-            either occluding the other. */}
-        <div style={{
-          position: 'absolute',
-          top: '38%', transform: 'translateY(-50%)',
-          left: `calc(${sideInsetL} + 44px)`,
-          zIndex: 12,
-        }}>
-          <MoveCluster bridge={bridge} disabled={disabled} moveSteps={moveSteps} />
-        </div>
-
-        {/* BOTTOM-LEFT: weapon strip */}
+        {/* BOTTOM-LEFT: horizontal move cluster stacked above weapon strip.
+            MoveCluster is now a single horizontal row (~28 px tall) so the
+            total bottom-left stack is short enough to clear the ANG edge
+            slider at top: 38 %. Order is column: A/D buttons on top so
+            they're closest to the player's tank, weapon strip below. */}
         <div style={{
           position: 'absolute',
           bottom: bottomInset,
           left: sideInsetL,
           zIndex: 12,
+          display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start',
         }}>
+          <MoveCluster bridge={bridge} disabled={disabled} moveSteps={moveSteps} />
           <WeaponIconStrip
             weapons={weapons}
             currentWeaponIndex={currentWeaponIndex}
@@ -912,11 +909,11 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
         </div>
 
         {/* BOTTOM-LEFT corner: gold readout (tiny, decorative).
-            Offset now matches the weapon strip alone (~46 px) since the
-            move cluster moved up beside the slider. */}
+            Sits just above the horizontal move cluster + weapon strip stack
+            (~82 px combined height, so offset is ~84 px from the bottom). */}
         <div style={{
           position: 'absolute',
-          bottom: `calc(${bottomInset} + 46px)`,
+          bottom: `calc(${bottomInset} + 84px)`,
           left: sideInsetL,
           fontFamily: 'var(--f-mono)', fontSize: 8,
           color: 'rgba(184,168,138,0.5)',

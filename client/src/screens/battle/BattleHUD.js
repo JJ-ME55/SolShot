@@ -887,11 +887,12 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
           min={5} max={100} color="#e8d89a" disabled={disabled}
         />
 
-        {/* BOTTOM-LEFT: horizontal move cluster stacked above weapon strip.
-            MoveCluster is now a single horizontal row (~28 px tall) so the
-            total bottom-left stack is short enough to clear the ANG edge
-            slider at top: 38 %. Order is column: A/D buttons on top so
-            they're closest to the player's tank, weapon strip below. */}
+        {/* BOTTOM-LEFT: weapon strip stacked above horizontal move cluster.
+            A/D sits at the very bottom edge because movement is the most
+            frequent per-turn action and the thumb's natural rest position
+            in landscape is closer to the bottom edge than to mid-screen.
+            Weapon selection is once-per-round so the slightly higher
+            position costs less. */}
         <div style={{
           position: 'absolute',
           bottom: bottomInset,
@@ -899,13 +900,13 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
           zIndex: 12,
           display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start',
         }}>
-          <MoveCluster bridge={bridge} disabled={disabled} moveSteps={moveSteps} />
           <WeaponIconStrip
             weapons={weapons}
             currentWeaponIndex={currentWeaponIndex}
             onSelect={(i) => bridge.selectWeapon(i)}
             disabled={disabled}
           />
+          <MoveCluster bridge={bridge} disabled={disabled} moveSteps={moveSteps} />
         </div>
 
         {/* BOTTOM-LEFT corner: gold readout (tiny, decorative).

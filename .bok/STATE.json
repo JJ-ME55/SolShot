@@ -1,7 +1,7 @@
 {
   "skill": "BOK",
   "version": "1.0.0",
-  "updated": "2026-05-07T05:30:00Z",
+  "updated": "2026-05-12T20:47:37Z",
   "kani_available": false,
   "degraded_mode": true,
   "degraded_mode_reason": "Kani unavailable on Windows (depends on std::os::unix). Probabilistic verification via LiteSVM + Proptest. Same posture as Feb 2026 BOK run.",
@@ -19,12 +19,21 @@
     "archived_at": ".bok-history/2026-02-23-ecfd03b/"
   },
   "phases": {
-    "scan": { "status": "complete", "completed_at": "2026-05-07T05:35:00Z", "math_regions_found": 14, "files_indexed": 2 },
+    "scan": {
+      "status": "complete",
+      "completed_at": "2026-05-07T05:35:00Z",
+      "math_regions_found": 14,
+      "files_indexed": 2
+    },
     "analyze": {
       "status": "complete",
       "completed_at": "2026-05-07T06:00:00Z",
       "invariants_proposed": 39,
-      "by_tool": { "kani": 0, "litesvm": 24, "proptest": 29 },
+      "by_tool": {
+        "kani": 0,
+        "litesvm": 24,
+        "proptest": 29
+      },
       "by_cluster": {
         "fee_calc_and_cap": 12,
         "pot_refund_and_bitfield": 15,
@@ -39,7 +48,11 @@
       "invariants_skipped": 0,
       "invariants_added": 2,
       "total": 41,
-      "by_tier": { "tier_1_critical": 13, "tier_2_high": 19, "tier_3_medium_low": 10 },
+      "by_tier": {
+        "tier_1_critical": 13,
+        "tier_2_high": 19,
+        "tier_3_medium_low": 10
+      },
       "user_decision": "Confirm all 39 + add I-CUSTOM-1 (per-match zero-leakage) + I-CUSTOM-2 (CPI surface lockdown)"
     },
     "generate": {
@@ -48,7 +61,7 @@
       "kani_harnesses_generated": 0,
       "kani_skipped_reason": "Kani unavailable on Windows (degraded mode)",
       "litesvm_tests_generated": 0,
-      "litesvm_skipped_reason": "Local re-implementation pattern (no BPF dep) used instead — same approach as Feb run; LiteSVM not strictly needed for these invariants",
+      "litesvm_skipped_reason": "Local re-implementation pattern (no BPF dep) used instead \u00e2\u20ac\u201d same approach as Feb run; LiteSVM not strictly needed for these invariants",
       "proptest_suites_generated": 9,
       "proptest_files": {
         "v1": [
@@ -92,14 +105,18 @@
   "cross_skill": {
     "gl_docs": true,
     "gl_docs_path": ".docs/",
-    "gl_docs_relevant": ["token-economics.md", "edge-case-playbook.md", "security-model.md"],
+    "gl_docs_relevant": [
+      "token-economics.md",
+      "edge-case-playbook.md",
+      "security-model.md"
+    ],
     "sos_findings": true,
     "sos_findings_path": ".audit/",
     "sos_arithmetic_concerns": [
       "A01-A04: v2 BPS poisoning chain (cap holds; H011 deferred to mainnet)",
       "A05-A06: start_with_depositors pot scaling on v2's u16 mask + 10-player",
       "A09: lamport conservation in refund loops (gap on v2; now post-H023-fix)",
-      "A10: H028 invalidated on v2 — runtime BPS now needs invariant proof"
+      "A10: H028 invalidated on v2 \u00e2\u20ac\u201d runtime BPS now needs invariant proof"
     ],
     "fix_bundle_constants_changed": [
       "v1 TIMEOUT_SECONDS: 600 -> 3600",
@@ -109,5 +126,17 @@
       "Both: NEW IncompleteRefund + ExecutableNotAllowed error variants",
       "Both: NEW Paused/Unpaused events"
     ]
-  }
+  },
+  "reruns": [
+    {
+      "date": "2026-05-12T20:47:37Z",
+      "git_ref": "feat/variable-viewport @ f50f5e3",
+      "context": "Variable-viewport refactor (TERRAIN_WIDTH 1422 -> 1956, added SAFE_BAND constants, generateTankPositions safe-band offset). Pure JS-side changes \u2014 no Rust touched. Re-ran existing 159 tests to confirm Rust escrow math invariants are unaffected.",
+      "rust_files_changed": 0,
+      "tests_run": 159,
+      "tests_passed": 159,
+      "tests_failed": 0,
+      "result": "PASS \u2014 all invariants hold, no regression introduced by the variable-viewport branch"
+    }
+  ]
 }

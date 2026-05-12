@@ -1068,7 +1068,7 @@ export class MainScene extends Scene {
       x += vx * dt;
       y += vy * dt;
       points.push({ x, y });
-      if (y > 800 || x < 0 || x > 1422) break;
+      if (y > 800 || x < 0 || x > 1956) break;
     }
 
     if (points.length < 4) return;
@@ -1144,7 +1144,7 @@ export class MainScene extends Scene {
       x += vx * dt;
       y += vy * dt;
       points.push({ x, y });
-      if (y > 800 || x < 0 || x > 1422) break;
+      if (y > 800 || x < 0 || x > 1956) break;
     }
 
     // First 1/3 of trajectory

@@ -506,26 +506,33 @@ function FireSquare({ disabled, onFire }) {
 }
 
 
-/** Tiny forfeit ✕ — top-left corner */
-function ForfeitX({ onForfeit }) {
+/** Labelled forfeit button — single component shared by every match type
+ *  so the affordance reads the same in 1v1 / FFA (top-left) and group-chat
+ *  (bottom-right above FIRE). Was a tiny 24×24 ✕ in v1.0.0-frontier; the
+ *  word-level label made the action discoverable on mobile where the
+ *  bare ✕ read as decoration. */
+function ForfeitButton({ onForfeit }) {
   return (
     <button
       onClick={onForfeit}
-      title="Forfeit"
+      title="Forfeit match"
       style={{
-        width: 24, height: 24,
-        background: 'rgba(10,12,8,0.55)',
+        padding: '6px 12px',
+        background: 'rgba(10,12,8,0.6)',
         backdropFilter: 'blur(6px)',
         WebkitBackdropFilter: 'blur(6px)',
-        border: '1px solid rgba(168,58,26,0.5)',
+        border: '1px solid rgba(168,58,26,0.55)',
         color: '#ff7a4a',
-        fontFamily: 'var(--f-mono)', fontSize: 11, lineHeight: 1,
+        fontFamily: 'var(--f-display)',
+        fontSize: 11,
+        letterSpacing: '0.22em',
+        lineHeight: 1,
         clipPath: 'var(--clip-6)',
         cursor: 'pointer',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        letterSpacing: 0,
+        textTransform: 'uppercase',
         pointerEvents: 'auto',
-      }}>✕</button>
+        userSelect: 'none',
+      }}>FORFEIT</button>
   );
 }
 
@@ -804,7 +811,7 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
         {/* TOP-LEFT: forfeit ✕ */}
         {!isGroupChat && (
           <div style={{ position: 'absolute', top: topInset, left: sideInsetL, zIndex: 13 }}>
-            <ForfeitX onForfeit={onForfeit} />
+            <ForfeitButton onForfeit={onForfeit} />
           </div>
         )}
 
@@ -814,7 +821,11 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
             <div style={{
               position: 'absolute',
               top: topInset,
-              left: `calc(${sideInsetL} + ${isGroupChat ? '0px' : '34px'})`,
+              // Leave room for the labelled FORFEIT button (~96 px wide
+              // including padding) in 1v1 / FFA non-group-chat layouts.
+              // In group-chat the forfeit lives bottom-right instead so
+              // the player pill stays flush with the edge.
+              left: `calc(${sideInsetL} + ${isGroupChat ? '0px' : '108px'})`,
               zIndex: 12,
             }}>
               {myPlayer && <CornerHPPill player={myPlayer} isMe side="left" />}
@@ -828,7 +839,9 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
           <div style={{
             position: 'absolute',
             top: topInset,
-            left: sideInsetL,
+            // Same offset rationale as the 1v1 branch above — make room
+            // for the FORFEIT button at the top-left corner.
+            left: `calc(${sideInsetL} + ${isGroupChat ? '0px' : '108px'})`,
             right: sideInsetR,
             zIndex: 12,
             padding: '6px 8px',
@@ -941,7 +954,7 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
             right: sideInsetR,
             zIndex: 13,
           }}>
-            <ForfeitX onForfeit={onForfeit} />
+            <ForfeitButton onForfeit={onForfeit} />
           </div>
         )}
 

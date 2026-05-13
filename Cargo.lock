@@ -1529,6 +1529,7 @@ name = "solshot-escrow-v2"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
+ "proptest",
 ]
 
 [[package]]

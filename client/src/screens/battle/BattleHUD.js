@@ -297,7 +297,13 @@ function EdgeSlider({ side, label, unit, value, onChange, min, max, color, disab
   return (
     <div style={{
       position: 'absolute',
-      top: '38%', transform: 'translateY(-50%)',
+      // Vertical centre. Was top: 38 % in v1.0.0-frontier to clear the
+      // old floating mid-left A/D cluster — that layout is gone (commit
+      // db2c67e moved A/D to the bottom-left horizontal row), so the
+      // slider goes back to 50 %. Bonus: the value box at the top of
+      // the slider no longer collides with the WIND chip in the
+      // top-right stack.
+      top: '50%', transform: 'translateY(-50%)',
       [side]: side === 'left' ? 8 : 8,
       zIndex: 11, pointerEvents: 'auto',
       display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,

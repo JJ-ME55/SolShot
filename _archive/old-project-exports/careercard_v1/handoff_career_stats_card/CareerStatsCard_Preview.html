@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Career Stats Card — Satori Preview</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<style>
+  html, body { margin: 0; padding: 0; background: #06080a; font-family: 'Share Tech Mono', monospace; color: #c4a65d; min-height: 100vh; }
+  .page { max-width: 1320px; margin: 0 auto; padding: 32px 24px 80px; }
+  .header { display: flex; align-items: baseline; justify-content: space-between; gap: 24px; flex-wrap: wrap; border-bottom: 1px solid rgba(196,166,93,0.2); padding-bottom: 14px; margin-bottom: 28px; }
+  .h1 { font-family: 'Black Ops One', sans-serif; font-size: 22px; letter-spacing: 0.1em; color: #fff8e8; }
+  .h1 b { color: #ff7a1a; }
+  .meta { font-size: 11px; letter-spacing: 0.3em; color: rgba(196,166,93,0.7); }
+
+  .preset-bar {
+    display: flex; gap: 10px; flex-wrap: wrap;
+    margin-bottom: 24px;
+  }
+  .preset-bar button {
+    background: rgba(10,13,7,0.7);
+    border: 1px solid rgba(196,166,93,0.4);
+    color: #f4e7c8;
+    padding: 10px 18px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.2em;
+    cursor: pointer;
+    text-transform: uppercase;
+  }
+  .preset-bar button:hover { border-color: #ff7a1a; color: #fff8e8; }
+  .preset-bar button.active { background: #ff7a1a; color: #06080a; border-color: #ff7a1a; }
+
+  .stage {
+    background:
+      linear-gradient(45deg, rgba(255,255,255,0.015) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.015) 75%),
+      linear-gradient(45deg, rgba(255,255,255,0.015) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.015) 75%);
+    background-size: 16px 16px; background-position: 0 0, 8px 8px;
+    border: 1px solid rgba(196,166,93,0.2);
+    padding: 32px;
+    display: flex; justify-content: center;
+  }
+  .stage-frame {
+    width: 100%; max-width: 1080px;
+    aspect-ratio: 1080 / 608;
+    position: relative;
+    box-shadow: 0 24px 48px rgba(0,0,0,0.6), 0 0 0 1px rgba(196,166,93,0.2);
+  }
+  .stage-inner { position: absolute; inset: 0; transform-origin: top left; width: 1080px; height: 608px; }
+
+  .note { margin-top: 20px; padding: 14px 18px; background: rgba(255,122,26,0.06); border: 1px dashed rgba(255,122,26,0.4); font-size: 12px; line-height: 1.6; color: rgba(244,231,200,0.85); }
+  .note b { color: #ff7a1a; letter-spacing: 0.2em; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="header">
+    <div class="h1">SOL<b>SHOT</b> · CAREER STATS CARD <span style="opacity:0.5;font-size:13px">Satori-ready · 1080×608 · "operative file"</span></div>
+    <div class="meta">DOSSIER · /STATS · TWITTER 1.91:1</div>
+  </div>
+
+  <div class="preset-bar" id="presets"></div>
+
+  <div class="stage">
+    <div id="frame" class="stage-frame">
+      <div id="inner" class="stage-inner">
+        <div id="root" style="width:1080px;height:608px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>NOTE:</b> Three preset states cover the brief — strong (Platinum), mid (Bronze), fresh (Unranked, no badge). Click to swap. Open <code style="color:#fff8e8">CareerStatsCard.jsx</code> to read the component; Satori will render this identically on Node.
+  </div>
+</div>
+
+<script type="text/babel" data-presets="env,react">
+  const { useEffect, useState } = React;
+
+  /* ── Inline mirror of CareerStatsCard.jsx ── */
+  const C = {
+    bgDeep:'#0e1209', bgDeeper:'#0a0d07', ink:'#06080a',
+    accent:'#ff7a1a', accentDeep:'#c44d12', accentSoft:'#ffb05a',
+    blood:'#a83a1f', bone:'#fff8e8', bonePale:'#f4e7c8',
+    olive:'#c4a65d', oliveDim:'rgba(196,166,93,0.6)',
+  };
+  const F = {
+    display:"'Black Ops One', sans-serif",
+    mono:"'Share Tech Mono', monospace",
+  };
+  const TIER_LABEL = {
+    NONE:'UNRANKED', BRONZE:'BRONZE TIER', SILVER:'SILVER TIER',
+    GOLD:'GOLD TIER', PLATINUM:'PLATINUM TIER', DIAMOND:'DIAMOND TIER',
+  };
+
+  function fmtK(n) {
+    if (n == null) return '—';
+    if (n >= 100000) return `${Math.round(n/1000)}K`;
+    if (n >= 1000) return `${(n/1000).toFixed(1)}K`;
+    return String(n);
+  }
+  function clip(s, n) { return (s ?? '').toString().slice(0, n); }
+
+  function Spacer() { return <div style={{ width:12, flexShrink:0 }} />; }
+
+  function Stat({ label, big, sub, smallBig }) {
+    return (
+      <div style={{
+        flexGrow:1, flexBasis:0, display:'flex', flexDirection:'column',
+        background:'rgba(10,13,7,0.85)', border:'1px solid rgba(255,176,90,0.35)', padding:'14px 16px',
+      }}>
+        <div style={{ fontFamily:F.mono, fontSize:10, color:C.olive, letterSpacing:'0.3em', marginBottom:6 }}>{label}</div>
+        <div style={{ display:'flex', fontFamily:F.display, fontSize: smallBig ? 30 : 40, color:C.bone, lineHeight:0.95, letterSpacing:'0.02em', whiteSpace:'nowrap', overflow:'hidden' }}>{big}</div>
+        <div style={{ fontFamily:F.mono, fontSize:10, color:'rgba(244,231,200,0.5)', letterSpacing:'0.25em', marginTop:4 }}>{sub}</div>
+      </div>
+    );
+  }
+
+  function UnrankedPlate() {
+    return (
+      <div style={{
+        display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+        width:220, height:220, border:`2px dashed rgba(196,166,93,0.5)`, background:'rgba(0,0,0,0.4)',
+      }}>
+        <div style={{ display:'flex', fontFamily:F.display, fontSize:22, color:C.olive, letterSpacing:'0.2em' }}>[ CLASSIFIED ]</div>
+        <div style={{ marginTop:10, fontFamily:F.mono, fontSize:11, letterSpacing:'0.3em', color:'rgba(196,166,93,0.6)' }}>TIER PENDING</div>
+        <div style={{ marginTop:4, fontFamily:F.mono, fontSize:11, letterSpacing:'0.3em', color:'rgba(196,166,93,0.6)' }}>EARN A WIN</div>
+      </div>
+    );
+  }
+
+  function CareerStatsCard(p) {
+    const w = 1080, h = 608;
+    const cs = clip(p.callsign, 14);
+    const reg = clip(p.registryId, 6).toUpperCase();
+    const wpn = clip(p.mvpWeapon?.name ?? '—', 14);
+    const tier = TIER_LABEL[p.tierName] || 'UNRANKED';
+    const isUnranked = p.tierName === 'NONE' || !p.tierBadgeUrl;
+    const kdRatio = p.deaths > 0 ? (p.kills / p.deaths).toFixed(2) : '∞';
+    const streakBig = p.streak?.current > 0 ? p.streak.current : (p.streak?.best ?? 0);
+    const streakSub = p.streak?.current > 0 ? 'CURRENT' : `BEST ${p.streak?.best ?? 0}`;
+
+    return (
+      <div style={{ width:w, height:h, position:'relative', background:C.bgDeep, display:'flex', overflow:'hidden' }}>
+        <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ position:'absolute', left:0, top:0 }}>
+          <defs>
+            <pattern id="cs-grid" width="32" height="32" patternUnits="userSpaceOnUse">
+              <path d="M 32 0 L 0 0 0 32" fill="none" stroke="rgba(196,166,93,0.06)" strokeWidth="1" />
+            </pattern>
+            <linearGradient id="cs-blade" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor={C.accent} stopOpacity="0.6" />
+              <stop offset="100%" stopColor={C.accentDeep} stopOpacity="0.4" />
+            </linearGradient>
+            <pattern id="cs-scan" width="3" height="3" patternUnits="userSpaceOnUse">
+              <rect width="3" height="1" fill="rgba(0,0,0,0.16)" />
+            </pattern>
+          </defs>
+          <rect width={w} height={h} fill="url(#cs-grid)" />
+          <rect x={w*0.66} y="0" width={w*0.34} height={h} fill={C.bgDeeper} />
+          <rect x={w*0.66} y="0" width="3" height={h} fill={C.accent} />
+          <polygon points={`0,${h} 0,${h*0.78} ${w*0.42},0 ${w*0.66},0 ${w*0.66},${h*0.05} ${w*0.18},${h}`} fill="url(#cs-blade)" opacity="0.55" />
+          <rect width={w} height={h} fill="url(#cs-scan)" />
+        </svg>
+
+        <div style={{ position:'absolute', left:56, right:56, top:28, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+          <div style={{ display:'flex', fontFamily:F.display, fontSize:30, color:C.bonePale, letterSpacing:'0.08em' }}>
+            <span>SOL</span><span style={{ color:C.accentSoft }}>SHOT</span>
+          </div>
+          <div style={{ display:'flex', alignItems:'center' }}>
+            <div style={{ width:44, height:12, background:C.bone, marginRight:12 }} />
+            <div style={{ fontFamily:F.mono, fontSize:13, letterSpacing:'0.4em', color:C.bonePale }}>OPERATIVE FILE · {reg}</div>
+            <div style={{ width:44, height:12, background:C.bone, marginLeft:12 }} />
+          </div>
+        </div>
+
+        <div style={{ position:'absolute', left:56, top:70, display:'flex', alignItems:'center', fontFamily:F.mono, fontSize:11, letterSpacing:'0.45em', color:C.olive }}>
+          <span>━━━ CLASSIFIED · TIER: {tier} ━━━</span>
+        </div>
+
+        <div style={{ position:'absolute', left:56, top:116, width: w*0.62 - 56, display:'flex', flexDirection:'column' }}>
+          <div style={{ fontFamily:F.mono, fontSize:13, letterSpacing:'0.4em', color:'rgba(255,255,255,0.7)', marginBottom:6 }}>OPERATIVE</div>
+          <div style={{ display:'flex', fontFamily:F.display, fontSize:84, lineHeight:0.92, color:C.bone, letterSpacing:'0.02em', textShadow:'0 4px 0 rgba(0,0,0,0.4)', whiteSpace:'nowrap', overflow:'hidden' }}>{cs}</div>
+
+          <div style={{ display:'flex', alignItems:'center', fontFamily:F.mono, fontSize:14, letterSpacing:'0.25em', marginTop:14, color:C.bonePale }}>
+            {p.rank != null ? (
+              <>
+                <span style={{ display:'flex', background:C.accent, color:C.ink, padding:'3px 10px', letterSpacing:'0.15em', fontFamily:F.display, fontSize:18 }}>#{p.rank}</span>
+                <span style={{ marginLeft:10, marginRight:10, opacity:0.4 }}>·</span>
+              </>
+            ) : (
+              <>
+                <span style={{ display:'flex', border:`1px solid ${C.olive}`, color:C.olive, padding:'3px 10px', letterSpacing:'0.25em', fontSize:12 }}>UNRANKED</span>
+                <span style={{ marginLeft:10, marginRight:10, opacity:0.4 }}>·</span>
+              </>
+            )}
+            <span style={{ color:C.bone }}>{p.record.wins}W</span>
+            <span style={{ margin:'0 6px', color:C.olive }}>–</span>
+            <span style={{ color:C.bone }}>{p.record.losses}L</span>
+            <span style={{ marginLeft:10, marginRight:10, opacity:0.4 }}>·</span>
+            <span style={{ color:C.accentSoft }}>{p.record.winRate}% WR</span>
+          </div>
+
+          <div style={{ display:'flex', flexDirection:'row', marginTop:26 }}>
+            <Stat label="TOTAL DMG" big={fmtK(p.totalDamage)} sub="HP DEALT" />
+            <Spacer />
+            <Stat label="K / D" big={`${p.kills}/${p.deaths}`} sub={`${kdRatio} RATIO`} smallBig />
+            <Spacer />
+            <Stat label="STREAK" big={String(streakBig)} sub={streakSub} />
+            <Spacer />
+            <Stat label="MVP WEAPON" big={wpn} sub={`${fmtK(p.mvpWeapon?.damage)} DMG`} smallBig />
+          </div>
+        </div>
+
+        <div style={{
+          position:'absolute', left: w*0.66, top:0, width: w*0.34, height: h-56,
+          display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', paddingTop:28,
+        }}>
+          <div style={{
+            position:'absolute', left:0, right:0, top:'50%',
+            display:'flex', justifyContent:'center',
+            fontFamily:F.display, fontSize:110, letterSpacing:'0.05em',
+            color:'rgba(196,166,93,0.06)',
+            transform:'translateY(-50%) rotate(-8deg)',
+          }}>CLASSIFIED</div>
+
+          {isUnranked ? <UnrankedPlate /> : (
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'center', width:220, height:220, position:'relative' }}>
+              <div style={{ position:'absolute', inset:0, border:`2px solid ${C.accent}`, borderRadius:9999, opacity:0.6 }} />
+              <div style={{ position:'absolute', inset:8, border:`1px solid rgba(255,176,90,0.5)`, borderRadius:9999 }} />
+              <img src={p.tierBadgeUrl} width="200" height="200" style={{ display:'flex' }} />
+            </div>
+          )}
+
+          <div style={{ marginTop:22, display:'flex', fontFamily:F.display, fontSize:28, letterSpacing:'0.15em', color:C.bone }}>{tier}</div>
+          <div style={{ marginTop:6, display:'flex', fontFamily:F.mono, fontSize:11, letterSpacing:'0.35em', color:C.olive }}>▸ STATUS · ACTIVE</div>
+        </div>
+
+        <div style={{
+          position:'absolute', left:0, right:0, bottom:0, height:56,
+          background:C.bgDeeper, borderTop:`2px solid ${C.accentSoft}`,
+          display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 56px',
+        }}>
+          <div style={{ fontFamily:F.mono, fontSize:13, color:C.olive, letterSpacing:'0.3em' }}>SOLSHOT.GG · ARTILLERY COMBAT ON SOLANA</div>
+          <div style={{ fontFamily:F.mono, fontSize:13, color:C.oliveDim, letterSpacing:'0.3em' }}>▸ {p.matchesPlayed} MATCHES · {p.joinedLabel}</div>
+        </div>
+      </div>
+    );
+  }
+
+  /* ── Sample data ── */
+  const PRESETS = [
+    {
+      key: 'strong', label: 'STRONG · PLATINUM',
+      props: {
+        callsign:'GRIZZLY-07', registryId:'A37F',
+        tierName:'PLATINUM', tierBadgeUrl:'assets/badge-platinum.png',
+        rank:14, record:{ wins:184, losses:43, winRate:81 },
+        totalDamage:127400, kills:412, deaths:198,
+        streak:{ current:9, best:14 },
+        mvpWeapon:{ name:'HEATSEEK', damage:38400 },
+        matchesPlayed:227, joinedLabel:'JOINED MAR 2026',
+      },
+    },
+    {
+      key: 'mid', label: 'MID · BRONZE',
+      props: {
+        callsign:'VIPER-12', registryId:'B0C2',
+        tierName:'BRONZE', tierBadgeUrl:'assets/badge-bronze.png',
+        rank:412, record:{ wins:24, losses:22, winRate:52 },
+        totalDamage:18900, kills:51, deaths:48,
+        streak:{ current:0, best:5 },
+        mvpWeapon:{ name:'STANDARD', damage:7100 },
+        matchesPlayed:46, joinedLabel:'JOINED APR 2026',
+      },
+    },
+    {
+      key: 'fresh', label: 'FRESH · UNRANKED',
+      props: {
+        callsign:'NEW-RECRUIT', registryId:'00F1',
+        tierName:'NONE', tierBadgeUrl:null,
+        rank:null, record:{ wins:1, losses:2, winRate:33 },
+        totalDamage:980, kills:2, deaths:3,
+        streak:{ current:0, best:1 },
+        mvpWeapon:{ name:'STANDARD', damage:520 },
+        matchesPlayed:3, joinedLabel:'JOINED THIS WEEK',
+      },
+    },
+  ];
+
+  function App() {
+    const [active, setActive] = useState('strong');
+    const preset = PRESETS.find(p => p.key === active);
+
+    useEffect(() => {
+      const fit = () => {
+        const fr = document.getElementById('frame');
+        const inner = document.getElementById('inner');
+        if (!fr || !inner) return;
+        inner.style.transform = `scale(${fr.clientWidth / 1080})`;
+      };
+      fit();
+      window.addEventListener('resize', fit);
+      return () => window.removeEventListener('resize', fit);
+    }, []);
+
+    return (
+      <>
+        <div id="presets-root" style={{ display:'none' }}></div>
+        <CareerStatsCard {...preset.props} />
+      </>
+    );
+  }
+
+  // Render preset bar in vanilla, since it lives outside the card
+  const bar = document.getElementById('presets');
+  let activeKey = 'strong';
+  function renderBar() {
+    bar.innerHTML = '';
+    PRESETS.forEach(p => {
+      const b = document.createElement('button');
+      b.textContent = p.label;
+      if (p.key === activeKey) b.classList.add('active');
+      b.onclick = () => { activeKey = p.key; renderBar(); renderCard(); };
+      bar.appendChild(b);
+    });
+  }
+  function renderCard() {
+    const preset = PRESETS.find(p => p.key === activeKey);
+    ReactDOM.createRoot.__cached ||= ReactDOM.createRoot(document.getElementById('root'));
+    ReactDOM.createRoot.__cached.render(<CareerStatsCard {...preset.props} />);
+  }
+  renderBar();
+  renderCard();
+
+  // Initial fit
+  const fit = () => {
+    const fr = document.getElementById('frame');
+    const inner = document.getElementById('inner');
+    if (!fr || !inner) return;
+    inner.style.transform = `scale(${fr.clientWidth / 1080})`;
+  };
+  fit();
+  window.addEventListener('resize', fit);
+</script>
+</body>
+</html>

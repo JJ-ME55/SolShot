@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>SolShot — Mobile Exploration</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=JetBrains+Mono:wght@400;500;700&family=Oswald:wght@400;500;600;700&family=Big+Shoulders+Stencil+Display:wght@400;700;900&display=swap" />
+<link rel="stylesheet" href="styles/tokens.css" />
+<style>
+  body { margin: 0; background: #08090a; font-family: var(--f-sec); }
+  * { box-sizing: border-box; }
+  .stencil { font-family: var(--f-display); font-weight: 900; }
+  .blink { animation: blink 1.2s step-end infinite; }
+  @keyframes blink { 50% { opacity: 0.25; } }
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(168,176,142,0.2); border-radius: 3px; }
+</style>
+</head>
+<body data-theme="crt">
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="mobile/mobile-shared.jsx"></script>
+<script type="text/babel" src="mobile/MobileHome.jsx"></script>
+<script type="text/babel" src="mobile/MobileDeploy.jsx"></script>
+<script type="text/babel" src="mobile/MobileShop.jsx"></script>
+<script type="text/babel" src="mobile/MobileLoadout.jsx"></script>
+<script type="text/babel" src="mobile/MobileMatch.jsx"></script>
+<script type="text/babel" src="mobile/MobileReport.jsx"></script>
+<script type="text/babel" src="mobile/MobileBarracks.jsx"></script>
+<script type="text/babel" src="mobile/MobileArmoryPrestige.jsx"></script>
+
+<script type="text/babel">
+function App() {
+  return (
+    <DesignCanvas title="SolShot Mobile — Landscape Exploration" initialZoom={0.55}>
+
+      {/* HOME */}
+      <DCSection id="home" title="HOME SCREEN">
+        <DCArtboard id="home-a" label="HOME · landscape port of web Main Menu" width={844} height={390}>
+          <MobileHomeA />
+        </DCArtboard>
+      </DCSection>
+
+      {/* PRE-MATCH FLOW */}
+      <DCSection id="prematch" title="PRE-MATCH FLOW">
+        <DCArtboard id="deploy" label="DEPLOY · mode + wager" width={844} height={390}>
+          <MobileDeploy />
+        </DCArtboard>
+        <DCArtboard id="shop" label="WEAPON SHOP · in-flow, 30s buy phase" width={844} height={390}>
+          <MobileShop />
+        </DCArtboard>
+        <DCArtboard id="loadout" label="LOADOUT · consumables, $SHOT" width={844} height={390}>
+          <MobileLoadout />
+        </DCArtboard>
+      </DCSection>
+
+      {/* MATCH */}
+      <DCSection id="match" title="IN-MATCH · thumb sliders">
+        <DCArtboard id="match-hud" label="MATCH HUD · L angle · R power · drag to aim" width={844} height={390}>
+          <MobileMatch />
+        </DCArtboard>
+      </DCSection>
+
+      {/* POST-MATCH + META */}
+      <DCSection id="post" title="POST-MATCH & META SCREENS">
+        <DCArtboard id="report" label="AFTER ACTION · shareable report" width={844} height={390}>
+          <MobileReport />
+        </DCArtboard>
+        <DCArtboard id="barracks" label="BARRACKS · stat card + history" width={844} height={390}>
+          <MobileBarracks />
+        </DCArtboard>
+        <DCArtboard id="armory" label="ARMORY · cosmetics, SOL" width={844} height={390}>
+          <MobileArmory />
+        </DCArtboard>
+        <DCArtboard id="prestige" label="PRESTIGE · burn path" width={844} height={390}>
+          <MobilePrestige />
+        </DCArtboard>
+      </DCSection>
+
+    </DesignCanvas>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>SolShot — Empty / Loading / Error States</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Days+One&family=Share+Tech+Mono&display=swap" />
+<link rel="stylesheet" href="styles/tokens.css" />
+<style>
+  body { margin: 0; background: #08090a; font-family: var(--f-sec); }
+  * { box-sizing: border-box; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(168,176,142,0.2); border-radius: 3px; }
+</style>
+</head>
+<body data-theme="field">
+<template id="__bundler_thumbnail">
+  <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <rect width="100" height="100" fill="#0e1209"/>
+    <circle cx="50" cy="50" r="28" fill="none" stroke="#7a9060" stroke-width="2"/>
+    <circle cx="50" cy="50" r="18" fill="none" stroke="#7a9060" stroke-width="1" stroke-dasharray="2 2"/>
+    <line x1="50" y1="50" x2="68" y2="36" stroke="#c8781a" stroke-width="2"/>
+    <rect x="48" y="48" width="4" height="4" fill="#c8781a"/>
+    <text x="50" y="86" text-anchor="middle" font-family="Arial Black, sans-serif" font-size="9" letter-spacing="2" fill="#c8b87a">EMPTY STATES</text>
+  </svg>
+</template>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="mobile-shared.jsx"></script>
+<script type="text/babel" src="empty-states-shared.jsx"></script>
+<script type="text/babel" src="empty-states-screens.jsx"></script>
+
+<script type="text/babel">
+function App() {
+  return (
+    <DesignCanvas title="SolShot · Empty / Loading / Error States" initialZoom={0.55}>
+
+      {/* ─── Primitives ─── */}
+      <DCSection id="primitives" title="PRIMITIVES" subtitle="Three reusable components, used across every screen below.">
+        <DCArtboard id="empty-prim" label="<EmptyState /> · primary + secondary CTA" width={520} height={340}>
+          <Demo_EmptyState />
+        </DCArtboard>
+        <DCArtboard id="error-prim" label="<ErrorState /> · red title, RETRY default" width={520} height={340}>
+          <Demo_ErrorState />
+        </DCArtboard>
+        <DCArtboard id="skeleton-prim" label="<SkeletonRow /> + <SkeletonCard /> · 1s opacity pulse, dashed frame" width={520} height={340}>
+          <Demo_Skeletons />
+        </DCArtboard>
+      </DCSection>
+
+      {/* ─── Icon library ─── */}
+      <DCSection id="icons" title="ICON LIBRARY" subtitle="13 pixel-aligned SVG glyphs. Each is 24×24, currentColor, crispEdges.">
+        <DCArtboard id="icon-grid" label="All 13 icons · 1px stroke, square caps, no anti-alias" width={760} height={260}>
+          <IconLibrary />
+        </DCArtboard>
+      </DCSection>
+
+      {/* ─── 1. MyGames ─── */}
+      <DCSection id="my-games" title="01 · MY GAMES" subtitle="No active group-chat matches. CTA: start one.">
+        <DCArtboard id="mg-empty" label="EMPTY · no contact on radar" width={844} height={390}>
+          <MyGames_Empty />
+        </DCArtboard>
+        <DCArtboard id="mg-loading" label="LOADING · 5 skeleton rows w/ left accent" width={844} height={390}>
+          <MyGames_Loading />
+        </DCArtboard>
+        <DCArtboard id="mg-error" label="ERROR · link severed" width={844} height={390}>
+          <MyGames_Error />
+        </DCArtboard>
+      </DCSection>
+
+      {/* ─── 2. Barracks · Combat Record ─── */}
+      <DCSection id="barracks" title="02 · BARRACKS · COMBAT RECORD" subtitle="Callsign card stays mounted; only the stats grid is the empty zone.">
+        <DCArtboard id="br-empty" label="EMPTY · 0 matches played" width={844} height={390}>
+          <Barracks_Empty />
+        </DCArtboard>
+        <DCArtboard id="br-loading" label="LOADING · 6 stat-card skeletons" width={844} height={390}>
+          <Barracks_Loading />
+        </DCArtboard>
+        <DCArtboard id="br-error" label="ERROR · stats unreachable" width={844} height={390}>
+          <Barracks_Error />
+        </DCArtboard>
+      </DCSection>
+
+      {/* ─── 3. Leaderboard ─── */}
+      <DCSection id="leaderboard" title="03 · BARRACKS · LEADERBOARD" subtitle="Genuinely-empty ecosystem case (early days).">
+        <DCArtboard id="lb-empty" label="EMPTY · no ranked operatives" width={844} height={390}>
+          <Leaderboard_Empty />
+        </DCArtboard>
+        <DCArtboard id="lb-loading" label="LOADING · 7 leaderboard rows" width={844} height={390}>
+          <Leaderboard_Loading />
+        </DCArtboard>
+        <DCArtboard id="lb-error" label="ERROR · board unreachable" width={844} height={390}>
+          <Leaderboard_Error />
+        </DCArtboard>
+      </DCSection>
+
+      {/* ─── 4. Lobby ─── */}
+      <DCSection id="lobby" title="04 · LOBBY · OPEN LOBBIES" subtitle="No matches matching current filters.">
+        <DCArtboard id="lo-empty" label="EMPTY · no lobbies match filters" width={844} height={390}>
+          <Lobby_Empty />
+        </DCArtboard>
+        <DCArtboard id="lo-loading" label="LOADING · 6 lobby rows" width={844} height={390}>
+          <Lobby_Loading />
+        </DCArtboard>
+        <DCArtboard id="lo-error" label="ERROR · lobby feed down" width={844} height={390}>
+          <Lobby_Error />
+        </DCArtboard>
+      </DCSection>
+
+      {/* ─── 5. Armory · Owned ─── */}
+      <DCSection id="armory" title="05 · ARMORY · OWNED" subtitle="No cosmetics owned. CTA → SOL Shop.">
+        <DCArtboard id="am-empty" label="EMPTY · locker empty" width={844} height={390}>
+          <Armory_Empty />
+        </DCArtboard>
+        <DCArtboard id="am-loading" label="LOADING · 10 cosmetic-tile skeletons" width={844} height={390}>
+          <Armory_Loading />
+        </DCArtboard>
+        <DCArtboard id="am-error" label="ERROR · locker locked" width={844} height={390}>
+          <Armory_Error />
+        </DCArtboard>
+      </DCSection>
+
+      {/* ─── 6. Loadout ─── */}
+      <DCSection id="loadout" title="06 · LOADOUT · CONSUMABLES" subtitle="Initial state: 3 empty consumable slots — empty-slot affordance, not a separate state.">
+        <DCArtboard id="ld-empty" label="EMPTY · 3 unassigned slots, not a centered EmptyState" width={844} height={390}>
+          <Loadout_Empty />
+        </DCArtboard>
+        <DCArtboard id="ld-loading" label="LOADING · 3 slot-tile skeletons" width={844} height={390}>
+          <Loadout_Loading />
+        </DCArtboard>
+        <DCArtboard id="ld-error" label="ERROR · loadout locked" width={844} height={390}>
+          <Loadout_Error />
+        </DCArtboard>
+      </DCSection>
+
+      {/* ─── 7. Prestige ─── */}
+      <DCSection id="prestige" title="07 · PRESTIGE · NEXT TIER LOCKED" subtitle="Player short on $SHOT. Locked tier badge + cost + how-to-earn line.">
+        <DCArtboard id="pr-empty" label="LOCKED · cost + progress + earn path" width={844} height={390}>
+          <Prestige_Empty />
+        </DCArtboard>
+        <DCArtboard id="pr-loading" label="LOADING · burn-path skeleton" width={844} height={390}>
+          <Prestige_Loading />
+        </DCArtboard>
+        <DCArtboard id="pr-error" label="ERROR · burn ledger offline" width={844} height={390}>
+          <Prestige_Error />
+        </DCArtboard>
+      </DCSection>
+
+      {/* ─── 8. Challenge expired ─── */}
+      <DCSection id="ch-expired" title="08 · CHALLENGEACCEPT · EXPIRED LINK" subtitle="Shortcode no longer points to a live challenge.">
+        <DCArtboard id="ce-empty" label="EXPIRED · skull glyph, dual CTA" width={844} height={390}>
+          <ChallengeExpired_Empty />
+        </DCArtboard>
+        <DCArtboard id="ce-loading" label="LOADING · code-lookup skeleton" width={844} height={390}>
+          <ChallengeExpired_Loading />
+        </DCArtboard>
+        <DCArtboard id="ce-error" label="ERROR · lookup failed" width={844} height={390}>
+          <ChallengeExpired_Error />
+        </DCArtboard>
+      </DCSection>
+
+      {/* ─── 9. Challenge not found ─── */}
+      <DCSection id="ch-notfound" title="09 · CHALLENGEACCEPT · NOT FOUND" subtitle="Bad / typo'd shortcode. Code displayed in red top-right.">
+        <DCArtboard id="cnf-empty" label="NOT FOUND · search glyph" width={844} height={390}>
+          <ChallengeNotFound_Empty />
+        </DCArtboard>
+        <DCArtboard id="cnf-loading" label="LOADING · same lookup skeleton" width={844} height={390}>
+          <ChallengeNotFound_Loading />
+        </DCArtboard>
+        <DCArtboard id="cnf-error" label="ERROR · same retry shell" width={844} height={390}>
+          <ChallengeNotFound_Error />
+        </DCArtboard>
+      </DCSection>
+
+      {/* ─── 10. Group Match · waiting ─── */}
+      <DCSection id="group-waiting" title="10 · GROUPMATCH · LOBBY WAITING" subtitle="1/N joined. Player slots show OPEN affordance + share-link CTA.">
+        <DCArtboard id="gw-empty" label="WAITING · 1 of 4 slots filled" width={844} height={390}>
+          <GroupWaiting_Empty />
+        </DCArtboard>
+        <DCArtboard id="gw-loading" label="LOADING · 4 player-slot skeletons" width={844} height={390}>
+          <GroupWaiting_Loading />
+        </DCArtboard>
+        <DCArtboard id="gw-error" label="ERROR · lobby lost contact" width={844} height={390}>
+          <GroupWaiting_Error />
+        </DCArtboard>
+      </DCSection>
+
+      {/* ─── 11. Spectator ─── */}
+      <DCSection id="spectator" title="11 · GROUPMATCH · SPECTATOR" subtitle="Viewer is not a player — watch only, no controls.">
+        <DCArtboard id="sp-empty" label="SPECTATING · eye glyph, LIVE pill" width={844} height={390}>
+          <Spectator_Empty />
+        </DCArtboard>
+        <DCArtboard id="sp-loading" label="LOADING · stream skeleton" width={844} height={390}>
+          <Spectator_Loading />
+        </DCArtboard>
+        <DCArtboard id="sp-error" label="ERROR · feed lost" width={844} height={390}>
+          <Spectator_Error />
+        </DCArtboard>
+      </DCSection>
+
+      {/* ─── 12. Menu · wallet not connected ─── */}
+      <DCSection id="menu-wallet" title="12 · MENUSCREEN · WALLET NOT CONNECTED" subtitle="Currency readout in top bar replaced with CONNECT CTA.">
+        <DCArtboard id="mw-empty" label="DISCONNECTED · CONNECT in top bar, casual still playable" width={844} height={390}>
+          <Menu_Empty />
+        </DCArtboard>
+        <DCArtboard id="mw-loading" label="LOADING · post-tap connect skeleton" width={844} height={390}>
+          <Menu_Loading />
+        </DCArtboard>
+        <DCArtboard id="mw-error" label="ERROR · wallet link failed" width={844} height={390}>
+          <Menu_Error />
+        </DCArtboard>
+      </DCSection>
+
+    </DesignCanvas>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

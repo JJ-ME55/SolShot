@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Career Stats Card — v2 Preview</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<style>
+  html, body { margin:0; padding:0; background:#06080a; font-family:'Share Tech Mono', monospace; color:#c4a65d; min-height:100vh; }
+  .page { max-width:1320px; margin:0 auto; padding:32px 24px 80px; }
+  .header { display:flex; align-items:baseline; justify-content:space-between; gap:24px; flex-wrap:wrap; border-bottom:1px solid rgba(196,166,93,0.2); padding-bottom:14px; margin-bottom:20px; }
+  .h1 { font-family:'Black Ops One', sans-serif; font-size:22px; letter-spacing:0.1em; color:#fff8e8; }
+  .h1 b { color:#ff7a1a; }
+  .meta { font-size:11px; letter-spacing:0.3em; color:rgba(196,166,93,0.7); }
+
+  .controls-row { display:flex; gap:24px; align-items:center; flex-wrap:wrap; margin-bottom:24px; }
+  .preset-bar { display:flex; gap:10px; flex-wrap:wrap; }
+  .preset-bar button {
+    background:rgba(10,13,7,0.7); border:1px solid rgba(196,166,93,0.4); color:#f4e7c8;
+    padding:10px 18px; font-family:'Share Tech Mono', monospace; font-size:12px; letter-spacing:0.2em;
+    cursor:pointer; text-transform:uppercase;
+  }
+  .preset-bar button:hover { border-color:#ff7a1a; color:#fff8e8; }
+  .preset-bar button.active { background:#ff7a1a; color:#06080a; border-color:#ff7a1a; }
+
+  .size-bar { display:flex; gap:10px; align-items:center; font-size:11px; letter-spacing:0.25em; color:rgba(196,166,93,0.7); text-transform:uppercase; }
+  .size-bar select {
+    background:#0a0d07; color:#fff8e8; border:1px solid rgba(196,166,93,0.4);
+    padding:8px 10px; font-family:'Share Tech Mono', monospace; font-size:12px; letter-spacing:0.15em;
+  }
+
+  .stages { display:flex; flex-direction:column; gap:24px; }
+  .stage-row { display:flex; align-items:flex-start; gap:24px; flex-wrap:wrap; }
+  .stage-label {
+    width:140px; flex-shrink:0;
+    font-family:'Share Tech Mono', monospace; font-size:11px; letter-spacing:0.3em; color:#ffb05a;
+    padding-top:8px;
+  }
+  .stage-label small { display:block; color:rgba(196,166,93,0.6); letter-spacing:0.2em; margin-top:4px; }
+
+  .stage {
+    background:
+      linear-gradient(45deg, rgba(255,255,255,0.015) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.015) 75%),
+      linear-gradient(45deg, rgba(255,255,255,0.015) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.015) 75%);
+    background-size:16px 16px; background-position:0 0, 8px 8px;
+    border:1px solid rgba(196,166,93,0.2);
+    padding:20px;
+    flex-grow:1;
+    min-width:0;
+    display:flex; justify-content:center;
+  }
+  .stage-frame { position:relative; box-shadow:0 16px 32px rgba(0,0,0,0.6), 0 0 0 1px rgba(196,166,93,0.2); max-width:100%; }
+  .stage-frame .stage-inner { position:absolute; inset:0; transform-origin:top left; width:1080px; height:608px; }
+
+  .frame-full   { width:1080px; aspect-ratio:1080/608; }
+  .frame-tg     { width:540px;  aspect-ratio:1080/608; }
+  .frame-tg-sm  { width:340px;  aspect-ratio:1080/608; }
+
+  .note { margin-top:20px; padding:14px 18px; background:rgba(255,122,26,0.06); border:1px dashed rgba(255,122,26,0.4); font-size:12px; line-height:1.6; color:rgba(244,231,200,0.85); }
+  .note b { color:#ff7a1a; letter-spacing:0.2em; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="header">
+    <div class="h1">SOL<b>SHOT</b> · CAREER STATS CARD <span style="opacity:0.5;font-size:13px">v2 · legibility pass · 1080×608</span></div>
+    <div class="meta">DOSSIER · /STATS</div>
+  </div>
+
+  <div class="controls-row">
+    <div class="preset-bar" id="presets"></div>
+  </div>
+
+  <div class="stages">
+    <div class="stage-row">
+      <div class="stage-label">FULL · 1080<small>desktop / twitter</small></div>
+      <div class="stage">
+        <div class="stage-frame frame-full"><div class="stage-inner"><div id="root-full" style="width:1080px;height:608px;"></div></div></div>
+      </div>
+    </div>
+    <div class="stage-row">
+      <div class="stage-label">TG · 540<small>large mobile inline</small></div>
+      <div class="stage">
+        <div class="stage-frame frame-tg"><div class="stage-inner"><div id="root-tg" style="width:1080px;height:608px;"></div></div></div>
+      </div>
+    </div>
+    <div class="stage-row">
+      <div class="stage-label">TG · 340<small>real iPhone size</small></div>
+      <div class="stage">
+        <div class="stage-frame frame-tg-sm"><div class="stage-inner"><div id="root-tgsm" style="width:1080px;height:608px;"></div></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>NOTE:</b> The 340px row is the actual size players see in a Telegram chat thread. Use it as the legibility test — labels should be readable, big numbers should be unmissable, the badge should pop.
+  </div>
+</div>
+
+<script type="text/babel" data-presets="env,react">
+  const { useEffect, useState } = React;
+
+  const C = {
+    bgDeep:'#0e1209', bgDeeper:'#0a0d07', ink:'#06080a',
+    accent:'#ff7a1a', accentDeep:'#c44d12', accentSoft:'#ffb05a',
+    blood:'#a83a1f', bone:'#fff8e8', bonePale:'#f4e7c8',
+    olive:'#c4a65d', oliveDim:'rgba(196,166,93,0.6)',
+  };
+  const F = { display:"'Black Ops One', sans-serif", mono:"'Share Tech Mono', monospace" };
+  const TIER_LABEL = { NONE:'UNRANKED', BRONZE:'BRONZE', SILVER:'SILVER', GOLD:'GOLD', PLATINUM:'PLATINUM', DIAMOND:'DIAMOND' };
+
+  function fmtK(n) {
+    if (n == null) return '—';
+    if (n >= 100000) return `${Math.round(n/1000)}K`;
+    if (n >= 1000) return `${(n/1000).toFixed(1)}K`;
+    return String(n);
+  }
+  function clip(s, n) { return (s ?? '').toString().slice(0, n); }
+
+  function Spacer() { return <div style={{ width:12, flexShrink:0 }} />; }
+
+  function Stat({ label, big, sub, bigSize=44, bigTrack='0.02em', flexGrow=1 }) {
+    return (
+      <div style={{
+        flexGrow, flexBasis:0, display:'flex', flexDirection:'column',
+        background:'rgba(10,13,7,0.85)', border:'1px solid rgba(255,176,90,0.4)',
+        padding:'18px 20px 16px', minWidth:0,
+      }}>
+        <div style={{ display:'flex', fontFamily:F.mono, fontSize:14, color:C.accentSoft, letterSpacing:'0.28em', marginBottom:10 }}>{label}</div>
+        <div style={{ display:'flex', fontFamily:F.display, fontSize:bigSize, color:C.bone, lineHeight:0.95, letterSpacing:bigTrack, whiteSpace:'nowrap' }}>{big}</div>
+        <div style={{ display:'flex', fontFamily:F.mono, fontSize:13, color:'rgba(244,231,200,0.65)', letterSpacing:'0.22em', marginTop:8 }}>{sub}</div>
+      </div>
+    );
+  }
+
+  function FormCell({ result }) {
+    const win = result === 'W';
+    return (
+      <div style={{
+        flexGrow:1, flexBasis:0, height:36, marginRight:4,
+        display:'flex', alignItems:'center', justifyContent:'center',
+        background: win ? C.accent : 'rgba(168,58,31,0.35)',
+        border:`1px solid ${win ? C.accentSoft : 'rgba(168,58,31,0.7)'}`,
+        fontFamily:F.display, fontSize:18,
+        color: win ? C.ink : C.bonePale, letterSpacing:'0.05em',
+      }}>{result}</div>
+    );
+  }
+
+  function UnrankedPlate() {
+    return (
+      <div style={{
+        display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+        width:240, height:240, border:'2px dashed rgba(196,166,93,0.55)', background:'rgba(0,0,0,0.4)',
+      }}>
+        <div style={{ display:'flex', fontFamily:F.display, fontSize:26, color:C.olive, letterSpacing:'0.18em' }}>[ CLASSIFIED ]</div>
+        <div style={{ marginTop:14, display:'flex', fontFamily:F.mono, fontSize:13, letterSpacing:'0.3em', color:'rgba(196,166,93,0.7)' }}>TIER PENDING</div>
+        <div style={{ marginTop:4, display:'flex', fontFamily:F.mono, fontSize:13, letterSpacing:'0.3em', color:'rgba(196,166,93,0.7)' }}>EARN A WIN</div>
+      </div>
+    );
+  }
+
+  function CareerStatsCard(p) {
+    const w = 1080, h = 608;
+    const cs = clip(p.callsign, 14);
+    const reg = clip(p.registryId, 6).toUpperCase();
+    const wpn = clip(p.mvpWeapon?.name ?? '—', 14);
+
+    // CALLSIGN auto-fit (1–14 chars)
+    const csLen = cs.length;
+    const csSize =
+      csLen <= 6  ? 108 :
+      csLen <= 8  ? 96  :
+      csLen <= 10 ? 82  :
+      csLen <= 12 ? 70  :
+                    60;
+    const csTrack =
+      csLen <= 8  ? '0.04em' :
+      csLen <= 10 ? '0.02em' :
+      csLen <= 12 ? '0.01em' :
+                    '0';
+
+    // MVP WEAPON auto-fit (1–14 chars)
+    const wpnLen = wpn.length;
+    const wpnSize =
+      wpnLen <= 5  ? 48 :
+      wpnLen <= 7  ? 42 :
+      wpnLen <= 9  ? 34 :
+      wpnLen <= 11 ? 28 :
+      wpnLen <= 13 ? 24 :
+                      22;
+    const wpnTrack =
+      wpnLen <= 7  ? '0.02em' :
+      wpnLen <= 11 ? '0.01em' :
+                      '0';
+    const tier = TIER_LABEL[p.tierName] || 'UNRANKED';
+    const isUnranked = p.tierName === 'NONE' || !p.tierBadgeUrl;
+    const kdRatio = p.deaths > 0 ? (p.kills / p.deaths).toFixed(2) : '∞';
+    const form = (p.recentForm && p.recentForm.length>0) ? p.recentForm.slice(-10)
+                : Array.from({length:10}, (_,i) => i < (p.streak?.current ?? 0) ? 'W' : 'L');
+    const sealW = w * 0.34;
+    const sealLeft = w - sealW;
+
+    return (
+      <div style={{ width:w, height:h, position:'relative', background:C.bgDeep, display:'flex', overflow:'hidden' }}>
+        <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ position:'absolute', left:0, top:0 }}>
+          <defs>
+            <pattern id="cs-grid" width="40" height="40" patternUnits="userSpaceOnUse">
+              <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(196,166,93,0.06)" strokeWidth="1" />
+            </pattern>
+            <pattern id="cs-scan" width="3" height="3" patternUnits="userSpaceOnUse">
+              <rect width="3" height="1" fill="rgba(0,0,0,0.14)" />
+            </pattern>
+          </defs>
+          <rect width={w} height={h} fill="url(#cs-grid)" />
+          <rect x={sealLeft} y="0" width={sealW} height={h} fill={C.bgDeeper} />
+          <rect x={sealLeft} y="0" width="3" height={h} fill={C.accent} />
+          <rect width={w} height={h} fill="url(#cs-scan)" />
+        </svg>
+
+        <div style={{ position:'absolute', left:56, right:56, top:30, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+          <div style={{ display:'flex', alignItems:'center' }}>
+            <div style={{ display:'flex', fontFamily:F.display, fontSize:36, color:C.bonePale, letterSpacing:'0.08em' }}>
+              <span>SOL</span><span style={{ color:C.accentSoft }}>SHOT</span>
+            </div>
+            <div style={{ display:'flex', marginLeft:18, fontFamily:F.mono, fontSize:16, letterSpacing:'0.3em', color:C.olive, borderLeft:`1px solid ${C.olive}`, paddingLeft:18 }}>
+              OPERATIVE FILE
+            </div>
+          </div>
+          <div style={{ display:'flex', fontFamily:F.mono, fontSize:16, letterSpacing:'0.3em', color:C.bonePale, background:'rgba(0,0,0,0.45)', border:'1px solid rgba(255,176,90,0.35)', padding:'6px 14px' }}>
+            ID · {reg}
+          </div>
+        </div>
+
+        <div style={{ position:'absolute', left:56, top:96, width: sealLeft - 56 - 32, display:'flex', flexDirection:'column' }}>
+          <div style={{ display:'flex', fontFamily:F.mono, fontSize:17, letterSpacing:'0.4em', color:C.accentSoft, marginBottom:10 }}>OPERATIVE</div>
+          <div style={{ display:'flex', fontFamily:F.display, fontSize:csSize, lineHeight:0.92, color:C.bone, letterSpacing:csTrack, textShadow:'0 4px 0 rgba(0,0,0,0.45)', whiteSpace:'nowrap' }}>{cs}</div>
+
+          <div style={{ display:'flex', alignItems:'center', fontFamily:F.mono, fontSize:17, letterSpacing:'0.18em', marginTop:18, color:C.bonePale }}>
+            {p.rank != null ? (
+              <span style={{ display:'flex', background:C.accent, color:C.ink, padding:'5px 14px', letterSpacing:'0.12em', fontFamily:F.display, fontSize:22 }}>#{p.rank}</span>
+            ) : (
+              <span style={{ display:'flex', border:`1.5px solid ${C.olive}`, color:C.olive, padding:'5px 14px', letterSpacing:'0.25em', fontSize:14 }}>UNRANKED</span>
+            )}
+            <span style={{ marginLeft:14, marginRight:14, opacity:0.5 }}>·</span>
+            <span style={{ color:C.bone, fontSize:22, fontFamily:F.display, letterSpacing:'0.04em' }}>{p.record.wins}W</span>
+            <span style={{ margin:'0 8px', color:C.olive }}>–</span>
+            <span style={{ color:C.bone, fontSize:22, fontFamily:F.display, letterSpacing:'0.04em' }}>{p.record.losses}L</span>
+            <span style={{ marginLeft:14, marginRight:14, opacity:0.5 }}>·</span>
+            <span style={{ color:C.accentSoft, fontSize:22, fontFamily:F.display, letterSpacing:'0.04em' }}>{p.record.winRate}%</span>
+          </div>
+
+          <div style={{ display:'flex', flexDirection:'row', marginTop:26 }}>
+            <Stat label="TOTAL DMG" big={fmtK(p.totalDamage)} sub="HP DEALT" bigSize={44} />
+            <Spacer />
+            <Stat label="K / D" big={`${p.kills}/${p.deaths}`} sub={`${kdRatio} RATIO`} bigSize={44} />
+            <Spacer />
+            <Stat label="MVP WEAPON" big={wpn} sub={`${fmtK(p.mvpWeapon?.damage)} DMG`} bigSize={wpnSize} bigTrack={wpnTrack} flexGrow={1.4} />
+          </div>
+
+          <div style={{ display:'flex', flexDirection:'column', marginTop:22 }}>
+            <div style={{ display:'flex', fontFamily:F.mono, fontSize:13, letterSpacing:'0.35em', color:C.olive, marginBottom:8 }}>
+              ▸ RECENT FORM · LAST 10
+            </div>
+            <div style={{ display:'flex', flexDirection:'row' }}>
+              {form.map((r, i) => <FormCell key={i} result={r} />)}
+            </div>
+          </div>
+        </div>
+
+        <div style={{
+          position:'absolute', left:sealLeft, top:0, width:sealW, height:h-56,
+          display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', paddingTop:40,
+        }}>
+          <div style={{
+            position:'absolute', left:0, right:0, top:'52%',
+            display:'flex', justifyContent:'center',
+            fontFamily:F.display, fontSize:96, letterSpacing:'0.05em',
+            color:'rgba(196,166,93,0.07)', transform:'translateY(-50%) rotate(-8deg)',
+          }}>CLASSIFIED</div>
+
+          <div style={{ display:'flex', fontFamily:F.mono, fontSize:14, letterSpacing:'0.45em', color:C.olive, marginBottom:18 }}>━ TIER ━</div>
+
+          {isUnranked ? <UnrankedPlate /> : (
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'center', width:240, height:240, position:'relative' }}>
+              <div style={{ position:'absolute', inset:0, border:`2px solid ${C.accent}`, borderRadius:9999, opacity:0.7 }} />
+              <div style={{ position:'absolute', inset:10, border:'1px solid rgba(255,176,90,0.5)', borderRadius:9999 }} />
+              <img src={p.tierBadgeUrl} width="220" height="220" style={{ display:'flex' }} />
+            </div>
+          )}
+
+          <div style={{ marginTop:22, display:'flex', fontFamily:F.display, fontSize:40, letterSpacing:'0.12em', color:C.bone, textShadow:'0 3px 0 rgba(0,0,0,0.4)' }}>{tier}</div>
+        </div>
+
+        <div style={{
+          position:'absolute', left:0, right:0, bottom:0, height:56,
+          background:C.bgDeeper, borderTop:`2px solid ${C.accentSoft}`,
+          display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 56px',
+        }}>
+          <div style={{ fontFamily:F.mono, fontSize:14, color:C.olive, letterSpacing:'0.3em' }}>SOLSHOT.GG · ARTILLERY ON SOLANA</div>
+          <div style={{ fontFamily:F.mono, fontSize:14, color:C.oliveDim, letterSpacing:'0.3em' }}>▸ {p.matchesPlayed} MATCHES · {p.joinedLabel}</div>
+        </div>
+      </div>
+    );
+  }
+
+  const PRESETS = [
+    {
+      key:'strong', label:'STRONG · PLATINUM',
+      props:{
+        callsign:'GRIZZLY-07', registryId:'A37F',
+        tierName:'PLATINUM', tierBadgeUrl:'assets/badge-platinum.png',
+        rank:14, record:{ wins:184, losses:43, winRate:81 },
+        totalDamage:127400, kills:412, deaths:198,
+        streak:{ current:9, best:14 },
+        mvpWeapon:{ name:'HEATSEEKER', damage:38400 },
+        matchesPlayed:227, joinedLabel:'JOINED MAR 2026',
+        recentForm:['W','W','L','W','W','W','W','W','L','W'],
+      },
+    },
+    {
+      key:'longname', label:'LONG NAME · GOLD',
+      props:{
+        callsign:'CHAINREACTION', registryId:'B821',
+        tierName:'GOLD', tierBadgeUrl:'assets/badge-gold.png',
+        rank:23, record:{ wins:96, losses:42, winRate:69 },
+        totalDamage:88200, kills:241, deaths:166,
+        streak:{ current:4, best:11 },
+        mvpWeapon:{ name:'HOMING MISSILE', damage:24100 },
+        matchesPlayed:138, joinedLabel:'JOINED FEB 2026',
+        recentForm:['W','W','W','W','L','W','W','L','W','W'],
+      },
+    },
+    {
+      key:'maxout', label:'MAXLEN · DIAMOND',
+      props:{
+        callsign:'WWWWWWWWWWWWWW', registryId:'FFFF',
+        tierName:'DIAMOND', tierBadgeUrl:'assets/badge-diamond.png',
+        rank:1, record:{ wins:999, losses:111, winRate:90 },
+        totalDamage:999000, kills:9999, deaths:1111,
+        streak:{ current:14, best:14 },
+        mvpWeapon:{ name:'CHAIN REACTION', damage:99000 },
+        matchesPlayed:1110, joinedLabel:'JOINED JAN 2026',
+        recentForm:['W','W','W','W','W','W','W','W','W','W'],
+      },
+    },
+    {
+      key:'mid', label:'MID · BRONZE',
+      props:{
+        callsign:'JJ_ME', registryId:'6416',
+        tierName:'BRONZE', tierBadgeUrl:'assets/badge-bronze.png',
+        rank:47, record:{ wins:14, losses:11, winRate:56 },
+        totalDamage:22300, kills:38, deaths:41,
+        streak:{ current:0, best:5 },
+        mvpWeapon:{ name:'RAILGUN', damage:6800 },
+        matchesPlayed:25, joinedLabel:'JOINED MAR 2026',
+        recentForm:['L','W','W','L','L','W','L','W','W','L'],
+      },
+    },
+    {
+      key:'fresh', label:'FRESH · UNRANKED',
+      props:{
+        callsign:'NEW-RECRUIT', registryId:'00F1',
+        tierName:'NONE', tierBadgeUrl:null,
+        rank:null, record:{ wins:1, losses:2, winRate:33 },
+        totalDamage:980, kills:2, deaths:3,
+        streak:{ current:0, best:1 },
+        mvpWeapon:{ name:'STANDARD', damage:520 },
+        matchesPlayed:3, joinedLabel:'JOINED THIS WEEK',
+        recentForm:['L','W','L'],
+      },
+    },
+  ];
+
+  let activeKey = 'maxout';   // open on worst-case overflow test
+  const roots = {
+    full:  ReactDOM.createRoot(document.getElementById('root-full')),
+    tg:    ReactDOM.createRoot(document.getElementById('root-tg')),
+    tgsm:  ReactDOM.createRoot(document.getElementById('root-tgsm')),
+  };
+
+  function fitAll() {
+    document.querySelectorAll('.stage-frame').forEach(fr => {
+      const inner = fr.querySelector('.stage-inner');
+      inner.style.transform = `scale(${fr.clientWidth / 1080})`;
+    });
+  }
+  function renderAll() {
+    const preset = PRESETS.find(p => p.key === activeKey);
+    Object.values(roots).forEach(r => r.render(<CareerStatsCard {...preset.props} />));
+    fitAll();
+  }
+
+  const bar = document.getElementById('presets');
+  function renderBar() {
+    bar.innerHTML = '';
+    PRESETS.forEach(p => {
+      const b = document.createElement('button');
+      b.textContent = p.label;
+      if (p.key === activeKey) b.classList.add('active');
+      b.onclick = () => { activeKey = p.key; renderBar(); renderAll(); };
+      bar.appendChild(b);
+    });
+  }
+
+  renderBar();
+  renderAll();
+  window.addEventListener('resize', fitAll);
+</script>
+</body>
+</html>

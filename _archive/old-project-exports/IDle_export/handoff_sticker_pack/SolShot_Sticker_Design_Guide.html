@@ -1,0 +1,642 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SolShot — Telegram Sticker Pack Design Guide</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Share+Tech+Mono&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-deep: #0e1209;
+    --bg-deeper: #0a0d07;
+    --ink: #06080a;
+    --accent: #ff7a1a;
+    --accent-deep: #c44d12;
+    --accent-soft: #ffb05a;
+    --blood: #a83a1f;
+    --blood-deep: #5a1e0a;
+    --bone: #fff8e8;
+    --bone-pale: #f4e7c8;
+    --olive: #c4a65d;
+    --olive-dim: rgba(196,166,93,0.5);
+
+    --font-display: 'Black Ops One', sans-serif;
+    --font-mono: 'Share Tech Mono', monospace;
+    --font-body: 'Space Grotesk', system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg-deep);
+    color: var(--bone-pale);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 0 48px 120px;
+    background:
+      linear-gradient(180deg, rgba(255,122,26,0.04) 0%, transparent 200px),
+      var(--bg-deep);
+  }
+
+  /* ── HERO ── */
+  .hero {
+    padding: 80px 0 56px;
+    border-bottom: 1px solid rgba(196,166,93,0.2);
+    position: relative;
+  }
+  .wordmark { font-family: var(--font-display); font-size: 42px; letter-spacing: 0.08em; color: var(--bone); }
+  .wordmark span { color: var(--accent); }
+  .hero h1 {
+    font-family: var(--font-display);
+    font-size: 64px;
+    line-height: 0.95;
+    letter-spacing: 0.02em;
+    color: var(--bone);
+    margin: 24px 0 16px;
+    text-wrap: balance;
+  }
+  .hero h1 em { font-style: normal; color: var(--accent); }
+  .hero .lead {
+    max-width: 720px;
+    font-size: 18px;
+    line-height: 1.55;
+    color: rgba(255,248,232,0.85);
+  }
+  .meta-strip {
+    margin-top: 36px;
+    display: flex;
+    gap: 32px;
+    flex-wrap: wrap;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.3em;
+    color: var(--olive);
+  }
+  .meta-strip b { color: var(--accent-soft); font-weight: normal; }
+
+  /* ── SECTIONS ── */
+  section { padding: 64px 0 24px; border-bottom: 1px solid rgba(196,166,93,0.15); }
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.4em;
+    color: var(--accent);
+    margin-bottom: 12px;
+  }
+  h2 {
+    font-family: var(--font-display);
+    font-size: 36px;
+    letter-spacing: 0.04em;
+    color: var(--bone);
+    margin: 0 0 20px;
+    text-wrap: balance;
+  }
+  h3 {
+    font-family: var(--font-display);
+    font-size: 20px;
+    letter-spacing: 0.06em;
+    color: var(--accent-soft);
+    margin: 32px 0 14px;
+  }
+  p { margin: 0 0 14px; max-width: 720px; }
+  p strong { color: var(--bone); font-weight: 600; }
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    color: var(--accent-soft);
+    background: rgba(0,0,0,0.4);
+    padding: 1px 6px;
+    border: 1px solid rgba(255,176,90,0.25);
+  }
+  ul { padding-left: 20px; margin: 0 0 16px; max-width: 720px; }
+  li { margin-bottom: 6px; }
+
+  /* ── PALETTE ── */
+  .palette {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 10px;
+    margin: 24px 0 8px;
+  }
+  .swatch {
+    aspect-ratio: 1;
+    position: relative;
+    border: 1px solid rgba(196,166,93,0.25);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.2em;
+  }
+  .swatch .name { color: var(--bone); margin-bottom: 2px; font-size: 11px; }
+  .swatch .hex { color: var(--olive); }
+  .swatch.dark .name { color: var(--bone-pale); }
+  .swatch.light .name, .swatch.light .hex { color: var(--ink); }
+
+  /* ── TYPE SAMPLES ── */
+  .type-card {
+    background: var(--bg-deeper);
+    border: 1px solid rgba(196,166,93,0.2);
+    padding: 28px 32px;
+    margin-bottom: 14px;
+  }
+  .type-card .name {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.3em;
+    color: var(--olive);
+    margin-bottom: 14px;
+  }
+  .type-card .sample-display { font-family: var(--font-display); font-size: 56px; line-height: 1; color: var(--bone); letter-spacing: 0.02em; }
+  .type-card .sample-mono { font-family: var(--font-mono); font-size: 22px; color: var(--bone-pale); letter-spacing: 0.1em; }
+  .type-card .usage {
+    margin-top: 12px;
+    font-size: 13px;
+    color: rgba(255,248,232,0.7);
+  }
+
+  /* ── DO / DON'T ── */
+  .dodont {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin: 24px 0;
+  }
+  .dodont > div {
+    padding: 22px 24px;
+    border: 1px solid;
+  }
+  .do { border-color: rgba(255,176,90,0.5); background: rgba(255,122,26,0.05); }
+  .dont { border-color: rgba(168,58,31,0.6); background: rgba(168,58,31,0.06); }
+  .dodont .label {
+    font-family: var(--font-display);
+    font-size: 18px;
+    letter-spacing: 0.15em;
+    margin-bottom: 12px;
+  }
+  .do .label { color: var(--accent-soft); }
+  .dont .label { color: #ff8862; }
+  .dodont ul { padding-left: 18px; }
+  .dodont li { font-size: 13.5px; line-height: 1.5; }
+
+  /* ── STICKER GRID ── */
+  .sticker-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+    margin: 28px 0 8px;
+  }
+  .sticker {
+    aspect-ratio: 1;
+    background: var(--bg-deeper);
+    border: 1px solid rgba(196,166,93,0.3);
+    position: relative;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    overflow: hidden;
+  }
+  .sticker .num {
+    position: absolute;
+    top: 8px; right: 10px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: var(--olive-dim);
+  }
+  .sticker .visual {
+    flex-grow: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-display);
+    color: var(--bone);
+    text-align: center;
+    line-height: 0.95;
+    margin-bottom: 6px;
+    min-height: 0;
+  }
+  .sticker .name {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.18em;
+    color: var(--accent-soft);
+    text-transform: uppercase;
+  }
+  .sticker .desc {
+    font-family: var(--font-body);
+    font-size: 10.5px;
+    line-height: 1.35;
+    color: rgba(255,248,232,0.65);
+    margin-top: 4px;
+  }
+  .sticker.video::before {
+    content: 'VIDEO';
+    position: absolute;
+    top: 8px; left: 10px;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.25em;
+    color: var(--accent);
+    background: var(--ink);
+    padding: 2px 6px;
+    border: 1px solid rgba(255,122,26,0.5);
+  }
+  .sticker.cat-trash { border-left: 3px solid #ff8862; }
+  .sticker.cat-flex  { border-left: 3px solid var(--accent-soft); }
+  .sticker.cat-prop  { border-left: 3px solid var(--blood); }
+  .sticker.cat-util  { border-left: 3px solid var(--olive); }
+
+  .cat-key {
+    display: flex; flex-wrap: wrap; gap: 16px;
+    margin-bottom: 16px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.2em;
+  }
+  .cat-key span { display: flex; align-items: center; gap: 8px; color: var(--olive); }
+  .cat-key i { display: inline-block; width: 14px; height: 14px; border-left: 3px solid; }
+
+  /* ── SPEC TABLE ── */
+  .spec-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    font-size: 13.5px;
+  }
+  .spec-table th, .spec-table td {
+    text-align: left;
+    padding: 12px 14px;
+    border-bottom: 1px solid rgba(196,166,93,0.18);
+    vertical-align: top;
+  }
+  .spec-table th {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.25em;
+    color: var(--olive);
+    text-transform: uppercase;
+    background: rgba(0,0,0,0.25);
+  }
+  .spec-table td code { font-size: 0.95em; }
+  .spec-table tr td:first-child { font-family: var(--font-mono); color: var(--accent-soft); letter-spacing: 0.05em; }
+
+  /* ── CALLOUT ── */
+  .callout {
+    padding: 22px 28px;
+    background: rgba(255,122,26,0.06);
+    border: 1px dashed rgba(255,122,26,0.5);
+    margin: 24px 0;
+  }
+  .callout b {
+    display: block;
+    font-family: var(--font-display);
+    font-size: 14px;
+    letter-spacing: 0.2em;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+
+  /* ── MASCOT BRIEF ── */
+  .mascot-block {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin: 24px 0;
+  }
+  .mascot-block > div {
+    padding: 22px 26px;
+    background: var(--bg-deeper);
+    border: 1px solid rgba(196,166,93,0.25);
+  }
+  .mascot-block h4 {
+    font-family: var(--font-display);
+    font-size: 16px;
+    letter-spacing: 0.12em;
+    color: var(--accent-soft);
+    margin: 0 0 10px;
+  }
+  .mascot-block p { font-size: 13.5px; }
+
+  /* ── FOOTER ── */
+  footer {
+    padding: 40px 0 0;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.3em;
+    color: var(--olive-dim);
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  /* ── PRINT ── */
+  @media print {
+    body { background: white; color: #0e1209; }
+    .page { background: white; padding: 0 24px; max-width: none; }
+    .hero, section { border-color: rgba(0,0,0,0.15); page-break-inside: avoid; }
+    .wordmark, .hero h1, h2, h3, .type-card .sample-display { color: #0e1209; }
+    .wordmark span, .hero h1 em { color: #c44d12; }
+    .lead, p, li { color: #2a2a2a; }
+    .type-card, .sticker, .mascot-block > div { background: #fafaf6; border-color: rgba(0,0,0,0.2); }
+    .callout { background: #fff5e8; border-color: #c44d12; }
+    .sticker .visual { color: #0e1209; }
+    .sticker .name { color: #c44d12; }
+    .sticker .desc { color: #444; }
+    section { padding: 32px 0 16px; }
+    .hero { padding: 24px 0; }
+    .hero h1 { font-size: 38px; }
+    h2 { font-size: 24px; }
+    .sticker-grid { grid-template-columns: repeat(5, 1fr); gap: 8px; }
+    .palette { grid-template-columns: repeat(10, 1fr); }
+    .meta-strip, .eyebrow { color: #c44d12; }
+    code { background: #fafaf6; color: #c44d12; }
+    .spec-table th { background: #f0eee5; color: #555; }
+    @page { margin: 18mm; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- HERO -->
+  <header class="hero">
+    <div class="wordmark">SOL<span>SHOT</span></div>
+    <h1>Sticker Pack <em>Design Guide</em></h1>
+    <p class="lead">A 30-sticker Telegram pack for SolShot — artillery combat on Solana. This document gives you the brand DNA, the visual rules, the technical specs, and the full sticker matrix. Read it once, then build.</p>
+    <div class="meta-strip">
+      <div>FORMAT · <b>STATIC + VIDEO</b></div>
+      <div>COUNT · <b>30 STICKERS</b></div>
+      <div>SIZE · <b>512 × 512</b></div>
+      <div>VIBE · <b>TRASH-TALK · W-FLEX · PROPAGANDA · UTILITY</b></div>
+    </div>
+  </header>
+
+  <!-- BRAND DNA -->
+  <section>
+    <div class="eyebrow">§ 01 — BRAND DNA</div>
+    <h2>What SolShot is, in one breath.</h2>
+    <p>SolShot is a turn-based artillery PvP game on Solana — players wager SOL, fight in <strong>BO3 duels</strong>, and either flex or get cooked. The brand is <strong>military propaganda by way of arcade</strong>: orange tracer-fire on volcanic blacks, dog-eared callsigns, scanline grit, ego-bait copy. Everyone is a callsign (<code>GRIZZLY-07</code>, <code>VIPER-12</code>). Wins are loud. Losses are louder.</p>
+    <p>The stickers should feel like they were <strong>printed on the side of a tank</strong> — stencilled, slightly distressed, declarative. Telegram is where players talk smack mid-match and post Ws after. These stickers are the ammo.</p>
+  </section>
+
+  <!-- COLOR -->
+  <section>
+    <div class="eyebrow">§ 02 — PALETTE</div>
+    <h2>Five colors. No more.</h2>
+    <p>Every sticker uses a maximum of <strong>3 colors from the core palette</strong> + the bone/ink for type and outlines. Resist the urge to introduce blues, greens, or pastels. The orange is sacred — it's the tracer round, the muzzle flash, the W.</p>
+
+    <div class="palette">
+      <div class="swatch dark" style="background:#ff7a1a"><div class="name">ACCENT</div><div class="hex">#FF7A1A</div></div>
+      <div class="swatch dark" style="background:#c44d12"><div class="name">ACCENT DEEP</div><div class="hex">#C44D12</div></div>
+      <div class="swatch dark" style="background:#ffb05a"><div class="name">ACCENT SOFT</div><div class="hex">#FFB05A</div></div>
+      <div class="swatch dark" style="background:#a83a1f"><div class="name">BLOOD</div><div class="hex">#A83A1F</div></div>
+      <div class="swatch dark" style="background:#5a1e0a"><div class="name">BLOOD DEEP</div><div class="hex">#5A1E0A</div></div>
+      <div class="swatch light" style="background:#fff8e8"><div class="name">BONE</div><div class="hex">#FFF8E8</div></div>
+      <div class="swatch light" style="background:#f4e7c8"><div class="name">BONE PALE</div><div class="hex">#F4E7C8</div></div>
+      <div class="swatch dark" style="background:#c4a65d"><div class="name">OLIVE</div><div class="hex">#C4A65D</div></div>
+      <div class="swatch dark" style="background:#0e1209"><div class="name">BG DEEP</div><div class="hex">#0E1209</div></div>
+      <div class="swatch dark" style="background:#06080a"><div class="name">INK</div><div class="hex">#06080A</div></div>
+    </div>
+
+    <div class="callout">
+      <b>BACKGROUNDS — IMPORTANT</b>
+      Telegram stickers must have <strong>transparent backgrounds</strong>. Use <code>#0E1209</code> ONLY when a sticker is "framed" (e.g. a propaganda poster with a deliberate dark border). For most stickers — characters, words, icons — render on full alpha transparency so they read on both Telegram light + dark themes.
+    </div>
+  </section>
+
+  <!-- TYPE -->
+  <section>
+    <div class="eyebrow">§ 03 — TYPOGRAPHY</div>
+    <h2>Two fonts. Both free. Both stencilled.</h2>
+
+    <div class="type-card">
+      <div class="name">DISPLAY · BLACK OPS ONE · GOOGLE FONTS</div>
+      <div class="sample-display">VICTORY · COWARD · GG EZ</div>
+      <div class="usage">Used for all sticker text headlines. Always uppercase. Always tight letter-spacing (0.02–0.05em). Add a 4–6px hard black drop-shadow offset down-right for the "stamped onto metal" feel — never a soft blur.</div>
+    </div>
+
+    <div class="type-card">
+      <div class="name">MONO · SHARE TECH MONO · GOOGLE FONTS</div>
+      <div class="sample-mono">CALLSIGN · M-#0A3F7 · 24:00:00</div>
+      <div class="usage">Used for small labels, codes, and HUD-style overlays. Wide letter-spacing (0.2–0.4em). Olive (<code>#C4A65D</code>) for secondary, accent for emphasis.</div>
+    </div>
+
+    <p><strong>Never use:</strong> Inter, Roboto, system fonts, anything rounded, anything italic, anything cursive. If you need a third weight, use <strong>outlined Black Ops One</strong> (transparent fill, 4px bone stroke) — that's the only acceptable variation.</p>
+  </section>
+
+  <!-- VOICE -->
+  <section>
+    <div class="eyebrow">§ 04 — VOICE</div>
+    <h2>How SolShot talks.</h2>
+    <p>Brutally short. Confidently rude. Military-flavoured but never cosplay. Imagine a drill sergeant who plays Worms.</p>
+
+    <div class="dodont">
+      <div class="do">
+        <div class="label">VOICE — DO</div>
+        <ul>
+          <li><strong>Imperative verbs.</strong> "ACCEPT.", "DECLINE.", "FIRE."</li>
+          <li><strong>Calling people out.</strong> "DECLINE = COWARD"</li>
+          <li><strong>Numbers as flexes.</strong> "742 DMG. AGAIN."</li>
+          <li><strong>Faux-military codes.</strong> "TARGET ACQUIRED", "ROUNDS DOWNRANGE"</li>
+          <li><strong>Punctuation as weapon.</strong> Periods. Always periods.</li>
+        </ul>
+      </div>
+      <div class="dont">
+        <div class="label">VOICE — DON'T</div>
+        <ul>
+          <li><strong>Crypto-bro slang.</strong> No "WAGMI", "GMI", "frens", "ser".</li>
+          <li><strong>Emoji.</strong> Stickers replace emoji; they shouldn't contain them.</li>
+          <li><strong>Hedging.</strong> No "maybe", "sort of", "I think".</li>
+          <li><strong>Genuine politeness.</strong> Sarcastic politeness is fine, even encouraged.</li>
+          <li><strong>Long sentences.</strong> If it's longer than 4 words, cut it.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- MASCOT -->
+  <section>
+    <div class="eyebrow">§ 05 — MASCOT — DESIGN BRIEF</div>
+    <h2>The Commander &amp; the Tank.</h2>
+    <p>SolShot doesn't have a fixed mascot yet — this pack is where you invent one. Two recurring characters, used together or separately:</p>
+
+    <div class="mascot-block">
+      <div>
+        <h4>▸ THE COMMANDER</h4>
+        <p>A grizzled, helmeted operator. <strong>Square jaw, scar, sunglasses or eyepatch, cigar optional.</strong> Anonymous on purpose — never see both eyes at once. Wears a faded olive jacket with a SolShot patch (the wordmark).</p>
+        <p><strong>Range of expression:</strong> stoic, smug, furious, dead-eyed boredom. Never smiling warmly. The <em>smirk</em> is the upper bound of joy.</p>
+        <p><strong>Style reference:</strong> Metal Gear box-art, Worms cartoony-but-mean, old Soviet recruitment posters.</p>
+      </div>
+      <div>
+        <h4>▸ THE TANK</h4>
+        <p>A small, stout artillery piece — <strong>more cartoon than realistic</strong>. Stubby barrel, oversized treads, single pivoting cyclops headlight. About the size of the Commander's torso when they're together.</p>
+        <p><strong>Personality:</strong> the tank is the reaction-comedy character — googly when surprised, shaky when scared, grinning when firing. The Commander is the straight man.</p>
+        <p><strong>Don't:</strong> draw it photoreal. Don't add wheels (it's tracked). Don't give it a face on the front of the hull — the headlight IS the face.</p>
+      </div>
+    </div>
+
+    <div class="callout">
+      <b>FIRST THING TO DO</b>
+      Before drawing any sticker, do <strong>one character sheet</strong> for the Commander (5 expressions: stoic / smug / angry / dead-inside / yelling) and <strong>one for the Tank</strong> (5 states: idle / firing / hit / sleeping / celebrating). Send those for approval. Everything else builds on them.
+    </div>
+  </section>
+
+  <!-- THE 30 STICKERS -->
+  <section>
+    <div class="eyebrow">§ 06 — THE PACK · 30 STICKERS</div>
+    <h2>The full matrix.</h2>
+    <p>30 stickers across 4 categories. <strong>6 are video</strong> (marked) — these go to the highest-impact moments. The rest are static. Order is loosely how a player will use them — utility/reaction stuff is highest-frequency, propaganda posters are lowest-frequency but highest-effort.</p>
+
+    <div class="cat-key">
+      <span><i style="border-color:#ff8862"></i>TRASH-TALK</span>
+      <span><i style="border-color:var(--accent-soft)"></i>W-FLEX</span>
+      <span><i style="border-color:var(--blood)"></i>PROPAGANDA</span>
+      <span><i style="border-color:var(--olive)"></i>UTILITY</span>
+    </div>
+
+    <!-- ROW 1 — UTILITY (high-frequency) -->
+    <div class="sticker-grid">
+      <div class="sticker cat-util"><div class="num">01</div><div class="visual" style="font-size:88px;color:var(--accent)">GG</div><div class="name">GG</div><div class="desc">Black Ops One, accent fill, hard shadow.</div></div>
+      <div class="sticker cat-util"><div class="num">02</div><div class="visual" style="font-size:64px;color:var(--bone)">GG<br><span style="color:var(--accent);font-size:48px">EZ</span></div><div class="name">GG EZ</div><div class="desc">Two-line stack. EZ is smaller, accent.</div></div>
+      <div class="sticker cat-util"><div class="num">03</div><div class="visual" style="font-size:60px">GLHF</div><div class="name">GLHF</div><div class="desc">Pre-match, sportsmanlike, ironic.</div></div>
+      <div class="sticker cat-util"><div class="num">04</div><div class="visual" style="font-size:62px;color:var(--accent)">AFK</div><div class="name">AFK</div><div class="desc">Tank with closed Z-eye, optional snore.</div></div>
+      <div class="sticker cat-util"><div class="num">05</div><div class="visual" style="font-size:54px">RE-<br>MATCH?</div><div class="name">REMATCH?</div><div class="desc">The "?" is bigger than the rest.</div></div>
+    </div>
+
+    <!-- ROW 2 — W-FLEX -->
+    <div class="sticker-grid">
+      <div class="sticker cat-flex video"><div class="num">06</div><div class="visual" style="font-size:170px;color:var(--accent-soft);text-shadow:0 0 30px rgba(255,122,26,0.5)">W</div><div class="name">BIG W (VIDEO)</div><div class="desc">W slams in from above, scanlines flicker, glow pulses.</div></div>
+      <div class="sticker cat-flex"><div class="num">07</div><div class="visual" style="font-size:90px">L<span style="color:var(--blood)">+</span></div><div class="name">L+RATIO</div><div class="desc">"L" plus a tiny RATIO underneath.</div></div>
+      <div class="sticker cat-flex"><div class="num">08</div><div class="visual" style="font-size:42px;line-height:1.05">VICT-<br>ORY<br><span style="color:var(--accent);font-size:14px;font-family:var(--font-mono);letter-spacing:0.3em">CONFIRMED</span></div><div class="name">VICTORY</div><div class="desc">Stencil + sub-label. Like a war ribbon.</div></div>
+      <div class="sticker cat-flex"><div class="num">09</div><div class="visual">🏆<span style="font-size:36px;display:block;margin-top:6px;color:var(--accent-soft)">TROPHY</span></div><div class="name">TROPHY</div><div class="desc">Custom drawn trophy, NOT emoji. Tank holding it overhead.</div></div>
+      <div class="sticker cat-flex video"><div class="num">10</div><div class="visual" style="font-size:38px;line-height:1.05">2-0<br><span style="color:var(--accent-soft);font-size:18px;font-family:var(--font-mono);letter-spacing:0.2em;display:block;margin-top:8px">SWEEP</span></div><div class="name">SWEEP (VIDEO)</div><div class="desc">Score flips 1-0 → 2-0, "SWEEP" stamps in.</div></div>
+    </div>
+
+    <!-- ROW 3 — TRASH TALK -->
+    <div class="sticker-grid">
+      <div class="sticker cat-trash"><div class="num">11</div><div class="visual" style="font-size:46px;color:#ff8862;line-height:1">COW-<br>ARD</div><div class="name">COWARD</div><div class="desc">Stamped diagonally. Splatter optional.</div></div>
+      <div class="sticker cat-trash"><div class="num">12</div><div class="visual" style="font-size:48px;line-height:1">DECLINE<br><span style="color:var(--accent);font-size:30px">= COWARD</span></div><div class="name">DECLINE = COWARD</div><div class="desc">Two lines. Equals sign reads as a stamp.</div></div>
+      <div class="sticker cat-trash"><div class="num">13</div><div class="visual" style="font-size:60px;line-height:0.9">SKILL<br><span style="color:var(--accent);font-size:32px">ISSUE</span></div><div class="name">SKILL ISSUE</div><div class="desc">"ISSUE" smaller, in accent.</div></div>
+      <div class="sticker cat-trash"><div class="num">14</div><div class="visual" style="font-size:42px;line-height:1">BO3<br><span style="color:var(--accent);font-size:34px">OR DIE</span></div><div class="name">BO3 OR DIE</div><div class="desc">Two-line stack.</div></div>
+      <div class="sticker cat-trash"><div class="num">15</div><div class="visual" style="font-size:46px;line-height:1">SEND IT<br><span style="font-size:26px;color:var(--olive);font-family:var(--font-mono);letter-spacing:0.2em">OR DON'T.</span></div><div class="name">SEND IT</div><div class="desc">Top loud, bottom dry.</div></div>
+    </div>
+
+    <!-- ROW 4 — TRASH TALK + REACTIONS -->
+    <div class="sticker-grid">
+      <div class="sticker cat-trash"><div class="num">16</div><div class="visual" style="font-size:52px">HIT.</div><div class="name">HIT.</div><div class="desc">Big H I T period. Scanline overlay.</div></div>
+      <div class="sticker cat-trash"><div class="num">17</div><div class="visual" style="font-size:48px;color:var(--blood);line-height:1">MISSED<br><span style="color:var(--bone);font-size:30px">AGAIN?</span></div><div class="name">MISSED AGAIN?</div><div class="desc">Tank cocking head, single eye squinted.</div></div>
+      <div class="sticker cat-trash video"><div class="num">18</div><div class="visual" style="font-size:42px;line-height:0.95">RNG<br>MOMENT</div><div class="name">RNG MOMENT (V)</div><div class="desc">Dice tumble, lands on 1, tank face-palms.</div></div>
+      <div class="sticker cat-trash"><div class="num">19</div><div class="visual" style="font-size:36px;line-height:1">PAY<br>UP.</div><div class="name">PAY UP</div><div class="desc">Commander palm out, behind: SOL coin.</div></div>
+      <div class="sticker cat-trash"><div class="num">20</div><div class="visual" style="font-size:28px;line-height:1.1">TOUCH<br><span style="color:var(--accent);font-size:42px">GRASS</span></div><div class="name">TOUCH GRASS</div><div class="desc">Tank with a single blade of grass on barrel.</div></div>
+    </div>
+
+    <!-- ROW 5 — PROPAGANDA -->
+    <div class="sticker-grid">
+      <div class="sticker cat-prop"><div class="num">21</div><div class="visual" style="font-size:24px;line-height:1">YOUR<br>CALLSIGN<br><span style="color:var(--accent);font-size:30px">NEEDS YOU</span></div><div class="name">NEEDS YOU</div><div class="desc">Commander pointing at viewer, Uncle-Sam pose.</div></div>
+      <div class="sticker cat-prop"><div class="num">22</div><div class="visual" style="font-size:24px;line-height:1.05">JOIN THE<br><span style="color:var(--accent);font-size:30px">FRONT LINE</span></div><div class="name">FRONT LINE</div><div class="desc">Recruitment poster: tank silhouette, sun behind.</div></div>
+      <div class="sticker cat-prop"><div class="num">23</div><div class="visual" style="font-size:24px;line-height:1.05">LOOSE<br>LIPS<br><span style="color:var(--accent);font-size:24px">LOSE SOL</span></div><div class="name">LOOSE LIPS</div><div class="desc">WW2 PSA pastiche. Commander, finger to lips.</div></div>
+      <div class="sticker cat-prop"><div class="num">24</div><div class="visual" style="font-size:24px;line-height:1.05">CALLSIGN<br><span style="color:var(--accent);font-size:28px">UNKNOWN</span></div><div class="name">CALLSIGN UNKNOWN</div><div class="desc">Silhouetted figure, ? where face is. Mystery flex.</div></div>
+      <div class="sticker cat-prop"><div class="num">25</div><div class="visual" style="font-size:22px;line-height:1.1">FOR THE<br>HONOR<br><span style="color:var(--accent);font-size:22px">OF THE PACK</span></div><div class="name">FOR THE PACK</div><div class="desc">Tank battalion lineup, marching.</div></div>
+    </div>
+
+    <!-- ROW 6 — VIDEO + UTILITY MIX -->
+    <div class="sticker-grid">
+      <div class="sticker cat-util video"><div class="num">26</div><div class="visual" style="font-size:36px;line-height:1">LOAD-<br>ING<br><span style="font-size:18px;color:var(--accent);font-family:var(--font-mono);letter-spacing:0.3em">▮▮▮▯▯</span></div><div class="name">LOADING (VIDEO)</div><div class="desc">Bar fills 0→100% over 2s, loops.</div></div>
+      <div class="sticker cat-util"><div class="num">27</div><div class="visual" style="font-size:56px;line-height:1">TYP-<br>ING<span style="color:var(--accent)">...</span></div><div class="name">TYPING...</div><div class="desc">Three dots are accent. Sub-version: dots animate (video).</div></div>
+      <div class="sticker cat-util video"><div class="num">28</div><div class="visual" style="font-size:36px;line-height:1">FIRE!<br><span style="color:var(--accent);font-size:18px;font-family:var(--font-mono);letter-spacing:0.3em">━━━━▶</span></div><div class="name">FIRE (VIDEO)</div><div class="desc">Tank fires, tracer arcs across, screen shakes.</div></div>
+      <div class="sticker cat-flex video"><div class="num">29</div><div class="visual" style="font-size:30px;line-height:1">CHALL-<br>ENGE<br><span style="color:var(--accent);font-size:30px">ACCEPTED</span></div><div class="name">ACCEPTED (V)</div><div class="desc">"PENDING..." crosses out, "ACCEPTED" stamps in.</div></div>
+      <div class="sticker cat-prop"><div class="num">30</div><div class="visual" style="font-size:30px;line-height:1">SOL<span style="color:var(--accent)">SHOT</span><br><span style="font-size:14px;color:var(--olive);font-family:var(--font-mono);letter-spacing:0.3em;display:block;margin-top:8px">SINCE 2025</span></div><div class="name">PACK COVER</div><div class="desc">The pack's hero/cover sticker. Wordmark + tank silhouette.</div></div>
+    </div>
+
+    <p style="margin-top:24px;font-size:13.5px;color:rgba(255,248,232,0.7)">The previews above are <strong>thumbnails of intent, not final art</strong>. Pace yourself — sticker 30 is the cover (Telegram lets you pick one to represent the pack). Build characters first (§05), then utility (01-05), then the rest.</p>
+  </section>
+
+  <!-- TECHNICAL SPECS -->
+  <section>
+    <div class="eyebrow">§ 07 — TECHNICAL SPECS</div>
+    <h2>Telegram requirements — these are hard limits.</h2>
+
+    <h3>STATIC STICKERS · 24 of 30</h3>
+    <table class="spec-table">
+      <thead><tr><th>Spec</th><th>Requirement</th></tr></thead>
+      <tbody>
+        <tr><td>Format</td><td><code>.webp</code> (preferred) or <code>.png</code></td></tr>
+        <tr><td>Dimensions</td><td>Exactly <strong>512 × 512 px</strong>. At least one side <em>must</em> be 512.</td></tr>
+        <tr><td>File size</td><td>≤ <strong>512 KB</strong> per sticker</td></tr>
+        <tr><td>Background</td><td>Transparent (alpha channel). No white box.</td></tr>
+        <tr><td>Color</td><td>sRGB</td></tr>
+        <tr><td>Outline</td><td>Add a <strong>2–3 px white/bone outline</strong> around major shapes — Telegram is used on dark AND light themes; outlines guarantee visibility.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>VIDEO STICKERS · 6 of 30</h3>
+    <table class="spec-table">
+      <thead><tr><th>Spec</th><th>Requirement</th></tr></thead>
+      <tbody>
+        <tr><td>Format</td><td><code>.webm</code>, codec <strong>VP9</strong></td></tr>
+        <tr><td>Dimensions</td><td>Exactly <strong>512 × 512 px</strong>. One side must be 512.</td></tr>
+        <tr><td>Duration</td><td>≤ <strong>3 seconds</strong>, must loop seamlessly</td></tr>
+        <tr><td>Frame rate</td><td>Up to <strong>30 fps</strong></td></tr>
+        <tr><td>File size</td><td>≤ <strong>256 KB</strong> per sticker</td></tr>
+        <tr><td>Audio</td><td>None. Strip audio track entirely.</td></tr>
+        <tr><td>Background</td><td>Transparent (alpha channel — VP9 supports alpha)</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout">
+      <b>EXPORT FROM AFTER EFFECTS / BLENDER</b>
+      Render to PNG sequence with alpha → encode WEBM-VP9 with <code>ffmpeg -i frame_%04d.png -c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf 30 -auto-alt-ref 0 -an out.webm</code>. The <code>yuva420p</code> + <code>-auto-alt-ref 0</code> flags are required for transparent VP9.
+    </div>
+
+    <h3>SUBMISSION TO TELEGRAM</h3>
+    <p>Stickers are uploaded via the official <strong>@Stickers</strong> bot in Telegram. Owner uses <code>/newpack</code> for static or <code>/newvideo</code> for video, sends each file with a single emoji that represents the sticker, names the pack <code>SolShot</code>, and gets a <code>t.me/addstickers/SolShot</code> link.</p>
+  </section>
+
+  <!-- WORKFLOW -->
+  <section>
+    <div class="eyebrow">§ 08 — WORKFLOW</div>
+    <h2>How to actually deliver this.</h2>
+    <ol>
+      <li><strong>Day 1 — Character sheets.</strong> Commander (5 expressions) + Tank (5 states). Send PNGs for approval before any final art.</li>
+      <li><strong>Day 2-3 — Utility stickers (01–05).</strong> These are highest-frequency in chat; nail them first.</li>
+      <li><strong>Day 4-7 — Trash-talk + W-flex (06–20).</strong> Type-driven, builds on the character work.</li>
+      <li><strong>Day 8-10 — Propaganda posters (21–25).</strong> Most illustration-heavy. Save for when the style is locked.</li>
+      <li><strong>Day 11-13 — Video stickers (06, 10, 18, 26, 28, 29).</strong> Animate the static versions you've already approved. Don't re-design.</li>
+      <li><strong>Day 14 — Cover (30) + final QA.</strong> Test every sticker on Telegram light theme AND dark theme on phone.</li>
+    </ol>
+  </section>
+
+  <!-- DELIVERABLES -->
+  <section>
+    <div class="eyebrow">§ 09 — WHAT TO DELIVER</div>
+    <h2>The handoff folder.</h2>
+    <ul>
+      <li><code>/static/</code> — 24× <code>.webp</code> files at 512×512, named <code>01_GG.webp</code> … <code>30_pack-cover.webp</code></li>
+      <li><code>/video/</code> — 6× <code>.webm</code> files at 512×512, same naming</li>
+      <li><code>/source/</code> — editable source files (PSD / AI / Figma / AE) so we can revise without re-drawing</li>
+      <li><code>/characters/</code> — character sheets for Commander + Tank, used for future expansions</li>
+      <li><code>emoji-mapping.txt</code> — the suggested emoji for each sticker (Telegram requires one per sticker on upload)</li>
+    </ul>
+  </section>
+
+  <footer>
+    <div>SOL<span style="color:var(--accent)">SHOT</span> · TELEGRAM PACK V1</div>
+    <div>QUESTIONS → SHIP THEM AT THE OWNER, NOT THE GUIDE</div>
+  </footer>
+
+</div>
+</body>
+</html>

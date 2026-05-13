@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SolShot — Field Manual</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Share+Tech+Mono&family=Days+One&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles/tokens.css">
+<style>
+  input[type=range] { -webkit-appearance: none; background: transparent; height: 18px; }
+  input[type=range]::-webkit-slider-runnable-track { height: 4px; background: var(--bg-deep); border: 1px solid var(--border); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 18px; background: var(--accent); border: 1px solid var(--accent-hot); margin-top: -8px; cursor: pointer; }
+  input[type=range]::-moz-range-track { height: 4px; background: var(--bg-deep); border: 1px solid var(--border); }
+  input[type=range]::-moz-range-thumb { width: 14px; height: 18px; background: var(--accent); border: 1px solid var(--accent-hot); cursor: pointer; border-radius: 0; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+/*EDITMODE-BEGIN*/
+window.__TWEAK_DEFAULTS = {
+  "theme": "crt",
+  "startingRoute": "menu"
+};
+/*EDITMODE-END*/
+</script>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="src/shared.jsx"></script>
+<script type="text/babel" src="src/MainMenu.jsx"></script>
+<script type="text/babel" src="src/Deploy.jsx"></script>
+<script type="text/babel" src="src/ChallengeFlow.jsx"></script>
+<script type="text/babel" src="src/PostMatch.jsx"></script>
+<script type="text/babel" src="src/InGameHUD.jsx"></script>
+<script type="text/babel" src="src/Barracks.jsx"></script>
+<script type="text/babel" src="src/WeaponShop.jsx"></script>
+<script type="text/babel" src="src/Armory.jsx"></script>
+<script type="text/babel" src="src/Loadout.jsx"></script>
+<script type="text/babel" src="src/Prestige.jsx"></script>
+
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+function App() {
+  const d = window.__TWEAK_DEFAULTS || { theme: "field", startingRoute: "menu" };
+  const [theme, setTheme] = useState(() => localStorage.getItem("solshot.theme") || d.theme);
+  const [route, setRoute] = useState(() => localStorage.getItem("solshot.route") || d.startingRoute);
+  const [editMode, setEditMode] = useState(false);
+
+  useEffect(() => { document.documentElement.setAttribute("data-theme", theme); localStorage.setItem("solshot.theme", theme); }, [theme]);
+  useEffect(() => { localStorage.setItem("solshot.route", route); }, [route]);
+
+  // Tweaks host integration
+  useEffect(() => {
+    const handler = (e) => {
+      if (!e.data || !e.data.type) return;
+      if (e.data.type === "__activate_edit_mode") setEditMode(true);
+      if (e.data.type === "__deactivate_edit_mode") setEditMode(false);
+    };
+    window.addEventListener("message", handler);
+    window.parent.postMessage({ type: "__edit_mode_available" }, "*");
+    return () => window.removeEventListener("message", handler);
+  }, []);
+
+  const persistTheme = (t) => {
+    setTheme(t);
+    window.parent.postMessage({ type: "__edit_mode_set_keys", edits: { theme: t } }, "*");
+  };
+
+  const screens = {
+    menu: MainMenu, deploy: Deploy, challenge: ChallengeFlow, match: InGameHUD, report: PostMatch, barracks: Barracks, shop: WeaponShop, armory: Armory, loadout: Loadout, prestige: Prestige,
+  };
+  const Screen = screens[route] || MainMenu;
+
+  return (
+    <div data-screen-label={`00 ${route.toUpperCase()}`}>
+      <Overlays />
+      <TopChrome theme={theme} setTheme={persistTheme} onNav={setRoute} route={route} />
+      <Screen onNav={setRoute} theme={theme} />
+      {editMode && (
+        <div style={{
+          position: "fixed", right: 18, bottom: 18, zIndex: 200,
+          background: "var(--bg-surface)", border: "1px solid var(--border-hot)",
+          clipPath: "var(--clip-10)", padding: 16, minWidth: 260,
+          fontFamily: "var(--f-mono)", fontSize: 11, letterSpacing: "0.15em", color: "var(--bone)",
+        }}>
+          <div className="stencil" style={{ fontSize: 14, marginBottom: 10, color: "var(--accent)" }}>◣ TWEAKS</div>
+          <div className="label" style={{ marginBottom: 6 }}>VISUAL DIRECTION</div>
+          {[
+            { id: "field",  label: "FIELD MANUAL — worn olive stencil" },
+            { id: "crt",    label: "CRT TERMINAL — phosphor scan-heavy" },
+            { id: "poster", label: "STENCIL POSTER — bone propaganda" },
+          ].map(t => (
+            <button key={t.id} onClick={() => persistTheme(t.id)}
+              style={{
+                display: "block", width: "100%", textAlign: "left",
+                padding: "8px 10px", marginBottom: 4,
+                background: theme === t.id ? "var(--accent)" : "var(--bg-raised)",
+                color: theme === t.id ? "#0e1209" : "var(--bone)",
+                border: "1px solid var(--border)",
+                fontFamily: "var(--f-mono)", fontSize: 10, letterSpacing: "0.15em",
+                cursor: "pointer",
+              }}>
+              {t.label}
+            </button>
+          ))}
+          <div className="label" style={{ marginTop: 12, marginBottom: 6 }}>JUMP TO SCREEN</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
+            {["menu","deploy","shop","match","report","barracks","armory","loadout"].map(r => (
+              <button key={r} onClick={() => setRoute(r)}
+                style={{
+                  padding: "6px 8px",
+                  background: route === r ? "var(--border-hot)" : "var(--bg-raised)",
+                  color: "var(--bone)", border: "1px solid var(--border)",
+                  fontFamily: "var(--f-mono)", fontSize: 10, letterSpacing: "0.15em",
+                  cursor: "pointer",
+                }}>
+                {r.toUpperCase()}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

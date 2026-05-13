@@ -128,10 +128,42 @@ results; they do not compute physics or verify game state.
 | `client/src/App.js` | Top-level router; disconnect/reconnect overlay; 10-minute reconnect window |
 | `client/config-overrides.js` | CRA webpack overrides (Solana polyfills) |
 
-**Tech:** React 18, Phaser 3.55 (canvas mode, 16:9 native / 1422×800), Privy embedded wallets,
-`@solana/spl-token` for burn IX, Create React App.
+**Tech:** React 18, Phaser 3.55 (canvas mode, 22:9 native / 1956×800 — see ADR_VARIABLE_VIEWPORT.md),
+Privy embedded wallets, `@solana/spl-token` for burn IX, Create React App.
 
 **Hosting:** Vercel (autoDeploy from `main`).
+
+#### HUD layout discipline (variable viewport)
+
+After the 2026-05-12 variable-viewport refactor the Phaser canvas is 1956×800 (22:9) and Phaser
+scales it with `ENVELOP` — the canvas fills the viewport and is cropped on whichever axis exceeds.
+Different phones therefore see different slices of the canvas, but the React HUD anchors to the
+**viewport**, not the canvas, so every player sees the same HUD layout regardless of device aspect
+ratio. Tanks always spawn inside the central `SAFE_BAND` (1422 px wide, offset 267 from the left
+edge) so they remain visible on the narrowest supported aspect.
+
+This makes HUD collisions easy to miss in dev. The canvas in a laptop browser is letterboxed top
+and bottom; on iPhone landscape it fills edge-to-edge and the HUD sits directly over playable
+ground. Edge sliders span ~30% of viewport height, and the chip row at the top spans the full
+width. After any HUD layout change, run this visual-sanity pass before merging:
+
+1. **Top row** — FORFEIT button (top-left), match status / WIND chip (top-centre), score / round
+   (top-right). No overlaps. No element extends below ~50px from the top.
+2. **Edge sliders** — ANG (left), PWR (right). Value boxes sit at the midpoint vertically
+   (`top: 50%`). Check the value box does not extend up into the WIND chip or down into the
+   weapon strip / A-D row.
+3. **Bottom row** — A/D move cluster + weapon strip at bottom-left, FIRE at bottom-right, gold +
+   round timer where present. No overlaps; nothing within thumb-reach of the screen-rotation
+   gesture zone on iOS.
+4. **FFA / group-chat strip** — when present (group matches), occupies top-left under the FORFEIT
+   button. FORFEIT must shift right by `108px` to clear the strip.
+5. **Both edges** — visually scan for any element that touches the viewport edge without padding.
+
+This list exists because the edge-slider re-centring on 2026-05-13 (commit `88dde7b`) was a fix
+for a collision introduced by an earlier Bug B workaround that placed the slider value box at
+`top: 38%`. That overlap was only visible on a real iPhone with the WIND chip rendered — neither
+desktop dev nor the Chrome iOS simulator surfaced it. The 30-second visual scan above catches
+this class of regression at zero cost.
 
 ---
 

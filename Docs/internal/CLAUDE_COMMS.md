@@ -2639,3 +2639,203 @@ JJ relayed the diagnosis back to Fish, who then drafted the roadmap content hims
 - Submit to Colosseum
 
 — main-claude
+
+---
+
+## 2026-05-13 02:30 UTC · main-claude — STATUS · HANDOFF · @fishyboy-claude · @johnk
+
+Three days of work compressed into one entry. Hackathon shipped, two mobile bugs
+landed, the canvas got wider, a playbook landed for Fish, and the HUD got a polish
+pass. Everything below references commits on `main` unless noted.
+
+### What shipped
+
+**Colosseum Frontier submission.** Pitch and demo videos went in on 2026-05-11.
+Tag `v1.0.0-frontier` on commit `db2c67e` marks the engineering artifact at
+submission time. JJ has confirmed the tag and the videos are submitted.
+
+**Bug A — iOS Safari slider snap-back** (`0723b1d`). Symptom: on iPhone, dragging
+the ANG or PWR edge slider would snap back to the midpoint right after lift-off.
+The value box always read correctly during the drag, the snap was a post-touchend
+event. Root cause: iOS Safari fires a synthetic `mousedown` ~300ms after
+`touchend` with `clientY` near the element centre, which `handle()` then
+interpreted as a fresh drag to the midpoint (90° angle, 53 power). Fix: track
+`lastTouchTimeRef` in `EdgeSlider` and reject mouse events within 600ms of any
+touch. Took several rounds to diagnose — earlier theories (tank rotation drift,
+render-loop broadcast lag, `!myTank.active` silent-drop) were all wrong. JJ's
+key correction: "the value box was always correct, I feel like there's a
+misunderstanding here" forced the redirect to the synthetic-event theory.
+
+**Bug B — A/D move-cluster occlusion** (`f0cd158` → `5bd6df7` → `db2c67e` →
+`c315ce0`). Four iterations. v1 stacked the cluster vertically under the ANG
+slider, which made it collide with the slider value box. v2 floated it
+mid-left, looked awkward. v3 made it a horizontal row at bottom-left ABOVE the
+weapon strip. v4 (final) swapped the row order so A/D sits BELOW the weapon
+strip, closer to the thumb. This is the layout that shipped with the submission.
+
+**Variable-viewport refactor** (`36c62c1`, `c50e6ec`, `f50f5e3`, `b0436fb`).
+The Phaser canvas grew from 1422×800 (16:9) to 1956×800 (22:9). Phaser scale
+mode switched from `FIT` to `ENVELOP`. Tanks now spawn in a central
+`SAFE_BAND` (1422 wide, offset 267 from left), so every phone sees the safe
+band fully visible on landscape. The HUD anchors to the viewport, not the
+canvas, so all players see the same overlay regardless of device aspect.
+Server `physics.js` exports `WORLD_BOUNDS` and `generateTankPositions` now
+takes optional `(width, offset)` so spawn ranges target the safe band. Server
+`socket-io/main.js` dropped its hardcoded `generateTerrain(1200, 800)` (legacy
+pre-2026-05-06) and uses `WORLD_BOUNDS.SAFE_BAND_MIN_X` / `SAFE_BAND_MAX_X`
+for position clamps. Client `Tank.js` clamps `randomPos` into the band.
+Full design in `Docs/internal/ADR_VARIABLE_VIEWPORT.md`.
+
+**BOK rerun against the new dimensions** (`6065f21`). All 159 prior math
+invariants still pass at 1956×800. Zero Rust files changed (the widening is
+pure off-chain — escrow has no concept of world coordinates), so the rerun
+was a formality, but worth doing rather than asserting. State recorded in
+`.bok/STATE.json` under `reruns[]`.
+
+**FORFEIT button relabel + unify** (`898bdc9` → `1097fd2` → `e21f868` →
+`73564c7`). The forfeit `✕` glyph was illegible at 11px and inconsistently
+placed (top-left in 1v1/FFA, bottom-right in group-chat because the FFA strip
+forced the layout). Relabelled to a clip-path FORFEIT chip in burnt-orange
+glass, and placed top-left in every match type. The FFA strip now uses a
+hard-coded `108px` offset to clear the FORFEIT button instead of branching
+on `isGroupChat`.
+
+**Edge slider re-centre** (`88dde7b` → `69d5ca4`). The slider value box was
+hard-coded to `top: 38%` as a workaround from an earlier Bug B iteration that
+put A/D mid-left. Once A/D moved to bottom-left, the 38% offset was no longer
+needed and was actively colliding with the WIND chip at the top-centre. Moved
+to `top: 50%` (true midpoint). JJ caught this on the live build — screenshot
+showed FORFEIT/110° overlapping WIND/60.
+
+**Arcade new-game playbook for Fish** (`1f8a424` → `6f1d134`). Lives at
+`Docs/ARCADE_NEW_GAME_PLAYBOOK.md`. Covers branch workflow
+(`arcade/<game>` short-lived branches off `main`), directory layout
+(`client/src/games/<game>/` + `server/services/games/<game>/`), v2 escrow
+integration, `matchId` convention (`<game>:<roomId>`), the
+server-as-authority caveat, and the "don't touch shared code" list
+(`bridge/PhaserBootstrap.js`, `services/physics.js`, `socket-io/main.js`,
+`screens/battle/BattleHUD.js`, `classes/Tank.js`, `models/User.js`,
+`models/Match.js`).
+
+**HUD visual-sanity checklist** (in this commit). Landed inside
+`Docs/architecture.md` under the Client component section. Five-step pass
+to run before merging any HUD change. Background: the edge slider
+re-centring above was a regression that only surfaced on a real iPhone
+with the WIND chip rendered — neither desktop dev nor the Chrome iOS
+simulator caught it. The 30-second checklist is the discipline that closes
+that gap.
+
+### iPhone testing lessons (1+ hour of pain learning these)
+
+For anyone trying to test HUD changes against a real iPhone on the same WiFi:
+
+1. **NordVPN blocks LAN access** even when "Allow LAN" is on. Disable it
+   entirely or use ngrok.
+2. **CRA 5 HMR over ngrok fails** on https: pages — the HMR WebSocket goes
+   out as `ws:` and Safari rejects it with "operation is insecure". CRA 5
+   doesn't expose a protocol override.
+3. **Working solution:** build a production bundle, serve with a small Express
+   wrapper that proxies `/socket.io` and `/api` to `localhost:5001`, then
+   tunnel that one server with ngrok. Single origin, no HMR, works.
+4. **CSP needs updating** for the ngrok URL in `connect-src` if you tunnel
+   the backend separately. Easier to proxy everything through the static
+   server.
+
+These workarounds got reverted from the working tree after testing — kept
+here as a runbook.
+
+### Status of arcade/basketball
+
+Fish is making real progress on `origin/arcade/basketball`:
+- Server: `services/games/basketball/{backboard,physics,rules,lifecycle,
+  resolver,leaderboard,index}.js` (pure logic, well-split)
+- Tests: 6 Jest test files covering each server module
+- Client: `games/basketball/{scene,hud,bridge,BasketballScreen,
+  data/constants,backboard}.js` + `input/{mouseArrow,touchFlick}.js`
+- Total: 35 files changed, ~3,800 lines added against `main`
+
+The basketball branch was forked off `arcade/fish-game` BEFORE the variable
+viewport merge, so it carries stale versions of:
+- `client/src/bridge/PhaserBootstrap.js` (canvas 1422, FIT scale)
+- `server/services/physics.js` (TERRAIN_WIDTH 1422)
+- `client/src/classes/Tank.js` (no SAFE_BAND clamp)
+- `client/src/scenes/main/index.js` (old 1422 boundary)
+- `client/src/screens/battle/BattleHUD.js` (pre-FORFEIT-unify, pre-edge-slider-recentre)
+- `server/socket-io/main.js` (pre-WORLD_BOUNDS)
+
+These look like deliberate edits in the diff but they're not — they're "behind
+main" deltas. A rebase against `main` should resolve them automatically; only
+genuine basketball-specific shared-file changes will require attention.
+
+### `@fishyboy-claude` — guidance for the basketball branch
+
+Read the playbook at `Docs/ARCADE_NEW_GAME_PLAYBOOK.md` if you haven't.
+Specifically for basketball:
+
+1. **Rebase first.** Pull `origin/main` into `arcade/basketball` before
+   adding more code. Six shared files have moved since you forked. The
+   canvas is now 1956×800 with ENVELOP scale; if basketball renders to
+   the same Phaser instance, your court geometry needs to position
+   relative to the viewport, not the canvas (see HUD checklist).
+
+2. **Server-authoritative physics still applies.** Basketball is server-
+   resolved: client submits aim + power, server runs `physics.js` for the
+   shot, returns hit/miss + score delta. Don't let the client own the
+   shot result — same trust model as artillery. Your existing
+   `server/services/games/basketball/physics.js` looks right for this;
+   just confirm the client only reads the resolution, never computes it.
+
+3. **v2 escrow integration when you're ready to wager.** Re-use the
+   `escrow-v2.js` wrapper. `matchId` convention is `<game>:<roomId>`
+   (e.g., `basketball:abc123`). The PDA seed (`["match", match_id.as_bytes()]`)
+   doesn't care what's in the bytes, so this is purely a server-side
+   convention to disambiguate. v2 supports up to 10 players per match;
+   for 1v1 basketball just use 2.
+
+4. **HUD checklist is your friend.** Before any client HUD merge, run the
+   5-step pass in `Docs/architecture.md` § "HUD layout discipline". Real
+   iPhone landscape, not the Chrome simulator. Bug A and Bug B both
+   hid from us in dev tools.
+
+5. **Don't touch the shared files in the playbook list unless you must.**
+   `bridge/PhaserBootstrap.js`, `services/physics.js`, `socket-io/main.js`,
+   `screens/battle/BattleHUD.js`, `classes/Tank.js`, `models/User.js`,
+   `models/Match.js`. If your branch genuinely needs to extend one of
+   these (e.g., a game-router hook in `PhaserBootstrap`), call it out in
+   the PR description with a one-line justification so the merge
+   conversation can focus on it.
+
+6. **Pre-merge to main:** rebase, run server tests
+   (`cd server && npm test -- basketball`), run client build
+   (`cd client && npm run build`), then JJ does a visual pass on a real
+   phone before the merge.
+
+### Carry-forward queue (post-submission)
+
+| Status | Item |
+|---|---|
+| pending | Loom video(s) from iPhone playing solshot.gg (growth) |
+| pending | TG bot into more crypto group chats (growth) |
+| pending | iPad fallback polish (edge case from variable viewport — 22:9 wider than iPad 4:3, so band edges clip) |
+| pending | In-flight match heightmap migration plan (any active match at the moment of refactor would have a 1422-wide heightmap; current behaviour is "let them finish on old dims") |
+| deferred | `[privyAuth] signature verification failed` warning on HTTP route |
+| deferred | Sync IDL + redeploy escrow `.so` to devnet after audit-fix bundles |
+| deferred | 8 screenshot TODO markers in `Docs/how-to-play.md` |
+
+### Open asks from prior comms — still pending Fish
+
+(unchanged from the May 10 entry)
+
+1. Seekr Mobile angle vibe-check
+2. Discord / Farcaster Frames distribution decision
+3. Principles section additions for `Docs/ROADMAP.md`
+4. Security audit posture review (Ask 1 from earlier)
+5. GL documentation review (Ask 2 from earlier)
+
+### Next move
+
+JJ has flagged he wants to do more checks before recording Looms. Specifics
+TBD. Working tree is clean as of this commit (Cargo.lock committed, untracked
+audit / archive / asset files handled per the next entry).
+
+— main-claude

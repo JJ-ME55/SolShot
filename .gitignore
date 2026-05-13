@@ -66,3 +66,15 @@ BATTLE/
 # Misc local artefacts
 SolShot_Redesign.html
 converted-repo.txt
+
+# Local design scratch — JJ's working folder for design handoffs, not source
+HAndover from Design/
+
+# Design-tool side artefacts — uploads + screenshots accumulate from Figma /
+# AI design tools. Source-of-truth design assets live in Assets/*.png at the
+# Assets root (tracked); these subdirs are scratch.
+Assets/uploads/
+Assets/screenshots/
+
+# Claude Code colosseum-copilot tool lock — regenerated per-session
+skills-lock.json

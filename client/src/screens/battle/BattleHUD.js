@@ -808,12 +808,13 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
         userSelect: 'none',
         WebkitTapHighlightColor: 'transparent',
       }}>
-        {/* TOP-LEFT: forfeit ✕ */}
-        {!isGroupChat && (
-          <div style={{ position: 'absolute', top: topInset, left: sideInsetL, zIndex: 13 }}>
-            <ForfeitButton onForfeit={onForfeit} />
-          </div>
-        )}
+        {/* TOP-LEFT: FORFEIT button. Unconditional across every match type
+            so the affordance lives in the same place whether you're in
+            1v1, FFA, or group-chat. Player pill / FFA strip are offset
+            108 px to make room. */}
+        <div style={{ position: 'absolute', top: topInset, left: sideInsetL, zIndex: 13 }}>
+          <ForfeitButton onForfeit={onForfeit} />
+        </div>
 
         {/* TOP-LEFT/RIGHT player pills (1v1) OR FFA strip across the top */}
         {is1v1 ? (
@@ -825,7 +826,7 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
               // including padding) in 1v1 / FFA non-group-chat layouts.
               // In group-chat the forfeit lives bottom-right instead so
               // the player pill stays flush with the edge.
-              left: `calc(${sideInsetL} + ${isGroupChat ? '0px' : '108px'})`,
+              left: `calc(${sideInsetL} + 108px)`,
               zIndex: 12,
             }}>
               {myPlayer && <CornerHPPill player={myPlayer} isMe side="left" />}
@@ -841,7 +842,7 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
             top: topInset,
             // Same offset rationale as the 1v1 branch above — make room
             // for the FORFEIT button at the top-left corner.
-            left: `calc(${sideInsetL} + ${isGroupChat ? '0px' : '108px'})`,
+            left: `calc(${sideInsetL} + 108px)`,
             right: sideInsetR,
             zIndex: 12,
             padding: '6px 8px',
@@ -945,18 +946,6 @@ function BattleHUD({ bridge, gameState, wager, turnTimer, onLeaveMatch, onForfei
         }}>
           <FireSquare disabled={disabled} onFire={() => bridge.fire()} />
         </div>
-
-        {/* GROUP-CHAT: forfeit lives in a corner stack with leave instead */}
-        {isGroupChat && (
-          <div style={{
-            position: 'absolute',
-            bottom: `calc(${bottomInset} + 90px)`,
-            right: sideInsetR,
-            zIndex: 13,
-          }}>
-            <ForfeitButton onForfeit={onForfeit} />
-          </div>
-        )}
 
         {/* ELIMINATION OVERLAY */}
         {isEliminated && players.length > 2 && (

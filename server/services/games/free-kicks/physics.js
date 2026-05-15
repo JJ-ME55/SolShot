@@ -1,0 +1,626 @@
+import {
+    BALL_MASS_KG, BALL_RADIUS_M, BALL_AREA_M2,
+    GRAVITY_M_S2, AIR_DENSITY_KG_M3,
+    DRAG_COEFFICIENT_CD,
+    CL_BASE, SP_BASE, CL_SLOPE_PER_SP, CL_MIN, CL_MAX,
+    PHYSICS_DT, PHYSICS_SUBSTEPS, MAX_TRAJECTORY_STEPS,
+    TERM_Z_MAX_M, TERM_Y_MIN_M, TERM_X_ABS_MAX_M,
+    GOAL_HALF_WIDTH_M, GOAL_HEIGHT_M, GOAL_PLANE_Z_M, POST_RADIUS_M,
+    WALL_DISTANCE_FROM_BALL_M, DEFENDER_WIDTH_M, DEFENDER_HEIGHT_M, DEFENDER_DEPTH_M,
+    BALL_RELEASE_HEIGHT_M,
+    MIN_POWER_M_S, MAX_POWER_M_S,
+    MIN_AZIMUTH_RAD, MAX_AZIMUTH_RAD,
+    MIN_ELEVATION_RAD, MAX_ELEVATION_RAD,
+    MAX_SPIN_RAD_S,
+    TARGET_HALF_WIDTH_M, TARGET_HALF_HEIGHT_M,
+} from './constants.js';
+
+/**
+ * Free-Kick Madness — server-side 3D physics + collision (v0.1)
+ *
+ * Simulates a single free-kick shot in 3D space.
+ *
+ *   Input: derived shot inputs (power, azimuth, elevation, spin)
+ *          + scenario (ballPos, wall geometry, target zones).
+ *   Output: { result, trajectory, hit, targetHit }.
+ *
+ * Forces modelled:
+ *   - Gravity (constant -g·ŷ)
+ *   - Aerodynamic drag: F_d = -½·ρ·A·Cd·|v|·v
+ *   - Magnus force:     F_m =  ½·ρ·A·Cl·|v|²·(ω̂ × v̂)
+ *
+ * Cl is computed as a linear function of the spin parameter
+ * Sp = r·|ω|/|v|, clamped to a measured envelope.
+ *
+ * Integration: 4th-order Runge-Kutta. Spin is treated as constant
+ * during flight (decay <5% over typical 1.5 s — see PHYSICS_RESEARCH.md
+ * §4). Each frame-step is sub-stepped PHYSICS_SUBSTEPS times for
+ * stability.
+ *
+ * COORDINATE SYSTEM:
+ *   x = lateral   (player's right = +x)
+ *   y = vertical  (up = +y)
+ *   z = depth     (toward goal = +z)
+ *   Goal-line plane at z = 0. Player kicks from z < 0 toward z > 0.
+ *
+ * SPIN CONVENTION:
+ *   ω is angular velocity in rad/s.
+ *   For v1 we only model SIDE spin (ω along y axis):
+ *     +ωy = ball curves to player's right (clockwise from above)
+ *     -ωy = ball curves to player's left
+ *   Topspin / backspin (ω along x) is supported by the physics but
+ *   not exposed in the v1 input model.
+ *
+ * RESULT outcomes:
+ *   'goal'              — ball crossed goal-plane within frame
+ *   'goal_plus10'       — goal AND ball passed through +10 zone
+ *   'goal_heart'        — goal AND ball passed through ❤️ zone
+ *   'goal_plus10_heart' — goal through both zones (rare)
+ *   'blocked'           — ball hit a wall defender
+ *   'post'              — ball hit goalpost or crossbar
+ *   'over'              — ball cleared crossbar (out of bounds high)
+ *   'wide'              — ball passed outside left/right post
+ *   'short'             — ball never reached goal plane (fell to pitch)
+ *   'invalid'           — input failed validation
+ *
+ * Determinism: same inputs → identical outputs. Pure function.
+ */
+
+
+// ============================================================
+// === Input validation ===
+// ============================================================
+
+export function validateShotInput({ power, azimuth, elevation, spin }) {
+    if (!isFiniteNum(power)) return 'power_invalid';
+    if (!isFiniteNum(azimuth)) return 'azimuth_invalid';
+    if (!isFiniteNum(elevation)) return 'elevation_invalid';
+    if (!isFiniteNum(spin)) return 'spin_invalid';
+    if (power < MIN_POWER_M_S || power > MAX_POWER_M_S) return 'power_out_of_range';
+    if (azimuth < MIN_AZIMUTH_RAD || azimuth > MAX_AZIMUTH_RAD) return 'azimuth_out_of_range';
+    if (elevation < MIN_ELEVATION_RAD || elevation > MAX_ELEVATION_RAD) return 'elevation_out_of_range';
+    if (Math.abs(spin) > MAX_SPIN_RAD_S) return 'spin_out_of_range';
+    return null;
+}
+
+function isFiniteNum(x) {
+    return typeof x === 'number' && Number.isFinite(x);
+}
+
+
+// ============================================================
+// === Scenario helpers ===
+// ============================================================
+
+/**
+ * Compute ball release position for a shot scenario.
+ *
+ * @param {object} scenario
+ * @param {number} scenario.distanceM     — distance from goal CENTRE
+ * @param {number} scenario.angleRad      — angle from straight-on
+ *                                          (+ve = player's right)
+ * @returns {{x:number, y:number, z:number}}
+ */
+export function ballReleasePos({ distanceM, angleRad }) {
+    return {
+        x: distanceM * Math.sin(angleRad),
+        y: BALL_RELEASE_HEIGHT_M,
+        z: -distanceM * Math.cos(angleRad),
+    };
+}
+
+/**
+ * Compute wall position — centred on the ball → near-post line, at
+ * WALL_DISTANCE_FROM_BALL_M from the ball.
+ *
+ * Near-post convention: for a player on the +x side of the pitch
+ * (angle > 0), the +x post is the near post. For straight shots
+ * (angle = 0) the wall is on the ball → goal-centre line.
+ *
+ * @returns {{ centerX:number, centerY:number, centerZ:number,
+ *             halfWidth:number, halfHeight:number, halfDepth:number,
+ *             defenders: Array<{minX, maxX, minY, maxY, minZ, maxZ}> }}
+ */
+export function wallGeometry({ ballPos, scenario }) {
+    const { wallSize, angleRad } = scenario;
+
+    // Pick near post. For angle === 0 the wall sits on the
+    // ball→goal-centre line (target = origin).
+    let targetX;
+    if (angleRad > 0)      targetX = +GOAL_HALF_WIDTH_M;     // player on right → +x post near
+    else if (angleRad < 0) targetX = -GOAL_HALF_WIDTH_M;     // player on left  → -x post near
+    else                   targetX = 0;                       // straight → centre
+
+    // Direction vector from ball toward near-post target (on goal plane).
+    const dx = targetX - ballPos.x;
+    const dz = GOAL_PLANE_Z_M - ballPos.z;
+    const dist = Math.hypot(dx, dz);
+    const ux = dx / dist;
+    const uz = dz / dist;
+
+    // Wall centre: WALL_DISTANCE_FROM_BALL_M along this unit vector.
+    const centerX = ballPos.x + ux * WALL_DISTANCE_FROM_BALL_M;
+    const centerZ = ballPos.z + uz * WALL_DISTANCE_FROM_BALL_M;
+    const centerY = DEFENDER_HEIGHT_M / 2;  // standing on pitch
+
+    // Wall is perpendicular to the (ux, uz) direction. The lateral
+    // axis of the wall is the perpendicular in the horizontal plane.
+    const perpX = -uz;  // rotated 90° in horizontal plane
+    const perpZ = +ux;
+
+    // Build defender AABBs along the wall.
+    // For v1 we use axis-aligned hitboxes that approximate the wall
+    // even when it's oblique — the wall's bounding box is the union
+    // of defender boxes. For a straight wall this is exact; for
+    // oblique walls it slightly over-estimates the hit zone, which
+    // is fine for arcade play (errs on side of "wall blocks more").
+    const wallTotalHalfWidth = (wallSize * DEFENDER_WIDTH_M) / 2;
+    const defenders = [];
+    for (let i = 0; i < wallSize; i++) {
+        // i-th defender's offset from wall centre (along perp).
+        const offset = (i - (wallSize - 1) / 2) * DEFENDER_WIDTH_M;
+        const cx = centerX + perpX * offset;
+        const cz = centerZ + perpZ * offset;
+        defenders.push({
+            minX: cx - DEFENDER_WIDTH_M / 2,
+            maxX: cx + DEFENDER_WIDTH_M / 2,
+            minY: 0,
+            maxY: DEFENDER_HEIGHT_M,
+            minZ: cz - DEFENDER_DEPTH_M / 2,
+            maxZ: cz + DEFENDER_DEPTH_M / 2,
+        });
+    }
+
+    return {
+        centerX, centerY, centerZ,
+        halfWidth: wallTotalHalfWidth,
+        halfHeight: DEFENDER_HEIGHT_M / 2,
+        halfDepth: DEFENDER_DEPTH_M / 2,
+        defenders,
+    };
+}
+
+
+// ============================================================
+// === Aerodynamics ===
+// ============================================================
+
+/**
+ * Compute lift coefficient Cl as a linear function of spin parameter
+ * Sp = r·|ω|/|v|, clamped to measured envelope.
+ *
+ * Source: Asai et al. 2007 wind-tunnel side-force slope (~0.5 per
+ * unit Sp), anchored at Bray & Kerwin 2003 / Goff & Carré 2010
+ * midpoint (Sp=0.18, Cl=0.20). See PHYSICS_RESEARCH.md §3.
+ */
+export function liftCoefficient({ speed, spinMag }) {
+    if (speed < 1e-6 || spinMag < 1e-6) return 0;
+    const sp = (BALL_RADIUS_M * spinMag) / speed;
+    const raw = CL_BASE + CL_SLOPE_PER_SP * (sp - SP_BASE);
+    return Math.max(CL_MIN, Math.min(CL_MAX, raw));
+}
+
+/**
+ * Compute the total aerodynamic + gravitational acceleration on the
+ * ball given current state.
+ *
+ * @returns {{ax:number, ay:number, az:number}}  acceleration in m/s²
+ */
+function acceleration(state, omega) {
+    const { vx, vy, vz } = state;
+    const speed = Math.hypot(vx, vy, vz);
+
+    if (speed < 1e-6) {
+        return { ax: 0, ay: -GRAVITY_M_S2, az: 0 };
+    }
+
+    // Unit velocity vector
+    const ux = vx / speed;
+    const uy = vy / speed;
+    const uz = vz / speed;
+
+    // Drag force magnitude / mass  =  -½·ρ·A·Cd·|v|² / m
+    // Direction opposite to velocity.
+    const dragMag = 0.5 * AIR_DENSITY_KG_M3 * BALL_AREA_M2 * DRAG_COEFFICIENT_CD * speed * speed / BALL_MASS_KG;
+
+    // Magnus force / mass  =  ½·ρ·A·Cl·|v|² / m  ·  (ω̂ × v̂)
+    const spinMag = Math.hypot(omega.wx, omega.wy, omega.wz);
+    let magnusX = 0, magnusY = 0, magnusZ = 0;
+    if (spinMag > 1e-6) {
+        const cl = liftCoefficient({ speed, spinMag });
+        const magnusMag = 0.5 * AIR_DENSITY_KG_M3 * BALL_AREA_M2 * cl * speed * speed / BALL_MASS_KG;
+        // ω̂ × v̂
+        const owx = omega.wx / spinMag;
+        const owy = omega.wy / spinMag;
+        const owz = omega.wz / spinMag;
+        const crossX = owy * uz - owz * uy;
+        const crossY = owz * ux - owx * uz;
+        const crossZ = owx * uy - owy * ux;
+        magnusX = magnusMag * crossX;
+        magnusY = magnusMag * crossY;
+        magnusZ = magnusMag * crossZ;
+    }
+
+    return {
+        ax: -dragMag * ux + magnusX,
+        ay: -dragMag * uy + magnusY - GRAVITY_M_S2,
+        az: -dragMag * uz + magnusZ,
+    };
+}
+
+
+// ============================================================
+// === RK4 integrator ===
+// ============================================================
+
+/**
+ * Advance the state by dt using 4th-order Runge-Kutta. Spin is
+ * treated as constant (decay <5% per 1.5 s — see PHYSICS_RESEARCH.md
+ * §4). Returns a new state object — does NOT mutate input.
+ */
+function rk4Step(state, omega, dt) {
+    const { x, y, z, vx, vy, vz } = state;
+
+    // k1
+    const a1 = acceleration(state, omega);
+    // k2 — state at +dt/2 using k1
+    const s2 = {
+        x: x + vx * dt / 2,
+        y: y + vy * dt / 2,
+        z: z + vz * dt / 2,
+        vx: vx + a1.ax * dt / 2,
+        vy: vy + a1.ay * dt / 2,
+        vz: vz + a1.az * dt / 2,
+    };
+    const a2 = acceleration(s2, omega);
+    // k3 — state at +dt/2 using k2
+    const s3 = {
+        x: x + s2.vx * dt / 2,
+        y: y + s2.vy * dt / 2,
+        z: z + s2.vz * dt / 2,
+        vx: vx + a2.ax * dt / 2,
+        vy: vy + a2.ay * dt / 2,
+        vz: vz + a2.az * dt / 2,
+    };
+    const a3 = acceleration(s3, omega);
+    // k4 — state at +dt using k3
+    const s4 = {
+        x: x + s3.vx * dt,
+        y: y + s3.vy * dt,
+        z: z + s3.vz * dt,
+        vx: vx + a3.ax * dt,
+        vy: vy + a3.ay * dt,
+        vz: vz + a3.az * dt,
+    };
+    const a4 = acceleration(s4, omega);
+
+    // Weighted average: (k1 + 2·k2 + 2·k3 + k4) / 6
+    const avgVx = (vx + 2 * s2.vx + 2 * s3.vx + s4.vx) / 6;
+    const avgVy = (vy + 2 * s2.vy + 2 * s3.vy + s4.vy) / 6;
+    const avgVz = (vz + 2 * s2.vz + 2 * s3.vz + s4.vz) / 6;
+    const avgAx = (a1.ax + 2 * a2.ax + 2 * a3.ax + a4.ax) / 6;
+    const avgAy = (a1.ay + 2 * a2.ay + 2 * a3.ay + a4.ay) / 6;
+    const avgAz = (a1.az + 2 * a2.az + 2 * a3.az + a4.az) / 6;
+
+    return {
+        x: x + avgVx * dt,
+        y: y + avgVy * dt,
+        z: z + avgVz * dt,
+        vx: vx + avgAx * dt,
+        vy: vy + avgAy * dt,
+        vz: vz + avgAz * dt,
+    };
+}
+
+
+// ============================================================
+// === Collision detection ===
+// ============================================================
+
+// AABB hit test for a moving ball (treats ball as a point + radius).
+// Returns true if the swept segment from prevState to state intersects
+// the defender's AABB (expanded by ball radius).
+function hitDefender(prevState, state, defender) {
+    // Expand AABB by ball radius (Minkowski sum trick — point-vs-AABB
+    // becomes the test for a sphere-vs-AABB intersection at instant).
+    const minX = defender.minX - BALL_RADIUS_M;
+    const maxX = defender.maxX + BALL_RADIUS_M;
+    const minY = defender.minY - BALL_RADIUS_M;
+    const maxY = defender.maxY + BALL_RADIUS_M;
+    const minZ = defender.minZ - BALL_RADIUS_M;
+    const maxZ = defender.maxZ + BALL_RADIUS_M;
+
+    // Check both endpoints — if either is inside expanded box, hit.
+    // (For higher fidelity use slab-based swept test; the substep
+    // size is small enough that endpoint checks rarely miss.)
+    if (pointInsideAABB(state.x, state.y, state.z, minX, maxX, minY, maxY, minZ, maxZ)) return true;
+    if (pointInsideAABB(prevState.x, prevState.y, prevState.z, minX, maxX, minY, maxY, minZ, maxZ)) return true;
+
+    // Swept test along the segment — use parametric line-vs-AABB.
+    return segmentHitsAABB(prevState, state, minX, maxX, minY, maxY, minZ, maxZ);
+}
+
+function pointInsideAABB(px, py, pz, minX, maxX, minY, maxY, minZ, maxZ) {
+    return px >= minX && px <= maxX && py >= minY && py <= maxY && pz >= minZ && pz <= maxZ;
+}
+
+function segmentHitsAABB(prev, curr, minX, maxX, minY, maxY, minZ, maxZ) {
+    // Parametric segment p(t) = prev + t·(curr - prev), t ∈ [0,1].
+    const dx = curr.x - prev.x;
+    const dy = curr.y - prev.y;
+    const dz = curr.z - prev.z;
+
+    let tEnter = 0;
+    let tExit = 1;
+
+    for (const [p, d, lo, hi] of [
+        [prev.x, dx, minX, maxX],
+        [prev.y, dy, minY, maxY],
+        [prev.z, dz, minZ, maxZ],
+    ]) {
+        if (Math.abs(d) < 1e-12) {
+            if (p < lo || p > hi) return false;
+        } else {
+            const t1 = (lo - p) / d;
+            const t2 = (hi - p) / d;
+            const tMin = Math.min(t1, t2);
+            const tMax = Math.max(t1, t2);
+            tEnter = Math.max(tEnter, tMin);
+            tExit = Math.min(tExit, tMax);
+            if (tEnter > tExit) return false;
+        }
+    }
+    return tEnter <= tExit;
+}
+
+// Crossbar / post collision — treated as vertical cylinder.
+// Post: vertical from y=0 to y=GOAL_HEIGHT_M at fixed x, z=0.
+// Crossbar: horizontal cylinder from x=-GOAL_HALF_WIDTH to +GOAL_HALF_WIDTH at y=GOAL_HEIGHT_M, z=0.
+function hitPost(prevState, state, postX) {
+    // Post is along y axis at (postX, *, 0). Ball is sphere.
+    // Check if 2D distance from segment to (postX, 0) line < (BALL + POST radius)
+    // in the x-z plane, AND y is within [0, GOAL_HEIGHT_M] at the contact instant.
+    const totalR = BALL_RADIUS_M + POST_RADIUS_M;
+
+    // Closest distance from segment to point in x-z plane
+    const dx1 = prevState.x - postX;
+    const dz1 = prevState.z; // post z = 0
+    const dx2 = state.x - postX;
+    const dz2 = state.z;
+    const dx = dx2 - dx1;
+    const dz = dz2 - dz1;
+    const lenSq = dx * dx + dz * dz;
+    let t = 0;
+    if (lenSq > 1e-12) {
+        t = -(dx1 * dx + dz1 * dz) / lenSq;
+        t = Math.max(0, Math.min(1, t));
+    }
+    const closestX = dx1 + t * dx;
+    const closestZ = dz1 + t * dz;
+    const dist = Math.hypot(closestX, closestZ);
+
+    if (dist > totalR) return false;
+
+    // Check that ball y at contact instant is within post height range
+    const yAtContact = prevState.y + t * (state.y - prevState.y);
+    return yAtContact >= 0 - BALL_RADIUS_M && yAtContact <= GOAL_HEIGHT_M + BALL_RADIUS_M;
+}
+
+function hitCrossbar(prevState, state) {
+    // Crossbar at y = GOAL_HEIGHT_M, z = 0, x ∈ [-GOAL_HALF, +GOAL_HALF].
+    // Treat as horizontal cylinder along x axis.
+    const totalR = BALL_RADIUS_M + POST_RADIUS_M;
+    const dy1 = prevState.y - GOAL_HEIGHT_M;
+    const dz1 = prevState.z;
+    const dy2 = state.y - GOAL_HEIGHT_M;
+    const dz2 = state.z;
+    const dy = dy2 - dy1;
+    const dz = dz2 - dz1;
+    const lenSq = dy * dy + dz * dz;
+    let t = 0;
+    if (lenSq > 1e-12) {
+        t = -(dy1 * dy + dz1 * dz) / lenSq;
+        t = Math.max(0, Math.min(1, t));
+    }
+    const closestY = dy1 + t * dy;
+    const closestZ = dz1 + t * dz;
+    const dist = Math.hypot(closestY, closestZ);
+
+    if (dist > totalR) return false;
+
+    // Check x range at contact instant
+    const xAtContact = prevState.x + t * (state.x - prevState.x);
+    return Math.abs(xAtContact) <= GOAL_HALF_WIDTH_M + BALL_RADIUS_M;
+}
+
+// Goal-line plane crossing — returns the (x, y) point where the
+// trajectory crossed z=0, or null if no crossing in this step.
+function goalPlaneCrossing(prevState, state) {
+    // Only count forward crossings (z went from <0 to >=0).
+    if (prevState.z >= GOAL_PLANE_Z_M || state.z < GOAL_PLANE_Z_M) return null;
+    if (state.z === prevState.z) return null;
+
+    const t = (GOAL_PLANE_Z_M - prevState.z) / (state.z - prevState.z);
+    return {
+        x: prevState.x + t * (state.x - prevState.x),
+        y: prevState.y + t * (state.y - prevState.y),
+        t,
+    };
+}
+
+// Check whether (x, y) is inside the goal frame (not the woodwork).
+function insideGoalFrame(x, y) {
+    return Math.abs(x) <= GOAL_HALF_WIDTH_M && y >= 0 && y <= GOAL_HEIGHT_M;
+}
+
+// Check whether (x, y) is inside a target zone.
+function insideTargetZone(x, y, target) {
+    if (!target) return false;
+    return Math.abs(x - target.x) <= TARGET_HALF_WIDTH_M
+        && Math.abs(y - target.y) <= TARGET_HALF_HEIGHT_M;
+}
+
+
+// ============================================================
+// === simulateShot — the public entry point ===
+// ============================================================
+
+/**
+ * Simulate one free-kick shot. Pure — same inputs always produce
+ * identical output.
+ *
+ * @param {object} params
+ * @param {object} params.shotInput
+ *   { power, azimuth, elevation, spin }
+ *   - power [m/s]      — initial speed
+ *   - azimuth [rad]    — horizontal aim angle (+ve = player's right)
+ *   - elevation [rad]  — vertical aim angle (+ve = upward)
+ *   - spin [rad/s]     — side spin around vertical axis
+ *                        (+ve = right curl, -ve = left curl)
+ * @param {object} params.scenario
+ *   { distanceM, angleRad, wallSize, plus10Target, heartTarget }
+ *   - plus10Target / heartTarget: { x, y } position in goal-plane
+ *     coordinates, or null if absent.
+ *
+ * @returns {{
+ *   result: string,
+ *   trajectory: Array<{x,y,z,vx,vy,vz}>,
+ *   crossing: {x, y} | null,
+ *   targetHit: { plus10: boolean, heart: boolean },
+ *   reason?: string,
+ * }}
+ */
+export function simulateShot({ shotInput, scenario }) {
+    const validationError = validateShotInput(shotInput);
+    if (validationError) {
+        return {
+            result: 'invalid',
+            reason: validationError,
+            trajectory: [],
+            crossing: null,
+            targetHit: { plus10: false, heart: false },
+        };
+    }
+
+    const { power, azimuth, elevation, spin } = shotInput;
+
+    // Player aims TOWARD the goal centre, plus their azimuth offset.
+    // The ball-centre direction is along -z (from -distance·cos toward
+    // 0). The player's facing angle is OPPOSITE to the position-angle
+    // from goal centre.
+    const ballPos = ballReleasePos(scenario);
+    // The "straight-ahead" direction from ball toward goal centre:
+    const facingDx = 0 - ballPos.x;
+    const facingDz = 0 - ballPos.z;
+    const facingLen = Math.hypot(facingDx, facingDz);
+    const facingX = facingDx / facingLen;
+    const facingZ = facingDz / facingLen;
+    // Apply azimuth offset (rotate around y axis by `azimuth`)
+    const cosA = Math.cos(azimuth);
+    const sinA = Math.sin(azimuth);
+    const aimX = facingX * cosA - facingZ * sinA;
+    const aimZ = facingX * sinA + facingZ * cosA;
+    // Apply elevation (tilt up)
+    const cosE = Math.cos(elevation);
+    const sinE = Math.sin(elevation);
+    // Horizontal component of velocity has magnitude power·cos(elevation),
+    // vertical is power·sin(elevation).
+    const vHoriz = power * cosE;
+    const initialVx = vHoriz * aimX;
+    const initialVy = power * sinE;
+    const initialVz = vHoriz * aimZ;
+
+    // Spin: side spin around vertical axis only for v1.
+    const omega = { wx: 0, wy: spin, wz: 0 };
+
+    // Compute wall geometry for collision tests.
+    const wall = wallGeometry({ ballPos, scenario });
+
+    // Initialise trajectory.
+    let state = {
+        x: ballPos.x, y: ballPos.y, z: ballPos.z,
+        vx: initialVx, vy: initialVy, vz: initialVz,
+    };
+    const trajectory = [{ ...state }];
+
+    const innerDt = PHYSICS_DT / PHYSICS_SUBSTEPS;
+
+    let result = null;
+    let crossing = null;
+    let targetHit = { plus10: false, heart: false };
+    let reason = null;
+
+    for (let step = 0; step < MAX_TRAJECTORY_STEPS; step++) {
+        let prevState = state;
+
+        // Sub-step integration
+        for (let sub = 0; sub < PHYSICS_SUBSTEPS; sub++) {
+            const next = rk4Step(state, omega, innerDt);
+
+            // Check goal-plane crossing FIRST (since once we cross,
+            // we resolve the shot regardless of subsequent collisions).
+            const cross = goalPlaneCrossing(state, next);
+            if (cross) {
+                crossing = cross;
+                // Did the crossing land inside the goal frame?
+                if (insideGoalFrame(cross.x, cross.y)) {
+                    targetHit.plus10 = insideTargetZone(cross.x, cross.y, scenario.plus10Target);
+                    targetHit.heart  = insideTargetZone(cross.x, cross.y, scenario.heartTarget);
+                    if (targetHit.plus10 && targetHit.heart)      result = 'goal_plus10_heart';
+                    else if (targetHit.plus10)                    result = 'goal_plus10';
+                    else if (targetHit.heart)                     result = 'goal_heart';
+                    else                                          result = 'goal';
+                } else {
+                    // Outside the frame — check for woodwork hit at this y/x.
+                    // (Treat near-post/crossbar grazes in collision pass instead.)
+                    if (cross.y > GOAL_HEIGHT_M + POST_RADIUS_M)              result = 'over';
+                    else if (Math.abs(cross.x) > GOAL_HALF_WIDTH_M + POST_RADIUS_M) result = 'wide';
+                    else                                                       result = 'post';
+                }
+                // Record final state and break.
+                state = next;
+                break;
+            }
+
+            // Check wall collision
+            let hitWall = false;
+            for (const def of wall.defenders) {
+                if (hitDefender(state, next, def)) {
+                    hitWall = true;
+                    break;
+                }
+            }
+            if (hitWall) { result = 'blocked'; state = next; break; }
+
+            // Check post collisions
+            if (hitPost(state, next, +GOAL_HALF_WIDTH_M)) { result = 'post'; state = next; break; }
+            if (hitPost(state, next, -GOAL_HALF_WIDTH_M)) { result = 'post'; state = next; break; }
+            if (hitCrossbar(state, next))                 { result = 'post'; state = next; break; }
+
+            state = next;
+        }
+
+        trajectory.push({ ...state });
+
+        if (result !== null) break;
+
+        // Termination conditions
+        if (state.y <= TERM_Y_MIN_M)                { result = 'short'; break; }
+        if (state.z > TERM_Z_MAX_M)                 { result = (crossing ? result : 'over'); break; }
+        if (Math.abs(state.x) > TERM_X_ABS_MAX_M)   { result = 'wide'; break; }
+    }
+
+    if (result === null) {
+        // Step cap reached — extremely unlikely; treat as short.
+        result = 'short';
+        reason = 'max_steps_reached';
+    }
+
+    return {
+        result,
+        trajectory,
+        crossing,
+        targetHit,
+        ...(reason ? { reason } : {}),
+    };
+}

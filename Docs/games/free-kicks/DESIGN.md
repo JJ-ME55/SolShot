@@ -282,17 +282,17 @@ From `Docs/BALL_GAMES_PLAYBOOK.md` (commit `1038cf1`):
 
 ---
 
-## Open questions (for Fish before constants file)
+## Resolved decisions
 
-1. **Wall placement angle** — when angle is oblique (±15°, ±25°), does the wall sit on the **ball→near-post line** (real-football convention) or **ball→goal-centre line** (arcade simplicity)? Real-football is more authentic but oblique shots become very different from straight shots. Recommend ball→near-post.
+1. **Wall placement on oblique angles** — wall sits on the **ball → near-post line** (real-football convention). On ±15° and ±25° shots, the wall blocks the near-post route; the far-post side is the open scoring lane. Each angle therefore plays meaningfully differently.
 
-2. **Post hit resolution** — does "POST" cost a life or is it a freebie ("close call, try again")? Per playbook §7.4 it's clearer to keep it as a miss with a great sound.
+2. **POST hit** — counts as a miss. Costs a life. Plays the satisfying clank SFX but is still −1 life. Playbook §7.4 — clarity wins, the player understands "didn't go in = life lost".
 
-3. **Wager window default** — same 1 / 2 / 4 / 7 day options as basketball/keepie-uppies? Assume yes.
+3. **Wager window default** — same 1 / 2 / 4 / 7 day options as basketball / keepie-uppies. Inherited from the lobby state machine, no per-game tweak needed.
 
-4. **Streak bonus** — basketball had HOT STREAK at 3-in-a-row. Free-kicks could mirror with a "PERFECT WALL" bonus for 3 `+10` hits in a row. Defer to playtest.
+4. **Streak bonus** — NONE in v1. Ship the core loop clean. The `+10` targets + life economy already supply variance. Revisit only if playtest shows the run feels flat.
 
-5. **Time pressure** — basketball had an optional timed rapid-fire mode. Free-kicks are usually set pieces — does Fish want a "rapid-fire" mode for free-kicks at all, or is the dead-ball pacing the right feel? Recommend NO timed mode in v1.
+5. **Timed rapid-fire mode** — NONE in v1. Free-kicks are set pieces — dead-ball pacing is the feel. Defer a timed mode to v2 if there is demand.
 
 ---
 

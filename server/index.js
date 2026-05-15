@@ -35,6 +35,11 @@ import { consumeLinkToken } from './services/walletLinkTokens.js';
 import { requirePrivyAuth, isPrivyAuthConfigured } from './services/privyAuth.js';
 import { renderCareerCardPng } from './services/challenge/renderCareerCard.js';
 import { buildCareerProps } from './services/challenge/careerCardProps.js';
+import {
+    verifySession as verifyBasketballSession,
+    submitScore as submitBasketballScore,
+    getLeaderboard as getBasketballLeaderboard,
+} from './services/games/basketball-standalone/standaloneLeaderboard.js';
 
 dotenv.config()
 
@@ -630,6 +635,65 @@ app.post(
         }
     }
 );
+
+// ─── Basketball Hoops standalone — score leaderboard ───────────────────
+//
+// The standalone basketball client (solshot-basketball.vercel.app) submits
+// scores here. Requests are gated by a JWT minted by the arcade bot at
+// /basketball launch time — that JWT carries the player's TG identity, so
+// every submission is verifiably tied to a Telegram user without requiring
+// wallet signature. Cheating mitigation is "good-enough" for v1 (signed JWT
+// stops easy forgery; client-side replay is possible but socially deterred
+// in groups). When Fish's Phase 4 server rewrite lands, wagered matches
+// write to this same leaderboard schema via a server-authoritative path
+// that bypasses the JWT.
+//
+// CORS: solshot-basketball.vercel.app must be in CORS_ORIGINS env (or the
+// global cors() middleware will block the cross-origin request).
+
+// POST /api/games/basketball/score
+//   body: { score: number, session: string }
+//   returns: { ok, newBest, bestScore, rank, totalPlayers }
+app.post('/api/games/basketball/score', async (req, res) => {
+    try {
+        const { score, session } = req.body || {};
+        if (!session || typeof session !== 'string') {
+            return res.status(400).json({ error: 'session required' });
+        }
+        if (!Number.isFinite(score) || score < 0) {
+            return res.status(400).json({ error: 'score must be a non-negative number' });
+        }
+        let identity;
+        try {
+            identity = verifyBasketballSession(session);
+        } catch (err) {
+            return res.status(401).json({ error: 'session_invalid_or_expired', detail: err.message });
+        }
+        const result = await submitBasketballScore({
+            telegramUserId: identity.telegramUserId,
+            telegramUsername: identity.telegramUsername,
+            firstName: identity.firstName,
+            score,
+        });
+        res.json({ ok: true, ...result });
+    } catch (err) {
+        console.error('[POST /api/games/basketball/score]', err.message);
+        res.status(500).json({ error: 'failed to submit score' });
+    }
+});
+
+// GET /api/games/basketball/leaderboard?limit=10
+//   returns: { ok, leaderboard: [{rank, displayName, bestScore, ...}, ...] }
+app.get('/api/games/basketball/leaderboard', async (req, res) => {
+    try {
+        const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 10));
+        const leaderboard = await getBasketballLeaderboard({ limit });
+        res.json({ ok: true, leaderboard });
+    } catch (err) {
+        console.error('[GET /api/games/basketball/leaderboard]', err.message);
+        res.status(500).json({ error: 'failed to fetch leaderboard' });
+    }
+});
 
 // Connect to MongoDB then start server
 const MONGODB_URI = process.env.MONGODB_URI;

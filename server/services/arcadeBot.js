@@ -28,6 +28,11 @@
  */
 
 import { Telegraf } from 'telegraf';
+import {
+    mintSession as mintBasketballSession,
+    getLeaderboard as getBasketballLeaderboard,
+    getMyStanding as getBasketballStanding,
+} from './games/basketball-standalone/standaloneLeaderboard.js';
 
 const ARCADE_WEBHOOK_PATH = '/api/arcade-webhook';
 
@@ -70,6 +75,15 @@ const GAMES = [
     tagline: 'Timed rapid-fire arcade hoops. 20s clock, hot-streak bonuses.',
     url: 'https://solshot-basketball.vercel.app/',
     supportsLoginUrl: false,
+    // Leaderboard binding — when present, we append a signed JWT to the
+    // launch URL so the standalone client can submit scores tied to this
+    // TG user. The client reads `?session=<jwt>`, stashes in sessionStorage,
+    // and forwards it on POST /api/games/basketball/score.
+    sessionMinter: (ctx) => mintBasketballSession({
+        telegramUserId: ctx.from?.id,
+        telegramUsername: ctx.from?.username,
+        firstName: ctx.from?.first_name,
+    }),
   },
 ];
 
@@ -102,17 +116,35 @@ export function initArcadeBot() {
 }
 
 /**
- * Build an inline-keyboard button for a game. Uses Telegram's `login_url`
- * for silent Privy sign-in when the user is in a DM and the game's URL
- * is on the bot's registered domain; falls back to plain `url:` in groups
- * and on cross-domain games.
+ * Build an inline-keyboard button for a game.
+ *   - In DM with a TG-identified user, if the game has a `sessionMinter`,
+ *     append a signed JWT as `?session=<jwt>` so the destination client
+ *     can submit scores tied to this user. The minter is called with the
+ *     full `ctx` so it can read `ctx.from.id`/.username/.first_name.
+ *   - In DM on a game whose `url` host matches the bot's registered domain
+ *     (`supportsLoginUrl: true`), use Telegram's `login_url` for the
+ *     TG-native confirmation dialog.
+ *   - In groups, both paths fall back to plain `url:` (TG rejects
+ *     `login_url` in groups, and we can't tie a group-launch button to
+ *     a specific TG user since multiple users see the same message).
  */
 function buildGameButton(game, ctx) {
   const isPrivate = ctx?.chat?.type === 'private';
-  if (isPrivate && game.supportsLoginUrl) {
-    return { text: `${game.emoji} ${game.name}`, login_url: { url: game.url } };
+  let url = game.url;
+  if (isPrivate && game.sessionMinter && ctx?.from?.id) {
+    try {
+      const session = game.sessionMinter(ctx);
+      const separator = url.includes('?') ? '&' : '?';
+      url = `${url}${separator}session=${encodeURIComponent(session)}`;
+    } catch (err) {
+      console.warn(`[arcade-bot] sessionMinter failed for ${game.slug}:`, err.message);
+      // fall through with un-sessioned URL — game still plays, just no leaderboard submission
+    }
   }
-  return { text: `${game.emoji} ${game.name}`, url: game.url };
+  if (isPrivate && game.supportsLoginUrl) {
+    return { text: `${game.emoji} ${game.name}`, login_url: { url } };
+  }
+  return { text: `${game.emoji} ${game.name}`, url };
 }
 
 function registerCommands(bot) {
@@ -159,6 +191,64 @@ function registerCommands(bot) {
     });
   }
 
+  // Basketball Hoops leaderboard. Shows top 10 globally + the caller's
+  // personal best/rank if they've submitted before. Scores flow into the
+  // `basketballscores` Mongo collection via POST /api/games/basketball/score
+  // (called by the standalone basketball client when a game ends).
+  bot.command('leaderboard', async (ctx) => {
+    try {
+      const top = await getBasketballLeaderboard({ limit: 10 });
+      const myTgId = ctx.from?.id;
+      const myStanding = myTgId ? await getBasketballStanding({ telegramUserId: myTgId }) : null;
+
+      if (!top || top.length === 0) {
+        return ctx.reply(
+          '🏀 <b>BASKETBALL HOOPS — LEADERBOARD</b>\n\nNo scores yet. Play /basketball to be the first.',
+          { parse_mode: 'HTML' }
+        );
+      }
+
+      // Monospaced table — TG renders <pre> in a fixed-width font so columns line up.
+      const HANDLE_W = 16;
+      const fmtHandle = (name) => {
+        const s = String(name || '???');
+        if (s.length <= HANDLE_W) return s.padEnd(HANDLE_W, ' ');
+        return s.slice(0, HANDLE_W - 1) + '…';
+      };
+      const fmtRank = (i) => {
+        if (i === 0) return '🥇';
+        if (i === 1) return '🥈';
+        if (i === 2) return '🥉';
+        return String(i + 1).padStart(2, ' ') + '.';
+      };
+
+      const lines = [];
+      lines.push('🏀 <b>BASKETBALL HOOPS · TOP 10</b>');
+      lines.push('<pre>');
+      top.forEach((row, i) => {
+        lines.push(`${fmtRank(i)} ${fmtHandle(row.displayName)} ${String(row.bestScore).padStart(4, ' ')}`);
+      });
+      // If the caller is outside the top 10, show their own row below
+      if (myStanding && myStanding.rank > 10) {
+        lines.push('');
+        lines.push(`#${String(myStanding.rank).padStart(2, ' ')} ${fmtHandle(myStanding.displayName)} ${String(myStanding.bestScore).padStart(4, ' ')}`);
+      }
+      lines.push('</pre>');
+      if (myStanding) {
+        lines.push('');
+        lines.push(`Your best: <b>${myStanding.bestScore}</b> (rank <b>#${myStanding.rank}</b>, ${myStanding.totalSubmissions} game${myStanding.totalSubmissions === 1 ? '' : 's'} submitted)`);
+      } else {
+        lines.push('');
+        lines.push('Play /basketball to put a score on the board.');
+      }
+
+      await ctx.reply(lines.join('\n'), { parse_mode: 'HTML' });
+    } catch (err) {
+      console.warn('[arcade-bot:/leaderboard] error:', err.message);
+      await ctx.reply('Could not fetch the leaderboard right now. Try again in a moment.');
+    }
+  });
+
   bot.command('help', async (ctx) => {
     const lines = [
       '<b>The Arcade</b> — multi-game launcher',
@@ -169,6 +259,7 @@ function registerCommands(bot) {
     for (const g of GAMES) {
       lines.push(`/${g.slug} — launch ${g.name}`);
     }
+    lines.push('/leaderboard — Basketball Hoops top 10');
     lines.push('/help — show this');
     lines.push('');
     lines.push('Bug? Reach <b>@SolShotGG</b> on X or <b>support@solshot.gg</b>.');
@@ -200,9 +291,10 @@ async function registerArcadeBotCommands() {
   if (!bot) return;
   try {
     const cmds = [
-      { command: 'games', description: 'List all games in the arcade' },
+      { command: 'games',       description: 'List all games in the arcade' },
       ...GAMES.map(g => ({ command: g.slug, description: `Launch ${g.name}` })),
-      { command: 'help',  description: 'Show commands + support' },
+      { command: 'leaderboard', description: 'Basketball Hoops top 10' },
+      { command: 'help',        description: 'Show commands + support' },
     ];
     await bot.telegram.setMyCommands(cmds);
     console.log('[arcade-bot] slash commands registered:', cmds.map(c => '/' + c.command).join(' '));

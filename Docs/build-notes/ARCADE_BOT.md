@@ -127,6 +127,96 @@ Both webhook paths share `TELEGRAM_WEBHOOK_URL` because they live on the same se
 
 ---
 
+## Basketball Hoops leaderboard (added 2026-05-15)
+
+`@TheArcadeGG_Bot` now hosts a global all-time best-score leaderboard for the Basketball Hoops standalone (`solshot-basketball.vercel.app`). Scores are automated end-to-end — no `/submit` typing.
+
+### Flow
+
+```
+User taps /basketball in @TheArcadeGG_Bot (DM)
+       ↓
+Bot's buildGameButton calls game.sessionMinter(ctx)
+   → mints HS256 JWT with TG identity (24h expiry)
+       ↓
+URL becomes:
+   https://solshot-basketball.vercel.app/?session=<jwt>
+       ↓
+Basketball client reads ?session= on load, stashes in sessionStorage
+       ↓
+Player plays, game-over triggers POST:
+   POST https://solshot-server.onrender.com/api/games/basketball/score
+   body: { score, session }
+       ↓
+Server verifies JWT → extracts TG identity → upsert in Mongo
+       ↓
+Response: { ok, newBest, bestScore, rank, totalPlayers }
+       ↓
+Client shows "Saved. Rank #3 of 47."
+```
+
+### Files (server side)
+
+| File | Purpose |
+|---|---|
+| `server/models/BasketballScore.js` | Mongoose schema — one doc per TG user, `bestScore` indexed for top-N. |
+| `server/services/games/basketball-standalone/standaloneLeaderboard.js` | JWT mint/verify (HS256, 24h), `submitScore` (atomic best-only upsert), `getLeaderboard`, `getMyStanding`. |
+| `server/index.js` | `POST /api/games/basketball/score` + `GET /api/games/basketball/leaderboard`. |
+| `server/services/arcadeBot.js` | `sessionMinter` on the basketball GAMES entry; new `/leaderboard` bot command. |
+
+Kept deliberately under `basketball-standalone/` so it doesn't collide with Fish's existing `basketball/` services (which encode the WAGERED match flow with on-chain escrow — Phase 4 work). When that lands, wagered scores can write to this same schema via a server-authoritative path that bypasses the JWT.
+
+### Env vars to set on Render (production)
+
+| Var | Value | Notes |
+|---|---|---|
+| `BASKETBALL_LEADERBOARD_SECRET` | 48-byte random base64url (generated, see commit notes) | HS256 signing secret for the session JWT. Required in production. Dev mode generates an ephemeral one. |
+| `CORS_ORIGINS` | append `https://solshot-basketball.vercel.app` to existing list | Lets the basketball Vercel client POST to the server. Without this the cross-origin POST is blocked. |
+
+### Patch Fish needs to add to `solshot-basketball` repo
+
+Five lines, two locations. The capture-session logic on app boot:
+
+```js
+// On app boot / first render
+const session = new URLSearchParams(window.location.search).get('session');
+if (session) sessionStorage.setItem('arcade_session', session);
+```
+
+The submit logic on game end (wherever the timer expires and the final score is locked in):
+
+```js
+const session = sessionStorage.getItem('arcade_session');
+if (session) {
+  fetch('https://solshot-server.onrender.com/api/games/basketball/score', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ score: finalScore, session }),
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) showToast(`Saved. Rank #${data.rank} of ${data.totalPlayers}.`);
+    })
+    .catch(err => console.warn('[leaderboard] submit failed:', err));
+}
+```
+
+If `session` is null (user opened the URL directly, not via the bot), the game just plays — submission is skipped. No friction for non-bot users.
+
+### Trust model
+
+For v1: JWT signature stops trivial forgery. A user CAN replay the same JWT to submit multiple scores (the JWT is valid for 24h after launch), and they CAN craft any score value within 0–999. Both are deterred by social pressure in groups rather than enforced server-side. When Fish's Phase 4 server rewrite lands, wagered matches go through a server-authoritative path that doesn't trust client input at all.
+
+### Commands
+
+| Command | Effect |
+|---|---|
+| `/leaderboard` | Top 10 globally + caller's own rank if outside top 10 |
+
+`/mybest` deferred — `/leaderboard` already shows the caller's standing if they have one.
+
+---
+
 ## Future considerations (not in v1)
 
 These were discussed with Fish (per CLAUDE_COMMS.md 2026-05-15 handoff) but deferred:

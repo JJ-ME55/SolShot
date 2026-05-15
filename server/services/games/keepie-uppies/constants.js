@@ -10,11 +10,11 @@
  */
 
 // --- ball geometry + mass ---
-// v0.3 (2026-05-15 playtest): 0.11m → 0.33m (3x). Fish's call after the
-// first playable deploy — the FIFA-spec ball read too small on phone
-// even at world=2m. 0.33m makes the ball ~265px on canvas / ~130px on
-// phone — about a third of screen width. Hitbox + Magnus auto-scale.
-export const BALL_RADIUS_M = 0.33;
+// v0.3 (2026-05-15 playtest): 0.11m → 0.33m (3x) — FIFA-spec read too
+// small on phone, Fish wanted bigger.
+// v0.4 (2026-05-15 playtest): 0.33m → 0.28m (-15%) — 0.33m felt slightly
+// too big in playtest. 0.28m gives ~225px canvas / ~110px phone.
+export const BALL_RADIUS_M = 0.28;
 export const BALL_MASS_KG = 0.43;           // mass unchanged; arcade abstraction
 
 // hitbox inflated 20% over visual for mobile fat-finger forgiveness

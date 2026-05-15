@@ -135,8 +135,10 @@ test('isTapInsideHitbox dead-centre tap is inside', () => {
     assert.equal(isTapInsideHitbox(4, 1, 4, 1), true);
 });
 
-test('isTapInsideHitbox tap exactly at hitbox edge is inside', () => {
-    assert.equal(isTapInsideHitbox(4, 1, 4 + HITBOX_RADIUS_M, 1), true);
+test('isTapInsideHitbox tap just inside hitbox edge is inside', () => {
+    // 1e-6 inset to dodge IEEE-754 boundary precision (which depends on
+    // the exact value of HITBOX_RADIUS_M).
+    assert.equal(isTapInsideHitbox(4, 1, 4 + HITBOX_RADIUS_M - 1e-6, 1), true);
 });
 
 test('isTapInsideHitbox tap just outside hitbox is outside', () => {

@@ -19,6 +19,7 @@ import { initEscrowV2 } from './services/escrow-v2.js';
 import { requireAdminKey } from './middleware/guards.js';
 import { telegramSocketMiddleware } from './middleware/telegram.js';
 import { initBot, setupBotWebhook, stopBot } from './services/bot.js';
+import { initArcadeBot, setupArcadeBotWebhook, stopArcadeBot } from './services/arcadeBot.js';
 import { restoreActiveTimers } from './services/groupchat/scheduler.js';
 import { startLobbyWatchdog } from './services/groupchat/lobbyWatchdog.js';
 // Importing lifecycle registers its onTimeout callback with the scheduler.
@@ -633,8 +634,12 @@ app.post(
 // Connect to MongoDB then start server
 const MONGODB_URI = process.env.MONGODB_URI;
 
-// Initialise Telegram bot (no-op if TELEGRAM_BOT_TOKEN not set)
+// Initialise Telegram bots (each no-ops if its token env isn't set).
+// Two independent bots:
+//   - SolShotGG_bot  (TELEGRAM_BOT_TOKEN) — game-specific, hackathon entry
+//   - TheArcadegg    (ARCADE_BOT_TOKEN)   — multi-game launcher
 initBot();
+initArcadeBot();
 
 // H032 fix — enforce schema validation on all update paths globally.
 // Without this, findOneAndUpdate / updateOne / bulkWrite skip validators
@@ -653,6 +658,7 @@ if (MONGODB_URI) {
                 process.exit(1);
             }
             await setupBotWebhook(app);
+            await setupArcadeBotWebhook(app);
             // Resume any group-chat matches that were active when the server last stopped.
             await restoreActiveTimers();
             // Sweep stale group-chat lobbies on a 15-min interval; fail-soft.
@@ -687,16 +693,16 @@ if (MONGODB_URI) {
         });
 } else {
     console.warn('MONGODB_URI not set — running without database');
-    setupBotWebhook(app).then(() => {
+    Promise.all([setupBotWebhook(app), setupArcadeBotWebhook(app)]).then(() => {
         server.listen(PORT, '0.0.0.0', function () {
             console.log(`SolShot server listening on 0.0.0.0:${PORT} (no DB)`);
         });
     });
 }
 
-// Graceful shutdown — stop bot polling/webhook before exit
-process.once('SIGINT', () => stopBot());
-process.once('SIGTERM', () => stopBot());
+// Graceful shutdown — stop both bots' polling/webhook before exit
+process.once('SIGINT', () => { stopBot(); stopArcadeBot(); });
+process.once('SIGTERM', () => { stopBot(); stopArcadeBot(); });
 
 // KM-05: SIGHUP-triggered credential reload
 process.on('SIGHUP', () => {

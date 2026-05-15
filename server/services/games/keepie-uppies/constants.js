@@ -9,9 +9,13 @@
  * ones; document each tuning step in the comment.
  */
 
-// --- ball geometry + mass [FIFA-LAW2] ---
-export const BALL_RADIUS_M = 0.11;          // FIFA Law 2 circumference 68-70cm midpoint
-export const BALL_MASS_KG = 0.43;           // FIFA Law 2 mass 410-450g midpoint
+// --- ball geometry + mass ---
+// v0.3 (2026-05-15 playtest): 0.11m → 0.33m (3x). Fish's call after the
+// first playable deploy — the FIFA-spec ball read too small on phone
+// even at world=2m. 0.33m makes the ball ~265px on canvas / ~130px on
+// phone — about a third of screen width. Hitbox + Magnus auto-scale.
+export const BALL_RADIUS_M = 0.33;
+export const BALL_MASS_KG = 0.43;           // mass unchanged; arcade abstraction
 
 // hitbox inflated 20% over visual for mobile fat-finger forgiveness
 // (basketball used inverse — strict bounds for miss readability;
@@ -29,9 +33,14 @@ export const GRAVITY_M_S2 = 9.81;           // [CIPM-G] standard gravity, rounde
 export const MAGNUS_COEFFICIENT = 0.020;
 
 // --- tap-impulse model (arcade abstraction, not physics-derived) ---
-export const BASE_UP_M_S = 6.0;             // [PLAYTEST] dead-centre tap, ~1.22s round-trip; bracket 4.5-8.0
+// v0.3 (2026-05-15 playtest): centre tap was sending the ball off the
+// top of the canvas. Brought BASE_UP down (6.0 → 4.5: centre tap apex
+// ~1m above launch, well within the 3m world) and VERTICAL_GAIN down
+// (3.0 → 1.5: bottom-edge tap is now the only way to send it off-screen,
+// per Fish's preferred feel).
+export const BASE_UP_M_S = 4.5;             // [PLAYTEST] dead-centre tap, ~0.92s round-trip; bracket 3.0-6.5
 export const LATERAL_GAIN = 2.5;            // [PLAYTEST] edge tap sideways; bracket 1.5-4.0
-export const VERTICAL_GAIN = 3.0;           // [PLAYTEST] bottom-edge bonus up; bracket 2.0-5.0
+export const VERTICAL_GAIN = 1.5;           // [PLAYTEST] bottom-edge bonus up; bracket 1.0-3.5
 export const SPIN_GAIN = 12.0;              // [PLAYTEST] edge tap spin (S≈0.22 [GOFF-2010]); bracket 6-20
 
 // --- wall + floor ---

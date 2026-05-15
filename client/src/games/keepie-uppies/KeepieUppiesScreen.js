@@ -53,6 +53,19 @@ export function KeepieUppiesScreen() {
     return (
         <div style={styles.root}>
             <div ref={phaserHostRef} style={styles.phaserHost} />
+            {/* Escape hatch for Telegram in-app browser — TG WebView is
+                flaky for sessionStorage + fetch (drops POSTs on
+                dismissal). Tapping this opens the same URL with the
+                JWT in Safari/Chrome where everything works. Always
+                visible because we can't reliably detect TG WebView. */}
+            <a
+                href={typeof window !== 'undefined' ? window.location.href : '#'}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={styles.safariLink}
+            >
+                Open in Safari ↗
+            </a>
         </div>
     );
 }
@@ -68,5 +81,21 @@ const styles = {
     phaserHost: {
         width: '100%',
         height: '100%',
+    },
+    safariLink: {
+        position: 'absolute',
+        top: 'max(env(safe-area-inset-top, 0px), 8px)',
+        right: 'max(env(safe-area-inset-right, 0px), 8px)',
+        padding: '6px 10px',
+        borderRadius: 6,
+        background: 'rgba(0, 0, 0, 0.55)',
+        color: '#ffffff',
+        fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+        fontSize: 12,
+        fontWeight: 600,
+        textDecoration: 'none',
+        letterSpacing: 0.5,
+        zIndex: 10,
+        WebkitTapHighlightColor: 'transparent',
     },
 };

@@ -1,37 +1,54 @@
 import {
-    BALL_START_X, BALL_START_Y,
-    MIN_ANGLE_RAD, MAX_ANGLE_RAD, MIN_POWER, MAX_POWER,
+    BALL_RELEASE_HEIGHT_M, BALL_RELEASE_LATERAL_M,
+    CAMERA_Y_M, HORIZON_Y_PX, K_NEAR_PX_PER_M, VIRTUAL_WIDTH,
+    MIN_POWER, MAX_POWER,
+    SHOT_ELEVATION_RAD,
     MOUSE_DRAG_FULL_POWER_PX, MOUSE_DEAD_ZONE_PX,
-    COLORS,
 } from '../data/constants.js';
 
 /**
- * Mouse aim input — desktop primary input scheme.
+ * Mouse aim input — desktop primary input scheme (v0.8, variable
+ * elevation).
  *
- * Player moves the mouse to a position BELOW the ball. A directional
- * arrow draws from the ball toward the cursor; the inverse direction
- * (ball away from cursor) is where the ball will fly. Cursor distance
- * from the ball below = power.
+ * Slingshot model: the cursor below the ball is the pull-back. Length
+ * of the pull = power; *direction* of the pull (inverted) = launch
+ * direction in 3D world space. Specifically:
  *
- *   cursor up-right of ball  → ball would fly down-left (no good)
- *   cursor below ball        → ball flies straight up at angle 0
- *   cursor below-and-right   → ball flies up-and-left
- *   cursor far below ball    → power = full
+ *   - Total drag length L → power (clamped to [MIN_POWER, MAX_POWER]).
+ *   - Pull-back unit vector (dx, dy) in screen pixels (dy > 0 below
+ *     the ball) is mirrored to (-dx, -dy) and converted to a 3D
+ *     launch direction by setting:
+ *       world_vx ∝ -dx
+ *       world_vy ∝  dy   (screen-y inverted maps to world-up)
+ *       world_vz  = fixed forward baseline = sin/cos decomposition
+ *                   that reproduces the original 55° elevation when
+ *                   the pull is purely vertical.
  *
- * Click to release the shot.
+ * Geometric consequence: the ball's *screen-space* trajectory at
+ * release starts in the inverted-flick direction — drag down-left,
+ * ball flies up-right along the mirror line. The trajectory then
+ * bends under gravity, but its initial heading matches the arrow.
  *
- * Angles outside the valid range get clamped. If the cursor is in the
- * dead zone immediately around the ball, no shot fires (too easy to
- * misclick).
- *
- * @param {Phaser.Scene} scene
- * @param {(shot: { angle: number, power: number }) => void} onShot
- * @returns {() => void} detach function
+ * Click to release. Cursor positions inside the dead zone around the
+ * ball, or above the ball, don't fire.
  */
+
+// Project the ball's release point to screen coords (constant — the
+// ball sits at this position before each shot). Uses the same K(z)
+// projection scheme as scene.js — K at z=BALL_RELEASE_FORWARD_M is
+// exactly K_NEAR_PX_PER_M by definition.
+function ballScreenPos() {
+    return {
+        x: VIRTUAL_WIDTH / 2 + BALL_RELEASE_LATERAL_M * K_NEAR_PX_PER_M,
+        y: HORIZON_Y_PX - (BALL_RELEASE_HEIGHT_M - CAMERA_Y_M) * K_NEAR_PX_PER_M,
+    };
+}
+
 export function attachMouseArrow(scene, onShot) {
     const arrow = scene.add.graphics();
-    let cursorX = BALL_START_X;
-    let cursorY = BALL_START_Y + MOUSE_DRAG_FULL_POWER_PX / 2;
+    const ballScreen = ballScreenPos();
+    let cursorX = ballScreen.x;
+    let cursorY = ballScreen.y + MOUSE_DRAG_FULL_POWER_PX / 2;
 
     function onMove(pointer) {
         cursorX = pointer.x;
@@ -50,20 +67,19 @@ export function attachMouseArrow(scene, onShot) {
         arrow.clear();
         const shot = computeShotFromCursor(cursorX, cursorY);
         if (!shot) return;
-        // Arrow draws from ball toward cursor (the "pull-back" direction).
-        // Visual cue: the longer the arrow, the more power.
-        const length = Math.min(
-            MOUSE_DRAG_FULL_POWER_PX,
-            Math.hypot(cursorX - BALL_START_X, cursorY - BALL_START_Y)
-        );
-        const color = shot.power < 0.2 ? COLORS.arrowAimDim : COLORS.arrowAim;
-        const dxN = (cursorX - BALL_START_X) / (length || 1);
-        const dyN = (cursorY - BALL_START_Y) / (length || 1);
-        const tipX = BALL_START_X + dxN * length;
-        const tipY = BALL_START_Y + dyN * length;
-        arrow.lineStyle(5, color, 0.9);
+        const dxC = cursorX - ballScreen.x;
+        const dyC = cursorY - ballScreen.y;
+        const length = Math.min(MOUSE_DRAG_FULL_POWER_PX,
+            Math.hypot(dxC, dyC));
+        // Power-gauge colour: green (low) → yellow (mid) → red (max)
+        const color = powerToColor(shot.power);
+        const dxN = dxC / (length || 1);
+        const dyN = dyC / (length || 1);
+        const tipX = ballScreen.x + dxN * length;
+        const tipY = ballScreen.y + dyN * length;
+        arrow.lineStyle(6, color, 0.95);
         arrow.beginPath();
-        arrow.moveTo(BALL_START_X, BALL_START_Y);
+        arrow.moveTo(ballScreen.x, ballScreen.y);
         arrow.lineTo(tipX, tipY);
         arrow.strokePath();
         // Arrowhead
@@ -72,7 +88,7 @@ export function attachMouseArrow(scene, onShot) {
         const hy = -dyN;
         const perpX = -hy;
         const perpY = hx;
-        arrow.fillStyle(color, 0.9);
+        arrow.fillStyle(color, 0.95);
         arrow.fillTriangle(
             tipX, tipY,
             tipX + hx * headSize + perpX * headSize * 0.6, tipY + hy * headSize + perpY * headSize * 0.6,
@@ -80,21 +96,60 @@ export function attachMouseArrow(scene, onShot) {
         );
     }
 
+    /**
+     * Lerp green → yellow → red as power ramps 0 → 1. Used as the
+     * visual power-gauge cue.
+     */
+    function powerToColor(power) {
+        const p = Math.max(0, Math.min(1, power));
+        let r, g;
+        if (p < 0.5) {
+            // green → yellow
+            const t = p * 2;
+            r = Math.round(t * 255);
+            g = 255;
+        } else {
+            // yellow → red
+            const t = (p - 0.5) * 2;
+            r = 255;
+            g = Math.round((1 - t) * 255);
+        }
+        return (r << 16) | (g << 8);
+    }
+
     function computeShotFromCursor(cx, cy) {
-        const dx = cx - BALL_START_X;
-        const dy = cy - BALL_START_Y;
+        const dx = cx - ballScreen.x;
+        const dy = cy - ballScreen.y;
         const dist = Math.hypot(dx, dy);
         if (dist < MOUSE_DEAD_ZONE_PX) return null;
-        // Cursor must be BELOW the ball (dy > 0) — that's how you aim "back" before releasing
+        // Cursor must be BELOW the ball — pull-back direction
         if (dy <= 0) return null;
-        // Ball flies in the OPPOSITE direction from the pull-back vector
-        // pull = (dx, dy)  → fly = (-dx, -dy)
-        // Convert fly vector to angle-from-vertical (positive = right)
-        const flyX = -dx;
-        const flyY = -dy;
-        const angle = clamp(Math.atan2(flyX, -flyY), MIN_ANGLE_RAD, MAX_ANGLE_RAD);
+        // Power from total drag distance (length of the pull-back).
         const power = clamp(dist / MOUSE_DRAG_FULL_POWER_PX, MIN_POWER, MAX_POWER);
-        return { angle, power };
+        // Build the 3D launch direction from the inverted pull-back.
+        //   horizScale = sin(SHOT_ELEVATION_RAD): how much of the unit
+        //   launch goes into the screen-visible (vx, vy) components.
+        //   fwdScale   = cos(SHOT_ELEVATION_RAD): the fixed forward
+        //   component, sized so a pure-vertical pull reproduces 55°.
+        // Together horizScale² + fwdScale² = 1, so the resulting
+        // (vx, vy, vz) is a unit vector and total speed = power · VEL.
+        const horizScale = Math.sin(SHOT_ELEVATION_RAD);
+        const fwdScale = Math.cos(SHOT_ELEVATION_RAD);
+        // LATERAL_AIM_SENSITIVITY (0.65) damps the sideways component
+        // of the pull so a small unintended off-axis tilt doesn't
+        // throw the ball way off target. Trades a little of the 1:1
+        // "ball follows the arrow" fidelity for a more forgiving aim
+        // — playtest showed the raw mapping was punishingly twitchy.
+        const LATERAL_AIM_SENSITIVITY = 0.65;
+        const vxNorm = (-dx / dist) * horizScale * LATERAL_AIM_SENSITIVITY;
+        const vyNorm = (dy / dist) * horizScale;
+        const vzNorm = fwdScale;
+        // Convert unit-direction back to (angle, elevation) for the
+        // simulateShot API.
+        const vhNorm = Math.sqrt(vxNorm * vxNorm + vzNorm * vzNorm);
+        const angle = Math.atan2(vxNorm, vzNorm);
+        const elevation = Math.atan2(vyNorm, vhNorm);
+        return { angle, power, elevation };
     }
 
     scene.input.on('pointermove', onMove);

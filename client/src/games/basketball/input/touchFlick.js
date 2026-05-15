@@ -1,91 +1,110 @@
 import {
-    BALL_START_X, BALL_START_Y, BALL_RADIUS,
-    MIN_ANGLE_RAD, MAX_ANGLE_RAD, MIN_POWER, MAX_POWER,
+    BALL_RELEASE_HEIGHT_M, BALL_RELEASE_LATERAL_M,
+    CAMERA_Y_M, HORIZON_Y_PX, K_NEAR_PX_PER_M, VIRTUAL_WIDTH,
+    BALL_RADIUS_M,
+    MIN_POWER, MAX_POWER,
+    SHOT_ELEVATION_RAD,
     FLICK_DISTANCE_FOR_FULL_POWER, FLICK_REFERENCE_TIME_SEC,
     FLICK_MIN_DURATION_SEC, FLICK_MAX_DURATION_SEC,
     COLORS,
 } from '../data/constants.js';
 
 /**
- * Touch flick input — mobile primary input scheme.
+ * Touch flick input — mobile primary scheme (v0.8, variable elevation).
  *
- * Player presses on the ball (or near it), drags upward, releases.
- *  - Direction of the flick (from start to release) = shot angle
- *  - Speed of the flick (distance / time) = shot power
+ * Player presses near the ball, flicks upward (toward the hoop),
+ * releases. Unlike the desktop pull-back, the flick direction IS the
+ * launch direction (no inversion — the finger pushes the ball where
+ * you flick).
  *
- * While dragging, a faint trail follows the finger so the player can
- * see what they're committing to. On release we compute (angle, power)
- * and call the supplied onShot callback.
+ *   - Flick speed (distance / time) → power.
+ *   - Flick unit vector → 3D launch direction:
+ *       world_vx ∝  dx   (right flick → ball right)
+ *       world_vy ∝ -dy   (upward flick = screen-up = world-up)
+ *       world_vz  = fixed forward baseline, sized so a pure-vertical
+ *                   flick reproduces the original 55° elevation.
  *
- * Angles outside ±60° from vertical are clamped to the bounds. Flicks
- * that are too slow or too fast are ignored as not-a-shot.
- *
- * @param {Phaser.Scene} scene
- * @param {(shot: { angle: number, power: number }) => void} onShot
- * @returns {() => void} detach function — call to remove listeners
+ * Flicks below ~30 px or outside the duration window are ignored.
  */
+
+function ballScreenPos() {
+    return {
+        x: VIRTUAL_WIDTH / 2 + BALL_RELEASE_LATERAL_M * K_NEAR_PX_PER_M,
+        y: HORIZON_Y_PX - (BALL_RELEASE_HEIGHT_M - CAMERA_Y_M) * K_NEAR_PX_PER_M,
+    };
+}
+
 export function attachTouchFlick(scene, onShot) {
-    let trackingPointerId = null;
-    let startX = 0;
-    let startY = 0;
-    let startTimeMs = 0;
+    const ballScreen = ballScreenPos();
+    const ballScreenRadius = BALL_RADIUS_M * K_NEAR_PX_PER_M;
+    let tracking = null;
     const trail = scene.add.graphics();
 
-    function isNearBall(x, y) {
-        const dx = x - BALL_START_X;
-        const dy = y - BALL_START_Y;
-        return (dx * dx + dy * dy) <= (BALL_RADIUS * 4) * (BALL_RADIUS * 4);
+    function isNearBall(px, py) {
+        const dx = px - ballScreen.x;
+        const dy = py - ballScreen.y;
+        return (dx * dx + dy * dy) <= (ballScreenRadius * 4) ** 2;
     }
 
     function onDown(pointer) {
-        if (trackingPointerId !== null) return;
+        if (tracking !== null) return;
         if (!isNearBall(pointer.x, pointer.y)) return;
-        trackingPointerId = pointer.id;
-        startX = pointer.x;
-        startY = pointer.y;
-        startTimeMs = pointer.downTime || performance.now();
+        tracking = pointer.id;
+        tracking = { id: pointer.id, startX: pointer.x, startY: pointer.y, startT: pointer.downTime || performance.now() };
         trail.clear();
     }
 
     function onMove(pointer) {
-        if (pointer.id !== trackingPointerId) return;
+        if (!tracking || pointer.id !== tracking.id) return;
         trail.clear();
         trail.lineStyle(4, COLORS.flickTrail, 0.7);
         trail.beginPath();
-        trail.moveTo(startX, startY);
+        trail.moveTo(tracking.startX, tracking.startY);
         trail.lineTo(pointer.x, pointer.y);
         trail.strokePath();
     }
 
     function onUp(pointer) {
-        if (pointer.id !== trackingPointerId) return;
-        const endX = pointer.x;
-        const endY = pointer.y;
-        const dx = endX - startX;
-        const dy = endY - startY;
-        const endTimeMs = pointer.upTime || performance.now();
-        const dtSec = Math.max(0.001, (endTimeMs - startTimeMs) / 1000);
+        if (!tracking || pointer.id !== tracking.id) return;
+        const dx = pointer.x - tracking.startX;
+        const dy = pointer.y - tracking.startY;
+        const endT = pointer.upTime || performance.now();
+        const dtSec = Math.max(0.001, (endT - tracking.startT) / 1000);
 
-        trackingPointerId = null;
+        tracking = null;
         trail.clear();
 
-        // Only forward-and-up flicks count. dy must be negative (toward
-        // the top of the screen) since up is -y.
+        // Only upward flicks count (dy negative = toward top of screen)
         if (dy >= 0) return;
         if (dtSec < FLICK_MIN_DURATION_SEC || dtSec > FLICK_MAX_DURATION_SEC) return;
+        const distance = Math.hypot(dx, dy);
+        if (distance < 30) return;
 
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        if (distance < 30) return; // too small to be a flick
-
-        // Angle from vertical, positive = right
-        const angle = clamp(Math.atan2(dx, -dy), MIN_ANGLE_RAD, MAX_ANGLE_RAD);
-
-        // Power based on flick speed normalized against reference
+        // Power from flick speed (magnitude / time)
         const speed = distance / dtSec;
         const referenceSpeed = FLICK_DISTANCE_FOR_FULL_POWER / FLICK_REFERENCE_TIME_SEC;
         const power = clamp(speed / referenceSpeed, MIN_POWER, MAX_POWER);
 
-        onShot({ angle, power });
+        // 3D launch direction from flick unit vector. Same math as
+        // mouseArrow but WITHOUT inversion (the flick IS the launch
+        // direction for touch). horizScale + fwdScale together make
+        // the resulting (vx, vy, vz) a unit vector — total speed
+        // remains power · VEL.
+        const horizScale = Math.sin(SHOT_ELEVATION_RAD);
+        const fwdScale = Math.cos(SHOT_ELEVATION_RAD);
+        // LATERAL_AIM_SENSITIVITY (0.65) damps the sideways flick
+        // component — a slightly-off flick no longer throws the ball
+        // way wide. More forgiving aim at the cost of a little 1:1
+        // flick fidelity. Mirrors mouseArrow.
+        const LATERAL_AIM_SENSITIVITY = 0.65;
+        const vxNorm = (dx / distance) * horizScale * LATERAL_AIM_SENSITIVITY;
+        const vyNorm = (-dy / distance) * horizScale;  // dy<0 for upward flick → +vy
+        const vzNorm = fwdScale;
+        const vhNorm = Math.sqrt(vxNorm * vxNorm + vzNorm * vzNorm);
+        const angle = Math.atan2(vxNorm, vzNorm);
+        const elevation = Math.atan2(vyNorm, vhNorm);
+
+        onShot({ angle, power, elevation });
     }
 
     scene.input.on('pointerdown', onDown);

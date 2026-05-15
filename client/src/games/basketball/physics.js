@@ -6,7 +6,7 @@ import {
     BACKBOARD_TOP_Y_M, BACKBOARD_BOTTOM_Y_M,
     SHOOTER_SQUARE_HALF_WIDTH_M, SHOOTER_SQUARE_BOTTOM_Y_M, SHOOTER_SQUARE_TOP_Y_M,
     BALL_RADIUS_M,
-    GRAVITY_M_S2, PHYSICS_DT, MAX_TRAJECTORY_STEPS,
+    GRAVITY_M_S2, PHYSICS_DT,
     VELOCITY_SCALE_M_S, VELOCITY_BASELINE_M_S, SHOT_ELEVATION_RAD,
     MIN_ANGLE_RAD, MAX_ANGLE_RAD, MIN_POWER, MAX_POWER,
     MIN_ELEVATION_RAD, MAX_ELEVATION_RAD,
@@ -15,50 +15,24 @@ import {
     AIR_DRAG_PER_STEP,
     INITIAL_BACKSPIN_HZ, BALL_MOI_FACTOR,
     FLOOR_Y_M,
-} from './constants.js';
+} from './data/constants.js';
 import { backboardOffsetX, backboardOffsetAtPhase, frequencyForShot } from './backboard.js';
 
 /**
- * Basketball Hoops — server-side 3D physics + collision (v0.4)
+ * Basketball Hoops — CLIENT MIRROR of server 3D physics.
  *
- * Simulates a single free-throw shot in 3D space.
- *  - input:   { angle, power } from the client (touch flick on mobile,
- *             mouse arrow on desktop — same encoding).
- *  - process: 3D parabolic trajectory under gravity, collision against
- *             the rim ring (treated as a circular tube — a torus),
- *             the backboard (vertical rect perpendicular to z), and
- *             the floor. Multi-bounce: after a collision the ball
- *             keeps simulating, so backboard → rim → out flows happen
- *             naturally.
- *  - output:  { result, trajectory, hitBackboard, hitRim }
- *
- * Coordinate system (right-handed):
- *   x = lateral (player's right = +x)
- *   y = height (up = +y)
- *   z = depth (toward hoop = +z)
- *
- * Result is one of:
- *   'swish'    — ball passed through rim ring with no metal contact
- *   'rim_in'   — touched rim metal but went through
- *   'bank_in'  — bounced off backboard then went through rim
- *   'rim_out'  — touched rim metal but didn't go through
- *   'bank_out' — bounced off backboard but didn't go through rim
- *   'short'    — ball never reached the rim (fell in front)
- *   'long'     — ball flew past the backboard entirely
- *   'wide'     — ball missed the rim/backboard laterally
- *   'invalid'  — input failed validation
- *
- * Determinism: same inputs always produce the same outputs — the
- * integrity invariant for fair wagered matches.
+ * Exact functional copy of server/services/games/basketball/physics.js
+ * with the import path adjusted. Used by the bridge so the offline v0
+ * prototype matches what the server will return at Phase 4 integration.
  */
+
+const MAX_TRAJECTORY_STEPS = 600;
 
 export function validateShotInput({ angle, power, elevation }) {
     if (typeof angle !== 'number' || !Number.isFinite(angle)) return 'angle_invalid';
     if (typeof power !== 'number' || !Number.isFinite(power)) return 'power_invalid';
     if (angle < MIN_ANGLE_RAD || angle > MAX_ANGLE_RAD) return 'angle_out_of_range';
     if (power < MIN_POWER || power > MAX_POWER) return 'power_out_of_range';
-    // Elevation is optional — when omitted, simulateShot uses the
-    // SHOT_ELEVATION_RAD default for backward compatibility.
     if (elevation !== undefined && elevation !== null) {
         if (typeof elevation !== 'number' || !Number.isFinite(elevation)) return 'elevation_invalid';
         if (elevation < MIN_ELEVATION_RAD || elevation > MAX_ELEVATION_RAD) return 'elevation_out_of_range';
@@ -66,48 +40,24 @@ export function validateShotInput({ angle, power, elevation }) {
     return null;
 }
 
-/**
- * Simulate one shot. Pure — same inputs always produce identical output.
- *
- * @param {object} params
- * @param {number} params.angle - lateral aim radians (positive = player's right)
- * @param {number} params.power - normalized [0, 1]
- * @param {number} params.attemptSeed - drives backboard motion
- * @param {number} params.shotIndex - 0-indexed shot within attempt
- * @returns {{
- *   result: string,
- *   trajectory: Array<{x:number,y:number,z:number,vx:number,vy:number,vz:number}>,
- *   hitBackboard: boolean,
- *   hitRim: boolean,
- *   reason?: string,
- * }}
- */
 export function simulateShot({ angle, power, elevation, attemptSeed, shotIndex, shotStartT = 0, motionStartT = 0, rimPhaseAtShotStart = null }) {
-    const validationError = validateShotInput({ angle, power, elevation });
-    if (validationError) {
-        return { result: 'invalid', reason: validationError, trajectory: [], hitBackboard: false, hitRim: false };
+    const err = validateShotInput({ angle, power, elevation });
+    if (err) {
+        return { result: 'invalid', reason: err, trajectory: [], hitBackboard: false, hitRim: false };
     }
 
-    // Initial velocity decomposed by elevation + lateral aim. When the
-    // payload omits `elevation`, fall back to SHOT_ELEVATION_RAD (55°)
-    // so older clients continue to work.
     const elev = (elevation === undefined || elevation === null) ? SHOT_ELEVATION_RAD : elevation;
-    // Baseline+linear power-to-velocity. See constants.js for the
-    // 5-band tuning rationale.
+    // Baseline+linear power-to-velocity (mirrors server).
     const powerNorm = (power - MIN_POWER) / (MAX_POWER - MIN_POWER);
     const v = VELOCITY_BASELINE_M_S + powerNorm * (VELOCITY_SCALE_M_S - VELOCITY_BASELINE_M_S);
     const vyInit = v * Math.sin(elev);
     const vHoriz = v * Math.cos(elev);
-    let vx = vHoriz * Math.sin(angle);     // lateral
-    let vy = vyInit;                        // up
-    let vz = vHoriz * Math.cos(angle);     // forward
+    let vx = vHoriz * Math.sin(angle);
+    let vy = vyInit;
+    let vz = vHoriz * Math.cos(angle);
 
-    // Initial backspin. Spin axis is horizontal and perpendicular to
-    // the ball's flight direction (computed as up × v_horiz, sign
-    // flipped so the top of the ball moves against the direction of
-    // travel). Magnitude = 2π · INITIAL_BACKSPIN_HZ. With zero
-    // horizontal velocity (pure-vertical shot, degenerate edge case)
-    // we leave the ball un-spun rather than picking an arbitrary axis.
+    // Initial backspin (mirrors server). Spin axis perpendicular to
+    // horizontal flight direction; top of ball rotates against motion.
     const omegaMag = 2 * Math.PI * INITIAL_BACKSPIN_HZ;
     const vh0 = Math.sqrt(vx * vx + vz * vz);
     let ox = vh0 > 1e-6 ? -omegaMag * (vz / vh0) : 0;
@@ -120,33 +70,24 @@ export function simulateShot({ angle, power, elevation, attemptSeed, shotIndex, 
 
     const trajectory = [{ x: r3(x), y: r3(y), z: r3(z), vx: r3(vx), vy: r3(vy), vz: r3(vz) }];
     // Events captured during simulation so the client can fire sound
-    // effects + net animation at the right moment during playback.
+    // effects + net animation at the right moment in playback.
     const events = [];
 
     let hitBackboard = false;
     let hitRim = false;
     let scored = false;
-    // True when the ball's centre crossed the rim plane within the
-    // cleanZone — drives the swish-vs-rim_in classification at the
-    // end. A clean cross counts as a swish even if the ball grazed
-    // the rim earlier in its arc; otherwise it's a rim_in.
+    // Set true when the ball's centre crosses the rim plane within
+    // the cleanZone — drives swish-vs-rim_in classification.
     let cleanCross = false;
-    let backboardActive = false;  // set true after ball passes z=rim_z so we don't trigger on shots that haven't reached the rim yet
 
-    // Per-shot rim frequency (rad/sec). Constant within the shot —
-    // shotIndex doesn't change during simulation. The caller-provided
-    // rimPhaseAtShotStart is the cumulative phase at the moment the
-    // shot was launched; physics increments forward from there.
+    // Per-shot rim frequency (constant during the shot). When the
+    // caller supplied a phase snapshot, use phase-based motion so the
+    // rim stays phase-continuous across tier-boundary speed changes.
     const shotFreqHz = frequencyForShot(shotIndex);
     const phaseRatePerStep = 2 * Math.PI * shotFreqHz * PHYSICS_DT;
 
     for (let step = 1; step <= MAX_TRAJECTORY_STEPS; step++) {
         const t = step * PHYSICS_DT;
-
-        // Rim+backboard x-offset. When the caller passed an explicit
-        // phase, use the phase-based path (preserves continuity across
-        // tier boundaries). Otherwise fall back to the legacy single-
-        // frequency `motionT` path so existing tests keep working.
         let rigOffset;
         if (rimPhaseAtShotStart !== null) {
             const phase = rimPhaseAtShotStart + step * phaseRatePerStep;
@@ -158,22 +99,15 @@ export function simulateShot({ angle, power, elevation, attemptSeed, shotIndex, 
         const rimX = RIM_X_BASE_M + rigOffset;
         const bbX = BACKBOARD_X_BASE_M + rigOffset;
 
-        // Euler step
-        const prevX = x;
         const prevY = y;
         const prevZ = z;
+        const prevX = x;
         vy -= GRAVITY_M_S2 * PHYSICS_DT;
         x += vx * PHYSICS_DT;
         y += vy * PHYSICS_DT;
         z += vz * PHYSICS_DT;
 
-        // --- Ball-rim torus collision (treat rim as a circular tube) ---
-        // 1. Find the nearest point on the rim ring (a circle in the
-        //    plane y=rim_y, centred at (rimX, rim_y, rim_z), radius
-        //    RIM_INNER_RADIUS_M).
-        // 2. The tube of the torus has radius RIM_TUBE_RADIUS_M around
-        //    that ring. Ball collides if dist(ball, nearest_ring_point)
-        //    < BALL_RADIUS_M + RIM_TUBE_RADIUS_M.
+        // --- Rim torus collision ---
         const dx = x - rimX;
         const dz = z - RIM_FORWARD_M;
         const horizDist = Math.sqrt(dx * dx + dz * dz);
@@ -191,52 +125,35 @@ export function simulateShot({ angle, power, elevation, attemptSeed, shotIndex, 
                 const nx = ddx / dist;
                 const ny = ddy / dist;
                 const nz = ddz / dist;
-                // Spin-coupled rim contact. The contact point on the
-                // ball is on its surface facing the ring point:
-                //   r_c = -BALL_RADIUS · n  (relative to ball centre)
-                // The velocity AT the contact point combines linear
-                // and rotational components:
-                //   v_c = v + ω × r_c
-                // Friction opposes the *tangential* component of v_c
-                // (not just v) — this is the slip-vs-grip distinction
-                // Okubo & Hubbard 2006 captures formally. A backspin-
-                // ning ball has a v_c with reduced tangential speed,
-                // so it grips the rim instead of sliding (the real-
-                // basketball "shooter's roll"). See Gemini verdict
-                // §1; PHYSICS_RESEARCH.md §3.1 (basketball physics).
+                // Spin-coupled rim contact — mirrors server. Friction
+                // is computed against the *contact-point* velocity
+                // (linear + ω × r) and updates both linear and angular
+                // velocity. See server physics.js for the full
+                // derivation.
                 const rcX = -BALL_RADIUS_M * nx;
                 const rcY = -BALL_RADIUS_M * ny;
                 const rcZ = -BALL_RADIUS_M * nz;
-                // v_spin = ω × r_c
                 const spinVx = oy * rcZ - oz * rcY;
                 const spinVy = oz * rcX - ox * rcZ;
                 const spinVz = ox * rcY - oy * rcX;
-                // Contact-point velocity
                 const vcx = vx + spinVx;
                 const vcy = vy + spinVy;
                 const vcz = vz + spinVz;
 
-                // Normal component uses LINEAR v (ω × r is ⊥ to n,
-                // so it contributes nothing along n).
                 const dot = vx * nx + vy * ny + vz * nz;
-                // Tangential component of CONTACT-POINT velocity
                 const vtx = vcx - dot * nx;
                 const vty = vcy - dot * ny;
                 const vtz = vcz - dot * nz;
                 const vtMag = Math.sqrt(vtx * vtx + vty * vty + vtz * vtz);
 
-                // Normal reflection (damped restitution)
                 const newVnx = -RIM_BOUNCE_FACTOR * dot * nx;
                 const newVny = -RIM_BOUNCE_FACTOR * dot * ny;
                 const newVnz = -RIM_BOUNCE_FACTOR * dot * nz;
 
-                // Coulomb friction impulse magnitude: μ · |J_n|
-                // where |J_n| = (1 + e) · |v_n| for unit mass.
                 const frictionImpulseMag = Math.min(
                     vtMag,
                     RIM_TANGENT_FRICTION_MU * Math.abs(dot) * (1 + RIM_BOUNCE_FACTOR),
                 );
-                // Friction impulse vector (opposes tangential motion)
                 let Jfx = 0, Jfy = 0, Jfz = 0;
                 if (vtMag > 1e-9) {
                     const k = -frictionImpulseMag / vtMag;
@@ -244,22 +161,14 @@ export function simulateShot({ angle, power, elevation, attemptSeed, shotIndex, 
                     Jfy = vty * k;
                     Jfz = vtz * k;
                 }
-                // Apply linear: tangential preserved minus friction,
-                // normal reflected.
                 vx = (vx - dot * nx) + newVnx + Jfx;
                 vy = (vy - dot * ny) + newVny + Jfy;
                 vz = (vz - dot * nz) + newVnz + Jfz;
 
-                // Apply angular impulse on ball:
-                //   Δω = (r_c × J_f) / I, where I = MOI · r² (unit mass)
-                // Backspin + glancing rim contact → friction torque
-                // typically increases backspin further (the "grip"),
-                // which then feeds back into the next rim contact.
                 const Iinv = 1 / (BALL_MOI_FACTOR * BALL_RADIUS_M * BALL_RADIUS_M);
                 ox += (rcY * Jfz - rcZ * Jfy) * Iinv;
                 oy += (rcZ * Jfx - rcX * Jfz) * Iinv;
                 oz += (rcX * Jfy - rcY * Jfx) * Iinv;
-                // Push the ball out so it doesn't re-collide next step.
                 x = ringPx + nx * (minDist + 0.001);
                 y = ringPy + ny * (minDist + 0.001);
                 z = ringPz + nz * (minDist + 0.001);
@@ -268,23 +177,18 @@ export function simulateShot({ angle, power, elevation, attemptSeed, shotIndex, 
             }
         }
 
-        // --- Ball-backboard front-face collision (swept + spin-coupled) ---
-        // The backboard is a vertical wall at z = BACKBOARD_Z_M, facing
-        // the player (front face = -z direction). We only collide on the
-        // FRONT face — a ball that flew over the top doesn't get sent
-        // back from behind.
-        //
-        // Rebuilt to mirror the rim contact: swept detection against the
-        // ball-centre contact plane (fast banks no longer tunnel through
-        // the board), normal/tangential decomposition using the
+        // --- Backboard front-face collision (swept + spin-coupled) ---
+        // Rebuilt to mirror the rim contact: swept detection against
+        // the ball-centre contact plane (fast banks no longer tunnel
+        // through the board), normal/tangential decomposition using the
         // contact-point velocity (v + ω×r), Coulomb friction across the
         // full x-y tangent plane, and an angular-impulse update.
         // Supersedes the old `vz = -|vz|·BOUNCE` + vx-only damping. The
         // "vy unchanged" caveat in PHYSICS_RESEARCH.md §5 Rec 3 / §6 Q3
         // applied to the pre-spin model — a spin-coupled impulse
         // necessarily resolves across the whole tangent plane, which is
-        // what gives banks a correct deflection angle instead of the old
-        // "every bank looks identical" behaviour.
+        // what gives banks a correct deflection angle instead of the
+        // old "every bank looks identical" behaviour.
         const bbContactZ = BACKBOARD_Z_M - BALL_RADIUS_M;
         if (vz > 0 && prevZ < bbContactZ && z >= bbContactZ) {
             // Ball centre crossed the front-face contact plane this
@@ -392,40 +296,21 @@ export function simulateShot({ angle, power, elevation, attemptSeed, shotIndex, 
             }
         }
 
-        // --- Score detection ---
-        // Ball passed downward through y=rim_y. Check if its horizontal
-        // position at that moment was inside the rim ring (allowing
-        // for ball radius). v0.5: scoring tolerance widened so that
-        // "close enough" descents through the rim plane count, even
-        // if the ball grazed the rim or banked off the backboard.
+        // --- Score detection (v0.5: forgiving "rim friendly" zone) ---
         if (!scored && prevY > RIM_HEIGHT_M && y <= RIM_HEIGHT_M && vy < 0) {
             const t01 = (prevY - RIM_HEIGHT_M) / (prevY - y || 1e-9);
-            const crossX = (x - vx * PHYSICS_DT) + (vx * PHYSICS_DT) * t01;
+            const crossX = prevX + (x - prevX) * t01;
             const crossZ = prevZ + (z - prevZ) * t01;
             const crossDx = crossX - rimX;
             const crossDz = crossZ - RIM_FORWARD_M;
             const crossHoriz = Math.sqrt(crossDx * crossDx + crossDz * crossDz);
-            // Clean-pass zone (arcade-friendly, widened for Fish's
-            // 5-band feel spec). Set to rim_radius + ball_radius/2 so
-            // a descending ball whose CENTRE crosses anywhere within
-            // half-a-ball-width past the rim ring still reads as a
-            // swish. Anything between this and outerZone is still
-            // classified as rim_in. Widened from the strict
-            // RIM_INNER_RADIUS_M after playtest showed scored shots
-            // were almost all classifying as rim_in rather than swish.
+            // Mirrors server. Widened to rim_r + ball_r/2 so descending
+            // crosses within half-a-ball past the rim ring read as swish.
             const cleanZone = RIM_INNER_RADIUS_M + BALL_RADIUS_M * 0.5;
-            // Outer tolerance: ball center must be within rim_r +
-            // 1.3·ball_r of rim centre at the crossing AND have made
-            // rim/backboard contact for the rattle to drop. Hard
-            // physical bound is rim_r + ball_r = 0.35 m; 1.3 leaves
-            // a small arcade fudge for "kissed the edge and rolled in".
             const outerZone = RIM_INNER_RADIUS_M + BALL_RADIUS_M * 1.3;
-            // Latch cleanCross on ANY descending cross within cleanZone
-            // — not just the first one that scored. After a rim-graze
-            // collision, the ball can get deflected outside the rim
-            // ring on its first descent (registering rim_in), then
-            // settle centrally on a later descent. Players read that
-            // as a swish, so the classification should too.
+            // Mirrors server. Latches cleanCross on any descending
+            // cross within cleanZone so post-rattle centred drops
+            // still classify as swishes.
             const isClean = crossHoriz <= cleanZone;
             if (isClean) cleanCross = true;
             if (!scored && crossHoriz <= outerZone) {
@@ -437,14 +322,7 @@ export function simulateShot({ angle, power, elevation, attemptSeed, shotIndex, 
             }
         }
 
-        // --- Air drag ---
-        // Per-step multiplicative damping on all velocity components.
-        // Subtle (~7%/s) but adds realism to the apex of the shot and
-        // matches the linearDamping convention of engine-backed
-        // basketball games. See PHYSICS_RESEARCH.md §5 Rec 4. Angular
-        // velocity decays at the same rate — physically slightly
-        // slower than linear drag, but the difference is invisible at
-        // the timescales of a free throw.
+        // --- Air drag --- linear + angular (mirrors server)
         vx *= AIR_DRAG_PER_STEP;
         vy *= AIR_DRAG_PER_STEP;
         vz *= AIR_DRAG_PER_STEP;
@@ -452,7 +330,7 @@ export function simulateShot({ angle, power, elevation, attemptSeed, shotIndex, 
         oy *= AIR_DRAG_PER_STEP;
         oz *= AIR_DRAG_PER_STEP;
 
-        // --- Termination conditions ---
+        // --- Termination ---
         // Floor-touch terminates first. The z/x cuts below catch
         // way-off shots so they don't simulate for 3+ s (which
         // emptied the strict 4-ball rack and felt like "can't flick").
@@ -476,13 +354,9 @@ export function simulateShot({ angle, power, elevation, attemptSeed, shotIndex, 
         trajectory.push({ x: r3(x), y: r3(y), z: r3(z), vx: r3(vx), vy: r3(vy), vz: r3(vz) });
     }
 
-    // Step cap reached without explicit termination
-    return classifyOutcome({ scored, hitBackboard, hitRim, cleanCross, x, y, z, rimX: RIM_X_BASE_M, trajectory, events });
+    return classifyOutcome({ scored, hitBackboard, hitRim, cleanCross, x, y, z, rimX: RIM_X_BASE_M, trajectory });
 }
 
-/**
- * Classify the shot outcome given final state + collision flags.
- */
 function classifyOutcome({ scored, hitBackboard, hitRim, cleanCross, x, y, z, rimX, trajectory, events }) {
     if (scored) {
         let result;
@@ -491,22 +365,13 @@ function classifyOutcome({ scored, hitBackboard, hitRim, cleanCross, x, y, z, ri
         else result = 'rim_in';
         return { result, trajectory, hitBackboard, hitRim, events };
     }
-    // Missed — categorize the way it missed
-    if (hitBackboard && !scored) {
-        return { result: 'bank_out', trajectory, hitBackboard, hitRim, events };
-    }
-    if (hitRim && !scored) {
-        return { result: 'rim_out', trajectory, hitBackboard, hitRim, events };
-    }
-    // No rim or backboard contact at all
+    if (hitBackboard) return { result: 'bank_out', trajectory, hitBackboard, hitRim, events };
+    if (hitRim) return { result: 'rim_out', trajectory, hitBackboard, hitRim, events };
     if (z < RIM_FORWARD_M - RIM_INNER_RADIUS_M) {
         return { result: 'short', trajectory, hitBackboard, hitRim, events };
     }
     if (z > BACKBOARD_Z_M) {
         return { result: 'long', trajectory, hitBackboard, hitRim, events };
-    }
-    if (Math.abs(x - rimX) > RIM_INNER_RADIUS_M) {
-        return { result: 'wide', trajectory, hitBackboard, hitRim, events };
     }
     return { result: 'wide', trajectory, hitBackboard, hitRim, events };
 }

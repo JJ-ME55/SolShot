@@ -1,7 +1,5 @@
-import {
-    BALL_START_X, BALL_START_Y, HOOP_X_BASE, HOOP_Y, HOOP_INNER_WIDTH,
-    VIRTUAL_HEIGHT, PHYSICS_DT,
-} from './data/constants.js';
+import { simulateShot } from './physics.js';
+import { GAME_DURATION_MS, BALL_COUNT } from './data/constants.js';
 
 /**
  * BasketballBridge — Phaser ↔ React state channel.
@@ -10,16 +8,14 @@ import {
  *   - Phaser writes state via updateState(), sets dirty=true
  *   - React reads via consume() in a rAF loop, only re-renders when dirty
  *
- * Plus an async I/O boundary `submitShot` that:
- *   - is currently a LOCAL MOCK (simple gravity-only trajectory, no
- *     backboard collision, swish/airball outcome only) — enough to
- *     validate input + animation in the offline prototype
- *   - will be swapped at Phase 4 integration for a real socket
- *     roundtrip to server/services/games/basketball/physics.js
+ * Plus an async I/O boundary `submitShot` that runs the client mirror
+ * of the server physics (physics.js) — one independent pre-computed
+ * trajectory per flicked ball. At Phase 4 this gets swapped for a
+ * socket roundtrip; the result shape is identical.
  *
- * The mock physics here is INTENTIONALLY simplified — the server
- * physics is the truth. This stub exists so Fish can play a v0
- * prototype before the socket layer is wired.
+ * Game mode: timed rapid-fire (see TIMED_MODE_DESIGN.md). The scene
+ * owns the game loop — timer, 4-ball rack, streaks — and writes the
+ * HUD-relevant slice of that state here.
  */
 
 class BasketballBridge {
@@ -27,12 +23,21 @@ class BasketballBridge {
         this.state = {
             score: 0,
             bestScore: 0,
-            shotIndex: 0,
-            heatCheckActive: false,
-            lastResult: null,     // 'swish' | 'rim_in' | 'bank_in' | 'rim_out' | 'bank_out' | 'airball' | null
+            // 'idle'     — game not started, waiting for first flick
+            // 'running'  — clock counting down
+            // 'settling' — clock hit 0, waiting for airborne balls
+            //              (buzzer-beaters) to resolve
+            // 'over'     — game finished, show final score + Play Again
+            gameState: 'idle',
+            timeRemainingMs: GAME_DURATION_MS,
+            // Streak counters — drive the +3 s clock extensions.
+            makesStreak: 0,
+            swishStreak: 0,
+            // How many of the BALL_COUNT balls are currently sitting
+            // in the rack (the rest are airborne or rolling back).
+            ballsInRack: BALL_COUNT,
+            lastResult: null,     // 'swish' | 'rim_in' | 'bank_in' | 'rim_out' | 'bank_out' | 'short' | 'wide' | 'long' | null
             lastPoints: 0,
-            awaitingShot: true,
-            roundOver: false,
             attemptSeed: 12345,
         };
         this.dirty = false;
@@ -60,19 +65,20 @@ class BasketballBridge {
     }
 
     /**
-     * Reset for a fresh attempt. Best-score is preserved across resets
-     * — that's the player's standing in the wagered window.
+     * Reset for a fresh game. Best-score is preserved across games —
+     * that's the player's standing in the wagered window.
      */
     resetAttempt(newSeed = null) {
         this.state = {
             ...this.state,
             score: 0,
-            shotIndex: 0,
-            heatCheckActive: false,
+            gameState: 'idle',
+            timeRemainingMs: GAME_DURATION_MS,
+            makesStreak: 0,
+            swishStreak: 0,
+            ballsInRack: BALL_COUNT,
             lastResult: null,
             lastPoints: 0,
-            awaitingShot: true,
-            roundOver: false,
             attemptSeed: newSeed !== null ? newSeed : this.state.attemptSeed,
         };
         this.dirty = true;
@@ -84,60 +90,14 @@ class BasketballBridge {
 // ──────────────────────────────────────────────────────────────────
 
 /**
- * Mock submitShot. Simulates a gravity-only trajectory locally and
- * decides outcome by checking if the ball passes through the hoop
- * plane between the rim ends. Ignores rim/backboard collision.
- *
- * Same signature as the real server roundtrip will have:
- *   ({ angle, power, attemptSeed, shotIndex }) => Promise<ShotResult>
- *
- * ShotResult = {
- *   result: 'swish' | 'rim_in' | 'bank_in' | 'rim_out' | 'bank_out' | 'airball',
- *   trajectory: Array<{ x, y, vx, vy }>,
- *   hitBackboard: boolean,
- *   hitRim: boolean,
- * }
+ * Local submitShot. Runs the client mirror of the server physics.
+ * One call per flicked ball — each ball still gets an independent
+ * pre-computed trajectory (ball-to-ball collision is a deferred
+ * follow-up that would need a continuous shared sim). At Phase 4 this
+ * becomes a socket roundtrip; the result shape is identical.
  */
-async function mockSubmitShot({ angle, power /*, attemptSeed, shotIndex */ }) {
-    const VELOCITY_SCALE = 2200;
-    const GRAVITY = 2400;
-    const MAX_STEPS = 600;
-
-    const velocity = power * VELOCITY_SCALE;
-    let vx = velocity * Math.sin(angle);
-    let vy = -velocity * Math.cos(angle);
-    let x = BALL_START_X;
-    let y = BALL_START_Y;
-
-    const trajectory = [{ x, y, vx, vy }];
-    let scored = false;
-
-    for (let step = 1; step <= MAX_STEPS; step++) {
-        const prevY = y;
-        vy += GRAVITY * PHYSICS_DT;
-        x += vx * PHYSICS_DT;
-        y += vy * PHYSICS_DT;
-        trajectory.push({ x, y, vx, vy });
-
-        // Crude hoop-plane check — no backboard motion, no rim collision
-        if (!scored && prevY < HOOP_Y && y >= HOOP_Y && vy > 0) {
-            const leftBound = HOOP_X_BASE - HOOP_INNER_WIDTH / 2;
-            const rightBound = HOOP_X_BASE + HOOP_INNER_WIDTH / 2;
-            if (x >= leftBound && x <= rightBound) scored = true;
-        }
-
-        if (y > VIRTUAL_HEIGHT) break;
-        if (scored && y > HOOP_Y + 100) break;
-    }
-
-    // Mock always returns swish-or-airball — real server distinguishes
-    // rim/bank cases via collision detection.
-    return {
-        result: scored ? 'swish' : 'airball',
-        trajectory,
-        hitBackboard: false,
-        hitRim: false,
-    };
+async function mockSubmitShot({ angle, power, elevation, attemptSeed, shotIndex, shotStartT, motionStartT, rimPhaseAtShotStart }) {
+    return simulateShot({ angle, power, elevation, attemptSeed, shotIndex, shotStartT, motionStartT, rimPhaseAtShotStart });
 }
 
 // Singleton bridge — accessible from Phaser scene and React via window

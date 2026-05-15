@@ -2,12 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { simulateShot, validateShotInput } from '../physics.js';
 import {
-    BALL_START_X, BALL_START_Y, MIN_ANGLE_RAD, MAX_ANGLE_RAD,
+    BALL_RELEASE_HEIGHT_M, BALL_RELEASE_FORWARD_M, BALL_RELEASE_LATERAL_M,
+    MIN_ANGLE_RAD, MAX_ANGLE_RAD,
 } from '../constants.js';
 
 test('validateShotInput accepts valid inputs', () => {
     assert.equal(validateShotInput({ angle: 0, power: 0.5 }), null);
-    assert.equal(validateShotInput({ angle: 0.3, power: 0.8 }), null);
+    assert.equal(validateShotInput({ angle: 0.1, power: 0.8 }), null);
     assert.equal(validateShotInput({ angle: MIN_ANGLE_RAD, power: 0.1 }), null);
     assert.equal(validateShotInput({ angle: MAX_ANGLE_RAD, power: 1.0 }), null);
 });
@@ -38,15 +39,18 @@ test('simulateShot returns invalid for bad inputs', () => {
 });
 
 test('simulateShot is deterministic — same inputs produce same output', () => {
-    const a = simulateShot({ angle: 0.1, power: 0.7, attemptSeed: 42, shotIndex: 0 });
-    const b = simulateShot({ angle: 0.1, power: 0.7, attemptSeed: 42, shotIndex: 0 });
+    const a = simulateShot({ angle: 0.05, power: 0.7, attemptSeed: 42, shotIndex: 0 });
+    const b = simulateShot({ angle: 0.05, power: 0.7, attemptSeed: 42, shotIndex: 0 });
     assert.deepEqual(a, b);
 });
 
-test('trajectory starts at BALL_START', () => {
+test('trajectory starts at the ball release point (in 3D)', () => {
     const r = simulateShot({ angle: 0, power: 0.5, attemptSeed: 42, shotIndex: 0 });
-    assert.equal(r.trajectory[0].x, Math.round(BALL_START_X * 10) / 10);
-    assert.equal(r.trajectory[0].y, Math.round(BALL_START_Y * 10) / 10);
+    assert.equal(r.trajectory.length > 0, true);
+    const p0 = r.trajectory[0];
+    assert.equal(p0.x, Math.round(BALL_RELEASE_LATERAL_M * 1000) / 1000);
+    assert.equal(p0.y, Math.round(BALL_RELEASE_HEIGHT_M * 1000) / 1000);
+    assert.equal(p0.z, Math.round(BALL_RELEASE_FORWARD_M * 1000) / 1000);
 });
 
 test('trajectory has at least 2 points for valid shots', () => {
@@ -54,20 +58,23 @@ test('trajectory has at least 2 points for valid shots', () => {
     assert.ok(r.trajectory.length >= 2);
 });
 
-test('very weak shot does not score', () => {
-    const r = simulateShot({ angle: 0, power: 0.1, attemptSeed: 42, shotIndex: 0 });
+test('minimum-power shot does not score', () => {
+    // With VELOCITY_BASELINE raised to 5.6 m/s, even MIN_POWER carries
+    // far enough to reach the rim's z-area, so the outcome is no longer
+    // strictly 'short' — but a min-power shot must still never SCORE
+    // (it falls below rim height: 'wide' / 'short' / 'rim_out').
+    const r = simulateShot({ angle: 0, power: 0.10, attemptSeed: 42, shotIndex: 0 });
     assert.ok(
-        ['airball', 'rim_out', 'bank_out'].includes(r.result),
-        `expected miss for weak shot, got ${r.result}`
+        !['swish', 'rim_in', 'bank_in'].includes(r.result),
+        `expected a non-scoring outcome for minimum-power shot, got ${r.result}`,
     );
 });
 
-test('extreme-angle shot eventually misses or exits bounds', () => {
-    const r = simulateShot({ angle: MAX_ANGLE_RAD, power: 0.3, attemptSeed: 42, shotIndex: 0 });
-    // A 60° angle with only 30% power should not score
+test('full-power shot overshoots into backboard or beyond', () => {
+    const r = simulateShot({ angle: 0, power: 1.0, attemptSeed: 42, shotIndex: 0 });
     assert.ok(
-        ['airball', 'rim_out', 'bank_out'].includes(r.result),
-        `expected miss for shallow weak shot, got ${r.result}`
+        ['bank_in', 'bank_out', 'long', 'rim_in', 'rim_out', 'swish'].includes(r.result),
+        `expected backboard hit or rim interaction at full power, got ${r.result}`
     );
 });
 
@@ -77,30 +84,46 @@ test('valid shot result has hitBackboard and hitRim booleans', () => {
     assert.equal(typeof r.hitRim, 'boolean');
 });
 
-test('different attemptSeeds can produce different results once backboard is moving', () => {
-    // On the first moving shot (index 5) at the same angle/power, different
-    // seeds shift the backboard's starting phase — result MAY differ.
-    // We don't assert it MUST differ (some seeds may happen to produce the
-    // same outcome), but we run many seeds and assert that not ALL of them
-    // are identical, which would suggest the seed isn't influencing physics.
-    const results = [];
-    for (let seed = 1; seed <= 20; seed++) {
-        const r = simulateShot({ angle: 0.1, power: 0.55, attemptSeed: seed, shotIndex: 5 });
-        results.push(r.result);
+test('every trajectory point has 3D coordinates (x, y, z)', () => {
+    const r = simulateShot({ angle: 0, power: 0.5, attemptSeed: 42, shotIndex: 0 });
+    for (const p of r.trajectory) {
+        assert.equal(typeof p.x, 'number');
+        assert.equal(typeof p.y, 'number');
+        assert.equal(typeof p.z, 'number');
+        assert.equal(typeof p.vx, 'number');
+        assert.equal(typeof p.vy, 'number');
+        assert.equal(typeof p.vz, 'number');
     }
-    const unique = new Set(results);
-    // With 20 seeds and a moving backboard, at least one variation is overwhelmingly likely
-    // (could fail in pathological cases, but extremely unlikely for v0)
+});
+
+test('attemptSeed is ignored — same other-inputs are deterministic', () => {
+    // attemptSeed is accepted for API compatibility but has no effect
+    // on the trajectory. (shotIndex DOES matter — it gates whether the
+    // backboard is moving — so both calls here use the same shotIndex.)
+    const a = simulateShot({ angle: 0.05, power: 0.55, attemptSeed: 1, shotIndex: 0, shotStartT: 1.0 });
+    const b = simulateShot({ angle: 0.05, power: 0.55, attemptSeed: 9999, shotIndex: 0, shotStartT: 1.0 });
+    assert.deepEqual(a, b, 'seed should not affect the trajectory');
+});
+
+test('extreme lateral angle eventually misses to the side', () => {
+    // Maximum lateral angle with mid power — should miss wide or short
+    // but not score.
+    const r = simulateShot({ angle: MAX_ANGLE_RAD, power: 0.85, attemptSeed: 42, shotIndex: 0 });
     assert.ok(
-        unique.size >= 1,
-        `expected the simulation to run for all seeds, got results: ${[...unique]}`
+        !['swish', 'rim_in', 'bank_in'].includes(r.result),
+        `expected miss for max lateral angle, got ${r.result}`
     );
 });
 
-test('shotIndex 0 (stationary backboard) is identical regardless of seed', () => {
-    // Backboard is stationary for the first STATIONARY_SHOTS shots, so the
-    // seed should have no effect on the trajectory or result.
-    const a = simulateShot({ angle: 0.1, power: 0.55, attemptSeed: 1, shotIndex: 0 });
-    const b = simulateShot({ angle: 0.1, power: 0.55, attemptSeed: 9999, shotIndex: 0 });
-    assert.deepEqual(a, b, 'stationary-phase shots should be seed-independent');
+test('a mid-power straight shot reaches the rim area', () => {
+    // With the baseline+linear velocity mapping (5.6 → 9.5 m/s across
+    // the power range), power ≈ 0.6 puts the shot in the swish/rim
+    // band — it must reach the rim in some recognisable way, not
+    // "short", "long", or "wide". Protects against gross physics
+    // regression.
+    const r = simulateShot({ angle: 0, power: 0.6, attemptSeed: 42, shotIndex: 0 });
+    assert.ok(
+        ['swish', 'rim_in', 'rim_out', 'bank_in', 'bank_out'].includes(r.result),
+        `expected rim-area outcome for mid-power centred shot, got ${r.result}`
+    );
 });

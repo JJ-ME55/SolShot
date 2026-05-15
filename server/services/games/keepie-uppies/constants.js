@@ -14,7 +14,9 @@
 // small on phone, Fish wanted bigger.
 // v0.4 (2026-05-15 playtest): 0.33m → 0.28m (-15%) — 0.33m felt slightly
 // too big in playtest. 0.28m gives ~225px canvas / ~110px phone.
-export const BALL_RADIUS_M = 0.28;
+// v0.5 (2026-05-15 playtest): 0.28m → 0.25m (-10%). 0.28 still slightly
+// too big. 0.25m gives ~200px canvas / ~98px phone.
+export const BALL_RADIUS_M = 0.25;
 export const BALL_MASS_KG = 0.43;           // mass unchanged; arcade abstraction
 
 // hitbox inflated 20% over visual for mobile fat-finger forgiveness

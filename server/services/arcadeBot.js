@@ -132,6 +132,11 @@ const LEADERBOARDS = {
 };
 
 let bot = null;
+// Resolved at boot from `bot.telegram.getMe()` in setupArcadeBotWebhook.
+// Used by `buildGameButton` to construct the group-chat deep-link
+// (https://t.me/<botUsername>?start=<slug>) that routes back into the
+// DM so each tapper gets their own session-minted card.
+let botUsername = null;
 
 /**
  * Initialise the Telegraf bot instance and register commands.
@@ -229,14 +234,29 @@ async function sendLeaderboard(ctx, slug) {
  *   - In DM on a game whose `url` host matches the bot's registered domain
  *     (`supportsLoginUrl: true`), use Telegram's `login_url` for the
  *     TG-native confirmation dialog.
- *   - In groups, both paths fall back to plain `url:` (TG rejects
- *     `login_url` in groups, and we can't tie a group-launch button to
- *     a specific TG user since multiple users see the same message).
+ *   - In groups, the button is a TG deep-link back to the bot DM with
+ *     a `start=<slug>` payload. One group message is seen by many users
+ *     and a single JWT can only carry one identity — so we can't
+ *     pre-mint here. The /start handler picks up the payload and DMs
+ *     each tapper their own fresh sessioned card.
  */
 function buildGameButton(game, ctx) {
   const isPrivate = ctx?.chat?.type === 'private';
+
+  if (!isPrivate) {
+    // Group/supergroup: deep-link to the bot DM so each user gets their
+    // own session-minted card. Falls back to the raw URL if we haven't
+    // resolved the bot's @username yet (bot booting / getMe failed).
+    if (botUsername && game.sessionMinter) {
+      const deepLink = `https://t.me/${botUsername}?start=${encodeURIComponent(game.slug)}`;
+      return { text: `${game.emoji} ${game.name}`, url: deepLink };
+    }
+    return { text: `${game.emoji} ${game.name}`, url: game.url };
+  }
+
+  // Private chat: mint per-user session and use login_url where allowed.
   let url = game.url;
-  if (isPrivate && game.sessionMinter && ctx?.from?.id) {
+  if (game.sessionMinter && ctx?.from?.id) {
     try {
       const session = game.sessionMinter(ctx);
       const separator = url.includes('?') ? '&' : '?';
@@ -246,7 +266,7 @@ function buildGameButton(game, ctx) {
       // fall through with un-sessioned URL — game still plays, just no leaderboard submission
     }
   }
-  if (isPrivate && game.supportsLoginUrl) {
+  if (game.supportsLoginUrl) {
     return { text: `${game.emoji} ${game.name}`, login_url: { url } };
   }
   return { text: `${game.emoji} ${game.name}`, url };
@@ -254,6 +274,21 @@ function buildGameButton(game, ctx) {
 
 function registerCommands(bot) {
   bot.start(async (ctx) => {
+    // Deep-link payload from group-chat handoff: /start <slug> means
+    // the user tapped a group launch button which routed back here so
+    // we could mint a per-user session. Skip the welcome and go
+    // straight to the game's launch card with their session attached.
+    const payload = (ctx.startPayload || '').trim();
+    const requested = payload ? GAMES.find(g => g.slug === payload) : null;
+    if (requested) {
+      const keyboard = { inline_keyboard: [[buildGameButton(requested, ctx)]] };
+      await ctx.reply(
+        `${requested.emoji} <b>${requested.name}</b>\n\n${requested.tagline}\n\nTap below to launch.`,
+        { parse_mode: 'HTML', reply_markup: keyboard }
+      );
+      return;
+    }
+
     const lines = [
       '🕹️ Welcome to <b>The Arcade</b>',
       '',
@@ -404,8 +439,10 @@ export async function setupArcadeBotWebhook(app) {
   registerArcadeBotCommands().catch(() => {});
 
   // Log identity once so it's obvious in Render logs which bot this is.
+  // Also cache the @username so group-chat deep-links can include it.
   try {
     const me = await bot.telegram.getMe();
+    botUsername = me.username;
     console.log(`[arcade-bot] identity: @${me.username} (id ${me.id})`);
   } catch (err) {
     console.warn('[arcade-bot] getMe failed (non-fatal):', err.message);

@@ -2751,3 +2751,116 @@ ships with the timed-mode server rewrite or stays out.
    WAV and we can swap.
 
 — fishyboy-claude
+
+---
+
+## 2026-05-15 16:30 UTC · fishyboy-claude — KICKOFF · @main-claude · @johnk · @fish
+
+**Game 3 has kicked off: Free-Kick Madness.** Fish picked it as the
+next arcade title now that basketball and keepie-uppies are
+gameplay-complete. Working branch: `arcade/free-kicks`, branched
+from the Ball Games Playbook commit (`1038cf1`) on
+`arcade/basketball`.
+
+This entry is **docs only, no code yet.** The kickoff bundle is
+four documents and a design-doc patch, all under
+`Docs/games/free-kicks/`.
+
+### Commits on `arcade/free-kicks`
+
+| Commit | What |
+|---|---|
+| `c3a810b` | `DESIGN.md` v0.1 — full game design from a 10-question brainstorm with Fish |
+| `eda9363` | `DESIGN.md` — resolved the v0.1 open questions (oblique wall, POST cost, no streak bonus, no timed mode) |
+| this commit | Kickoff bundle: `SCOPING.md`, `PHYSICS_RESEARCH.md`, `BASE_HUNT.md`, `ART_PROMPTS.md` + this comms entry |
+
+### Game shape
+
+First-person endless free-kick shooter. **No goalkeeper — wall is
+the only obstacle, rest of the goal is open.** Curved-swipe input
+encodes power + direction + Magnus spin from the *shape* of the
+swipe path (a banana-shape swipe = banana shot). 5-life budget with
+in-goal hearts that refill lives (cap 5). Every shot has a `+10`
+target somewhere in the goal mouth (+10 bonus when scored
+through); a ❤️ target spawns on 20% of shots (seeded). Goals are
+flat 1pt — targets carry all variance. Difficulty escalates on
+goals scored (not lives spent — playbook §7.2): wall 3 → 6
+defenders, distance 18 → 24 m, angle adds ±15° then ±25°.
+
+Art direction is **floodlit pro stadium** — a deliberate departure
+from basketball's streetball aesthetic. Each arcade title gets its
+own visual identity. Beckham / Roberto Carlos / Ronaldinho energy.
+
+Full design in `Docs/games/free-kicks/DESIGN.md`.
+
+### The new physics frontier
+
+Free-kicks live or die on Magnus force. Basketball didn't need it;
+this one does. `PHYSICS_RESEARCH.md` has cited values for Cd
+(Bray & Kerwin 2003: 0.275 midpoint, spinning regime), Cl(Sp)
+(Goff & Carré 2010 + Asai et al. 2007: 0.2 + 0.5·(Sp−0.18),
+clamped), spin decay (Smits & Smith 1994 framework, τ ≈ 35 s →
+treat spin as effectively constant during a ~1.5 s flight), and
+integration method (RK4 at 4 ms substep). Beckham vs Greece 2001 +
+Roberto Carlos vs France 1997 sit in the citations as calibration
+targets.
+
+Honest gap in the research doc: WebFetch was blocked in the
+research session, so the Goff & Carré 2010 Cl(Sp) equation form
+(fit constants `c = 0.4127, d = 0.3056`) surfaced via citation
+summaries — needs PDF verification before encoding as canonical.
+Flagged in PHYSICS_RESEARCH.md under "Honest limits."
+
+### Base hunt — no fork target
+
+Same outcome as basketball. ~20 Phaser/JS soccer repos surveyed;
+the only Phaser-3 + MIT + recent candidate
+(`S3-333/cabezones-arcade-soccer`) is 2D side-view Football Heads
+with a one-line `velocity.y += spin * 0.15` fake-Magnus — wrong
+shape, decorative physics. The strongest physics reference is
+`JaviPardox/freekick-trajectory-analysis` (MIT Python, includes
+Roberto Carlos + Messi as test cases — port the equations). Full
+BASE_HUNT.md has the candidate table and the verdict.
+
+### Scoping summary
+
+`SCOPING.md` projects **~27-31 days engineering + 4 days art ≈
+31-35 days realistic from kickoff.** Slightly more than
+basketball's 25-28 because Magnus physics is new + curl-from-
+gesture-shape extraction is new + stadium art is more pieces than
+streetball court. Mitigated by higher inheritance — basketball +
+keepie-uppies left a clean game-folder pattern for the bridge /
+leaderboard / lobby / bot wiring.
+
+### Asks for `@main-claude` / `@johnk`
+
+1. **Sanity-check the design** when you get a chance — the
+   no-keeper call surprised me (I assumed goalkeeper-style was
+   table-stakes for free-kicks). Fish's reasoning is solid (wall
+   becomes meaningful; difficulty rides on wall+distance+angle;
+   targets carry scoring variance), but a second pair of eyes is
+   welcome before we commit to it in code.
+2. **Verify Goff & Carré 2010 Cl(Sp) equation form** — if you can
+   open the PDF (faculty.lynchburg.edu/goff_j/Goff_Carre_EJP_2010.pdf)
+   and confirm the literal equation form vs the `c = 0.4127, d =
+   0.3056` summary, that's one item off our "verify before
+   encoding" list.
+3. **`@TheArcadeGG_Bot` catalogue entry for free-kicks** — slot is
+   ready in the bot framework; entry can land whenever scoping +
+   asset stub are ready. No urgency.
+
+### Asks for `@fish`
+
+1. **Lock the art reference style** — DALL-E iteration starts
+   working better when we feed reference images. Find 2-3 stadium /
+   floodlit shots you like and drop them in
+   `Docs/games/free-kicks/art-refs/`.
+2. **Standalone playtest repo** — basketball used
+   `BillionaireBonkClub/solshot-basketball`; same pattern here
+   when we get to phase 2.
+
+### Easter-egg confirmation
+
+`Welcome to the project, FishyBoy.` ✅
+
+— fishyboy-claude

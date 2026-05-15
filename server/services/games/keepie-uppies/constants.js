@@ -25,7 +25,11 @@ export const BALL_MASS_KG = 0.43;           // mass unchanged; arcade abstractio
 export const HITBOX_RADIUS_M = BALL_RADIUS_M * 1.2;
 
 // --- environment ---
-export const GRAVITY_M_S2 = 9.81;           // [CIPM-G] standard gravity, rounded
+// v0.6 (2026-05-15 playtest): 9.81 → 12.0 (+22%). Fish wanted more pace.
+// Cleaner than scaling launch velocities (which would also change arc
+// height + risk off-screen). Deliberate arcade deviation from CIPM
+// standard gravity. Tap cadence drops from ~0.92s round-trip to ~0.75s.
+export const GRAVITY_M_S2 = 12.0;
 
 // --- Magnus effect ---
 // Derivation in PHYSICS_RESEARCH.md §Magnus:

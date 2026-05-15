@@ -4,8 +4,9 @@
  * The shapes a socket handler or match-lifecycle caller needs.
  * Internal helpers stay private to their modules.
  *
- * Phase 1.x: physics + shotgen + rules + leaderboard + lifecycle.
- * resolver (window-deadline cron) comes in a subsequent phase.
+ * Phase 1.x: physics + shotgen + rules + leaderboard + lifecycle +
+ * resolver. Server-side core complete; Phase 2 is the client +
+ * standalone playtest repo.
  */
 
 export {
@@ -46,5 +47,9 @@ export {
     evaluateOTRound,
     cancelMatch,
 } from './lifecycle.js';
+
+export {
+    resolveWindow,
+} from './resolver.js';
 
 export * as Constants from './constants.js';

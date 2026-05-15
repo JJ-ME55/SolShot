@@ -716,6 +716,42 @@ export class BasketballScene extends Phaser.Scene {
         });
         // Shot-clock buzzer — the iconic basketball end-of-game horn.
         try { sfx.playBuzzer(); } catch (e) { /* audio failure non-fatal */ }
+        // Submit to the arcade leaderboard if launched via @TheArcadeGG_Bot.
+        // Fire-and-forget; failures don't affect gameplay. Surfaces the
+        // resulting rank into the bridge so the HUD can render it later
+        // without coupling to the network call.
+        this._submitToArcadeLeaderboard(finalScore);
+    }
+
+    _submitToArcadeLeaderboard(finalScore) {
+        let session = null;
+        try {
+            session = sessionStorage.getItem('arcade_session');
+        } catch (_) { /* sessionStorage unavailable (privacy mode etc.) */ }
+        if (!session) return;
+        const endpoint = 'https://solshot-server.onrender.com/api/games/basketball/score';
+        fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ score: finalScore, session }),
+        })
+            .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+            .then(data => {
+                if (data?.ok) {
+                    this.bridge.updateState({
+                        arcadeRank: data.rank,
+                        arcadeTotalPlayers: data.totalPlayers,
+                        arcadeNewBest: data.newBest,
+                    });
+                }
+            })
+            .catch(err => {
+                // 401 means session expired (>24h since launch) — silent;
+                // user can re-tap /basketball in the bot to refresh.
+                if (!String(err.message || '').includes('401')) {
+                    console.warn('[arcade-leaderboard] submit failed:', err.message);
+                }
+            });
     }
 
     // ──────────────────────────────────────────────────────────────

@@ -18,6 +18,21 @@ export function BasketballScreen() {
     const phaserHostRef = useRef(null);
     const gameRef = useRef(null);
 
+    // Capture the arcade-bot session JWT from the launch URL (if present).
+    // @TheArcadeGG_Bot mints this per-user when they tap /basketball; we
+    // forward it on score submission so the leaderboard can tie the score
+    // to a verified Telegram identity. Stashed in sessionStorage so
+    // multiple games in the same browser session reuse the same JWT
+    // (24h TTL on the JWT itself). If no session is present (user opened
+    // the URL directly, not via the bot), the game still plays — score
+    // submission is just skipped at game-end.
+    useEffect(() => {
+        try {
+            const session = new URLSearchParams(window.location.search).get('session');
+            if (session) sessionStorage.setItem('arcade_session', session);
+        } catch (_) { /* ignore — no leaderboard for this play, game still works */ }
+    }, []);
+
     useEffect(() => {
         if (!phaserHostRef.current) return;
         if (gameRef.current) return;

@@ -2934,3 +2934,178 @@ None right now — this is informational. **Two things to flag for later:**
    than bundling in the keepie-uppies branch.
 
 — fishyboy-claude
+
+---
+
+## 2026-05-15 15:18 UTC · fishyboy-claude — HANDOFF · @main-claude · @johnk
+
+**Keepie-Uppies is gameplay-complete and Fish-signed-off.** Pushing here
+for the same Phase-6-onwards integration work that basketball had —
+lifecycle, leaderboard, resolver, lobby wiring into `@TheArcadeGG_Bot`,
+plus the client React-screen wrapper to mount the Phaser scene inside
+the SolShot CRA app.
+
+Branch: `arcade/keepie-uppies` (off latest `main`, branched at
+`2f8471b feat(arcade-bot): add @TheArcadeGG_Bot — multi-game launcher`).
+
+### Standalone playtest target (live now)
+
+https://arcadegg-keepie-uppies.vercel.app — auto-deploys on every push to
+[BillionaireBonkClub/arcadegg-keepie-uppies](https://github.com/BillionaireBonkClub/arcadegg-keepie-uppies).
+Vite + React + Phaser harness; same `scene.js` + `constants.js` +
+`physics.js` modules that landed in this branch. Three-file-sync
+discipline maintained per playbook ch.9.1 — at this commit they're
+byte-identical between standalone and monorepo.
+
+### What landed on this branch
+
+**Docs** (`Docs/games/keepie-uppies/`):
+- `DESIGN.md` — full design spec, anti-goals, wager fit
+- `SCOPING.md` — file-by-file plan, phase breakdown, risks
+- `PHYSICS_RESEARCH.md` — cited constants (FIFA Law 2, Goff-2010 Magnus
+  derivation, ICAO atmosphere). World-dim revision § added during build.
+- `BASE_HUNT.md` — no clean Phaser 3 fork target found, build fresh
+- `ART_PROMPTS.md` — winning DALL-E prompts + lesson on simpler backdrop
+  briefs for arcade games
+
+**Server**:
+- `server/services/games/keepie-uppies/constants.js` — physics + tuning
+  constants with full v0.1 → v0.6 version trail in comments
+- `server/services/games/keepie-uppies/physics.js` — `simulateRound`
+  deterministic replay + `applyTap` + `isTapInsideHitbox` +
+  `validateRoundInput`
+- `server/services/games/keepie-uppies/__tests__/physics.test.js` —
+  **31 tests, all green**
+
+**Client**:
+- `client/src/games/keepie-uppies/scene.js` — `Phaser.Scene` subclass
+  with idle/playing/over state machine, fixed-timestep accumulator
+  physics, tap-fx ring, score + best HUD, game-over overlay with Play
+  Again. Tap log captured for future server submission.
+- `client/src/games/keepie-uppies/constants.js` + `physics.js` —
+  byte-identical mirror of server; `applyTap` and `isTapInsideHitbox`
+  exact, `stepPhysics` is the continuous-step variant for the live
+  update loop (server uses `simulateRound` for canonical replay).
+- `client/src/games/keepie-uppies/README.md` — module README per
+  playbook checklist, includes tap-log format spec for the Phase 6
+  socket endpoint.
+- `client/public/assets/keepie-uppies/ball.png` + `pitch.png` —
+  no-shadow Telstar football + grass-with-stripes pitch band, both
+  measured (centres + radii documented in `scene.js` constants).
+
+### What's still to build (Phase 6 per `SCOPING.md`)
+
+The game runs 100% client-side with `localStorage` for best-score.
+Server has canonical-physics-ready `simulateRound` but isn't wired into
+anything. Needed for live integration:
+
+| File | Purpose | Est |
+|---|---|---|
+| `server/services/games/keepie-uppies/lifecycle.js` | Match state machine, calls `escrow-v2.js`. `matchId: keepie:<roomId>` | 0.5d |
+| `server/services/games/keepie-uppies/rules.js` | Scoring (~5 lines) + tiebreak | 0.25d |
+| `server/services/games/keepie-uppies/leaderboard.js` | Best-score per wallet, TG broadcast on new leader | 0.5d |
+| `server/services/games/keepie-uppies/resolver.js` | Window-deadline cron → settleMatch | 0.5d |
+| `client/src/screens/KeepieUppiesScreen.js` | CRA screen mounting Phaser + wallet + socket. Modelled on `BasketballScreen.js` / `BattleScreen.js`. | 0.5d |
+| `client/src/games/keepie-uppies/bridge.js` | Phaser↔React bridge per `client/src/scenes/main/index.js` pattern | 0.25d |
+| Server socket endpoint | Receive `tapLog`, replay via `simulateRound`, persist canonical score | 0.5d |
+| `arcadeBot.js` catalogue entry | Add keepie-uppies to `@TheArcadeGG_Bot` game list with lobby config (2–10 players, wager amount, window 1d/2d/4d/7d) | 0.5d |
+| Devnet end-to-end test | Lobby fill → play → leaderboard updates → settle on deadline | 0.5d |
+| **Total** | | **~4d** |
+
+Tap-log format for the socket endpoint is documented in
+`client/src/games/keepie-uppies/README.md`. The server expects:
+
+```js
+{
+  matchId: 'keepie:<roomId>',
+  attemptId: '<uuid>',
+  seed: <number>,           // currently 0; reserved
+  worldWidth: 2.0,          // mirror of server DEFAULT_WORLD_WIDTH_M
+  tapEvents: [{tapX, tapY, timestamp}, ...],
+  clientScore: <number>,    // for cross-check
+}
+```
+
+### Constants version trail (v0.1 → v0.6)
+
+Six tuning rounds in this build, all driven by Fish playtest feedback.
+Full trail in `client/src/games/keepie-uppies/README.md` + comments
+within `constants.js`. Final values:
+
+```
+BALL_RADIUS_M        = 0.25       (down from FIFA 0.11; arcade visibility)
+BASE_UP_M_S          = 4.5        (down from 6.0; centre tap stays on screen)
+LATERAL_GAIN         = 4.0        (up from 2.5; "less forgiving with offset")
+VERTICAL_GAIN        = 1.5        (down from 3.0; only bottom-edge tap goes off-screen)
+SPIN_GAIN            = 12.0       (unchanged; Magnus feel never explicitly playtested)
+MAGNUS_COEFFICIENT   = 0.020      (unchanged; research-cited starting value)
+GRAVITY_M_S2         = 12.0       (up from 9.81; Fish wanted more pace)
+WORLD_WIDTH_M        = 2.0        (down from initial 8.0; phone visibility)
+WORLD_HEIGHT_M       = 3.0
+HITBOX_RADIUS_M      = BALL_RADIUS * 1.2  (mobile fat-finger forgiveness)
+```
+
+Fish has signed off on the v0.6 feel. **Magnus, SPIN_GAIN, and HITBOX
+forgiveness haven't been explicitly playtested** — Fish hasn't flagged
+them as issues but worth a sanity check during your integration testing.
+
+### Lessons learned (for the Ball Games Playbook update at next merge)
+
+The basketball playbook is on `arcade/basketball`, not yet merged to
+`main`, so I haven't touched it from this branch (would create a
+divergent fork). When you merge basketball, please also fold these in:
+
+1. **Phaser config-object scenes silently drop custom methods.** Pass
+   a config object literal `{key, preload, create, update, ...customs}`
+   and Phaser only binds `init/preload/create/update/render` — custom
+   methods like `startIdle`, `handleTap` get dropped unless wrapped in
+   `extend: { ... }`. **Fix:** use a `Phaser.Scene` subclass. I lost a
+   deploy cycle to this in Phase 3 (ball stuck top-left, taps did
+   nothing — `this.startIdle()` was throwing silently inside `create()`).
+2. **Even simple ball assets need pngjs measurement.** First ball asset
+   had a baked-in drop shadow — visible centre was 7 px below PNG
+   centre, so rotating for spin made the shadow orbit the ball weirdly.
+   Solution: prompt the artist to omit the shadow entirely AND
+   `setOrigin` to the measured visible centre, not PNG centre. (Same
+   playbook ch.5.5 pattern as basketball, just for a different reason.)
+3. **World dimensions matter as much as asset size for screen
+   readability.** A FIFA-spec ball at 100 px/m renders 22 px on canvas
+   / 11 px on phone after `Scale.FIT`. Two paths: shrink world (keeps
+   physics ratios real, but watch for `LATERAL_GAIN` exceeding world
+   width per flight = wall-bounce chaos) OR inflate ball radius. We
+   did both — world 8 → 2 m AND BALL_RADIUS 0.11 → 0.25 m.
+4. **Single-tap input is much simpler than basketball's
+   drag-and-release** (per playbook ch.6.1). The multi-pointer trap
+   doesn't apply — every tap is a discrete event. Just need a 30ms
+   debounce against accidental double-fires.
+5. **Skill-ceiling difficulty design works.** Constant Magnus, no
+   escalation, no multi-ball, no shrinking — the game is mechanically
+   identical at touch 5 and touch 500. Fish signed off after one
+   playtest round + 4 constant tweaks. Total iteration: ~1 day from
+   playable to signed-off (vs basketball's ~5 days of physics tuning).
+   Validates the simplicity-first thesis.
+6. **Vercel auto-deploy + `vercel deploy --prod --yes` from CLI is
+   essential for tight iteration loops.** Standalone repo + Vercel
+   integration meant ~30s from "code change" to "Fish playtests on
+   phone". Tuning rounds v0.3 → v0.6 went through 6 deploys in under
+   30 minutes.
+
+### Asks / open items
+
+1. **Phase 6 integration** is your build per scoping. Tap-log format
+   spec + simulateRound API are documented in the client README.
+2. **Magnus + SPIN_GAIN + HITBOX_RADIUS forgiveness** — not explicitly
+   playtested. Worth a sanity check during your integration playtest.
+3. **Cheering audio file** (low priority, basketball deferred this
+   too) — synth approximation in Phase 4 was deferred; if you want a
+   richer cue, drop a WAV at `client/public/assets/keepie-uppies/`.
+4. **Standalone repo cleanup at end of Phase 6** — once monorepo is
+   live, the standalone serves as Fish's iteration target only. Worth
+   keeping but flagging the README that monorepo is canonical.
+5. **`arcade/basketball` merge order** — when basketball merges first,
+   this branch needs a light rebase (no code conflict expected; both
+   branches add files in their own subdirs, only the comms log + the
+   playbook would conflict if we'd both edited them, but I didn't
+   touch the playbook from this branch).
+
+— fishyboy-claude

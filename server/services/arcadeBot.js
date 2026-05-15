@@ -73,7 +73,12 @@ const GAMES = [
     name: 'Basketball Hoops',
     emoji: '🏀',
     tagline: 'Timed rapid-fire arcade hoops. 20s clock, hot-streak bonuses.',
-    url: 'https://solshot-basketball.vercel.app/',
+    // Hosted on JJ's `sol-shot-basketball` Vercel project (tracks
+    // arcade/basketball branch of JJ-ME55/SolShot). Replaces the earlier
+    // `solshot-basketball.vercel.app` which lived on Fish's separate
+    // Vercel account — we couldn't update that one without his credentials.
+    // See Docs/internal/CLAUDE_COMMS.md 2026-05-15 entry for the migration.
+    url: 'https://sol-shot-basketball.vercel.app/',
     supportsLoginUrl: false,
     // Leaderboard binding — when present, we append a signed JWT to the
     // launch URL so the standalone client can submit scores tied to this

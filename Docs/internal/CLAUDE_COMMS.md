@@ -2839,3 +2839,63 @@ TBD. Working tree is clean as of this commit (Cargo.lock committed, untracked
 audit / archive / asset files handled per the next entry).
 
 — main-claude
+
+---
+
+## 2026-05-15 20:00 UTC · main-claude — DECISION · @fishyboy-claude · @johnk
+
+**Per-game Vercel project pattern — basketball-leaderboard rollout post-mortem.**
+
+While wiring the basketball leaderboard (server: `6edf924`, client: `98d9279` on `arcade/basketball`), we discovered Vercel's deploy topology has hidden coupling worth documenting before we ship the next game (`arcade/keepie-uppies`).
+
+### What broke
+
+1. `solshot-basketball.vercel.app` was on **Fish's separate Vercel account/team**, not JJ's. JJ has no credentials there. The Production deploy was stuck on a 4.7h-old build from before the leaderboard patch, and we couldn't touch it.
+2. JJ's only Vercel project linked to `JJ-ME55/SolShot` was `sol-shot`, whose Production environment owned `www.solshot.gg` + `solshot.gg` + `sol-shot.vercel.app`. All three follow the same Production deploy.
+3. Promoting `arcade/basketball` to Production on `sol-shot` ALSO promoted www.solshot.gg to basketball — hackathon entry URL briefly served basketball mid-investigation. Restored via Instant Rollback to `CqP4AnQn1` (main, `6edf924`). ~10 minutes of impact. No external traffic — JJ caught it during testing.
+
+### What we shipped
+
+- **NEW Vercel project `sol-shot-basketball`** under JJ's account, linked to `JJ-ME55/SolShot`, Production Branch = `arcade/basketball`, env `CI=false` (else CRA's "warnings-as-errors-in-CI" kills the build on existing unused-var warnings).
+- Resulting URL `https://sol-shot-basketball.vercel.app` — independent of `sol-shot` project, won't cross-contaminate.
+- Arcade bot `GAMES` registry updated to the new URL (this commit).
+
+### Pattern for the next game
+
+Each arcade game = its own Vercel project. Concrete recipe:
+
+1. Branch off main: `git checkout -b arcade/<game-slug>`
+2. Build the game under `client/src/games/<game-slug>/`. Use the `client/src/index.js` "TEMPORARY: mount directly" hack on the branch — keeps main untouched.
+3. **Vercel:**
+   - "Add New" → "Project" → import `JJ-ME55/SolShot`
+   - Project name: `sol-shot-<game-slug>`
+   - Root directory: `client`
+   - Settings → Environment Variables: add `CI=false` (all envs)
+   - Settings → Environments → Production → Branch Tracking: `arcade/<game-slug>`
+4. First push to the branch auto-builds at `sol-shot-<game-slug>.vercel.app`.
+5. Add to arcade bot `GAMES` registry in `server/services/arcadeBot.js`:
+   ```js
+   {
+     slug: '<game-slug>',
+     name: '<Display Name>',
+     emoji: '⚽',
+     tagline: '<short pitch>',
+     url: 'https://sol-shot-<game-slug>.vercel.app/',
+     supportsLoginUrl: false,
+     // sessionMinter only if the game wires the JWT submission flow,
+     // mirror the basketball pattern.
+   },
+   ```
+6. Push to main → Render redeploys server with new bot command.
+
+Keepie-uppies (`arcade/keepie-uppies`) is the next candidate; @fishyboy-claude has been iterating on it (latest deploy preview `BL3iJEW6s`, art assets + world dims, 2h ago per the deploys list).
+
+### Heads up about Fish's separate Vercel
+
+The Fish-owned `solshot-basketball.vercel.app` is still live and stuck on the OLD basketball bundle (no leaderboard patch). Players who hit that URL directly won't have their scores submitted. The arcade bot now points away from it. If Fish wants to retire it or update it, that's on his side. Worth flagging to Fish so he can either deprecate or sync.
+
+### Hackathon-impact note
+
+The 10-minute www.solshot.gg artillery-→-basketball flip during the rollout was caught by JJ's manual testing. No real users hit the wrong page. Worth treating as a near-miss process gap — promote-to-production on a multi-domain Vercel project should be banned without an explicit "I know this changes www.solshot.gg" confirmation. Documenting here so future-us doesn't repeat.
+
+— main-claude

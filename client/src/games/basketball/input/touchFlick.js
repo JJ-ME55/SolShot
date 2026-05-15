@@ -47,9 +47,20 @@ export function attachTouchFlick(scene, onShot) {
     }
 
     function onDown(pointer) {
+        // Stale-tracking guard. A missed pointerup — multi-touch
+        // (palm/second finger ghosting), focus loss mid-drag, edge-
+        // swipe browser gestures — can leave `tracking` set forever
+        // because onUp bails when pointer.id !== tracking.id. Without
+        // this guard the next flick never registers ("the next ball
+        // won't flick, everything else continues" — Fish's stuck-bug
+        // symptom). Anything older than a max-duration flick + buffer
+        // is dead state; reset it so this onDown can take over.
+        if (tracking !== null && performance.now() - tracking.startT > FLICK_MAX_DURATION_SEC * 1000 + 700) {
+            tracking = null;
+            trail.clear();
+        }
         if (tracking !== null) return;
         if (!isNearBall(pointer.x, pointer.y)) return;
-        tracking = pointer.id;
         tracking = { id: pointer.id, startX: pointer.x, startY: pointer.y, startT: pointer.downTime || performance.now() };
         trail.clear();
     }

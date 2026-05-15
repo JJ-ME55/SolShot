@@ -372,7 +372,18 @@ export class BasketballScene extends Phaser.Scene {
         }
 
         // --- Render every ball per its state ---
-        for (const ball of this.balls) this._renderBall(ball, now);
+        // Wrapped per-ball so one ball's render error can't terminate
+        // the loop and freeze the rack (the original "next ball won't
+        // flick" stuck-bug pattern). With this, even if a render call
+        // throws, the other balls still progress their state machines
+        // (returning balls still reach rack-push, etc).
+        for (const ball of this.balls) {
+            try {
+                this._renderBall(ball, now);
+            } catch (err) {
+                console.warn('[basketball] render ball error', err);
+            }
+        }
 
         this._updateScoreboard();
     }

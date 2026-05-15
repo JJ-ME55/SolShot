@@ -40,6 +40,11 @@ import {
     submitScore as submitBasketballScore,
     getLeaderboard as getBasketballLeaderboard,
 } from './services/games/basketball-standalone/standaloneLeaderboard.js';
+import {
+    verifySession as verifyKeepieUppiesSession,
+    submitScore as submitKeepieUppiesScore,
+    getLeaderboard as getKeepieUppiesLeaderboard,
+} from './services/games/keepie-uppies-standalone/standaloneLeaderboard.js';
 
 dotenv.config()
 
@@ -79,6 +84,7 @@ const ALWAYS_ALLOWED_ORIGINS = [
     'https://sol-shot.vercel.app',
     'https://solshot-basketball.vercel.app',
     'https://sol-shot-basketball.vercel.app',
+    'https://sol-shot-keepie-uppies.vercel.app',
 ];
 const CORS_ORIGINS = Array.from(new Set([
     ...ALWAYS_ALLOWED_ORIGINS,
@@ -704,6 +710,53 @@ app.get('/api/games/basketball/leaderboard', async (req, res) => {
         res.json({ ok: true, leaderboard });
     } catch (err) {
         console.error('[GET /api/games/basketball/leaderboard]', err.message);
+        res.status(500).json({ error: 'failed to fetch leaderboard' });
+    }
+});
+
+// Keepie Uppies leaderboard — mirror of basketball endpoints. The
+// standalone client at sol-shot-keepie-uppies.vercel.app captures the JWT
+// minted by the arcade bot on /keepieuppies tap and forwards it here.
+//
+// POST /api/games/keepieuppies/score
+//   body: { score: number, session: string }
+//   returns: { ok, newBest, bestScore, rank, totalPlayers }
+app.post('/api/games/keepieuppies/score', async (req, res) => {
+    try {
+        const { score, session } = req.body || {};
+        if (!session || typeof session !== 'string') {
+            return res.status(400).json({ error: 'session token required' });
+        }
+        if (!Number.isFinite(score)) {
+            return res.status(400).json({ error: 'numeric score required' });
+        }
+        let identity;
+        try {
+            identity = verifyKeepieUppiesSession(session);
+        } catch (err) {
+            return res.status(401).json({ error: 'session_invalid_or_expired', detail: err.message });
+        }
+        const result = await submitKeepieUppiesScore({
+            telegramUserId: identity.telegramUserId,
+            telegramUsername: identity.telegramUsername,
+            firstName: identity.firstName,
+            score,
+        });
+        res.json({ ok: true, ...result });
+    } catch (err) {
+        console.error('[POST /api/games/keepieuppies/score]', err.message);
+        res.status(500).json({ error: 'failed to submit score' });
+    }
+});
+
+// GET /api/games/keepieuppies/leaderboard?limit=10
+app.get('/api/games/keepieuppies/leaderboard', async (req, res) => {
+    try {
+        const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 10));
+        const leaderboard = await getKeepieUppiesLeaderboard({ limit });
+        res.json({ ok: true, leaderboard });
+    } catch (err) {
+        console.error('[GET /api/games/keepieuppies/leaderboard]', err.message);
         res.status(500).json({ error: 'failed to fetch leaderboard' });
     }
 });

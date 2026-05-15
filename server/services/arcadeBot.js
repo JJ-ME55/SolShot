@@ -33,6 +33,11 @@ import {
     getLeaderboard as getBasketballLeaderboard,
     getMyStanding as getBasketballStanding,
 } from './games/basketball-standalone/standaloneLeaderboard.js';
+import {
+    mintSession as mintKeepieUppiesSession,
+    getLeaderboard as getKeepieUppiesLeaderboard,
+    getMyStanding as getKeepieUppiesStanding,
+} from './games/keepie-uppies-standalone/standaloneLeaderboard.js';
 
 const ARCADE_WEBHOOK_PATH = '/api/arcade-webhook';
 
@@ -90,7 +95,41 @@ const GAMES = [
         firstName: ctx.from?.first_name,
     }),
   },
+  {
+    // TG slash commands can't contain hyphens, so the URL slug uses
+    // `sol-shot-keepie-uppies` but the bot slug stays `keepieuppies`.
+    slug: 'keepieuppies',
+    name: 'Keepie Uppies',
+    emoji: '⚽',
+    tagline: 'Tap the ball, keep it off the ground. How long can you go?',
+    url: 'https://sol-shot-keepie-uppies.vercel.app/',
+    supportsLoginUrl: false,
+    sessionMinter: (ctx) => mintKeepieUppiesSession({
+        telegramUserId: ctx.from?.id,
+        telegramUsername: ctx.from?.username,
+        firstName: ctx.from?.first_name,
+    }),
+  },
 ];
+
+// Per-game leaderboard config. Maps slug → { rendering metadata, lib }.
+// Used by `/leaderboard` chooser + per-game `/leaderboard<slug>` commands.
+const LEADERBOARDS = {
+  basketball: {
+    emoji: '🏀',
+    title: 'BASKETBALL HOOPS',
+    getLeaderboard: getBasketballLeaderboard,
+    getMyStanding: getBasketballStanding,
+    launchCmd: '/basketball',
+  },
+  keepieuppies: {
+    emoji: '⚽',
+    title: 'KEEPIE UPPIES',
+    getLeaderboard: getKeepieUppiesLeaderboard,
+    getMyStanding: getKeepieUppiesStanding,
+    launchCmd: '/keepieuppies',
+  },
+};
 
 let bot = null;
 
@@ -118,6 +157,67 @@ export function initArcadeBot() {
   });
 
   return bot;
+}
+
+/**
+ * Render and send one game's leaderboard to the caller. Used by both the
+ * `/leaderboard` chooser (via callback_query) and the per-game direct
+ * commands (e.g. `/leaderboardbasketball`).
+ */
+async function sendLeaderboard(ctx, slug) {
+  const cfg = LEADERBOARDS[slug];
+  if (!cfg) {
+    return ctx.reply('Unknown game. Use /leaderboard to see the list.');
+  }
+  try {
+    const top = await cfg.getLeaderboard({ limit: 10 });
+    const myTgId = ctx.from?.id;
+    const myStanding = myTgId ? await cfg.getMyStanding({ telegramUserId: myTgId }) : null;
+
+    if (!top || top.length === 0) {
+      return ctx.reply(
+        `${cfg.emoji} <b>${cfg.title} — LEADERBOARD</b>\n\nNo scores yet. Play ${cfg.launchCmd} to be the first.`,
+        { parse_mode: 'HTML' }
+      );
+    }
+
+    const HANDLE_W = 16;
+    const fmtHandle = (name) => {
+      const s = String(name || '???');
+      if (s.length <= HANDLE_W) return s.padEnd(HANDLE_W, ' ');
+      return s.slice(0, HANDLE_W - 1) + '…';
+    };
+    const fmtRank = (i) => {
+      if (i === 0) return '🥇';
+      if (i === 1) return '🥈';
+      if (i === 2) return '🥉';
+      return String(i + 1).padStart(2, ' ') + '.';
+    };
+
+    const lines = [];
+    lines.push(`${cfg.emoji} <b>${cfg.title} · TOP 10</b>`);
+    lines.push('<pre>');
+    top.forEach((row, i) => {
+      lines.push(`${fmtRank(i)} ${fmtHandle(row.displayName)} ${String(row.bestScore).padStart(4, ' ')}`);
+    });
+    if (myStanding && myStanding.rank > 10) {
+      lines.push('');
+      lines.push(`#${String(myStanding.rank).padStart(2, ' ')} ${fmtHandle(myStanding.displayName)} ${String(myStanding.bestScore).padStart(4, ' ')}`);
+    }
+    lines.push('</pre>');
+    if (myStanding) {
+      lines.push('');
+      lines.push(`Your best: <b>${myStanding.bestScore}</b> (rank <b>#${myStanding.rank}</b>, ${myStanding.totalSubmissions} game${myStanding.totalSubmissions === 1 ? '' : 's'} submitted)`);
+    } else {
+      lines.push('');
+      lines.push(`Play ${cfg.launchCmd} to put a score on the board.`);
+    }
+
+    await ctx.reply(lines.join('\n'), { parse_mode: 'HTML' });
+  } catch (err) {
+    console.warn(`[arcade-bot:leaderboard:${slug}] error:`, err.message);
+    await ctx.reply('Could not fetch the leaderboard right now. Try again in a moment.');
+  }
 }
 
 /**
@@ -196,62 +296,38 @@ function registerCommands(bot) {
     });
   }
 
-  // Basketball Hoops leaderboard. Shows top 10 globally + the caller's
-  // personal best/rank if they've submitted before. Scores flow into the
-  // `basketballscores` Mongo collection via POST /api/games/basketball/score
-  // (called by the standalone basketball client when a game ends).
+  // `/leaderboard` — chooser. Lists the games and uses inline buttons to
+  // jump into each game's board. Direct entry via `/leaderboard<slug>`
+  // (e.g. /leaderboardbasketball) is also registered below.
   bot.command('leaderboard', async (ctx) => {
-    try {
-      const top = await getBasketballLeaderboard({ limit: 10 });
-      const myTgId = ctx.from?.id;
-      const myStanding = myTgId ? await getBasketballStanding({ telegramUserId: myTgId }) : null;
+    const lines = [
+      '🏆 <b>The Arcade — leaderboards</b>',
+      '',
+      'Pick a game:',
+    ];
+    const buttons = Object.entries(LEADERBOARDS).map(([slug, cfg]) => ([
+      { text: `${cfg.emoji} ${cfg.title}`, callback_data: `lb:${slug}` },
+    ]));
+    await ctx.reply(lines.join('\n'), {
+      parse_mode: 'HTML',
+      reply_markup: { inline_keyboard: buttons },
+    });
+  });
 
-      if (!top || top.length === 0) {
-        return ctx.reply(
-          '🏀 <b>BASKETBALL HOOPS — LEADERBOARD</b>\n\nNo scores yet. Play /basketball to be the first.',
-          { parse_mode: 'HTML' }
-        );
-      }
+  // Per-game direct entry commands: /leaderboardbasketball, /leaderboardkeepieuppies, ...
+  for (const slug of Object.keys(LEADERBOARDS)) {
+    bot.command(`leaderboard${slug}`, async (ctx) => {
+      await sendLeaderboard(ctx, slug);
+    });
+  }
 
-      // Monospaced table — TG renders <pre> in a fixed-width font so columns line up.
-      const HANDLE_W = 16;
-      const fmtHandle = (name) => {
-        const s = String(name || '???');
-        if (s.length <= HANDLE_W) return s.padEnd(HANDLE_W, ' ');
-        return s.slice(0, HANDLE_W - 1) + '…';
-      };
-      const fmtRank = (i) => {
-        if (i === 0) return '🥇';
-        if (i === 1) return '🥈';
-        if (i === 2) return '🥉';
-        return String(i + 1).padStart(2, ' ') + '.';
-      };
-
-      const lines = [];
-      lines.push('🏀 <b>BASKETBALL HOOPS · TOP 10</b>');
-      lines.push('<pre>');
-      top.forEach((row, i) => {
-        lines.push(`${fmtRank(i)} ${fmtHandle(row.displayName)} ${String(row.bestScore).padStart(4, ' ')}`);
-      });
-      // If the caller is outside the top 10, show their own row below
-      if (myStanding && myStanding.rank > 10) {
-        lines.push('');
-        lines.push(`#${String(myStanding.rank).padStart(2, ' ')} ${fmtHandle(myStanding.displayName)} ${String(myStanding.bestScore).padStart(4, ' ')}`);
-      }
-      lines.push('</pre>');
-      if (myStanding) {
-        lines.push('');
-        lines.push(`Your best: <b>${myStanding.bestScore}</b> (rank <b>#${myStanding.rank}</b>, ${myStanding.totalSubmissions} game${myStanding.totalSubmissions === 1 ? '' : 's'} submitted)`);
-      } else {
-        lines.push('');
-        lines.push('Play /basketball to put a score on the board.');
-      }
-
-      await ctx.reply(lines.join('\n'), { parse_mode: 'HTML' });
-    } catch (err) {
-      console.warn('[arcade-bot:/leaderboard] error:', err.message);
-      await ctx.reply('Could not fetch the leaderboard right now. Try again in a moment.');
-    }
+  // Callback handler for chooser inline buttons.
+  bot.on('callback_query', async (ctx, next) => {
+    const data = ctx.callbackQuery?.data;
+    if (typeof data !== 'string' || !data.startsWith('lb:')) return next?.();
+    const slug = data.slice(3);
+    await ctx.answerCbQuery().catch(() => {});
+    await sendLeaderboard(ctx, slug);
   });
 
   bot.command('help', async (ctx) => {
@@ -264,7 +340,7 @@ function registerCommands(bot) {
     for (const g of GAMES) {
       lines.push(`/${g.slug} — launch ${g.name}`);
     }
-    lines.push('/leaderboard — Basketball Hoops top 10');
+    lines.push('/leaderboard — pick a game leaderboard');
     lines.push('/help — show this');
     lines.push('');
     lines.push('Bug? Reach <b>@SolShotGG</b> on X or <b>support@solshot.gg</b>.');
@@ -298,7 +374,11 @@ async function registerArcadeBotCommands() {
     const cmds = [
       { command: 'games',       description: 'List all games in the arcade' },
       ...GAMES.map(g => ({ command: g.slug, description: `Launch ${g.name}` })),
-      { command: 'leaderboard', description: 'Basketball Hoops top 10' },
+      { command: 'leaderboard', description: 'Pick a game leaderboard' },
+      ...Object.entries(LEADERBOARDS).map(([slug, cfg]) => ({
+        command: `leaderboard${slug}`,
+        description: `${cfg.title} top 10`,
+      })),
       { command: 'help',        description: 'Show commands + support' },
     ];
     await bot.telegram.setMyCommands(cmds);

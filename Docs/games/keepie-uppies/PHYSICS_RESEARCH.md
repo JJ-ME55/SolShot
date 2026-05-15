@@ -273,8 +273,28 @@ export const MAX_FLIGHT_STEPS = 36000;
 | `WALL_RESTITUTION` | 1.0 | design — perfectly elastic |
 | `PHYSICS_DT_S` | 1/120 | determinism + tunneling margin |
 | `MAX_FLIGHT_STEPS` | 36000 | 5-minute hard cap |
-| `WORLD_WIDTH_M` | TBD scene.js | derived from canvas + K(z=0) |
+| `DEFAULT_WORLD_WIDTH_M` | 2.0 | revised v0.2 — see World dimensions §below |
 | `FLOOR_Y_M` | 0 (by convention) | scene.js |
+
+---
+
+## World dimensions (revised v0.2)
+
+Original v0.1 sized the playfield at 8m × 12m world / 800×1200 px canvas (100 px/m). Once we mounted the FIFA-spec ball.png in Phase 2, this rendered at **22 px diameter on canvas / ~11 px on phone after Scale.FIT downscale** — too small to read or tap.
+
+**Revised v0.2:** 2m × 3m world / 800×1200 px canvas (400 px/m).
+
+| Property | v0.1 | v0.2 |
+|---|---|---|
+| WORLD_WIDTH_M | 8.0 | **2.0** |
+| WORLD_HEIGHT_M | 12.0 | **3.0** |
+| PIXELS_PER_METRE | 100 | **400** |
+| Ball diameter on canvas | 22 px | **88 px** |
+| Ball diameter on phone (Scale.FIT @ 390 wide) | 11 px | **43 px** |
+
+**Why this is fine for physics:** the simulation is parameterised by `worldWidth` per-attempt, so existing tests pass unchanged. No physics constant moved. The decision is purely "what's a realistic playable juggling area" — and 2m wide matches an actual real-life keepie-up juggling space (about 6.5 feet, the size of a small bedroom). The original 8m was an oversized arena that just happened to be the round number I picked first.
+
+**Possible side-effect to watch in playtest:** with `LATERAL_GAIN = 2.5 m/s`, an edge tap sends the ball ~3m laterally during a 1.2s flight — exceeds the 2m world. Wall bounces are now part of normal play, not a corner case. If this feels too chaotic at playtest, drop `LATERAL_GAIN` to ~1.5 (edge tap travels 1.8m, mostly stays within world).
 
 All four playtest-tuned constants (`MAGNUS_COEFFICIENT`, `BASE_UP_M_S`, `LATERAL_GAIN`, `VERTICAL_GAIN`, `SPIN_GAIN`) carry comment trails per playbook ch.3.4 — every value change documents the playtest feedback that drove it.
 

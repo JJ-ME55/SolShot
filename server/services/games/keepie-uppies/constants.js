@@ -42,7 +42,13 @@ export const WALL_RESTITUTION = 1.0;        // perfectly elastic; gravity is the
 // WORLD_WIDTH_M is derived from canvas dimensions in the client; on the
 // server we accept it as a per-attempt config so the simulation matches
 // what the client renders.
-export const DEFAULT_WORLD_WIDTH_M = 8.0;   // ~scene width; client overrides per-attempt
+//
+// Default revised v0.2: 8.0m → 2.0m. Original 8m × 12m world rendered the
+// FIFA-spec ball at 22 px on canvas / ~11 px on phone — too small to read
+// or tap. 2m × 3m matches a realistic keepie-up juggling space and gives
+// the ball a touch-comfortable ~88 px on canvas / ~43 px on phone. No
+// physics constants change — just the playfield extent.
+export const DEFAULT_WORLD_WIDTH_M = 2.0;   // ~scene width; client overrides per-attempt
 export const FLOOR_Y_M = 0.0;               // floor at y=0 by convention
 
 // --- integration ---

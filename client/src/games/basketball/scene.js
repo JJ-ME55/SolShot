@@ -729,7 +729,7 @@ export class BasketballScene extends Phaser.Scene {
             session = sessionStorage.getItem('arcade_session');
         } catch (_) { /* sessionStorage unavailable (privacy mode etc.) */ }
         if (!session) return;
-        const endpoint = 'https://solshot-server.onrender.com/api/games/basketball/score';
+        const endpoint = 'https://solshot.onrender.com/api/games/basketball/score';
         fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

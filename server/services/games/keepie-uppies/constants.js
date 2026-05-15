@@ -41,7 +41,11 @@ export const MAGNUS_COEFFICIENT = 0.020;
 // (3.0 → 1.5: bottom-edge tap is now the only way to send it off-screen,
 // per Fish's preferred feel).
 export const BASE_UP_M_S = 4.5;             // [PLAYTEST] dead-centre tap, ~0.92s round-trip; bracket 3.0-6.5
-export const LATERAL_GAIN = 2.5;            // [PLAYTEST] edge tap sideways; bracket 1.5-4.0
+// v0.5 (2026-05-15 playtest): LATERAL_GAIN 2.5 → 4.0 (+60%). Game felt
+// too forgiving — small offsets in tap position should mean bigger
+// directional consequences. Off-centre taps now send the ball ~80% of
+// world width during a typical flight, harder to chase.
+export const LATERAL_GAIN = 4.0;            // [PLAYTEST] edge tap sideways; bracket 1.5-5.0
 export const VERTICAL_GAIN = 1.5;           // [PLAYTEST] bottom-edge bonus up; bracket 1.0-3.5
 export const SPIN_GAIN = 12.0;              // [PLAYTEST] edge tap spin (S≈0.22 [GOFF-2010]); bracket 6-20
 

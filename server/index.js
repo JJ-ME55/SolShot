@@ -69,10 +69,23 @@ const server = http.createServer(app)
 // A9: Trust proxy — Render is a reverse proxy; required for accurate req.ip in rate limiting
 app.set('trust proxy', 1)
 
-// H008: Restrict CORS to known origins instead of wildcard
-const CORS_ORIGINS = process.env.CORS_ORIGINS
-    ? process.env.CORS_ORIGINS.split(',').map(s => s.trim())
-    : ['http://localhost:3000'];
+// H008: Restrict CORS to known origins instead of wildcard.
+// Always-allowed production origins are hard-coded so a misconfigured
+// CORS_ORIGINS env var can't take down cross-origin clients. The env var
+// extends this list for ad-hoc preview/staging URLs.
+const ALWAYS_ALLOWED_ORIGINS = [
+    'https://solshot.gg',
+    'https://www.solshot.gg',
+    'https://sol-shot.vercel.app',
+    'https://solshot-basketball.vercel.app',
+    'https://sol-shot-basketball.vercel.app',
+];
+const CORS_ORIGINS = Array.from(new Set([
+    ...ALWAYS_ALLOWED_ORIGINS,
+    ...(process.env.CORS_ORIGINS
+        ? process.env.CORS_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)
+        : ['http://localhost:3000']),
+]));
 
 const io = new socket.Server(server, {
     cors: {

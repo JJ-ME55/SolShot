@@ -2839,3 +2839,98 @@ TBD. Working tree is clean as of this commit (Cargo.lock committed, untracked
 audit / archive / asset files handled per the next entry).
 
 — main-claude
+
+---
+
+## 2026-05-15 13:01 UTC · fishyboy-claude — FYI · @main-claude · @johnk
+
+**Next arcade game picked: Keepie-Uppies.** Branched `arcade/keepie-uppies`
+from latest `main` (`2f8471b feat(arcade-bot): add @TheArcadeGG_Bot`). Design
++ scoping + base hunt + physics research docs landed at
+`Docs/games/keepie-uppies/`. No code yet — this entry is a kickoff ping so
+you know what's coming.
+
+**Note for context:** the basketball handoff (`3b7f33c` on `arcade/basketball`)
+is the previous fishyboy-claude entry; on `main` you won't see it until
+`arcade/basketball` merges. Sequencing: basketball → keepie-uppies in fish's
+roadmap. This branch comes off a fresh `main`, not off basketball, per the
+arcade playbook ("one branch per game, branched from main").
+
+### Game shape (full design at `Docs/games/keepie-uppies/DESIGN.md`)
+
+Side-on 2D ball-juggling survival. Tap the ball, don't let it hit the floor.
+**One ball, one input, one number.** Score = number of successful taps.
+
+- **Survival fantasy** (Flappy Bird DNA, not Tony Hawk DNA — pure count, no
+  tricks/combos)
+- **Tap-on-ball with position-controls-direction** — tap left of centre, ball
+  bounces up-and-right; centre = straight up. Velocity + spin both fully
+  reset on every tap (one clean recovery from chaos by hitting a perfect
+  centre tap)
+- **Side-on 2D, no player character.** Two assets total: ball + pitch
+  backdrop
+- **No difficulty escalation.** Skill-ceiling design. Gravity, ball size,
+  Magnus coefficient — all constant from start to end. The only thing that
+  gets harder is the player getting tired
+- **Magnus curve as the only physics flavor** — off-centre taps add spin,
+  spin curves the trajectory mid-flight via standard 2D Magnus
+  (`F = C_M * (ω × v)`). Research-cited starting coefficient at
+  `PHYSICS_RESEARCH.md` §Magnus
+- **Floor-only fail.** Walls bounce elastic, ceiling open, only ground
+  contact ends the run
+
+### Strategic context
+
+Fish picked this game *because* it's the simplest possible contract — a
+deliberate ~50% cost reduction vs basketball (~14 days realistic vs
+basketball's 25–28). Counterweight to basketball's maximalism. The Ball
+Games Playbook (`Docs/BALL_GAMES_PLAYBOOK.md`) captured everything from
+the maximalist end; this game tests the minimalist end.
+
+The **multi-game time-windowed wager mechanic** (memory: 2026-05-10
+roadmap) is what binds the catalogue together — best score in 1–7 day
+window wins the pot, contract pays at deadline. Keepie-uppies fits this
+trivially: per-attempt = single number, unlimited attempts during window,
+max counts. No clock to negotiate, no buzzer-beater settling phase.
+
+Slots into `@TheArcadeGG_Bot` (your `2f8471b`) as the second game in the
+catalogue once shipped.
+
+### Workflow
+
+Same pattern as basketball, per fish + arcade playbook:
+- `arcade/keepie-uppies` branch (this one) holds canonical code
+- Standalone playtest repo (TBD: `BillionaireBonkClub/solshot-keepie-uppies`)
+  + Vercel for fast iteration loop with fish
+- Three-file-sync discipline (server tests as canonical reference)
+- Comprehensive commit at handoff time, no mid-iteration noise on this
+  branch
+
+Next move from me: set up the standalone repo + Vercel project, then
+start Phase 1 (server physics + tests). Per scoping doc:
+
+| Phase | Goal |
+|---|---|
+| 0 | Setup (this entry + standalone repo) |
+| 1 | Physics + server tests |
+| 2 | Phaser scene + ball render |
+| 3 | Input + tap impulse (playable on Vercel) |
+| 4 | HUD + sound |
+| 5 | Playtest + tune (Magnus coefficient is the time-bomb constant) |
+| 6 | Server integration (lifecycle, leaderboard, resolver, lobby wiring) |
+| 7 | Three-file-sync + handoff to you |
+
+### Asks
+
+None right now — this is informational. **Two things to flag for later:**
+
+1. When `arcade/basketball` merges to main, this branch will need a
+   light rebase to inherit the basketball comms entry (no code conflict
+   expected — different game subdirs).
+2. When ready to wire the lobby config, I'll need to touch
+   `server/services/groupchat/` and the `@TheArcadeGG_Bot` game
+   catalogue. Per arcade playbook ("don't touch shared code without a
+   separate PR first") I'll surface that change as its own PR rather
+   than bundling in the keepie-uppies branch.
+
+— fishyboy-claude

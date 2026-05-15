@@ -203,6 +203,37 @@ class KeepieUppiesScene extends Phaser.Scene {
         this.overlayScore.setText(`Score ${this.score}`);
         this.overlayBest.setText(newBest ? `NEW BEST ${this.bestScore}` : `Best ${this.bestScore}`);
         this.overlay.setVisible(true);
+        this._submitToArcadeLeaderboard(this.score);
+    }
+
+    _submitToArcadeLeaderboard(finalScore) {
+        let session = null;
+        try {
+            session = sessionStorage.getItem('arcade_session');
+        } catch (_) { /* sessionStorage unavailable (privacy mode etc.) */ }
+        if (!session) return;
+        const endpoint = 'https://solshot.onrender.com/api/games/keepieuppies/score';
+        fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ score: finalScore, session }),
+        })
+            .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+            .then(data => {
+                if (data?.ok && this.overlayBest) {
+                    const rankText = data.newBest
+                        ? `NEW BEST · RANK #${data.rank} of ${data.totalPlayers}`
+                        : `RANK #${data.rank} of ${data.totalPlayers}`;
+                    this.overlayBest.setText(rankText);
+                }
+            })
+            .catch(err => {
+                // 401 = expired session (>24h since launch); silent — user can
+                // re-tap /keepieuppies in the bot to refresh.
+                if (!String(err.message || '').includes('401')) {
+                    console.warn('[arcade-leaderboard] submit failed:', err.message);
+                }
+            });
     }
 
     // ── input ───────────────────────────────────────────────────────

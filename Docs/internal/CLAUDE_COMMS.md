@@ -2639,3 +2639,115 @@ JJ relayed the diagnosis back to Fish, who then drafted the roadmap content hims
 - Submit to Colosseum
 
 — main-claude
+
+---
+
+## 2026-05-15 11:59 UTC · fishyboy-claude — HANDOFF · @main-claude · @johnk
+
+**Basketball Hoops is gameplay-complete and playtested.** Fish has
+been iterating it on the standalone build
+(`github.com/BillionaireBonkClub/solshot-basketball` → Vercel) for
+the past few days; he just signed off on the latest deploy ("happy
+with gameplay now"). Pushing here for SolShot integration / live
+deploy.
+
+Two commits on this branch (`arcade/basketball`) for your review:
+
+| Commit | What |
+|---|---|
+| `2bda4a8` | The bulk: timed rapid-fire mode, sprite-split visuals, full physics rebuild, SFX, polish |
+| `d2c6646` | Post-playtest rack-empty stuck-bug fix (touch input multi-pointer trap) |
+| this commit | This comms entry |
+
+### What landed
+
+**Gameplay — timed rapid-fire mode (replaces the old endless retry).**
+20 s clock, strict 4-ball rack, HOT STREAK at 3 makes-in-a-row →
++5 s. State machine: idle → running → settling → over. Buzzer-beater
+shots still count, and a HOT STREAK completed DURING settling
+revives the clock back to 'running'. Two watchdogs against stuck
+balls (FLYING_TRAJECTORY_TIMEOUT_MS 2500, MAX_FLIGHT_MS 4000) and a
+stale-tracking guard on the touch-flick handler (the actual
+stuck-bug cause — multi-touch palm ghosts leaving tracking set
+forever and locking out new flicks).
+
+**Physics — full rebuild, all grounded in `Docs/games/basketball/PHYSICS_RESEARCH.md`.**
+Spin-coupled rim contact (normal restitution + Coulomb friction on
+the contact-point velocity v + ω×r, angular impulse update,
+hollow-sphere MOI 2/3). Swept-detection backboard with strict bounds
+(over/wide misses fly past instead of bouncing the edge), vy
+untouched on board contact per §5 Rec 3 caveat (lets bank shots
+drop into the rim under gravity). Shooter's-square auto-guide: a
+hit INSIDE the real-NBA-dimensioned red rectangle overrides
+post-bounce velocity to a free-fall from the hit point into the rim
+centre — the iconic "bank off the square" make. Baseline+linear
+power model, no initial backspin, looser trajectory terminations
+(z > BACKBOARD_Z_M + 2.5, |x − rimX| > 3.0) so balls visibly travel
+past the cage wall before resolving. Backboard sway amplitude
+measured against the cabinet backdrop image (cage inner edges at
+canvas x ≈ 121 / 677 at the rim's screen-y) — `AMPLITUDE_M = 1.05`
+so the rim/net just touches the cage at peak.
+
+**Visuals — three-sprite hoop with explicit depth ordering.**
+Replaced the old `hoop.png` with separate `backboard.png` +
+`rim.png` (rim sliced in code into rim-only and net-only frames).
+Three sprites, four ball depths:
+
+```
+backdrop          (depth -10)
+ball-behind-board (depth -1)  ← past BACKBOARD_Z_M, occluded
+backboard         (depth  0)
+rim               (depth  1)
+ball-behind-net   (depth  2)  ← on score (caught-in-net)
+net               (depth  3)
+ball              (depth  4)  ← default, in front
+popups            (depth 10)
+```
+
+Per-frame depth logic in `_renderFlyingBall` picks BEHIND_BOARD /
+BEHIND_NET / default based on ball state. Old `hoop.png` is unused
+by code; safe to delete whenever.
+
+**Feedback polish.** Miss-type popup (SHORT / WIDE / LONG / RIM /
+OFF BOARD) tells the player WHY the shot missed. Big centred HOT
+STREAK celebration text. Final-5-second countdown beeps, game-over
+buzzer, streak cheer — all Web Audio synth, no asset files. Cheer
+is best-effort without a real WAV; if you want a richer cue, drop
+a cheering audio file in `public/assets/audio/` and we can swap to
+an `<audio>` element.
+
+### Phase-4 outstanding (server-side timed-mode rewrite)
+
+`server/services/games/basketball/rules.js` and `lifecycle.js`
+still encode the OLD round / heat-check / round-ends-on-miss model.
+The CLIENT now runs the timed rapid-fire game loop entirely
+locally — `bridge.submitShot` calls the client-mirror `physics.js`
+directly. For full server-authoritative integration you'll need to
+port the timed-mode state machine (timer, streaks, per-ball
+scoring) into the server. The design is locked in
+`Docs/games/basketball/TIMED_MODE_DESIGN.md`. The 75 server tests
+exercise the per-shot physics + the old rules; they all still pass,
+but they're testing the wrong rules layer for timed mode.
+
+### Ball-to-ball collision — deferred
+
+Each ball in the timed mode gets its own pre-computed
+`simulateShot` trajectory, independent of the others. For multiple
+balls airborne simultaneously to interact, we'd need a continuous
+shared sim instead of per-ball independent trajectories. Fish was
+fine deferring this for v0 — flagging for your call on whether it
+ships with the timed-mode server rewrite or stays out.
+
+### Asks
+
+1. **Push this to the live SolShot deploy** when you're ready —
+   client-side it's all here and self-contained on `arcade/basketball`.
+2. **Phase-4 server timed-mode rewrite** — when you get to it. The
+   design doc + the timed-mode constants in
+   `client/src/games/basketball/data/constants.js` should make it
+   mechanical.
+3. **Cheering audio file** (low priority) — if you want a richer
+   crowd cue than the synth approximation, find a 0.5–1 s cheering
+   WAV and we can swap.
+
+— fishyboy-claude

@@ -1,5 +1,5 @@
 import {
-    ESCALATION_TIERS,
+    ESCALATION_TIERS, DISTANCE_BIAS_EXPONENT,
     GOAL_HALF_WIDTH_M, GOAL_HEIGHT_M,
     TARGET_HALF_WIDTH_M, TARGET_HALF_HEIGHT_M,
     HEART_SPAWN_PROBABILITY,
@@ -79,6 +79,28 @@ export function tierForGoals(goalCount) {
         else break;
     }
     return chosen;
+}
+
+/**
+ * Roll a per-shot distance for the given tier.
+ *
+ * The roll is biased TOWARD the minimum (the comfortable distance)
+ * via a power curve:
+ *   distance = min + (max − min) · roll^DISTANCE_BIAS_EXPONENT
+ *
+ * With EXPONENT = 2.0:
+ *   roll=0.0 → min          (most common)
+ *   roll=0.5 → min + 25% of range
+ *   roll=0.8 → min + 64% of range
+ *   roll=1.0 → max          (rarest, big-distance shot)
+ *
+ * Rounded to the nearest metre so the HUD displays a clean value.
+ */
+export function distanceForTier(tier, rng) {
+    const [min, max] = tier.distanceRangeM;
+    const u = rng();
+    const biased = Math.pow(u, DISTANCE_BIAS_EXPONENT);
+    return Math.round(min + (max - min) * biased);
 }
 
 
@@ -193,6 +215,10 @@ export function generateScenario({ attemptSeed, shotIndex, goalCount }) {
     const rng = rngFor(attemptSeed, shotIndex);
     const tier = tierForGoals(goalCount);
 
+    // Per-shot distance — biased toward the tier's minimum,
+    // occasionally extending much further.
+    const distanceM = distanceForTier(tier, rng);
+
     // Pick angle from the tier's pool.
     const angleDeg = tier.anglePoolDeg[Math.floor(rng() * tier.anglePoolDeg.length)];
     const angleRad = angleDeg * Math.PI / 180;
@@ -207,7 +233,7 @@ export function generateScenario({ attemptSeed, shotIndex, goalCount }) {
         : null;
 
     return {
-        distanceM: tier.distanceM,
+        distanceM,
         angleRad,
         wallSize: tier.wallSize,
         plus10Target,

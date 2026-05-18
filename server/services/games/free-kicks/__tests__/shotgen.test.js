@@ -174,18 +174,65 @@ test('generateScenario: +10 corner bias is dominant (~85-95%)', () => {
 // ============================================================
 
 test('generateScenario: tier respects goalCount', () => {
-    // Generated scenario's distance + wallSize must match the tier
-    // selected by goalCount. References ESCALATION_TIERS dynamically.
+    // Generated scenario's wallSize must match the tier selected by
+    // goalCount, and distance must fall within the tier's range.
+    // (Per-shot distance is now rolled within tier.distanceRangeM —
+    // see v0.7.1.)
     const goalCounts = ESCALATION_TIERS.map(t => t.minGoals);
     for (const goalCount of goalCounts) {
         const tier = ESCALATION_TIERS.find(t => t.minGoals === goalCount);
         const s = generateScenario({ attemptSeed: 1, shotIndex: 0, goalCount });
-        assert.equal(s.distanceM, tier.distanceM, `goalCount=${goalCount}`);
         assert.equal(s.wallSize, tier.wallSize, `goalCount=${goalCount}`);
+        const [min, max] = tier.distanceRangeM;
+        assert.ok(s.distanceM >= min && s.distanceM <= max,
+            `goalCount=${goalCount}: distance ${s.distanceM} must be in [${min}, ${max}]`);
     }
-    // Tier 0 has only [0] in angle pool — verify centre-only at 0 goals.
     const s0 = generateScenario({ attemptSeed: 1, shotIndex: 0, goalCount: 0 });
     assert.equal(s0.angleRad, 0);
+});
+
+test('generateScenario: distance bias toward tier minimum', () => {
+    // Roll 200 shots at goalCount=0 (tier 1, range [12, 22]) and
+    // confirm: (a) all distances within the range, (b) median is
+    // closer to min than max (power-law bias toward minimum), and
+    // (c) the full range is sampled across the distribution.
+    const tier = ESCALATION_TIERS[0];
+    const [min, max] = tier.distanceRangeM;
+    const distances = [];
+    for (let i = 0; i < 200; i++) {
+        const s = generateScenario({ attemptSeed: 999, shotIndex: i, goalCount: 0 });
+        assert.ok(s.distanceM >= min && s.distanceM <= max,
+            `shot ${i} distance ${s.distanceM} out of range [${min}, ${max}]`);
+        distances.push(s.distanceM);
+    }
+    distances.sort((a, b) => a - b);
+    const median = distances[Math.floor(distances.length / 2)];
+    const midpoint = (min + max) / 2;
+    assert.ok(median < midpoint,
+        `median distance ${median} should be < midpoint ${midpoint} (bias toward min)`);
+    // Spread check: at least one shot in the top quartile
+    const topQuartileThreshold = min + (max - min) * 0.75;
+    const longShots = distances.filter(d => d >= topQuartileThreshold).length;
+    assert.ok(longShots > 0,
+        `expected at least 1 shot in top quartile (≥${topQuartileThreshold}m); got 0`);
+});
+
+test('generateScenario: distance never below tier minimum', () => {
+    // For each tier, roll a bunch of shots and confirm all distances
+    // are at or above the tier's minimum (Fish's "should never get
+    // closer than the current position" rule).
+    for (const tier of ESCALATION_TIERS) {
+        const [min] = tier.distanceRangeM;
+        for (let i = 0; i < 50; i++) {
+            const s = generateScenario({
+                attemptSeed: 42,
+                shotIndex: i,
+                goalCount: tier.minGoals,
+            });
+            assert.ok(s.distanceM >= min,
+                `tier minGoals=${tier.minGoals}, shot ${i}: distance ${s.distanceM} < min ${min}`);
+        }
+    }
 });
 
 test('generateScenario: tier 1 always produces centre angle', () => {

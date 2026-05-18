@@ -199,15 +199,27 @@ export const WALL_SIZES_BY_TIER = [3, 4, 5, 6];
 // Each tier triggers on goal count crossing the lower bound.
 // See DESIGN.md §Difficulty ramp.
 //
-// v0.4: pulled distances IN to match Flick Kick (which varies 11–20m,
-// often opens at 11–14m). Original 18→24m range was too far for
-// early gameplay and made the goal feel small/distant.
+// v0.4: pulled distances IN to match Flick Kick (opens at 11–14m).
+//
+// v0.7.1: replaced fixed `distanceM` per tier with a `distanceRangeM:
+// [min, max]` per tier. Each shot rolls a distance from the range,
+// biased toward min via a power curve (see shotgen.distanceForTier).
+//   - Min = "the comfortable distance you'll see most of the time"
+//     (Fish: "should never get closer than the current position")
+//   - Max ≈ +10-20m further (Flick Kick happily varies up to 38m)
+//   - Bias = 2.0 power-curve, so ~70% of shots land in the first
+//     half of the range, ~10% in the top quarter (genuine long-shots)
+//
+// Backwards-compat: a `distanceM` getter on each tier returns the
+// MIN distance so existing display code that reads tier.distanceM
+// still gets a sensible default.
+export const DISTANCE_BIAS_EXPONENT = 2.0;
 export const ESCALATION_TIERS = [
-    { minGoals: 0,  distanceM: 12, wallSize: 3, anglePoolDeg: [0] },
-    { minGoals: 3,  distanceM: 14, wallSize: 4, anglePoolDeg: [0, -15, +15] },
-    { minGoals: 6,  distanceM: 16, wallSize: 5, anglePoolDeg: [0, -15, +15, -25, +25] },
-    { minGoals: 10, distanceM: 18, wallSize: 6, anglePoolDeg: [0, -15, +15, -25, +25] },
-];
+    { minGoals: 0,  distanceRangeM: [12, 22], wallSize: 3, anglePoolDeg: [0] },
+    { minGoals: 3,  distanceRangeM: [14, 26], wallSize: 4, anglePoolDeg: [0, -15, +15] },
+    { minGoals: 6,  distanceRangeM: [16, 30], wallSize: 5, anglePoolDeg: [0, -15, +15, -25, +25] },
+    { minGoals: 10, distanceRangeM: [18, 38], wallSize: 6, anglePoolDeg: [0, -15, +15, -25, +25] },
+].map(tier => ({ ...tier, distanceM: tier.distanceRangeM[0] }));
 
 
 // ============================================================

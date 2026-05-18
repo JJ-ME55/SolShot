@@ -187,17 +187,23 @@ export function wallGeometry({ ballPos, scenario }) {
 // ============================================================
 
 /**
- * Compute lift coefficient Cl as a linear function of spin parameter
- * Sp = r·|ω|/|v|, clamped to measured envelope.
+ * Compute lift coefficient Cl from spin parameter Sp = r·|ω|/|v|.
  *
- * Source: Asai et al. 2007 wind-tunnel side-force slope (~0.5 per
- * unit Sp), anchored at Bray & Kerwin 2003 / Goff & Carré 2010
- * midpoint (Sp=0.18, Cl=0.20). See PHYSICS_RESEARCH.md §3.
+ * v0.7: pure proportional Cl(Sp) = (CL_BASE / SP_BASE) · Sp, clamped
+ * to [CL_MIN, CL_MAX]. Proportional model has the natural property
+ * that ZERO SPIN → ZERO CURL (Fish's playtest requirement: straight
+ * swipes must give straight shots). Anchored at the Beckham-spec
+ * reference point (Sp=0.18, Cl=0.20).
+ *
+ * Trade-off: the proportional model slightly over-predicts Cl at
+ * very high Sp vs Asai's wind-tunnel data — that's the arcade-feel
+ * choice. Real-football realism is sacrificed for wider dynamic
+ * range between mild and dramatic curls.
  */
 export function liftCoefficient({ speed, spinMag }) {
     if (speed < 1e-6 || spinMag < 1e-6) return 0;
     const sp = (BALL_RADIUS_M * spinMag) / speed;
-    const raw = CL_BASE + CL_SLOPE_PER_SP * (sp - SP_BASE);
+    const raw = (CL_BASE / SP_BASE) * sp;
     return Math.max(CL_MIN, Math.min(CL_MAX, raw));
 }
 

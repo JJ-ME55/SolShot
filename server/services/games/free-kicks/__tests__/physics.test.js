@@ -114,16 +114,19 @@ test('liftCoefficient: midpoint Sp returns CL_BASE', () => {
     assert.ok(Math.abs(cl - CL_BASE) < 0.01, `Cl=${cl} should be near CL_BASE=${CL_BASE}`);
 });
 
-test('liftCoefficient: clamps low', () => {
-    // Very low spin → very low Sp → should clamp to CL_MIN
+test('liftCoefficient: tiny spin → near-zero Cl', () => {
+    // v0.7 proportional model: zero spin gives zero Cl, tiny spin
+    // gives tiny Cl (no built-in floor). Confirms straight swipes
+    // produce truly straight shots — no curl from background noise.
     const cl = liftCoefficient({ speed: 30, spinMag: 1 });
-    assert.equal(cl, CL_MIN);
+    assert.ok(cl < 0.01, `tiny spin Cl=${cl}, expected near 0`);
 });
 
 test('liftCoefficient: clamps high', () => {
-    // Roberto Carlos extreme: Sp ≈ 0.32 → un-clamped Cl ≈ 0.27 (still in range)
-    // Push higher to test clamp.
-    const cl = liftCoefficient({ speed: 20, spinMag: 100 });  // Sp = 0.55, well past clamp
+    // v0.7 widened the Cl range to [0.05, 0.45]. Push spin/v ratio
+    // high enough to exceed CL_MAX. At v=15 spin=100: Sp=0.733,
+    // raw Cl = 0.2 + 0.5·(0.733−0.18) = 0.476 → clamps to 0.45.
+    const cl = liftCoefficient({ speed: 15, spinMag: 100 });
     assert.equal(cl, CL_MAX);
 });
 

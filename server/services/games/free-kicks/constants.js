@@ -86,20 +86,38 @@ export const DRAG_COEFFICIENT_CD = 0.275;
 // Functional form: linear in Sp, anchored at the midpoint
 // (Sp=0.18, Cl=0.20). Slope ≈ 0.5 per unit Sp matches Asai's
 // wind-tunnel side-force data (0.21 at Sp=0.18, 0.24 at Sp=0.22,
-// 0.29 at Sp=0.34). Clamped to [0.15, 0.30] to stay in measured
-// envelope.
+// 0.29 at Sp=0.34).
 //
-// (Goff & Carré 2010 published an exact fit form with constants
-// c=0.4127, d=0.3056. The PDF text could not be extracted for
-// verification — see PHYSICS_RESEARCH.md "Honest limits". The
-// Asai-derived linear form below is research-grounded and matches
-// the magnitudes; refining to the exact Goff & Carré form is a
-// v1.1 polish item.)
+// v0.7 tuning (playtest feedback: "needs wider dynamic range
+// between mild and dramatic curls — like a power bar"):
+//   - Switched to pure proportional Cl ∝ Sp anchored at Beckham-spec.
+//     The old offset-linear form had a built-in floor at Sp=0 of
+//     Cl≈0.11 which meant straight swipes still curved.
+//   - CL_MIN dropped to 0 — zero spin truly = zero curl.
+//   - CL_MAX raised 0.30 → 0.45 so extreme spin produces extreme
+//     curl. Deliberately past the measured 0.15-0.30 research
+//     envelope — arcade feel over realism. App-Store reviews of
+//     Flick Kick complain the ball "curves too dramatically" —
+//     that's the target.
+//
+// New formula (in physics.js liftCoefficient):
+//   Cl(Sp) = clamp((CL_BASE / SP_BASE) · Sp, CL_MIN, CL_MAX)
+//          = clamp(1.111 · Sp, 0, 0.45)
+//
+// Values at key spin levels (at v = 30 m/s):
+//   10 rad/s  → Sp=0.037 → Cl = 0.041   (barely any curl)
+//   30 rad/s  → Sp=0.110 → Cl = 0.122   (mild curl)
+//   50 rad/s  → Sp=0.183 → Cl = 0.203   (Beckham-spec)
+//   100 rad/s → Sp=0.367 → Cl = 0.408   (very strong curl)
+//   150 rad/s → Sp=0.550 → Cl = 0.45    (clamps — extreme curl)
+//
+// CL_SLOPE_PER_SP is no longer used by physics.js but exported for
+// backwards-compatible imports.
 export const CL_BASE = 0.20;          // Cl at Sp = SP_BASE
 export const SP_BASE = 0.18;
-export const CL_SLOPE_PER_SP = 0.5;   // ΔCl per unit ΔSp
-export const CL_MIN = 0.15;
-export const CL_MAX = 0.30;
+export const CL_SLOPE_PER_SP = 0.5;   // legacy — unused since v0.7
+export const CL_MIN = 0.0;
+export const CL_MAX = 0.45;
 
 // === Spin decay ===
 // Smits & Smith 1994 (golf-ball aero model, cited by all soccer
@@ -251,8 +269,9 @@ export const MAX_ELEVATION_RAD = Math.PI / 4;  // 45°
 
 // Spin (side spin only for v1, around vertical axis).
 // Real free-kicks: 7–10 rev/s = 44–63 rad/s. Roberto Carlos extreme: ~88 rad/s.
-// Allow sign for left/right curl.
-export const MAX_SPIN_RAD_S = 100.0;            // 16 rev/s — covers Carlos outlier
+// v0.7: raised from 100 to 150 rad/s (24 rev/s) so extreme-hook
+// gestures can produce extreme arcade curls beyond physical realism.
+export const MAX_SPIN_RAD_S = 150.0;            // 24 rev/s — arcade extreme
 
 
 // ============================================================

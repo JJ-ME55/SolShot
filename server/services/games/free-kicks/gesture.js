@@ -107,21 +107,31 @@ export const REFERENCE_VERTICAL_ELEVATION_RAD = 0.25;  // ~14.3°
 // damps it for forgiveness.
 export const LATERAL_AIM_SENSITIVITY = 0.65;
 
-// Spin sensitivity — converts pixels of post-contact lateral
-// deviation to rad/s of side spin.
-// Tuning history:
-//   v0.1: 0.5 — curl was barely visible at 18m
-//   v0.2: 1.5 — 3× boost, with whole-swipe-midpoint model
-//   v0.3: 0.75 — switched to TAIL-OF-SWIPE model; tail deviations
-//                are typically larger than midpoint-of-chord
-//                deviations, so the sensitivity comes back down.
-//                Calibrated so a 70 px hook → ~50 rad/s (Beckham
-//                spec), a 140 px sharp hook → 100 rad/s (Roberto
-//                Carlos extreme, hits MAX_SPIN_RAD_S clamp).
-//                PikPok's own reviewers complain the ball "curves
-//                too dramatically" — that's the target arcadey
-//                feel, not subtle Magnus.
-export const SPIN_SENSITIVITY_RAD_S_PER_PX = 0.75;
+// Spin sensitivity + curve dynamic-range tunables.
+//
+// v0.7 (playtest feedback: 'needs more/less curve based on swipe
+// movement — like a power bar'): switched from linear to POWER-LAW
+// mapping so small hooks give small curves and large hooks give
+// large curves. Plus a small dead-zone so near-straight swipes
+// produce truly straight shots.
+//
+// Formula:
+//   active   = max(0, |signedCurlPx| − SPIN_DEADZONE_PX)
+//   rawSpin  = sign(curlPx) × active^SPIN_CURVE_EXPONENT × SPIN_SENSITIVITY
+//   spin     = clamp(rawSpin, ±MAX_SPIN_RAD_S)
+//
+// Calibration targets (verified manually):
+//   - Hook 10 px  → 0 rad/s          (no curl — dead-zone)
+//   - Hook 20 px  → ~10 rad/s        (very slight curl)
+//   - Hook 50 px  → ~50 rad/s        (Beckham-spec)
+//   - Hook 100 px → ~130 rad/s       (very strong)
+//   - Hook 150 px → ~220 rad/s clamps to 150 (Roberto Carlos extreme)
+//
+// Exponent 1.2 is mild non-linear — strongly preserves order but
+// boosts the contrast between mild and dramatic gestures.
+export const SPIN_DEADZONE_PX = 10;
+export const SPIN_CURVE_EXPONENT = 1.2;
+export const SPIN_SENSITIVITY_RAD_S_PER_PX = 0.60;
 
 // Minimum samples to consider a gesture valid. Path length and
 // curvature need at least three points to be meaningful.
@@ -232,6 +242,10 @@ export function extractInputs(samples) {
     //    length to get a pixel-units lateral deviation.
     //    Sign convention: pre-chord pointing UP (preDyScreenDown < 0)
     //    + post-tail hooking RIGHT (postDx > 0) → POSITIVE cross.
+    //
+    //    v0.7: dead-zone + power-law mapping so the player has a
+    //    'curve power bar' — tiny hooks make tiny curls, big hooks
+    //    make big curls. See SPIN_* constants header for math.
     const preLen = Math.hypot(preDxScreen, preDyScreenDown);
     let signedCurlPx = 0;
     if (preLen > 1e-6) {
@@ -240,7 +254,9 @@ export function extractInputs(samples) {
         const cross = preDxScreen * postDy - preDyScreenDown * postDx;
         signedCurlPx = cross / preLen;
     }
-    const rawSpin = signedCurlPx * SPIN_SENSITIVITY_RAD_S_PER_PX;
+    const sign = signedCurlPx >= 0 ? 1 : -1;
+    const activePx = Math.max(0, Math.abs(signedCurlPx) - SPIN_DEADZONE_PX);
+    const rawSpin = sign * Math.pow(activePx, SPIN_CURVE_EXPONENT) * SPIN_SENSITIVITY_RAD_S_PER_PX;
     const spin = clamp(rawSpin, -MAX_SPIN_RAD_S, MAX_SPIN_RAD_S);
 
     return {

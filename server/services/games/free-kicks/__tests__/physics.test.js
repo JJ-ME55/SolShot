@@ -180,6 +180,29 @@ test('simulateShot: straight shot INTO wall (no curl) — blocked', () => {
 // === Magnus / curl behaviour ===
 // ============================================================
 
+test('simulateShot: positive azimuth aims to player\'s right (no spin)', () => {
+    // REGRESSION GUARD (v0.2): caught a rotation-matrix sign bug
+    // where positive azimuth was producing -x velocity. With no spin,
+    // a centre-shot at positive azimuth must cross goal-plane at +x.
+    const out = simulateShot({
+        shotInput: { power: 26, azimuth: 0.15, elevation: 0.22, spin: 0 },
+        scenario: { distanceM: 18, angleRad: 0, wallSize: 0, plus10Target: null, heartTarget: null },
+    });
+    assert.ok(out.crossing, 'shot should reach goal plane');
+    assert.ok(out.crossing.x > 0,
+        `positive azimuth should aim +x; got crossing.x=${out.crossing.x.toFixed(3)}`);
+});
+
+test('simulateShot: negative azimuth aims to player\'s left (no spin)', () => {
+    const out = simulateShot({
+        shotInput: { power: 26, azimuth: -0.15, elevation: 0.22, spin: 0 },
+        scenario: { distanceM: 18, angleRad: 0, wallSize: 0, plus10Target: null, heartTarget: null },
+    });
+    assert.ok(out.crossing, 'shot should reach goal plane');
+    assert.ok(out.crossing.x < 0,
+        `negative azimuth should aim -x; got crossing.x=${out.crossing.x.toFixed(3)}`);
+});
+
 test('simulateShot: positive spin curls ball to player\'s right', () => {
     // Same shot with +ve spin should land further +x than 0-spin shot.
     const baseShot = {

@@ -226,8 +226,12 @@ export const HEART_LIFE_BONUS = 1;
 // === Input bounds (validation) ===
 // ============================================================
 
-// Power: real free-kick range 25–35 m/s. Allow a small margin.
-export const MIN_POWER_M_S = 15.0;
+// Power: real free-kick range 25–35 m/s. We allow the lower bound to
+// dip well below that for arcade feel — a tiny tap should produce a
+// soft dribbler, not a 15 m/s rocket. 8 m/s is a gentle pass speed.
+// Tuned during v0.2 playtest (Fish: "tiniest flick goes over the goal"
+// → bring the floor way down).
+export const MIN_POWER_M_S = 8.0;
 export const MAX_POWER_M_S = 40.0;
 
 // Launch azimuth (horizontal angle from straight-toward-goal).

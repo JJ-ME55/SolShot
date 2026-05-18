@@ -515,11 +515,17 @@ export function simulateShot({ shotInput, scenario }) {
     const facingLen = Math.hypot(facingDx, facingDz);
     const facingX = facingDx / facingLen;
     const facingZ = facingDz / facingLen;
-    // Apply azimuth offset (rotate around y axis by `azimuth`)
+    // Apply azimuth as deviation from straight-ahead, in PLAYER-RELATIVE
+    // terms: positive azimuth = aim toward player's right.
+    //   aim = facing * cos(azimuth)  +  playerRight * sin(azimuth)
+    // where playerRight = (facingZ, 0, -facingX) (perpendicular to
+    // facing in the horizontal plane, pointing to the kicker's right).
+    // For a centre shot (facing = +z): playerRight = +x → aimX =
+    // sin(azimuth), aimZ = cos(azimuth). Positive azimuth → ball goes +x.
     const cosA = Math.cos(azimuth);
     const sinA = Math.sin(azimuth);
-    const aimX = facingX * cosA - facingZ * sinA;
-    const aimZ = facingX * sinA + facingZ * cosA;
+    const aimX =  facingX * cosA + facingZ * sinA;
+    const aimZ = -facingX * sinA + facingZ * cosA;
     // Apply elevation (tilt up)
     const cosE = Math.cos(elevation);
     const sinE = Math.sin(elevation);

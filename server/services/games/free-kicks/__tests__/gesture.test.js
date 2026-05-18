@@ -96,15 +96,15 @@ test('extractInputs: gesture too short → invalid', () => {
 
 test('extractInputs: power scales with path length', () => {
     const short = straightSwipe({ fromX: 0, fromY: 600, toX: 0, toY: 400 });   // 200px
-    const long = straightSwipe({ fromX: 0, fromY: 600, toX: 0, toY: 0 });      // 600px
+    const long = straightSwipe({ fromX: 0, fromY: 1000, toX: 0, toY: 0 });     // 1000px
     const a = extractInputs(short);
     const b = extractInputs(long);
     assert.ok(b.power > a.power, `long swipe power=${b.power} should be > short swipe power=${a.power}`);
 });
 
 test('extractInputs: maximum-length swipe maps to MAX_POWER', () => {
-    // 800px swipe (longer than REFERENCE) clamps to MAX.
-    const samples = straightSwipe({ fromX: 0, fromY: 800, toX: 0, toY: 0 });
+    // 1200px swipe (longer than REFERENCE_PATH_LENGTH_PX=1000) clamps to MAX.
+    const samples = straightSwipe({ fromX: 0, fromY: 1200, toX: 0, toY: 0 });
     const out = extractInputs(samples);
     assert.equal(out.power, MAX_POWER_M_S);
 });
@@ -154,8 +154,8 @@ test('extractInputs: azimuth clamps to MIN/MAX', () => {
 // ============================================================
 
 test('extractInputs: vertical reference swipe → reference elevation', () => {
-    // 200px upward swipe → REFERENCE_VERTICAL_ELEVATION_RAD.
-    const samples = straightSwipe({ fromX: 0, fromY: 600, toX: 0, toY: 400 });
+    // 400px upward swipe → REFERENCE_VERTICAL_ELEVATION_RAD.
+    const samples = straightSwipe({ fromX: 0, fromY: 800, toX: 0, toY: 400 });
     const out = extractInputs(samples);
     assert.ok(
         Math.abs(out.elevation - REFERENCE_VERTICAL_ELEVATION_RAD) < 0.01,
@@ -165,13 +165,13 @@ test('extractInputs: vertical reference swipe → reference elevation', () => {
 
 test('extractInputs: longer upward swipe → higher elevation', () => {
     const short = straightSwipe({ fromX: 0, fromY: 600, toX: 0, toY: 500 });   // 100px up
-    const long = straightSwipe({ fromX: 0, fromY: 600, toX: 0, toY: 200 });    // 400px up
+    const long = straightSwipe({ fromX: 0, fromY: 800, toX: 0, toY: 200 });    // 600px up
     assert.ok(extractInputs(long).elevation > extractInputs(short).elevation);
 });
 
 test('extractInputs: elevation clamps to MAX', () => {
-    // 900px upward swipe → raw elevation way past MAX.
-    const samples = straightSwipe({ fromX: 0, fromY: 900, toX: 0, toY: 0 });
+    // 1600px upward swipe → raw elevation way past MAX.
+    const samples = straightSwipe({ fromX: 0, fromY: 1600, toX: 0, toY: 0 });
     const out = extractInputs(samples);
     assert.equal(out.elevation, MAX_ELEVATION_RAD);
 });

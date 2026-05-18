@@ -65,13 +65,20 @@ import {
 // ============================================================
 
 // A swipe of this many pixels = full power (mapped to MAX_POWER_M_S).
-// Tuned for a phone screen ~1500px tall in CSS pixels.
-export const REFERENCE_PATH_LENGTH_PX = 600;
+// Phaser's FIT scale mode amplifies physical swipes into large virtual-
+// pixel paths on a phone (an 800x1200 virtual canvas on a ~400x600
+// device-px screen means every physical pixel maps to ~2 virtual px).
+// 1000 px ≈ 83% of the 1200 virtual canvas height — requires a long
+// deliberate swipe to hit full power.
+// Tuned during v0.2 playtest.
+export const REFERENCE_PATH_LENGTH_PX = 1000;
 
 // A purely-upward swipe of this length (in screen pixels) maps to
 // REFERENCE_VERTICAL_ELEVATION_RAD elevation. Linearly extrapolated
 // beyond + clamped.
-export const REFERENCE_VERTICAL_SWIPE_PX = 200;
+// Tuned during v0.2 playtest — was 200 px, sending the ball over the
+// crossbar on every small swipe.
+export const REFERENCE_VERTICAL_SWIPE_PX = 400;
 export const REFERENCE_VERTICAL_ELEVATION_RAD = 0.25;  // ~14.3°
 
 // Lateral aim sensitivity — same value the playbook (§6.3) settled on
@@ -80,9 +87,11 @@ export const REFERENCE_VERTICAL_ELEVATION_RAD = 0.25;  // ~14.3°
 export const LATERAL_AIM_SENSITIVITY = 0.65;
 
 // Spin sensitivity — converts pixels of midpoint deviation to rad/s
-// of side spin. Calibrated so that 100 px of midpoint deviation gives
+// of side spin. Calibrated so that ~33 px of midpoint deviation gives
 // 50 rad/s spin — Beckham-spec (~8 rev/s) at a typical swipe length.
-export const SPIN_SENSITIVITY_RAD_S_PER_PX = 0.5;
+// Tuned during v0.2 playtest — was 0.5, but the curl was barely
+// visible at 18m. 3× boost makes the curl mirror the swipe shape.
+export const SPIN_SENSITIVITY_RAD_S_PER_PX = 1.5;
 
 // Minimum samples to consider a gesture valid. Path length and
 // curvature need at least three points to be meaningful.

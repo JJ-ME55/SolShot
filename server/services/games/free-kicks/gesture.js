@@ -6,7 +6,7 @@ import {
 } from './constants.js';
 
 /**
- * Free-Kick Madness — gesture extractor (v0.1)
+ * Free-Kick Madness — gesture extractor (v0.3 — tail-of-swipe model)
  *
  * Pure function that turns a swipe path (array of {x, y, t}) into
  * the derived shot inputs that simulateShot() consumes:
@@ -18,6 +18,24 @@ import {
  * for live trail / preview — guarantees client and server agree on
  * what a given gesture means.
  *
+ * GESTURE MODEL (v0.3 — copied from Flick Kick Football)
+ *
+ *   PikPok's developer guide: "The curve is affected by the angle
+ *   of the curve AFTER you've made contact with the ball... you
+ *   need to increase tightness of your swipe AFTER making contact."
+ *
+ *   We approximate "the contact point" as the MIDDLE sample of the
+ *   gesture. Everything before that = THE KICK (direction + power).
+ *   Everything after that = THE CURL (curl magnitude + direction).
+ *
+ *   This lets the player:
+ *     - swipe straight up + hook right at the tail → driven shot
+ *       with late curl (the iconic Flick Kick "tight hook" feel)
+ *     - swipe in a smooth banana arc → the pre-contact direction
+ *       already aims slightly off-line + the late tail continues
+ *       the bend → curling shot in the same direction
+ *     - swipe straight all the way → no curl
+ *
  * COORDINATE CONVENTION
  *   Input samples are in screen pixels with y INCREASING DOWNWARD
  *   (standard browser / Phaser convention). The extractor flips y
@@ -25,32 +43,35 @@ import {
  *
  * MAPPING (each calibration constant marked PLAYTEST):
  *
- *   POWER       = path length of the swipe, normalised against
- *                 REFERENCE_PATH_LENGTH_PX, then baseline+linear
- *                 to [MIN_POWER_M_S, MAX_POWER_M_S].
+ *   POWER       = TOTAL path length of the swipe (full gesture),
+ *                 normalised against REFERENCE_PATH_LENGTH_PX,
+ *                 then baseline+linear to [MIN_POWER_M_S,
+ *                 MAX_POWER_M_S]. Confirmed by PikPok: "longer
+ *                 the flick, the higher the ball travels."
  *
- *   AZIMUTH     = atan2(dx, max(dy, 1)) — the angle of the swipe's
- *                 end-vs-start vector from "straight up" — then
- *                 scaled by LATERAL_AIM_SENSITIVITY (~0.65) for
- *                 forgiveness, then clamped to the valid range.
+ *   AZIMUTH     = lateral angle of the PRE-CONTACT chord
+ *                 (samples[0] → samples[contactIdx]), atan2-from-
+ *                 straight-up, scaled by LATERAL_AIM_SENSITIVITY.
  *                 +ve = player's right.
  *
- *   ELEVATION   = upward component of start→end vector, mapped via
- *                 REFERENCE_VERTICAL_SWIPE_PX → REFERENCE_VERTICAL
- *                 _ELEVATION_RAD then linearly extrapolated and
- *                 clamped.
+ *   ELEVATION   = upward component of the PRE-CONTACT chord,
+ *                 calibrated via REFERENCE_VERTICAL_SWIPE_PX →
+ *                 REFERENCE_VERTICAL_ELEVATION_RAD, clamped.
  *
- *   SPIN        = signed perpendicular deviation of the path's
- *                 MIDPOINT from the chord (start→end), expressed
- *                 in pixels and scaled by SPIN_SENSITIVITY_RAD_S
- *                 _PER_PX.
- *                 +ve = right curl (banana shot bending right).
- *                 -ve = left curl.
- *                 Sign uses cross-product of (chord, mid-from-start):
- *                   cross = chordDx*midDy − chordDy*midDx
- *                 with y kept in SCREEN coords (downward +). A
- *                 right-bowing swipe to an upward chord yields a
- *                 POSITIVE cross.
+ *   SPIN        = signed perpendicular deviation of the POST-CONTACT
+ *                 endpoint relative to the PRE-CONTACT chord
+ *                 direction, in pixels, scaled by
+ *                 SPIN_SENSITIVITY_RAD_S_PER_PX.
+ *                 +ve = right curl. -ve = left curl.
+ *                 Sign uses 2D cross:
+ *                   preDx = preEnd.x − preStart.x  (screen)
+ *                   preDy = preEnd.y − preStart.y  (screen, down +)
+ *                   postDx = postEnd.x − preEnd.x
+ *                   postDy = postEnd.y − preEnd.y
+ *                   cross = preDx·postDy − preDy·postDx
+ *                 A pre-chord going UP (preDy < 0) with the post-
+ *                 tail hooking RIGHT (postDx > 0) yields a POSITIVE
+ *                 cross.
  *
  * Pure — same input always produces the same output. Returns
  * { invalid: true, reason } on bad input rather than throwing, so
@@ -86,12 +107,21 @@ export const REFERENCE_VERTICAL_ELEVATION_RAD = 0.25;  // ~14.3°
 // damps it for forgiveness.
 export const LATERAL_AIM_SENSITIVITY = 0.65;
 
-// Spin sensitivity — converts pixels of midpoint deviation to rad/s
-// of side spin. Calibrated so that ~33 px of midpoint deviation gives
-// 50 rad/s spin — Beckham-spec (~8 rev/s) at a typical swipe length.
-// Tuned during v0.2 playtest — was 0.5, but the curl was barely
-// visible at 18m. 3× boost makes the curl mirror the swipe shape.
-export const SPIN_SENSITIVITY_RAD_S_PER_PX = 1.5;
+// Spin sensitivity — converts pixels of post-contact lateral
+// deviation to rad/s of side spin.
+// Tuning history:
+//   v0.1: 0.5 — curl was barely visible at 18m
+//   v0.2: 1.5 — 3× boost, with whole-swipe-midpoint model
+//   v0.3: 0.75 — switched to TAIL-OF-SWIPE model; tail deviations
+//                are typically larger than midpoint-of-chord
+//                deviations, so the sensitivity comes back down.
+//                Calibrated so a 70 px hook → ~50 rad/s (Beckham
+//                spec), a 140 px sharp hook → 100 rad/s (Roberto
+//                Carlos extreme, hits MAX_SPIN_RAD_S clamp).
+//                PikPok's own reviewers complain the ball "curves
+//                too dramatically" — that's the target arcadey
+//                feel, not subtle Magnus.
+export const SPIN_SENSITIVITY_RAD_S_PER_PX = 0.75;
 
 // Minimum samples to consider a gesture valid. Path length and
 // curvature need at least three points to be meaningful.
@@ -125,9 +155,16 @@ function isFiniteSample(s) {
 /**
  * Extract derived shot inputs from a gesture path.
  *
+ * v0.3: tail-of-swipe curl model. The gesture is split into a
+ * PRE-CONTACT half (the "kick" — direction + elevation) and a
+ * POST-CONTACT half (the "curl" — lateral deviation of the tail).
+ *
  * @param {Array<{x:number, y:number, t:number}>} samples
  * @returns {
- *   { power, azimuth, elevation, spin, pathLengthPx, signedCurlPx }
+ *   {
+ *     power, azimuth, elevation, spin,
+ *     pathLengthPx, signedCurlPx, contactIdx,
+ *   }
  *   | { invalid: true, reason: string }
  * }
  */
@@ -142,7 +179,7 @@ export function extractInputs(samples) {
         }
     }
 
-    // 1. Path length — sum of segment distances.
+    // 1. Total path length — sum of segment distances.
     let pathLengthPx = 0;
     for (let i = 1; i < samples.length; i++) {
         pathLengthPx += Math.hypot(
@@ -154,60 +191,64 @@ export function extractInputs(samples) {
         return { invalid: true, reason: 'gesture_too_short' };
     }
 
-    // 2. Start → end vector. Screen y is DOWN, so flip for "up = +y world".
-    const start = samples[0];
-    const end = samples[samples.length - 1];
-    const dxScreen = end.x - start.x;       // right is +
-    const dyScreenDown = end.y - start.y;   // screen y, down is +
-    const dyUp = -dyScreenDown;              // flipped: up is +
+    // 2. Split the gesture at the "contact" point. We approximate
+    //    the ball-contact moment as the middle sample of the swipe.
+    //    Clamped to leave at least 1 segment in each half.
+    const contactIdx = clampInt(Math.floor(samples.length / 2), 1, samples.length - 2);
 
-    // 3. POWER — path length normalised, baseline+linear to m/s.
+    const preStart = samples[0];
+    const preEnd = samples[contactIdx];
+    const postEnd = samples[samples.length - 1];
+
+    // 3. PRE-CONTACT chord — the "kick". Screen y is DOWN; flip for
+    //    "up = +y world" semantics on elevation/azimuth.
+    const preDxScreen = preEnd.x - preStart.x;       // right is +
+    const preDyScreenDown = preEnd.y - preStart.y;   // screen y, down is +
+    const preDyUp = -preDyScreenDown;                 // flipped: up is +
+
+    // 4. POWER — total path length (full gesture) normalised,
+    //    baseline+linear to m/s.
     const pathNorm = clamp(pathLengthPx / REFERENCE_PATH_LENGTH_PX, 0, 1);
     const power = MIN_POWER_M_S + pathNorm * (MAX_POWER_M_S - MIN_POWER_M_S);
 
-    // 4. AZIMUTH — angle of the (dx, dyUp) vector from "straight up",
-    // dampened.
-    // For a purely upward swipe: dxScreen=0, dyUp>0 → atan2 = 0 → azimuth=0.
-    // For an upward-right swipe: dxScreen>0, dyUp>0 → positive azimuth.
-    // Guard against dyUp<=0 (sideways or downward swipe) — clamp to a
-    // tiny positive value so atan2 doesn't flip sign weirdly.
-    const dyUpSafe = Math.max(dyUp, 1);
-    const rawSwipeAngle = Math.atan2(dxScreen, dyUpSafe);
+    // 5. AZIMUTH — angle of the PRE-CONTACT chord from "straight up",
+    //    dampened by LATERAL_AIM_SENSITIVITY.
+    const preDyUpSafe = Math.max(preDyUp, 1);
+    const rawSwipeAngle = Math.atan2(preDxScreen, preDyUpSafe);
     const azimuth = clamp(
         LATERAL_AIM_SENSITIVITY * rawSwipeAngle,
         MIN_AZIMUTH_RAD,
         MAX_AZIMUTH_RAD,
     );
 
-    // 5. ELEVATION — verticality of swipe.
-    const rawElevation = (dyUp / REFERENCE_VERTICAL_SWIPE_PX)
+    // 6. ELEVATION — upward component of the PRE-CONTACT chord.
+    const rawElevation = (preDyUp / REFERENCE_VERTICAL_SWIPE_PX)
                        * REFERENCE_VERTICAL_ELEVATION_RAD;
     const elevation = clamp(rawElevation, MIN_ELEVATION_RAD, MAX_ELEVATION_RAD);
 
-    // 6. SPIN — signed perpendicular deviation of midpoint from chord.
-    // Use the actual midpoint of the path (sample at index ⌊n/2⌋).
-    // y kept in SCREEN coords for the cross product; the sign
-    // convention below has been verified by example (right-bowing
-    // upward swipe → positive spin → ball curves right).
-    const mid = samples[Math.floor(samples.length / 2)];
-    const chordDx = end.x - start.x;
-    const chordDy = end.y - start.y;  // screen y
-    const chordLen = Math.hypot(chordDx, chordDy);
+    // 7. SPIN — signed lateral deviation of the POST-CONTACT segment
+    //    (preEnd → postEnd) relative to the PRE-CONTACT chord direction.
+    //    2D cross product gives signed area, divided by pre-chord
+    //    length to get a pixel-units lateral deviation.
+    //    Sign convention: pre-chord pointing UP (preDyScreenDown < 0)
+    //    + post-tail hooking RIGHT (postDx > 0) → POSITIVE cross.
+    const preLen = Math.hypot(preDxScreen, preDyScreenDown);
     let signedCurlPx = 0;
-    if (chordLen > 1e-6) {
-        const midDx = mid.x - start.x;
-        const midDy = mid.y - start.y;  // screen y
-        // Cross product (2D) — gives signed area of the triangle.
-        // For an UPWARD chord (chordDy < 0 in screen coords) and a
-        // RIGHT-bowing mid (midDx > 0), the result is POSITIVE.
-        const cross = chordDx * midDy - chordDy * midDx;
-        signedCurlPx = cross / chordLen;
+    if (preLen > 1e-6) {
+        const postDx = postEnd.x - preEnd.x;
+        const postDy = postEnd.y - preEnd.y;  // screen y
+        const cross = preDxScreen * postDy - preDyScreenDown * postDx;
+        signedCurlPx = cross / preLen;
     }
     const rawSpin = signedCurlPx * SPIN_SENSITIVITY_RAD_S_PER_PX;
     const spin = clamp(rawSpin, -MAX_SPIN_RAD_S, MAX_SPIN_RAD_S);
 
     return {
         power, azimuth, elevation, spin,
-        pathLengthPx, signedCurlPx,
+        pathLengthPx, signedCurlPx, contactIdx,
     };
+}
+
+function clampInt(v, lo, hi) {
+    return Math.max(lo, Math.min(hi, v));
 }

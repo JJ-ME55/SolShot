@@ -23,7 +23,10 @@ import {
 // (screen y increases DOWNWARD; bottom of screen is y=600)
 // ============================================================
 
-function straightSwipe({ fromX, fromY, toX, toY, samples = 10, startT = 0, dt = 16 }) {
+// Default to ODD sample count so contactIdx = floor(n/2) lands exactly
+// on the path midpoint — makes pre/post split symmetric and tests
+// against the reference calibration values cleanly.
+function straightSwipe({ fromX, fromY, toX, toY, samples = 11, startT = 0, dt = 16 }) {
     const out = [];
     for (let i = 0; i < samples; i++) {
         const u = i / (samples - 1);
@@ -38,17 +41,58 @@ function straightSwipe({ fromX, fromY, toX, toY, samples = 10, startT = 0, dt = 
 
 // A bowed path: arcs out perpendicular to chord by `bowPx` at the midpoint.
 // Positive bowPx in our convention => bows TOWARD player's right in screen coords.
-// We add `+bowPx` to the midpoint's x (the chord goes vertical/upward, so right is +x).
+// (Kept for the simulateShot integration test — the OVERALL bow does still
+// produce a curling shot via the pre-contact direction biasing slightly
+// off-line + the post-contact continuing to bend.)
 function bowedSwipe({ fromX, fromY, toX, toY, bowPx, samples = 11 }) {
     const out = [];
     for (let i = 0; i < samples; i++) {
         const u = i / (samples - 1);
-        // Quadratic bow: 4·u·(1-u) is a parabola peaking at u=0.5 with value 1.
         const bowAmt = 4 * u * (1 - u);
         out.push({
             x: fromX + u * (toX - fromX) + bowAmt * bowPx,
             y: fromY + u * (toY - fromY),
             t: i * 16,
+        });
+    }
+    return out;
+}
+
+// "Hook" swipe — straight from start to mid, then hooks off to `hookEnd`.
+// This is the canonical Flick Kick gesture: straight-then-hook. The tail
+// of the swipe encodes the curl. Positive `hookOffsetPx` = right hook.
+function hookSwipe({ fromX, fromY, midX, midY, hookOffsetPx, samplesPerHalf = 6 }) {
+    const out = [];
+    // First half: straight from (fromX, fromY) to (midX, midY)
+    for (let i = 0; i < samplesPerHalf; i++) {
+        const u = i / (samplesPerHalf - 1);
+        out.push({
+            x: fromX + u * (midX - fromX),
+            y: fromY + u * (midY - fromY),
+            t: i * 16,
+        });
+    }
+    // Second half: extends in the same direction as the pre-segment but
+    // offset laterally by hookOffsetPx. Compute the unit perpendicular
+    // to (midX-fromX, midY-fromY), in screen coords.
+    const preDx = midX - fromX;
+    const preDy = midY - fromY;
+    const preLen = Math.hypot(preDx, preDy);
+    // Perp (right-of-direction in screen coords): rotating 90° CW from
+    // (preDx, preDy) gives (-preDy, preDx). With y increasing DOWNWARD,
+    // for an upward swipe (preDy < 0) this gives positive x — i.e. the
+    // PLAYER's right. So +hookOffsetPx along this perp = right hook.
+    const perpX = -preDy / preLen;
+    const perpY = preDx / preLen;
+    // Tail endpoint: continue forward by half a pre-length AND offset by hookOffsetPx
+    const tailEndX = midX + (preDx / preLen) * preLen * 0.5 + perpX * hookOffsetPx;
+    const tailEndY = midY + (preDy / preLen) * preLen * 0.5 + perpY * hookOffsetPx;
+    for (let i = 1; i < samplesPerHalf; i++) {
+        const u = i / (samplesPerHalf - 1);
+        out.push({
+            x: midX + u * (tailEndX - midX),
+            y: midY + u * (tailEndY - midY),
+            t: (samplesPerHalf + i - 1) * 16,
         });
     }
     return out;
@@ -154,8 +198,10 @@ test('extractInputs: azimuth clamps to MIN/MAX', () => {
 // ============================================================
 
 test('extractInputs: vertical reference swipe → reference elevation', () => {
-    // 400px upward swipe → REFERENCE_VERTICAL_ELEVATION_RAD.
-    const samples = straightSwipe({ fromX: 0, fromY: 800, toX: 0, toY: 400 });
+    // v0.3: elevation reads from PRE-CONTACT chord (first half of samples).
+    // Use a 800px total swipe with odd sample count so the contact split
+    // is exactly the midpoint → pre-chord = 400px upward → REFERENCE.
+    const samples = straightSwipe({ fromX: 0, fromY: 800, toX: 0, toY: 0 });
     const out = extractInputs(samples);
     assert.ok(
         Math.abs(out.elevation - REFERENCE_VERTICAL_ELEVATION_RAD) < 0.01,
@@ -170,15 +216,19 @@ test('extractInputs: longer upward swipe → higher elevation', () => {
 });
 
 test('extractInputs: elevation clamps to MAX', () => {
-    // 1600px upward swipe → raw elevation way past MAX.
-    const samples = straightSwipe({ fromX: 0, fromY: 1600, toX: 0, toY: 0 });
+    // v0.3: elevation reads from PRE-CONTACT chord. To exceed
+    // MAX_ELEVATION_RAD (π/4 ≈ 0.785) at 0.25 rad per 400px, need
+    // pre-chord > 1257px upward. 3000px total swipe → 1500px pre-chord
+    // → raw elevation 0.94 rad → clamps.
+    const samples = straightSwipe({ fromX: 0, fromY: 3000, toX: 0, toY: 0 });
     const out = extractInputs(samples);
     assert.equal(out.elevation, MAX_ELEVATION_RAD);
 });
 
 test('extractInputs: backwards swipe (downward) → elevation clamps to MIN', () => {
-    // Swipe DOWN on screen (which is +y in screen, -y in world).
-    const samples = straightSwipe({ fromX: 0, fromY: 100, toX: 0, toY: 400 });
+    // v0.3: with pre-contact elevation, need a big enough downward
+    // swipe that the pre-chord (~half) goes below MIN_ELEVATION_RAD.
+    const samples = straightSwipe({ fromX: 0, fromY: 0, toX: 0, toY: 800 });
     const out = extractInputs(samples);
     assert.equal(out.elevation, MIN_ELEVATION_RAD);
 });
@@ -194,26 +244,38 @@ test('extractInputs: straight swipe → zero spin', () => {
     assert.ok(Math.abs(out.spin) < 1e-6, `spin=${out.spin}, expected 0`);
 });
 
-test('extractInputs: right-bowing swipe → positive spin (right curl)', () => {
-    // Chord straight up, midpoint bows to the right.
-    const samples = bowedSwipe({ fromX: 0, fromY: 600, toX: 0, toY: 200, bowPx: 80 });
+test('extractInputs: hook-right tail → positive spin (right curl)', () => {
+    // Straight up, then hook right at the end (the canonical Flick Kick gesture).
+    const samples = hookSwipe({ fromX: 0, fromY: 700, midX: 0, midY: 350, hookOffsetPx: 80 });
     const out = extractInputs(samples);
-    assert.ok(out.spin > 0, `right-bowing swipe spin=${out.spin}, expected > 0`);
+    assert.ok(out.spin > 0, `right-hook swipe spin=${out.spin}, expected > 0`);
 });
 
-test('extractInputs: left-bowing swipe → negative spin (left curl)', () => {
-    const samples = bowedSwipe({ fromX: 0, fromY: 600, toX: 0, toY: 200, bowPx: -80 });
+test('extractInputs: hook-left tail → negative spin (left curl)', () => {
+    const samples = hookSwipe({ fromX: 0, fromY: 700, midX: 0, midY: 350, hookOffsetPx: -80 });
     const out = extractInputs(samples);
-    assert.ok(out.spin < 0, `left-bowing swipe spin=${out.spin}, expected < 0`);
+    assert.ok(out.spin < 0, `left-hook swipe spin=${out.spin}, expected < 0`);
 });
 
-test('extractInputs: stronger bow → larger |spin|', () => {
-    const mild = bowedSwipe({ fromX: 0, fromY: 600, toX: 0, toY: 200, bowPx: 40 });
-    const strong = bowedSwipe({ fromX: 0, fromY: 600, toX: 0, toY: 200, bowPx: 120 });
+test('extractInputs: tighter hook → larger |spin|', () => {
+    const mild = hookSwipe({ fromX: 0, fromY: 700, midX: 0, midY: 350, hookOffsetPx: 30 });
+    const tight = hookSwipe({ fromX: 0, fromY: 700, midX: 0, midY: 350, hookOffsetPx: 110 });
     const a = extractInputs(mild);
-    const b = extractInputs(strong);
+    const b = extractInputs(tight);
     assert.ok(Math.abs(b.spin) > Math.abs(a.spin),
-        `strong |spin|=${Math.abs(b.spin)} should exceed mild |spin|=${Math.abs(a.spin)}`);
+        `tight |spin|=${Math.abs(b.spin)} should exceed mild |spin|=${Math.abs(a.spin)}`);
+});
+
+test('extractInputs: smooth banana arc → also produces curl (not zero)', () => {
+    // A smooth parabolic bow has a non-trivial pre-direction bias AND
+    // continues to bend post-contact. Net curl should be non-zero.
+    // (Direction may be skewed because the pre-contact half of the
+    // bow itself angles off-axis — that's the trade-off of choosing
+    // a banana over a straight-then-hook.)
+    const samples = bowedSwipe({ fromX: 0, fromY: 700, toX: 0, toY: 100, bowPx: 100 });
+    const out = extractInputs(samples);
+    assert.ok(Math.abs(out.spin) > 0.5,
+        `banana arc should produce some curl, got spin=${out.spin}`);
 });
 
 
@@ -221,17 +283,21 @@ test('extractInputs: stronger bow → larger |spin|', () => {
 // === Integration with simulateShot ===
 // ============================================================
 
-test('extractInputs + simulateShot: a curly upward gesture results in a curled trajectory', () => {
-    // Big right-bow swipe.
-    const gesture = bowedSwipe({ fromX: 0, fromY: 700, toX: 0, toY: 100, bowPx: 100 });
+test('extractInputs + simulateShot: a hook-tail gesture results in a curled trajectory', () => {
+    // v0.3: use the canonical Flick Kick "straight up + hook tail" gesture.
+    // Pre-contact: straight upward 350px (gives ~22 m/s power, ~12° elev,
+    // 0 azimuth). Post-contact: hook right 80px (gives right curl).
+    const gesture = hookSwipe({
+        fromX: 0, fromY: 800, midX: 0, midY: 450,
+        hookOffsetPx: 80,
+    });
     const derived = extractInputs(gesture);
 
-    // Sanity on derived inputs
     assert.ok(derived.power > MIN_POWER_M_S && derived.power <= MAX_POWER_M_S);
-    assert.ok(Math.abs(derived.azimuth) < 0.01, 'centred-chord gesture should have ~0 azimuth');
-    assert.ok(derived.spin > 0, 'right-bow should produce positive spin');
+    assert.ok(Math.abs(derived.azimuth) < 0.01,
+        `straight pre-chord should give ~0 azimuth, got ${derived.azimuth}`);
+    assert.ok(derived.spin > 0, `right-hook tail should produce positive spin, got ${derived.spin}`);
 
-    // Now feed to simulateShot and check the ball curls right vs zero-spin baseline.
     const scenario = { distanceM: 18, angleRad: 0, wallSize: 0, plus10Target: null, heartTarget: null };
     const curled = simulateShot({ shotInput: derived, scenario });
     const straight = simulateShot({
@@ -239,13 +305,10 @@ test('extractInputs + simulateShot: a curly upward gesture results in a curled t
         scenario,
     });
 
-    // Whatever else happened, the curled shot's crossing should be
-    // further +x than the straight shot's IF both reached the plane.
     if (curled.crossing && straight.crossing) {
         assert.ok(curled.crossing.x > straight.crossing.x,
             `curled x=${curled.crossing.x.toFixed(3)} should exceed straight x=${straight.crossing.x.toFixed(3)}`);
     } else {
-        // If either didn't reach, at least one of them should have.
         assert.ok(curled.crossing || straight.crossing,
             'at least one shot should reach the goal plane');
     }

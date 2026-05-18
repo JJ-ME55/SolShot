@@ -153,9 +153,14 @@ export const MAX_TRAJECTORY_STEPS = 1500;
 
 // Trajectory termination conditions. Per playbook §4.6 — explicit
 // bounds prevent late-stage drift from polluting the trajectory.
+//
+// v1.2: TERM_X_ABS_MAX_M raised 10 → 30 to accommodate oblique
+// starting positions. With tier-3 ±35° angles at 38m max distance,
+// the ball can START at |x| = 38 · sin(35°) ≈ 21.8m. The old 10m
+// threshold immediately fired 'wide' on shot 0 — ball never moved.
 export const TERM_Z_MAX_M = 3.0;           // 3m past goal-line → end
 export const TERM_Y_MIN_M = 0.0;           // hit pitch → end
-export const TERM_X_ABS_MAX_M = 10.0;      // 10m off-axis → end
+export const TERM_X_ABS_MAX_M = 30.0;      // 30m off-axis → end
 
 
 // ============================================================
@@ -318,3 +323,37 @@ export const BOUNCE_RESTITUTION = 0.50;
 export const BOUNCE_FRICTION_H = 0.80;
 export const MAX_BOUNCES = 6;
 export const MIN_BOUNCE_SPEED_M_S = 1.5;
+
+
+// ============================================================
+// === Post / crossbar / net bounce physics ===
+// ============================================================
+//
+// v1.2: ball no longer stops dead on first goalpost contact OR
+// at the goal-line. Real football: ball ricochets off woodwork
+// dramatically; on a goal it hits the net, bounces around briefly,
+// and settles.
+
+// Coefficient of restitution for ball hitting goal post / crossbar.
+// Real woodwork is harder than grass — ball retains more energy than
+// a pitch bounce. ~0.55-0.65 is empirically reasonable.
+export const POST_BOUNCE_RESTITUTION = 0.60;
+
+// Net interaction — net is fabric, very absorbent. Ball loses most
+// of its energy on each contact. Different restitution per surface:
+//   BACK: 0.15  (back wall of net, vertical, behind goal-line)
+//   SIDE: 0.20  (side panels at ±GOAL_HALF_WIDTH)
+//   TOP : 0.20  (top sloping panel from crossbar to back-top)
+//   GROUND: 0.30 (ground inside net, where ball settles)
+export const NET_RESTITUTION_BACK = 0.15;
+export const NET_RESTITUTION_SIDE = 0.20;
+export const NET_RESTITUTION_TOP = 0.20;
+export const NET_RESTITUTION_GROUND = 0.30;
+
+// Depth of the net behind the goal-line. Matches the 3D scene's
+// rendered net depth (scene3d.js netDepth = 1.5).
+export const NET_DEPTH_M = 1.5;
+
+// Once the ball's total speed inside the net drops below this, the
+// trajectory terminates (ball has come to rest in the net).
+export const MIN_NET_SPEED_M_S = 0.8;

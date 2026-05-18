@@ -14,6 +14,9 @@ import {
     MAX_SPIN_RAD_S,
     TARGET_HALF_WIDTH_M, TARGET_HALF_HEIGHT_M,
     BOUNCE_RESTITUTION, BOUNCE_FRICTION_H, MAX_BOUNCES, MIN_BOUNCE_SPEED_M_S,
+    POST_BOUNCE_RESTITUTION,
+    NET_RESTITUTION_BACK, NET_RESTITUTION_SIDE, NET_RESTITUTION_TOP, NET_RESTITUTION_GROUND,
+    NET_DEPTH_M, MIN_NET_SPEED_M_S,
 } from './constants.js';
 
 /**
@@ -460,6 +463,80 @@ function insideGoalFrame(x, y) {
     return Math.abs(x) <= GOAL_HALF_WIDTH_M && y >= 0 && y <= GOAL_HEIGHT_M;
 }
 
+// Surface normal at the ball-impact point on a vertical goalpost.
+// Post axis is at (postX, *, 0). Normal direction = ball horizontal
+// offset from post centre, in the x-z plane.
+function computeVerticalPostNormal(state, postX) {
+    const dx = state.x - postX;
+    const dz = state.z - GOAL_PLANE_Z_M;
+    const len = Math.hypot(dx, dz);
+    if (len < 1e-9) {
+        // Degenerate: ball center exactly on post axis. Default normal
+        // pointing toward camera (-z in physics ≡ toward player).
+        return { nx: 0, ny: 0, nz: -1 };
+    }
+    return { nx: dx / len, ny: 0, nz: dz / len };
+}
+
+// Surface normal at the ball-impact point on the crossbar.
+// Crossbar axis at y=GOAL_HEIGHT_M, z=0, x ∈ [-GOAL_HALF, +GOAL_HALF].
+// Normal direction = ball offset from crossbar axis in the y-z plane.
+function computeCrossbarNormal(state) {
+    const dy = state.y - GOAL_HEIGHT_M;
+    const dz = state.z - GOAL_PLANE_Z_M;
+    const len = Math.hypot(dy, dz);
+    if (len < 1e-9) {
+        return { nx: 0, ny: 0, nz: -1 };
+    }
+    return { nx: 0, ny: dy / len, nz: dz / len };
+}
+
+// Reflect a velocity across a surface normal and apply restitution
+// damping. Modifies state in place.
+function applyReflection(state, normal, restitution) {
+    const vdotn = state.vx * normal.nx + state.vy * normal.ny + state.vz * normal.nz;
+    state.vx = (state.vx - 2 * vdotn * normal.nx) * restitution;
+    state.vy = (state.vy - 2 * vdotn * normal.ny) * restitution;
+    state.vz = (state.vz - 2 * vdotn * normal.nz) * restitution;
+}
+
+// Handle ball physics inside the net: bounce off the back, side
+// walls, top panel, and ground with heavy damping.
+function handleNetPhysics(state) {
+    // Back of net at z = NET_DEPTH_M (ball must stay behind this when in net)
+    if (state.z >= NET_DEPTH_M && state.vz > 0) {
+        state.z = NET_DEPTH_M;
+        state.vz = -NET_RESTITUTION_BACK * state.vz;
+        state.vx *= NET_RESTITUTION_BACK;
+        state.vy *= NET_RESTITUTION_BACK;
+    }
+    // Side walls
+    if (state.x > GOAL_HALF_WIDTH_M && state.vx > 0) {
+        state.x = GOAL_HALF_WIDTH_M;
+        state.vx = -NET_RESTITUTION_SIDE * state.vx;
+        state.vz *= NET_RESTITUTION_SIDE;
+    }
+    if (state.x < -GOAL_HALF_WIDTH_M && state.vx < 0) {
+        state.x = -GOAL_HALF_WIDTH_M;
+        state.vx = -NET_RESTITUTION_SIDE * state.vx;
+        state.vz *= NET_RESTITUTION_SIDE;
+    }
+    // Top of net
+    if (state.y > GOAL_HEIGHT_M && state.vy > 0) {
+        state.y = GOAL_HEIGHT_M;
+        state.vy = -NET_RESTITUTION_TOP * state.vy;
+        state.vx *= NET_RESTITUTION_TOP;
+        state.vz *= NET_RESTITUTION_TOP;
+    }
+    // Ground inside net
+    if (state.y <= BALL_RADIUS_M && state.vy < 0) {
+        state.y = BALL_RADIUS_M;
+        state.vy = -NET_RESTITUTION_GROUND * state.vy;
+        state.vx *= NET_RESTITUTION_GROUND;
+        state.vz *= NET_RESTITUTION_GROUND;
+    }
+}
+
 // Check whether (x, y) is inside a target zone.
 function insideTargetZone(x, y, target) {
     if (!target) return false;
@@ -563,35 +640,80 @@ export function simulateShot({ shotInput, scenario }) {
     let targetHit = { plus10: false, heart: false };
     let reason = null;
     let bounceCount = 0;
+    let touchedPost = false;
+    let inNet = false;
+    let settled = false;
 
-    for (let step = 0; step < MAX_TRAJECTORY_STEPS; step++) {
+    for (let step = 0; step < MAX_TRAJECTORY_STEPS && !settled; step++) {
 
-        // Sub-step integration
-        for (let sub = 0; sub < PHYSICS_SUBSTEPS; sub++) {
+        for (let sub = 0; sub < PHYSICS_SUBSTEPS && !settled; sub++) {
             const next = rk4Step(state, omega, innerDt);
 
-            // Check goal-plane crossing FIRST (since once we cross,
-            // we resolve the shot regardless of subsequent collisions).
+            if (inNet) {
+                // Ball is captured in the net — special collision rules.
+                // Net surfaces dampen heavily. Ball eventually settles.
+                handleNetPhysics(next);
+                const speed = Math.hypot(next.vx, next.vy, next.vz);
+                if (speed < MIN_NET_SPEED_M_S) {
+                    next.vx = 0; next.vy = 0; next.vz = 0;
+                    state = next;
+                    settled = true;
+                    break;
+                }
+                state = next;
+                continue;
+            }
+
+            // POST / CROSSBAR check first — if hit, bounce + continue.
+            // (Posts sit AT the goal-plane z=0, so this must run before
+            // goal-plane crossing detection.)
+            let postNormal = null;
+            if (hitPost(state, next, +GOAL_HALF_WIDTH_M)) {
+                postNormal = computeVerticalPostNormal(next, +GOAL_HALF_WIDTH_M);
+            } else if (hitPost(state, next, -GOAL_HALF_WIDTH_M)) {
+                postNormal = computeVerticalPostNormal(next, -GOAL_HALF_WIDTH_M);
+            } else if (hitCrossbar(state, next)) {
+                postNormal = computeCrossbarNormal(next);
+            }
+            if (postNormal) {
+                if (result === null) result = 'post';
+                touchedPost = true;
+                applyReflection(next, postNormal, POST_BOUNCE_RESTITUTION);
+                // Nudge ball slightly OUT of the post to avoid re-collision
+                next.x += postNormal.nx * 0.02;
+                next.y += postNormal.ny * 0.02;
+                next.z += postNormal.nz * 0.02;
+                state = next;
+                continue;
+            }
+
+            // Goal-plane crossing
             const cross = goalPlaneCrossing(state, next);
             if (cross) {
                 crossing = cross;
                 if (insideGoalFrame(cross.x, cross.y)) {
+                    // GOAL — switch to net mode, keep simulating
                     targetHit.plus10 = insideTargetZone(cross.x, cross.y, scenario.plus10Target);
                     targetHit.heart  = insideTargetZone(cross.x, cross.y, scenario.heartTarget);
                     if (targetHit.plus10 && targetHit.heart)      result = 'goal_plus10_heart';
                     else if (targetHit.plus10)                    result = 'goal_plus10';
                     else if (targetHit.heart)                     result = 'goal_heart';
                     else                                          result = 'goal';
+                    inNet = true;
+                    state = next;
+                    continue;
                 } else {
-                    if (cross.y > GOAL_HEIGHT_M + POST_RADIUS_M)              result = 'over';
+                    // MISS — terminate (woodwork-grazed cases already handled above)
+                    if (cross.y > GOAL_HEIGHT_M + POST_RADIUS_M)                    result = 'over';
                     else if (Math.abs(cross.x) > GOAL_HALF_WIDTH_M + POST_RADIUS_M) result = 'wide';
-                    else                                                       result = 'post';
+                    else                                                             result = 'post';
+                    state = next;
+                    settled = true;
+                    break;
                 }
-                state = next;
-                break;
             }
 
-            // Check wall collision
+            // Wall (defender) collision — terminate as 'blocked'
             let hitWall = false;
             for (const def of wall.defenders) {
                 if (hitDefender(state, next, def)) {
@@ -599,18 +721,14 @@ export function simulateShot({ shotInput, scenario }) {
                     break;
                 }
             }
-            if (hitWall) { result = 'blocked'; state = next; break; }
+            if (hitWall) {
+                if (result === null) result = 'blocked';
+                state = next;
+                settled = true;
+                break;
+            }
 
-            // Check post collisions
-            if (hitPost(state, next, +GOAL_HALF_WIDTH_M)) { result = 'post'; state = next; break; }
-            if (hitPost(state, next, -GOAL_HALF_WIDTH_M)) { result = 'post'; state = next; break; }
-            if (hitCrossbar(state, next))                 { result = 'post'; state = next; break; }
-
-            // Pitch bounce: ball is heading into the ground.
-            //   - Snap y to 0
-            //   - Invert vy with restitution
-            //   - Dampen horizontal velocity (friction)
-            //   - If energy too low OR bounce count exhausted, terminate
+            // Pitch bounce (outside the goal frame)
             if (next.y <= BALL_RADIUS_M && next.vy < 0) {
                 bounceCount++;
                 next.y = BALL_RADIUS_M;
@@ -620,10 +738,10 @@ export function simulateShot({ shotInput, scenario }) {
 
                 const speedAfter = Math.hypot(next.vx, next.vy, next.vz);
                 if (bounceCount >= MAX_BOUNCES || speedAfter < MIN_BOUNCE_SPEED_M_S) {
-                    // Ball comes to rest on the pitch — short of goal.
                     next.vx = 0; next.vy = 0; next.vz = 0;
                     state = next;
-                    result = 'short';
+                    if (result === null) result = touchedPost ? 'post' : 'short';
+                    settled = true;
                     break;
                 }
             }
@@ -633,12 +751,21 @@ export function simulateShot({ shotInput, scenario }) {
 
         trajectory.push({ ...state });
 
-        if (result !== null) break;
+        if (settled) break;
 
-        // Outer safety nets (bounce logic above handles normal y<=0 case).
-        if (state.y < -1.0 + BALL_RADIUS_M)         { result = 'short'; break; }
-        if (state.z > TERM_Z_MAX_M)                 { result = (crossing ? result : 'over'); break; }
-        if (Math.abs(state.x) > TERM_X_ABS_MAX_M)   { result = 'wide'; break; }
+        // Outer safety nets
+        if (state.y < -1.0 + BALL_RADIUS_M) {
+            if (result === null) result = touchedPost ? 'post' : 'short';
+            settled = true;
+        }
+        if (!inNet && state.z > TERM_Z_MAX_M) {
+            if (result === null) result = touchedPost ? 'post' : 'over';
+            settled = true;
+        }
+        if (Math.abs(state.x) > TERM_X_ABS_MAX_M) {
+            if (result === null) result = touchedPost ? 'post' : 'wide';
+            settled = true;
+        }
     }
 
     if (result === null) {

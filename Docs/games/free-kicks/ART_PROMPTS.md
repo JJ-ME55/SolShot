@@ -1,181 +1,245 @@
-# Free-Kick Madness — Art Prompts v0.1
+# Free-Kick Madness — Art Prompts v0.2 (Flick Kick aesthetic)
 
-DALL-E prompt drafts for each asset, applying [`BALL_GAMES_PLAYBOOK §11`](../../BALL_GAMES_PLAYBOOK.md#11-asset-generation-lessons-dall-e) lessons:
+Replaces the v0.1 night-floodlit direction. Fish picked **Flick Kick Football** (PikPok) as the visual reference target after frame analysis of his gameplay clips. The aesthetic is:
 
-- Transparent backgrounds — DALL-E struggles; prompt for it explicitly and follow up with cleanup.
-- Reference style transfer — feed a reference image when possible.
-- Specify proportions explicitly — DALL-E does not respect implicit aspect ratios.
-- Element overlap kills frame-slicing — keep each sprite isolated.
+> Daytime stadium, packed cheering crowd, vivid green pitch, blue sky, classic football kit, cartoonish-stylized but clearly recognisable — family-friendly arcade look.
 
-The stadium / floodlit art is more ambitious than basketball's streetball court. Plan on 3-4 DALL-E iterations per asset to land it. **All sprite assets need a final pngjs measurement pass to capture true bounding box + visible centre — playbook §5.5.**
+Reference frames live at `C:\Users\jacob\SolShot\Other Games\Flick kick\` (clips `IMG_5051.MP4` + `Curved shots new.MP4`). When generating with DALL-E / ChatGPT, **upload one of those frames as a reference image** and ask for "match this art style."
 
----
+Applying [`BALL_GAMES_PLAYBOOK §11`](../../BALL_GAMES_PLAYBOOK.md#11-asset-generation-lessons-dall-e):
+- Transparent backgrounds — prompt for it explicitly, follow up with cleanup
+- Reference style transfer — feed a Flick Kick screenshot as reference
+- Specify proportions explicitly — DALL-E does not respect implicit aspect ratios
+- Element overlap kills frame-slicing — keep each sprite isolated
 
-## Style anchor — overall visual reference
+Plan on 3-5 DALL-E iterations per asset. All sprite assets need a final pngjs measurement pass to capture true bounding box + visible centre.
 
-Before generating individual assets, lock the **art-style anchor** in your head. The pitch is:
+## Style anchor
 
-> *"A modern football video-game art style. Like FIFA's free-kick camera, but slightly stylised — not photoreal. Saturated floodlight at night, deep blue/black sky, the pitch a vivid green. Crowd in silhouette except where lit. Punchy, arcade-readable, with a touch of comic-book line work."*
+> *"A bright daytime football stadium, packed with a colourful cheering crowd. Vivid blue sky, intense green pitch with subtle mowing stripes, classic FIFA-style goal with white posts and white netting. Cartoonish-stylised art, like a modern mobile arcade football game — clean lines, saturated colours, family-friendly, slightly comic-book."*
 
-Save 2-3 reference images you like in `Docs/games/free-kicks/art-refs/` before generating, and use them as DALL-E reference uploads.
+Reference Flick Kick by name in the prompt when iterating — many image models recognise it.
 
----
+## Save location
 
-## 1. Stadium hero background
+All generated assets go in:
 
-**Purpose:** Single hero image rendered behind everything. The "world" the player sees from the kicker's POV. Sky, far stands, near stands silhouette, floodlights, light haze. The goal frame is rendered as a separate sprite on top.
+```
+C:\Users\jacob\solshot-free-kicks\public\assets\
+```
 
-### Prompt v1
-
-> A first-person view from behind a football during a floodlit night match in a packed stadium. Wide aspect ratio (16:9). The viewer is at ground level, looking down the pitch toward the goal area. Stadium fills the background: tiered stands packed with silhouetted crowd, four large floodlight pylons rising from the corners of the stadium, deep blue-black night sky above. Floodlights cast a warm white wash across the scene with visible lens flares and atmospheric haze. The pitch surface (vivid bright green grass) is visible in the foreground stretching toward the goal. The goal itself is OMITTED — leave the centre-back of the image clear so a goal frame sprite can be composited on top. Slight wide-angle lens distortion. Stylised semi-realistic art, like a modern football video game. No players, no ball, no UI. Saturated colours, punchy contrast.
-
-### Notes
-
-- The "OMIT the goal" instruction is critical — the goal is a separate sprite for animation control.
-- Aspect ratio: 16:9 minimum (the canvas is 1956×800 on SolShot — match or exceed).
-- Iterate on the floodlight position until they don't overlap the goal area in the centre.
-
-### Failure modes to watch
-
-- DALL-E often places a goal in the scene anyway → manually mask out in Photoshop.
-- Crowd too detailed → say "silhouetted" in the prompt repeatedly.
+Filenames are listed under each asset below. The Phaser scene auto-loads from there — if the file is present, the scene uses it; if missing, it falls back to the Phaser primitive. So you can drop one asset at a time and see the layered improvement.
 
 ---
 
-## 2. Pitch foreground
+## 1. Stadium hero background — `stadium-hero.png`
 
-**Purpose:** Maybe not a separate asset — if §1 has the pitch baked in, skip this. If we need a parallax layer for the near-ground (so the ball can sit on it cleanly), here's the prompt.
+**Purpose:** Single hero image rendered behind everything as the world backdrop. The goal, players, ball, and HUD all composite ON TOP. Single image, no animation in v1.
 
-### Prompt v1
+**Dimensions:** 800 × 1200 px (matches our virtual canvas aspect). The image fills the canvas; the goal-render area must be EMPTY (transparent or sky-coloured) in the centre so the goal sprite composites cleanly.
 
-> A patch of football pitch grass viewed from a low angle, slight perspective foreshortening, vivid green with light/dark mowing stripes visible. The near edge of the penalty arc is partially visible at the top of the image (a white painted curve). Wide aspect (16:9), transparent background outside the grass area. No ball, no players. Stylised semi-realistic.
+### Prompt
 
-### Notes
+> A bright daytime football stadium scene viewed from behind the kicker's position on the pitch. **800×1200 portrait** aspect ratio. **Match the visual style of Flick Kick Football (the PikPok iOS game) exactly** — cartoonish-stylised but recognisable.
+>
+> Layers from top to bottom:
+>
+> 1. **Sky** (top ~25% of image): bright clear daytime blue, gentle gradient from lighter at horizon (~#9ec5e8) to deeper blue above (~#5fa5d9). No clouds, no haze.
+>
+> 2. **Stadium roof line** (~30% from top): dark teal-grey curved roof structure with small bright lighting fixtures along its underside; thin vertical white pillars supporting it at the sides.
+>
+> 3. **Far crowd** (~35-45% from top): tiered stadium seating packed with a colourful cheering crowd rendered as red/orange/blue/white/yellow coloured speckles — no detailed faces. Densely packed.
+>
+> 4. **Mid stadium banner row** (~45% from top): a clear horizontal advertising band running the full width — alternating red, white, and blue rectangular ad panels, no text (we'll overlay our own logos later).
+>
+> 5. **Near crowd** (~50-60% from top): slightly more detailed crowd silhouettes with visible flag bunting and head dots. Occasional waving flags (blue + white).
+>
+> 6. **Goal-area band** (~58-62% from top): a darker horizontal band where the goal will composite on top — DO NOT INCLUDE A GOAL FRAME HERE, leave this band clean so a goal sprite can be placed cleanly.
+>
+> 7. **Pitch** (bottom ~38%): bright vivid green grass with subtle horizontal mowing stripes (alternating slightly-darker and slightly-lighter bands). A white penalty arc curve visible in the lower foreground. White goal line visible just in front of the goal-area band.
+>
+> No players, no ball, no HUD, no text labels. Cartoonish-stylised art style — saturated colours, clean edges, slight comic-book line work. Match Flick Kick Football's visual feel.
 
-- Most likely **drop this asset** — bake the pitch into the stadium hero.
-
----
-
-## 3. Goal frame + netting sprite
-
-**Purpose:** The goal as a separate sprite, composited over the stadium. Independent depth-ordering for the "ball in net" caught-visual (playbook §5.3).
-
-### Prompt v1
-
-> A football goal frame with white netting, viewed from a first-person POV behind the ball, dead-centre. Standard regulation proportions (7.32m wide, 2.44m tall — the frame should be roughly 3× as wide as it is tall). White goalposts and crossbar, slightly thicker than realistic for arcade readability. White net behind the frame, fine mesh pattern, slightly transparent (you should be able to see motion through it). Transparent background outside the goal. No pitch, no crowd, no defenders. Stylised semi-realistic, modern football video game style. Sharp clean lines.
-
-### Notes
-
-- Critical: aspect ratio must be 3:1 (or close). Measure with pngjs after generation.
-- Net transparency lets the celebration / target-hit visual punch through.
-- Iterate until the post thickness reads cleanly at game scale.
-
----
-
-## 4. Wall defender sprites
-
-**Purpose:** N defenders rendered side by side to form the wall. Per design we need **at least 2 kit colours** so the wall doesn't look like one blob, and **3-4 body / pose variants** so a 6-defender wall is visually varied.
-
-### Prompt v1 — Kit A (e.g. red shirt, white shorts)
-
-> A professional football player standing in a defensive wall pose, viewed from directly in front. Full body, head to toe. Wearing a red short-sleeve football shirt with white sleeves trim, white shorts, red socks, modern football boots. Arms folded across the groin (the standard wall pose for protection). Eyes focused forward, intense expression, slight crouch. Realistic adult male proportions. Stylised semi-realistic, modern football video game style. **Transparent background — no pitch, no shadow, no scenery.** Centred subject. No ball, no other players.
-
-### Prompt v1 — Kit B (e.g. white shirt, black shorts — Real Madrid style)
-
-> [same as above with: "Wearing a white short-sleeve football shirt with black trim, white shorts, black socks..."]
-
-### Pose variants to generate
-
-Make 3-4 of each kit:
-- (a) Arms-crossed-over-groin standard wall pose, neutral face.
-- (b) Same pose but slight head turn looking at the ball position.
-- (c) Same pose, taller player (height variation gives the wall texture).
-- (d) Same pose, shorter / stockier player.
-
-### Notes
-
-- **Transparent background is non-negotiable** — restate in the prompt at least twice and check the alpha channel of every output.
-- DALL-E will often add a shadow under the feet → ask explicitly for "no shadow" and erase any that slips through.
-- Measure with pngjs after each generation to confirm visible bounding box. Defenders at game scale should be ~1.8m tall in world units.
-- No facial detail required for v1 — small enough at game scale that it doesn't matter.
+**Failure modes to watch:**
+- DALL-E sometimes puts a goal frame in the scene anyway → mask it out in Photoshop or regenerate
+- Crowd too detailed (visible faces) → emphasise "small coloured speckles, no faces"
+- Sky too dark / night vibe → emphasise "BRIGHT DAYTIME"
+- Pitch missing mowing stripes → ask explicitly for "horizontal lighter/darker mowing bands"
 
 ---
 
-## 5. Football sprite
+## 2. Goal frame + net — `goal-frame.png`
 
-**Purpose:** The ball. Same sprite throughout the trajectory, with depth-emphasis scaling (playbook §5.4 — 2× scale at launch, 1× at goal distance).
+**Purpose:** Composited on top of the stadium hero, showing the goal frame + netting. Transparent background.
 
-### Prompt v1
+**Dimensions:** ~600 × 250 px (3:1 ratio, matches regulation 7.32m × 2.44m). Centre of the image is the goal mouth. The image needs alpha transparency outside the netting/posts.
 
-> A modern football (soccer ball), viewed from a 3/4 angle. White with black geometric panels in the classic icosahedral pattern (12 black pentagons, 20 white hexagons). Sharp clean lines, slight specular highlight on top-left to indicate light source. Stylised semi-realistic, modern football video game style. Centred subject. **Transparent background — no pitch, no shadow, no field markings.**
+### Prompt
 
-### Notes
+> A football goal frame with white netting, viewed straight on from a slightly-low first-person angle. **Match the visual style of Flick Kick Football.**
+>
+> **Image dimensions: approximately 600 px wide × 250 px tall (3:1 aspect ratio).**
+>
+> The goal:
+> - Three thick clean white goalposts (left vertical, right vertical, horizontal crossbar). Posts noticeably thicker than realistic — arcade-readable.
+> - Cylindrical 3D feel — subtle shading suggests roundness, not flat lines.
+> - Drop shadow beneath each post connection.
+> - White net behind the frame, mesh pattern clearly visible — fine grid of thin lines.
+> - Net is semi-transparent — you can see through it to whatever is behind.
+> - Net hangs on the back two side posts and the top.
+>
+> **Background: completely transparent (alpha channel).** No pitch, no sky, no crowd. Just the goal frame and netting against transparency.
+>
+> Cartoonish-stylised, family-friendly, clean line art.
 
-- One ball sprite. We do NOT generate rotation frames — the ball travels too fast to need them at game scale.
-- If we DO want rotation later (v1.1), use a 4-frame loop and pick one panel pattern that reads cleanly at speed.
-- Pngjs measure after generation — the visible centre should be exact for trajectory plotting.
-
----
-
-## 6. Target sprites
-
-**Purpose:** Two overlay sprites visible in the goal mouth — `+10` and `❤️`.
-
-### Prompt v1 — `+10` target
-
-> A gold metallic disc, viewed straight-on, with the text "+10" embossed in bold sans-serif numerals on the front face. Slight 3D depth so the edges of the disc are visible. Subtle radial gleam suggesting metal shine. Centred subject. **Transparent background — no pitch, no field, no shadow.** Stylised semi-realistic, modern football video game style.
-
-### Prompt v1 — ❤️ heart target
-
-> A glossy red heart shape, viewed straight-on, slight 3D depth. Strong red colour with a small white highlight at the upper-left to suggest gloss. Symmetric. Centred subject. **Transparent background — no pitch, no shadow, no border.** Slightly stylised, modern arcade game look.
-
-### Notes
-
-- Both rendered at the same scale so they slot into the same hitbox dimensions (~0.6m × 0.6m in world units).
-- The ❤️ heart gets a subtle pulse animation in-engine (CSS/canvas keyframe scaling 1.0 ↔ 1.1) — DALL-E doesn't need to handle that.
-- The `+10` may want a subtle rotation in-engine for visual punch — also CSS, not DALL-E.
+**Failure modes:**
+- DALL-E adds pitch grass under the goal → re-prompt and mask in Photoshop
+- Net too opaque → request "fine white mesh, mostly transparent"
+- Posts too thin (realistic) → emphasise "thick arcade-style posts"
 
 ---
 
-## 7. HUD elements
+## 3. Defender sprite — `defender-blue.png` (also `-red.png` for kit variant)
 
-Most HUD will be CSS / Phaser shapes — minimal DALL-E here.
+**Purpose:** Wall defender figure. Full body, transparent BG. Multiple copies composited side-by-side to form a defensive wall.
 
-| Element | Approach |
-|---|---|
-| Lives bar (5 small ❤️ icons) | Reuse the ❤️ target sprite at small scale. CSS-render the count. |
-| Score readout | Pure text, Phaser BitmapText. No DALL-E. |
-| Scenario chip ("18m • centre • 3-man wall") | Pure CSS / Phaser. No DALL-E. |
-| Miss-type popup ("BLOCKED!" / "OVER!" / "WIDE!" / "POST!") | Pure text with a strong outline / shadow. Phaser BitmapText. |
-| Goal-celebration text ("GOAL!") | Pure text with screen-shake + crowd-roar SFX. Phaser BitmapText. |
+**Dimensions:** ~120 × 280 px portrait (figure occupies most of the height, centred horizontally).
 
-No DALL-E prompts needed.
+### Prompt v1 (Blue kit)
+
+> A male professional footballer standing in a defensive wall pose, viewed from directly in front. **Match the visual style of Flick Kick Football.**
+>
+> **Image dimensions: approximately 120 px wide × 280 px tall, portrait.**
+>
+> Pose: standing upright, both arms folded down over the groin (the standard wall pose for protection during a free kick). Slightly serious facial expression, eyes forward.
+>
+> Kit:
+> - **Long-sleeve blue jersey** (medium blue, like Italy or Chelsea)
+> - **White shorts**
+> - **Blue socks** pulled up to the knee
+> - **Brown or black football boots**
+>
+> Body: realistic adult male proportions, full body head-to-toe in frame. Slightly cartoonish-stylised proportions (head ~1/7 of body height), but clearly recognisable as a player. Light skin tone for the head; simple cartoonish facial features (eyes, nose, eyebrows).
+>
+> **Background: completely transparent (alpha channel).** No pitch, no shadow under feet, no scenery.
+>
+> Cartoonish-stylised, family-friendly, clean edges. Match Flick Kick Football's player art style.
+
+### Prompt v1 (Red kit — for variety in the wall)
+
+> [Same as above but: "Long-sleeve red jersey, white shorts, red socks, brown football boots."]
+
+**Failure modes:**
+- DALL-E adds a shadow → explicitly state "no shadow beneath"
+- Face too detailed (realistic) → emphasise "simple cartoonish features"
+- Body too realistic vs stylised → reference Flick Kick by name
+- Hair colour: leave unspecified to get variety. Generate 3-4 versions per kit and pick the most varied set.
 
 ---
 
-## 8. Live swipe trail (no DALL-E)
+## 4. Goalkeeper sprite — `goalkeeper.png`
 
-Rendered live in Phaser as a curved line that follows the gesture path. Faded tail. Pure shader / canvas drawing.
+**Purpose:** Sometimes a keeper stands in the goal mouth (per Flick Kick gameplay). Transparent BG, same scale as defender but ARMS WIDE / ready pose.
+
+### Prompt
+
+> A male football goalkeeper standing in the goal mouth, ready stance. **Match the visual style of Flick Kick Football.**
+>
+> **Image dimensions: approximately 120 px wide × 280 px tall, portrait.**
+>
+> Pose: standing upright with arms slightly spread out from sides (ready to dive). Hands open, palms forward.
+>
+> Kit:
+> - **Long-sleeve yellow jersey** (bright yellow, classic keeper colour)
+> - **Black shorts**
+> - **Black socks** pulled up
+> - **Goalkeeper gloves** (white) visible on hands
+> - **Brown or black boots**
+>
+> Body: realistic adult male proportions, full body head-to-toe in frame. Cartoonish-stylised. Light skin head with simple features. Eyes alert, focused forward.
+>
+> **Background: completely transparent (alpha channel).** No shadow, no scenery.
+>
+> Cartoonish-stylised, family-friendly. Match Flick Kick Football's keeper art style.
 
 ---
 
-## Checklist before generating
+## 5. Football sprite — `ball.png`
 
-- [ ] Style reference images saved to `Docs/games/free-kicks/art-refs/`.
-- [ ] DALL-E quota confirmed.
-- [ ] Photoshop / Procreate ready for background-cleanup and alpha-mask passes.
-- [ ] pngjs measurement script ready to run on each output (see basketball's `scripts/measure-sprite.js` if it exists; otherwise add one).
+**Purpose:** The ball. Single sprite used throughout the trajectory with depth-emphasis scaling.
+
+**Dimensions:** ~256 × 256 px square, ball centred.
+
+### Prompt
+
+> A modern classic football (soccer ball) viewed from a 3/4 angle. **Match the visual style of Flick Kick Football.**
+>
+> **Image dimensions: 256 px × 256 px square, ball centred in frame.**
+>
+> Pattern: **classic icosahedral panels** — 12 black pentagons connected by white hexagons (the iconic Telstar pattern). Pentagons should be clearly visible (~5-6 of them in view at this angle).
+>
+> Subtle glossy highlight on the top-left of the ball.
+>
+> Soft drop shadow beneath the ball (a slightly elongated grey ellipse under the ball's bottom).
+>
+> **Background: completely transparent (alpha channel).** No pitch, no scenery.
+>
+> Cartoonish-stylised, clean edges. Should look like the ball in Flick Kick Football's screenshots.
 
 ---
 
-## Iteration log (fill in as we generate)
+## 6. Target sprites — `target-plus10.png` and `target-heart.png`
 
-| Asset | Iteration | Prompt change | Result | Notes |
-|---|---|---|---|---|
-| Stadium hero | v1 | initial | — | — |
-| Goal frame | v1 | initial | — | — |
-| Wall defender Kit A pose (a) | v1 | initial | — | — |
-| Wall defender Kit B pose (a) | v1 | initial | — | — |
-| Football | v1 | initial | — | — |
-| +10 target | v1 | initial | — | — |
-| ❤️ target | v1 | initial | — | — |
+**Purpose:** Overlaid on the goal mouth showing where +10 / ❤️ targets are. Transparent BG.
+
+**Dimensions:** ~128 × 128 px each.
+
+### Prompt — `target-plus10.png`
+
+> A golden bullseye / dartboard-style target with the text **"+10"** embossed in bold sans-serif numerals in the centre. **Match the visual style of Flick Kick Football** (where they have round bullseye targets in the goal mouth).
+>
+> **Image dimensions: 128 px × 128 px square.**
+>
+> Concentric rings: outermost ring gold/yellow, middle ring red/orange, innermost ring darker red. The "+10" text is centred and clearly readable in white or dark contrast.
+>
+> Subtle 3D depth — the rings have a slight bevel.
+>
+> **Background: completely transparent (alpha channel).**
+>
+> Cartoonish-stylised, family-friendly.
+
+### Prompt — `target-heart.png`
+
+> A glossy bright red heart shape, viewed straight-on. Subtle 3D depth and gloss highlight on the upper-left. **Match the visual style of Flick Kick Football.**
+>
+> **Image dimensions: 128 px × 128 px square, heart centred.**
+>
+> No text. Just the heart.
+>
+> **Background: completely transparent (alpha channel).**
+>
+> Cartoonish-stylised, family-friendly.
+
+---
+
+## Workflow
+
+1. **Run the stadium hero first.** It's the biggest visual win. Iterate 3-5 times until it matches Flick Kick's daytime vibe.
+2. **Save to** `C:\Users\jacob\solshot-free-kicks\public\assets\stadium-hero.png`.
+3. **Refresh the Vercel URL on your phone** — the game auto-detects the asset and uses it.
+4. **Move to goal frame next.** Same workflow.
+5. **Then defenders + keeper** (these come in matched sets; the scene code picks one per slot).
+6. **Then ball + targets.**
+
+After each asset lands, send me a screenshot of the in-game render and we'll calibrate any sprite-anchor / scale adjustments.
+
+---
+
+## v0.1 → v0.2 changelog
+
+- **Removed** the entire night-floodlit-stadium direction
+- **Added** the Flick Kick daytime style anchor
+- **Replaced** all six core prompts with Flick-Kick-targeted wording
+- **Added** explicit save paths so the scene-loader can find each file
+- **Added** the workflow (stadium-first → swap incrementally)
+- The v0.1 art-refs (basketball-style streetball references) are not relevant here. New refs are the Flick Kick clips already in `Other Games\Flick kick\`.

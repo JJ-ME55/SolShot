@@ -210,15 +210,20 @@ export const WALL_SIZES_BY_TIER = [3, 4, 5, 6];
 //   - Bias = 2.0 power-curve, so ~70% of shots land in the first
 //     half of the range, ~10% in the top quarter (genuine long-shots)
 //
+// v1.1.1: angle pools moved EARLIER in the curve so oblique shots
+// appear from shot 1. Previously every player saw centre-only shots
+// until they scored 3 goals — most sessions never reached oblique
+// territory. Flick Kick has angled shots from the start.
+//
 // Backwards-compat: a `distanceM` getter on each tier returns the
 // MIN distance so existing display code that reads tier.distanceM
 // still gets a sensible default.
 export const DISTANCE_BIAS_EXPONENT = 2.0;
 export const ESCALATION_TIERS = [
-    { minGoals: 0,  distanceRangeM: [12, 22], wallSize: 3, anglePoolDeg: [0] },
-    { minGoals: 3,  distanceRangeM: [14, 26], wallSize: 4, anglePoolDeg: [0, -15, +15] },
-    { minGoals: 6,  distanceRangeM: [16, 30], wallSize: 5, anglePoolDeg: [0, -15, +15, -25, +25] },
-    { minGoals: 10, distanceRangeM: [18, 38], wallSize: 6, anglePoolDeg: [0, -15, +15, -25, +25] },
+    { minGoals: 0,  distanceRangeM: [12, 22], wallSize: 3, anglePoolDeg: [0, -15, +15] },
+    { minGoals: 3,  distanceRangeM: [14, 26], wallSize: 4, anglePoolDeg: [0, -15, +15, -25, +25] },
+    { minGoals: 6,  distanceRangeM: [16, 30], wallSize: 5, anglePoolDeg: [-15, +15, -25, +25, -35, +35] },
+    { minGoals: 10, distanceRangeM: [18, 38], wallSize: 6, anglePoolDeg: [-25, +25, -35, +35] },
 ].map(tier => ({ ...tier, distanceM: tier.distanceRangeM[0] }));
 
 

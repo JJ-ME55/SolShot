@@ -23,7 +23,7 @@ import {
 test('tierForGoals: 0 goals → first tier', () => {
     const t = tierForGoals(0);
     assert.deepEqual(t, ESCALATION_TIERS[0]);
-    assert.deepEqual(t.anglePoolDeg, [0]);
+    assert.deepEqual(t.anglePoolDeg, ESCALATION_TIERS[0].anglePoolDeg);
 });
 
 test('tierForGoals: minGoals of each tier resolves to that tier', () => {
@@ -176,8 +176,7 @@ test('generateScenario: +10 corner bias is dominant (~85-95%)', () => {
 test('generateScenario: tier respects goalCount', () => {
     // Generated scenario's wallSize must match the tier selected by
     // goalCount, and distance must fall within the tier's range.
-    // (Per-shot distance is now rolled within tier.distanceRangeM —
-    // see v0.7.1.)
+    // Angle must be from the tier's pool (in radians).
     const goalCounts = ESCALATION_TIERS.map(t => t.minGoals);
     for (const goalCount of goalCounts) {
         const tier = ESCALATION_TIERS.find(t => t.minGoals === goalCount);
@@ -186,9 +185,10 @@ test('generateScenario: tier respects goalCount', () => {
         const [min, max] = tier.distanceRangeM;
         assert.ok(s.distanceM >= min && s.distanceM <= max,
             `goalCount=${goalCount}: distance ${s.distanceM} must be in [${min}, ${max}]`);
+        const angleDegs = tier.anglePoolDeg.map(d => d * Math.PI / 180);
+        const matched = angleDegs.some(a => Math.abs(a - s.angleRad) < 1e-9);
+        assert.ok(matched, `goalCount=${goalCount}: angle ${s.angleRad} not in tier pool`);
     }
-    const s0 = generateScenario({ attemptSeed: 1, shotIndex: 0, goalCount: 0 });
-    assert.equal(s0.angleRad, 0);
 });
 
 test('generateScenario: distance bias toward tier minimum', () => {
@@ -235,10 +235,15 @@ test('generateScenario: distance never below tier minimum', () => {
     }
 });
 
-test('generateScenario: tier 1 always produces centre angle', () => {
+test('generateScenario: tier 0 uses tier 0 angle pool', () => {
+    // v1.1.1: tier 0 includes oblique angles from shot 1 — pool is
+    // {0, -15, +15} (radians). Every generated angle must come
+    // from that set.
+    const tier0Pool = ESCALATION_TIERS[0].anglePoolDeg.map(d => d * Math.PI / 180);
     for (let i = 0; i < 50; i++) {
         const s = generateScenario({ attemptSeed: 42, shotIndex: i, goalCount: 0 });
-        assert.equal(s.angleRad, 0, `tier 1 should only produce angle=0, shot ${i} produced ${s.angleRad}`);
+        const matched = tier0Pool.some(a => Math.abs(a - s.angleRad) < 1e-9);
+        assert.ok(matched, `shot ${i} angle ${s.angleRad} not in tier 0 pool`);
     }
 });
 

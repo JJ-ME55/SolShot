@@ -52,4 +52,13 @@ export {
     resolveWindow,
 } from './resolver.js';
 
+export {
+    extractInputs,
+    REFERENCE_PATH_LENGTH_PX,
+    REFERENCE_VERTICAL_SWIPE_PX,
+    REFERENCE_VERTICAL_ELEVATION_RAD,
+    LATERAL_AIM_SENSITIVITY,
+    SPIN_SENSITIVITY_RAD_S_PER_PX,
+} from './gesture.js';
+
 export * as Constants from './constants.js';

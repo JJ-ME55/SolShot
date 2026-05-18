@@ -253,3 +253,32 @@ export const MAX_ELEVATION_RAD = Math.PI / 4;  // 45°
 // Real free-kicks: 7–10 rev/s = 44–63 rad/s. Roberto Carlos extreme: ~88 rad/s.
 // Allow sign for left/right curl.
 export const MAX_SPIN_RAD_S = 100.0;            // 16 rev/s — covers Carlos outlier
+
+
+// ============================================================
+// === Pitch bounce physics ===
+// ============================================================
+//
+// Soccer ball on grass (FIFA-spec ball, regulation pitch):
+//   - Coefficient of restitution e ≈ 0.40 – 0.60 (varies with
+//     pitch condition and ball pressure). Source: Bray & Kerwin
+//     2003 reference values + Asai wind-tunnel + multiple soccer
+//     physics review papers.
+//   - Horizontal friction per bounce: ~0.80 (ball retains ~80% of
+//     horizontal velocity through each bounce).
+//
+// Arcade tuning (v0.5.2):
+//   - BOUNCE_RESTITUTION 0.50 — middle of measured range
+//   - BOUNCE_FRICTION_H 0.80 — slightly under typical research
+//     range to ensure energy decays cleanly across bounces
+//   - MAX_BOUNCES 6 — caps simulation length on shorts
+//   - MIN_BOUNCE_SPEED_M_S 1.5 — below this, ball is effectively
+//     rolling to a stop; terminate the simulation
+//
+// Behavioural effect: a low-power shot that falls short still
+// bounces forward, potentially rolling into the goal. Matches
+// real-football feel where dribblers can sneak in past defenders.
+export const BOUNCE_RESTITUTION = 0.50;
+export const BOUNCE_FRICTION_H = 0.80;
+export const MAX_BOUNCES = 6;
+export const MIN_BOUNCE_SPEED_M_S = 1.5;

@@ -333,6 +333,64 @@ test('Roberto Carlos 1997 — extreme spin gives extreme curl', () => {
 // === Determinism ===
 // ============================================================
 
+// ============================================================
+// === Pitch bounce physics ===
+// ============================================================
+
+test('simulateShot: low-power shot bounces off the pitch (vy sign change)', () => {
+    // A weak shot that falls short — confirm the trajectory shows
+    // a vy sign-change from negative to positive somewhere along the
+    // way (the canonical bounce signature). Sample boundaries may
+    // never land exactly at y=0, so detect the velocity flip instead.
+    const out = simulateShot({
+        shotInput: { power: 16, azimuth: 0, elevation: 0.15, spin: 0 },
+        scenario: { distanceM: 18, angleRad: 0, wallSize: 0, plus10Target: null, heartTarget: null },
+    });
+    let bounced = false;
+    for (let i = 1; i < out.trajectory.length; i++) {
+        const prev = out.trajectory[i - 1];
+        const cur = out.trajectory[i];
+        // Falling fast → suddenly rising → bounce
+        if (prev.vy < -0.5 && cur.vy > 0.5 && cur.y < 0.3) {
+            bounced = true;
+            break;
+        }
+    }
+    assert.ok(bounced, 'ball must show a bounce (vy sign-change near ground)');
+});
+
+test('simulateShot: bounces decay (each peak lower than previous)', () => {
+    const out = simulateShot({
+        shotInput: { power: 18, azimuth: 0, elevation: 0.18, spin: 0 },
+        scenario: { distanceM: 25, angleRad: 0, wallSize: 0, plus10Target: null, heartTarget: null },
+    });
+    // Find consecutive peaks (local maxima of y).
+    const peaks = [];
+    for (let i = 1; i < out.trajectory.length - 1; i++) {
+        const prev = out.trajectory[i - 1].y;
+        const cur = out.trajectory[i].y;
+        const next = out.trajectory[i + 1].y;
+        if (cur > prev && cur > next && cur > 0.1) peaks.push(cur);
+    }
+    if (peaks.length < 2) return; // not enough peaks to test (shot may have scored)
+    // Each successive peak should be strictly lower than the previous
+    for (let i = 1; i < peaks.length; i++) {
+        assert.ok(peaks[i] < peaks[i - 1],
+            `bounce peak ${i} (${peaks[i].toFixed(2)}) should be lower than peak ${i - 1} (${peaks[i - 1].toFixed(2)})`);
+    }
+});
+
+test('simulateShot: trajectory eventually terminates after bounces', () => {
+    // A very weak shot — must terminate, not run to MAX_TRAJECTORY_STEPS.
+    const out = simulateShot({
+        shotInput: { power: 10, azimuth: 0, elevation: 0.10, spin: 0 },
+        scenario: { distanceM: 24, angleRad: 0, wallSize: 0, plus10Target: null, heartTarget: null },
+    });
+    // Should resolve to 'short' (or any miss type — not run unbounded)
+    assert.notEqual(out.result, null);
+    assert.notEqual(out.result, 'invalid');
+});
+
 test('simulateShot: deterministic — same inputs produce identical trajectory', () => {
     const params = {
         shotInput: { power: 28, azimuth: 0.05, elevation: 0.22, spin: 45 },

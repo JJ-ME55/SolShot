@@ -13,6 +13,7 @@ import {
     MIN_ELEVATION_RAD, MAX_ELEVATION_RAD,
     MAX_SPIN_RAD_S,
     TARGET_HALF_WIDTH_M, TARGET_HALF_HEIGHT_M,
+    BOUNCE_RESTITUTION, BOUNCE_FRICTION_H, MAX_BOUNCES, MIN_BOUNCE_SPEED_M_S,
 } from './constants.js';
 
 /**
@@ -555,9 +556,9 @@ export function simulateShot({ shotInput, scenario }) {
     let crossing = null;
     let targetHit = { plus10: false, heart: false };
     let reason = null;
+    let bounceCount = 0;
 
     for (let step = 0; step < MAX_TRAJECTORY_STEPS; step++) {
-        let prevState = state;
 
         // Sub-step integration
         for (let sub = 0; sub < PHYSICS_SUBSTEPS; sub++) {
@@ -568,7 +569,6 @@ export function simulateShot({ shotInput, scenario }) {
             const cross = goalPlaneCrossing(state, next);
             if (cross) {
                 crossing = cross;
-                // Did the crossing land inside the goal frame?
                 if (insideGoalFrame(cross.x, cross.y)) {
                     targetHit.plus10 = insideTargetZone(cross.x, cross.y, scenario.plus10Target);
                     targetHit.heart  = insideTargetZone(cross.x, cross.y, scenario.heartTarget);
@@ -577,13 +577,10 @@ export function simulateShot({ shotInput, scenario }) {
                     else if (targetHit.heart)                     result = 'goal_heart';
                     else                                          result = 'goal';
                 } else {
-                    // Outside the frame — check for woodwork hit at this y/x.
-                    // (Treat near-post/crossbar grazes in collision pass instead.)
                     if (cross.y > GOAL_HEIGHT_M + POST_RADIUS_M)              result = 'over';
                     else if (Math.abs(cross.x) > GOAL_HALF_WIDTH_M + POST_RADIUS_M) result = 'wide';
                     else                                                       result = 'post';
                 }
-                // Record final state and break.
                 state = next;
                 break;
             }
@@ -603,6 +600,28 @@ export function simulateShot({ shotInput, scenario }) {
             if (hitPost(state, next, -GOAL_HALF_WIDTH_M)) { result = 'post'; state = next; break; }
             if (hitCrossbar(state, next))                 { result = 'post'; state = next; break; }
 
+            // Pitch bounce: ball is heading into the ground.
+            //   - Snap y to 0
+            //   - Invert vy with restitution
+            //   - Dampen horizontal velocity (friction)
+            //   - If energy too low OR bounce count exhausted, terminate
+            if (next.y <= 0 && next.vy < 0) {
+                bounceCount++;
+                next.y = 0;
+                next.vy = -BOUNCE_RESTITUTION * next.vy;
+                next.vx *= BOUNCE_FRICTION_H;
+                next.vz *= BOUNCE_FRICTION_H;
+
+                const speedAfter = Math.hypot(next.vx, next.vy, next.vz);
+                if (bounceCount >= MAX_BOUNCES || speedAfter < MIN_BOUNCE_SPEED_M_S) {
+                    // Ball comes to rest on the pitch — short of goal.
+                    next.vx = 0; next.vy = 0; next.vz = 0;
+                    state = next;
+                    result = 'short';
+                    break;
+                }
+            }
+
             state = next;
         }
 
@@ -610,8 +629,8 @@ export function simulateShot({ shotInput, scenario }) {
 
         if (result !== null) break;
 
-        // Termination conditions
-        if (state.y <= TERM_Y_MIN_M)                { result = 'short'; break; }
+        // Outer safety nets (bounce logic above handles normal y<=0 case).
+        if (state.y < -1.0)                         { result = 'short'; break; }
         if (state.z > TERM_Z_MAX_M)                 { result = (crossing ? result : 'over'); break; }
         if (Math.abs(state.x) > TERM_X_ABS_MAX_M)   { result = 'wide'; break; }
     }

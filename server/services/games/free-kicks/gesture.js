@@ -86,20 +86,20 @@ import {
 // ============================================================
 
 // A swipe of this many pixels = full power (mapped to MAX_POWER_M_S).
-// Phaser's FIT scale mode amplifies physical swipes into large virtual-
-// pixel paths on a phone (an 800x1200 virtual canvas on a ~400x600
-// device-px screen means every physical pixel maps to ~2 virtual px).
-// 1000 px ≈ 83% of the 1200 virtual canvas height — requires a long
-// deliberate swipe to hit full power.
-// Tuned during v0.2 playtest.
-export const REFERENCE_PATH_LENGTH_PX = 1000;
+// Tuning history:
+//   v0.2 (Phaser FIT virtual canvas): 1000 px — virtual pixels in
+//        800×1200 scaled-to-fit canvas.
+//   v1.0 (Three.js raw canvas): 500 px — actual CSS pixels on the
+//        real phone canvas (~400×800). A 500 px swipe is ~60% of
+//        a phone screen — feasible for full power without
+//        cramping.
+export const REFERENCE_PATH_LENGTH_PX = 500;
 
 // A purely-upward swipe of this length (in screen pixels) maps to
 // REFERENCE_VERTICAL_ELEVATION_RAD elevation. Linearly extrapolated
 // beyond + clamped.
-// Tuned during v0.2 playtest — was 200 px, sending the ball over the
-// crossbar on every small swipe.
-export const REFERENCE_VERTICAL_SWIPE_PX = 400;
+// v1.0: same scale-down as path length (400 → 200).
+export const REFERENCE_VERTICAL_SWIPE_PX = 200;
 export const REFERENCE_VERTICAL_ELEVATION_RAD = 0.25;  // ~14.3°
 
 // Lateral aim sensitivity — same value the playbook (§6.3) settled on

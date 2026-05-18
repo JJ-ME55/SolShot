@@ -198,10 +198,10 @@ test('extractInputs: azimuth clamps to MIN/MAX', () => {
 // ============================================================
 
 test('extractInputs: vertical reference swipe → reference elevation', () => {
-    // v0.3: elevation reads from PRE-CONTACT chord (first half of samples).
-    // Use a 800px total swipe with odd sample count so the contact split
-    // is exactly the midpoint → pre-chord = 400px upward → REFERENCE.
-    const samples = straightSwipe({ fromX: 0, fromY: 800, toX: 0, toY: 0 });
+    // v1.0: REFERENCE_VERTICAL_SWIPE_PX dropped 400 → 200 for raw
+    // Three.js canvas. Pre-contact chord must equal 200 px → total
+    // upward swipe = 400 px (with odd sample count, contact = mid).
+    const samples = straightSwipe({ fromX: 0, fromY: 400, toX: 0, toY: 0 });
     const out = extractInputs(samples);
     assert.ok(
         Math.abs(out.elevation - REFERENCE_VERTICAL_ELEVATION_RAD) < 0.01,

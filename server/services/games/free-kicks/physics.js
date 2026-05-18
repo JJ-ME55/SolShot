@@ -611,9 +611,9 @@ export function simulateShot({ shotInput, scenario }) {
             //   - Invert vy with restitution
             //   - Dampen horizontal velocity (friction)
             //   - If energy too low OR bounce count exhausted, terminate
-            if (next.y <= 0 && next.vy < 0) {
+            if (next.y <= BALL_RADIUS_M && next.vy < 0) {
                 bounceCount++;
-                next.y = 0;
+                next.y = BALL_RADIUS_M;
                 next.vy = -BOUNCE_RESTITUTION * next.vy;
                 next.vx *= BOUNCE_FRICTION_H;
                 next.vz *= BOUNCE_FRICTION_H;
@@ -636,7 +636,7 @@ export function simulateShot({ shotInput, scenario }) {
         if (result !== null) break;
 
         // Outer safety nets (bounce logic above handles normal y<=0 case).
-        if (state.y < -1.0)                         { result = 'short'; break; }
+        if (state.y < -1.0 + BALL_RADIUS_M)         { result = 'short'; break; }
         if (state.z > TERM_Z_MAX_M)                 { result = (crossing ? result : 'over'); break; }
         if (Math.abs(state.x) > TERM_X_ABS_MAX_M)   { result = 'wide'; break; }
     }

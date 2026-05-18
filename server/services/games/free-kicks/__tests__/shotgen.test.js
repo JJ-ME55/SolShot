@@ -8,50 +8,61 @@ import {
     HEART_SPAWN_PROBABILITY,
 } from '../constants.js';
 
+// Re-export at the test scope so the dynamic tier tests can reference it.
+// (Already imported above — this line is for clarity.)
+
 
 // ============================================================
 // === Tier resolution ===
 // ============================================================
 
+// These tests assert tier RESOLUTION (which tier the goal count maps to),
+// not the specific distance/wallSize values — those are tuned often.
+// We reference ESCALATION_TIERS dynamically so retunes don't break tests.
+
 test('tierForGoals: 0 goals → first tier', () => {
     const t = tierForGoals(0);
-    assert.equal(t.distanceM, 18);
-    assert.equal(t.wallSize, 3);
+    assert.deepEqual(t, ESCALATION_TIERS[0]);
     assert.deepEqual(t.anglePoolDeg, [0]);
 });
 
-test('tierForGoals: 3 goals → tier 2', () => {
-    const t = tierForGoals(3);
-    assert.equal(t.distanceM, 20);
-    assert.equal(t.wallSize, 4);
-});
-
-test('tierForGoals: 6 goals → tier 3', () => {
-    const t = tierForGoals(6);
-    assert.equal(t.distanceM, 22);
-    assert.equal(t.wallSize, 5);
-});
-
-test('tierForGoals: 10 goals → tier 4', () => {
-    const t = tierForGoals(10);
-    assert.equal(t.distanceM, 24);
-    assert.equal(t.wallSize, 6);
+test('tierForGoals: minGoals of each tier resolves to that tier', () => {
+    for (let i = 0; i < ESCALATION_TIERS.length; i++) {
+        const tier = ESCALATION_TIERS[i];
+        const resolved = tierForGoals(tier.minGoals);
+        assert.deepEqual(resolved, tier,
+            `tierForGoals(${tier.minGoals}) should resolve to tier ${i}`);
+    }
 });
 
 test('tierForGoals: 100 goals → still highest tier', () => {
     const t = tierForGoals(100);
-    assert.equal(t.distanceM, 24);
-    assert.equal(t.wallSize, 6);
+    assert.deepEqual(t, ESCALATION_TIERS[ESCALATION_TIERS.length - 1]);
 });
 
-test('tierForGoals: boundary — 2 goals (tier 1)', () => {
-    const t = tierForGoals(2);
-    assert.equal(t.distanceM, 18);
+test('tierForGoals: just below next-tier threshold stays in current tier', () => {
+    // For every tier transition, goalCount = (next tier minGoals - 1) must
+    // still resolve to the current tier.
+    for (let i = 0; i < ESCALATION_TIERS.length - 1; i++) {
+        const tier = ESCALATION_TIERS[i];
+        const nextTier = ESCALATION_TIERS[i + 1];
+        const resolved = tierForGoals(nextTier.minGoals - 1);
+        assert.deepEqual(resolved, tier,
+            `goal count ${nextTier.minGoals - 1} should be in tier ${i}, not ${i + 1}`);
+    }
 });
 
-test('tierForGoals: boundary — 9 goals (tier 3)', () => {
-    const t = tierForGoals(9);
-    assert.equal(t.distanceM, 22);
+test('escalation: distance strictly increases per tier', () => {
+    for (let i = 1; i < ESCALATION_TIERS.length; i++) {
+        assert.ok(ESCALATION_TIERS[i].distanceM > ESCALATION_TIERS[i - 1].distanceM,
+            `tier ${i} distance ${ESCALATION_TIERS[i].distanceM} should exceed tier ${i - 1} distance ${ESCALATION_TIERS[i - 1].distanceM}`);
+    }
+});
+
+test('escalation: wall size strictly increases per tier', () => {
+    for (let i = 1; i < ESCALATION_TIERS.length; i++) {
+        assert.ok(ESCALATION_TIERS[i].wallSize > ESCALATION_TIERS[i - 1].wallSize);
+    }
 });
 
 
@@ -163,18 +174,18 @@ test('generateScenario: +10 corner bias is dominant (~85-95%)', () => {
 // ============================================================
 
 test('generateScenario: tier respects goalCount', () => {
+    // Generated scenario's distance + wallSize must match the tier
+    // selected by goalCount. References ESCALATION_TIERS dynamically.
+    const goalCounts = ESCALATION_TIERS.map(t => t.minGoals);
+    for (const goalCount of goalCounts) {
+        const tier = ESCALATION_TIERS.find(t => t.minGoals === goalCount);
+        const s = generateScenario({ attemptSeed: 1, shotIndex: 0, goalCount });
+        assert.equal(s.distanceM, tier.distanceM, `goalCount=${goalCount}`);
+        assert.equal(s.wallSize, tier.wallSize, `goalCount=${goalCount}`);
+    }
+    // Tier 0 has only [0] in angle pool — verify centre-only at 0 goals.
     const s0 = generateScenario({ attemptSeed: 1, shotIndex: 0, goalCount: 0 });
-    assert.equal(s0.distanceM, 18);
-    assert.equal(s0.wallSize, 3);
-    assert.equal(s0.angleRad, 0);  // tier 1 angle pool = [0]
-
-    const s3 = generateScenario({ attemptSeed: 1, shotIndex: 0, goalCount: 3 });
-    assert.equal(s3.distanceM, 20);
-    assert.equal(s3.wallSize, 4);
-
-    const s10 = generateScenario({ attemptSeed: 1, shotIndex: 0, goalCount: 10 });
-    assert.equal(s10.distanceM, 24);
-    assert.equal(s10.wallSize, 6);
+    assert.equal(s0.angleRad, 0);
 });
 
 test('generateScenario: tier 1 always produces centre angle', () => {

@@ -180,11 +180,15 @@ export const WALL_SIZES_BY_TIER = [3, 4, 5, 6];
 
 // Each tier triggers on goal count crossing the lower bound.
 // See DESIGN.md §Difficulty ramp.
+//
+// v0.4: pulled distances IN to match Flick Kick (which varies 11–20m,
+// often opens at 11–14m). Original 18→24m range was too far for
+// early gameplay and made the goal feel small/distant.
 export const ESCALATION_TIERS = [
-    { minGoals: 0,  distanceM: 18, wallSize: 3, anglePoolDeg: [0] },
-    { minGoals: 3,  distanceM: 20, wallSize: 4, anglePoolDeg: [0, -15, +15] },
-    { minGoals: 6,  distanceM: 22, wallSize: 5, anglePoolDeg: [0, -15, +15, -25, +25] },
-    { minGoals: 10, distanceM: 24, wallSize: 6, anglePoolDeg: [0, -15, +15, -25, +25] },
+    { minGoals: 0,  distanceM: 12, wallSize: 3, anglePoolDeg: [0] },
+    { minGoals: 3,  distanceM: 14, wallSize: 4, anglePoolDeg: [0, -15, +15] },
+    { minGoals: 6,  distanceM: 16, wallSize: 5, anglePoolDeg: [0, -15, +15, -25, +25] },
+    { minGoals: 10, distanceM: 18, wallSize: 6, anglePoolDeg: [0, -15, +15, -25, +25] },
 ];
 
 

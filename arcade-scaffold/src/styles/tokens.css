@@ -1,0 +1,52 @@
+/* The Arcade — brand tokens.
+   Palette per THE_ARCADE_v1_DESIGN.md §Visual Identity.
+   Fire gradient (yellow → orange → red, top-to-bottom) is the
+   defining mark; Solana colours stay tightly scoped to "this is
+   on Solana" cues. */
+
+:root {
+  /* Core palette */
+  --arcade-black: #0a0606;
+  --arcade-yellow: #ffd23a;
+  --arcade-orange: #ff8a1f;
+  --arcade-red: #e62e2e;
+  --arcade-deep-red: #7a0f0f;
+  --solana-purple: #9945ff;
+  --solana-teal: #14f195;
+  --paper-warm: #f5e6cc;
+
+  /* Semantic */
+  --bg: var(--arcade-black);
+  --fg: var(--paper-warm);
+  --accent: var(--arcade-yellow);
+  --accent-hot: var(--arcade-orange);
+  --accent-live: var(--arcade-red);
+  --shadow-deep: var(--arcade-deep-red);
+
+  /* Fire gradient (display headings, CTAs) */
+  --fire-gradient: linear-gradient(180deg,
+    var(--arcade-yellow) 0%,
+    var(--arcade-orange) 50%,
+    var(--arcade-red) 100%);
+
+  /* Typography stack — sourcing TBD per §Visual Identity. Stub stack
+     so scaffold renders cleanly; Fish swaps in real pixel face when
+     brand assets land. */
+  --font-display: 'Press Start 2P', 'VT323', 'Courier New', monospace;
+  --font-subhead: 'Anton', 'Bebas Neue', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+
+  /* Surface */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+
+  /* Spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+}

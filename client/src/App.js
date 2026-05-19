@@ -14,6 +14,7 @@ import HandleModal from './components/HandleModal';
 import DebugAuthOverlay from './components/DebugAuthOverlay';
 import { useTelegram } from './telegram/TelegramContext';
 import { useSolShotWallet } from './wallet/WalletContext';
+import useArcadeTokenReceiver from './hooks/useArcadeTokenReceiver';
 
 // Lazy — split into separate chunks (huge Phaser deps live in BattleScreen/AIPracticeScreen)
 const LobbyScreen          = lazy(() => import('./screens/LobbyScreen'));
@@ -65,6 +66,11 @@ function AppInner() {
   const [screen, setScreen] = useState('loading');
   const [screenData, setScreenData] = useState({});
   const [faqOpen, setFaqOpen] = useState(false);
+
+  // Side-effect only: reads ?arcade_token=... from URL (if present),
+  // validates against /api/arcade/session-validate, stashes callsign
+  // hint in localStorage, strips the param. No-op on normal entry.
+  useArcadeTokenReceiver();
 
   const { isTelegram, user: tgUser, startParam } = useTelegram();
   // walletHandle comes from server after auth and is the authoritative

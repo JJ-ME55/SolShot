@@ -33,6 +33,8 @@ import {
 import { lookupUserByTelegramId, getPlayerRank, linkTelegramIdentity } from './services/users.js';
 import { consumeLinkToken } from './services/walletLinkTokens.js';
 import { requirePrivyAuth, isPrivyAuthConfigured } from './services/privyAuth.js';
+import { mintArcadeSession, verifyArcadeSession } from './services/arcadeSession.js';
+import User from './models/User.js';
 import { renderCareerCardPng } from './services/challenge/renderCareerCard.js';
 import { buildCareerProps } from './services/challenge/careerCardProps.js';
 import {
@@ -660,6 +662,75 @@ app.post(
         }
     }
 );
+
+// ─── Arcade ↔ SolShot session handoff ──────────────────────────────────
+//
+// arcade.xyz user taps SolShot tile → arcade client mints a handoff JWT
+// here, redirects to solshot.gg/?arcade_token=<jwt>. solshot.gg client
+// validates the token via the sibling endpoint below, displays a welcome
+// banner using the callsign from the token. Token is a hint, not auth —
+// SolShot's real session still goes through Privy (same app, native
+// cross-origin session sharing covers most cases).
+//
+// 10-min TTL, HS256, ARCADE_SESSION_SECRET env var.
+
+// POST /api/arcade/session-handoff
+//   headers: Authorization: Bearer <privy-access-token>  (required)
+//   body: (none)
+//   returns: { token, expiresAt }
+app.post(
+    '/api/arcade/session-handoff',
+    requirePrivyAuth({ required: true }),
+    async (req, res) => {
+        try {
+            const uid = req.privyUserId;
+            if (!uid) {
+                return res.status(401).json({ error: 'privy_session_required' });
+            }
+            // Resolve to the User doc so we can include callsign/wallet/TG
+            // hints in the token. Missing User doc isn't fatal — the handoff
+            // can still carry just the Privy DID.
+            const user = await User.findOne({ uid }).lean().catch(() => null);
+            const token = mintArcadeSession({
+                uid,
+                walletAddress: user?.walletAddress || undefined,
+                telegramUserId: user?.telegramUserId || undefined,
+                handle: user?.handle || undefined,
+            });
+            // expiresAt for client-side display only; the JWT carries
+            // its own exp claim that the validator checks.
+            const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+            res.json({ token, expiresAt });
+        } catch (err) {
+            console.error('[POST /api/arcade/session-handoff]', err.message);
+            res.status(500).json({ error: 'mint_failed' });
+        }
+    }
+);
+
+// POST /api/arcade/session-validate
+//   body: { token: string }
+//   returns: { ok: true, claims: { uid, walletAddress?, telegramUserId?, handle? } }
+//   or:     { ok: false, error: string }
+//
+// Public endpoint — the JWT itself is the auth. SolShot client calls
+// this after reading ?arcade_token=... from the URL.
+app.post('/api/arcade/session-validate', async (req, res) => {
+    try {
+        const { token } = req.body || {};
+        if (!token || typeof token !== 'string') {
+            return res.status(400).json({ ok: false, error: 'token required' });
+        }
+        const claims = verifyArcadeSession(token);
+        res.json({ ok: true, claims });
+    } catch (err) {
+        // Invalid/expired/forged — return 200 with ok:false so the client
+        // can silently drop the welcome banner instead of surfacing an
+        // error. The user is a guest from arcade.xyz; if the hint is
+        // stale, that's fine.
+        res.json({ ok: false, error: err.message || 'invalid_token' });
+    }
+});
 
 // ─── Basketball Hoops standalone — score leaderboard ───────────────────
 //

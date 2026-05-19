@@ -201,6 +201,16 @@ export class BasketballScene extends Phaser.Scene {
         this._lastBeepSec = 99;
 
         this._onResize = null;
+
+        // --- Debug instrumentation (toggle via ?debug=1) ---
+        // Phaser-rendered HUD that shows live game-state + per-ball
+        // age so we can see what wedges on a spam-fire freeze. Mobile
+        // users can't open dev tools, so the HUD is on-canvas.
+        this._debugMode = false;
+        this._debugRing = [];
+        this._debugRingMax = 20;
+        this._debugText = null;
+        this._touchState = null;
     }
 
     preload() {
@@ -213,6 +223,21 @@ export class BasketballScene extends Phaser.Scene {
     }
 
     create() {
+        // Debug toggle — append ?debug=1 to the URL to enable the
+        // on-canvas state HUD. Touch + scene events route through the
+        // window.__bballDebug bridge so cross-module logs land here.
+        try {
+            const params = new URLSearchParams(window.location.search);
+            this._debugMode = params.get('debug') === '1';
+        } catch { /* SSR / non-browser env */ }
+        if (typeof window !== 'undefined') {
+            window.__bballDebug = {
+                log: (msg) => this._debug(msg),
+                touch: (state) => { this._touchState = state; },
+                snapshot: () => this._debugSnapshot(),
+            };
+        }
+
         // Procedural sky + floor sit underneath the cabinet backdrop.
         // Whole stack is pinned to DEPTH_BACKDROP so a ball at
         // DEPTH_BALL_BEHIND_BOARD (long miss past the board plane)
@@ -296,6 +321,7 @@ export class BasketballScene extends Phaser.Scene {
         for (const ball of this.balls) this._renderBall(ball, now0);
 
         this._createScoreboard();
+        this._createDebugOverlay();
 
         // Input scheme — mouse arrow on desktop, touch flick elsewhere
         const hasMouse = this.sys.game.device.input.mspointer
@@ -386,6 +412,7 @@ export class BasketballScene extends Phaser.Scene {
         }
 
         this._updateScoreboard();
+        this._updateDebugOverlay(now);
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -448,6 +475,7 @@ export class BasketballScene extends Phaser.Scene {
                 // and never delivered a trajectory: force-recover the
                 // ball so the rack doesn't permanently shrink.
                 if (now - ball.flyingStartMs > FLYING_TRAJECTORY_TIMEOUT_MS) {
+                    this._debug(`watchdog A fired: B${ball.id} no-trajectory ${Math.floor(now - ball.flyingStartMs)}ms`);
                     this._recoverStuckBall(ball);
                     return;
                 }
@@ -460,6 +488,7 @@ export class BasketballScene extends Phaser.Scene {
             // trajectory that doesn't terminate cleanly — without this
             // the rack empties and the player can't flick.
             if (now - ball.flyingStartMs > MAX_FLIGHT_MS) {
+                this._debug(`watchdog B fired: B${ball.id} max-flight ${Math.floor(now - ball.flyingStartMs)}ms trajLen=${ball.trajectory.length}`);
                 this._resolveBall(ball, now);
                 return;
             }
@@ -1095,8 +1124,15 @@ export class BasketballScene extends Phaser.Scene {
      * Ignored when the rack is empty or the game is settling/over.
      */
     async onShotSubmitted({ angle, power, elevation }) {
-        if (this.gameState === 'over' || this.gameState === 'settling') return;
-        if (this.rack.length === 0) return; // no ball ready — strict pool
+        if (this.gameState === 'over' || this.gameState === 'settling') {
+            this._debug(`flick rejected: gameState=${this.gameState}`);
+            return;
+        }
+        if (this.rack.length === 0) {
+            this._debug(`flick rejected: rack empty (all 4 in flight)`);
+            return; // no ball ready — strict pool
+        }
+        this._debug(`flick accepted: rack ${this.rack.length}→${this.rack.length - 1} pow=${power.toFixed(2)} ang=${angle.toFixed(2)}`);
 
         const now = performance.now();
 
@@ -1170,6 +1206,7 @@ export class BasketballScene extends Phaser.Scene {
             ball.pendingResult = result;
         } catch (e) {
             console.warn('[basketball] shot submit failed — recovering ball', e);
+            this._debug(`submit threw: ${e && e.message ? e.message : e}`);
             if (ball.state === 'flying') this._recoverStuckBall(ball);
         }
     }
@@ -1231,6 +1268,70 @@ export class BasketballScene extends Phaser.Scene {
         this.bridge.resetAttempt();
     }
 
+    // ──────────────────────────────────────────────────────────────
+    // Debug instrumentation — enabled with ?debug=1
+    // ──────────────────────────────────────────────────────────────
+
+    _debug(msg) {
+        // Always mirror to console (Safari remote-debug picks these
+        // up even if the canvas overlay isn't running).
+        try { console.warn('[bball]', msg); } catch { /* ignore */ }
+        // Ring buffer — capped, always populated so the spawn-time
+        // toggle isn't required (helps when the bug repros before the
+        // user notices and reloads with ?debug=1).
+        const stamp = Math.floor(performance.now()) % 100000;
+        this._debugRing.push(`${stamp} ${msg}`);
+        if (this._debugRing.length > this._debugRingMax) this._debugRing.shift();
+    }
+
+    _debugSnapshot() {
+        // Callable from console: window.__bballDebug.snapshot()
+        return {
+            gameState: this.gameState,
+            rackLen: this.rack.length,
+            shotsScored: this.shotsScored,
+            timeRemainingMs: Math.floor(this.timeRemainingMs),
+            touch: this._touchState,
+            balls: this.balls.map((b) => ({
+                id: b.id,
+                state: b.state,
+                hasTrajectory: !!b.trajectory,
+                trajLen: b.trajectory ? b.trajectory.length : 0,
+                ageMs: b.state === 'flying' ? Math.floor(performance.now() - b.flyingStartMs) : null,
+                counted: b.counted,
+            })),
+            events: this._debugRing.slice(),
+        };
+    }
+
+    _createDebugOverlay() {
+        if (!this._debugMode) return;
+        // Semi-transparent panel pinned to top-left. Depth above
+        // everything else so an in-flight ball can't occlude it.
+        this._debugBg = this.add.rectangle(0, 0, 540, 460, 0x000000, 0.7)
+            .setOrigin(0, 0).setDepth(1000);
+        this._debugText = this.add.text(8, 6, '', {
+            fontFamily: 'monospace',
+            fontSize: '15px',
+            color: '#7CFF7C',
+            lineSpacing: 2,
+        }).setOrigin(0, 0).setDepth(1001);
+    }
+
+    _updateDebugOverlay(now) {
+        if (!this._debugMode || !this._debugText) return;
+        const snap = this._debugSnapshot();
+        const lines = [
+            `state:${snap.gameState}  rack:${snap.rackLen}  scored:${snap.shotsScored}  t:${snap.timeRemainingMs}`,
+            ...snap.balls.map((b) =>
+                `B${b.id} ${b.state.padEnd(9)} traj:${b.hasTrajectory ? b.trajLen : '-'} age:${b.ageMs ?? '-'}ms ${b.counted ? 'C' : ''}`),
+            `touch: ${snap.touch ? JSON.stringify(snap.touch) : 'idle'}`,
+            '— events —',
+            ...snap.events.slice(-10),
+        ];
+        this._debugText.setText(lines.join('\n'));
+    }
+
     shutdown() {
         if (this._detachInput) this._detachInput();
         if (this._onResize) {
@@ -1239,6 +1340,11 @@ export class BasketballScene extends Phaser.Scene {
                 window.visualViewport.removeEventListener('resize', this._onResize);
             }
             this._onResize = null;
+        }
+        if (typeof window !== 'undefined' && window.__bballDebug) {
+            // Drop the reference so a stale handle doesn't outlive
+            // the scene (next instance overwrites it anyway).
+            window.__bballDebug = null;
         }
     }
 

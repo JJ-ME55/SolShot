@@ -34,11 +34,34 @@ function ballScreenPos() {
     };
 }
 
+// Debug bridge — when ?debug=1 is on, the scene exposes
+// window.__bballDebug. We push log lines + the live tracking object
+// through it so the on-canvas HUD can show what touch is doing.
+function dbg(msg) {
+    try {
+        const d = typeof window !== 'undefined' ? window.__bballDebug : null;
+        if (d && d.log) d.log(msg);
+    } catch { /* ignore */ }
+}
+function dbgTouch(state) {
+    try {
+        const d = typeof window !== 'undefined' ? window.__bballDebug : null;
+        if (d && d.touch) d.touch(state);
+    } catch { /* ignore */ }
+}
+
 export function attachTouchFlick(scene, onShot) {
     const ballScreen = ballScreenPos();
     const ballScreenRadius = BALL_RADIUS_M * K_NEAR_PX_PER_M;
     let tracking = null;
     const trail = scene.add.graphics();
+    // One-shot unit-mismatch detector: pointer.downTime is meant to
+    // be DOMHighResTimeStamp (same scale as performance.now()), but
+    // some mobile WebViews report it in Date.now() epoch ms — that
+    // would wreck the stale-clear guard at startT. Log the deltas on
+    // the first pointerdown so we can confirm if this is what's
+    // happening on Saud's phone.
+    let _firstDownSampled = false;
 
     function isNearBall(px, py) {
         const dx = px - ballScreen.x;
@@ -47,6 +70,15 @@ export function attachTouchFlick(scene, onShot) {
     }
 
     function onDown(pointer) {
+        if (!_firstDownSampled) {
+            _firstDownSampled = true;
+            const perf = performance.now();
+            const dt = pointer.downTime;
+            const scale = (typeof dt === 'number' && dt > 0) ? (dt / perf) : null;
+            // scale ≈ 1 → same units. scale >> 1 → epoch ms (BUG).
+            dbg(`pointer.downTime=${dt} perf=${Math.floor(perf)} scale=${scale ? scale.toFixed(2) : 'n/a'}`);
+        }
+
         // Stale-tracking guard. A missed pointerup — multi-touch
         // (palm/second finger ghosting), focus loss mid-drag, edge-
         // swipe browser gestures — can leave `tracking` set forever
@@ -55,13 +87,24 @@ export function attachTouchFlick(scene, onShot) {
         // won't flick, everything else continues" — Fish's stuck-bug
         // symptom). Anything older than a max-duration flick + buffer
         // is dead state; reset it so this onDown can take over.
-        if (tracking !== null && performance.now() - tracking.startT > FLICK_MAX_DURATION_SEC * 1000 + 700) {
-            tracking = null;
-            trail.clear();
+        if (tracking !== null) {
+            const delta = performance.now() - tracking.startT;
+            if (delta > FLICK_MAX_DURATION_SEC * 1000 + 700) {
+                dbg(`stale-clear fired delta=${Math.floor(delta)}ms`);
+                tracking = null;
+                trail.clear();
+            } else {
+                dbg(`onDown BLOCKED by tracking (id=${tracking.id}, delta=${Math.floor(delta)}ms, near=${isNearBall(pointer.x, pointer.y)})`);
+                dbgTouch({ id: tracking.id, delta: Math.floor(delta), state: 'blocked' });
+                return;
+            }
         }
-        if (tracking !== null) return;
-        if (!isNearBall(pointer.x, pointer.y)) return;
+        if (!isNearBall(pointer.x, pointer.y)) {
+            dbg(`onDown ignored (not near ball, ${Math.floor(pointer.x)},${Math.floor(pointer.y)})`);
+            return;
+        }
         tracking = { id: pointer.id, startX: pointer.x, startY: pointer.y, startT: pointer.downTime || performance.now() };
+        dbgTouch({ id: tracking.id, startT: Math.floor(tracking.startT), state: 'tracking' });
         trail.clear();
     }
 
@@ -76,20 +119,31 @@ export function attachTouchFlick(scene, onShot) {
     }
 
     function onUp(pointer) {
-        if (!tracking || pointer.id !== tracking.id) return;
+        if (!tracking) {
+            dbg(`onUp ignored (no tracking, id=${pointer.id})`);
+            return;
+        }
+        if (pointer.id !== tracking.id) {
+            dbg(`onUp wrong id (got=${pointer.id}, tracked=${tracking.id}) — tracking stays set!`);
+            return;
+        }
         const dx = pointer.x - tracking.startX;
         const dy = pointer.y - tracking.startY;
         const endT = pointer.upTime || performance.now();
         const dtSec = Math.max(0.001, (endT - tracking.startT) / 1000);
 
         tracking = null;
+        dbgTouch(null);
         trail.clear();
 
         // Only upward flicks count (dy negative = toward top of screen)
-        if (dy >= 0) return;
-        if (dtSec < FLICK_MIN_DURATION_SEC || dtSec > FLICK_MAX_DURATION_SEC) return;
+        if (dy >= 0) { dbg(`flick rejected: downward dy=${Math.floor(dy)}`); return; }
+        if (dtSec < FLICK_MIN_DURATION_SEC || dtSec > FLICK_MAX_DURATION_SEC) {
+            dbg(`flick rejected: dt=${dtSec.toFixed(3)}s out of [${FLICK_MIN_DURATION_SEC}, ${FLICK_MAX_DURATION_SEC}]`);
+            return;
+        }
         const distance = Math.hypot(dx, dy);
-        if (distance < 30) return;
+        if (distance < 30) { dbg(`flick rejected: distance=${Math.floor(distance)}px<30`); return; }
 
         // Power from flick speed (magnitude / time)
         const speed = distance / dtSec;

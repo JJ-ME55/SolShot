@@ -38,6 +38,11 @@ import {
     getLeaderboard as getKeepieUppiesLeaderboard,
     getMyStanding as getKeepieUppiesStanding,
 } from './games/keepie-uppies-standalone/standaloneLeaderboard.js';
+import {
+    mintSession as mintFreeKicksSession,
+    getLeaderboard as getFreeKicksLeaderboard,
+    getMyStanding as getFreeKicksStanding,
+} from './games/free-kicks-standalone/standaloneLeaderboard.js';
 
 const ARCADE_WEBHOOK_PATH = '/api/arcade-webhook';
 
@@ -110,6 +115,22 @@ const GAMES = [
         firstName: ctx.from?.first_name,
     }),
   },
+  {
+    // Vite + Three.js standalone (BillionaireBonkClub origin, forked to
+    // JJ-ME55/solshot-free-kicks). Vercel auto-suffixed `-iota` because
+    // of a name collision on the platform — keep the URL exact.
+    slug: 'freekicks',
+    name: 'Free-Kick Madness',
+    emoji: '🥅',
+    tagline: 'Bend it past the wall. Targets, bonus boards, fire-ball hat-tricks.',
+    url: 'https://solshot-free-kicks-iota.vercel.app/',
+    supportsLoginUrl: false,
+    sessionMinter: (ctx) => mintFreeKicksSession({
+        telegramUserId: ctx.from?.id,
+        telegramUsername: ctx.from?.username,
+        firstName: ctx.from?.first_name,
+    }),
+  },
 ];
 
 // Per-game leaderboard config. Maps slug → { rendering metadata, lib }.
@@ -128,6 +149,13 @@ const LEADERBOARDS = {
     getLeaderboard: getKeepieUppiesLeaderboard,
     getMyStanding: getKeepieUppiesStanding,
     launchCmd: '/keepieuppies',
+  },
+  freekicks: {
+    emoji: '🥅',
+    title: 'FREE-KICK MADNESS',
+    getLeaderboard: getFreeKicksLeaderboard,
+    getMyStanding: getFreeKicksStanding,
+    launchCmd: '/freekicks',
   },
 };
 

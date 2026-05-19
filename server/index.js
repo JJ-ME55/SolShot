@@ -45,6 +45,11 @@ import {
     submitScore as submitKeepieUppiesScore,
     getLeaderboard as getKeepieUppiesLeaderboard,
 } from './services/games/keepie-uppies-standalone/standaloneLeaderboard.js';
+import {
+    verifySession as verifyFreeKicksSession,
+    submitScore as submitFreeKicksScore,
+    getLeaderboard as getFreeKicksLeaderboard,
+} from './services/games/free-kicks-standalone/standaloneLeaderboard.js';
 
 dotenv.config()
 
@@ -85,6 +90,7 @@ const ALWAYS_ALLOWED_ORIGINS = [
     'https://solshot-basketball.vercel.app',
     'https://sol-shot-basketball.vercel.app',
     'https://sol-shot-keepie-uppies.vercel.app',
+    'https://solshot-free-kicks-iota.vercel.app',
 ];
 const CORS_ORIGINS = Array.from(new Set([
     ...ALWAYS_ALLOWED_ORIGINS,
@@ -757,6 +763,54 @@ app.get('/api/games/keepieuppies/leaderboard', async (req, res) => {
         res.json({ ok: true, leaderboard });
     } catch (err) {
         console.error('[GET /api/games/keepieuppies/leaderboard]', err.message);
+        res.status(500).json({ error: 'failed to fetch leaderboard' });
+    }
+});
+
+// Free-Kicks leaderboard — mirror of basketball/keepie-uppies endpoints.
+// Standalone client at solshot-free-kicks-iota.vercel.app (Vite+Three.js
+// from JJ-ME55/solshot-free-kicks fork) captures the JWT minted by the
+// arcade bot on /freekicks tap and forwards it here.
+//
+// POST /api/games/freekicks/score
+//   body: { score: number, session: string }
+//   returns: { ok, newBest, bestScore, rank, totalPlayers }
+app.post('/api/games/freekicks/score', async (req, res) => {
+    try {
+        const { score, session } = req.body || {};
+        if (!session || typeof session !== 'string') {
+            return res.status(400).json({ error: 'session token required' });
+        }
+        if (!Number.isFinite(score)) {
+            return res.status(400).json({ error: 'numeric score required' });
+        }
+        let identity;
+        try {
+            identity = verifyFreeKicksSession(session);
+        } catch (err) {
+            return res.status(401).json({ error: 'session_invalid_or_expired', detail: err.message });
+        }
+        const result = await submitFreeKicksScore({
+            telegramUserId: identity.telegramUserId,
+            telegramUsername: identity.telegramUsername,
+            firstName: identity.firstName,
+            score,
+        });
+        res.json({ ok: true, ...result });
+    } catch (err) {
+        console.error('[POST /api/games/freekicks/score]', err.message);
+        res.status(500).json({ error: 'failed to submit score' });
+    }
+});
+
+// GET /api/games/freekicks/leaderboard?limit=10
+app.get('/api/games/freekicks/leaderboard', async (req, res) => {
+    try {
+        const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 10));
+        const leaderboard = await getFreeKicksLeaderboard({ limit });
+        res.json({ ok: true, leaderboard });
+    } catch (err) {
+        console.error('[GET /api/games/freekicks/leaderboard]', err.message);
         res.status(500).json({ error: 'failed to fetch leaderboard' });
     }
 });

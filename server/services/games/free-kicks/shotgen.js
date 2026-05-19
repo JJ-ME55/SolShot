@@ -2,6 +2,7 @@ import {
     ESCALATION_TIERS, DISTANCE_BIAS_EXPONENT,
     GOAL_HALF_WIDTH_M, GOAL_HEIGHT_M,
     TARGET_HALF_WIDTH_M, TARGET_HALF_HEIGHT_M,
+    HEART_HALF_WIDTH_M, HEART_HALF_HEIGHT_M,
     HEART_SPAWN_PROBABILITY,
 } from './constants.js';
 
@@ -159,29 +160,49 @@ function pickTarget(rng) {
     return pickTargetAnywhere(rng);
 }
 
-function targetsOverlap(a, b) {
-    return Math.abs(a.x - b.x) < 2 * TARGET_HALF_WIDTH_M
-        && Math.abs(a.y - b.y) < 2 * TARGET_HALF_HEIGHT_M;
+function targetsOverlap(a, aHalfW, aHalfH, b, bHalfW, bHalfH) {
+    return Math.abs(a.x - b.x) < (aHalfW + bHalfW)
+        && Math.abs(a.y - b.y) < (aHalfH + bHalfH);
+}
+
+// Heart-specific bounds (heart is 2x bullseye, so it needs its own
+// margin from the goal frame).
+const MIN_HEART_X = -GOAL_HALF_WIDTH_M + HEART_HALF_WIDTH_M;
+const MAX_HEART_X = +GOAL_HALF_WIDTH_M - HEART_HALF_WIDTH_M;
+const MIN_HEART_Y = HEART_HALF_HEIGHT_M;
+const MAX_HEART_Y = GOAL_HEIGHT_M - HEART_HALF_HEIGHT_M;
+
+function pickHeartAnywhere(rng) {
+    return {
+        x: MIN_HEART_X + rng() * (MAX_HEART_X - MIN_HEART_X),
+        y: MIN_HEART_Y + rng() * (MAX_HEART_Y - MIN_HEART_Y),
+    };
 }
 
 // Pick a heart target that doesn't overlap the +10 target. If a few
-// attempts fail, place it in the corner furthest from +10 — guarantees
-// non-overlap.
+// attempts fail, place it at the heart-region corner furthest from +10.
 function pickHeartNotOverlapping(rng, plus10) {
     for (let i = 0; i < 8; i++) {
-        const candidate = pickTarget(rng);
-        if (!targetsOverlap(candidate, plus10)) return candidate;
+        const candidate = pickHeartAnywhere(rng);
+        if (!targetsOverlap(
+            candidate, HEART_HALF_WIDTH_M, HEART_HALF_HEIGHT_M,
+            plus10, TARGET_HALF_WIDTH_M, TARGET_HALF_HEIGHT_M,
+        )) return candidate;
     }
-    // Fallback: pick the corner whose centre is furthest from +10.
-    let best = null;
+    // Fallback: corner of the heart-placement box furthest from plus10.
+    const heartCorners = [
+        { x: MIN_HEART_X, y: MIN_HEART_Y },
+        { x: MAX_HEART_X, y: MIN_HEART_Y },
+        { x: MIN_HEART_X, y: MAX_HEART_Y },
+        { x: MAX_HEART_X, y: MAX_HEART_Y },
+    ];
+    let best = heartCorners[0];
     let bestDist = -1;
-    for (const region of CORNER_REGIONS) {
-        const cx = (region.xLo + region.xHi) / 2;
-        const cy = (region.yLo + region.yHi) / 2;
-        const d = Math.hypot(cx - plus10.x, cy - plus10.y);
+    for (const c of heartCorners) {
+        const d = Math.hypot(c.x - plus10.x, c.y - plus10.y);
         if (d > bestDist) {
             bestDist = d;
-            best = { x: cx, y: cy };
+            best = c;
         }
     }
     return best;
@@ -232,11 +253,25 @@ export function generateScenario({ attemptSeed, shotIndex, goalCount }) {
         ? pickHeartNotOverlapping(rng, plus10Target)
         : null;
 
+    // v1.16: optional "wall motion" — on ~35% of shots the entire wall
+    // slides side-to-side (1.5–3.0 m amplitude, slow). The renderer
+    // animates the dummies; the shooter has to time their shot against
+    // the moving wall. On the remaining 65% the wall is static (no
+    // tiny sway either — Flick Kick wall doesn't fidget when still).
+    const wallMotionActive = rng() < 0.35;
+    const wallMotion = wallMotionActive ? {
+        active: true,
+        amplitudeM: 1.5 + rng() * 1.5,       // 1.5 – 3.0 m
+        frequencyHz: 0.18 + rng() * 0.16,    // 0.18 – 0.34 Hz (slow, readable)
+        phase: rng() * Math.PI * 2,
+    } : { active: false, amplitudeM: 0, frequencyHz: 0, phase: 0 };
+
     return {
         distanceM,
         angleRad,
         wallSize: tier.wallSize,
         plus10Target,
         heartTarget,
+        wallMotion,
     };
 }

@@ -13,6 +13,7 @@ import {
     MIN_ELEVATION_RAD, MAX_ELEVATION_RAD,
     MAX_SPIN_RAD_S,
     TARGET_HALF_WIDTH_M, TARGET_HALF_HEIGHT_M,
+    HEART_HALF_WIDTH_M, HEART_HALF_HEIGHT_M,
     BOUNCE_RESTITUTION, BOUNCE_FRICTION_H, MAX_BOUNCES, MIN_BOUNCE_SPEED_M_S,
     POST_BOUNCE_RESTITUTION,
     NET_RESTITUTION_BACK, NET_RESTITUTION_SIDE, NET_RESTITUTION_TOP, NET_RESTITUTION_GROUND,
@@ -158,30 +159,53 @@ export function wallGeometry({ ballPos, scenario }) {
     // of defender boxes. For a straight wall this is exact; for
     // oblique walls it slightly over-estimates the hit zone, which
     // is fine for arcade play (errs on side of "wall blocks more").
-    const wallTotalHalfWidth = (wallSize * DEFENDER_WIDTH_M) / 2;
+    //
+    // v1.16: scenario.wallShiftX is an optional lateral offset applied
+    // to every defender. The renderer slides the wall sideways on shots
+    // tagged with wallMotion.active and captures the current offset at
+    // fire-time — physics then evaluates the wall at the position the
+    // player actually kicked against.
+    //
+    // v1.19: dummies shrink slightly on long shots so the goal stays
+    // visible past the wall. The same scale factor is applied to the
+    // rendered mesh in scene3d so what you see is what you can hit.
+    const dummyScale = dummyScaleForDistance(scenario.distanceM);
+    const defW = DEFENDER_WIDTH_M * dummyScale;
+    const defH = DEFENDER_HEIGHT_M * dummyScale;
+    const defD = DEFENDER_DEPTH_M * dummyScale;
+    const wallTotalHalfWidth = (wallSize * defW) / 2;
+    const shiftX = scenario.wallShiftX || 0;
     const defenders = [];
     for (let i = 0; i < wallSize; i++) {
         // i-th defender's offset from wall centre (along perp).
-        const offset = (i - (wallSize - 1) / 2) * DEFENDER_WIDTH_M;
-        const cx = centerX + perpX * offset;
+        const offset = (i - (wallSize - 1) / 2) * defW;
+        const cx = centerX + perpX * offset + shiftX;
         const cz = centerZ + perpZ * offset;
         defenders.push({
-            minX: cx - DEFENDER_WIDTH_M / 2,
-            maxX: cx + DEFENDER_WIDTH_M / 2,
+            minX: cx - defW / 2,
+            maxX: cx + defW / 2,
             minY: 0,
-            maxY: DEFENDER_HEIGHT_M,
-            minZ: cz - DEFENDER_DEPTH_M / 2,
-            maxZ: cz + DEFENDER_DEPTH_M / 2,
+            maxY: defH,
+            minZ: cz - defD / 2,
+            maxZ: cz + defD / 2,
         });
     }
 
     return {
-        centerX, centerY, centerZ,
+        centerX: centerX + shiftX,
+        centerY, centerZ,
         halfWidth: wallTotalHalfWidth,
-        halfHeight: DEFENDER_HEIGHT_M / 2,
-        halfDepth: DEFENDER_DEPTH_M / 2,
+        halfHeight: defH / 2,
+        halfDepth: defD / 2,
         defenders,
+        dummyScale,
     };
+}
+
+// Linear fall-off: full size at 20 m, clamped at 0.78 from ~37 m onward.
+// Used by both wallGeometry (physics) and scene3d (visual scale).
+export function dummyScaleForDistance(distanceM) {
+    return Math.max(0.78, Math.min(1.0, 1.0 - (distanceM - 20) * 0.012));
 }
 
 
@@ -537,11 +561,13 @@ function handleNetPhysics(state) {
     }
 }
 
-// Check whether (x, y) is inside a target zone.
-function insideTargetZone(x, y, target) {
+// Check whether (x, y) is inside a target zone. Half-dimensions are
+// passed by the caller so the bullseye and heart can have different
+// hit-box sizes.
+function insideTargetZone(x, y, target, halfW, halfH) {
     if (!target) return false;
-    return Math.abs(x - target.x) <= TARGET_HALF_WIDTH_M
-        && Math.abs(y - target.y) <= TARGET_HALF_HEIGHT_M;
+    return Math.abs(x - target.x) <= halfW
+        && Math.abs(y - target.y) <= halfH;
 }
 
 
@@ -574,7 +600,7 @@ function insideTargetZone(x, y, target) {
  *   reason?: string,
  * }}
  */
-export function simulateShot({ shotInput, scenario }) {
+export function simulateShot({ shotInput, scenario, skipWall = false }) {
     const validationError = validateShotInput(shotInput);
     if (validationError) {
         return {
@@ -693,8 +719,8 @@ export function simulateShot({ shotInput, scenario }) {
                 crossing = cross;
                 if (insideGoalFrame(cross.x, cross.y)) {
                     // GOAL — switch to net mode, keep simulating
-                    targetHit.plus10 = insideTargetZone(cross.x, cross.y, scenario.plus10Target);
-                    targetHit.heart  = insideTargetZone(cross.x, cross.y, scenario.heartTarget);
+                    targetHit.plus10 = insideTargetZone(cross.x, cross.y, scenario.plus10Target, TARGET_HALF_WIDTH_M, TARGET_HALF_HEIGHT_M);
+                    targetHit.heart  = insideTargetZone(cross.x, cross.y, scenario.heartTarget,  HEART_HALF_WIDTH_M,  HEART_HALF_HEIGHT_M);
                     if (targetHit.plus10 && targetHit.heart)      result = 'goal_plus10_heart';
                     else if (targetHit.plus10)                    result = 'goal_plus10';
                     else if (targetHit.heart)                     result = 'goal_heart';
@@ -713,19 +739,23 @@ export function simulateShot({ shotInput, scenario }) {
                 }
             }
 
-            // Wall (defender) collision — terminate as 'blocked'
-            let hitWall = false;
-            for (const def of wall.defenders) {
-                if (hitDefender(state, next, def)) {
-                    hitWall = true;
+            // Wall (defender) collision — terminate as 'blocked'.
+            // skipWall=true (fire-ball / hat-trick mode) lets the ball
+            // pass straight through the wall on its way to goal.
+            if (!skipWall) {
+                let hitWall = false;
+                for (const def of wall.defenders) {
+                    if (hitDefender(state, next, def)) {
+                        hitWall = true;
+                        break;
+                    }
+                }
+                if (hitWall) {
+                    if (result === null) result = 'blocked';
+                    state = next;
+                    settled = true;
                     break;
                 }
-            }
-            if (hitWall) {
-                if (result === null) result = 'blocked';
-                state = next;
-                settled = true;
-                break;
             }
 
             // Pitch bounce (outside the goal frame)

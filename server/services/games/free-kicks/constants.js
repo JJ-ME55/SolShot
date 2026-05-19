@@ -223,12 +223,18 @@ export const WALL_SIZES_BY_TIER = [3, 4, 5, 6];
 // Backwards-compat: a `distanceM` getter on each tier returns the
 // MIN distance so existing display code that reads tier.distanceM
 // still gets a sensible default.
-export const DISTANCE_BIAS_EXPONENT = 2.0;
+// v1.14: harsher angles and wider distance variety per playtest
+// feedback ("ball positions are too square-on — make some shots from
+// penalty-box corners and further out"). Angles now reach 50° (the
+// penalty-box corner is at atan(20.15 / 16.5) ≈ 51°). Distance bias
+// exponent relaxed 2.0 → 1.5 so mid/long distances appear more often
+// instead of clustering at the tier minimum.
+export const DISTANCE_BIAS_EXPONENT = 1.5;
 export const ESCALATION_TIERS = [
-    { minGoals: 0,  distanceRangeM: [12, 22], wallSize: 3, anglePoolDeg: [0, -15, +15] },
-    { minGoals: 3,  distanceRangeM: [14, 26], wallSize: 4, anglePoolDeg: [0, -15, +15, -25, +25] },
-    { minGoals: 6,  distanceRangeM: [16, 30], wallSize: 5, anglePoolDeg: [-15, +15, -25, +25, -35, +35] },
-    { minGoals: 10, distanceRangeM: [18, 38], wallSize: 6, anglePoolDeg: [-25, +25, -35, +35] },
+    { minGoals: 0,  distanceRangeM: [12, 22], wallSize: 3, anglePoolDeg: [0, -20, +20, -30, +30] },
+    { minGoals: 3,  distanceRangeM: [14, 28], wallSize: 4, anglePoolDeg: [-15, +15, -30, +30, -40, +40] },
+    { minGoals: 6,  distanceRangeM: [16, 32], wallSize: 5, anglePoolDeg: [-20, +20, -35, +35, -45, +45, -50, +50] },
+    { minGoals: 10, distanceRangeM: [18, 42], wallSize: 6, anglePoolDeg: [-25, +25, -35, +35, -42, +42] },
 ].map(tier => ({ ...tier, distanceM: tier.distanceRangeM[0] }));
 
 
@@ -250,9 +256,17 @@ export const LIVES_MAX = 5;
 
 // +10 target — always present every shot.
 export const PLUS10_POINTS = 10;
-// +10 target hitbox is ~25% of goal height per side.
-export const TARGET_HALF_WIDTH_M = 0.30;
-export const TARGET_HALF_HEIGHT_M = 0.30;
+// v1.15: target hit-box bumped 0.30 -> 0.45 ("targets are too hard to hit").
+// Visual bullseye/heart planes share the same dimensions so what you see
+// is what you can hit.
+export const TARGET_HALF_WIDTH_M = 0.45;
+export const TARGET_HALF_HEIGHT_M = 0.45;
+
+// v1.21: hearts doubled to 2x bullseye size — they spawn far less often
+// (HEART_SPAWN_PROBABILITY ~0.20) so making them generous evens out the
+// "I haven't hit a single one" feeling without devaluing the bullseye.
+export const HEART_HALF_WIDTH_M = TARGET_HALF_WIDTH_M * 2;
+export const HEART_HALF_HEIGHT_M = TARGET_HALF_HEIGHT_M * 2;
 
 // ❤️ target — independent 20% chance per shot (seeded).
 export const HEART_SPAWN_PROBABILITY = 0.20;

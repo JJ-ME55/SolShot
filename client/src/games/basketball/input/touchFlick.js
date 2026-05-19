@@ -49,6 +49,12 @@ function dbgTouch(state) {
         if (d && d.touch) d.touch(state);
     } catch { /* ignore */ }
 }
+function dbgSticky(msg) {
+    try {
+        const d = typeof window !== 'undefined' ? window.__bballDebug : null;
+        if (d && d.sticky) d.sticky(msg);
+    } catch { /* ignore */ }
+}
 
 export function attachTouchFlick(scene, onShot) {
     const ballScreen = ballScreenPos();
@@ -75,8 +81,11 @@ export function attachTouchFlick(scene, onShot) {
             const perf = performance.now();
             const dt = pointer.downTime;
             const scale = (typeof dt === 'number' && dt > 0) ? (dt / perf) : null;
-            // scale ≈ 1 → same units. scale >> 1 → epoch ms (BUG).
-            dbg(`pointer.downTime=${dt} perf=${Math.floor(perf)} scale=${scale ? scale.toFixed(2) : 'n/a'}`);
+            // scale ≈ 1 → same units. scale >> 100 → epoch ms (BUG).
+            const verdict = scale === null ? '?' : (scale > 100 ? 'EPOCH-MS-BUG' : 'OK');
+            const msg = `dT=${Math.floor(dt)} perf=${Math.floor(perf)} scale=${scale ? scale.toFixed(2) : 'n/a'} ${verdict}`;
+            dbg(msg);
+            dbgSticky(msg);
         }
 
         // Stale-tracking guard. A missed pointerup — multi-touch

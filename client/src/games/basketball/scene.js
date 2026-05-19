@@ -208,9 +208,12 @@ export class BasketballScene extends Phaser.Scene {
         // users can't open dev tools, so the HUD is on-canvas.
         this._debugMode = false;
         this._debugRing = [];
-        this._debugRingMax = 20;
+        this._debugRingMax = 50;
         this._debugText = null;
         this._touchState = null;
+        // Sticky line — set once by touchFlick's first-down sampler
+        // and pinned to the top of the HUD so it survives ring rotation.
+        this._debugSticky = '';
     }
 
     preload() {
@@ -234,6 +237,7 @@ export class BasketballScene extends Phaser.Scene {
             window.__bballDebug = {
                 log: (msg) => this._debug(msg),
                 touch: (state) => { this._touchState = state; },
+                sticky: (msg) => { this._debugSticky = msg; },
                 snapshot: () => this._debugSnapshot(),
             };
         }
@@ -1326,9 +1330,11 @@ export class BasketballScene extends Phaser.Scene {
             ...snap.balls.map((b) =>
                 `B${b.id} ${b.state.padEnd(9)} traj:${b.hasTrajectory ? b.trajLen : '-'} age:${b.ageMs ?? '-'}ms ${b.counted ? 'C' : ''}`),
             `touch: ${snap.touch ? JSON.stringify(snap.touch) : 'idle'}`,
-            '— events —',
-            ...snap.events.slice(-10),
         ];
+        // Sticky line — pinned ABOVE the rotating events. Set once on
+        // the first pointerdown by touchFlick's unit-mismatch sampler.
+        if (this._debugSticky) lines.push(`★ ${this._debugSticky}`);
+        lines.push('— events —', ...snap.events.slice(-15));
         this._debugText.setText(lines.join('\n'));
     }
 

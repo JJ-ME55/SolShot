@@ -2899,3 +2899,36 @@ The Fish-owned `solshot-basketball.vercel.app` is still live and stuck on the OL
 The 10-minute www.solshot.gg artillery-→-basketball flip during the rollout was caught by JJ's manual testing. No real users hit the wrong page. Worth treating as a near-miss process gap — promote-to-production on a multi-domain Vercel project should be banned without an explicit "I know this changes www.solshot.gg" confirmation. Documenting here so future-us doesn't repeat.
 
 — main-claude
+
+---
+
+## 2026-05-19 · `[fishyboy-claude]` — FYI · @johnk
+
+@johnk — Fish and I drafted a v1 design proposal for **The Arcade web hub** (`thearcade.gg`). Doc: `Docs/THE_ARCADE_v1_DESIGN.md`, on this branch `arcade/website-design` off main.
+
+**Important caveat:** the doc was drafted in a long brainstorming pass with Fish *before* I read your recent main work. After Fish asked me to push it for your review, I caught up on main and surfaced significant existing work that the original draft was ignorant of:
+
+- `@TheArcadeGG_Bot` (commit `2f8471b`) — already shipping, the TG-side multi-game launcher
+- `BasketballScore.js` / `KeepieUppiesScore.js` models + `standaloneLeaderboard.js` services — per-game leaderboards keyed on `telegramUserId`, JWT-gated submission, already shipping
+- The "each game = its own Vercel project + bot route" pattern documented in your `Docs/build-notes/ARCADE_BOT.md`
+
+I updated the doc to acknowledge this before pushing. Three things specifically need your call:
+
+1. **Cross-game leaderboard ("Arcade Champion") reverses your 2026-05-15 deferral.** Your arcade-bot commit explicitly logged it as deferred per Fish's earlier handoff. In the 2026-05-19 brainstorm Fish revisited it and chose to include it in v1 (percentile-rank-sum formula across the three ball games). Flagged in the doc with a ⚠️ callout; happy to restore the deferral if you'd rather wait.
+
+2. **Identity-model divergence is the biggest open architectural call.** Your bot pathway keys leaderboards on `telegramUserId`; this design's web pathway keys on Privy callsign. Same player → two identities. Three reconciliation options proposed in Open Items #11 (merge via TG ↔ wallet binding in `users` collection / show two boards / treat bot leaderboards as source-of-truth surfaced by the website). No call made — please weigh in.
+
+3. **The two surfaces are framed as complementary, not competing.** Bot = TG surface; web hub = web surface. v1 keeps the bot's `GAMES` array pointing at the existing standalone Vercel deploys. Deferred decision: when (if?) the bot re-routes to `thearcade.gg/play/<slug>`.
+
+Other open items needing your call (full list in §Open Items, doc text):
+- Domain — `thearcade.gg` shortlisted (WHOIS not yet checked)
+- Framework for the new `client-arcade/` — Vite + React + TS recommended; CRA + JS fallback if you prefer stack continuity with `client/`
+- Cross-domain auth handoff to solshot.gg — JWT pattern proposed; touches `client/src/wallet/` (on the "don't touch without separate PR first" list per `ARCADE_NEW_GAME_PLAYBOOK.md`)
+- $TOKENS as the parent-brand utility/rewards token (mirror of $SHOT's role, separate economy)
+- `Docs/TOKENS_TOKEN_MODEL.md` to write before v2
+
+**No code yet, design only.** Brand mocks are local at `C:\Users\jacob\The Arcade\Website images and branding\` — Fish can drop them in the repo when implementation starts.
+
+Fish hasn't yet pulled the recent main commits into his free-kicks branch (he's still heads-down there), so any nuance about your shipped infra I may have under-described in the doc — please flag and we'll iterate.
+
+— fishyboy-claude (Opus 4.7 / 1M context)

@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
 import { PrivyProvider } from '@privy-io/react-auth';
+import { defaultSolanaRpcsPlugin } from '@privy-io/react-auth/solana';
 
 const PRIVY_APP_ID = import.meta.env.VITE_PRIVY_APP_ID;
-const NETWORK = import.meta.env.VITE_SOLANA_NETWORK ?? 'devnet';
 
 interface Props {
   children: ReactNode;
@@ -17,6 +17,15 @@ interface Props {
  * If VITE_PRIVY_APP_ID is unset (initial Vercel deploy before JJ
  * configures env vars), this renders children directly so the build
  * succeeds and the cabinet landing is reachable.
+ *
+ * Privy SDK 3.x config notes:
+ * - `embeddedWallets` is per-chain (was flat in 2.x).
+ * - Solana RPC config comes via `defaultSolanaRpcsPlugin()` plugin
+ *   (was `solanaClusters` top-level in earlier versions). The plugin
+ *   uses Privy's default endpoints for SDK-internal calls; for app-
+ *   level transaction broadcasting, use your own Connection with
+ *   VITE_SOLANA_RPC (matches SolShot's pattern where the embedded
+ *   Solana RPC is unreliable, so they broadcast through clusterApiUrl).
  */
 export function ArcadePrivyProvider({ children }: Props) {
   if (!PRIVY_APP_ID) {
@@ -40,20 +49,9 @@ export function ArcadePrivyProvider({ children }: Props) {
           logo: undefined,
         },
         embeddedWallets: {
-          // Privy SDK 3.x nests createOnLogin per-chain. Matches SolShot's
-          // working WalletContext.js config (server/client/src/wallet/).
           solana: { createOnLogin: 'users-without-wallets' },
         },
-        solanaClusters: [
-          {
-            name: NETWORK === 'mainnet-beta' ? 'mainnet-beta' : 'devnet',
-            rpcUrl:
-              import.meta.env.VITE_SOLANA_RPC ??
-              (NETWORK === 'mainnet-beta'
-                ? 'https://api.mainnet-beta.solana.com'
-                : 'https://api.devnet.solana.com'),
-          },
-        ],
+        plugins: [defaultSolanaRpcsPlugin()],
       }}
     >
       {children}

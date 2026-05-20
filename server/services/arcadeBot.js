@@ -83,17 +83,17 @@ const GAMES = [
     name: 'Basketball Hoops',
     emoji: '🏀',
     tagline: 'Timed rapid-fire arcade hoops. 20s clock, hot-streak bonuses.',
-    // Hosted on JJ's `sol-shot-basketball` Vercel project (tracks
-    // arcade/basketball branch of JJ-ME55/SolShot). Replaces the earlier
-    // `solshot-basketball.vercel.app` which lived on Fish's separate
-    // Vercel account — we couldn't update that one without his credentials.
-    // See Docs/internal/CLAUDE_COMMS.md 2026-05-15 entry for the migration.
-    url: 'https://sol-shot-basketball.vercel.app/',
+    // Now served from the unified arcade hub (JJ-ME55/The-Arcade repo,
+    // deployed at the-arcade-eta.vercel.app, route /play/basketball).
+    // Previous standalone Vercel `sol-shot-basketball.vercel.app` stays
+    // live as a fallback for ~30 days post-cutover (see playbook §Cleanup).
+    url: 'https://the-arcade-eta.vercel.app/play/basketball',
     supportsLoginUrl: false,
-    // Leaderboard binding — when present, we append a signed JWT to the
-    // launch URL so the standalone client can submit scores tied to this
-    // TG user. The client reads `?session=<jwt>`, stashes in sessionStorage,
-    // and forwards it on POST /api/games/basketball/score.
+    // Leaderboard binding — append a signed JWT to the launch URL so the
+    // game client can submit scores tied to this TG user. Client reads
+    // `?session=<jwt>`, stashes in sessionStorage, POSTs on game-over to
+    // `/api/games/basketball/score`. Same endpoint as the standalone era;
+    // scores land in the same BasketballScore Mongo collection.
     sessionMinter: (ctx) => mintBasketballSession({
         telegramUserId: ctx.from?.id,
         telegramUsername: ctx.from?.username,
@@ -101,13 +101,13 @@ const GAMES = [
     }),
   },
   {
-    // TG slash commands can't contain hyphens, so the URL slug uses
-    // `sol-shot-keepie-uppies` but the bot slug stays `keepieuppies`.
+    // TG slash commands can't contain hyphens, so the bot slug is
+    // `keepieuppies` while the arcade URL is `/play/keepie-uppies`.
     slug: 'keepieuppies',
     name: 'Keepie Uppies',
     emoji: '⚽',
     tagline: 'Tap the ball, keep it off the ground. How long can you go?',
-    url: 'https://sol-shot-keepie-uppies.vercel.app/',
+    url: 'https://the-arcade-eta.vercel.app/play/keepie-uppies',
     supportsLoginUrl: false,
     sessionMinter: (ctx) => mintKeepieUppiesSession({
         telegramUserId: ctx.from?.id,
@@ -116,14 +116,14 @@ const GAMES = [
     }),
   },
   {
-    // Vite + Three.js standalone (BillionaireBonkClub origin, forked to
-    // JJ-ME55/solshot-free-kicks). Vercel auto-suffixed `-iota` because
-    // of a name collision on the platform — keep the URL exact.
+    // Vite + Three.js, lifted from JJ-ME55/solshot-free-kicks into the
+    // arcade hub at /play/free-kicks. Previous standalone
+    // solshot-free-kicks-iota.vercel.app stays live as a fallback.
     slug: 'freekicks',
     name: 'Free-Kick Madness',
     emoji: '🥅',
     tagline: 'Bend it past the wall. Targets, bonus boards, fire-ball hat-tricks.',
-    url: 'https://solshot-free-kicks-iota.vercel.app/',
+    url: 'https://the-arcade-eta.vercel.app/play/free-kicks',
     supportsLoginUrl: false,
     sessionMinter: (ctx) => mintFreeKicksSession({
         telegramUserId: ctx.from?.id,

@@ -4,6 +4,14 @@ Parent-brand web hub. Hosts the ball games (Keepie-Uppies, Basketball, Free-Kick
 
 Companion to `@TheArcadeGG_Bot` (the Telegram launcher in the SolShot repo at `server/services/arcadeBot.js`). Two surfaces, one brand.
 
+## Read first (Fish + any Claude landing in this repo)
+
+- **`docs/FISH_KICKOFF.md`** — onboarding doc, first thing to read on a fresh session
+- **`docs/THE_ARCADE_v1_DESIGN.md`** — canonical design proposal (v1)
+- **`docs/MIGRATION_PLAYBOOK.md`** — operational rollout (pre-flight, lift moment, cutover, rollback)
+- **`docs/CLAUDE_COMMS.md`** — cross-session journal for arcade-local decisions
+- **Cross-repo:** the SolShot repo's `Docs/internal/CLAUDE_COMMS.md` (2026-05-19 entry) is the canonical record of decisions that span both repos
+
 ## Stack
 
 - Vite + React 18 + TypeScript (strict)

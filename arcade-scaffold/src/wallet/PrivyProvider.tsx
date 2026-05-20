@@ -40,7 +40,9 @@ export function ArcadePrivyProvider({ children }: Props) {
           logo: undefined,
         },
         embeddedWallets: {
-          createOnLogin: 'users-without-wallets',
+          // Privy SDK 3.x nests createOnLogin per-chain. Matches SolShot's
+          // working WalletContext.js config (server/client/src/wallet/).
+          solana: { createOnLogin: 'users-without-wallets' },
         },
         solanaClusters: [
           {

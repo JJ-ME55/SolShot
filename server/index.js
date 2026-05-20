@@ -93,6 +93,10 @@ const ALWAYS_ALLOWED_ORIGINS = [
     'https://sol-shot-basketball.vercel.app',
     'https://sol-shot-keepie-uppies.vercel.app',
     'https://solshot-free-kicks-iota.vercel.app',
+    // The Arcade — parent-brand web hub. Project on jj-me55s-projects.
+    // Vite + React + TS, client-only. Talks to this server via HTTPS
+    // for /api/arcade/* endpoints + leaderboard reads + score writes.
+    'https://the-arcade.vercel.app',
 ];
 const CORS_ORIGINS = Array.from(new Set([
     ...ALWAYS_ALLOWED_ORIGINS,

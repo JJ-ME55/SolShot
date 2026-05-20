@@ -96,7 +96,13 @@ const ALWAYS_ALLOWED_ORIGINS = [
     // The Arcade — parent-brand web hub. Project on jj-me55s-projects.
     // Vite + React + TS, client-only. Talks to this server via HTTPS
     // for /api/arcade/* endpoints + leaderboard reads + score writes.
-    'https://the-arcade.vercel.app',
+    //
+    // `the-arcade.vercel.app` (without suffix) is owned by another
+    // Vercel account; Vercel auto-suffixed ours with `-eta`. Same
+    // pattern as `solshot-free-kicks-iota.vercel.app`.
+    'https://the-arcade-eta.vercel.app',
+    'https://the-arcade-jj-me55s-projects.vercel.app',
+    'https://the-arcade-git-main-jj-me55s-projects.vercel.app',
 ];
 const CORS_ORIGINS = Array.from(new Set([
     ...ALWAYS_ALLOWED_ORIGINS,

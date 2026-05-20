@@ -41,16 +41,19 @@ import {
     verifySession as verifyBasketballSession,
     submitScore as submitBasketballScore,
     getLeaderboard as getBasketballLeaderboard,
+    mintSession as mintBasketballSession,
 } from './services/games/basketball-standalone/standaloneLeaderboard.js';
 import {
     verifySession as verifyKeepieUppiesSession,
     submitScore as submitKeepieUppiesScore,
     getLeaderboard as getKeepieUppiesLeaderboard,
+    mintSession as mintKeepieUppiesSession,
 } from './services/games/keepie-uppies-standalone/standaloneLeaderboard.js';
 import {
     verifySession as verifyFreeKicksSession,
     submitScore as submitFreeKicksScore,
     getLeaderboard as getFreeKicksLeaderboard,
+    mintSession as mintFreeKicksSession,
 } from './services/games/free-kicks-standalone/standaloneLeaderboard.js';
 
 dotenv.config()
@@ -741,6 +744,76 @@ app.post('/api/arcade/session-validate', async (req, res) => {
         res.json({ ok: false, error: err.message || 'invalid_token' });
     }
 });
+
+// ─── Arcade hub — mint per-game session JWT for web users ──────────────
+//
+// Web users (signed in via Privy on the arcade hub) need a session JWT
+// to submit scores via the per-game endpoints (/api/games/<slug>/score).
+// Bot users get the JWT from the bot; web users mint their own here.
+//
+// Resolves Privy DID → User → telegramUserId, then mints the existing
+// game-specific session JWT bound to that TG identity. Scores then land
+// in the same Mongo collections as bot-submitted scores — true
+// leaderboard unification.
+//
+// Limitation: requires the Privy user to have a linked telegramUserId.
+// Users who signed in via email/Google on the arcade hub but never
+// linked their TG can play but can't submit. Linking happens via
+// SolShot's existing /api/wallet/link-from-privy-telegram or the bot's
+// /link command. Returning 412 here signals "free-play mode" cleanly.
+
+// POST /api/arcade/mint-session
+//   query: ?game=basketball|keepieuppies|freekicks
+//   headers: Authorization: Bearer <privy-access-token>  (required)
+//   body: (none)
+//   returns: { session: string, game: string, telegramUserId: number }
+//   or 412: { error: 'tg_not_linked', reason: 'Link Telegram to submit scores' }
+const GAME_MINTERS = {
+    basketball: mintBasketballSession,
+    keepieuppies: mintKeepieUppiesSession,
+    freekicks: mintFreeKicksSession,
+};
+
+app.post(
+    '/api/arcade/mint-session',
+    requirePrivyAuth({ required: true }),
+    async (req, res) => {
+        try {
+            const game = (req.query?.game || '').toString();
+            const minter = GAME_MINTERS[game];
+            if (!minter) {
+                return res.status(400).json({
+                    error: 'invalid_game',
+                    reason: `game must be one of: ${Object.keys(GAME_MINTERS).join(', ')}`,
+                });
+            }
+            const uid = req.privyUserId;
+            if (!uid) {
+                return res.status(401).json({ error: 'privy_session_required' });
+            }
+            const user = await User.findOne({ uid }).lean().catch(() => null);
+            if (!user || !user.telegramUserId) {
+                return res.status(412).json({
+                    error: 'tg_not_linked',
+                    reason: 'Link Telegram to submit scores',
+                });
+            }
+            const session = minter({
+                telegramUserId: user.telegramUserId,
+                telegramUsername: user.username || undefined,
+                firstName: user.handle || undefined,
+            });
+            res.json({
+                session,
+                game,
+                telegramUserId: user.telegramUserId,
+            });
+        } catch (err) {
+            console.error('[POST /api/arcade/mint-session]', err?.message || err);
+            res.status(500).json({ error: 'mint_failed' });
+        }
+    }
+);
 
 // ─── Basketball Hoops standalone — score leaderboard ───────────────────
 //

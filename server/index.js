@@ -35,6 +35,7 @@ import { consumeLinkToken } from './services/walletLinkTokens.js';
 import { requirePrivyAuth, isPrivyAuthConfigured } from './services/privyAuth.js';
 import { mintArcadeSession, verifyArcadeSession } from './services/arcadeSession.js';
 import User from './models/User.js';
+import WagerWaitlist from './models/WagerWaitlist.js';
 import { renderCareerCardPng } from './services/challenge/renderCareerCard.js';
 import { buildCareerProps } from './services/challenge/careerCardProps.js';
 import {
@@ -761,6 +762,49 @@ app.post('/api/arcade/session-validate', async (req, res) => {
 // linked their TG can play but can't submit. Linking happens via
 // SolShot's existing /api/wallet/link-from-privy-telegram or the bot's
 // /link command. Returning 412 here signals "free-play mode" cleanly.
+
+// POST /api/wager-waitlist
+//   body: { email: string, callsign?: string, source?: string }
+//   returns: { ok: true, alreadySignedUp: boolean }
+//
+// Idempotent. Upserts on email — repeat submissions return success
+// without creating duplicate rows. No auth required — anyone with the
+// page open can submit (rate-limiting comes from the global httpLimiter
+// at 100 req / 15 min / IP).
+//
+// Email regex is permissive on purpose; full RFC 5322 validation is
+// overkill for a marketing waitlist. Bad addresses self-select out
+// when we send the v2 beta-access email.
+app.post('/api/wager-waitlist', async (req, res) => {
+    try {
+        const { email, callsign, source } = req.body || {};
+        if (!email || typeof email !== 'string') {
+            return res.status(400).json({ error: 'email required' });
+        }
+        const cleanEmail = email.trim().toLowerCase();
+        if (cleanEmail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+            return res.status(400).json({ error: 'invalid_email' });
+        }
+        const existing = await WagerWaitlist.findOne({ email: cleanEmail }).lean();
+        if (existing) {
+            return res.json({ ok: true, alreadySignedUp: true });
+        }
+        await WagerWaitlist.create({
+            email: cleanEmail,
+            callsign: callsign && typeof callsign === 'string' ? callsign.slice(0, 64) : null,
+            source: source && typeof source === 'string' ? source.slice(0, 64) : 'unknown',
+        });
+        console.log(`[wager-waitlist] new signup from ${cleanEmail} (source=${source || 'unknown'})`);
+        res.json({ ok: true, alreadySignedUp: false });
+    } catch (err) {
+        // Race condition on the unique index — treat as already signed up
+        if (err?.code === 11000) {
+            return res.json({ ok: true, alreadySignedUp: true });
+        }
+        console.error('[POST /api/wager-waitlist]', err?.message || err);
+        res.status(500).json({ error: 'waitlist_failed' });
+    }
+});
 
 // POST /api/arcade/register
 //   headers: Authorization: Bearer <privy-access-token>  (required)

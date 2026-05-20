@@ -762,6 +762,65 @@ app.post('/api/arcade/session-validate', async (req, res) => {
 // SolShot's existing /api/wallet/link-from-privy-telegram or the bot's
 // /link command. Returning 412 here signals "free-play mode" cleanly.
 
+// POST /api/arcade/register
+//   headers: Authorization: Bearer <privy-access-token>  (required)
+//   body: (none)
+//   returns: { user: { uid, telegramUserId, handle, walletAddress }, created: boolean }
+//
+// Idempotent. Creates a User doc keyed on the Privy DID if one doesn't
+// exist yet. Closes the orphan gap for users who signed in via Privy
+// on the arcade hub but never touched SolShot — without this, their
+// User doc never gets created and mint-session always returns
+// `tg_not_linked` even after they go off and link TG via the bot
+// (because there's no doc to attach to).
+//
+// Wallet address and TG identity are NOT set here — those flow through
+// the existing /api/wallet/link-* endpoints which validate the linkage
+// against Privy's authoritative records (H001 trust model). Register
+// just plants the seed doc.
+app.post(
+    '/api/arcade/register',
+    requirePrivyAuth({ required: true }),
+    async (req, res) => {
+        try {
+            const uid = req.privyUserId;
+            if (!uid) {
+                return res.status(401).json({ error: 'privy_session_required' });
+            }
+            // Upsert — single Mongo op, atomic, handles race conditions.
+            // `setOnInsert` ensures `uid` is only written on the create
+            // path; existing docs aren't touched. `new: true` returns
+            // the doc post-update (or post-insert).
+            const user = await User.findOneAndUpdate(
+                { uid },
+                { $setOnInsert: { uid } },
+                { upsert: true, new: true, lean: true }
+            );
+            // Mongo doesn't tell us whether this was a create or update
+            // directly from findOneAndUpdate, but we can infer: if the
+            // doc has only `uid` and the auto-managed `_id`+`__v`, it
+            // was just created. Used for telemetry only — caller doesn't
+            // need to act differently on either path.
+            const created = !user.telegramUserId && !user.walletAddress && !user.handle;
+            if (created) {
+                console.log(`[arcade/register] new User for uid=${uid.slice(0, 20)}…`);
+            }
+            res.json({
+                user: {
+                    uid: user.uid,
+                    telegramUserId: user.telegramUserId || null,
+                    handle: user.handle || '',
+                    walletAddress: user.walletAddress || null,
+                },
+                created,
+            });
+        } catch (err) {
+            console.error('[POST /api/arcade/register]', err?.message || err);
+            res.status(500).json({ error: 'register_failed' });
+        }
+    }
+);
+
 // POST /api/arcade/mint-session
 //   query: ?game=basketball|keepieuppies|freekicks
 //   headers: Authorization: Bearer <privy-access-token>  (required)

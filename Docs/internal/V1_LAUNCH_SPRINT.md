@@ -475,6 +475,7 @@ Land all mainnet-blocking code changes: Bundle 1 Anchor, SHOT off-chain conversi
 - [ ] `v1-mainnet-rc1` tag on `main`
 - [ ] Render mainnet env vars staged (not deployed yet)
 - [ ] Vercel mainnet env vars staged
+- [ ] **Vercel Deployment Protection: disabled OR preview-only** ⚠️ (see §4.5 — this gotcha cost us 3.5 days on devnet, do NOT repeat at mainnet)
 - [ ] Mainnet RPC provider chosen (Helius / QuickNode / Triton — decide before this) + tested
 - [ ] Treasury + ops wallets funded with ~0.5 SOL each for rent
 - [ ] Server keypair (`solshot-server-authority.json`) on Render disk
@@ -530,6 +531,51 @@ Land all mainnet-blocking code changes: Bundle 1 Anchor, SHOT off-chain conversi
 - Client env: flip `REACT_APP_SOLANA_NETWORK` back to devnet, redeploy
 - Mainnet v2 program stays deployed (you can't undeploy) but no traffic hits it
 - Diagnose, fix, re-attempt flip after fix verified on devnet
+
+---
+
+## §4.5 — Vercel deployment-protection gotcha (learned the hard way 2026-05-26)
+
+**What bit us:** Pushed 14 commits to `main` over the course of a working session. Vercel built and deployed every one to "Production" target ✓. **None reached `www.solshot.gg` for 3.5 days** because:
+
+1. **Vercel "Deployment Protection" was enabled** on the `sol-shot` project — every new deploy got an auth wall (returning "Authentication Required" to anonymous visitors)
+2. The custom domain `www.solshot.gg` (set as "Third Party" DNS, not Vercel-managed DNS) was pinned to an OLDER unprotected deployment from 23 May
+3. Because Vercel's auto-promotion-to-domain-alias path expects the new deployment to be publicly accessible, the alias **never updated**
+4. Edge cache served the old deployment with `Age: 299274s` (83 hours stale), `X-Vercel-Cache: HIT` on every request
+
+Server-side was fine — Render auto-deploys from `main` and our v2 escrow + funnel + SHOT off-chain conversion all landed correctly. **Only the client was stuck**, which is the worst combination: backend expects new client behaviour, frontend is on stale code, integration bugs look like code bugs.
+
+**How we diagnosed:**
+- `curl -sI https://www.solshot.gg` → headers showed `Age:` very high, `Last-Modified:` 3 days old
+- Pulled `asset-manifest.json` + grepped chunks for known markers from recent commits (e.g. `3P FFA`, `fetchWithRetry`) — all missing
+- `vercel ls sol-shot` showed deploys WERE happening to Production target
+- `vercel inspect <latest>` → aliases listed only `*-jj-me55s-projects.vercel.app`, NOT `www.solshot.gg`
+- Curling the latest deployment URL directly returned the Vercel auth wall — confirmed protection
+
+**How we fixed:**
+- `vercel promote <latest-deployment-url>` — manually re-aliased `www.solshot.gg` to the latest deploy + invalidated edge cache
+- This is a one-off fix; the underlying setting is still on
+
+**The permanent fix (mandatory before mainnet flip):**
+
+1. Go to https://vercel.com/jj-me55s-projects/sol-shot/settings/deployment-protection
+2. Set **Vercel Authentication** to one of:
+   - **Disabled** — production deploys are publicly accessible immediately. Simplest. Recommended for V1 mainnet (you literally cannot have a wagering game where users hit an auth wall).
+   - **Only Preview Deployments** — production stays public; preview deploys (branch deploys) get the auth wall. Preserves the "private staging" benefit while not blocking prod.
+3. Click Save — applies to all future deploys
+
+**Verification command** (after the change, on any deploy):
+```bash
+curl -sI https://www.solshot.gg | grep -iE "age:|last-modified:"
+# Age should be low (under a few hours).
+# Last-Modified should match a recent commit timestamp.
+```
+
+If Age stays high after a fresh push, the alias hasn't updated → re-investigate.
+
+**Same gotcha applies to other arcade Vercel projects.** The `sol-shot-basketball`, `sol-shot-keepie-uppies`, and any future game-specific Vercel projects ALL need this checked. Free-Kick Madness is on a separate repo with its own project — verify there too.
+
+**Memory entry:** [project_v1_mainnet_scope.md](../../../../.claude/projects/C--Users-johnk-SolShot/memory/project_v1_mainnet_scope.md) updated 2026-05-26.
 
 ---
 

@@ -1046,7 +1046,30 @@ export class MainScene extends Scene {
     const myTank = this.myPlayerIndex >= 0
       ? this.tanks[this.myPlayerIndex]
       : this.tanks[(this.activeTank || 1) - 1];
-    if (!myTank?.turret || !myTank.active) return;
+
+    // Need the turret to compute trajectory. We deliberately DO NOT gate
+    // on `myTank.active` — all 3 call sites of this function either:
+    //   (a) check `currentPlayerIndex === myPlayerIndex` before calling
+    //       (_activateCurrentTank line 586), or
+    //   (b) bail in handlePowerFromReact / handleAngleFromReact if the
+    //       slider event came in for an inactive tank (lines 2409, 2426).
+    // Re-checking `active` here was a defensive double-gate that could
+    // race during turn-change ticks where the foreach setting active=true
+    // and the preview call happen in the same function but the preview
+    // is rendered before the foreach has flushed for the local tank in
+    // some Phaser scene-update orderings. Joiner-only first-shot-preview
+    // misses (reported by JJ 2026-05-26) were the symptom.
+    if (!myTank?.turret) return;
+
+    // One-shot diagnostic log so we can confirm the preview is being
+    // attempted on both clients during S2-T5 playtest. Logged once per
+    // tank-creation to keep the console signal-to-noise high.
+    if (!this._trainingPreviewLogged) {
+      console.log('[Training] first-shot preview rendering for myPlayerIndex=' + this.myPlayerIndex
+        + ' currentPlayerIndex=' + this.currentPlayerIndex
+        + ' shotsFired=' + (this._myTrainingShots ?? 0));
+      this._trainingPreviewLogged = true;
+    }
 
     // Server-mirrored physics simulation (matches _renderScopePreview).
     const angle = myTank.turret.rotation;

@@ -2967,3 +2967,96 @@ The cardinal rule "every game gets its own Vercel project" still holds. Relaxed 
 - MEMORY.md was updated this session: 4-game list, multi-stack note, free-kicks repo/URL recorded.
 
 — main-claude
+
+---
+
+## 2026-05-26 · main-claude — STATUS · HANDOFF · @fishyboy-claude · @johnk · @fishyboy
+
+**V1 mainnet push kicked off. Sprint 1 essentially done (4/5 + T4 prep), Sprint 2's hardest task scoped. The strategic frame shifted significantly — read §0 first if cold-picking this up.**
+
+This was a long planning + execution session. JJ walked in wanting to push toward V1 mainnet with live SOL wagering; we ended with a locked scope, 4 of 5 Sprint 1 tasks shipped to main, and a full scoping doc for the highest-risk Sprint 2 work.
+
+### §0 — The strategic frame change (READ THIS FIRST)
+
+JJ dropped a "V3 Arcade Economy — North Star" doc mid-session. Persisted at [Docs/internal/V3_ARCADE_ECONOMY_NORTH_STAR.md](V3_ARCADE_ECONOMY_NORTH_STAR.md). The headlines that affect ongoing work:
+
+- **$SHOT is no longer a launched on-chain token.** Pump.fun path is **abandoned, not deferred.** SHOT becomes the Tier 1 closed in-game currency role (V-Bucks-like). The 10M devnet mint at `4NnY…VLd` is orphaned. **No mainnet mint.** No LP. No Jupiter listing.
+- **Arcade-wide tradable token idea is killed.** A freely-traded arcade currency reintroduces the death-spiral risk the V3 model exists to avoid.
+- **Sequencing locked:** V1 = SolShot mainnet only (this push). V2 = 4+ players / last-man-standing. V3 = arcade-wide three-tier economy (Tickets buyable-but-not-sellable + administered redemption shop). V3 is **explicitly not to be built before V3.**
+- **V1 player count is 1-4** (JJ corrected my mis-read mid-session — V2 starts at 5+, not 4+). Server is N-aware up to 10, UI hard-blocks 5+ in V1.
+
+Memory was updated with three project entries that future-you should load: `project_v3_arcade_economy.md`, `project_shot_pivot_to_ingame.md`, `project_v1_mainnet_scope.md`.
+
+### What shipped this session (10 commits to main + 1 branch parked)
+
+| Commit | What |
+|---|---|
+| `de0547d` | Planning doc bundle — V1_LAUNCH_SPRINT.md, V3_ARCADE_ECONOMY_NORTH_STAR.md, Next_Steps_Games.docx moved to Docs/internal/ |
+| `6934e8d` | **S1-T2:** Funnel instrumentation (Mongo `funnel_events` collection, 5 stages, 7 emission sites, `/api/admin/funnel` endpoint, smoke test script) |
+| `5161181` | **S1-T3:** Wallet-link retry + sticky toast on POST exhaustion. Wraps the two link endpoints in `fetchWithRetry` (3 attempts exponential backoff). |
+| `141e201` | Funnel TOCTOU dedupe fix — atomic `findOneAndUpdate` with `$setOnInsert` replaces check-then-write. Caught by smoke test. |
+| `e78c6de` | TxToast bug — `TxToastHost` wasn't forwarding `toast.duration`, so my sticky toast for retry exhaustion was auto-dismissing at 4s. Caught by puppeteer browser smoke. |
+| `cac4f63` | **S1-T5:** 4P client scaffold + escrow v2 dispatch (LobbyScreen player-count selector, server-side `createMatchEscrowFor` / `buildDepositTransactionFor` / `getEscrowStateFor` routing) |
+| `36cc978`, `8be5f6b`, `bbcce0e` | **S1-T4 prep:** Generated `solshot-server-authority.json` (ops hot key, pubkey `CgcA…3wmC`). KEY_MANAGEMENT.md written. JJ initialized cold Ledger from his stash (fresh seed, verified via test-restore). Cold pubkey `4XoQ…TFLV` recorded. |
+| `126da62` | **S2-T1 scoping doc** — full diff sketch for the propose_authority/accept_authority/apply_config_update Anchor changes |
+| `cd38211` (branch) | Map refactor parked at `feat/variable-viewport-maps` — pushed to origin, off `main` |
+
+### Sprint 1 status — 4 of 5 complete, T4 awaiting Fish
+
+| Task | State | Notes |
+|---|---|---|
+| S1-T1 — Clean working tree | ✅ | Map work branched off, main clean |
+| S1-T2 — Funnel instrumentation | ✅ | Smoke-tested via `server/scripts/smoke-funnel.mjs`, dedupe bug caught + fixed |
+| S1-T3 — Wallet-link retry | ✅ | Browser smoke verified end-to-end, toast bug caught + fixed |
+| S1-T4 — Squads multisig | 🟡 | Prep done. Ledger cold-signer initialized + verified. **Awaiting Fish's mainnet Phantom pubkey + JJ-and-Fish at Squads UI together** (~15 min when both online). |
+| S1-T5 — 4P client scaffold | ✅ | Server boot smoke passes. Settle dispatch for N>2 deferred to S2-T5 (acceptable per scaffold spec). |
+
+### Sprint 2 — S2-T1 scoping done, 3 tasks unblocked for solo pickup
+
+[Docs/internal/S2-T1_SCOPING.md](S2-T1_SCOPING.md) is the spec for Bundle 1 Anchor changes. **Critical context:** the propose_authority / accept_authority / apply_config_update flow is TWO parallel mechanisms (NOT one unified rotation):
+
+- Authority rotation → 2-step propose/accept, **no timelock** (recovery scenarios may need fast rotation; 2-step ensures new key signs to prove it's live)
+- Treasury/ops/fee BPS → `update_config` writes pending state, `apply_config_update` callable by anyone after **24h timelock** (community visibility window)
+
+GlobalConfig SPACE: 110 → 231 bytes. Existing devnet config PDA needs close + reinit (Option A in the doc).
+
+**Five open design questions in §9** — defaults sensible, but worth a glance from whoever implements.
+
+**Three unblocked Sprint 2 tasks for solo pickup:**
+- **S2-T3** — SHOT off-chain conversion (server side) — mechanical, 175+ refs, ships in one session
+- **S2-T6** — Wallet rotation hardening (`updateWalletForTgUser` + reconcile script) — closes DB H009/H010
+- **S2-T7** — Refund + settle correctness (atomic `findOneAndUpdate` for `confirmDeposit` + `checkAndSettle`, getEscrowState before refund builders)
+
+### Locked decisions @johnk made this session
+
+1. **V1 scope:** 1-4 players, v2 escrow only on mainnet, SHOT off-chain only, no external audit, full Bundle 1 hardening before flip (~2 weeks)
+2. **Squads multisig:** **2-of-3 with cold Ledger** — JJ hot + Fish hot + JJ-owned Ledger Nano (fresh-seeded from his stash, verified)
+3. **Multisig serves 3 on-chain roles** — single Squads PDA = upgrade authority + config authority + treasury + ops fee destination. No need for separate multisigs for each role.
+4. **Mainnet upgrade authority: Squads-from-day-one** — `anchor deploy --upgrade-authority <squads-pda>` on mainnet flip. NO hot upgrade-authority keypair ever exists. Eliminates the "rotation window" attack surface.
+5. **Mainnet RPC:** free public RPC for smoke test, Helius developer tier (~$49/mo) before public announcement
+6. **Funnel backend:** Mongo + `/admin/funnel` endpoint. Mixpanel/PostHog deferred.
+7. **Flip-day comms:** quiet flip + smoke test, announce only after first successful mainnet match
+8. **v1 escrow:** stays devnet-only. Mainnet deploys v2 only.
+9. **Bug bounty:** deferred to post-launch (within 2 weeks of mainnet)
+10. **External audit:** skipped — internal SOS/DB/BOK accepted as audit floor
+
+### What needs Fish (the S1-T4 unblock + early Sprint 2 coordination)
+
+1. **Send JJ your mainnet Phantom pubkey** — needed to create the Squads multisig
+2. **Have ~0.01 SOL on that mainnet wallet** for future Squads proposal-signing gas
+3. **You + JJ at v3.squads.so together** (~15 min) for the create + 2-of-3 test-sign flow. KEY_MANAGEMENT.md §3 is the script.
+
+Fish decided he's using a hot Phantom (not a cold Ledger) for his signer slot — his existing Ledger is already in use for personal crypto, and he didn't want to introduce passphrase complexity. That's fine — JJ's cold Ledger is the third signer, gives us 1-hot+1-hot+1-cold which is acceptable for V1 multisig topology.
+
+### Notes for the next session (cold pickup)
+
+- **Read [V1_LAUNCH_SPRINT.md](V1_LAUNCH_SPRINT.md) §7 first** — it has the resolved-questions table, all 8 open questions from session start are now locked
+- **[KEY_MANAGEMENT.md](../KEY_MANAGEMENT.md) is the runbook for S1-T4 closing** — §3 walks Fish + JJ through Squads UI step by step
+- **[S2-T1_SCOPING.md](S2-T1_SCOPING.md) is the spec for the next big coding piece** — §9 open questions need JJ's input before Rust changes start
+- **Funnel admin endpoint requires `ADMIN_API_KEY` env on Render** to be useful in production — currently set on local dev only via inline env var. Add to Render dashboard before public launch.
+- **TxToast.js fix landed** — `TxToastHost` now forwards `toast.duration`. Any other code using `showToast({ duration: 0 })` for sticky behavior now actually works (previously silently auto-dismissed at 4s).
+- `solshot-server-authority.json` (operational hot key) lives at `~/.config/solana/` on JJ's machine, pubkey `CgcAZJf6U5LFkUzPRhcx217prT76uUV3vUdae7QU3wmC`. Path goes into `SOLANA_SERVER_KEYPAIR_PATH` env at mainnet flip time. NOT yet on Render disk.
+- **Cold Ledger pubkey is `4XoQgPxxLFNSc19A3TPqpfcvptEQ5g2DYmnaRLkYTFLV`** — recorded in KEY_MANAGEMENT.md §1. Seed phrase backed up on paper, verified via test-restore on a second device. Device + paper in separate physical locations per the runbook.
+- Memory updated with V1/V3/SHOT entries — future-claude on either side should have full strategic context after MEMORY.md loads.
+
+— main-claude

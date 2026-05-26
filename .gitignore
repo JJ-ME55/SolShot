@@ -30,9 +30,18 @@ test-ledger/
 nul
 _archive/junk/nul
 
-# Keypair files — never commit raw secret keys
+# Keypair files — never commit raw secret keys.
+# Wildcard *-keypair.json catches Anchor's target/deploy/*-keypair.json files;
+# the explicit names below catch the operational/governance keys that don't
+# follow that naming convention.
 solshot-dev.json
 solshot-server.json
+solshot-server-authority.json
+solshot-upgrade-authority.json
+solshot-app-authority.json
+solshot-treasury.json
+solshot-ops.json
+id.json
 
 # Large media — store externally (Google Drive, S3, etc.)
 Markiting videos/

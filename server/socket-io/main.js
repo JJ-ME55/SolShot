@@ -21,6 +21,7 @@ import { createChallenge as createChallengeRecord, getChallenge, attachRoomId, m
 import { dispatchVictoryDm } from '../services/challenge/victoryDm.js';
 import { linkTelegramIdentity } from '../services/users.js';
 import { attributeReferrer, processReferralReward, getOrCreateReferralCode, buildInviteLink } from '../services/referrals.js';
+import { recordFunnelEvent } from '../services/funnel.js';
 
 // Cosmetic item costs (mirrors client/src/data/tiers.js COSMETIC_ITEMS)
 const COSMETIC_COSTS = {
@@ -797,6 +798,10 @@ function startTurnTimer(io, roomId) {
                             settlementSucceeded = false
                             console.error(`[Forfeit] Settlement returned failure for room ${roomId}:`, result.error)
                             await handleSettlementFailure(roomId, roomSnapshot, wsSnapshot, result.error)
+                        } else {
+                            // Funnel: first wagered settle on-chain
+                            recordFunnelEvent('first_settle', { walletAddress: winnerWallet }, { matchId: roomId, role: 'winner', settleType: 'forfeit' });
+                            recordFunnelEvent('first_settle', { walletAddress: loserWallet }, { matchId: roomId, role: 'loser', settleType: 'forfeit' });
                         }
                     } catch (err) {
                         settlementSucceeded = false
@@ -1339,8 +1344,24 @@ const mainsocket = (io) => {
                         username: client.telegramUser.username || null,
                         firstName: client.telegramUser.first_name || null,
                         handle: playerUids[client.id]?.handle || null, // legacy fallback
-                    }).catch((err) => console.warn('[Auth] linkTelegramIdentity failed:', err.message));
+                    })
+                        .then(() => {
+                            // Funnel: wallet+TG bound at socket-auth time
+                            recordFunnelEvent('wallet_linked', {
+                                walletAddress: result.walletAddress,
+                                telegramUserId: client.telegramUser.id,
+                                uid: playerUids[client.id]?.uid || null,
+                            }, { via: 'socket_authenticate' });
+                        })
+                        .catch((err) => console.warn('[Auth] linkTelegramIdentity failed:', err.message));
                 }
+
+                // Funnel: wallet signature verified, socket authenticated
+                recordFunnelEvent('auth', {
+                    walletAddress: result.walletAddress,
+                    telegramUserId: client.telegramUser?.id || null,
+                    uid: playerUids[client.id]?.uid || null,
+                });
             }
             client.emit('authResult', result)
         })
@@ -1452,6 +1473,15 @@ const mainsocket = (io) => {
             // Server-side profanity guard (normalises leet speak)
             if (isProfane(clean)) clean = 'Player' + uid.slice(0, 4)
             playerUids[client.id] = { uid, handle: clean }
+
+            // Funnel: first step of the V1 onboarding measurement.
+            // Fire on every registerIdentity — frequency dedupe happens
+            // downstream via unique-identity aggregation in /admin/funnel.
+            recordFunnelEvent('register', {
+                uid,
+                telegramUserId: client.telegramUser?.id || null,
+                walletAddress: authenticatedWallets[client.id] || null,
+            }, { handle: clean });
 
             // Orphan-account fix (2026-05-10): if the client is sending us
             // a `tg_<id>` uid (from Privy with TG-linked account, or from
@@ -1678,6 +1708,9 @@ const mainsocket = (io) => {
                                         trackForfeit()
                                         if (settlementResult.settlement) trackSettlement({ winnerPayout: settlementResult.settlement.winner, treasuryFee: settlementResult.settlement.treasury, opsFee: settlementResult.settlement.ops })
                                         transitionState(currentMs, MATCH_STATES.COMPLETE)
+                                        // Funnel: first wagered settle on-chain
+                                        recordFunnelEvent('first_settle', { walletAddress: winnerWallet }, { matchId: roomId, role: 'winner', settleType: 'forfeit_disconnect' });
+                                        recordFunnelEvent('first_settle', { walletAddress: loserWallet }, { matchId: roomId, role: 'loser', settleType: 'forfeit_disconnect' });
                                         if (opponentId) {
                                             io.to(opponentId).emit('matchSettled', {
                                                 type: 'forfeit',
@@ -3531,6 +3564,14 @@ const mainsocket = (io) => {
                 ws.firstDepositorSocketId = client.id
             }
 
+            // Funnel: real money committed for this identity. One-shot per
+            // identity (dedupe handled inside recordFunnelEvent).
+            recordFunnelEvent('first_deposit', {
+                walletAddress: ws.wallets?.[client.id] || authenticatedWallets[client.id] || null,
+                telegramUserId: client.telegramUser?.id || null,
+                uid: playerUids[client.id]?.uid || null,
+            }, { matchId: rid, wagerSol: ws.amount, txSignature });
+
             // SRV-18: Emit real-time deposit status to all room members
             io.sockets.in(rid).emit('escrowDepositStatus', {
                 roomId: rid,
@@ -4115,6 +4156,9 @@ const mainsocket = (io) => {
                                         console.log('[Solana] Match settled:', settlementInfo)
                                         // H064: Only transition to COMPLETE on success
                                         transitionState(ms, MATCH_STATES.COMPLETE)
+                                        // Funnel: first wagered settle on-chain (main happy path)
+                                        recordFunnelEvent('first_settle', { walletAddress: winnerWallet }, { matchId: roomId, role: 'winner', settleType: 'match_complete' });
+                                        recordFunnelEvent('first_settle', { walletAddress: loserWallet }, { matchId: roomId, role: 'loser', settleType: 'match_complete' });
                                     }
                                 } catch (err) {
                                     console.error('[Solana] Settlement error:', err.message)

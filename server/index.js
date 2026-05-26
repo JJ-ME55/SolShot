@@ -31,6 +31,7 @@ import {
     cancelChallenge,
 } from './services/challenge/challenge.js';
 import { lookupUserByTelegramId, getPlayerRank, linkTelegramIdentity } from './services/users.js';
+import { recordFunnelEvent, getFunnelAggregates } from './services/funnel.js';
 import { consumeLinkToken } from './services/walletLinkTokens.js';
 import { requirePrivyAuth, isPrivyAuthConfigured } from './services/privyAuth.js';
 import { renderCareerCardPng } from './services/challenge/renderCareerCard.js';
@@ -292,6 +293,30 @@ app.post('/api/admin/truncate-handles', requireAdminKey, async (req, res) => {
     } catch (err) {
         console.error('[/api/admin/truncate-handles]', err.message);
         res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
+// V1 onboarding funnel — read aggregated stage counts for a time window.
+//   GET /api/admin/funnel?range=24h    (default 24h; accepts 24h, 7d, 30d)
+//   headers: x-admin-key
+// Response: {
+//   range, since, generatedAt,
+//   stages: [{ stage, count, uniqueIdentities, retentionFromPrev }, ...]
+// }
+//
+// Stages flow register → auth → wallet_linked → first_deposit → first_settle.
+// retentionFromPrev is uniqueIdentities[i] / uniqueIdentities[i-1] — the
+// per-step retention. Use this to spot drop-off (e.g. wallet_linked / auth
+// low means the link flow is failing for authenticated users).
+app.get('/api/admin/funnel', requireAdminKey, async (req, res) => {
+    try {
+        const range = String(req.query.range || '24h');
+        const data = await getFunnelAggregates(range);
+        if (data?.error) return res.status(400).json(data);
+        res.json(data);
+    } catch (err) {
+        console.error('[/api/admin/funnel]', err.message);
+        res.status(500).json({ error: 'aggregate_failed' });
     }
 });
 
@@ -560,6 +585,11 @@ app.post('/api/wallet/link-from-tg-token', requirePrivyAuth({ required: false })
         if (!updated) {
             return res.status(500).json({ error: 'link_failed' });
         }
+        // Funnel: wallet+TG bound via /play magic-link path
+        recordFunnelEvent('wallet_linked', {
+            walletAddress: updated.walletAddress || walletAddress,
+            telegramUserId: entry.telegramUserId,
+        }, { via: 'tg_token' }, 'http');
         res.json({
             ok: true,
             telegramUserId: entry.telegramUserId,
@@ -649,6 +679,11 @@ app.post(
             if (!updated) {
                 return res.status(500).json({ error: 'link_failed' });
             }
+            // Funnel: wallet+TG bound via Privy direct (no /play required)
+            recordFunnelEvent('wallet_linked', {
+                walletAddress: updated.walletAddress || walletAddress,
+                telegramUserId,
+            }, { via: 'privy_telegram' }, 'http');
             res.json({
                 ok: true,
                 telegramUserId,

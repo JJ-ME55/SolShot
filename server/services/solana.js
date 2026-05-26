@@ -231,19 +231,31 @@ export async function settleMatch(winnerAddress, loserAddress, wagerSOL, matchId
     const totalPot = wagerSOL * playerCount;
     const settlement = calculateSettlement(totalPot);
 
-    // If escrow program is live and we have a matchId, settle on-chain
-    if (isEscrowEnabled() && matchId) {
+    // S2-T5a (2026-05-26): dispatch by playerCount. 1v1 → v1 (proven path).
+    // 3P/4P → v2 (the program that actually has these matches' escrow PDAs).
+    // Without this, 3P/4P forfeits + match-ends silently fail because the
+    // server calls v1's settleMatchEscrow against a matchId that only
+    // exists in v2 — stuck funds until permissionless_reclaim @ 24h.
+    const useV2 = shouldUseEscrowV2(playerCount);
+
+    if (matchId && useV2 && isEscrowV2Enabled()) {
+        const result = await settleMatchEscrowV2(matchId, winnerAddress);
+        if (result.success) {
+            logger.info({ matchId, playerCount, txSignature: result.txSignature, escrow: 'v2' }, '[Solana] On-chain settlement');
+            return { success: true, settlement, txSignature: result.txSignature };
+        }
+        console.error('[Solana] On-chain v2 settle failed:', result.error);
+        return { success: false, error: result.error, settlement };
+    }
+
+    if (matchId && !useV2 && isEscrowEnabled()) {
         const result = await settleMatchEscrow(matchId, winnerAddress);
         if (result.success) {
-            logger.info({ matchId, txSignature: result.txSignature }, '[Solana] On-chain settlement');
-            return {
-                success: true,
-                settlement,
-                txSignature: result.txSignature,
-            };
+            logger.info({ matchId, playerCount, txSignature: result.txSignature, escrow: 'v1' }, '[Solana] On-chain settlement');
+            return { success: true, settlement, txSignature: result.txSignature };
         }
         // SF-02: Propagate failure — do NOT fall through to dev-mode fallback (DB: H015)
-        console.error('[Solana] On-chain settle failed:', result.error);
+        console.error('[Solana] On-chain v1 settle failed:', result.error);
         return { success: false, error: result.error, settlement };
     }
 
@@ -276,11 +288,18 @@ export async function refundWager(playerAddress, wagerSOL, matchId, playerAddres
     // to `return { success: true }` even after the on-chain CPI threw,
     // making callers believe the refund succeeded while SOL remained
     // locked on-chain.
-    if (isEscrowEnabled() && matchId && playerAddresses && playerAddresses.length > 0) {
+    //
+    // S2-T5a (2026-05-26): playerAddresses.length is the deposited-player count.
+    // Dispatch to v2 cancel if N > 2 — same reason as settleMatch above.
+    const refundUsesV2 = playerAddresses && shouldUseEscrowV2(playerAddresses.length);
+    const cancelFn = refundUsesV2 ? cancelMatchEscrowV2 : cancelMatchEscrow;
+    const cancelEscrowAvailable = refundUsesV2 ? isEscrowV2Enabled() : isEscrowEnabled();
+
+    if (cancelEscrowAvailable && matchId && playerAddresses && playerAddresses.length > 0) {
         try {
-            const result = await cancelMatchEscrow(matchId, playerAddresses);
+            const result = await cancelFn(matchId, playerAddresses);
             if (result.success) {
-                console.log('[Solana] On-chain refund:', { matchId, txSignature: result.txSignature });
+                console.log('[Solana] On-chain refund:', { matchId, escrow: refundUsesV2 ? 'v2' : 'v1', txSignature: result.txSignature });
                 return { success: true, txSignature: result.txSignature };
             }
             // On-chain cancel returned success: false — surface that to caller.

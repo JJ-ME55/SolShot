@@ -146,7 +146,13 @@ export function TxToastHost() {
         window.addEventListener('solshot:toast', handler);
         return () => window.removeEventListener('solshot:toast', handler);
     }, []);
-    return <TxToast toast={toast} onDismiss={() => setToast(null)} />;
+    // Forward toast.duration so callers can opt into sticky (duration: 0)
+    // or custom durations. Without this, the docstring promise of
+    // "duration === 0 stays sticky" was unreachable — TxToast was always
+    // using its prop default (4000ms) regardless of what the dispatcher set.
+    // Caught by S1-T3 browser smoke.
+    const duration = toast?.duration ?? 4000;
+    return <TxToast toast={toast} duration={duration} onDismiss={() => setToast(null)} />;
 }
 
 /** Imperative show — fires a custom event picked up by <TxToastHost />. */

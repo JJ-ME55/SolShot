@@ -2899,3 +2899,71 @@ The Fish-owned `solshot-basketball.vercel.app` is still live and stuck on the OL
 The 10-minute www.solshot.gg artillery-→-basketball flip during the rollout was caught by JJ's manual testing. No real users hit the wrong page. Worth treating as a near-miss process gap — promote-to-production on a multi-domain Vercel project should be banned without an explicit "I know this changes www.solshot.gg" confirmation. Documenting here so future-us doesn't repeat.
 
 — main-claude
+
+---
+
+## 2026-05-20 18:30 UTC · main-claude — STATUS · HANDOFF · @fishyboy-claude · @johnk
+
+**Free-Kick Madness shipped — 4th arcade game live, end-to-end verified on iPhone TG.**
+
+JJ brought a handover from a parallel build (BillionaireBonkClub team built the standalone, server-side scaffold partially synced on the stale `arcade/free-kicks` branch). This session integrated it the rest of the way through the standalone-leaderboard pattern that basketball + keepie-uppies use.
+
+### What shipped
+
+| Layer | Where | Commit |
+|---|---|---|
+| Bot + leaderboard service + Mongo model + routes + CORS | `JJ-ME55/SolShot` main | `bc6d4cb` |
+| Standalone JWT capture + score POST + Safari hatch | `JJ-ME55/solshot-free-kicks` main | `32bb99e` |
+| POST resilience fix (mid-session bug) | same fork | `70eb14f` |
+
+### Reference data
+
+- **Game URL:** `https://solshot-free-kicks-iota.vercel.app` (Vercel auto-suffixed `-iota` from name collision)
+- **Source repo (forked):** `JJ-ME55/solshot-free-kicks` ← `BillionaireBonkClub/solshot-free-kicks`
+- **Vercel project:** `sol-shot-free-kicks` (JJ's account)
+- **Render env:** `FREE_KICKS_LEADERBOARD_SECRET` (set 2026-05-20)
+- **Bot slug:** `/freekicks` (TG strips hyphens — URL has them, slug doesn't)
+- **Mongo collection:** `freekicksscores`
+- **JWT issuer:** `arcade-bot:freekicks`
+
+### Architectural deviations from prior pattern
+
+This was the first arcade game on a **non-Phaser stack** (Vite + Three.js) and the first to ship from a **separate repo** rather than a branch in the SolShot monorepo. Both worked fine. The "Phaser-only stack policy" listed as a pending strategic decision is now **de facto multi-stack** — no formal decision needed but worth acknowledging.
+
+The cardinal rule "every game gets its own Vercel project" still holds. Relaxed rule: branch-in-monorepo OR separate repo are both fine.
+
+### Decisions log
+
+- **Scoring model:** kept as-is. Reviewed against PikPok's original Flick Kick — their "skill zones" reward extra LIVES not points (vs JJ's initial recollection of extra points). JJ called it: "I'm fine with where we are now." No changes to point values, fire-ball persistence, or zone bonuses.
+- **Fire-ball persistence:** current behaviour (consumed on next shot, goal-or-miss) kept. Flick Kick's "lasts until used" model considered but not adopted.
+- **Deployment:** Option B — direct commits to main on both repos, no PRs. Matches existing arcade commit history pattern.
+
+### Mid-session bug + fix
+
+**Reported:** 18:43 UTC — JJ scored 85 pts on iPhone TG WebView, leaderboard didn't update. Server-side `totalSubmissions` stayed at 5, confirming the POST never reached Render.
+
+**Diagnosis:** documented iOS Telegram in-app browser issue — `WKWebView` aggressively suspends in-flight fetches near animation/navigation events. Same pattern that drove basketball's `d006672` Safari hatch commit.
+
+**Fix shipped (`70eb14f`):**
+- `submitToArcadeLeaderboard` returns structured `{ ok, reason }` instead of swallowing failures into null.
+- Single retry on network exception (800ms backoff).
+- Failed scores stashed in `localStorage` as max-of-pending-current; `retryPendingOnBoot()` recovers them on next page load (typically when user taps "Open in Safari ↗").
+- Run-over overlay surfaces failure mode: "Session expired — re-tap /freekicks" vs "Score not recorded — tap Open in Safari ↗".
+
+**JJ's lost 85:** unrecoverable (nothing was stashed at the time). Future incidents self-heal.
+
+### Open items / follow-ups for future sessions
+
+1. **Retrofit keepie-uppies + basketball** with the same POST resilience pattern. Both have identical silent-fail in their React `*Screen.js` files. Not urgent — wait for a complaint, then ~30-min change.
+2. **Try `fetch({ keepalive: true })`** as an additional iOS WebView mitigation if drop rate stays bothersome. JJ deferred — current fix solved his case.
+3. **Visual identity re-audit** is now due. Memory's plan was "re-audit after game #4." Three arcade games still use bespoke HUD palettes — none aligned to SolShot's Black Ops One + olive/bone/orange-rust tokens. Free-kicks specifically uses a pitch-and-sky palette with `system-ui` fonts. Worth a Fish ask.
+4. **Update `Docs/ARCADE_NEW_GAME_PLAYBOOK.md`** to cover the standalone-leaderboard track. The doc on `arcade/basketball` branch is written around the wagered-PvP model and doesn't reflect how we actually ship. MEMORY.md's arcade section is the current source of truth.
+
+### Notes for the next session (cold pickup)
+
+- Audit clone of the fork at `C:\Users\johnk\solshot-free-kicks-audit\` is intentional — useful for future v1.25+ syncs from Fish's `BillionaireBonkClub` upstream. Don't delete unless cleaning house.
+- Render env vars are not in `render.yaml` and must be set in the dashboard for each new game (`<SLUG>_LEADERBOARD_SECRET`). `render.yaml` `sync: false` deliberately keeps secrets out of git — don't try to script it.
+- The `arcade/free-kicks` branch on `JJ-ME55/SolShot` is the OLD wagered-PvP scaffold (143 server tests but for a different architecture). Stale — ignore for standalone-leaderboard work. Could be repurposed if/when we revisit the wagered track for ball games.
+- MEMORY.md was updated this session: 4-game list, multi-stack note, free-kicks repo/URL recorded.
+
+— main-claude

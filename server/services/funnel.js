@@ -58,10 +58,16 @@ async function oneShotInsert(doc) {
     else if (doc.telegramUserId) dedupeQuery.telegramUserId = doc.telegramUserId;
     else dedupeQuery.uid = doc.uid;
 
-    const existing = await FunnelEvent.findOne(dedupeQuery).lean();
-    if (existing) return null;
-
-    return FunnelEvent.create(doc);
+    // Atomic upsert: insert only if no doc matches the dedupe query.
+    // Avoids the TOCTOU race that a separate findOne + create pair has
+    // when two emissions for the same identity fire concurrently
+    // (e.g. settleMatch emits 'first_settle' for both winner + loser
+    // in the same tick).
+    return FunnelEvent.findOneAndUpdate(
+        dedupeQuery,
+        { $setOnInsert: doc },
+        { upsert: true, new: false, runValidators: true }
+    );
 }
 
 const RANGE_TO_MS = {

@@ -109,7 +109,7 @@ export function generateWind() {
  * @param {number} wind - Wind horizontal acceleration (px/s², + = right)
  * @returns {Array<{x: number, y: number, vx: number, vy: number}>} trajectory points per frame
  */
-export function calculateTrajectory(angle, power, gravity = DEFAULT_GRAVITY, startX, startY, wind = 0) {
+export function calculateTrajectory(angle, power, gravity = DEFAULT_GRAVITY, startX, startY, wind = 0, worldWidth = TERRAIN_WIDTH, wrap = false) {
     const velocity = power * POWER_FACTOR;
     const rotation = angle - Math.PI / 2;
 
@@ -127,11 +127,23 @@ export function calculateTrajectory(angle, power, gravity = DEFAULT_GRAVITY, sta
         x += vx * PHYSICS_DT;
         y += vy * PHYSICS_DT;
 
-        points.push({ x, y, vx, vy });
-
-        // Bounds check — stop if out of play area
-        if (x <= 0 || x >= TERRAIN_WIDTH - 1) break;
-        if (y >= TERRAIN_HEIGHT) break;
+        if (wrap) {
+            // Wrap-around world: shot exits one side and re-enters the
+            // other with the same velocity. Used for stress-test 6+ player
+            // matches so cross-map shots stay competitive on the wider
+            // canvas. Production wagered matches pass wrap=false and
+            // trajectories break at world edges as before.
+            if (x < 0) x += worldWidth;
+            else if (x >= worldWidth) x -= worldWidth;
+            points.push({ x, y, vx, vy });
+            // Stop only on floor — never on horizontal edge
+            if (y >= TERRAIN_HEIGHT) break;
+        } else {
+            points.push({ x, y, vx, vy });
+            // Bounds check — stop if out of play area
+            if (x <= 0 || x >= worldWidth - 1) break;
+            if (y >= TERRAIN_HEIGHT) break;
+        }
     }
 
     return points;
@@ -151,7 +163,13 @@ export function calculateTrajectory(angle, power, gravity = DEFAULT_GRAVITY, sta
  * @param {Array<{x: number, y: number, width: number, height: number}>} tankPositions - Tank bounding boxes
  * @returns {{x: number, y: number, type: string, tankIndex?: number, frameIndex: number}}
  */
-export function calculateImpact(trajectory, terrain, tankPositions) {
+// Module-level "current shot wrap" state — set by processShot at the
+// start of each shot, read by helper calculateImpact calls inside the
+// process*Shot sub-handlers. Single-threaded Node.js makes this safe:
+// no overlap between matches' shot processing.
+let _currentShotWrap = false;
+
+export function calculateImpact(trajectory, terrain, tankPositions, wrap = _currentShotWrap) {
     // Launch grace period: skip terrain & tank collision for first N frames.
     // Projectile starts at/near the turret tip which may be at or below terrain surface.
     // Without this, the projectile collides with the shooter's own terrain/tank immediately.
@@ -163,8 +181,12 @@ export function calculateImpact(trajectory, terrain, tankPositions) {
         const ix = Math.floor(x);
         const iy = Math.floor(y);
 
-        // Out of bounds — always check (even during grace period)
-        if (ix <= 0 || ix >= TERRAIN_WIDTH - 1) {
+        // Out of bounds — only meaningful when world has hard edges. In
+        // wrap mode the trajectory has already been wrapped into the
+        // valid [0, worldWidth) range by calculateTrajectory, so a point
+        // landing at x=0 right after a wrap shouldn't trigger out-of-
+        // bounds. Skip the check entirely when wrap is on.
+        if (!wrap && (ix <= 0 || ix >= terrain.length - 1)) {
             return { x, y, type: 'outOfBounds', frameIndex: i };
         }
 
@@ -746,7 +768,7 @@ function processScatterShot(weapon, trajectory, terrain, tanks, shooterId) {
             const offsetX = (rng() - 0.5) * 2 * scatterRadius;
             const offsetY = (rng() - 0.5) * 2 * scatterRadius * 0.5; // less vertical spread
             const subPoint = {
-                x: Math.max(0, Math.min(TERRAIN_WIDTH - 1, impact.x + offsetX)),
+                x: Math.max(0, Math.min(terrain.length - 1, impact.x + offsetX)),
                 y: Math.max(0, Math.min(TERRAIN_HEIGHT - 1, impact.y + offsetY))
             };
 
@@ -790,7 +812,7 @@ function processSpiderShot(weapon, trajectory, terrain, tanks, shooterId) {
             // Alternate left/right from impact
             const direction = i % 2 === 0 ? 1 : -1;
             const distance = Math.ceil((i + 1) / 2) * subSpacing;
-            const subX = Math.max(0, Math.min(TERRAIN_WIDTH - 1, Math.floor(impact.x) + direction * distance));
+            const subX = Math.max(0, Math.min(terrain.length - 1, Math.floor(impact.x) + direction * distance));
             const subY = newTerrain[subX] !== undefined ? newTerrain[subX] : impact.y;
 
             const subPoint = { x: subX, y: subY };
@@ -828,7 +850,7 @@ function processAreaShot(weapon, trajectory, terrain, tanks, shooterId) {
 
         for (let i = 0; i < burnCount; i++) {
             const offsetX = (i - Math.floor(burnCount / 2)) * (burnSpread / burnCount);
-            const subX = Math.max(0, Math.min(TERRAIN_WIDTH - 1, Math.floor(impact.x + offsetX)));
+            const subX = Math.max(0, Math.min(terrain.length - 1, Math.floor(impact.x + offsetX)));
             const subY = newTerrain[subX] !== undefined ? newTerrain[subX] : impact.y;
             const subPoint = { x: subX, y: subY };
 
@@ -868,7 +890,7 @@ function processRainShot(weapon, trajectory, terrain, tanks, shooterId) {
         for (let i = 0; i < count; i++) {
             // Distribute drops across the rain zone centered on impact
             const offsetX = (i / (count - 1) - 0.5) * rainWidth + (rng() - 0.5) * 20;
-            const dropX = Math.max(0, Math.min(TERRAIN_WIDTH - 1, Math.floor(impact.x + offsetX)));
+            const dropX = Math.max(0, Math.min(terrain.length - 1, Math.floor(impact.x + offsetX)));
             const dropY = newTerrain[dropX] !== undefined ? newTerrain[dropX] : impact.y;
             const subPoint = { x: dropX, y: dropY };
 
@@ -913,7 +935,7 @@ function processChainShot(weapon, trajectory, terrain, tanks, shooterId) {
         }
 
         for (let i = 0; i < count; i++) {
-            const subX = Math.max(0, Math.min(TERRAIN_WIDTH - 1, Math.floor(impact.x + direction * i * chainSpacing)));
+            const subX = Math.max(0, Math.min(terrain.length - 1, Math.floor(impact.x + direction * i * chainSpacing)));
             const subY = newTerrain[subX] !== undefined ? newTerrain[subX] : impact.y;
             const subPoint = { x: subX, y: subY };
 
@@ -960,7 +982,7 @@ function processFragmentShot(weapon, trajectory, terrain, tanks, shooterId) {
         for (let i = 0; i < fragCount; i++) {
             const angle = (2 * Math.PI * i) / fragCount;
             const dist = fragRadius * (0.6 + 0.4 * rng()); // seeded randomness in distance
-            const subX = Math.max(0, Math.min(TERRAIN_WIDTH - 1, impact.x + Math.cos(angle) * dist));
+            const subX = Math.max(0, Math.min(terrain.length - 1, impact.x + Math.cos(angle) * dist));
             const subY = Math.max(0, Math.min(TERRAIN_HEIGHT - 1, impact.y + Math.sin(angle) * dist));
             const subPoint = { x: subX, y: subY };
 
@@ -996,7 +1018,7 @@ function processWallShot(weapon, trajectory, terrain, tanks, shooterId) {
         const wallHeight = 140;
         const cx = Math.floor(impact.x);
         const xMin = Math.max(0, cx - wallWidth / 2);
-        const xMax = Math.min(TERRAIN_WIDTH - 1, cx + wallWidth / 2);
+        const xMax = Math.min(terrain.length - 1, cx + wallWidth / 2);
 
         // Save original heights for decay/revert
         const originalHeights = {};
@@ -1078,7 +1100,7 @@ function processTerrainCreateShot(weapon, trajectory, terrain, tanks, shooterId)
         const moundHeight = 70;
         const cx = Math.floor(impact.x);
 
-        for (let x = Math.max(0, cx - moundRadius); x <= Math.min(TERRAIN_WIDTH - 1, cx + moundRadius); x++) {
+        for (let x = Math.max(0, cx - moundRadius); x <= Math.min(heightmap.length - 1, cx + moundRadius); x++) {
             const ix = Math.floor(x);
             const dx = ix - cx;
             // Circular mound profile
@@ -1159,7 +1181,7 @@ function processBouncerShot(weapon, trajectory, terrain, tanks, shooterId) {
             bx += bvx * PHYSICS_DT;
             by += bvy * PHYSICS_DT;
             bounceTraj.push({ x: bx, y: by, vx: bvx, vy: bvy });
-            if (bx <= 0 || bx >= TERRAIN_WIDTH - 1) break;
+            if (bx <= 0 || bx >= terrain.length - 1) break;
             if (by >= TERRAIN_HEIGHT) break;
         }
 
@@ -1243,7 +1265,7 @@ function processHomingShot(weapon, trajectory, terrain, tanks, shooterId) {
         y += vy * PHYSICS_DT;
         homingTraj.push({ x, y, vx, vy });
 
-        if (x <= 0 || x >= TERRAIN_WIDTH - 1) break;
+        if (x <= 0 || x >= terrain.length - 1) break;
         if (y >= TERRAIN_HEIGHT) break;
     }
 
@@ -1313,7 +1335,7 @@ function processRollerShot(weapon, trajectory, terrain, tanks, shooterId) {
     // Roll along terrain
     for (let d = 0; d < rollDistance; d++) {
         const nextX = rollX + direction;
-        if (nextX < 0 || nextX >= TERRAIN_WIDTH) break;
+        if (nextX < 0 || nextX >= terrain.length) break;
         rollX = nextX;
 
         // Check if rolled into a tank
@@ -1342,7 +1364,7 @@ function processRollerShot(weapon, trajectory, terrain, tanks, shooterId) {
     const startRollX = Math.floor(impact.x);
     const step = direction;
     for (let rx = startRollX; rx !== finalX + step; rx += step) {
-        if (rx < 0 || rx >= TERRAIN_WIDTH) break;
+        if (rx < 0 || rx >= terrain.length) break;
         const ry = terrain[rx] !== undefined ? terrain[rx] - 5 : impact.y;
         rollPoints.push({ x: rx, y: ry });
     }
@@ -1399,7 +1421,7 @@ function processTunnelShot(weapon, trajectory, terrain, tanks, shooterId) {
     // Tunnel underground: move horizontally until we find open air (terrain surface above us)
     for (let d = 0; d < maxTunnel; d++) {
         tx += tunnelDir * tunnelSpeed;
-        if (tx < 0 || tx >= TERRAIN_WIDTH) break;
+        if (tx < 0 || tx >= terrain.length) break;
 
         const terrainY = terrain[tx];
         if (terrainY === undefined) continue;
@@ -1417,7 +1439,7 @@ function processTunnelShot(weapon, trajectory, terrain, tanks, shooterId) {
 
     // Emerge and explode
     const exitX = foundExit ? tunnelExitX : tx;
-    const exitY = terrain[Math.max(0, Math.min(TERRAIN_WIDTH - 1, exitX))] || impact.y;
+    const exitY = terrain[Math.max(0, Math.min(terrain.length - 1, exitX))] || impact.y;
     const exitPoint = { x: exitX, y: exitY };
 
     damage = calculateDamageWithRadius(exitPoint, weapon.blastRadius, weapon.damageFactor, tanks, shooterId);
@@ -1457,17 +1479,27 @@ function processTunnelShot(weapon, trajectory, terrain, tanks, shooterId) {
  * @param {Array<{id: string, x: number, y: number, width?: number, height?: number}>} params.tanks
  * @returns {{trajectory: Array, impact: object, damage: object, newTerrain: number[], weaponId: number}}
  */
-export function processShot({ angle, power, weaponId, startX, startY, shooterId, terrain, tanks, wind = 0 }) {
+export function processShot({ angle, power, weaponId, startX, startY, shooterId, terrain, tanks, wind = 0, wrap = false }) {
     const weapon = WEAPON_DATA[weaponId];
     if (!weapon) {
         return { trajectory: [], impact: null, damage: {}, newTerrain: terrain, weaponId };
     }
 
+    // Stash wrap on module-level state so calculateImpact and its callers
+    // pick it up without threading the param through every process*Shot
+    // sub-handler. Safe under Node.js single-thread; reset at end of shot
+    // would be ideal but the next processShot call will overwrite it.
+    _currentShotWrap = wrap;
+
     // Attach weaponId + wind to weapon data for helpers that need it
     const w = { ...weapon, weaponId, wind };
 
-    // Calculate primary trajectory (used by most weapon types)
-    const trajectory = calculateTrajectory(angle, power, w.gravity, startX, startY, wind);
+    // Calculate primary trajectory (used by most weapon types). Use the
+    // terrain's actual length as worldWidth so stress-test matches with a
+    // wider canvas don't have trajectories cut off at 1956. `wrap` is
+    // forwarded so shots can re-enter from the opposite edge instead of
+    // dying at the boundary (stress-test only).
+    const trajectory = calculateTrajectory(angle, power, w.gravity, startX, startY, wind, terrain.length, wrap);
 
     // Type-based dispatch
     let result;

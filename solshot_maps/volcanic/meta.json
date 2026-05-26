@@ -1,0 +1,16 @@
+{
+  "name": "Lava Lake",
+  "slug": "volcanic",
+  "difficulty": "hard",
+  "boundary": "open-pit",
+  "skybox": "open",
+  "ambient": {
+    "music": "volcanic-loop-01.mp3",
+    "particles": "embers"
+  },
+  "indestructibleBoxes": [],
+  "landmarks": [
+    "Heightmap traced from AI-generated silhouette source",
+    "0 auto-detected indestructible feature regions"
+  ]
+}

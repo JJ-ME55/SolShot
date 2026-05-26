@@ -6,9 +6,16 @@ import useIsMobile from '../hooks/useIsMobile';
 // Player-selectable colors (exclude WHITE id:8, reserved for Shot Bot)
 const PLAYER_COLORS = TANK_COLORS.filter(c => c.id !== 8);
 
+// Stress-test player counts. 2 = classic 1v1 Shot Bot (smart AI). 4/6/8/10
+// = mixed match: 1 smart Shot Bot + (N-2) random-fire dummy bots so JJ can
+// see the real BattleScreen scale to N tanks. Used to validate spawn
+// density, weapon range, and HUD readability at higher player counts.
+const PLAYER_COUNTS = [2, 4, 6, 8, 10];
+
 export default function AIPracticeScreen({ navigate }) {
   const isMobile = useIsMobile();
   const [selectedColor, setSelectedColor] = useState(PLAYER_COLORS[0]);
+  const [playerCount, setPlayerCount] = useState(2);
   const [launching, setLaunching] = useState(false);
 
   const handleStart = useCallback(() => {
@@ -26,8 +33,9 @@ export default function AIPracticeScreen({ navigate }) {
         name: localStorage.getItem('solshot_handle') || 'Player',
         color: selectedColor.phaserHex,
       },
+      playerCount,
     });
-  }, [launching, selectedColor]);
+  }, [launching, selectedColor, playerCount]);
 
   // Listen for shopPhase to navigate into the match
   useEffect(() => {
@@ -99,6 +107,73 @@ export default function AIPracticeScreen({ navigate }) {
       }}>
         PRACTICE AGAINST THE AI &middot; STATS ARE NOT RECORDED
       </div>
+
+      {/* Player count picker */}
+      <div style={{
+        fontFamily: 'var(--f-mono)',
+        fontSize: isMobile ? 10 : 12,
+        color: 'var(--olive)',
+        letterSpacing: '0.22em',
+        marginTop: isMobile ? 4 : 10,
+        textTransform: 'uppercase',
+        zIndex: 1,
+      }}>
+        PLAYERS
+      </div>
+      <div style={{
+        display: 'flex',
+        gap: isMobile ? 6 : 10,
+        flexWrap: 'wrap',
+        justifyContent: 'center',
+        zIndex: 1,
+      }}>
+        {PLAYER_COUNTS.map(n => {
+          const selected = playerCount === n;
+          return (
+            <div
+              key={n}
+              onClick={() => setPlayerCount(n)}
+              role="button"
+              aria-label={`${n} players`}
+              aria-pressed={selected}
+              style={{
+                minWidth: 44,
+                minHeight: 44,
+                padding: '0 14px',
+                clipPath: 'var(--clip-6)',
+                background: selected ? 'var(--accent)' : 'transparent',
+                border: selected ? '2px solid var(--bone)' : '1px solid var(--border)',
+                color: selected ? 'var(--bg-deep)' : 'var(--olive)',
+                fontFamily: 'var(--f-mono)',
+                fontSize: isMobile ? 13 : 15,
+                fontWeight: 700,
+                letterSpacing: '0.1em',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+              }}
+            >
+              {n}
+            </div>
+          );
+        })}
+      </div>
+      {playerCount > 2 && (
+        <div style={{
+          fontFamily: 'var(--f-mono)',
+          fontSize: isMobile ? 9 : 10,
+          color: 'var(--orange)',
+          letterSpacing: '0.18em',
+          textTransform: 'uppercase',
+          textAlign: 'center',
+          maxWidth: 360,
+          zIndex: 1,
+        }}>
+          stress-test mode &middot; 1 shot bot + {playerCount - 2} random-fire bots
+        </div>
+      )}
 
       {/* Color picker label */}
       <div style={{

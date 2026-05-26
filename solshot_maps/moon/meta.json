@@ -1,0 +1,16 @@
+{
+  "name": "Lunar Surface",
+  "slug": "moon",
+  "difficulty": "medium",
+  "boundary": "open-pit",
+  "skybox": "open",
+  "ambient": {
+    "music": "moon-loop-01.mp3",
+    "particles": null
+  },
+  "indestructibleBoxes": [],
+  "landmarks": [
+    "Heightmap traced from AI-generated silhouette source",
+    "0 auto-detected indestructible feature regions"
+  ]
+}

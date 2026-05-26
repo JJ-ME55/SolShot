@@ -87,14 +87,20 @@ export class MainScene extends Scene {
 
   preload = () => {
     this.load.image('wall', 'assets/images/wall.png');
-    // Load the 5 background themes — one is picked randomly in createBackground().
-    // bg-default.png intentionally not preloaded; it duplicated bg-jungle's
-    // palette and the index entry was removed in the 012ff34 / 5455e8e fixes.
+    // Legacy 5 backgrounds (640×640) — still preloaded as fallback for older
+    // matches and for the bgThemes table lookup path.
     this.load.image('bg-jungle', 'assets/images/backgrounds/bg-jungle.png');
     this.load.image('bg-arctic', 'assets/images/backgrounds/bg-arctic.png');
     this.load.image('bg-desert', 'assets/images/backgrounds/bg-desert.png');
     this.load.image('bg-moon', 'assets/images/backgrounds/bg-moon.png');
     this.load.image('bg-volcanic', 'assets/images/backgrounds/bg-volcanic.png');
+    // Themed map backdrops served from server's /maps/<slug>/backdrop.png.
+    // Each match's `mapId` selects the matching key here; createBackground()
+    // prefers `map-bg-<slug>` over the legacy `bg-<theme>` when present.
+    const serverUrl = (process.env.REACT_APP_SERVER_URL || '').replace(/\/$/, '');
+    for (const slug of ['desert', 'jungle', 'moon', 'urban', 'arctic', 'volcanic', 'castle', 'canyon']) {
+      this.load.image(`map-bg-${slug}`, `${serverUrl}/maps/${slug}/backdrop.png`);
+    }
     this.load.audio('background', ['assets/sounds/background.mp3']);
     this.load.audio('click', ['assets/sounds/click.wav']);
     this.load.audio('winner', ['assets/sounds/winner.mp3']);
@@ -166,6 +172,12 @@ export class MainScene extends Scene {
     if (this.sceneData?.backgroundIndex !== undefined && this.sceneData?.backgroundIndex !== null) {
       this._backgroundIndex = this.sceneData.backgroundIndex;
     }
+
+    // World width — viewport stays 1956 (locked), but terrain + camera
+    // bounds can extend wider for stress-test 6-10p matches. Server
+    // sends sceneData.worldWidth via shopPhase → ShopScreen → here.
+    // Defaults to 1956 for 2-4p where world == viewport.
+    this._worldWidth = Number(this.sceneData?.worldWidth) || this.renderer.width;
 
     this.createBackground();
     this.createBlastLayer();
@@ -283,7 +295,10 @@ export class MainScene extends Scene {
   // ── Physics / Rendering (unchanged from original) ──
 
   createBoundWalls = () => {
-    this.rightWall = this.physics.add.image(this.renderer.width + 50, this.renderer.height, 'wall');
+    // Walls sit at world edges, not viewport edges, so a tank that walks
+    // to the far side of the wider stress-test world still hits a wall.
+    const worldW = this._worldWidth || this.renderer.width;
+    this.rightWall = this.physics.add.image(worldW + 50, this.renderer.height, 'wall');
     this.leftWall = this.physics.add.image(-50, this.renderer.height, 'wall');
     this.rightWall.setSize(100, this.renderer.height * 4);
     this.leftWall.setSize(100, this.renderer.height * 4);
@@ -323,6 +338,80 @@ export class MainScene extends Scene {
     ]},
   ];
 
+  // Hand-tuned per-theme palettes. When `_mapId` matches a key here we use
+  // these saturated 5-stop ladders instead of auto-sampling from the
+  // backdrop, because the auto-sample loses hue at depth (a dim grey-purple
+  // sample × 0.35 factor goes near-black, leaving craters at depth looking
+  // colourless — and on a missed sample the renderer falls back to the
+  // legacy theme's terrainLayers which is green for jungle, etc.).
+  // Each palette has the same shape as a `_bgThemes` entry.
+  // Add an entry as Jamie tunes each theme.
+  _handTunedPalettes = {
+    urban: {
+      key: 'handtuned-urban',
+      fill: '#160828',
+      terrainLayers: [
+        { color: 'rgba(170, 80, 200, 1)',  width: 10  },
+        { color: 'rgba(135, 55, 180, 1)',  width: 30  },
+        { color: 'rgba(95,  35, 145, 1)',  width: 70  },
+        { color: 'rgba(60,  22, 105, 1)',  width: 130 },
+        { color: 'rgba(38,  14, 70,  1)',  width: 200 },
+      ],
+    },
+  };
+
+  // Sample the painted-ground band of a themed backdrop and derive a 5-stop
+  // terrain layer palette. Returns a theme-shaped object compatible with the
+  // existing terrain renderer ({key, fill, terrainLayers: [{color, width}]}).
+  // Returns null on failure (e.g. canvas-tainted image) so caller can fall
+  // back to the legacy palette.
+  sampleTerrainPaletteFromBackdrop = (img) => {
+    try {
+      const off = document.createElement('canvas');
+      off.width = img.width;
+      off.height = img.height;
+      const offCtx = off.getContext('2d');
+      offCtx.drawImage(img, 0, 0);
+      // Sample the bottom 18% of the image, central 50% horizontal band
+      // (skip edges that often have vignette or watermarks).
+      const sampleTop = Math.floor(img.height * 0.82);
+      const sampleH = img.height - sampleTop;
+      const sampleLeft = Math.floor(img.width * 0.25);
+      const sampleW = Math.floor(img.width * 0.50);
+      const data = offCtx.getImageData(sampleLeft, sampleTop, sampleW, sampleH).data;
+      let r = 0, g = 0, b = 0, count = 0;
+      for (let i = 0; i < data.length; i += 16) { // step 16 = every 4th pixel (RGBA × 4)
+        r += data[i];
+        g += data[i + 1];
+        b += data[i + 2];
+        count++;
+      }
+      r = Math.round(r / count);
+      g = Math.round(g / count);
+      b = Math.round(b / count);
+      // Build five progressively-darker shades. The top layer is the sampled
+      // anchor; each deeper layer multiplies by a darker factor.
+      const layers = [
+        { factor: 1.00, width: 10  },
+        { factor: 0.82, width: 30  },
+        { factor: 0.65, width: 70  },
+        { factor: 0.50, width: 130 },
+        { factor: 0.35, width: 200 },
+      ].map(({ factor, width }) => ({
+        color: `rgba(${Math.round(r * factor)},${Math.round(g * factor)},${Math.round(b * factor)},1)`,
+        width,
+      }));
+      // Darker hex for the "fill" used as solid below-terrain band
+      const fr = Math.round(r * 0.20).toString(16).padStart(2, '0');
+      const fg = Math.round(g * 0.20).toString(16).padStart(2, '0');
+      const fb = Math.round(b * 0.20).toString(16).padStart(2, '0');
+      return { key: `sampled-${this._mapId}`, fill: `#${fr}${fg}${fb}`, terrainLayers: layers };
+    } catch (e) {
+      console.warn('[sampleTerrainPalette] Failed:', e?.message);
+      return null;
+    }
+  };
+
   createBackground = () => {
     // Destroy previous background sprite before removing its texture —
     // prevents Phaser "canvasData null" crash when called a second time
@@ -338,54 +427,76 @@ export class MainScene extends Scene {
     canvas.width = this.renderer.width;
     // Use server-chosen index if available, otherwise random
     const idx = this._backgroundIndex ?? Math.floor(Math.random() * this._bgThemes.length);
-    const theme = this._bgThemes[idx % this._bgThemes.length];
-    this._currentTheme = theme; // Store for terrain layer colors
-    ctx.fillStyle = theme.fill;
+    const legacyTheme = this._bgThemes[idx % this._bgThemes.length];
+    // PRE-RESOLVE the palette: if this mapId has a hand-tuned palette, use
+    // it RIGHT NOW (before the canvas fill) so the bottom-of-canvas strip
+    // that the backdrop image doesn't cover gets painted in-theme. Previous
+    // order filled the canvas with the LEGACY theme's `fill` (could be the
+    // dark-green jungle fill if random landed on idx 0) and only swapped in
+    // the hand-tuned palette afterward — leaving a green strip at the
+    // bottom on urban matches.
+    const handTuned = this._mapId ? this._handTunedPalettes[this._mapId] : null;
+    this._currentTheme = handTuned || legacyTheme;
+    ctx.fillStyle = this._currentTheme.fill;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    // Sky: draw background image, showing more of the horizon detail.
-    // Previous offsetY = -25% cropped the bottom of the BG image hard,
-    // killing the mountains+horizon (user reported: "fades too black
-    // too quickly, strange effect"). Reduced to -10% so ~90% of the
-    // image's bottom is preserved into the visible viewport.
-    var bgTex = this.textures.exists(theme.key) ? this.textures.get(theme.key) : null;
+    // Prefer the THEMED backdrop key (map-bg-<slug>) over the legacy 5-theme
+    // key. Themed backdrops are ~1846×852 (close-to-canvas aspect) and per-map
+    // painted, so they avoid the legacy 640×640 stretch and match the
+    // heightmap's identity. Fall back to legacy if the themed one didn't load.
+    const themedKey = this._mapId ? `map-bg-${this._mapId}` : null;
+    var bgKey = themedKey && this.textures.exists(themedKey) ? themedKey : legacyTheme.key;
+    var bgTex = this.textures.exists(bgKey) ? this.textures.get(bgKey) : null;
     if (bgTex && bgTex.source && bgTex.source[0]) {
       var img = bgTex.source[0].image;
+      // Bottom-anchored full-bleed: scale image width to canvas width,
+      // preserve source aspect, anchor BOTTOM of image to BOTTOM of
+      // canvas so the painted ground band meets the terrain layer with
+      // no artificial fade strip. Source PNGs ~2.2:1 fit the 1956 canvas
+      // naturally (drawH ~830 for canvas height 800 — modest top crop).
+      // Canvas is always 1956×800 now; wider worlds pan via camera, not
+      // by stretching the canvas. See PhaserBootstrap.js header.
       var scale = canvas.width / img.width;
       var drawW = img.width * scale;
       var drawH = img.height * scale;
-      // -10% offset (was -25%) — keep the horizon line visible
-      var offsetY = -(drawH * 0.10);
+      var offsetY = canvas.height - drawH;
       ctx.drawImage(img, 0, 0, img.width, img.height, 0, offsetY, drawW, drawH);
+
+      // PALETTE SELECTION (priority order):
+      //   1. Hand-tuned palette for this slug (if defined in _handTunedPalettes).
+      //   2. Auto-sample from the backdrop image.
+      //   3. Falls through to the legacy `_bgThemes[idx]` palette.
+      if (themedKey && bgKey === themedKey) {
+        const handTuned = this._handTunedPalettes[this._mapId];
+        if (handTuned) {
+          this._currentTheme = handTuned;
+        } else {
+          const sampledTheme = this.sampleTerrainPaletteFromBackdrop(img);
+          if (sampledTheme) this._currentTheme = sampledTheme;
+        }
+      }
     }
-    // Gradient fade from sky into dark terrain area.
-    // Previous gradient at 40-55% slammed into the bottom of the BG image
-    // because the image only filled 0-55%. Pushed down to 55-72% so the
-    // fade now lives BELOW the image's natural bottom edge, smoothing the
-    // transition into the dark terrain band rather than chopping mountains
-    // mid-silhouette. Final alpha 0.92 (was 1.0) so a faint horizon hint
-    // bleeds into the terrain band instead of a hard cutoff.
-    const r = parseInt(theme.fill.slice(1,3), 16);
-    const g = parseInt(theme.fill.slice(3,5), 16);
-    const b = parseInt(theme.fill.slice(5,7), 16);
-    var fadeGrad = ctx.createLinearGradient(0, canvas.height * 0.55, 0, canvas.height * 0.72);
-    fadeGrad.addColorStop(0, `rgba(${r},${g},${b},0)`);
-    fadeGrad.addColorStop(0.5, `rgba(${r},${g},${b},0.55)`);
-    fadeGrad.addColorStop(1, `rgba(${r},${g},${b},0.92)`);
-    ctx.fillStyle = fadeGrad;
-    ctx.fillRect(0, Math.floor(canvas.height * 0.55), canvas.width, Math.ceil(canvas.height * 0.17));
-    // Solid dark fill below the fade for terrain area (terrain renders
-    // on top — this is just background color where heightmap reaches)
-    ctx.fillStyle = theme.fill;
-    ctx.fillRect(0, Math.floor(canvas.height * 0.72), canvas.width, Math.ceil(canvas.height * 0.28));
+    // No artificial horizon fade or solid bottom fill — the backdrop image
+    // anchored to canvas bottom (above) already has the painted ground band
+    // reaching the bottom, so the terrain layer renders directly on top of
+    // matching ground pixels. JJ 2026-05-18: "no need for the horizon strip,
+    // BG full bleed down into the terrain".
     if (this.textures.exists('background')) this.textures.remove('background');
     this.background = this.textures.addCanvas('background', canvas);
     this._bgImage = this.add.image(canvas.width / 2, canvas.height / 2, 'background').setDepth(-10);
+    // Lock BG to the viewport so camera pans don't slide it. Acts as a
+    // fixed stage backdrop while terrain (wider than viewport at N>5)
+    // scrolls underneath. Classic artillery-game parallax model — see
+    // SESSION_2026-05-18 §6 (camera director, originally deferred,
+    // landed 2026-05-19).
+    this._bgImage.setScrollFactor(0, 0);
   };
 
   createBlastLayer = () => {
     var canvas = document.createElement('canvas');
     canvas.height = this.renderer.height;
-    canvas.width = this.renderer.width;
+    // Span the full world (terrain width) so blasts from off-screen tanks
+    // still render correctly when camera pans to that part of the world.
+    canvas.width = this._worldWidth || this.renderer.width;
     if (this.textures.exists('blast-layer')) this.textures.remove('blast-layer');
     this.textures.addCanvas('blast-layer', canvas);
     this.blastLayer = this.add.image(canvas.width / 2, canvas.height / 2, 'blast-layer').setDepth(3);
@@ -394,7 +505,8 @@ export class MainScene extends Scene {
   createPointsLayer = () => {
     var canvas = document.createElement('canvas');
     canvas.height = this.renderer.height;
-    canvas.width = this.renderer.width;
+    // Spans full world width — see createBlastLayer comment.
+    canvas.width = this._worldWidth || this.renderer.width;
     if (this.textures.exists('points-layer')) this.textures.remove('points-layer');
     this.blastLayer = this.textures.addCanvas('points-layer', canvas);
     this.add.image(canvas.width / 2, canvas.height / 2, 'points-layer').setDepth(4);
@@ -582,6 +694,25 @@ export class MainScene extends Scene {
       t.active = isMyTankAndMyTurn;
       if (i === this.currentPlayerIndex) t.movesRemaining = 4;
     });
+    // Lock camera to whoever's turn it is — only matters when world is
+    // wider than viewport (N>5 stress-test). For 2-4p the world ==
+    // viewport and the lock is a visual no-op since the target is
+    // already on-screen.
+    const activeTank = this.tanks[this.currentPlayerIndex];
+    if (activeTank && this._worldWidth > 1956 && this.cameras?.main) {
+      // SNAP-CENTRE on every turn change, not just on first init. Without
+      // this the camera lerps in slowly and the previous impact's
+      // location (where the camera was last held) bleeds into the next
+      // player's frame — feels like "no lock". Snap first, then enable
+      // a tight lerp so any tank movement during the turn keeps centred.
+      this.cameras.main.centerOn(activeTank.x, activeTank.y);
+      this._cameraInitialised = true;
+      // Reset zoom from the impact zoom-in (1.25×) back to neutral.
+      this.cameras.main.zoomTo(1.0, 250, 'Cubic.easeOut');
+      // Tight lerp (0.18 ≈ ~150ms catch-up) so any tank movement during
+      // the turn stays framed without obvious smoothing artefacts.
+      this.cameras.main.startFollow(activeTank, true, 0.18, 0.18);
+    }
     // Flash "YOUR TURN!" when it becomes the local player's turn
     if (this.currentPlayerIndex === this.myPlayerIndex && !this._isSpectating) {
       this._flashYourTurn();
@@ -1068,7 +1199,7 @@ export class MainScene extends Scene {
       x += vx * dt;
       y += vy * dt;
       points.push({ x, y });
-      if (y > 800 || x < 0 || x > 1956) break;
+      if (y > 800 || x < 0 || x > this.renderer.width) break;
     }
 
     if (points.length < 4) return;
@@ -1144,7 +1275,7 @@ export class MainScene extends Scene {
       x += vx * dt;
       y += vy * dt;
       points.push({ x, y });
-      if (y > 800 || x < 0 || x > 1956) break;
+      if (y > 800 || x < 0 || x > this.renderer.width) break;
     }
 
     // First 1/3 of trajectory
@@ -1272,10 +1403,13 @@ export class MainScene extends Scene {
 
     // ── STEP 1: Server-generated terrain ──
     // Both clients listen for terrainGenerated. Host triggers requestTerrain.
-    this._socketHandlers.terrainGenerated = ({ path, heightmap, positions, tankPositions, seed, wind, backgroundIndex, firstTurn, seq, consumables }) => {
+    this._socketHandlers.terrainGenerated = ({ path, heightmap, positions, tankPositions, seed, wind, backgroundIndex, mapId, firstTurn, seq, consumables }) => {
       // Re-draw background with server-chosen theme so both clients match.
       // Fallback random matches the server's roll range (5 themes, idx 0-4).
       this._backgroundIndex = backgroundIndex ?? Math.floor(Math.random() * this._bgThemes.length);
+      // Capture the themed-map slug so createBackground() can prefer the
+      // themed backdrop over the legacy index-based one.
+      this._mapId = mapId || null;
       this.createBackground();
       // Store server heightmap for later terrain sync
       this._serverHeightmap = heightmap;
@@ -1332,6 +1466,22 @@ export class MainScene extends Scene {
         const myTank = this.myPlayerIndex >= 0 ? this.tanks[this.myPlayerIndex] : null;
         if (myTank) myTank.maxPower = 115;
       }
+
+      // Camera bounds = full terrain width plus a half-viewport gutter on
+      // each side. The gutters let the camera scroll past world edges so
+      // an edge tank can sit in viewport CENTRE on its turn — without
+      // them, the bounds clamp and edge tanks end up pinned to the
+      // viewport edge instead of being framed. Gutters are off-world so
+      // they show only the locked BG (terrain ends at world edge).
+      this._worldWidth = (heightmap && heightmap.length) || 1956;
+      if (this._worldWidth > this.renderer.width) {
+        const gutter = this.renderer.width / 2;
+        this.cameras.main.setBounds(-gutter, 0, this._worldWidth + gutter * 2, 800);
+      } else {
+        this.cameras.main.setBounds(0, 0, this._worldWidth, 800);
+      }
+      // Soft deadzone so small tank movements don't twitch the camera.
+      this.cameras.main.setDeadzone(220, 120);
 
       this._activateCurrentTank();
       this.showTurnPointer();
@@ -1965,6 +2115,31 @@ export class MainScene extends Scene {
     // Glow ring for weapons that have it (Heatseeker, Pile Driver, etc.)
     const glowRing = this._spawnGlowSprite(weaponId, trajectory[0].x, trajectory[0].y, vis);
 
+    // Adaptive cinematic camera (Option C): zoom-to-fit-arc only when the
+    // shot is wider than the viewport. Short close-range exchanges stay
+    // calm (Worms-classic pan-only); long cross-map shots get framed so
+    // the whole arc is visible. Caps at 0.55× so even shots that span
+    // the full 3500-wide stress-test world fit on screen.
+    if (this._worldWidth > 1956 && this.cameras?.main) {
+      this.cameras.main.startFollow(projectile, true, 0.12, 0.12);
+
+      const arcStartX = trajectory[0]?.x ?? 0;
+      const arcEndX = (impact && Number.isFinite(impact.x))
+        ? impact.x
+        : (trajectory[trajectory.length - 1]?.x ?? arcStartX);
+      const arcSpan = Math.abs(arcEndX - arcStartX) + 240;  // padding
+      const viewW = this.renderer.width; // 1956
+      if (arcSpan > viewW) {
+        // Clamp min zoom to 0.78 so the camera never reveals the "underside"
+        // of the world (below y=800 is empty — at lower zooms the viewport
+        // shows it as a black band). 0.78 keeps the vertical exposure to
+        // ~110px above and below, mostly hidden by HUD overlays.
+        const fitZoom = Math.max(0.78, viewW / arcSpan);
+        this.cameras.main.zoomTo(fitZoom, 220, 'Cubic.easeOut');
+      }
+      // else: arc fits at 1.0× — stay tight on the projectile, no zoom.
+    }
+
     let frameIndex = 0;
     let trailFrame = 0;
     let completed = false;
@@ -2016,6 +2191,18 @@ export class MainScene extends Scene {
           this._trajectoryTimer.remove(false);
         }
 
+        // Release the projectile-follow + cinematic impact zoom. Camera
+        // holds on impact (centred on impact point) and zooms IN slightly
+        // for emphasis; _activateCurrentTank on the next turn resets the
+        // zoom to 1× and pans to that player.
+        if (this._worldWidth > 1956 && this.cameras?.main) {
+          this.cameras.main.stopFollow();
+          if (impact && Number.isFinite(impact.x) && Number.isFinite(impact.y)) {
+            this.cameras.main.pan(impact.x, impact.y, 250, 'Cubic.easeOut');
+          }
+          this.cameras.main.zoomTo(1.12, 250, 'Cubic.easeOut');
+        }
+
         try { projectile.destroy(); } catch (_) {}
         try { if (glowRing) glowRing.destroy(); } catch (_) {}
 
@@ -2045,11 +2232,27 @@ export class MainScene extends Scene {
       }
 
       const point = trajectory[Math.min(Math.floor(frameIndex), trajectory.length - 1)];
+
+      // Detect wraparound between server-trajectory points: when the
+      // shot exits one side and re-enters the other, adjacent points
+      // have an x-delta > worldWidth/2. Snap the camera so the follow-
+      // lerp doesn't drag across the whole world chasing the teleport.
+      // Trail particles handle themselves — old ones fade on the
+      // departing side, new ones spawn on the arriving side.
+      const prevIdx = Math.max(0, Math.floor(frameIndex) - speed);
+      const prev = trajectory[prevIdx] || point;
+      const wrappedThisFrame = this._worldWidth > 1956 &&
+        Math.abs(point.x - prev.x) > this._worldWidth / 2;
+
       projectile.setPosition(point.x, point.y);
       if (glowRing) glowRing.setPosition(point.x, point.y);
 
+      if (wrappedThisFrame && this.cameras?.main) {
+        this.cameras.main.centerOn(point.x, point.y);
+      }
+
       // Trail particles every frame (speed already skips points, so trail stays dense)
-      spawnTrail(point.x, point.y);
+      if (!wrappedThisFrame) spawnTrail(point.x, point.y);
     };
 
     this._trajectoryTimer = this.time.addEvent({

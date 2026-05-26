@@ -20,12 +20,17 @@ export const setTerrain = (ctx, width, height, path, terrain) => {
         ctx.closePath()
         ctx.fill()
 
-        // Tint base terrain with theme's deepest layer color
+        // Tint base terrain with theme's deepest layer color. Alpha 0.98 so
+        // the sampled palette completely dominates — the underlying PNG
+        // texture has warm-brown gravel/sand pixels which at lower alpha
+        // peek through and create the "brown speckle" artifact JJ spotted.
+        // At 0.98 it's effectively a flat coloured fill with the faintest
+        // structural noise from the pattern.
         const baseLayers = terrain.scene?._currentTheme?.terrainLayers;
         if (baseLayers && baseLayers.length > 0) {
             ctx.globalCompositeOperation = 'source-atop'
             ctx.fillStyle = baseLayers[baseLayers.length - 1].color
-            ctx.globalAlpha = 0.5
+            ctx.globalAlpha = 1.0
             ctx.fill()
             ctx.globalAlpha = 1.0
             ctx.globalCompositeOperation = 'source-over'
@@ -166,16 +171,27 @@ const createLayers = (ctx, path, terrain) => {
         img[index].src = `./assets/images/${index + 1}.png`;
         function startLayers(terrain) {
             pattern[index] = ctx.createPattern(img[index], 'repeat');
-            ctx.fillStyle = pattern[index]
             ctx.lineWidth = layer.width
-            ctx.strokeStyle = pattern[index]
+            // BUGFIX 2026-05-19: stroke with the LAYER COLOUR, not the texture
+            // pattern. Strokes are centred on the terrain polyline, so half
+            // the stroke width sits ABOVE the surface. The subsequent fill
+            // only covers BELOW the polyline — so the above-half of the
+            // stroke kept showing the green jungle gravel PNG (1.png..5.png)
+            // even when the sampled palette was canyon-red. Visible as a
+            // bright green band on top of every terrain hill. Solid stroke
+            // = no PNG showing through = no green leak. Trade-off: lose the
+            // texture noise; gain correct theme colour at every surface.
+            ctx.strokeStyle = layer.color
             ctx.globalCompositeOperation = 'source-atop'
             ctx.stroke()
 
-            // Tint this layer with theme color — draw color overlay using multiply blend
+            // Tint this layer with theme color. Alpha 1.0 — sampled palette
+            // dominates over the underlying texture-pattern PNG so the warm-
+            // brown gravel pixels in the textures can't peek through and
+            // create the "brown speckle" artifact JJ spotted.
             ctx.globalCompositeOperation = 'source-atop'
             ctx.fillStyle = layer.color
-            ctx.globalAlpha = 0.55
+            ctx.globalAlpha = 1.0
             ctx.fill()
             ctx.globalAlpha = 1.0
 

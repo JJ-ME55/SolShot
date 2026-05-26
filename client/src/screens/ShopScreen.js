@@ -254,6 +254,9 @@ function ShopScreen({ navigate, screenData }) {
       round: currentRound,
       totalRounds,
       isAIMatch: screenData?.isAIMatch || false,
+      // Stress-test wide-world propagation. Falls through to PhaserBootstrap
+      // which uses it for canvas dims. Undefined → defaults to 1956.
+      worldWidth: screenData?.worldWidth,
     });
   });
 

@@ -1,0 +1,16 @@
+{
+  "name": "Pyramids & Sphinx",
+  "slug": "desert",
+  "difficulty": "easy",
+  "boundary": "open-pit",
+  "skybox": "open",
+  "ambient": {
+    "music": "desert-loop-01.mp3",
+    "particles": "dust-motes"
+  },
+  "indestructibleBoxes": [],
+  "landmarks": [
+    "Heightmap traced from AI-generated silhouette source",
+    "0 auto-detected indestructible feature regions"
+  ]
+}

@@ -319,6 +319,10 @@ function LobbyScreen({ navigate, screenData }) {
   const [rooms, setRooms] = useState([]);
   const [matchMode, setMatchMode] = useState('practice');
   const [matchLength, setMatchLength] = useState(1); // rounds: 1, 3, 5
+  // VS BOT stress-test mode: N=2 is classic 1v1 Shot Bot; N>2 spawns the
+  // smart bot + (N-2) random-fire dummies so JJ can validate spawn density,
+  // weapon range, and HUD readability at higher player counts.
+  const [vsBotPlayerCount, setVsBotPlayerCount] = useState(2);
   const [wager, setWager] = useState(0.1);
   const [customWager, setCustomWager] = useState(0.1); // for custom_challenge mode
   const [selectedColor, setSelectedColor] = useState(0); // index into TANK_COLORS
@@ -696,9 +700,12 @@ function LobbyScreen({ navigate, screenData }) {
     // VS SHOT BOT mode dispatches to the AI flow (createAIMatch) instead
     // of the multiplayer createRoom path. Match starts immediately, no
     // wager, no opponent matchmaking — same backend as AIPracticeScreen.
+    // playerCount: 2 = classic 1v1 Shot Bot. N>2 = stress-test mode (1
+    // smart bot + N-2 random-fire dummies).
     if (matchMode === 'vs_bot') {
       window.socket.emit('createAIMatch', {
         player: { name, color },
+        playerCount: vsBotPlayerCount,
       });
       return;
     }
@@ -794,7 +801,7 @@ function LobbyScreen({ navigate, screenData }) {
 
     setWaitingRoomMax(numPlayers);
     setWaiting(true);
-  }, [getPlayerName, selectedColor, wager, customWager, isCustomMode, matchLength, matchMode, walletAddress, numPlayers, solBalance, fundWallet]);
+  }, [getPlayerName, selectedColor, wager, customWager, isCustomMode, matchLength, matchMode, walletAddress, numPlayers, solBalance, fundWallet, vsBotPlayerCount]);
 
   const joinRoom = useCallback(async (roomId) => {
     if (!window.socket) return;
@@ -1570,7 +1577,9 @@ function LobbyScreen({ navigate, screenData }) {
                 // the research synthesis: $5 → $25 → $50 → 1 SOL cap ladder).
                 // Set REACT_APP_WAGERED_ENABLED=true in Vercel env to unlock.
                 const wageredEnabled = process.env.REACT_APP_WAGERED_ENABLED === 'true';
-                const locked = !wageredEnabled && key !== 'practice';
+                // VS BOT (and practice) are always unlocked — they're free
+                // single-player flows that don't touch the wager ladder.
+                const locked = !wageredEnabled && key !== 'practice' && key !== 'vs_bot';
                 return (
                   <div
                     key={key}
@@ -1624,6 +1633,57 @@ function LobbyScreen({ navigate, screenData }) {
                 textTransform: 'uppercase',
               }}>
                 SOLO VS AI · NO STAKES · OFFLINE
+              </div>
+            )}
+            {matchMode === 'vs_bot' && (
+              <div style={{ marginTop: 12 }}>
+                <div style={s.sectionLabel}>PLAYERS</div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {[2, 4, 6, 8, 10].map(n => {
+                    const selected = vsBotPlayerCount === n;
+                    return (
+                      <div
+                        key={n}
+                        onClick={() => setVsBotPlayerCount(n)}
+                        role="button"
+                        aria-pressed={selected}
+                        style={{
+                          minWidth: 40,
+                          minHeight: 36,
+                          padding: '0 12px',
+                          clipPath: 'var(--clip-6)',
+                          background: selected ? 'var(--kh)' : 'transparent',
+                          border: selected ? '2px solid var(--bone)' : '1px solid var(--border)',
+                          color: selected ? 'var(--bg-deep)' : 'var(--kh)',
+                          fontFamily: "'Share Tech Mono', monospace",
+                          fontSize: 14,
+                          fontWeight: 700,
+                          letterSpacing: '0.1em',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s',
+                        }}
+                      >
+                        {n}
+                      </div>
+                    );
+                  })}
+                </div>
+                {vsBotPlayerCount > 2 && (
+                  <div style={{
+                    fontFamily: "'Share Tech Mono', monospace",
+                    fontSize: 10,
+                    color: 'var(--orange, #c8781a)',
+                    opacity: 0.9,
+                    letterSpacing: 2,
+                    marginTop: 6,
+                    textTransform: 'uppercase',
+                  }}>
+                    STRESS TEST · 1 SHOT BOT + {vsBotPlayerCount - 2} RANDOM-FIRE BOTS
+                  </div>
+                )}
               </div>
             )}
           </div>

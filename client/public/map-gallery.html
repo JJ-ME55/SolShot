@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>SolShot — Map Review Gallery</title>
+<style>
+    :root {
+        --bg: #0d1014;
+        --panel: #161a1f;
+        --text: #e8eef5;
+        --muted: #7f8a96;
+        --accent: #6cf;
+    }
+    html, body { background: var(--bg); color: var(--text); margin: 0; padding: 0;
+                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    header.page { padding: 16px 24px; border-bottom: 1px solid #222; position: sticky; top: 0;
+                  background: var(--bg); z-index: 10; }
+    header.page h1 { margin: 0 0 4px 0; font-size: 18px; letter-spacing: 0.05em; }
+    header.page .subtitle { color: var(--muted); font-size: 12px; }
+    main { padding: 16px 24px; display: flex; flex-direction: column; gap: 24px; }
+    .map-card { background: var(--panel); border-radius: 8px; overflow: hidden;
+                box-shadow: 0 2px 12px rgba(0,0,0,0.4); }
+    .map-card .row {
+        display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+        background: #1c2128; border-bottom: 1px solid #222;
+    }
+    .map-card .label { font-size: 14px; font-weight: 600; letter-spacing: 0.04em; }
+    .map-card .meta { color: var(--muted); font-size: 12px; }
+    .map-card .diff { padding: 2px 8px; border-radius: 4px; font-size: 11px;
+                      font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
+    .map-card .diff.easy   { background: #2d4a30; color: #9fdba6; }
+    .map-card .diff.medium { background: #4a432d; color: #e8c97f; }
+    .map-card .diff.hard   { background: #4a2d2d; color: #e89a9a; }
+
+    .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: #000; }
+    .col { background: #000; position: relative; }
+    .col .col-label {
+        position: absolute; top: 8px; left: 8px; padding: 4px 8px;
+        background: rgba(0,0,0,0.65); border-radius: 4px;
+        font-size: 11px; font-weight: 600; letter-spacing: 0.05em;
+        text-transform: uppercase; z-index: 1; pointer-events: none;
+    }
+    .col canvas {
+        display: block;
+        width: 100%;
+        height: auto;
+        image-rendering: -webkit-optimize-contrast;
+        image-rendering: crisp-edges;
+    }
+    .anchor-strip {
+        padding: 4px 12px; font-size: 11px; color: var(--muted);
+        background: #11151a; font-family: ui-monospace, Menlo, Consolas, monospace;
+    }
+</style>
+</head>
+<body>
+<header class="page">
+    <h1>SolShot Map Review — side-by-side</h1>
+    <div class="subtitle">LEFT: current <code>solshot_maps/&lt;slug&gt;/surface.png</code> on disk (procedural, 2026-05-13).
+        RIGHT: synthesised in-browser from the <strong>current heightmap.png</strong> + theme palette (what
+        regenerating the surface would produce).</div>
+</header>
+<main id="root"></main>
+
+<script>
+// Native canvas resolution = the heightmap PNG's resolution (3456×800).
+// Spawn anchors are authored in 1956-wide game-viewport space, so we scale
+// them up by SPAWN_SCALE when placing tanks. Tank sprites are scaled
+// likewise so they look the same relative size as in-game.
+const NATIVE_W = 3456;
+const NATIVE_H = 800;
+const SPAWN_NATIVE_W = 1956;
+const SPAWN_SCALE = NATIVE_W / SPAWN_NATIVE_W; // ≈ 1.767
+const SURFACE_DEPTH = 200; // gradient depth in pixels — matches tools/from-trace.js
+// Per-theme render style. `null` = smooth gradient (original from-trace
+// behaviour). A number N = N discrete strata bands. Picked per-theme so
+// some maps read as carved natural rock (smooth) and others as geological
+// strata (banded).
+const LAYER_STYLE = {
+    urban:    null, // smooth — neon city
+    arctic:   null, // smooth — ice/snow
+    castle:   null, // smooth — weathered stone
+    canyon:   null, // smooth — sandstone, blends with the canyon backdrop
+    volcanic: null, // smooth — magma plume, no banding
+    desert:   3,    // banded — sand strata
+    jungle:   3,    // banded — root layers
+    moon:     3,    // banded — regolith depth
+};
+
+const MAPS = [
+    { slug: 'desert',   name: 'Sand Dunes',      difficulty: 'easy'   },
+    { slug: 'jungle',   name: 'Jungle Valley',   difficulty: 'medium' },
+    { slug: 'moon',     name: 'Lunar Surface',   difficulty: 'medium' },
+    { slug: 'urban',    name: 'Neon Cityscape',  difficulty: 'hard'   },
+    { slug: 'arctic',   name: 'Iceberg Tundra',  difficulty: 'easy'   },
+    { slug: 'volcanic', name: 'Lava Lake',       difficulty: 'hard'   },
+    { slug: 'castle',   name: 'Stone Ruins',     difficulty: 'hard'   },
+    { slug: 'canyon',   name: 'Red Mesa',        difficulty: 'hard'   },
+];
+
+// Mirrored from tools/from-trace.js — keep in sync.
+const PALETTES = {
+    urban: [
+        { atFrac: 0.00, rgba: [170,  80, 200, 255] },
+        { atFrac: 0.10, rgba: [120,  50, 170, 255] },
+        { atFrac: 0.30, rgba: [ 75,  28, 120, 255] },
+        { atFrac: 0.60, rgba: [ 45,  15,  78, 255] },
+        { atFrac: 1.00, rgba: [ 22,   8,  40, 255] },
+    ],
+    desert:   [{ atFrac: 0, rgba: [220, 180, 110, 255] }, { atFrac: 1, rgba: [90, 60, 30, 255] }],
+    jungle:   [{ atFrac: 0, rgba: [110, 130,  55, 255] }, { atFrac: 1, rgba: [30, 45, 20, 255] }],
+    moon:     [{ atFrac: 0, rgba: [150, 150, 160, 255] }, { atFrac: 1, rgba: [40, 40, 50, 255] }],
+    arctic:   [{ atFrac: 0, rgba: [220, 230, 240, 255] }, { atFrac: 1, rgba: [80, 95, 115, 255] }],
+    volcanic: [{ atFrac: 0, rgba: [220, 100,  40, 255] }, { atFrac: 1, rgba: [60, 15, 8, 255] }],
+    castle:   [{ atFrac: 0, rgba: [180, 170, 150, 255] }, { atFrac: 1, rgba: [60, 50, 40, 255] }],
+    canyon:   [{ atFrac: 0, rgba: [200, 110,  60, 255] }, { atFrac: 1, rgba: [80, 25, 12, 255] }],
+};
+
+const TANK_TURRET_COLORS = ['#5fb4ff', '#ff6b6b', '#9fdba6', '#e8c97f'];
+
+function loadImage(src) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('Failed to load ' + src));
+        img.src = src;
+    });
+}
+async function loadJSON(src) {
+    const r = await fetch(src);
+    if (!r.ok) throw new Error('Failed to load ' + src);
+    return r.json();
+}
+
+/** Linear interpolation between palette stops at depth fraction t∈[0,1]. */
+function samplePalette(palette, t) {
+    const tc = Math.max(0, Math.min(1, t));
+    for (let i = 0; i < palette.length - 1; i++) {
+        const a = palette[i], b = palette[i + 1];
+        if (tc >= a.atFrac && tc <= b.atFrac) {
+            const span = b.atFrac - a.atFrac || 1;
+            const f = (tc - a.atFrac) / span;
+            return [
+                a.rgba[0] + (b.rgba[0] - a.rgba[0]) * f,
+                a.rgba[1] + (b.rgba[1] - a.rgba[1]) * f,
+                a.rgba[2] + (b.rgba[2] - a.rgba[2]) * f,
+                a.rgba[3] + (b.rgba[3] - a.rgba[3]) * f,
+            ];
+        }
+    }
+    return palette[palette.length - 1].rgba;
+}
+
+/** Read heightmap.png pixel data, return array[NATIVE_W] of surface y values
+ *  in NATIVE coords (1:1 with the heightmap PNG — no downsampling). */
+function heightmapToHeights(heightmapImg) {
+    const buf = document.createElement('canvas');
+    buf.width = heightmapImg.naturalWidth;
+    buf.height = heightmapImg.naturalHeight;
+    const ctx = buf.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(heightmapImg, 0, 0);
+    const imgData = ctx.getImageData(0, 0, buf.width, buf.height).data;
+
+    const heights = new Array(NATIVE_W);
+    const xScale = buf.width / NATIVE_W;     // = 1 when the source PNG is exactly NATIVE_W wide
+    const yScale = NATIVE_H / buf.height;    // = 1 when exactly NATIVE_H tall
+
+    for (let xN = 0; xN < NATIVE_W; xN++) {
+        const xPng = Math.min(buf.width - 1, Math.floor(xN * xScale));
+        let groundY = buf.height - 1;
+        for (let y = 0; y < buf.height; y++) {
+            const idx = (y * buf.width + xPng) * 4;
+            if (imgData[idx] > 128) { groundY = y; break; }
+        }
+        heights[xN] = groundY * yScale;
+    }
+    return heights;
+}
+
+/** Paint synthetic surface at NATIVE_W × NATIVE_H using palette + heights.
+ *
+ *  bands === null → SMOOTH MODE. Gradient is world-Y anchored: same colour
+ *      at the same Y across every column. Span runs from the highest peak
+ *      (min surfaceY) to canvas bottom. Eliminates the per-column "seam"
+ *      where buildings of different heights show a vertical band of
+ *      mismatched gradient stops at their boundary.
+ *
+ *  bands === N → BANDED MODE. Gradient is per-column (depth from each
+ *      column's own surfaceY), quantised into N flat strata. Works for
+ *      organic terrains where the slope is gentle so the per-column
+ *      anchor doesn't create visible seams. */
+function paintSurface(palette, heights, bands) {
+    const buf = document.createElement('canvas');
+    buf.width = NATIVE_W;
+    buf.height = NATIVE_H;
+    const ctx = buf.getContext('2d');
+    const img = ctx.createImageData(NATIVE_W, NATIVE_H);
+
+    const bottomColor = samplePalette(palette, 1);
+
+    if (bands === null) {
+        // SMOOTH: gradient anchored to world Y. Span = (peak top → floor).
+        let minSurfaceY = Infinity;
+        for (let x = 0; x < NATIVE_W; x++) {
+            if (heights[x] < minSurfaceY) minSurfaceY = heights[x];
+        }
+        const span = Math.max(1, NATIVE_H - minSurfaceY);
+
+        for (let x = 0; x < NATIVE_W; x++) {
+            const surfaceY = heights[x];
+            for (let y = 0; y < NATIVE_H; y++) {
+                const idx = (y * NATIVE_W + x) * 4;
+                if (y < surfaceY) {
+                    img.data[idx + 3] = 0;
+                    continue;
+                }
+                const t = Math.max(0, Math.min(1, (y - minSurfaceY) / span));
+                const color = samplePalette(palette, t);
+                img.data[idx]     = color[0];
+                img.data[idx + 1] = color[1];
+                img.data[idx + 2] = color[2];
+                img.data[idx + 3] = color[3];
+            }
+        }
+    } else {
+        // BANDED: per-column strata.
+        const bandColors = new Array(bands);
+        for (let b = 0; b < bands; b++) {
+            const tMid = (b + 0.5) / bands;
+            bandColors[b] = samplePalette(palette, tMid);
+        }
+
+        for (let x = 0; x < NATIVE_W; x++) {
+            const surfaceY = heights[x];
+            for (let y = 0; y < NATIVE_H; y++) {
+                const idx = (y * NATIVE_W + x) * 4;
+                if (y < surfaceY) {
+                    img.data[idx + 3] = 0;
+                    continue;
+                }
+                const depth = y - surfaceY;
+                let color;
+                if (depth >= SURFACE_DEPTH) {
+                    color = bottomColor;
+                } else {
+                    const bandIdx = Math.min(bands - 1, Math.floor((depth / SURFACE_DEPTH) * bands));
+                    color = bandColors[bandIdx];
+                }
+                img.data[idx]     = color[0];
+                img.data[idx + 1] = color[1];
+                img.data[idx + 2] = color[2];
+                img.data[idx + 3] = color[3];
+            }
+        }
+    }
+    ctx.putImageData(img, 0, 0);
+    return buf;
+}
+
+function drawTanksOnCanvas(ctx, heights, spawns, tankBase, tankTurret) {
+    // Tank sprites scaled by SPAWN_SCALE to keep apparent size matched
+    // when the canvas is at NATIVE_W (3456) instead of game-viewport (1956).
+    const TANK_W = 52 * SPAWN_SCALE;
+    const TANK_H = 22 * SPAWN_SCALE;
+    const TURRET_W = 18 * SPAWN_SCALE;
+    const TURRET_H = 14 * SPAWN_SCALE;
+    const TICK_H   = 6  * SPAWN_SCALE;
+    spawns.anchors.forEach((anchorX1956, i) => {
+        const anchorX = anchorX1956 * SPAWN_SCALE; // 1956→native
+        const surfTopY = heights[Math.max(0, Math.min(NATIVE_W - 1, Math.floor(anchorX)))];
+        const drawX = anchorX - TANK_W / 2;
+        const drawY = surfTopY - TANK_H + 4 * SPAWN_SCALE;
+        ctx.save();
+        ctx.drawImage(tankBase, drawX, drawY, TANK_W, TANK_H);
+        ctx.globalCompositeOperation = 'source-atop';
+        ctx.fillStyle = TANK_TURRET_COLORS[i % TANK_TURRET_COLORS.length];
+        ctx.globalAlpha = 0.55;
+        ctx.fillRect(drawX, drawY, TANK_W, TANK_H);
+        ctx.restore();
+        ctx.drawImage(tankTurret, anchorX - TURRET_W / 2, drawY - TURRET_H + 4 * SPAWN_SCALE, TURRET_W, TURRET_H);
+        ctx.fillStyle = 'rgba(255,255,255,0.18)';
+        ctx.fillRect(anchorX - 1, NATIVE_H - TICK_H, 2, TICK_H);
+    });
+}
+
+/** Compute heights from surface.png alpha channel (LEFT column). 1:1 with NATIVE_W. */
+function surfaceToHeights(surfaceImg) {
+    const buf = document.createElement('canvas');
+    buf.width = surfaceImg.naturalWidth;
+    buf.height = surfaceImg.naturalHeight;
+    const ctx = buf.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(surfaceImg, 0, 0);
+    const data = ctx.getImageData(0, 0, buf.width, buf.height).data;
+
+    const heights = new Array(NATIVE_W);
+    const xScale = buf.width / NATIVE_W;
+    const yScale = NATIVE_H / buf.height;
+
+    for (let xN = 0; xN < NATIVE_W; xN++) {
+        const xPng = Math.min(buf.width - 1, Math.floor(xN * xScale));
+        let surfaceY = buf.height - 1;
+        for (let y = 0; y < buf.height; y++) {
+            const idx = (y * buf.width + xPng) * 4;
+            if (data[idx + 3] >= 32) { surfaceY = y; break; }
+        }
+        heights[xN] = surfaceY * yScale;
+    }
+    return heights;
+}
+
+async function renderMap(card, mapDef, tankBase, tankTurret) {
+    const dir = `/maps-review/${mapDef.slug}`;
+    const [backdrop, surfaceCurrent, heightmap, spawns, meta] = await Promise.all([
+        loadImage(`${dir}/backdrop.png`),
+        loadImage(`${dir}/surface.png`),
+        loadImage(`${dir}/heightmap.png`),
+        loadJSON(`${dir}/spawns.json`),
+        loadJSON(`${dir}/meta.json`).catch(() => ({})),
+    ]);
+
+    card.querySelector('.label').textContent = `${meta.name || mapDef.name} · ${mapDef.slug}`;
+    card.querySelector('.meta').textContent =
+        `${spawns.anchors.length} spawn anchors · boundary: ${meta.boundary || '?'} · skybox: ${meta.skybox || '?'}`;
+    card.querySelector('.anchor-strip').textContent = `anchors: [${spawns.anchors.join(', ')}]`;
+
+    // LEFT column — current surface.png on disk
+    const leftHeights = surfaceToHeights(surfaceCurrent);
+    const leftCanvas = card.querySelector('.col-current canvas');
+    leftCanvas.width = NATIVE_W;
+    leftCanvas.height = NATIVE_H;
+    const leftCtx = leftCanvas.getContext('2d');
+    leftCtx.drawImage(backdrop, 0, 0, NATIVE_W, NATIVE_H);
+    leftCtx.drawImage(surfaceCurrent, 0, 0, NATIVE_W, NATIVE_H);
+    drawTanksOnCanvas(leftCtx, leftHeights, spawns, tankBase, tankTurret);
+
+    // RIGHT column — surface synthesised from CURRENT heightmap.png + palette
+    const rightHeights = heightmapToHeights(heightmap);
+    const palette = PALETTES[mapDef.slug] || PALETTES.desert;
+    const bands = LAYER_STYLE[mapDef.slug] ?? null;
+    const synthSurface = paintSurface(palette, rightHeights, bands);
+    const rightCanvas = card.querySelector('.col-fresh canvas');
+    rightCanvas.width = NATIVE_W;
+    rightCanvas.height = NATIVE_H;
+    const rightCtx = rightCanvas.getContext('2d');
+    rightCtx.drawImage(backdrop, 0, 0, NATIVE_W, NATIVE_H);
+    rightCtx.drawImage(synthSurface, 0, 0);
+    drawTanksOnCanvas(rightCtx, rightHeights, spawns, tankBase, tankTurret);
+}
+
+async function init() {
+    const root = document.getElementById('root');
+    const [tankBase, tankTurret] = await Promise.all([
+        loadImage('/assets/images/tanks/tank-base.png'),
+        loadImage('/assets/images/tanks/tank-turret.png'),
+    ]);
+
+    for (const m of MAPS) {
+        const card = document.createElement('section');
+        card.className = 'map-card';
+        card.innerHTML = `
+            <div class="row">
+                <span class="diff ${m.difficulty}">${m.difficulty}</span>
+                <span class="label">${m.name} · ${m.slug}</span>
+                <span class="meta">loading…</span>
+            </div>
+            <div class="pair">
+                <div class="col col-current">
+                    <span class="col-label">surface.png on disk (current)</span>
+                    <canvas></canvas>
+                </div>
+                <div class="col col-fresh">
+                    <span class="col-label">re-rendered from heightmap.png</span>
+                    <canvas></canvas>
+                </div>
+            </div>
+            <div class="anchor-strip"></div>
+        `;
+        root.appendChild(card);
+
+        renderMap(card, m, tankBase, tankTurret).catch(err => {
+            card.querySelector('.meta').textContent = `ERROR: ${err.message}`;
+            console.error(m.slug, err);
+        });
+    }
+}
+
+init();
+</script>
+</body>
+</html>

@@ -4,6 +4,10 @@
 // so the H002 hard-503 path has its required env var documented as sync:false.
 import express from "express";
 import http from "http";
+import path from "path";
+import { fileURLToPath } from "url";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 import * as socket from "socket.io";
 import cors from 'cors';
 import helmet from 'helmet';
@@ -16,6 +20,7 @@ import { initShotState } from './services/shot-token.js'
 import { initKeys } from './services/keys.js';
 import { initEscrow } from './services/escrow.js';
 import { initEscrowV2 } from './services/escrow-v2.js';
+import { preloadAllMaps } from './services/maps.js';
 import { requireAdminKey } from './middleware/guards.js';
 import { telegramSocketMiddleware } from './middleware/telegram.js';
 import { initBot, setupBotWebhook, stopBot } from './services/bot.js';
@@ -66,6 +71,9 @@ if (keysLoaded) {
     const escrowV2Ready = initEscrowV2();
     console.log(`[Server] Escrow v2: ${escrowV2Ready ? 'ENABLED' : 'DISABLED'}`);
 }
+
+// Preload themed map heightmaps at boot — fail fast if any are missing.
+preloadAllMaps();
 
 const PORT = process.env.PORT || 5001
 const app = express();
@@ -229,6 +237,22 @@ mainsocket(io)
 // service constructor; tagged with __solshot prefix to avoid namespace
 // collisions.
 global.__solshotIo = io;
+
+// Static-serve themed map backdrops from solshot_maps/. Each themed map
+// has its own backdrop.png at solshot_maps/<slug>/backdrop.png; client
+// fetches via /maps/<slug>/backdrop.png and renders it as the far layer.
+// We only expose backdrop.png + surface.png (the visual layers); the
+// heightmap.png and JSON files stay server-side (gameplay geometry the
+// client doesn't need to see directly).
+app.use('/maps', (req, res, next) => {
+    // Path traversal guard: only allow /<slug>/backdrop.png or surface.png
+    const match = req.path.match(/^\/([a-z]+)\/(backdrop|surface)\.png$/);
+    if (!match) return res.status(404).send('Not found');
+    next();
+}, express.static(path.resolve(__dirname, '..', 'solshot_maps'), {
+    maxAge: '1d',
+    fallthrough: false,
+}));
 
 app.get('/', (req, res) => {
     res.send('SolShot server running')

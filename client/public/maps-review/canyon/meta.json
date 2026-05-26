@@ -1,0 +1,24 @@
+{
+  "name": "Monument Valley",
+  "slug": "canyon",
+  "difficulty": "hard",
+  "boundary": "open-pit",
+  "skybox": "open",
+  "ambient": {
+    "music": "canyon-loop-01.mp3",
+    "particles": "dust-motes"
+  },
+  "indestructibleBoxes": [
+    { "x": 460, "y": 358, "w": 141, "h": 442 },
+    { "x": 2855, "y": 358, "w": 141, "h": 442 },
+    { "x": 620, "y": 458, "w": 41, "h": 342 },
+    { "x": 2795, "y": 458, "w": 41, "h": 342 },
+    { "x": 1680, "y": 238, "w": 96, "h": 562 }
+  ],
+  "landmarks": [
+    "Tall canyon walls at left and right edges (destructible, smooth slopes)",
+    "Left & Right Mittens (indestructible) at x~460-600 and x~2855-2995",
+    "Mitten thumbs (indestructible, shorter) at x~620-660 and x~2795-2835",
+    "Central tall butte (indestructible) at x~1680-1775, spanning the mirror axis"
+  ]
+}

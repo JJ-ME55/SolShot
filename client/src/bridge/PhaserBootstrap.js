@@ -50,6 +50,14 @@ function startBattle(container, sceneData, bridge) {
   // — server-authoritative heightmap is sized to these dims, so they
   // MUST stay in lockstep. Was 1422 × 800 (16:9) prior to 2026-05-12
   // and 1200 × 800 (3:2) prior to 2026-05-06.
+  //
+  // Canvas is LOCKED at 1956×800 for all match types. Stress-test 10p
+  // (and any future N>5 mode) renders a wider WORLD via camera-panning,
+  // not a wider canvas — viewport stays the same zoom as 2-4p so the
+  // BG art, phone visibility, and weapon balance hold across all sizes.
+  // The MainScene reads sceneData.worldWidth and sets camera bounds to
+  // match; backdrop is locked to viewport (scrollFactor 0) so it acts
+  // as a stage backdrop while the terrain scrolls underneath.
   const customCanvas = document.createElement('canvas');
   customCanvas.width = 1956;
   customCanvas.height = 800;

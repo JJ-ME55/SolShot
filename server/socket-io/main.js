@@ -5,6 +5,7 @@ import logger from '../services/logger.js';
 import Match from '../models/Match.js';
 import User from '../models/User.js';
 import { processShot, generateTerrain, generateTankPositions, generateWind, WEAPON_DATA, decayWalls, WORLD_BOUNDS } from '../services/physics.js';
+import { pickRandomMap, generateTankPositionsFromMap } from '../services/maps.js';
 import { createMatchState, validateAction, transitionState, getNextTurn, isRoundOver, isMatchOver, getRoundPlacement, PLACEMENT_POINTS, resetForNextRound, MATCH_STATES } from '../services/match.js';
 import { initGold, getBalance, earnGold, spendGold, awardKillBonus, awardRoundWinBonus, awardPlacementGold } from '../services/gold.js';
 import { WEAPON_CATALOG, PRESTIGE_WEAPONS, getWeapon, getWeaponCost, getAllLaunchWeapons } from '../models/Weapon.js';
@@ -883,8 +884,11 @@ const mainsocket = (io) => {
         if (!room || !room.isAIMatch) return;
         const ms = matchStates[roomId];
         if (!ms || ms.status !== MATCH_STATES.BATTLE) return;
-        const AI_SOCKET_ID = `ai-bot-${roomId}`;
-        if (ms.currentTurn !== AI_SOCKET_ID) return;
+        // Stress-test mode generalises this: any socketId starting with `ai-bot-`
+        // is a bot. Slot 0 (or the one with `-smart` suffix) uses calibration;
+        // others fire random angle/power. For 2-player AI matches this still
+        // resolves to the single Shot Bot at `ai-bot-${roomId}`.
+        if (typeof ms.currentTurn !== 'string' || !ms.currentTurn.startsWith('ai-bot-')) return;
 
         // Debounce: clear any existing scheduled AI turn
         if (aiTurnTimers[roomId]) {
@@ -905,17 +909,38 @@ const mainsocket = (io) => {
         const ms = matchStates[roomId];
         if (!ms || ms.status !== MATCH_STATES.BATTLE) return;
 
-        const AI_SOCKET_ID = `ai-bot-${roomId}`;
-        if (ms.currentTurn !== AI_SOCKET_ID) return;
+        // Generalised for N-bot stress-test mode: the firing bot is whichever
+        // bot socketId currently holds the turn. For the classic 1v1 Shot Bot
+        // match this is still `ai-bot-${roomId}`, unchanged.
+        const AI_SOCKET_ID = ms.currentTurn;
+        if (typeof AI_SOCKET_ID !== 'string' || !AI_SOCKET_ID.startsWith('ai-bot-')) return;
 
         const aiSlot = room.players.find(p => p.socketId === AI_SOCKET_ID);
-        const humanSlot = room.players.find(p => p.socketId !== AI_SOCKET_ID && ms.alive[p.socketId]);
-        if (!aiSlot?.pos || !humanSlot?.pos) return;
+        // Target: any alive player other than the firing bot. In 1v1 this is
+        // the human; in N-bot mode it's an arbitrary alive opponent (which
+        // is fine for v1 stress test — bots just need to fire somewhere).
+        const targetSlot = room.players.find(p => p.socketId !== AI_SOCKET_ID && ms.alive[p.socketId]);
+        if (!aiSlot?.pos || !targetSlot?.pos) return;
 
-        // Pick weapon and aim
+        // Stress-test mode: more than one bot means we're not in classic
+        // Shot Bot. Use random angle/power and a random weapon from the
+        // bot's inventory so the turn cycle visibly progresses without
+        // forcing 9 calibration states to coexist in one room.
+        const botCount = room.players.filter(p => p.socketId.startsWith('ai-bot-')).length;
+        const stressTest = botCount > 1;
+
         const inventory = weaponInventories[roomId]?.[AI_SOCKET_ID] || [0];
-        const weaponId = pickWeapon(inventory, aiSlot.pos, humanSlot.pos, room.heightmap);
-        const { angle, power } = calculateAim(roomId, aiSlot.pos, humanSlot.pos, room.wind || 0, weaponId, room.heightmap);
+        let weaponId, angle, power;
+        if (stressTest) {
+            weaponId = inventory[Math.floor(Math.random() * inventory.length)] ?? 0;
+            angle = 15 + Math.random() * 65;          // 15° – 80°
+            power = 40 + Math.random() * 60;          // 40 – 100
+        } else {
+            weaponId = pickWeapon(inventory, aiSlot.pos, targetSlot.pos, room.heightmap);
+            const aim = calculateAim(roomId, aiSlot.pos, targetSlot.pos, room.wind || 0, weaponId, room.heightmap);
+            angle = aim.angle;
+            power = aim.power;
+        }
 
         // Weapons are unlimited per match for both human and AI players —
         // once owned, can be reused. Don't splice from inventory.
@@ -934,6 +959,10 @@ const mainsocket = (io) => {
             shooterId: AI_SOCKET_ID,
             terrain, tanks,
             wind: room.wind || 0,
+            // Stress-test 6+ player matches: shots that leave one edge
+            // re-enter on the other. Production wagered matches keep
+            // hard edges (wrap defaults to false for room.worldWidth ≤ 1956).
+            wrap: (room.worldWidth || 1956) > 1956,
         });
 
         console.log(`[AI] Shot Bot fires weapon ${weaponId} at angle=${angle.toFixed(1)} power=${power}`);
@@ -2498,6 +2527,26 @@ const mainsocket = (io) => {
             if (!data || typeof data !== 'object' || !data.player) return;
             const { player } = data;
 
+            // N-player stress-test mode: data.playerCount in [2..10] spawns
+            // (playerCount - 1) bots instead of the classic single Shot Bot.
+            // Bot 0 is the smart Shot Bot (`ai-bot-${roomId}`); bots 1..N-2
+            // fire random angles so all 10 slots take a turn. Backward-compat:
+            // omit playerCount or set to 2 to get the original 1v1 flow.
+            const playerCount = Math.max(2, Math.min(10, Number(data.playerCount) || 2));
+
+            // World width — production matches stay at the locked 1956 canvas
+            // (phone visibility, weapon balance). Stress-test matches with >5
+            // players widen the world so 10 tanks aren't bunched. 450 px/slot
+            // gives roughly the same per-player breathing room as a 2P
+            // match (~978 px each, the locked baseline) once you halve for
+            // the share-the-screen factor. Cap at 5000 to keep camera
+            // panning reasonable.
+            const BASE_WIDTH = 1956;
+            const PX_PER_SLOT = 450;
+            const stressTestWide = playerCount > 5
+                ? Math.min(5000, Math.max(BASE_WIDTH, playerCount * PX_PER_SLOT))
+                : BASE_WIDTH;
+
             // Clean up any existing room
             if (client.roomId !== null) {
                 client.leave(client.roomId);
@@ -2510,7 +2559,11 @@ const mainsocket = (io) => {
             client.roomId = roomId;
             client.isHost = true;
 
-            const AI_SOCKET_ID = `ai-bot-${roomId}`;
+            const AI_SOCKET_ID = `ai-bot-${roomId}`;          // smart bot — keeps old id for 1v1 compat
+            const BOT_COLORS = [
+                0xFFFFFF, 0xFF9900, 0xFFFF00, 0x00FF00, 0x00FFFF,
+                0x0066FF, 0x9900FF, 0xFF00FF, 0xFF66B2,
+            ];
 
             const humanSlot = {
                 name: creatorHandle,
@@ -2522,34 +2575,49 @@ const mainsocket = (io) => {
                 isHost: true,
             };
 
-            const aiSlot = {
+            // Slot 0 = primary smart bot. Slots 1..(N-2) = stress-test dummy bots.
+            const botSlots = [];
+            botSlots.push({
                 name: 'Shot Bot',
-                color: 0xFFFFFF,
+                color: BOT_COLORS[0],
                 socketId: AI_SOCKET_ID,
                 isReady: true,
                 playAgain: false,
                 pos: null,
                 isHost: false,
                 isAI: true,
-            };
+            });
+            for (let i = 1; i < playerCount - 1; i++) {
+                botSlots.push({
+                    name: `Bot ${i + 1}`,
+                    color: BOT_COLORS[i % BOT_COLORS.length],
+                    socketId: `${AI_SOCKET_ID}-${i}`,
+                    isReady: true,
+                    playAgain: false,
+                    pos: null,
+                    isHost: false,
+                    isAI: true,
+                });
+            }
 
             const roomData = {
                 roomId,
-                players: [humanSlot, aiSlot],
-                maxPlayers: 2,
+                players: [humanSlot, ...botSlots],
+                maxPlayers: playerCount,
                 active: true,
                 wager: 0,
                 matchMode: 'practice',
                 totalRounds: 1,
                 isAIMatch: true,
+                worldWidth: stressTestWide,
             };
 
             rooms.set(roomId, roomData);
-            matchStates[roomId] = createMatchState(roomId, '1', 2);
+            matchStates[roomId] = createMatchState(roomId, '1', playerCount);
 
             initAI(roomId);
 
-            const playerIds = [client.id, AI_SOCKET_ID];
+            const playerIds = roomData.players.map(p => p.socketId);
             goldStates[roomId] = initGold(playerIds);
 
             // Extra Rations consumable: +200G starting gold
@@ -2561,11 +2629,12 @@ const mainsocket = (io) => {
                 }
             }
 
-            const aiInventory = autoBuyWeapons(1000);
-            weaponInventories[roomId] = {
-                [client.id]: [0],
-                [AI_SOCKET_ID]: aiInventory,
-            };
+            // Each bot gets its own auto-bought inventory so weapon variety
+            // shows up during stress test.
+            weaponInventories[roomId] = { [client.id]: [0] };
+            for (const slot of botSlots) {
+                weaponInventories[roomId][slot.socketId] = autoBuyWeapons(1000);
+            }
 
             const ms = matchStates[roomId];
             transitionState(ms, MATCH_STATES.WEAPON_SHOP);
@@ -2584,17 +2653,21 @@ const mainsocket = (io) => {
                 // Player data for ShopScreen → BattleScreen flow
                 players: roomData.players,
                 host: humanSlot,
-                player: aiSlot,
+                player: botSlots[0],        // legacy field — first bot is shown as the "opponent"
                 wager: 0,
+                worldWidth: stressTestWide,
             });
 
-            shopReady[roomId] = { [client.id]: false, [AI_SOCKET_ID]: true };
+            // All bots are auto-ready in the shop; only the human needs to confirm.
+            shopReady[roomId] = { [client.id]: false };
+            for (const slot of botSlots) shopReady[roomId][slot.socketId] = true;
             if (shopTimers[roomId]) clearTimeout(shopTimers[roomId]);
             shopTimers[roomId] = setTimeout(() => {
                 endShopPhase(io, roomId);
             }, shopDuration * 1000);
 
-            console.log(`[AI] Practice match created: ${roomId} — ${creatorHandle} vs Shot Bot`);
+            const label = playerCount === 2 ? 'vs Shot Bot' : `STRESS TEST ${playerCount}p`;
+            console.log(`[AI] Practice match created: ${roomId} — ${creatorHandle} ${label}`);
         }));
 
 
@@ -3837,7 +3910,10 @@ const mainsocket = (io) => {
                 shooterId: this.id,
                 terrain,
                 tanks,
-                wind: room.wind || 0
+                wind: room.wind || 0,
+                // Stress-test wrap: shot off one edge re-enters the other.
+                // Always false for production matches (room.worldWidth = 1956).
+                wrap: (room.worldWidth || 1956) > 1956,
             })
             console.log('[Fire] impact:', result.impact, 'damage:', result.damage)
 
@@ -4433,38 +4509,92 @@ const mainsocket = (io) => {
                 return
             }
 
-            // IM-05: 128-bit CSPRNG entropy for terrain seed (DB: H038)
+            // IM-05: keep 128-bit CSPRNG seed for replay metadata (no longer
+            // drives terrain generation — themed maps replaced procedural).
             const fullSeed = crypto.randomBytes(16).toString('hex');
-            // Derive 32-bit unsigned int for mulberry32 PRNG (first 4 bytes = 32 bits)
-            // mulberry32's seededRandom() uses s |= 0 which truncates to 32-bit signed;
-            // >>> 0 ensures unsigned interpretation
-            const seed32 = parseInt(fullSeed.slice(0, 8), 16) >>> 0;
 
-            // Use generateTerrain defaults — world width = TERRAIN_WIDTH
-            // (currently 1956 per Docs/internal/ADR_VARIABLE_VIEWPORT.md),
-            // height = TERRAIN_HEIGHT (800). The hardcoded (1200, 800) here
-            // pre-dated the 16:9 widen on 2026-05-06 and the variable-
-            // viewport widen on 2026-05-12; using defaults keeps the 1v1
-            // path consistent with the N-player path in groupchat/lifecycle.
-            const { path, heightmap } = generateTerrain(undefined, undefined, seed32)
+            // Pick a random themed map from solshot_maps/ (8 hand-crafted maps).
+            // Returns a fresh copy of heightmap + spawn anchors — gameplay
+            // mutates the heightmap in place via shot impacts; the cache is
+            // unaffected.
+            const mapData = pickRandomMap();
+            let heightmap = mapData.heightmap;
+
+            // Stress-test wide-world support: when room.worldWidth > BASE,
+            // linearly stretch the heightmap from 1956 → room.worldWidth
+            // so physics + rendering operate on the wider canvas. Sample
+            // every output column from the nearest input column. Cheap and
+            // deterministic; no smoothing needed (heightmap is binary-edged).
+            const targetWidth = room.worldWidth && room.worldWidth > heightmap.length
+                ? room.worldWidth
+                : heightmap.length;
+            if (targetWidth !== heightmap.length) {
+                const src = heightmap;
+                const stretched = new Array(targetWidth);
+                const ratio = src.length / targetWidth;
+                for (let x = 0; x < targetWidth; x++) {
+                    const srcX = Math.min(src.length - 1, Math.floor(x * ratio));
+                    stretched[x] = src[srcX];
+                }
+                heightmap = stretched;
+            }
+            // Synthesize a sparse path from the heightmap by sampling every
+            // PATH_SAMPLE_STEP columns. The client's setPath() needs a
+            // non-null path for back-compat with the original procedural
+            // terrain renderer (which used path points for cubic-bezier-ish
+            // smoothing). For hand-crafted heightmaps the heightmap IS the
+            // source of truth — the path is just a downsampled echo.
+            const PATH_SAMPLE_STEP = 12;
+            const path = [];
+            for (let x = 0; x < heightmap.length; x += PATH_SAMPLE_STEP) {
+                path.push({ x, y: heightmap[x] });
+            }
+            // Always include the rightmost column so the path covers the full width
+            const lastX = heightmap.length - 1;
+            if (path[path.length - 1].x !== lastX) {
+                path.push({ x: lastX, y: heightmap[lastX] });
+            }
             const wind = generateWind()
-            // Pick a random background theme (0-4) — five distinct biomes
-            // (jungle / arctic / desert / moon / volcanic). The 6th client-
-            // side entry (bg-default) was removed because its palette dup'd
-            // jungle and was biasing matches toward green.
-            const backgroundIndex = Math.floor(Math.random() * 5)
+
+            // backgroundIndex retained for trophy card biome name compat;
+            // mirrored from the map's slug to one of the 5 legacy biome IDs
+            // so post-match share cards continue to render the right label.
+            // 0=jungle 1=arctic 2=desert 3=moon 4=volcanic
+            const SLUG_TO_BG_INDEX = { jungle: 0, arctic: 1, desert: 2, moon: 3, volcanic: 4, urban: 0, castle: 2, canyon: 4 };
+            const backgroundIndex = SLUG_TO_BG_INDEX[mapData.slug] ?? 0;
 
             // Store server-side
             room.heightmap = heightmap
             room.terrainSeed = fullSeed
+            room.mapId = mapData.slug
             room.wind = wind
-            // Persist for post-match trophy card biome name
             room.backgroundIndex = backgroundIndex
-            // N-player: generate positions for all players and assign to room.players[i].pos.
-            // Defaults spawn within SAFE_BAND_WIDTH (1422) offset into the
-            // wider world by SAFE_BAND_OFFSET (267) so every common landscape
-            // viewport renders every tank on screen.
-            const positions = generateTankPositions(heightmap, room.players.length)
+            // Generate tank spawn positions.
+            //
+            // Production wagered/quick matches use the map's 5 anchors mirrored
+            // to 10 then subset-picked by maps.js#generateTankPositionsFromMap,
+            // staying inside the 1422-wide safe band for phone visibility.
+            //
+            // Stress-test AI matches (>2 players in vs_bot mode) ignore the
+            // safe-band rule and uniform-spread tanks across the full 1956
+            // canvas — the safe-band rescale clusters them in the central
+            // ~1000 px, which defeats the "validate density at N=10" point.
+            // Phone visibility doesn't matter for a local stress test.
+            let positions
+            const isStressTest = room.isAIMatch && room.players.length > 2
+            if (isStressTest) {
+                const N = room.players.length
+                const EDGE = 80
+                const span = heightmap.length - 2 * EDGE
+                positions = []
+                for (let i = 0; i < N; i++) {
+                    const x = Math.round(EDGE + (i * span) / (N - 1))
+                    const clampedX = Math.max(0, Math.min(heightmap.length - 1, x))
+                    positions.push({ x: clampedX, y: heightmap[clampedX] })
+                }
+            } else {
+                positions = generateTankPositionsFromMap(mapData, room.players.length)
+            }
             room.players.forEach((p, i) => {
                 p.pos = positions[i]
             })
@@ -4538,6 +4668,7 @@ const mainsocket = (io) => {
             const terrainPayload = {
                 path,
                 heightmap,
+                mapId: mapData.slug, // themed-map identifier; client picks matching backdrop / surface
                 // N-player positions array (canonical)
                 positions: room.players.map(p => ({ socketId: p.socketId, pos: p.pos })),
                 // Backward-compat shim for 2-player client
@@ -4552,6 +4683,10 @@ const mainsocket = (io) => {
                 firstTurn: ms ? ms.currentTurn : null,
                 seq: ms ? ms.turnSequence : 0,  // Fix 4: initial nonce for first fire
                 consumables: ms?.consumables || {},
+                // Stress-test wide-world: tells client to size Phaser canvas to
+                // this width instead of the locked 1956. Production matches
+                // omit (undefined → client defaults to 1956).
+                worldWidth: heightmap.length,
             }
             room._terrainCache = terrainPayload
 

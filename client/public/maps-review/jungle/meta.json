@@ -1,0 +1,16 @@
+{
+  "name": "Mayan Ruins",
+  "slug": "jungle",
+  "difficulty": "medium",
+  "boundary": "open-pit",
+  "skybox": "open",
+  "ambient": {
+    "music": "jungle-loop-01.mp3",
+    "particles": "fireflies"
+  },
+  "indestructibleBoxes": [],
+  "landmarks": [
+    "Heightmap traced from AI-generated silhouette source",
+    "0 auto-detected indestructible feature regions"
+  ]
+}

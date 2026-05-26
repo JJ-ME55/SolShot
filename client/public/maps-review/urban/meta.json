@@ -1,0 +1,19 @@
+{
+  "name": "Neon Cityscape",
+  "slug": "urban",
+  "difficulty": "hard",
+  "boundary": "open-pit",
+  "skybox": "open",
+  "ambient": {
+    "music": "urban-loop-01.mp3",
+    "particles": null
+  },
+  "indestructibleBoxes": [
+    { "x": 1050, "y": 130, "w": 261, "h": 670 },
+    { "x": 2145, "y": 130, "w": 261, "h": 670 }
+  ],
+  "landmarks": [
+    "Iconic stepped skyscraper (indestructible, 4-tier setback silhouette) at x~1050-1311 and x~2145-2406",
+    "Four supporting buildings (destructible) of varied widths and heights"
+  ]
+}

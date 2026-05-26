@@ -1,0 +1,29 @@
+{
+  "name": "Frozen Wreck",
+  "slug": "arctic",
+  "difficulty": "easy",
+  "boundary": "open-pit",
+  "skybox": "open",
+  "ambient": {
+    "music": "arctic-loop-01.mp3",
+    "particles": "snow-flurries"
+  },
+  "indestructibleBoxes": [
+    {
+      "x": 694,
+      "y": 433,
+      "w": 20,
+      "h": 367
+    },
+    {
+      "x": 2742,
+      "y": 433,
+      "w": 20,
+      "h": 367
+    }
+  ],
+  "landmarks": [
+    "Heightmap traced from AI-generated silhouette source",
+    "2 auto-detected indestructible feature regions"
+  ]
+}

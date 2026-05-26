@@ -10,7 +10,13 @@ export class Terrain extends Textures.CanvasTexture {
     * @param {Phaser.Scene} scene
     */
     constructor (scene) {
-        var width = scene.game.renderer.width
+        // Terrain canvas spans the FULL world width, not the viewport.
+        // For 2-4p matches this is renderer.width (1956); for stress-test
+        // 6-10p the server sends a wider heightmap and the scene stashes
+        // its length on `scene._worldWidth` BEFORE constructing the terrain.
+        // Wider terrain extends past viewport; camera pans across it
+        // (see scenes/main/index.js camera-director hooks).
+        var width = scene._worldWidth || scene.game.renderer.width
         var height = scene.game.renderer.height
 
         var canvas = document.createElement('canvas');
@@ -33,6 +39,18 @@ export class Terrain extends Textures.CanvasTexture {
         scene.textures.list['terrain'] = this;
 
         scene.add.image(width/2, height/2, 'terrain');
+
+        // Wraparound visual: in stress-test mode (worldWidth > viewport),
+        // also draw the terrain shifted by ±worldWidth so when camera
+        // pans into the gutter past an edge, the OTHER side of the
+        // wrap-connected world is visible. Same texture → blast craters
+        // appear on both copies automatically. Adds nothing for 2-4p
+        // matches where world == viewport.
+        const viewportW = scene.game.renderer.width;
+        if (width > viewportW) {
+            scene.add.image(width/2 - width, height/2, 'terrain');
+            scene.add.image(width/2 + width, height/2, 'terrain');
+        }
 
         this.canvas = canvas
         this.scene = scene

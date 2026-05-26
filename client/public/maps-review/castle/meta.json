@@ -1,0 +1,22 @@
+{
+  "name": "Castle Gate",
+  "slug": "castle",
+  "difficulty": "hard",
+  "boundary": "open-pit",
+  "skybox": "open",
+  "ambient": {
+    "music": "castle-loop-01.mp3",
+    "particles": null
+  },
+  "indestructibleBoxes": [
+    { "x": 250, "y": 458, "w": 201, "h": 342 },
+    { "x": 3005, "y": 458, "w": 201, "h": 342 },
+    { "x": 1450, "y": 418, "w": 556, "h": 382 }
+  ],
+  "landmarks": [
+    "Two corner towers (indestructible) at x~250-450 and x~3005-3205, top at y=460",
+    "Central gate tower (indestructible) at x~1620-1835, top at y=420 (taller than corner towers)",
+    "Crenellated gate wall (destructible) flanking the centre tower",
+    "Rubble field (destructible) at x~1080-1450 and x~2005-2375"
+  ]
+}

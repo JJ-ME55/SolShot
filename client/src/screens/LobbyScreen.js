@@ -1644,7 +1644,30 @@ function LobbyScreen({ navigate, screenData }) {
             </div>
           </div>
 
-          {/* Player Count — hidden for practice-only launch */}
+          {/* Player Count — V1 mainnet: 1v1, 3P, 4P FFA. 5+ deferred to V2.
+              Hidden for vs_bot (always 1P + bot). Server (createRoom handler
+              + match.js createMatchState) is N-aware; v2 escrow supports 2-10
+              on-chain but UI must hard-block 5+ per V1_LAUNCH_SPRINT.md. */}
+          {matchMode !== 'vs_bot' && (
+            <div>
+              <div style={s.sectionLabel}>PLAYERS</div>
+              <div style={s.matchRow}>
+                {[
+                  { count: 2, label: '1V1' },
+                  { count: 3, label: '3P FFA' },
+                  { count: 4, label: '4P FFA' },
+                ].map((opt) => (
+                  <div
+                    key={opt.count}
+                    style={s.matchBtn(numPlayers === opt.count)}
+                    onClick={() => setNumPlayers(opt.count)}
+                  >
+                    {opt.label}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Wager — custom mode uses preset tier buttons + a CUSTOM option that reveals
               a numeric input. Picking FREE creates a no-wager practice challenge (no

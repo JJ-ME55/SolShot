@@ -9,8 +9,43 @@ import { createMatchState, validateAction, transitionState, getNextTurn, isRound
 import { initGold, getBalance, earnGold, spendGold, awardKillBonus, awardRoundWinBonus, awardPlacementGold } from '../services/gold.js';
 import { WEAPON_CATALOG, PRESTIGE_WEAPONS, getWeapon, getWeaponCost, getAllLaunchWeapons } from '../models/Weapon.js';
 import { handleAuthenticate, verifyAuthMessage, verifyWalletSignature } from '../middleware/auth.js';
-import { verifyBalance, isValidWager, settleMatch, refundWager, WAGER_TIERS, MATCH_MODES, validateMatchMode, isEscrowEnabled, createMatchEscrow, buildDepositTransaction, getEscrowState, startWithDepositorsEscrow } from '../services/solana.js';
+import { verifyBalance, isValidWager, settleMatch, refundWager, WAGER_TIERS, MATCH_MODES, validateMatchMode, isEscrowEnabled, createMatchEscrow, buildDepositTransaction, getEscrowState, startWithDepositorsEscrow, createMatchEscrowV2, buildDepositTransactionV2, getEscrowStateV2, isEscrowV2Enabled, shouldUseEscrowV2, V2_DEFAULT_MATCH_DURATION_SECS, V2_DEFAULT_DEPOSIT_WINDOW_SECS } from '../services/solana.js';
 import { cancelMatchEscrow } from '../services/escrow.js';
+
+// S1-T5 escrow dispatch helpers — route 1v1 to v1 (battle-tested) and
+// 3P/4P to v2 (N-player capable). Stored on the room as `escrowVersion`
+// at create time so subsequent state queries hit the correct program.
+// Sprint 2 Bundle 1 will retire v1 entirely; until then this is the bridge.
+async function createMatchEscrowFor(matchId, wagerSOL, playerAddresses) {
+    if (shouldUseEscrowV2(playerAddresses.length)) {
+        return createMatchEscrowV2(
+            matchId,
+            wagerSOL,
+            playerAddresses,
+            V2_DEFAULT_MATCH_DURATION_SECS,
+            V2_DEFAULT_DEPOSIT_WINDOW_SECS,
+        );
+    }
+    return createMatchEscrow(matchId, wagerSOL, playerAddresses);
+}
+
+async function buildDepositTransactionFor(matchId, playerAddress, playerCount) {
+    if (shouldUseEscrowV2(playerCount)) {
+        return buildDepositTransactionV2(matchId, playerAddress);
+    }
+    return buildDepositTransaction(matchId, playerAddress);
+}
+
+async function getEscrowStateFor(matchId, playerCount) {
+    if (shouldUseEscrowV2(playerCount)) {
+        return getEscrowStateV2(matchId);
+    }
+    return getEscrowState(matchId);
+}
+
+function isEscrowAvailableFor(playerCount) {
+    return shouldUseEscrowV2(playerCount) ? isEscrowV2Enabled() : isEscrowEnabled();
+}
 import { recordMatchPlayed, prestigeBurn, getPrestigeInfo, getShotBalance, PRESTIGE_TIERS, loadMilestoneState, saveMilestoneState, verifyBurnTransaction, getPlayerShotState, SHOT_MILESTONES } from '../services/shot-token.js';
 import { trackConnection, trackDisconnection, trackMatchCreated, trackMatchCompleted, trackMatchCancelled, trackWager, trackSettlement, trackForfeit, trackShot, trackDamage, trackGoldEarned, trackShotEmission, trackShotBurn, trackError } from '../services/monitoring.js';
 import { requireAuth, validatePayload, validateFireParams, sanitizeName, withLock, safeHandler } from '../middleware/guards.js';
@@ -244,18 +279,18 @@ function resetForPlayAgain(roomId, room, paRoundType, io) {
 
     // Trigger fresh escrow round for wagered rematches
     const ws = wagerStates[roomId]
-    if (ws && ws.amount > 0 && isEscrowEnabled()) {
+    if (ws && ws.amount > 0 && isEscrowAvailableFor(room.players.length)) {
         const allWallets = room.players.map(p => ws.wallets?.[p.socketId]).filter(Boolean)
         if (allWallets.length === room.players.length) {
             ;(async () => {
                 try {
-                    const escrowResult = await createMatchEscrow(roomId, ws.amount, allWallets)
+                    const escrowResult = await createMatchEscrowFor(roomId, ws.amount, allWallets)
                     if (escrowResult.success) {
                         room.escrowPDA = escrowResult.escrowPDA
-                        console.log(`[Match] PlayAgain escrow created for room ${roomId}: ${escrowResult.escrowPDA}`)
+                        console.log(`[Match] PlayAgain escrow (${shouldUseEscrowV2(allWallets.length) ? 'v2' : 'v1'}) created for room ${roomId}: ${escrowResult.escrowPDA}`)
 
                         const depositTxs = await Promise.all(
-                            room.players.map(p => buildDepositTransaction(roomId, ws.wallets?.[p.socketId]))
+                            room.players.map(p => buildDepositTransactionFor(roomId, ws.wallets?.[p.socketId], allWallets.length))
                         )
                         const depositDeadline = Date.now() + DEPOSIT_TIMEOUT_MS
                         room.players.forEach((p, i) => {
@@ -2073,19 +2108,20 @@ const mainsocket = (io) => {
             broadcastRooms(io)
 
             // Create on-chain escrow for wagered matches
-            if (roomWager > 0 && isEscrowEnabled()) {
+            if (roomWager > 0 && isEscrowAvailableFor(room.players.length)) {
                 // SRV-09: Collect all N player wallets for N-player escrow creation
                 const allWallets = room.players.map(p => ws?.wallets[p.socketId]).filter(Boolean)
                 if (allWallets.length === room.players.length) {
                     try {
-                        const escrowResult = await createMatchEscrow(roomId, roomWager, allWallets)
+                        // S1-T5: dispatch to v1 (1v1) or v2 (3P/4P) based on player count
+                        const escrowResult = await createMatchEscrowFor(roomId, roomWager, allWallets)
                         if (escrowResult.success) {
                             room.escrowPDA = escrowResult.escrowPDA
-                            console.log(`[Match] Escrow created for room ${roomId}: ${escrowResult.escrowPDA}`)
+                            console.log(`[Match] Escrow (${shouldUseEscrowV2(allWallets.length) ? 'v2' : 'v1'}) created for room ${roomId}: ${escrowResult.escrowPDA}`)
 
                             // SRV-10: Build deposit transactions for all N players in parallel
                             const depositTxs = await Promise.all(
-                                room.players.map(p => buildDepositTransaction(roomId, ws?.wallets[p.socketId]))
+                                room.players.map(p => buildDepositTransactionFor(roomId, ws?.wallets[p.socketId], allWallets.length))
                             )
 
                             // DCA-01: Compute deposit deadline before emitting so all players get same value
@@ -2755,17 +2791,18 @@ const mainsocket = (io) => {
                 broadcastRooms(io);
 
                 // Escrow creation for wagered queue matches
-                if (wagerAmount > 0 && isEscrowEnabled()) {
+                if (wagerAmount > 0 && isEscrowAvailableFor(roomData.players.length)) {
                     // SRV-09: Collect all N player wallets (queue is always 2-player, but use N-player pattern for consistency)
                     const allQueueWallets = roomData.players.map(p => wagerStates[roomId]?.wallets[p.socketId]).filter(Boolean)
                     if (allQueueWallets.length === roomData.players.length) {
                         try {
-                            const escrowResult = await createMatchEscrow(roomId, wagerAmount, allQueueWallets);
+                            // S1-T5: dispatch (queue is 2P today, but dispatcher is forward-compat)
+                            const escrowResult = await createMatchEscrowFor(roomId, wagerAmount, allQueueWallets);
                             if (escrowResult.success) {
                                 roomData.escrowPDA = escrowResult.escrowPDA;
                                 // SRV-10: Build deposit transactions for all N players in parallel
                                 const depositTxs = await Promise.all(
-                                    roomData.players.map(p => buildDepositTransaction(roomId, wagerStates[roomId]?.wallets[p.socketId]))
+                                    roomData.players.map(p => buildDepositTransactionFor(roomId, wagerStates[roomId]?.wallets[p.socketId], allQueueWallets.length))
                                 );
                                 // DCA-01: Compute deposit deadline before emitting so all players get same value
                                 const depositDeadline = Date.now() + DEPOSIT_TIMEOUT_MS
@@ -3512,14 +3549,15 @@ const mainsocket = (io) => {
             if (!ws) return
 
             // SF-01: Verify deposit on-chain before accepting (DB: H013, H049, H051)
-            if (isEscrowEnabled()) {
+            if (isEscrowAvailableFor(room.players.length)) {
                 try {
                     // Single retry with 2s delay for devnet confirmation lag
-                    let escrowState = await getEscrowState(rid)
+                    // S1-T5: dispatch to v1 or v2 based on player count
+                    let escrowState = await getEscrowStateFor(rid, room.players.length)
                     if (!escrowState) {
                         // Retry once after delay — TX may not be confirmed yet
                         await new Promise(r => setTimeout(r, 2000))
-                        escrowState = await getEscrowState(rid)
+                        escrowState = await getEscrowStateFor(rid, room.players.length)
                     }
 
                     if (!escrowState) {

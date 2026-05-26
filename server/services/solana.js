@@ -22,8 +22,37 @@ import {
     createMatchEscrow, settleMatchEscrow, cancelMatchEscrow,
     buildDepositTransaction, getEscrowState, getEscrowPDA,
 } from './escrow.js';
-import { initEscrowV2, isEscrowV2Enabled } from './escrow-v2.js';
+import {
+    initEscrowV2, isEscrowV2Enabled,
+    createMatchEscrowV2, settleMatchEscrowV2, cancelMatchEscrowV2,
+    buildDepositTransactionV2, getEscrowStateV2,
+} from './escrow-v2.js';
 import logger from './logger.js';
+
+// S1-T5: Default v2 escrow timing for 3P/4P rooms (within v2's 60s-24h bounds).
+// Match window mirrors the practical longest BO5 with N players;
+// deposit window mirrors v1's DEPOSIT_TIMEOUT_MS (120s) in socket-io/main.js.
+export const V2_DEFAULT_MATCH_DURATION_SECS = 3600;   // 1h — generous BO5 N-player ceiling
+export const V2_DEFAULT_DEPOSIT_WINDOW_SECS = 120;    // 2 min — matches v1 client deposit countdown
+
+// S1-T5: Player-count → escrow-version routing. v1 for 1v1, v2 for 3P/4P.
+// Single source of truth; main.js dispatches by calling this. After Bundle 1
+// lands (Sprint 2), this returns true unconditionally and v1 is retired.
+export function shouldUseEscrowV2(playerCount) {
+    return playerCount > 2;
+}
+
+// Re-export v2 functions so socket-io/main.js can import everything from
+// solana.js (the dispatch layer) rather than reaching into escrow.js
+// or escrow-v2.js directly.
+export {
+    createMatchEscrowV2,
+    buildDepositTransactionV2,
+    getEscrowStateV2,
+    settleMatchEscrowV2,
+    cancelMatchEscrowV2,
+    isEscrowV2Enabled,
+};
 
 const SOLANA_RPC = process.env.SOLANA_RPC || 'https://api.devnet.solana.com';
 const TREASURY_WALLET = process.env.TREASURY_WALLET || null;

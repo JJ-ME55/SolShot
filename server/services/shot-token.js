@@ -1,10 +1,20 @@
 /**
  * SolShot SHOT Token Service
  *
- * Handles SHOT token emissions and prestige burns:
+ * SHOT is the Tier 1 closed in-game currency per the V3 arcade-economy
+ * north star (Docs/internal/V3_ARCADE_ECONOMY_NORTH_STAR.md). It is NOT
+ * a launched on-chain token. The Pump.fun launch path is abandoned, not
+ * deferred. Balances live in MongoDB; prestige burns are server-side
+ * deductions; no SPL token, no LP, no Jupiter listing.
+ *
+ * Per the V3 thesis: per-game tradable tokens cause the pump-and-death-
+ * spiral that kills indie P2E. SHOT plays the closed-currency role
+ * (V-Bucks-like) — rewards skill, never leaves the game, never has an
+ * outside price, never speculates.
+ *
  *   - Track match milestones → earn SHOT (Litepaper v2.1)
- *   - Prestige tiers: burn SHOT to unlock weapons
- *   - Token supply: 10M, 70% reward pool
+ *   - Prestige tiers: burn SHOT off-chain to unlock weapons
+ *   - Persisted on User.stats.shotBalance / totalBurned / prestigeTier
  *
  * Emission schedule — Litepaper v2.1 (8 one-time milestones per account):
  *   first_wagered_match    → 10 SHOT   (First Wagered Match)
@@ -26,32 +36,24 @@
  *   Tier 5: 4000 SHOT → Diamond  (unlock: Pineapple)
  */
 
-import { Connection, PublicKey } from '@solana/web3.js';
-import { loadServerState, saveServerState, persistBurnTx } from '../models/ServerState.js';
+import { loadServerState, saveServerState } from '../models/ServerState.js';
 import User from '../models/User.js';
 import logger from './logger.js';
 
-// Solana connection for burn verification
-const SOLANA_RPC = process.env.SOLANA_RPC || 'https://api.devnet.solana.com';
-const connection = new Connection(SOLANA_RPC, 'confirmed');
-
-// SHOT token mint — set via .env after deploy
-const SHOT_MINT = process.env.SHOT_TOKEN_MINT || null;
-
-// Track verified burn tx signatures to prevent replay
-const verifiedBurnTxs = new Set();
-
-// Token supply config — Litepaper v2.0
+// Legacy supply config — retained for any UI that displays the litepaper
+// numbers but no longer corresponds to an on-chain mint. The devnet mint
+// 4NnYBycLLo8acgbkLz2SyCXd3KU8jgHQLEmrVypi5VLd is orphaned and never
+// promoted to mainnet per the V3 pivot. `mint` is null in all envs.
 export const SHOT_TOKEN_CONFIG = {
     name: 'SHOT',
     symbol: 'SHOT',
-    decimals: 9,                 // SPL token standard
-    totalSupply: 10_000_000,     // 10M total
-    rewardPool: 7_000_000,       // 70% for rewards
-    treasury: 1_500_000,         // 15% treasury (multisig)
-    teamAllocation: 1_000_000,   // 10% team (12mo cliff, 24mo linear)
-    liquidityPool: 500_000,      // 5% Raydium LP (locked)
-    mint: process.env.SHOT_TOKEN_MINT || null, // Set after deploy
+    decimals: 9,                 // legacy — no on-chain representation
+    totalSupply: 10_000_000,     // legacy — was the planned cap
+    rewardPool: 7_000_000,       // legacy
+    treasury: 1_500_000,         // legacy
+    teamAllocation: 1_000_000,   // legacy
+    liquidityPool: 500_000,      // legacy
+    mint: null,                  // intentionally null — SHOT is off-chain in V1
 };
 
 // Litepaper v2.1 — 8 one-time milestones per account
@@ -103,11 +105,10 @@ let savePending = false;
 export async function initShotState() {
     const state = await loadServerState();
     totalShotEmitted = state.totalShotEmitted;
-    // TE-01: Restore verified burn tx signatures from MongoDB
-    if (state.verifiedBurnTxs && state.verifiedBurnTxs.length > 0) {
-        state.verifiedBurnTxs.forEach(tx => verifiedBurnTxs.add(tx));
-    }
-    console.log(`[SHOT] Initialized: totalShotEmitted = ${totalShotEmitted}, verifiedBurnTxs = ${verifiedBurnTxs.size}`);
+    // V3 pivot: verifiedBurnTxs no longer relevant — SHOT is off-chain so
+    // there's no replay surface. Legacy field in ServerState retained for
+    // backward compat but ignored here.
+    console.log(`[SHOT] Initialized (off-chain): totalShotEmitted = ${totalShotEmitted}`);
 }
 
 /**
@@ -469,128 +470,10 @@ export function getShotBalance(walletAddress) {
     return state ? state.balance : 0;
 }
 
-/**
- * Verify an on-chain SHOT burn transaction before unlocking prestige.
- *
- * Checks:
- *   1. Transaction exists and is confirmed
- *   2. Transaction has not been used for a previous prestige burn (replay protection)
- *   3. Transaction contains a Burn instruction for the SHOT token mint
- *   4. Burn was signed by the claimed wallet address
- *   5. Burn amount matches the expected prestige tier cost
- *
- * @param {string} txSignature — Solana transaction signature
- * @param {string} walletAddress — Player's wallet address (must match signer)
- * @param {number} expectedAmount — Expected burn amount in whole SHOT tokens
- * @returns {Promise<{valid: boolean, reason?: string}>}
- */
-export async function verifyBurnTransaction(txSignature, walletAddress, expectedAmount) {
-    // If no SHOT mint is configured, skip on-chain verification (dev mode)
-    if (!SHOT_MINT) {
-        console.log('[SHOT] No SHOT_TOKEN_MINT configured — skipping on-chain burn verification (dev mode)');
-        return { valid: true };
-    }
-
-    // A4: Replay protection with TOCTOU guard — claim slot before async verification
-    if (verifiedBurnTxs.has(txSignature)) {
-        return { valid: false, reason: 'Transaction already used for prestige' };
-    }
-    // Immediately mark as claimed to prevent concurrent verification of same TX
-    verifiedBurnTxs.add(txSignature);
-
-    try {
-        // Fetch the confirmed transaction
-        const tx = await connection.getParsedTransaction(txSignature, {
-            commitment: 'confirmed',
-            maxSupportedTransactionVersion: 0,
-        });
-
-        if (!tx) {
-            verifiedBurnTxs.delete(txSignature);
-            return { valid: false, reason: 'Transaction not found or not confirmed' };
-        }
-
-        if (tx.meta?.err) {
-            verifiedBurnTxs.delete(txSignature);
-            return { valid: false, reason: 'Transaction failed on-chain' };
-        }
-
-        // Look for a Burn instruction targeting the SHOT mint
-        const instructions = tx.transaction.message.instructions;
-        let burnFound = false;
-
-        for (const ix of instructions) {
-            // Check parsed token instructions (SPL Token program)
-            if (ix.program === 'spl-token' && ix.parsed) {
-                const { type, info } = ix.parsed;
-
-                if (type === 'burn' || type === 'burnChecked') {
-                    const ixMint = info.mint;
-                    const ixAuthority = info.authority;
-                    const ixAmount = type === 'burnChecked'
-                        ? parseInt(info.tokenAmount?.amount || '0')
-                        : parseInt(info.amount || '0');
-
-                    // Verify mint matches SHOT token
-                    if (ixMint !== SHOT_MINT) continue;
-
-                    // Verify signer matches the player's wallet
-                    if (ixAuthority !== walletAddress) {
-                        verifiedBurnTxs.delete(txSignature);
-                        return { valid: false, reason: 'Burn was not signed by your wallet' };
-                    }
-
-                    // Verify amount (expectedAmount is in whole tokens, on-chain is raw with 9 decimals)
-                    const expectedRaw = BigInt(expectedAmount) * BigInt(1_000_000_000);
-                    if (BigInt(ixAmount) < expectedRaw) {
-                        verifiedBurnTxs.delete(txSignature);
-                        return { valid: false, reason: `Burned ${ixAmount} raw but need ${expectedRaw} for prestige` };
-                    }
-
-                    burnFound = true;
-                    break;
-                }
-            }
-        }
-
-        // Also check innerInstructions for burn (some wallets wrap in CPI)
-        if (!burnFound && tx.meta?.innerInstructions) {
-            for (const inner of tx.meta.innerInstructions) {
-                for (const ix of inner.instructions) {
-                    if (ix.program === 'spl-token' && ix.parsed) {
-                        const { type, info } = ix.parsed;
-                        if (type === 'burn' || type === 'burnChecked') {
-                            if (info.mint === SHOT_MINT && info.authority === walletAddress) {
-                                const ixAmount = type === 'burnChecked'
-                                    ? parseInt(info.tokenAmount?.amount || '0')
-                                    : parseInt(info.amount || '0');
-                                const expectedRaw = BigInt(expectedAmount) * BigInt(1_000_000_000);
-                                if (BigInt(ixAmount) >= expectedRaw) {
-                                    burnFound = true;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-                if (burnFound) break;
-            }
-        }
-
-        if (!burnFound) {
-            // A4: Release claim — TX was not a valid burn
-            verifiedBurnTxs.delete(txSignature);
-            return { valid: false, reason: 'No valid SHOT burn found in transaction' };
-        }
-
-        // TX already claimed in set above — persist to MongoDB so replay protection survives restart
-        persistBurnTx(txSignature);
-
-        return { valid: true };
-    } catch (err) {
-        // A4: Release claim on error so user can retry
-        verifiedBurnTxs.delete(txSignature);
-        console.error('[SHOT] Burn verification error:', err.message);
-        return { valid: false, reason: 'Failed to verify burn transaction' };
-    }
-}
+// V3 pivot (2026-05-26): verifyBurnTransaction removed entirely.
+// SHOT is off-chain; prestige burns are server-side deductions of
+// User.stats.shotBalance, not on-chain SPL Burn instructions. The
+// prestigeBurn() function above (line ~388) does the deduction with
+// no need for transaction verification. See
+// Docs/internal/V3_ARCADE_ECONOMY_NORTH_STAR.md + ../memory/
+// project_shot_pivot_to_ingame.md for the strategic context.

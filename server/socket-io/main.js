@@ -46,7 +46,7 @@ async function getEscrowStateFor(matchId, playerCount) {
 function isEscrowAvailableFor(playerCount) {
     return shouldUseEscrowV2(playerCount) ? isEscrowV2Enabled() : isEscrowEnabled();
 }
-import { recordMatchPlayed, prestigeBurn, getPrestigeInfo, getShotBalance, PRESTIGE_TIERS, loadMilestoneState, saveMilestoneState, verifyBurnTransaction, getPlayerShotState, SHOT_MILESTONES } from '../services/shot-token.js';
+import { recordMatchPlayed, prestigeBurn, getPrestigeInfo, getShotBalance, PRESTIGE_TIERS, loadMilestoneState, saveMilestoneState, getPlayerShotState, SHOT_MILESTONES } from '../services/shot-token.js';
 import { trackConnection, trackDisconnection, trackMatchCreated, trackMatchCompleted, trackMatchCancelled, trackWager, trackSettlement, trackForfeit, trackShot, trackDamage, trackGoldEarned, trackShotEmission, trackShotBurn, trackError } from '../services/monitoring.js';
 import { requireAuth, validatePayload, validateFireParams, sanitizeName, withLock, safeHandler } from '../middleware/guards.js';
 import { initAI, cleanupAI, pickWeapon, calculateAim, autoBuyWeapons } from '../services/ai.js';
@@ -3405,7 +3405,15 @@ const mainsocket = (io) => {
             }
         })
 
-        // Burn SHOT to prestige up (with on-chain burn verification)
+        // Burn SHOT to prestige up.
+        //
+        // V3 pivot (2026-05-26): SHOT is the Tier 1 closed in-game currency,
+        // not an on-chain token. Prestige is now a pure server-side deduction
+        // of User.stats.shotBalance — no transaction, no wallet popup, no
+        // on-chain verification. See Docs/internal/V3_ARCADE_ECONOMY_NORTH_STAR.md.
+        //
+        // Payload: { burnAmount } — txSignature accepted but ignored for
+        // backward compat with any in-flight pre-pivot client sessions.
         client.on('prestigeBurn', async (data) => {
             const wallet = authenticatedWallets[client.id] || null
             if (!wallet) {
@@ -3413,32 +3421,20 @@ const mainsocket = (io) => {
                 return
             }
 
-            const { txSignature, burnAmount } = data || {}
-            if (!txSignature) {
-                client.emit('prestigeResult', { success: false, reason: 'No burn transaction provided' })
-                return
-            }
-
             try {
-                // Verify the burn transaction on-chain
-                const verification = await verifyBurnTransaction(txSignature, wallet, burnAmount)
-
-                if (!verification.valid) {
-                    client.emit('prestigeResult', { success: false, reason: verification.reason || 'Burn verification failed' })
-                    return
-                }
-
-                // Burn verified — unlock the tier
+                // prestigeBurn() reads the next tier from PRESTIGE_TIERS and checks
+                // the player's balance internally — burnAmount in payload is only
+                // for client UX, not server trust.
                 const result = prestigeBurn(wallet)
                 if (result.success) {
                     const tier = PRESTIGE_TIERS[result.tier]
                     if (tier) trackShotBurn(tier.burnCost)
-                    logger.info({ tier: result.tier, tierName: result.tierName, tx: txSignature }, '[Prestige] On-chain burn verified')
+                    logger.info({ tier: result.tier, tierName: result.tierName }, '[Prestige] Off-chain burn applied')
                 }
                 client.emit('prestigeResult', result)
             } catch (err) {
-                console.error('[Prestige] Burn verification error:', err.message)
-                client.emit('prestigeResult', { success: false, reason: 'Burn verification error' })
+                console.error('[Prestige] Burn error:', err.message)
+                client.emit('prestigeResult', { success: false, reason: 'Burn error' })
             }
         })
 

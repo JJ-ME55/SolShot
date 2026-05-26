@@ -22,7 +22,9 @@ function PrestigeScreen({ navigate }) {
   const [burnResult, setBurnResult] = useState(null);
   const [selected, setSelected] = useState(null);
 
-  const { prestigeInfo, shotBalance: contextShotBalance, signAndBurnShot } = useSolShotWallet();
+  // V3 pivot (2026-05-26): SHOT is off-chain in-game currency, no wallet
+  // signing required for prestige. signAndBurnShot removed from context.
+  const { prestigeInfo, shotBalance: contextShotBalance } = useSolShotWallet();
 
   useEffect(() => {
     if (prestigeInfo) setCurrentTier(prestigeInfo.tier || 0);
@@ -54,30 +56,20 @@ function PrestigeScreen({ navigate }) {
 
   const sel = selected ? PRESTIGE_TIERS.find(t => t.tier === selected) : null;
 
-  const handleBurn = async () => {
+  const handleBurn = () => {
     if (!canBurn || !nextTier) return;
-    if (!signAndBurnShot) {
-      setBurnResult({ success: false, message: 'Wallet not connected' });
+    // V3 pivot: server-side deduction only. No wallet popup, no on-chain TX.
+    // Result arrives via the `prestigeResult` socket handler above.
+    setBurning(true);
+    setBurnResult(null);
+    const socket = window.socket;
+    if (!socket) {
+      setBurning(false);
+      setBurnResult({ success: false, message: 'Not connected' });
       setTimeout(() => setBurnResult(null), 3000);
       return;
     }
-    setBurning(true);
-    setBurnResult(null);
-    try {
-      const txSignature = await signAndBurnShot(nextTier.cost);
-      if (!txSignature) {
-        setBurning(false);
-        setBurnResult({ success: false, message: 'Burn transaction cancelled' });
-        setTimeout(() => setBurnResult(null), 3000);
-        return;
-      }
-      const socket = window.socket;
-      if (socket) socket.emit('prestigeBurn', { txSignature, burnAmount: nextTier.cost });
-    } catch (err) {
-      setBurning(false);
-      setBurnResult({ success: false, message: err.message || 'Burn failed' });
-      setTimeout(() => setBurnResult(null), 3000);
-    }
+    socket.emit('prestigeBurn', { burnAmount: nextTier.cost });
   };
 
   // ── MOBILE LANDSCAPE LAYOUT ───────────────────────────────────────

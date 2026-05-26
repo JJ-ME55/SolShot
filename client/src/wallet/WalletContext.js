@@ -20,7 +20,8 @@
 
 import React, { useMemo, useEffect, useCallback, useRef, useState, createContext, useContext } from 'react';
 import { Connection, clusterApiUrl, LAMPORTS_PER_SOL, Transaction, PublicKey } from '@solana/web3.js';
-import { createBurnInstruction, getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from '@solana/spl-token';
+// V3 pivot (2026-05-26): SHOT is off-chain in-game currency. createBurnInstruction
+// imports from @solana/spl-token removed — no on-chain burn flow remains.
 import { showToast } from '../components/TxToast';
 
 // Privy SDK (Phase 2 — embedded Solana wallets via dashboard.privy.io)
@@ -49,9 +50,9 @@ const PRIVY_APP_ID = process.env.REACT_APP_PRIVY_APP_ID || '';
 // signing.
 const PRIVY_SOLANA_CHAIN = NETWORK === 'mainnet-beta' ? 'solana:mainnet' : 'solana:devnet';
 
-const SHOT_TOKEN_MINT = process.env.REACT_APP_SHOT_TOKEN_MINT
-    ? new PublicKey(process.env.REACT_APP_SHOT_TOKEN_MINT)
-    : null;
+// V3 pivot: SHOT is off-chain. REACT_APP_SHOT_TOKEN_MINT no longer read at runtime.
+// Devnet mint 4NnYBy...VLd is orphaned; mainnet has no SHOT mint. Env var
+// can stay in .env files but has no effect in code paths.
 
 const ESCROW_PROGRAM_ID = process.env.REACT_APP_ESCROW_PROGRAM_ID
     ? new PublicKey(process.env.REACT_APP_ESCROW_PROGRAM_ID)
@@ -707,29 +708,11 @@ function SolShotWalletInner({ children }) {
         }
     }, [publicKey, connection, sendTransactionUnified, refreshBalance]);
 
-    const signAndBurnShot = useCallback(async (burnAmount) => {
-        if (!publicKey || !SHOT_TOKEN_MINT) {
-            console.warn('[SolShot] Cannot burn SHOT: wallet not ready or no token mint');
-            return null;
-        }
-        try {
-            const ata = await getAssociatedTokenAddress(SHOT_TOKEN_MINT, publicKey);
-            const rawAmount = burnAmount * 1_000_000_000;
-            const burnIx = createBurnInstruction(
-                ata, SHOT_TOKEN_MINT, publicKey, rawAmount, [], TOKEN_PROGRAM_ID
-            );
-            const tx = new Transaction().add(burnIx);
-            tx.feePayer = publicKey;
-            const { blockhash } = await connection.getLatestBlockhash();
-            tx.recentBlockhash = blockhash;
-            const signature = await sendTransactionUnified(tx, connection);
-            await connection.confirmTransaction(signature, 'confirmed');
-            return signature;
-        } catch (err) {
-            console.error('[SolShot] SHOT burn error:', err.message);
-            return null;
-        }
-    }, [publicKey, connection, sendTransactionUnified]);
+    // V3 pivot (2026-05-26): signAndBurnShot removed entirely.
+    // SHOT is the Tier 1 closed in-game currency, not an on-chain token.
+    // PrestigeScreen now emits `prestigeBurn` socket event directly with
+    // { burnAmount } — no wallet popup, no on-chain TX, no signature.
+    // See Docs/internal/V3_ARCADE_ECONOMY_NORTH_STAR.md.
 
     // Listen for auth result from server
     useEffect(() => {
@@ -999,7 +982,7 @@ function SolShotWalletInner({ children }) {
         prestigeInfo,
         signAndSendEscrowDeposit,
         signAndSendGroupDeposit,
-        signAndBurnShot,
+        // signAndBurnShot removed in V3 pivot — SHOT is off-chain in-game currency
         openPrivyAccount,
         fundWallet,
         // Recovery / linking — for the "secure your account" flow that
@@ -1041,7 +1024,7 @@ function SolShotWalletInner({ children }) {
         },
     }), [
         balance, refreshBalance, walletAddress, connected, isAuthenticated, authenticate,
-        login, logout, shotBalance, prestigeInfo, signAndSendEscrowDeposit, signAndSendGroupDeposit, signAndBurnShot,
+        login, logout, shotBalance, prestigeInfo, signAndSendEscrowDeposit, signAndSendGroupDeposit,
         openPrivyAccount, fundWallet, isFreshSignIn,
         recoveryStatus, linkEmailRecovery, linkTelegramRecovery,
         walletHandle, setWalletHandle,
@@ -1114,7 +1097,7 @@ const LOCAL_DEV_FALLBACK_VALUE = {
     prestigeInfo: { tier: 0, tierName: 'Unranked' },
     signAndSendEscrowDeposit: async () => null,
     signAndSendGroupDeposit: async () => null,
-    signAndBurnShot: async () => null,
+    // signAndBurnShot removed in V3 pivot — SHOT is off-chain in-game currency
     openPrivyAccount: async () => false,
     fundWallet: async () => false,
     isFreshSignIn: false,

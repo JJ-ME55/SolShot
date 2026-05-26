@@ -63,35 +63,39 @@ The Bundle 1 Anchor instructions (`propose_authority` / `accept_authority` / `ap
 ## §3 Squads Multisig Setup Procedure
 
 **Prerequisites:**
-- Ledger Nano purchased + initialized with a fresh seed phrase
+- A fresh, unused Ledger Nano (JJ has a stash — pick one, dedicate it to SolShot governance only, never reuse for personal crypto)
 - Seed phrase written on paper (NEVER digital, NEVER cloud), stored in a safe
 - JJ + Fish each have a Solana wallet (Phantom / Solflare) with at least 0.01 SOL on mainnet for rent
 
 **Steps:**
 
-1. **Initialize Ledger Solana app.** Open Ledger Live, install the Solana app on the device. Open the app on-device, derive your first Solana address (`Settings → Display Public Key`). Write the pubkey down — this is the cold signer pubkey.
+1. **Initialize the Ledger.** First-boot setup generates a fresh seed phrase — write it on the supplied recovery sheet (or paper of equal durability), set a strong PIN. The seed phrase is the ONLY thing that can recover this signer if the device is lost. Treat it accordingly.
 
-2. **Verify Ledger seed restore.** Before relying on the Ledger, do a test restore: factory-reset a SECOND Ledger and restore the seed phrase onto it. Verify it derives the same Solana pubkey. If it doesn't, your seed is bad. (If you only have one Ledger, skip this — but accept that an untested backup is no backup.)
+2. **Install the Solana app on the Ledger.** Open Ledger Live → Manager → Solana → install. Open the Solana app on-device.
 
-3. **Create the multisig.** Go to https://v3.squads.so/ on **mainnet** (top-right network selector). Connect JJ's hot wallet (Phantom). Click "Create Squad":
+3. **Derive the SolShot cold signer pubkey.** In Ledger Live, add a Solana account. Account 0 is fine since this device is dedicated to SolShot only. Copy the pubkey — that's the value Fish and JJ feed into the Squads "members" field.
+
+4. **(Recommended) Verify seed restore on a second device.** Take a second unused Ledger from the stash, set it up using the recovery procedure, enter the SolShot seed phrase, derive Solana account 0. Confirm the pubkey matches what you recorded in step 3. If it does, the seed phrase is correctly backed up. Wipe the second Ledger and put it back in the stash (or keep it as a hot spare). This verification is cheap insurance against bad seed transcription.
+
+5. **Create the multisig.** Go to https://v3.squads.so/ on **mainnet** (top-right network selector). Connect JJ's hot wallet (Phantom). Click "Create Squad":
    - **Members:** JJ hot pubkey, Fish hot pubkey, Ledger cold pubkey (3 total)
    - **Threshold:** 2 (any 2 of 3 must sign)
    - **Squad name:** "SolShot Mainnet Governance"
    - **Vault name:** "SolShot Treasury"
    - **Initial deposit:** ~0.05 SOL (covers rent + first few TX fees)
 
-4. **Record the multisig vault PDA.** Squads shows it on the Squad detail page. This pubkey is the value you pass to:
+6. **Record the multisig vault PDA.** Squads shows it on the Squad detail page. This pubkey is the value you pass to:
    - `anchor deploy --upgrade-authority <THIS PDA>`
    - `initialize_config(authority: <THIS PDA>, treasury: <THIS PDA>, ops: <THIS PDA>, ...)`
 
-5. **Test the multisig with a no-op TX.** Create a proposal that sends 0.001 SOL from the vault to JJ's hot wallet. JJ signs, Fish signs, executes. Confirm SOL moves on-chain. This validates the 2-of-3 flow works before you bet the program on it.
+7. **Test the multisig with a no-op TX.** Create a proposal that sends 0.001 SOL from the vault to JJ's hot wallet. JJ signs, Fish signs, executes. Confirm SOL moves on-chain. This validates the 2-of-3 flow works before you bet the program on it.
 
-6. **Lock down access:**
+8. **Lock down access:**
    - Confirm JJ and Fish each have their hot signer seed phrases backed up (paper, offline)
    - Lock the Ledger in a safe / safety deposit box
    - Document each signer's recovery procedure in their personal records (separate from this repo)
 
-**Estimated time:** 1–2 hours including the test TX. Most of it is the seed-phrase paper-trail discipline.
+**Estimated time:** 1–2 hours including the test TX. Most of it is the seed-phrase paper-trail discipline. The Ledger initialization + Squads UI itself is ~30 minutes.
 
 ---
 
@@ -218,7 +222,7 @@ Follow §5 rotation procedure. Treasury is NOT at risk (gated on Squads). Worst 
 - ❌ **Never `solana-keygen new` without `--no-bip39-passphrase` flag, unless you're consciously adding a passphrase.** Without the flag, `solana-keygen` prompts interactively and the resulting key may or may not have a passphrase depending on whether you remembered to press enter. Be explicit.
 - ❌ **Never run `solana program set-upgrade-authority` against mainnet without dry-running it on devnet first.** The command is irreversible. If you fat-finger the new authority pubkey, the program is permanently locked.
 - ❌ **Never sign a Squads proposal without reading the TX detail.** Squads UI shows the proposed instruction. If it doesn't match what you expected (e.g. you expected `transfer` but see `setUpgradeAuthority`), do NOT sign. Phishing exists.
-- ❌ **Never assume a Ledger is genuine without verifying.** Buy from ledger.com directly; never from Amazon resellers or eBay. Verify the device's seal on receipt.
+- ❌ **Never assume a Ledger is genuine without verifying.** Buy from ledger.com directly; never from Amazon resellers or eBay. Verify the device's seal on receipt. (JJ's existing fresh Ledgers were procured from official sources — confirm the seal is intact on the chosen device before initialization.)
 
 ---
 

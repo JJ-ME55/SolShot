@@ -21,6 +21,7 @@
 import React, { useMemo, useEffect, useCallback, useRef, useState, createContext, useContext } from 'react';
 import { Connection, clusterApiUrl, LAMPORTS_PER_SOL, Transaction, PublicKey } from '@solana/web3.js';
 import { createBurnInstruction, getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import { showToast } from '../components/TxToast';
 
 // Privy SDK (Phase 2 — embedded Solana wallets via dashboard.privy.io)
 import { PrivyProvider, usePrivy, useLogin } from '@privy-io/react-auth';
@@ -71,6 +72,37 @@ const ALLOWED_ESCROW_PROGRAM_IDS = [ESCROW_PROGRAM_ID, ESCROW_V2_PROGRAM_ID].fil
 // first 8 bytes). Verified from IDL: [234, 73, 235, 136, 168, 103, 239, 207]
 const DEPOSIT_WAGER_DISCRIMINATOR = Buffer.from([234, 73, 235, 136, 168, 103, 239, 207]);
 const COMPUTE_BUDGET_PROGRAM_ID = new PublicKey('ComputeBudget111111111111111111111111111111');
+
+/**
+ * Wallet-link retry helper (S1-T3). Retries fetch on network failure or
+ * 5xx with exponential backoff. Does NOT retry on 4xx (caller error /
+ * permission / not found — retrying won't help). Returns the final
+ * Response or throws after exhausting attempts.
+ *
+ * Backoff: 500ms, 1000ms, 2000ms — total max wait ~3.5s.
+ */
+async function fetchWithRetry(url, options, { maxAttempts = 3, baseMs = 500 } = {}) {
+    let lastError = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            const resp = await fetch(url, options);
+            if (resp.ok || (resp.status >= 400 && resp.status < 500)) {
+                // Success OR 4xx (don't retry — caller error)
+                return resp;
+            }
+            // 5xx — fall through to retry
+            lastError = new Error(`HTTP ${resp.status}`);
+        } catch (err) {
+            // Network failure (no Response at all)
+            lastError = err;
+        }
+        if (attempt < maxAttempts) {
+            const wait = baseMs * Math.pow(2, attempt - 1);
+            await new Promise((resolve) => setTimeout(resolve, wait));
+        }
+    }
+    throw lastError || new Error('fetchWithRetry: exhausted');
+}
 
 /**
  * CS-01: Validate escrow deposit transaction instructions before signing.
@@ -301,37 +333,55 @@ function SolShotWalletInner({ children }) {
         setLinkTokenAttempted(true);
         const serverUrl = process.env.REACT_APP_SERVER_URL || 'http://localhost:5001';
 
+        // S1-T3: extract the bind into an async function so we can wrap
+        // with retry (network failures, 5xx) and offer manual retry via
+        // toast on final failure. Without this, a dropped connection
+        // mid-bind would leave the user thinking they're linked.
         // Attach the Privy access token (JWT) so the server can verify
         // we're actually the authenticated user claiming this wallet —
         // production hardening on top of the magic-link CSPRNG token.
         // If getAccessToken isn't available (Privy still warming up),
         // we send without — server's graceful mode allows it through
         // when PRIVY_APP_SECRET isn't set; rejects with 401 when it is.
-        const headers = { 'Content-Type': 'application/json' };
-        const tokenPromise = privyGetAccessToken
-            ? privyGetAccessToken().catch(() => null)
-            : Promise.resolve(null);
-
-        tokenPromise.then((accessToken) => {
-            if (accessToken) {
-                headers.Authorization = `Bearer ${accessToken}`;
-            }
-            return fetch(`${serverUrl}/api/wallet/link-from-tg-token`, {
+        const performBind = async () => {
+            const headers = { 'Content-Type': 'application/json' };
+            const accessToken = privyGetAccessToken
+                ? await privyGetAccessToken().catch(() => null)
+                : null;
+            if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+            const resp = await fetchWithRetry(`${serverUrl}/api/wallet/link-from-tg-token`, {
                 method: 'POST',
                 headers,
                 body: JSON.stringify({ token, walletAddress }),
             });
-        })
-            .then(async (resp) => {
-                const body = await resp.json().catch(() => ({}));
-                if (resp.ok) {
-                    console.log('[link] Wallet bound to TG user', body.telegramUserId);
-                } else {
-                    console.warn('[link] Token bind failed:', resp.status, body.error);
-                }
-            })
+            const body = await resp.json().catch(() => ({}));
+            if (resp.ok) {
+                console.log('[link] Wallet bound to TG user', body.telegramUserId);
+                return true;
+            }
+            console.warn('[link] Token bind failed:', resp.status, body.error);
+            throw new Error(body.error || `http_${resp.status}`);
+        };
+
+        performBind()
             .catch((err) => {
-                console.warn('[link] Bind request errored:', err?.message || err);
+                console.warn('[link] Bind request exhausted:', err?.message || err);
+                showToast({
+                    kind: 'error',
+                    text: "COULDN'T LINK YOUR WALLET TO TELEGRAM",
+                    duration: 0, // sticky — user must dismiss or retry
+                    actionLabel: 'RETRY',
+                    onAction: () => {
+                        performBind().catch((retryErr) => {
+                            console.warn('[link] Manual retry also failed:', retryErr?.message || retryErr);
+                            showToast({
+                                kind: 'error',
+                                text: 'STILL FAILING — CHECK CONNECTION',
+                                duration: 6000,
+                            });
+                        });
+                    },
+                });
             })
             .finally(() => {
                 // Strip linkToken from URL so a refresh doesn't replay
@@ -431,41 +481,63 @@ function SolShotWalletInner({ children }) {
         if (walletHandle?.telegramUserId) return; // already bound
         setAutoBindAttempted(true);
         const serverUrl = process.env.REACT_APP_SERVER_URL || 'http://localhost:5001';
-        privyGetAccessToken()
-            .then((accessToken) => {
-                if (!accessToken) return null;
-                return fetch(`${serverUrl}/api/wallet/link-from-privy-telegram`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${accessToken}`,
-                    },
-                    body: JSON.stringify({
-                        telegramUserId: Number(privyTgId),
-                        telegramUsername: privyUser?.telegram?.username || null,
-                        walletAddress,
-                    }),
-                });
-            })
-            .then(async (resp) => {
-                if (!resp) return;
-                const body = await resp.json().catch(() => ({}));
-                if (resp.ok) {
-                    console.log('[link] Privy-direct TG bind succeeded for tg user', body.telegramUserId);
-                    // Optimistic update — match the shape the server will
-                    // emit in walletHandle. Triggers re-render so screens
-                    // pick up the bound state immediately.
-                    setWalletHandleState((prev) => ({
-                        ...prev,
-                        telegramUserId: Number(privyTgId),
-                    }));
-                } else {
-                    console.warn('[link] Privy-direct bind failed:', resp.status, body.error);
-                }
-            })
-            .catch((err) => {
-                console.warn('[link] Privy-direct bind errored:', err?.message || err);
+
+        // S1-T3: wrap with retry + toast-surfaced failure. Same rationale
+        // as the magic-link path above.
+        const performBind = async () => {
+            const accessToken = await privyGetAccessToken().catch(() => null);
+            if (!accessToken) {
+                throw new Error('no_access_token');
+            }
+            const resp = await fetchWithRetry(`${serverUrl}/api/wallet/link-from-privy-telegram`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${accessToken}`,
+                },
+                body: JSON.stringify({
+                    telegramUserId: Number(privyTgId),
+                    telegramUsername: privyUser?.telegram?.username || null,
+                    walletAddress,
+                }),
             });
+            const body = await resp.json().catch(() => ({}));
+            if (resp.ok) {
+                console.log('[link] Privy-direct TG bind succeeded for tg user', body.telegramUserId);
+                // Optimistic update — match the shape the server will
+                // emit in walletHandle. Triggers re-render so screens
+                // pick up the bound state immediately.
+                setWalletHandleState((prev) => ({
+                    ...prev,
+                    telegramUserId: Number(privyTgId),
+                }));
+                return true;
+            }
+            console.warn('[link] Privy-direct bind failed:', resp.status, body.error);
+            throw new Error(body.error || `http_${resp.status}`);
+        };
+
+        performBind().catch((err) => {
+            console.warn('[link] Privy-direct bind exhausted:', err?.message || err);
+            // no_access_token is a transient Privy state — don't toast for it
+            if (err?.message === 'no_access_token') return;
+            showToast({
+                kind: 'error',
+                text: "COULDN'T LINK YOUR WALLET TO TELEGRAM",
+                duration: 0,
+                actionLabel: 'RETRY',
+                onAction: () => {
+                    performBind().catch((retryErr) => {
+                        console.warn('[link] Manual retry also failed:', retryErr?.message || retryErr);
+                        showToast({
+                            kind: 'error',
+                            text: 'STILL FAILING — CHECK CONNECTION',
+                            duration: 6000,
+                        });
+                    });
+                },
+            });
+        });
     }, [walletAddress, privyUser, walletHandle, privyGetAccessToken, autoBindAttempted]);
 
     /**

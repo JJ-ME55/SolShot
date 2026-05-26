@@ -22,7 +22,7 @@ This doc is the **source of truth** for:
 | **Squads multisig** | Upgrade authority + config authority + treasury + ops fee destination | On-chain PDA (Squads v3 program `SMPLecH534NA9acpos4G6x7uf3LWbCAwZQE9e8ZekMu`) | Highest. Can redeploy programs, rotate config, drain fee destinations. | Via Squads UI (add/remove signers, change threshold) |
 | **JJ hot signer** | One of 3 Squads signers | JJ local wallet (Phantom / Solflare / hardware) | Single signature toward 2-of-3 threshold | Via Squads UI |
 | **Fish hot signer** | One of 3 Squads signers | Fish local wallet | Single signature toward 2-of-3 threshold | Via Squads UI |
-| **Cold Ledger** | One of 3 Squads signers, recovery role | Ledger Nano hardware, stored offline by JJ | Single signature toward 2-of-3 threshold. Only used if a hot signer is lost. | Squads UI (with 2 existing signers approving) |
+| **Cold Ledger** | One of 3 Squads signers, recovery role | Ledger Nano hardware, stored offline by JJ. Pubkey `4XoQgPxxLFNSc19A3TPqpfcvptEQ5g2DYmnaRLkYTFLV` (derived 2026-05-26). | Single signature toward 2-of-3 threshold. Only used if a hot signer is lost. | Squads UI (with 2 existing signers approving) |
 | **`solshot-server-authority.json`** | Server operational key | Render disk, env var `SOLANA_SERVER_KEYPAIR_PATH` | Lowest. Can call `create_match`, `settle_match`, `cancel_match` on the program — but program logic gates what each call can do. Cannot rotate config, cannot drain treasury. | Hot rotation procedure (see §5) |
 
 **Generated:** `solshot-server-authority.json` pubkey = `CgcAZJf6U5LFkUzPRhcx217prT76uUV3vUdae7QU3wmC` (2026-05-26)
@@ -231,5 +231,6 @@ Follow §5 rotation procedure. Treasury is NOT at risk (gated on Squads). Worst 
 | Date | Change | By |
 |---|---|---|
 | 2026-05-26 | Initial doc. Generated `solshot-server-authority.json` (pubkey `CgcAZJf6U5LFkUzPRhcx217prT76uUV3vUdae7QU3wmC`). Squads multisig + Ledger purchase pending JJ + Fish coordination. | JJ + Claude (Sprint 1 S1-T4) |
+| 2026-05-26 | Cold Ledger initialized from JJ's stash (fresh seed, never reused). Solana app installed + opened on device. Cold signer pubkey: `4XoQgPxxLFNSc19A3TPqpfcvptEQ5g2DYmnaRLkYTFLV`. | JJ |
 
-When you complete the Squads setup, append a row with the multisig vault PDA + signer pubkeys.
+When you complete the Squads setup, append a row with the multisig vault PDA + JJ hot pubkey + Fish hot pubkey.

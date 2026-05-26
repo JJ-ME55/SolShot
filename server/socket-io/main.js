@@ -11,6 +11,7 @@ import { WEAPON_CATALOG, PRESTIGE_WEAPONS, getWeapon, getWeaponCost, getAllLaunc
 import { handleAuthenticate, verifyAuthMessage, verifyWalletSignature } from '../middleware/auth.js';
 import { verifyBalance, isValidWager, settleMatch, refundWager, WAGER_TIERS, MATCH_MODES, validateMatchMode, isEscrowEnabled, createMatchEscrow, buildDepositTransaction, getEscrowState, startWithDepositorsEscrow, createMatchEscrowV2, buildDepositTransactionV2, getEscrowStateV2, isEscrowV2Enabled, shouldUseEscrowV2, V2_DEFAULT_MATCH_DURATION_SECS, V2_DEFAULT_DEPOSIT_WINDOW_SECS } from '../services/solana.js';
 import { cancelMatchEscrow } from '../services/escrow.js';
+import { notifyMatchLobbyOpen } from '../services/adminNotifications.js';
 
 // S1-T5 escrow dispatch helpers — route 1v1 to v1 (battle-tested) and
 // 3P/4P to v2 (N-player capable). Stored on the room as `escrowVersion`
@@ -2548,6 +2549,18 @@ const mainsocket = (io) => {
             if (wagerAmount > 0) trackWager(wagerAmount * maxPlayers)  // All N players wager
             broadcastRooms(io)
 
+            // Ping JJ + Fish on Telegram whenever a lobby is opened so
+            // the creator isn't left waiting. Fires for ALL matches
+            // (free + wagered). Fire-and-forget; never blocks createRoom.
+            notifyMatchLobbyOpen({
+                playerName: creatorSlot.name,
+                wagerSOL: wagerAmount,
+                matchId: roomId,
+                format: roundType === '1' ? 'BO1' : roundType,
+                maxPlayers,
+                matchMode: matchMode || 'custom_challenge',
+            }).catch(() => { /* fail-soft */ });
+
             // Notify creator of their waiting room state
             client.emit('roomUpdate', {
                 players: roomData.players.map(p => ({
@@ -2896,6 +2909,20 @@ const mainsocket = (io) => {
                 broadcastQueueSnapshot(io);
                 client.emit('queueWaiting', { matchMode, matchLength, position: queue.length });
                 console.log(`[Queue] ${sanitizedName} queued for ${matchMode} (${matchLength}) @ ${wagerAmount} SOL — ${queue.length} waiting`);
+
+                // Ping admins — someone's now sitting in the queue waiting
+                // for an opponent. No matchId yet (room is only created at
+                // match-time), so the deep link drops them in the lobby and
+                // they pick the same mode/wager to FIFO-match.
+                // Throttle key includes socket + mode + length + wager so
+                // re-queuing doesn't double-ping but a different mode does.
+                notifyMatchLobbyOpen({
+                    playerName: sanitizedName,
+                    wagerSOL: wagerAmount,
+                    format: matchLength === 5 ? 'BO5' : matchLength === 3 ? 'BO3' : 'BO1',
+                    matchMode,
+                    throttleKey: `queue:${client.id}:${matchMode}:${matchLength}:${wagerAmount}`,
+                }).catch(() => { /* fail-soft */ });
             }
         });
 

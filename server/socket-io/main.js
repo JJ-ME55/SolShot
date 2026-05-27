@@ -11,6 +11,7 @@ import { WEAPON_CATALOG, PRESTIGE_WEAPONS, getWeapon, getWeaponCost, getAllLaunc
 import { handleAuthenticate, verifyAuthMessage, verifyWalletSignature } from '../middleware/auth.js';
 import { verifyBalance, isValidWager, settleMatch, refundWager, WAGER_TIERS, MATCH_MODES, validateMatchMode, isEscrowEnabled, createMatchEscrow, buildDepositTransaction, getEscrowState, startWithDepositorsEscrow, createMatchEscrowV2, buildDepositTransactionV2, getEscrowStateV2, isEscrowV2Enabled, shouldUseEscrowV2, V2_DEFAULT_MATCH_DURATION_SECS, V2_DEFAULT_DEPOSIT_WINDOW_SECS } from '../services/solana.js';
 import { cancelMatchEscrow } from '../services/escrow.js';
+import { cancelMatchEscrowV2 } from '../services/escrow-v2.js';
 import { notifyMatchLobbyOpen } from '../services/adminNotifications.js';
 
 // S1-T5 escrow dispatch helpers — route 1v1 to v1 (battle-tested) and
@@ -531,22 +532,54 @@ function isEscrowReady(room, ws) {
  * @returns {Promise<{success: boolean, txSignature?: string, error?: string}>}
  */
 async function cancelEscrowSafely(matchId, room, ws, contextLabel) {
-    if (!isEscrowEnabled()) return { success: false, error: 'escrow_disabled' }
+    const playerCount = room?.players?.length || 2
+    const useV2 = shouldUseEscrowV2(playerCount)
+
+    if (!isEscrowAvailableFor(playerCount)) return { success: false, error: 'escrow_disabled' }
+
+    // S2-T7 (DB H014/H023 follow-on): v2 matches use cancelMatchEscrowV2 which
+    // self-derives the refund target list from the on-chain deposits_mask.
+    // The v2 program's cancel_match handles non-contiguous masks correctly
+    // (H023 fix in lib.rs), so we skip the contiguous-only guard that exists
+    // for v1. Server-side deposit state (`ws.deposits`) is used only as a
+    // sanity cross-check inside the wrapper — the wrapper's RPC fetch is the
+    // authoritative source.
+    if (useV2) {
+        const wallets = room.players
+            .map(p => ws?.wallets?.[p.socketId])
+            .filter(Boolean)
+        try {
+            const result = await cancelMatchEscrowV2(matchId, wallets)
+            if (result?.success) {
+                console.log(`[Escrow] ${contextLabel}: v2 cancelled ${matchId} (${result.refundCount ?? '?'} refunds, on-chain mask)`)
+            } else {
+                console.error(`[Escrow] ${contextLabel}: v2 cancel returned failure for ${matchId}: ${result?.error}`)
+            }
+            return result
+        } catch (err) {
+            console.error(`[Escrow] ${contextLabel}: v2 cancel threw for ${matchId}: ${err.message}`)
+            return { success: false, error: err.message }
+        }
+    }
+
+    // v1 path: 2-player only. Server-side state determines refund list.
+    // Non-contiguous masks are unrecoverable on v1 (no H023 fix in v1
+    // program). Most common cause: player 1 deposits but player 0 doesn't.
     const { wallets, contiguous, mask } = getEscrowDepositors(room, ws)
     if (!contiguous) {
-        console.error(`[Escrow] ${contextLabel}: UNRECOVERABLE non-contiguous deposits for ${matchId} (mask=0b${mask.toString(2)}, ${wallets.length} depositors). On-chain cancel cannot refund — PDA funds stranded until program redeploy.`)
+        console.error(`[Escrow] ${contextLabel}: UNRECOVERABLE non-contiguous deposits for ${matchId} (mask=0b${mask.toString(2)}, ${wallets.length} depositors). v1 on-chain cancel cannot refund — PDA funds stranded until program redeploy.`)
         return { success: false, error: 'non_contiguous_deposits' }
     }
     try {
         const result = await cancelMatchEscrow(matchId, wallets)
         if (result?.success) {
-            console.log(`[Escrow] ${contextLabel}: cancelled ${matchId} (${wallets.length} refunds, mask=0b${mask.toString(2)})`)
+            console.log(`[Escrow] ${contextLabel}: v1 cancelled ${matchId} (${wallets.length} refunds, mask=0b${mask.toString(2)})`)
         } else {
-            console.error(`[Escrow] ${contextLabel}: cancel returned failure for ${matchId}: ${result?.error}`)
+            console.error(`[Escrow] ${contextLabel}: v1 cancel returned failure for ${matchId}: ${result?.error}`)
         }
         return result
     } catch (err) {
-        console.error(`[Escrow] ${contextLabel}: cancel threw for ${matchId}: ${err.message}`)
+        console.error(`[Escrow] ${contextLabel}: v1 cancel threw for ${matchId}: ${err.message}`)
         return { success: false, error: err.message }
     }
 }
@@ -3570,6 +3603,19 @@ const mainsocket = (io) => {
 
             const ws = wagerStates[rid]
             if (!ws) return
+
+            // S2-T7 (DB H016): idempotent guard — if this socket has already
+            // confirmed a deposit for this room, drop duplicate confirmations.
+            // Without this guard, a second confirm event (network retry, fast
+            // tab-flip, client-side re-emit) would re-run on-chain verification
+            // and re-fire downstream effects (escrowDepositStatus broadcast,
+            // allDeposited check, depositTimer cleanup). The on-chain side is
+            // idempotent (the v2 program rejects already-deposited bits), so
+            // there's no fund-loss risk — just wasted RPC + duplicate events.
+            if (ws.deposits?.[client.id]) {
+                console.log(`[Escrow] Duplicate escrowDepositConfirm for ${client.id} in ${rid} — already recorded TX ${ws.deposits[client.id]}, ignoring`);
+                return
+            }
 
             // SF-01: Verify deposit on-chain before accepting (DB: H013, H049, H051)
             if (isEscrowAvailableFor(room.players.length)) {

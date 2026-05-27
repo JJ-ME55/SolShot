@@ -330,19 +330,59 @@ export async function settleMatchEscrowV2(matchId, winnerAddress) {
 }
 
 /**
- * Cancel a match — refund deposited players. Players passed via remainingAccounts in player-index order.
+ * Cancel a match — refund deposited players.
+ *
+ * S2-T7 (DB H014): the refund-target subset is derived from the ON-CHAIN
+ * deposits_mask, not from the caller-provided list. Server-side wagerStates
+ * can diverge from on-chain truth (missed confirmation, server crash mid-flow,
+ * RPC blip on deposit verify) — passing the caller's list would risk
+ * IncompleteRefund and stick funds in the PDA.
+ *
+ * The `providedPlayerAddresses` arg is kept for backward-compat with existing
+ * call sites + used as a sanity cross-check. If caller's list diverges from
+ * on-chain, we log a warning and proceed with the on-chain set.
+ *
+ * The v2 contract expects remaining_accounts.length == count_ones(deposits_mask)
+ * with accounts in player-index order matching set bits. This wrapper handles
+ * that construction atomically against the same RPC read as the count.
  */
-export async function cancelMatchEscrowV2(matchId, playerAddresses) {
+export async function cancelMatchEscrowV2(matchId, providedPlayerAddresses) {
     if (!program) return { success: false, error: 'EscrowV2 not initialized' };
 
     try {
         const [escrowPDA] = getEscrowPDAV2(matchId);
 
+        // Fetch escrow state to derive the correct refund-target list
+        const escrow = await program.account.matchEscrow.fetch(escrowPDA);
+        const maxPlayers = escrow.maxPlayers;
+        const depositsMask = escrow.depositsMask;
+
+        const refundTargets = [];
+        for (let i = 0; i < maxPlayers; i++) {
+            if ((depositsMask >> i) & 1) {
+                refundTargets.push(escrow.players[i].toBase58());
+            }
+        }
+
+        // Sanity cross-check vs caller's view (non-blocking — log only)
+        if (Array.isArray(providedPlayerAddresses) && providedPlayerAddresses.length > 0) {
+            const callerSorted = [...providedPlayerAddresses].sort().join(',');
+            const onChainSorted = [...refundTargets].sort().join(',');
+            if (callerSorted !== onChainSorted) {
+                console.warn(`[EscrowV2] cancelMatch refund list divergence for ${matchId} — caller: [${callerSorted}] on-chain: [${onChainSorted}] — using on-chain`);
+            }
+        }
+
+        if (refundTargets.length === 0) {
+            console.warn(`[EscrowV2] cancelMatch ${matchId}: no deposits to refund (deposits_mask=0)`);
+            // Still call cancel — closes the PDA and reclaims rent to authority
+        }
+
         const tx = await program.methods
             .cancelMatch()
             .accounts({ escrow: escrowPDA, caller: getEscrowKeypair().publicKey })
             .remainingAccounts(
-                playerAddresses.map(addr => ({
+                refundTargets.map(addr => ({
                     pubkey: new PublicKey(addr),
                     isWritable: true,
                     isSigner: false,
@@ -350,8 +390,8 @@ export async function cancelMatchEscrowV2(matchId, playerAddresses) {
             )
             .rpc();
 
-        console.log(`[EscrowV2] Cancelled match ${matchId} — TX: ${tx}`);
-        return { success: true, txSignature: tx };
+        console.log(`[EscrowV2] Cancelled match ${matchId} (${refundTargets.length} refunds via on-chain mask) — TX: ${tx}`);
+        return { success: true, txSignature: tx, refundCount: refundTargets.length };
     } catch (err) {
         console.error(`[EscrowV2] cancelMatch failed for ${matchId}:`, err.message);
         return { success: false, error: err.message };
@@ -361,18 +401,42 @@ export async function cancelMatchEscrowV2(matchId, playerAddresses) {
 /**
  * Permissionless reclaim — anyone can trigger refund after match_end_ts + 24h grace.
  * Caller receives PDA rent reserve as economic incentive.
+ *
+ * S2-T7 (DB H014): same on-chain-derived refund-target pattern as cancelMatchEscrowV2.
+ * Especially important here — permissionless_reclaim can be called by ANYONE after
+ * grace expires, including third parties whose view of who-deposited may not exist
+ * at all. Deriving from on-chain is the only correct path.
  */
-export async function permissionlessReclaimEscrowV2(matchId, playerAddresses) {
+export async function permissionlessReclaimEscrowV2(matchId, providedPlayerAddresses) {
     if (!program) return { success: false, error: 'EscrowV2 not initialized' };
 
     try {
         const [escrowPDA] = getEscrowPDAV2(matchId);
 
+        const escrow = await program.account.matchEscrow.fetch(escrowPDA);
+        const maxPlayers = escrow.maxPlayers;
+        const depositsMask = escrow.depositsMask;
+
+        const refundTargets = [];
+        for (let i = 0; i < maxPlayers; i++) {
+            if ((depositsMask >> i) & 1) {
+                refundTargets.push(escrow.players[i].toBase58());
+            }
+        }
+
+        if (Array.isArray(providedPlayerAddresses) && providedPlayerAddresses.length > 0) {
+            const callerSorted = [...providedPlayerAddresses].sort().join(',');
+            const onChainSorted = [...refundTargets].sort().join(',');
+            if (callerSorted !== onChainSorted) {
+                console.warn(`[EscrowV2] permissionlessReclaim refund list divergence for ${matchId} — caller: [${callerSorted}] on-chain: [${onChainSorted}] — using on-chain`);
+            }
+        }
+
         const tx = await program.methods
             .permissionlessReclaim()
             .accounts({ escrow: escrowPDA, caller: provider.wallet.publicKey })
             .remainingAccounts(
-                playerAddresses.map(addr => ({
+                refundTargets.map(addr => ({
                     pubkey: new PublicKey(addr),
                     isWritable: true,
                     isSigner: false,
@@ -380,8 +444,8 @@ export async function permissionlessReclaimEscrowV2(matchId, playerAddresses) {
             )
             .rpc();
 
-        console.log(`[EscrowV2] Permissionless reclaim TX: ${tx}`);
-        return { success: true, txSignature: tx };
+        console.log(`[EscrowV2] Permissionless reclaim ${matchId} (${refundTargets.length} refunds via on-chain mask) — TX: ${tx}`);
+        return { success: true, txSignature: tx, refundCount: refundTargets.length };
     } catch (err) {
         console.error(`[EscrowV2] Permissionless reclaim failed for ${matchId}:`, err.message);
         return { success: false, error: err.message };

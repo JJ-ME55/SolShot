@@ -17,6 +17,92 @@
 import User from '../models/User.js';
 
 /**
+ * S2-T6 (DB H009/H010 fix): rotate a user's wallet address with audit trail.
+ *
+ * The pre-fix behaviour was: if a User doc already had a walletAddress,
+ * linkTelegramIdentity would silently skip the new one. This meant that
+ * if Privy re-provisioned the user's embedded wallet (which it does after
+ * account recovery, key rotation, or certain auth flows), the DB kept the
+ * STALE address — and any future settlement routed to the wrong wallet
+ * (or, worse, a wallet the attacker who triggered the rotation now controls).
+ *
+ * This helper:
+ *   1. Idempotent if same wallet — no-op, returns user
+ *   2. Different wallet — pushes prior to walletHistory[] for audit, then
+ *      atomically updates walletAddress
+ *   3. Conflict check — if the new wallet is already on a DIFFERENT user,
+ *      refuse + warn. Manual merge needed; don't silently overwrite either side.
+ *
+ * @param {number} telegramUserId
+ * @param {string} newWalletAddress  Solana base58 pubkey
+ * @param {string} [source='unknown']  Audit hint: 'privy-rotation' | 'manual' | 'reconnect' | 'reconcile' | etc
+ * @returns {Promise<{ ok: boolean, user?: object, reason?: string, conflict?: object }>}
+ */
+export async function updateWalletForTgUser(telegramUserId, newWalletAddress, source = 'unknown') {
+    if (!telegramUserId || typeof telegramUserId !== 'number') {
+        return { ok: false, reason: 'invalid_telegram_user_id' };
+    }
+    if (!newWalletAddress || typeof newWalletAddress !== 'string') {
+        return { ok: false, reason: 'invalid_wallet_address' };
+    }
+    if (newWalletAddress.length < 32 || newWalletAddress.length > 64) {
+        return { ok: false, reason: 'wallet_shape_invalid' };
+    }
+
+    try {
+        const user = await User.findOne({ telegramUserId });
+        if (!user) {
+            return { ok: false, reason: 'user_not_found' };
+        }
+
+        // Idempotent — already on the new wallet, nothing to do
+        if (user.walletAddress === newWalletAddress) {
+            return { ok: true, user: user.toObject(), noop: true };
+        }
+
+        // Conflict check — the new wallet must not already belong to a different user
+        const conflict = await User.findOne({
+            walletAddress: newWalletAddress,
+            _id: { $ne: user._id },
+        }).lean();
+        if (conflict) {
+            console.warn(`[users] updateWalletForTgUser: wallet ${newWalletAddress.slice(0, 8)}… already on User ${conflict._id} (tg ${conflict.telegramUserId || 'none'}) — refusing rotation for tg ${telegramUserId}`);
+            return { ok: false, reason: 'wallet_belongs_to_other_user', conflict: { _id: conflict._id, telegramUserId: conflict.telegramUserId } };
+        }
+
+        // Atomic update: push prior wallet to history (only if there WAS one)
+        // + set new walletAddress + bump lastActive. findOneAndUpdate with
+        // $set + $push in the same call is atomic; no TOCTOU window.
+        const oldAddress = user.walletAddress;
+        const update = {
+            $set: { walletAddress: newWalletAddress, lastActive: new Date() },
+        };
+        if (oldAddress) {
+            update.$push = {
+                walletHistory: { address: oldAddress, timestamp: new Date(), source },
+            };
+        }
+
+        const updated = await User.findOneAndUpdate(
+            { telegramUserId },
+            update,
+            { returnDocument: 'after', runValidators: true }
+        ).lean();
+
+        if (oldAddress) {
+            console.log(`[users] wallet rotated for tg ${telegramUserId}: ${oldAddress.slice(0, 8)}… → ${newWalletAddress.slice(0, 8)}… (source=${source})`);
+        } else {
+            console.log(`[users] wallet attached for tg ${telegramUserId}: ${newWalletAddress.slice(0, 8)}… (source=${source})`);
+        }
+
+        return { ok: true, user: updated, rotated: !!oldAddress };
+    } catch (err) {
+        console.warn('[users] updateWalletForTgUser failed:', err.message);
+        return { ok: false, reason: 'db_error', error: err.message };
+    }
+}
+
+/**
  * Link a Telegram user id to a User document. Called when a socket has
  * BOTH validated TG initData AND an authenticated wallet (or uid) — the
  * server now knows these identities belong to the same human, so we
@@ -88,25 +174,57 @@ export async function linkTelegramIdentity({
             //   3. Conflict has a different telegramUserId (real
             //      duplicate user, two TG accounts claiming same
             //      wallet) → refuse + warn, manual merge needed.
-            if (walletAddress && !existingByTg.walletAddress) {
-                const conflict = await User.findOne({
-                    walletAddress,
-                    _id: { $ne: existingByTg._id },
-                }).lean();
-                if (!conflict) {
-                    update.walletAddress = walletAddress;
-                    console.log(`[users] linked wallet ${walletAddress.slice(0, 8)}… to tg ${telegramUserId}`);
-                } else if (!conflict.telegramUserId) {
-                    // Orphan — consume it. Delete the empty Privy-only
-                    // doc and attach its wallet to our TG-keyed doc.
-                    await User.deleteOne({ _id: conflict._id });
-                    update.walletAddress = walletAddress;
-                    console.log(`[users] consumed orphan ${conflict._id} → linked wallet ${walletAddress.slice(0, 8)}… to tg ${telegramUserId}`);
-                } else {
-                    // Real conflict — wallet belongs to a different TG
-                    // user. Refuse + warn; manual merge required.
-                    console.warn(`[users] cannot link wallet to tg ${telegramUserId} — wallet already on User ${conflict._id} (tg ${conflict.telegramUserId})`);
+            if (walletAddress) {
+                if (!existingByTg.walletAddress) {
+                    // No wallet attached yet — initial attach path (pre-S2-T6 behaviour preserved).
+                    // Still need conflict check for orphan-consume path.
+                    const conflict = await User.findOne({
+                        walletAddress,
+                        _id: { $ne: existingByTg._id },
+                    }).lean();
+                    if (!conflict) {
+                        update.walletAddress = walletAddress;
+                        console.log(`[users] linked wallet ${walletAddress.slice(0, 8)}… to tg ${telegramUserId}`);
+                    } else if (!conflict.telegramUserId) {
+                        // Orphan — consume it. Delete the empty Privy-only
+                        // doc and attach its wallet to our TG-keyed doc.
+                        await User.deleteOne({ _id: conflict._id });
+                        update.walletAddress = walletAddress;
+                        console.log(`[users] consumed orphan ${conflict._id} → linked wallet ${walletAddress.slice(0, 8)}… to tg ${telegramUserId}`);
+                    } else {
+                        // Real conflict — wallet belongs to a different TG
+                        // user. Refuse + warn; manual merge required.
+                        console.warn(`[users] cannot link wallet to tg ${telegramUserId} — wallet already on User ${conflict._id} (tg ${conflict.telegramUserId})`);
+                    }
+                } else if (existingByTg.walletAddress !== walletAddress) {
+                    // S2-T6: ROTATION PATH. The doc has a wallet but it's
+                    // not the one Privy is now reporting. Previously this
+                    // silently dropped the new wallet — DB H009 — meaning
+                    // future settlement TXs would route to the stale address.
+                    //
+                    // Hand off to updateWalletForTgUser, which does:
+                    //   (a) idempotent check (no-op if same — we already
+                    //       know they differ but defense-in-depth),
+                    //   (b) conflict check against the new address,
+                    //   (c) atomic push-prior-to-history + set new
+                    //       walletAddress.
+                    //
+                    // We DO NOT also $set update.walletAddress in the
+                    // findOneAndUpdate below — the helper handles it
+                    // atomically. The baseSet merge into update keeps
+                    // telegramUserId/lastActive/handle/username fresh.
+                    const rotation = await updateWalletForTgUser(
+                        telegramUserId,
+                        walletAddress,
+                        'linkTelegramIdentity'
+                    );
+                    if (!rotation.ok) {
+                        console.warn(`[users] wallet rotation refused for tg ${telegramUserId}: ${rotation.reason}`);
+                        // Continue with the rest of the link flow — handle/username
+                        // updates still apply, just walletAddress doesn't change.
+                    }
                 }
+                // (Case: existingByTg.walletAddress === walletAddress — no-op, normal re-link)
             }
 
             // Same defensive check for uid (browser session id).

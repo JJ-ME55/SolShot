@@ -11,6 +11,20 @@ solshot_escrow_v2 = "BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N"
 solshot_escrow = "4kzrDpV9JxjE27AMg4PQXzGuge9MEYQEFznSPvkBtnH1"
 solshot_escrow_v2 = "BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N"
 
+# Mainnet — v2 only (v1 stays devnet-only per V1 mainnet scope).
+# Keypair generated 2026-05-27, lives at target/deploy/solshot_escrow_v2_mainnet-keypair.json
+# (gitignored). After mainnet deploy, this entry locks the program ID; the
+# keypair file is functionally retired (only useful at initial deploy moment).
+# At deploy time, declare_id! in lib.rs must match this value — Anchor's
+# `--provider.cluster mainnet` resolution looks here, but the runtime check
+# inside the deployed bytecode reads from declare_id!. To deploy:
+#   1. Update declare_id! in programs/solshot-escrow-v2/src/lib.rs to match
+#   2. anchor build
+#   3. anchor deploy --provider.cluster mainnet --upgrade-authority <squads-vault-pda>
+#   4. node server/scripts/init-config-mainnet.mjs
+[programs.mainnet]
+solshot_escrow_v2 = "BNLgn96LqskqcgTTf7cPZ5iHkaKqRdSiCdGzcAw4L7uS"
+
 [registry]
 url = "https://api.apr.dev"
 

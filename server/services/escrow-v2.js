@@ -40,7 +40,14 @@ const IDL_PATH = path.join(__dirname, '..', 'idl', 'solshot_escrow_v2.json');
 
 // v2 program ID — deployed to devnet 2026-05-04
 // Tx: 55E7KiCapU51GXGSnAhR5i2gQrPSX2Yyxtzvnai973JgwtwxPBiv1LrbLakePjLCydoGmC5g9bcT5sCHUuGCBPHo
-const PROGRAM_ID = new PublicKey('BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N');
+//
+// Default = devnet. Mainnet sets ESCROW_PROGRAM_ID_V2 in env (Render var, or the
+// init-config-mainnet.mjs script export). Keeping a hardcoded devnet fallback
+// means dev workflows JustWork — no env needed locally — while mainnet flip is
+// purely an env-var rotation. Both PROGRAM_ID and the IDL's `address` field need
+// to match (Anchor 0.30+ binds the Program object via IDL.address).
+const DEFAULT_PROGRAM_ID = 'BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N';
+const PROGRAM_ID = new PublicKey(process.env.ESCROW_PROGRAM_ID_V2 || DEFAULT_PROGRAM_ID);
 
 const SOLANA_RPC = process.env.SOLANA_RPC || 'https://api.devnet.solana.com';
 
@@ -72,6 +79,10 @@ export function initEscrowV2() {
         });
 
         const idl = JSON.parse(fs.readFileSync(IDL_PATH, 'utf-8'));
+        // Anchor 0.30+ reads program ID from idl.address. Overwrite so a mainnet
+        // env override actually binds — otherwise the Program object would still
+        // target devnet.
+        idl.address = PROGRAM_ID.toBase58();
         program = new Program(idl, provider);
 
         const [configPDA] = getConfigPDAV2();

@@ -19,7 +19,7 @@ This doc is the **source of truth** for:
 
 | Key | Role | Location | Privilege | Rotateable |
 |---|---|---|---|---|
-| **Squads multisig** | Upgrade authority + config authority + treasury + ops fee destination | On-chain PDA (Squads v3 program `SMPLecH534NA9acpos4G6x7uf3LWbCAwZQE9e8ZekMu`) | Highest. Can redeploy programs, rotate config, drain fee destinations. | Via Squads UI (add/remove signers, change threshold) |
+| **Squads multisig — 3 vaults** | One multisig (2-of-3 signers), three distinct vault PDAs: **Vault 0 = Authority** (upgrade auth + config governance), **Vault 1 = Treasury** (7% fee dest), **Vault 2 = Ops** (3% fee dest). On-chain `initialize_config` rejects passing the same PDA for any two roles (`require!(authority != treasury); require!(authority != ops); require!(treasury != ops);`). | On-chain PDAs (Squads v3 program `SMPLecH534NA9acpos4G6x7uf3LWbCAwZQE9e8ZekMu`) | Highest. Can redeploy programs, rotate config, drain fee destinations — all gated through the same 2-of-3 signer set. | Via Squads UI (add/remove signers, change threshold) |
 | **JJ hot signer** | One of 3 Squads signers | JJ local wallet (Phantom / Solflare / hardware) | Single signature toward 2-of-3 threshold | Via Squads UI |
 | **Fish hot signer** | One of 3 Squads signers | Fish local wallet (Phantom mainnet). Pubkey `311auAZEvCVX2oBaW7AYMcSnby3UDaTN1uJYuuPWkXwo` (provided 2026-05-26). | Single signature toward 2-of-3 threshold | Via Squads UI |
 | **Cold Ledger** | One of 3 Squads signers, recovery role | Ledger Nano hardware, stored offline by JJ. Pubkey `4XoQgPxxLFNSc19A3TPqpfcvptEQ5g2DYmnaRLkYTFLV` (derived 2026-05-26). | Single signature toward 2-of-3 threshold. Only used if a hot signer is lost. | Squads UI (with 2 existing signers approving) |
@@ -47,8 +47,8 @@ Two layers of authority exist on a Solana program:
 2. **Layer 2 — Application authority.** The `config.authority` field stored inside `GlobalConfig`. Used by `update_config` and related governance instructions in the Anchor program.
 
 With **Squads-from-day-one**:
-- At mainnet deploy: `anchor deploy --provider.cluster mainnet --upgrade-authority <squads-pda>`. Layer 1 = multisig from genesis.
-- Immediately after deploy: server calls `initialize_config(authority: <squads-pda>, treasury: <squads-pda>, ops: <squads-pda>, ...)`. Layer 2 + fee destinations = multisig from genesis.
+- At mainnet deploy: `anchor deploy --provider.cluster mainnet --upgrade-authority <squads-vault-0-pda>`. Layer 1 = multisig from genesis.
+- Immediately after deploy: server calls `initialize_config(authority: <vault-0>, treasury: <vault-1>, ops: <vault-2>, ...)`. Layer 2 + fee destinations = multisig from genesis. Three distinct vault PDAs under one multisig — required because the program rejects same-PDA collisions.
 - The original deployer keypair is **never the authority** at any point.
 
 This eliminates:
@@ -81,14 +81,21 @@ The Bundle 1 Anchor instructions (`propose_authority` / `accept_authority` / `ap
    - **Members:** JJ hot pubkey, Fish hot pubkey, Ledger cold pubkey (3 total)
    - **Threshold:** 2 (any 2 of 3 must sign)
    - **Squad name:** "SolShot Mainnet Governance"
-   - **Vault name:** "SolShot Treasury"
+   - **Initial vault name:** "Authority" (this becomes Vault 0)
    - **Initial deposit:** ~0.05 SOL (covers rent + first few TX fees)
 
-6. **Record the multisig vault PDA.** Squads shows it on the Squad detail page. This pubkey is the value you pass to:
-   - `anchor deploy --upgrade-authority <THIS PDA>`
-   - `initialize_config(authority: <THIS PDA>, treasury: <THIS PDA>, ops: <THIS PDA>, ...)`
+6. **Add two more vaults to the same Squad.** In the Squad detail page, click "Add Vault" twice:
+   - **Vault 1 name:** "Treasury" — receives 7% fees, governed by the same 2-of-3.
+   - **Vault 2 name:** "Ops" — receives 3% fees, same governance.
 
-7. **Test the multisig with a no-op TX.** Create a proposal that sends 0.001 SOL from the vault to JJ's hot wallet. JJ signs, Fish signs, executes. Confirm SOL moves on-chain. This validates the 2-of-3 flow works before you bet the program on it.
+   We need three distinct PDAs because the on-chain program enforces:
+   `require!(authority != treasury); require!(authority != ops); require!(treasury != ops);`. One multisig with three vaults gives us three PDAs under one signer set.
+
+7. **Record all three vault PDAs.** Squads shows each on its detail page. You'll pass:
+   - `anchor deploy --upgrade-authority <vault-0-pda>` (Authority)
+   - `initialize_config(authority: <vault-0>, treasury: <vault-1>, ops: <vault-2>, ...)` via `init-config-mainnet.mjs`
+
+8. **Test each vault with a no-op TX.** Create one proposal per vault that sends 0.001 SOL out to JJ's hot wallet. JJ signs, Fish signs, executes. Confirm SOL moves on-chain for all three. This validates the 2-of-3 flow per vault before you bet the program on it.
 
 8. **Lock down access:**
    - Confirm JJ and Fish each have their hot signer seed phrases backed up (paper, offline)
@@ -101,37 +108,48 @@ The Bundle 1 Anchor instructions (`propose_authority` / `accept_authority` / `ap
 
 ## §4 Mainnet Deploy Procedure (uses Squads from genesis)
 
-After §3 is complete and the multisig vault PDA is known:
+After §3 is complete and the three Squads vault PDAs (Authority/Treasury/Ops) are known:
 
 ```bash
-# Build mainnet binary
+# 1. Update declare_id! in programs/solshot-escrow-v2/src/lib.rs to match
+#    Anchor.toml [programs.mainnet].solshot_escrow_v2:
+#    BNLgn96LqskqcgTTf7cPZ5iHkaKqRdSiCdGzcAw4L7uS
+
+# 2. Build mainnet binary
 anchor build
 
-# Deploy with Squads as upgrade auth from genesis
+# 3. Deploy with Squads Authority vault (Vault 0) as upgrade auth from genesis
 solana program deploy \
   --url mainnet-beta \
-  --program-id <v2_program_id> \
-  --upgrade-authority <squads_vault_pda> \
+  --program-id target/deploy/solshot_escrow_v2_mainnet-keypair.json \
+  --upgrade-authority <squads_vault_0_pda> \
   target/deploy/solshot_escrow_v2.so
 
-# Verify upgrade authority
-solana program show <v2_program_id> --url mainnet-beta
-# → "Upgrade Authority" should show the Squads vault PDA
+# 4. Verify upgrade authority
+solana program show BNLgn96LqskqcgTTf7cPZ5iHkaKqRdSiCdGzcAw4L7uS --url mainnet-beta
+# → "Upgrade Authority" should show Vault 0 PDA
 ```
 
-Then initialize the config via the server (server keypair signs `initialize_config`, but passes Squads PDA as the `authority` argument):
+Then initialize the config via the server. The server keypair signs `initialize_config`, but passes the three **distinct** Squads vault PDAs as authority/treasury/ops:
 
 ```bash
-# From server/ — uses solshot-server-authority.json
-node scripts/init-config-mainnet.mjs \
-  --authority <squads_vault_pda> \
-  --treasury <squads_vault_pda> \
-  --ops <squads_vault_pda> \
-  --fee-bps-treasury 700 \
-  --fee-bps-ops 300
+# Dry-run first (no INIT_MAINNET_CONFIRM)
+cd server/
+ESCROW_PROGRAM_ID_V2=BNLgn96LqskqcgTTf7cPZ5iHkaKqRdSiCdGzcAw4L7uS \
+SOLANA_RPC=https://api.mainnet-beta.solana.com \
+SOLANA_KEYPAIR_PATH=~/.config/solana/solshot-server-authority.json \
+SQUADS_AUTHORITY_PDA=<vault_0_pda> \
+SQUADS_TREASURY_PDA=<vault_1_pda> \
+SQUADS_OPS_PDA=<vault_2_pda> \
+node scripts/init-config-mainnet.mjs
+
+# Review output, then execute for real
+INIT_MAINNET_CONFIRM=I_UNDERSTAND_MAINNET_IRREVERSIBLE \
+ESCROW_PROGRAM_ID_V2=... (same env) ... \
+node scripts/init-config-mainnet.mjs
 ```
 
-(The `init-config-mainnet.mjs` script is a S2 / pre-flip deliverable — TBD path.)
+`initialize_config` is **one-shot** — the script aborts if config already exists. After this, all rotations go through `update_config` (24h timelock) and `propose_authority` / `accept_authority` (two-step).
 
 ---
 

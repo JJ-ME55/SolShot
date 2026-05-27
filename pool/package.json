@@ -1,20 +1,28 @@
 {
-  "name": "ts-8-ball",
-  "version": "1.0.0",
-  "description": "Classic Pool Game TypeScript Adaptation",
-  "main": "index.js",
+  "name": "solshot-pool",
+  "version": "0.1.0",
+  "description": "SolShot Pool — 8-ball pool for TheArcade. Forked from henshmi/Classic-8-Ball-Pool (MIT).",
+  "private": true,
+  "license": "MIT",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "webpack --mode production",
+    "build:dev": "webpack --mode development",
+    "dev": "webpack serve --mode development --open",
+    "clean": "rimraf dist",
+    "typecheck": "tsc --noEmit"
   },
-  "author": "Chen Shmilovich",
-  "license": "ISC",
+  "dependencies": {
+    "lodash": "^4.17.21"
+  },
   "devDependencies": {
-    "ts-loader": "^5.3.3",
-    "typescript": "^3.3.3",
-    "webpack": "^4.29.3",
-    "webpack-cli": "^3.2.3",
-    "@types/lodash": "^4.14.137",
-    "lodash": "^4.17.15"
-  },
-  "dependencies": {}
+    "@types/lodash": "^4.17.0",
+    "copy-webpack-plugin": "^12.0.2",
+    "html-webpack-plugin": "^5.6.0",
+    "rimraf": "^5.0.5",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.4.5",
+    "webpack": "^5.91.0",
+    "webpack-cli": "^5.1.4",
+    "webpack-dev-server": "^5.0.4"
+  }
 }

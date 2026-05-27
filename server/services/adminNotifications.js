@@ -163,6 +163,75 @@ export async function notifyMatchLobbyOpen(args) {
 export const notifyWageredMatchCreated = notifyMatchLobbyOpen;
 
 /**
+ * Ping admins when a stealth bot has filled a lobby (Plan B fired). Lets
+ * JJ + Fish see how often the auto-fill kicks in vs organic matches —
+ * useful for tuning STEALTH_FILL_DELAY_MS and judging real demand.
+ *
+ * Distinct from notifyMatchLobbyOpen — this fires AFTER the lobby-open
+ * ping was already sent and neither an admin nor an organic opponent
+ * showed up in time.
+ *
+ * @param {Object} args
+ * @param {string} args.playerName  — the real human's display name
+ * @param {string} args.botName     — the stealth bot's chosen handle
+ * @param {string} [args.matchId]
+ * @param {string} [args.matchMode]
+ * @param {string} [args.format]
+ * @returns {Promise<void>}
+ */
+export async function notifyStealthBotSpawned(args) {
+  try {
+    const {
+      playerName = 'Someone',
+      botName = 'AI bot',
+      matchId = null,
+      matchMode = null,
+      format = null,
+    } = args || {};
+
+    // Throttle defensively — same matchId shouldn't fire twice.
+    const key = matchId ? `stealth:${matchId}` : null;
+    if (key) {
+      if (recentPings.has(key)) return;
+      recentPings.set(key, Date.now());
+      prune();
+    }
+
+    const adminIds = getAdminIds();
+    if (adminIds.length === 0) {
+      console.log(`[adminNotify] stealth bot spawned for ${playerName} (${matchMode || 'unknown'}) — ADMIN_TELEGRAM_IDS not set, skipping ping`);
+      return;
+    }
+
+    const bot = getBot();
+    if (!bot || !bot.telegram) {
+      console.warn('[adminNotify] bot not initialised — skipping ping');
+      return;
+    }
+
+    const detailBits = [];
+    const mode = prettyMode(matchMode);
+    if (mode) detailBits.push(mode);
+    if (format) detailBits.push(format);
+    const detailLine = detailBits.length > 0 ? `\n${detailBits.join(' · ')}` : '';
+
+    const message = `🤖 Game started with AI bot — ${playerName} vs ${botName}${detailLine}`;
+
+    await Promise.all(adminIds.map(async (id) => {
+      try {
+        await bot.telegram.sendMessage(id, message, { disable_web_page_preview: true });
+      } catch (err) {
+        console.warn(`[adminNotify] stealth-spawn sendMessage to ${id} failed:`, err.message);
+      }
+    }));
+
+    console.log(`[adminNotify] pinged ${adminIds.length} admin(s) about stealth spawn — ${playerName} vs ${botName}`);
+  } catch (err) {
+    console.warn('[adminNotify] notifyStealthBotSpawned unexpected error:', err.message);
+  }
+}
+
+/**
  * Test helper — wipe the throttle map.
  */
 export function _resetThrottleForTests() {

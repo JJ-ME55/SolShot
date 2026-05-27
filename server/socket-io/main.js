@@ -12,7 +12,7 @@ import { handleAuthenticate, verifyAuthMessage, verifyWalletSignature } from '..
 import { verifyBalance, isValidWager, settleMatch, refundWager, WAGER_TIERS, MATCH_MODES, validateMatchMode, isEscrowEnabled, createMatchEscrow, buildDepositTransaction, getEscrowState, startWithDepositorsEscrow, createMatchEscrowV2, buildDepositTransactionV2, getEscrowStateV2, isEscrowV2Enabled, shouldUseEscrowV2, V2_DEFAULT_MATCH_DURATION_SECS, V2_DEFAULT_DEPOSIT_WINDOW_SECS } from '../services/solana.js';
 import { cancelMatchEscrow } from '../services/escrow.js';
 import { cancelMatchEscrowV2 } from '../services/escrow-v2.js';
-import { notifyMatchLobbyOpen } from '../services/adminNotifications.js';
+import { notifyMatchLobbyOpen, notifyStealthBotSpawned } from '../services/adminNotifications.js';
 import {
     scheduleStealthBot,
     cancelStealthBot,
@@ -280,6 +280,16 @@ function spawnStealthBotForRoom(io, roomId) {
     });
 
     console.log(`[StealthBot] filled room ${roomId} with ${aiName} (createRoom path)`);
+
+    // Tell JJ + Fish so they can track how often Plan B actually fires
+    const realHuman = room.players.find(p => !p.isAI);
+    notifyStealthBotSpawned({
+        playerName: realHuman?.name || 'Someone',
+        botName: aiName,
+        matchId: roomId,
+        matchMode: room.matchMode || 'custom_challenge',
+        format: room.totalRounds === 5 ? 'BO5' : room.totalRounds === 3 ? 'BO3' : 'BO1',
+    }).catch(() => { /* fail-soft */ });
 }
 
 function spawnStealthBotForQueueWaiter(io, waiter, queueKey) {
@@ -376,6 +386,15 @@ function spawnStealthBotForQueueWaiter(io, waiter, queueKey) {
     }, 2500);
 
     console.log(`[StealthBot] filled queue waiter ${waiter.name} with ${aiName} → room ${roomId} (${waiter.matchMode} BO${waiter.format})`);
+
+    // Tell JJ + Fish so they can track how often Plan B actually fires
+    notifyStealthBotSpawned({
+        playerName: waiter.name,
+        botName: aiName,
+        matchId: roomId,
+        matchMode: waiter.matchMode,
+        format: waiter.format === 5 ? 'BO5' : waiter.format === 3 ? 'BO3' : 'BO1',
+    }).catch(() => { /* fail-soft */ });
 }
 
 /**

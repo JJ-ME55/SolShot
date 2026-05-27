@@ -13,6 +13,14 @@ import { verifyBalance, isValidWager, settleMatch, refundWager, WAGER_TIERS, MAT
 import { cancelMatchEscrow } from '../services/escrow.js';
 import { cancelMatchEscrowV2 } from '../services/escrow-v2.js';
 import { notifyMatchLobbyOpen } from '../services/adminNotifications.js';
+import {
+    scheduleStealthBot,
+    cancelStealthBot,
+    cancelStealthBotsForSocket,
+    pickStealthName,
+    makeStealthSocketId,
+    STEALTH_FILL_DELAY_MS,
+} from '../services/stealthBot.js';
 
 // S1-T5 escrow dispatch helpers — route 1v1 to v1 (battle-tested) and
 // 3P/4P to v2 (N-player capable). Stored on the room as `escrowVersion`
@@ -202,6 +210,172 @@ function removeFromAllQueues(socketId) {
         }
     }
     return changed;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Stealth Bot (Plan B retention fallback)
+//
+// When a lobby has been open for STEALTH_FILL_DELAY_MS without a real
+// opponent joining (or admin DMing in), drop a server AI in with a
+// plausible-looking handle so the player can actually play. Free
+// matches only — wagered matches never get filled with a bot (the AI
+// can't lose real SOL, so that'd be fraud-adjacent).
+//
+// Two spawn paths:
+//   - spawnStealthBotForRoom(io, roomId)
+//       For createRoom lobbies (Custom Challenge). Adds the bot to the
+//       existing room as a second player; creator presses Ready and
+//       the normal shop flow kicks in.
+//   - spawnStealthBotForQueueWaiter(io, waiter, queueKey)
+//       For joinQueue waiters (Practice / Quick Match etc.). Pops the
+//       waiter from the queue, synthesizes a room with bot opponent,
+//       mirrors the auto-match flow (queueMatched -> startPick).
+// ═══════════════════════════════════════════════════════════════════
+function spawnStealthBotForRoom(io, roomId) {
+    const room = rooms.get(roomId);
+    if (!room) return; // room was cleaned up
+    if (room.players.length >= room.maxPlayers) return; // someone joined first
+    if ((room.wager || 0) > 0) return; // never auto-fill wagered (safety net)
+    if (room.isAIMatch) return; // already an AI match somehow
+    if (room.isStealthFill) return; // already filled by us; defensive
+
+    const aiSocketId = makeStealthSocketId(roomId);
+    const aiName = pickStealthName();
+    // Pick a contrasting color — find one not already in use
+    const usedColors = new Set(room.players.map(p => p.color));
+    const colorPool = [0xFF0000, 0x00FF00, 0x00FFFF, 0xFFFF00, 0xFF00FF, 0xFF8000];
+    const botColor = colorPool.find(c => !usedColors.has(c)) || 0xFFFFFF;
+
+    const aiSlot = {
+        name: aiName,
+        color: botColor,
+        socketId: aiSocketId,
+        isReady: true,    // bot is ready from spawn — user just needs to ready up
+        playAgain: false,
+        pos: null,
+        isHost: false,
+        isAI: true,
+    };
+
+    room.players.push(aiSlot);
+    room.isAIMatch = true;
+    room.isStealthFill = true;
+    if (room.players.length === room.maxPlayers) room.active = true;
+
+    initAI(roomId);
+    broadcastRooms(io);
+
+    // Tell the human their "opponent" arrived — uses the same roomUpdate
+    // shape as a real joinRoom so the client doesn't need any new logic.
+    io.sockets.in(roomId).emit('roomUpdate', {
+        players: room.players.map(p => ({
+            socketId: p.socketId,
+            name: p.name,
+            color: p.color,
+            isReady: p.isReady || false,
+            isHost: p.isHost || false,
+        })),
+        maxPlayers: room.maxPlayers,
+        currentPlayers: room.players.length,
+    });
+
+    console.log(`[StealthBot] filled room ${roomId} with ${aiName} (createRoom path)`);
+}
+
+function spawnStealthBotForQueueWaiter(io, waiter, queueKey) {
+    if (!waiter || !waiter.socketId) return;
+    if ((waiter.wager || 0) > 0) return; // free only
+
+    // Pop the waiter from their queue
+    const queue = matchmakingQueues.get(queueKey);
+    if (!queue) return;
+    const idx = queue.findIndex(e => e.socketId === waiter.socketId);
+    if (idx === -1) return; // already gone — left queue, matched, disconnected
+    queue.splice(idx, 1);
+    if (queue.length === 0) matchmakingQueues.delete(queueKey);
+    broadcastQueueSnapshot(io);
+
+    const waiterSocket = io.sockets.sockets.get(waiter.socketId);
+    if (!waiterSocket) return; // they disconnected during the wait
+
+    // Synthesize a 2-player room: waiter (host) + stealth bot
+    const roomId = crypto.randomBytes(4).toString('hex');
+    const aiSocketId = makeStealthSocketId(roomId);
+    const aiName = pickStealthName();
+
+    const hostSlot = {
+        name: waiter.name,
+        color: waiter.color,
+        socketId: waiter.socketId,
+        isReady: true,
+        playAgain: false,
+        pos: null,
+        isHost: true,
+    };
+
+    const colorPool = [0xFF0000, 0x00FF00, 0x00FFFF, 0xFFFF00, 0xFF00FF, 0xFF8000];
+    const botColor = colorPool.find(c => c !== waiter.color) || 0xFFFFFF;
+    const aiSlot = {
+        name: aiName,
+        color: botColor,
+        socketId: aiSocketId,
+        isReady: true,
+        playAgain: false,
+        pos: null,
+        isHost: false,
+        isAI: true,
+    };
+
+    const roundType = waiter.format === 5 ? 'BO5' : waiter.format === 3 ? 'BO3' : '1';
+    const roomData = {
+        roomId,
+        players: [hostSlot, aiSlot],
+        maxPlayers: 2,
+        active: true,
+        wager: 0,
+        matchMode: waiter.matchMode,
+        totalRounds: waiter.format,
+        isAIMatch: true,
+        isStealthFill: true,
+    };
+
+    rooms.set(roomId, roomData);
+    matchStates[roomId] = createMatchState(roomId, roundType, 2);
+    initAI(roomId);
+
+    waiterSocket.roomId = roomId;
+    waiterSocket.isHost = true;
+    waiterSocket.name = waiter.name;
+    waiterSocket.color = waiter.color;
+    waiterSocket.join(roomId);
+
+    trackMatchCreated();
+    broadcastRooms(io);
+
+    // Tell the waiter they've been "matched" — same payload as a real
+    // queue match so the client flows naturally out of searching UI.
+    waiterSocket.emit('queueMatched', {
+        roomId,
+        matchMode: waiter.matchMode,
+        matchLength: waiter.format,
+        wager: 0,
+        host: { name: waiter.name, color: waiter.color },
+        player: { name: aiName, color: botColor },
+        isHost: true,
+    });
+
+    // Mirror the real queue-match path — startPick after 2.5s
+    setTimeout(() => {
+        const checkRoom = findRoom(roomId);
+        if (!checkRoom || !checkRoom.active) return;
+        io.sockets.in(roomId).emit('startPick', {
+            host: hostSlot,
+            player: aiSlot,
+            wager: 0,
+        });
+    }, 2500);
+
+    console.log(`[StealthBot] filled queue waiter ${waiter.name} with ${aiName} → room ${roomId} (${waiter.matchMode} BO${waiter.format})`);
 }
 
 /**
@@ -657,6 +831,7 @@ async function persistRoom(room) {
 // Helper: remove room from memory and mark cancelled in DB
 async function removeRoom(roomId) {
     cleanupAI(roomId);
+    cancelStealthBot(`room:${roomId}`);
     const room = rooms.get(roomId);
     rooms.delete(roomId);
     delete matchStates[roomId];
@@ -1848,6 +2023,7 @@ const mainsocket = (io) => {
         client.on('disconnect', async () => {
             // Remove from matchmaking queue first (before room cleanup)
             if (removeFromAllQueues(client.id)) broadcastQueueSnapshot(io);
+            cancelStealthBotsForSocket(client.id);
             trackDisconnection()
 
             // Immediate cleanup — no reconnect window (disabled for P1 launch)
@@ -2128,6 +2304,9 @@ const mainsocket = (io) => {
 
             // Set room active when all slots filled
             if (room.players.length === room.maxPlayers) room.active = true
+
+            // Real opponent joined — kill any pending stealth-bot fill timer
+            cancelStealthBot(`room:${roomId}`);
 
             // Store joiner's wallet in wager state
             if (ws) {
@@ -2594,6 +2773,14 @@ const mainsocket = (io) => {
                 matchMode: matchMode || 'custom_challenge',
             }).catch(() => { /* fail-soft */ });
 
+            // Plan B — stealth bot fallback. If no real opponent (or admin)
+            // joins within STEALTH_FILL_DELAY_MS, drop an AI into the lobby
+            // with a plausible handle. Free matches only — wagered lobbies
+            // never get bot-filled (escrow money on the line).
+            if (wagerAmount === 0) {
+                scheduleStealthBot(`room:${roomId}`, () => spawnStealthBotForRoom(io, roomId));
+            }
+
             // Notify creator of their waiting room state
             client.emit('roomUpdate', {
                 players: roomData.players.map(p => ({
@@ -2738,6 +2925,7 @@ const mainsocket = (io) => {
 
             // Remove from any existing queue before re-queuing
             removeFromAllQueues(client.id);
+            cancelStealthBotsForSocket(client.id);
 
             // E8: Balance check for wagered queue joins
             const joinerWallet = authenticatedWallets[client.id] || null;
@@ -2786,6 +2974,11 @@ const mainsocket = (io) => {
                 queue.shift(); // now safe to consume
                 if (queue.length === 0) matchmakingQueues.delete(queueKey);
                 broadcastQueueSnapshot(io);
+
+                // Real match — cancel any pending stealth-bot fill timer
+                // for the opponent we just consumed. Joiner had no timer
+                // (they never sat in the queue).
+                cancelStealthBot(`queue:${opponent.socketId}`);
 
                 // Auto-create room — mirrors createRoom + joinRoom exactly
                 const roomId = crypto.randomBytes(4).toString('hex');
@@ -2956,11 +3149,24 @@ const mainsocket = (io) => {
                     matchMode,
                     throttleKey: `queue:${client.id}:${matchMode}:${matchLength}:${wagerAmount}`,
                 }).catch(() => { /* fail-soft */ });
+
+                // Plan B — schedule a stealth bot to fill the slot if no
+                // real opponent shows up in time. Free queues only. The
+                // waiter entry captured above (just pushed to queue) is
+                // what the spawn pops from the queue when the timer fires.
+                if (wagerAmount === 0) {
+                    const waiterRef = queue[queue.length - 1]; // the entry we just pushed
+                    scheduleStealthBot(
+                        `queue:${client.id}`,
+                        () => spawnStealthBotForQueueWaiter(io, waiterRef, queueKey),
+                    );
+                }
             }
         });
 
         client.on('leaveQueue', () => {
             if (removeFromAllQueues(client.id)) broadcastQueueSnapshot(io);
+            cancelStealthBotsForSocket(client.id);
             client.emit('queueLeft');
             console.log(`[Queue] Player ${client.id} left queue`);
         });

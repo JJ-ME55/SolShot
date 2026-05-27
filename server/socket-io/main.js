@@ -18,6 +18,8 @@ import {
     cancelStealthBot,
     cancelStealthBotsForSocket,
     pickStealthName,
+    pickStealthSkill,
+    describeSkill,
     makeStealthSocketId,
     STEALTH_FILL_DELAY_MS,
 } from '../services/stealthBot.js';
@@ -262,7 +264,8 @@ function spawnStealthBotForRoom(io, roomId) {
     room.isStealthFill = true;
     if (room.players.length === room.maxPlayers) room.active = true;
 
-    initAI(roomId);
+    const skill = pickStealthSkill();
+    initAI(roomId, skill);
     broadcastRooms(io);
 
     // Tell the human their "opponent" arrived — uses the same roomUpdate
@@ -279,7 +282,7 @@ function spawnStealthBotForRoom(io, roomId) {
         currentPlayers: room.players.length,
     });
 
-    console.log(`[StealthBot] filled room ${roomId} with ${aiName} (createRoom path)`);
+    console.log(`[StealthBot] filled room ${roomId} with ${aiName} [${describeSkill(skill)} ${skill}] (createRoom path)`);
 
     // Tell JJ + Fish so they can track how often Plan B actually fires
     const realHuman = room.players.find(p => !p.isAI);
@@ -351,7 +354,8 @@ function spawnStealthBotForQueueWaiter(io, waiter, queueKey) {
 
     rooms.set(roomId, roomData);
     matchStates[roomId] = createMatchState(roomId, roundType, 2);
-    initAI(roomId);
+    const skill = pickStealthSkill();
+    initAI(roomId, skill);
 
     waiterSocket.roomId = roomId;
     waiterSocket.isHost = true;
@@ -385,7 +389,7 @@ function spawnStealthBotForQueueWaiter(io, waiter, queueKey) {
         });
     }, 2500);
 
-    console.log(`[StealthBot] filled queue waiter ${waiter.name} with ${aiName} → room ${roomId} (${waiter.matchMode} BO${waiter.format})`);
+    console.log(`[StealthBot] filled queue waiter ${waiter.name} with ${aiName} [${describeSkill(skill)} ${skill}] → room ${roomId} (${waiter.matchMode} BO${waiter.format})`);
 
     // Tell JJ + Fish so they can track how often Plan B actually fires
     notifyStealthBotSpawned({

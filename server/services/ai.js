@@ -44,9 +44,18 @@ const DIRECT_DAMAGE_TYPES = new Set([
  * Initialize calibration state for a new AI match.
  * @param {string} roomId
  */
-export function initAI(roomId) {
+/**
+ * @param {string} roomId
+ * @param {number} [startingErrorFactor=1.0] — initial aim spread.
+ *   1.0 = fresh / wild shots (the original Shot Bot default).
+ *   ~0.5 = already partly calibrated, lands shots fast (shark).
+ *   ~1.2 = takes longer to dial in (noob — bias persists past the cap
+ *   because recalibration only clamps to 1.0 when target/self moves).
+ *   Floor is 0.15 (best aim a fully-calibrated bot reaches).
+ */
+export function initAI(roomId, startingErrorFactor = 1.0) {
   calibration[roomId] = {
-    errorFactor: 1.0,
+    errorFactor: startingErrorFactor,
     lastTargetX: null,
     lastTargetY: null,
     lastSelfX: null,

@@ -43,6 +43,38 @@ export function pickStealthName() {
 }
 
 /**
+ * Pick a starting AI skill (errorFactor seed) for a stealth bot.
+ *
+ * Range [0.5, 1.2] uniform — covers a believable spread:
+ *   0.5–0.7 = shark. Lands shot 1 or 2; feels veteran.
+ *   0.7–1.0 = normal. The default Shot Bot zone.
+ *   1.0–1.2 = noob. Wild early shots, takes 4+ tries to dial in.
+ *
+ * Uniform random rather than tiered-by-name because real-world player
+ * skill doesn't correlate with handle. A `crackshot` who whiffs and a
+ * `kaitlyn_7` who lands shot one both happen on real ladders — that's
+ * what keeps it feeling like a person, not a difficulty selector.
+ *
+ * Floor (0.15) and recalibration ceiling (1.0 during in-match bumps)
+ * are enforced by ai.js — we only seed the starting point.
+ */
+export function pickStealthSkill() {
+  const min = 0.5;
+  const max = 1.2;
+  return +(min + Math.random() * (max - min)).toFixed(2);
+}
+
+/**
+ * Human-readable label for the skill level — for logging only, never
+ * surfaced to the player or in admin pings.
+ */
+export function describeSkill(errorFactor) {
+  if (errorFactor < 0.7) return 'sharp';
+  if (errorFactor < 1.0) return 'normal';
+  return 'wild';
+}
+
+/**
  * Generate a synthetic socket-id-shaped string for the AI player slot.
  * Mirrors the pattern used by /createAIMatch (`ai-bot-<roomId>`) so any
  * downstream `socketId.startsWith('ai-bot-')` checks still fire.

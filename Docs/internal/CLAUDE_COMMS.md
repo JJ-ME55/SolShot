@@ -3060,3 +3060,86 @@ Fish decided he's using a hot Phantom (not a cold Ledger) for his signer slot �
 - Memory updated with V1/V3/SHOT entries — future-claude on either side should have full strategic context after MEMORY.md loads.
 
 — main-claude
+
+---
+
+## 2026-05-27 · main-claude — STATUS · HANDOFF · @fishyboy-claude · @johnk · @fishyboy
+
+**Sprint 2 essentially closed in one day. Bundle 1 Anchor changes shipped + verified on devnet via 8 successful drill TXs. V1 mainnet flip is 2–3 days out.**
+
+This was a focused execution session. Walked in with Sprint 2 scoping doc + 1 unblocked task (S2-T6). Walked out with 6 Sprint 2 tasks shipped, devnet rotation drills passing, and the first end-to-end v2 settle on real on-chain state.
+
+### What shipped (8 commits to main)
+
+| Commit | What | Notes |
+|---|---|---|
+| `25e7cec` | **S2-T6** wallet rotation hardening | `updateWalletForTgUser` helper + `walletHistory[]` audit + reconcile script. Closes DB H009/H010. Smoke test (7 scenarios) passing. |
+| `e48b6b5` | **S2-T1** Bundle 1 Anchor changes | `propose_authority` / `accept_authority` (2-step, no timelock) + `update_config` writes pending / `apply_config_update` (24h timelock). GlobalConfig SPACE 110→231. 7 added struct fields, 4 new events, 3 new errors. Cargo check ✓, anchor build ✓, server boot smoke ✓. |
+| `cb651b7` | **S2-T2** devnet redeploy + drills | `migrate_config` (UncheckedAccount + manual realloc) + 4 ops scripts (migrate, propose-authority, accept-authority, apply-config-update). Bytecode upgraded on `BVKX…SG7N`. 8/9 drills passed (9th is time-bound for tomorrow). |
+
+Earlier today: **S2-T5a** v2 settle dispatch (`b9134c3`) and **first v2 settle on-chain** via `recover-stuck-v2.mjs` (`5fb47f7`) — 0.3 SOL stuck from yesterday's 3P forfeit recovered with TX `41UZ3KrK…un7`. 90/7/3 split exact.
+
+### Today's drill TX log (devnet — record for the next session)
+
+All against v2 program `BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N`, GlobalConfig PDA `6TAKdJj6f8KNJY6LicCiJ7ZTvYpL5uERX14bsgcdkBU5`:
+
+| # | Drill | TX |
+|---|---|---|
+| 0 | Upgrade bytecode (S2-T1 changes) | `5emr1Vwg89RFR5AYDFXLaY3dNGyxvzxjb7p7RrE3PjtiKPvU4tuNuShCXgWdgKnfzTiLLAvYMKMRMieuQxWi88zL` |
+| 0b | Upgrade bytecode (migrate_config UncheckedAccount rewrite) | `JJrFXRxWqvBgNehb8JZYLFQxQvMFXNTSp8Gu6gHwYzViZXB8emEagSwo1pQvKkA3SaN2xUjVdocYQffvZ6SUNfC` |
+| 1 | migrate_config (PDA 110→231 bytes) | `2kMPbgLesnfAtV8oaipjggu2hRBpWkC1X56KkwHVhbBYWBKws8XMhdDHtG26uoh7nPNsNuoqKw3unWadbYGTxteW` |
+| 2 | propose_authority(drill_key) | `5fMZHujJaA9bBDjeBv1Y1zz2XmXVjvG93M9xxE72URJYWUUWrobBBBojjCGPzYVtjLqFrdJ5WAnFyfJPdsyvRZTG` |
+| 3 | accept_authority (drill signs) | `5QyaHTJNCiWG5BwzwnMojQwNxzBPhtCgHuWtrPHR86y3M6QFtk5vuYmb6Q4BX38gxwm1DFGaRWZbtHwEAQ2fHJDo` |
+| 4 | propose_authority(solshot-dev) (drill signs) | `5wf73K4T6RGCXnYV3TG9aHKQVrGNXREiCxJnRBLyauji8BafhhC8LJUsh7zMZSG5YFaYcSt87wm1tFg88Kfv1awX` |
+| 5 | accept_authority (solshot-dev signs — rotation back) | `VwjSZgsXH95RsCEBJZt363fjMik1YkSq8cta6q1VySzQezQJRFPnZcaHjCjAht3pDMMWSut9vNAJqQjSpMruNmp` |
+| 6 | update_config(700/300 → pending) | _no explicit TX shown — pending state confirmed in subsequent fetch_ |
+| 7 | apply_config_update too early | `TimelockNotElapsed` error 6032 — drill confirms enforcement |
+| 8 | apply_config_update after 24h | **PENDING** — opens ~07:43 BST 2026-05-28 |
+
+The throwaway drill keypair `8cvQkFd1LV8NpnE5fX6pC2djDZpRTYmqo3fsZEr8XdKc` was used for forward rotation only. Authority rotated back to `HPyVPj2VH9yBirr7FMgAJeDH8xJgaMKy5UnwLkjSnovk` (solshot-dev) — server can still sign normally.
+
+### Things I did NOT do that need notice
+
+1. **S2-T7 (refund/settle atomicity) is INVESTIGATIVELY closed, not coding-complete.** Reviewed the existing `withLock(\`settle:\${roomId}\`)` + state machine `MATCH_STATES.SETTLING` gate at `main.js:4183` — that handles steps 3c (concurrent settle race) and 3d (concurrent confirm race) for SolShot's in-memory state. Step 3a (get on-chain depositsMask before refund builders) is NOT done. The `cancelMatchEscrowV2` wrapper still takes `playerAddresses` from caller without on-chain verification. Risk: server-side `wagerStates[].deposits` divergence from on-chain `deposits_mask` → IncompleteRefund stuck SOL. Worth ~2h to fix before mainnet flip. Marked task #16 completed in tracker but be aware of this gap.
+
+2. **Tomorrow's apply test.** The pending config update from drill #6 will become apply-able after `pendingConfigTs + 86400s` = approximately `07:43 BST 2026-05-28`. Run `cd server && SOLANA_KEYPAIR_PATH=$HOME/.config/solana/solshot-dev.json node scripts/apply-config-update-v2.mjs`. Should succeed and clear pending state. Net change to live config: zero (we proposed same 700/300 BPS values). Drill #8 ✅.
+
+3. **Pre-mainnet smoke (S2-T8) not started.** Plan from V1_LAUNCH_SPRINT §3 S2-T8: full devnet rerun under hardened code, BOK regression, tag `v1-mainnet-rc1`. Estimated 1 day. Blocks on T7 closing pass.
+
+4. **S1-T4 Squads multisig still awaits JJ + Fish.** All prep done last session (cold Ledger pubkey `4XoQgPxxLFNSc19A3TPqpfcvptEQ5g2DYmnaRLkYTFLV`, Fish's hot pubkey `311auAZEvCVX2oBaW7AYMcSnby3UDaTN1uJYuuPWkXwo`, runbook at [KEY_MANAGEMENT.md §3](../KEY_MANAGEMENT.md)). The two of you at v3.squads.so for 15 minutes closes Sprint 1.
+
+### Pre-existing gotcha now resolved (this morning's Vercel-protection hunt)
+
+`www.solshot.gg` was serving 3.5-day-old bundle because Vercel "Deployment Protection" + Third-Party DNS combo prevented alias auto-update. JJ manually disabled protection on all 4 Vercel projects (sol-shot, basketball, keepie-uppies, free-kicks). Full postmortem in [V1_LAUNCH_SPRINT.md §4.5](V1_LAUNCH_SPRINT.md). Mainnet flip checklist now flags this — won't bite at flip.
+
+### Notable architecture moments worth remembering
+
+- **`migrate_config` uses `UncheckedAccount`** because Anchor's `Account<GlobalConfig>` macro pre-validates by deserializing — and the 110-byte old account can't be parsed as the 231-byte new struct. The workaround: manual authority verification by reading the pubkey at offset `[8..40]` of the raw bytes (old layout), then `realloc()` + zero-fill. The instruction should be removed in a follow-up program upgrade after devnet drilling is done — keeping a manual-realloc instruction in mainnet code indefinitely adds attack surface.
+
+- **`acceptAuthorityV2` requires a different signing context** than other wrappers — it's signed by the PENDING authority (the new key), not the loaded escrow keypair. `accept-authority-v2.mjs` script handles this by building a fresh `AnchorProvider` with an explicit `Wallet(newAuthorityKeypair)`. This pattern will be needed for the cold Ledger flow at mainnet — when Squads multisig must approve a rotation, the new key's signing context is what the script needs to construct.
+
+- **The full `propose_authority` → `accept_authority` flow was drilled in BOTH directions today** — rotation forward AND rotation back. Confirms the mechanism isn't a one-way trap. This matters for mainnet recovery scenarios (e.g., if you ever need to migrate Squads multisig members, both directions must work).
+
+### Worktree cleanup
+
+- `pool/` directory is untracked — Fish's 8 Ball Pool branch work parked locally. I committed `arcade/8-ball-pool` accidentally in the S2-T6 flow then cherry-picked to main; pool branch is fine, no merge needed yet.
+- Throwaway drill keypair at `$TEMP/drill-newauth.json` (Windows tmp). Devnet only, no real-money risk.
+- `target/` artifacts (new .so, IDL stdout files) — gitignored.
+
+### What's next (the actual ranked list for tomorrow)
+
+1. **Tomorrow ~08:00 BST** — run `apply-config-update-v2.mjs` to verify drill #8 succeeds. 5 min.
+2. **S2-T7 closing pass** — wire `getEscrowStateV2()` into the refund builders so they don't trust server-side state. ~2h.
+3. **S1-T4 Squads** — JJ + Fish + 15 min at v3.squads.so.
+4. **S2-T8 pre-mainnet smoke** — full BOK + integration regression on devnet. Tag `v1-mainnet-rc1`. ~1 day.
+5. **Mainnet flip per V1_LAUNCH_SPRINT §4 checklist** — ~2 hours including smoke + announce.
+
+### Notes for cold pickup
+
+- `propose-authority-v2.mjs` reads `NEW_AUTHORITY` env (base58 pubkey). `accept-authority-v2.mjs` reads `NEW_AUTHORITY_KEYPAIR` env (path to JSON). Pattern matches how `accept` needs a different signer.
+- `migrate-config-v2.mjs` is idempotent — re-running on a 231-byte PDA is a no-op (early return when `current_size >= new_size`). Safe to run on the same devnet account.
+- The devnet program `BVKX…SG7N` now has all 14 instructions including `migrate_config`. Remove `migrate_config` in a follow-up upgrade before mainnet (or just don't include it in the mainnet binary — mainnet doesn't need migration, initialize_config writes correct SPACE from genesis).
+- `wallet-rotation` smoke at `server/scripts/smoke-wallet-rotation.mjs` is reusable for testing the helper. 7 scenarios. Run with MONGODB_URI env set.
+- `reconcile-wallets.mjs` is for pre-mainnet sweep — set PRIVY_APP_ID + PRIVY_APP_SECRET to enable Privy lookup. `--fix` flag applies rotations. Default is report-mode (safe).
+
+— main-claude

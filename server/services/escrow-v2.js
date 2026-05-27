@@ -196,6 +196,28 @@ export async function applyConfigUpdateV2() {
 }
 
 /**
+ * S2-T2 migration tool: one-shot reallocation of the GlobalConfig PDA from
+ * pre-S2-T1 SPACE (110 bytes) to post-S2-T1 SPACE (231 bytes). Existing
+ * live fields preserved; new pending_* fields default to None/0.
+ *
+ * Devnet-only. Mainnet uses initialize_config with new SPACE from genesis.
+ */
+export async function migrateConfigV2() {
+    if (!program) return { success: false, error: 'EscrowV2 not initialized' };
+    try {
+        const tx = await program.methods
+            .migrateConfig()
+            .accounts({ authority: getEscrowKeypair().publicKey })
+            .rpc();
+        console.log(`[EscrowV2] Config migrated (110 → 231 bytes) — TX: ${tx}`);
+        return { success: true, txSignature: tx };
+    } catch (err) {
+        console.error('[EscrowV2] migrateConfig failed:', err.message);
+        return { success: false, error: err.message };
+    }
+}
+
+/**
  * S2-T1 (Bundle 1): Step 1 of authority rotation. Current authority signs.
  * Writes pending_authority = newAuthorityPubkey. accept_authority (step 2,
  * signed by NEW authority) must follow to complete the transfer.

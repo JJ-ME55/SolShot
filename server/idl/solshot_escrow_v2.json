@@ -411,6 +411,69 @@
       ]
     },
     {
+      "name": "migrate_config",
+      "docs": [
+        "S2-T2 migration tool: grow GlobalConfig PDA from pre-S2-T1 SPACE (110)",
+        "to post-S2-T1 SPACE (231) bytes. Existing live fields preserved; new",
+        "pending_* fields zero-filled (Option discriminant byte 0 = None,",
+        "i64 zero = 0).",
+        "",
+        "Uses UncheckedAccount because Anchor's normal Account<GlobalConfig>",
+        "pre-validates by deserializing as the NEW struct against the OLD data",
+        "— which fails since the old data only has 110 bytes. We bypass that",
+        "by manually reading the authority pubkey at offset [8..40] of the",
+        "old serialized layout, then doing realloc + zero-fill.",
+        "",
+        "Devnet-only. Remove this instruction in a follow-up program upgrade",
+        "after drilling is complete. Mainnet deploys with new SPACE from",
+        "initialize_config genesis — no migration path needed there."
+      ],
+      "discriminator": [
+        92,
+        131,
+        58,
+        105,
+        210,
+        154,
+        224,
+        193
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "docs": [
+            "it's the GlobalConfig PDA; authority verified manually from raw data."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "pause_program",
       "docs": [
         "Emergency pause — halts new match creation + deposits.",

@@ -167,6 +167,77 @@ pub mod solshot_escrow_v2 {
         Ok(())
     }
 
+    /// S2-T2 migration tool: grow GlobalConfig PDA from pre-S2-T1 SPACE (110)
+    /// to post-S2-T1 SPACE (231) bytes. Existing live fields preserved; new
+    /// pending_* fields zero-filled (Option discriminant byte 0 = None,
+    /// i64 zero = 0).
+    ///
+    /// Uses UncheckedAccount because Anchor's normal Account<GlobalConfig>
+    /// pre-validates by deserializing as the NEW struct against the OLD data
+    /// — which fails since the old data only has 110 bytes. We bypass that
+    /// by manually reading the authority pubkey at offset [8..40] of the
+    /// old serialized layout, then doing realloc + zero-fill.
+    ///
+    /// Devnet-only. Remove this instruction in a follow-up program upgrade
+    /// after drilling is complete. Mainnet deploys with new SPACE from
+    /// initialize_config genesis — no migration path needed there.
+    pub fn migrate_config(ctx: Context<MigrateConfigUnchecked>) -> Result<()> {
+        let config_info = &ctx.accounts.config;
+        let auth_info = &ctx.accounts.authority;
+
+        // Manual authority verification — read pubkey from raw account data
+        // at the old layout offset (8-byte discriminator + 32-byte authority).
+        {
+            let data = config_info.try_borrow_data()?;
+            require!(data.len() >= 40, EscrowError::InvalidConfig);
+            let stored_authority_bytes: [u8; 32] = data[8..40]
+                .try_into()
+                .map_err(|_| EscrowError::InvalidConfig)?;
+            let stored_authority = Pubkey::from(stored_authority_bytes);
+            require!(stored_authority == auth_info.key(), EscrowError::Unauthorized);
+        }
+
+        // Realloc to new size + top up rent if needed
+        let new_size = GlobalConfig::SPACE;
+        let current_size = config_info.data_len();
+        if current_size >= new_size {
+            // Already migrated — no-op (idempotent)
+            return Ok(());
+        }
+
+        let rent = Rent::get()?;
+        let new_minimum = rent.minimum_balance(new_size);
+        let current_balance = config_info.lamports();
+        if current_balance < new_minimum {
+            let lamports_needed = new_minimum.checked_sub(current_balance)
+                .ok_or(EscrowError::ArithmeticOverflow)?;
+            anchor_lang::system_program::transfer(
+                CpiContext::new(
+                    ctx.accounts.system_program.to_account_info(),
+                    anchor_lang::system_program::Transfer {
+                        from: auth_info.to_account_info(),
+                        to: config_info.to_account_info(),
+                    },
+                ),
+                lamports_needed,
+            )?;
+        }
+
+        config_info.realloc(new_size, false)?;
+
+        // Zero-fill the new bytes. realloc(_, false) leaves them uninitialized;
+        // zero-fill makes the Option<T> fields read as None (discriminant 0)
+        // and the i64 fields read as 0.
+        {
+            let mut data = config_info.try_borrow_mut_data()?;
+            for byte in data.iter_mut().skip(current_size) {
+                *byte = 0;
+            }
+        }
+
+        Ok(())
+    }
+
     /// S2-T1 (Bundle 1): Apply pending config fields → live, clear pending state.
     /// Permissionless — anyone can pay the fee to apply once timelock elapses.
     /// This ensures announced changes always take effect even if the proposing
@@ -772,6 +843,31 @@ pub struct UpdateConfig<'info> {
     pub config: Account<'info, GlobalConfig>,
 
     pub authority: Signer<'info>,
+}
+
+/// S2-T2 migration context — uses UncheckedAccount because the old config
+/// data (110 bytes) can't be deserialized as the new GlobalConfig struct
+/// (231 bytes). Authority verification happens manually inside the
+/// instruction body by reading the pubkey at offset [8..40] of the old
+/// serialized layout.
+///
+/// Remove this context + the migrate_config instruction in the follow-up
+/// program upgrade after devnet drilling is complete.
+#[derive(Accounts)]
+pub struct MigrateConfigUnchecked<'info> {
+    /// CHECK: deserialized manually inside migrate_config. PDA seeds verify
+    /// it's the GlobalConfig PDA; authority verified manually from raw data.
+    #[account(
+        mut,
+        seeds = [GlobalConfig::SEED],
+        bump,
+    )]
+    pub config: UncheckedAccount<'info>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
 }
 
 /// S2-T1: anyone-callable apply_config_update — payer signs the TX but no

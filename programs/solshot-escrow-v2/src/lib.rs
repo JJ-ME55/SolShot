@@ -53,6 +53,13 @@ const PUBLIC_REFUND_GRACE_SECS: i64 = 24 * 3_600;  // 24 hours
 const MAX_FEE_BPS: u16 = 1_000;
 const BPS_DENOMINATOR: u128 = 10_000;
 
+/// S2-T1 (Bundle 1): 24-hour timelock between `update_config` (proposes pending
+/// changes) and `apply_config_update` (applies them live). Gives off-chain
+/// monitoring a window to detect and respond to a governance compromise before
+/// fee destinations or BPS values rotate. Authority rotation uses a separate
+/// 2-step propose/accept flow (no timelock — recovery scenarios may need speed).
+const CONFIG_TIMELOCK_SECS: i64 = 24 * 3_600;     // 24h
+
 // ─────────────────────────────────────────────
 // PROGRAM
 // ─────────────────────────────────────────────
@@ -93,38 +100,104 @@ pub mod solshot_escrow_v2 {
         Ok(())
     }
 
-    /// Update config fields. All parameters are optional (pass None to keep current value).
-    /// Re-validates distinctness + fee cap after all updates.
-    /// NOTE: changes here do NOT affect in-flight matches — they snapshot at create_match.
+    /// S2-T1 (Bundle 1): Propose new treasury/ops/fee BPS values. Writes to
+    /// pending_* fields + sets pending_config_ts. Does NOT apply immediately —
+    /// `apply_config_update` (callable by anyone after CONFIG_TIMELOCK_SECS)
+    /// is the apply step.
+    ///
+    /// Authority rotation is NOT part of this instruction — that goes through
+    /// the 2-step propose_authority/accept_authority flow (no timelock).
+    ///
+    /// All parameters optional; pass None to leave that field unchanged.
+    /// Validates the effective post-apply config (live + pending merge) for
+    /// distinctness + fee cap so callers can't propose an invalid future state.
+    /// NOTE: applied changes do NOT affect in-flight matches — they snapshot at create_match.
     pub fn update_config(
         ctx: Context<UpdateConfig>,
-        new_authority: Option<Pubkey>,
         new_treasury: Option<Pubkey>,
         new_ops: Option<Pubkey>,
         new_fee_bps_treasury: Option<u16>,
         new_fee_bps_ops: Option<u16>,
     ) -> Result<()> {
         let cfg = &mut ctx.accounts.config;
+        let now = Clock::get()?.unix_timestamp;
 
-        if let Some(a) = new_authority {
-            require!(a != Pubkey::default(), EscrowError::InvalidConfig);
-            cfg.authority = a;
-        }
         if let Some(t) = new_treasury {
             require!(t != Pubkey::default(), EscrowError::InvalidConfig);
-            cfg.treasury = t;
+            cfg.pending_treasury = Some(t);
         }
         if let Some(o) = new_ops {
             require!(o != Pubkey::default(), EscrowError::InvalidConfig);
-            cfg.ops = o;
+            cfg.pending_ops = Some(o);
         }
         if let Some(t) = new_fee_bps_treasury {
-            cfg.fee_bps_treasury = t;
+            cfg.pending_fee_bps_treasury = Some(t);
         }
         if let Some(o) = new_fee_bps_ops {
+            cfg.pending_fee_bps_ops = Some(o);
+        }
+
+        // Effective post-apply state for validation
+        let eff_treasury = cfg.pending_treasury.unwrap_or(cfg.treasury);
+        let eff_ops = cfg.pending_ops.unwrap_or(cfg.ops);
+        let eff_fee_t = cfg.pending_fee_bps_treasury.unwrap_or(cfg.fee_bps_treasury);
+        let eff_fee_o = cfg.pending_fee_bps_ops.unwrap_or(cfg.fee_bps_ops);
+
+        require!(cfg.authority != eff_treasury, EscrowError::InvalidConfig);
+        require!(cfg.authority != eff_ops, EscrowError::InvalidConfig);
+        require!(eff_treasury != eff_ops, EscrowError::DuplicateFeeAccount);
+        require!(
+            (eff_fee_t as u32 + eff_fee_o as u32) <= MAX_FEE_BPS as u32,
+            EscrowError::FeesTooHigh
+        );
+
+        cfg.pending_config_ts = now;
+
+        emit!(ConfigProposed {
+            pending_treasury: cfg.pending_treasury,
+            pending_ops: cfg.pending_ops,
+            pending_fee_bps_treasury: cfg.pending_fee_bps_treasury,
+            pending_fee_bps_ops: cfg.pending_fee_bps_ops,
+            propose_ts: now,
+            applies_at: now
+                .checked_add(CONFIG_TIMELOCK_SECS)
+                .ok_or(EscrowError::ArithmeticOverflow)?,
+        });
+
+        Ok(())
+    }
+
+    /// S2-T1 (Bundle 1): Apply pending config fields → live, clear pending state.
+    /// Permissionless — anyone can pay the fee to apply once timelock elapses.
+    /// This ensures announced changes always take effect even if the proposing
+    /// authority becomes unreachable.
+    pub fn apply_config_update(ctx: Context<ApplyConfigUpdate>) -> Result<()> {
+        let cfg = &mut ctx.accounts.config;
+
+        require!(cfg.pending_config_ts > 0, EscrowError::NoPendingConfig);
+
+        let now = Clock::get()?.unix_timestamp;
+        let earliest = cfg
+            .pending_config_ts
+            .checked_add(CONFIG_TIMELOCK_SECS)
+            .ok_or(EscrowError::ArithmeticOverflow)?;
+        require!(now >= earliest, EscrowError::TimelockNotElapsed);
+
+        if let Some(t) = cfg.pending_treasury.take() {
+            cfg.treasury = t;
+        }
+        if let Some(o) = cfg.pending_ops.take() {
+            cfg.ops = o;
+        }
+        if let Some(t) = cfg.pending_fee_bps_treasury.take() {
+            cfg.fee_bps_treasury = t;
+        }
+        if let Some(o) = cfg.pending_fee_bps_ops.take() {
             cfg.fee_bps_ops = o;
         }
 
+        // Re-validate post-apply (defense in depth — propose-time check could
+        // have raced with a propose_authority that changed cfg.authority)
         require!(cfg.authority != cfg.treasury, EscrowError::InvalidConfig);
         require!(cfg.authority != cfg.ops, EscrowError::InvalidConfig);
         require!(cfg.treasury != cfg.ops, EscrowError::DuplicateFeeAccount);
@@ -133,14 +206,73 @@ pub mod solshot_escrow_v2 {
             EscrowError::FeesTooHigh
         );
 
-        emit!(ConfigUpdated {
+        cfg.last_config_update_ts = now;
+        cfg.pending_config_ts = 0;
+
+        emit!(ConfigApplied {
             authority: cfg.authority,
             treasury: cfg.treasury,
             ops: cfg.ops,
             fee_bps_treasury: cfg.fee_bps_treasury,
             fee_bps_ops: cfg.fee_bps_ops,
+            applied_ts: now,
         });
 
+        Ok(())
+    }
+
+    /// S2-T1 (Bundle 1): 2-step authority rotation, step 1.
+    /// Current authority writes a pending_authority. NOT a transfer yet — old
+    /// key is still authority. accept_authority (signed by new key) is step 2.
+    ///
+    /// Overwrite policy: if pending_authority is already Some, this OVERWRITES
+    /// it. Acts as a free cancellation mechanism — call with the current
+    /// authority's own pubkey to effectively cancel a prior proposal.
+    pub fn propose_authority(
+        ctx: Context<ProposeAuthority>,
+        new_authority: Pubkey,
+    ) -> Result<()> {
+        require!(new_authority != Pubkey::default(), EscrowError::InvalidConfig);
+
+        let cfg = &mut ctx.accounts.config;
+        let previous = cfg.pending_authority;
+        cfg.pending_authority = Some(new_authority);
+
+        emit!(AuthorityProposed {
+            current: cfg.authority,
+            pending: new_authority,
+            replaced_pending: previous,
+        });
+        Ok(())
+    }
+
+    /// S2-T1 (Bundle 1): 2-step authority rotation, step 2.
+    /// Signed by the NEW authority (the one in pending_authority). Atomically
+    /// transfers: authority = pending_authority, pending_authority = None.
+    ///
+    /// This ensures the new key is live (can sign) BEFORE the old key loses
+    /// access — a single-step rotation can't guarantee that.
+    pub fn accept_authority(ctx: Context<AcceptAuthority>) -> Result<()> {
+        let cfg = &mut ctx.accounts.config;
+        let pending = cfg.pending_authority.ok_or(EscrowError::NoPendingAuthority)?;
+        require!(
+            pending == ctx.accounts.new_authority.key(),
+            EscrowError::Unauthorized
+        );
+
+        let old = cfg.authority;
+        cfg.authority = pending;
+        cfg.pending_authority = None;
+
+        // Re-validate distinctness — the new authority might collide with
+        // treasury/ops, which would lock the program. Defense in depth.
+        require!(cfg.authority != cfg.treasury, EscrowError::InvalidConfig);
+        require!(cfg.authority != cfg.ops, EscrowError::InvalidConfig);
+
+        emit!(AuthorityAccepted {
+            old,
+            new: pending,
+        });
         Ok(())
     }
 
@@ -642,6 +774,52 @@ pub struct UpdateConfig<'info> {
     pub authority: Signer<'info>,
 }
 
+/// S2-T1: anyone-callable apply_config_update — payer signs the TX but no
+/// authority gate. The CONFIG_TIMELOCK_SECS check inside the instruction
+/// body is the only gate. Permissionless apply ensures announced changes
+/// take effect even if the proposing authority becomes unreachable.
+#[derive(Accounts)]
+pub struct ApplyConfigUpdate<'info> {
+    #[account(
+        mut,
+        seeds = [GlobalConfig::SEED],
+        bump = config.bump,
+    )]
+    pub config: Account<'info, GlobalConfig>,
+
+    #[account(mut)]
+    pub payer: Signer<'info>,
+}
+
+/// S2-T1: propose_authority — only current authority can call.
+#[derive(Accounts)]
+pub struct ProposeAuthority<'info> {
+    #[account(
+        mut,
+        seeds = [GlobalConfig::SEED],
+        bump = config.bump,
+        has_one = authority @ EscrowError::Unauthorized,
+    )]
+    pub config: Account<'info, GlobalConfig>,
+
+    pub authority: Signer<'info>,
+}
+
+/// S2-T1: accept_authority — signed by the PENDING authority (not the old).
+/// The new_authority signer must match config.pending_authority. Without
+/// has_one gate (since the matching key is in a different field).
+#[derive(Accounts)]
+pub struct AcceptAuthority<'info> {
+    #[account(
+        mut,
+        seeds = [GlobalConfig::SEED],
+        bump = config.bump,
+    )]
+    pub config: Account<'info, GlobalConfig>,
+
+    pub new_authority: Signer<'info>,
+}
+
 #[derive(Accounts)]
 pub struct PauseProgram<'info> {
     #[account(
@@ -842,6 +1020,7 @@ pub struct StartWithDepositors<'info> {
 
 #[account]
 pub struct GlobalConfig {
+    // ── Live fields (existing semantics) ────────────────────────────
     pub authority: Pubkey,
     pub treasury: Pubkey,
     pub ops: Pubkey,
@@ -849,11 +1028,49 @@ pub struct GlobalConfig {
     pub fee_bps_ops: u16,
     pub is_paused: bool,
     pub bump: u8,
+
+    // ── S2-T1 (Bundle 1): pending authority — 2-step rotation ───────
+    // propose_authority writes Some(new_key); accept_authority (signed by
+    // new_key, NOT old) atomically sets authority = pending, clears pending.
+    // No timelock — recovery scenarios may need fast rotation.
+    pub pending_authority: Option<Pubkey>,
+
+    // ── S2-T1 (Bundle 1): pending config — 24h timelocked ───────────
+    // update_config writes Some() to whichever fields are changing, sets
+    // pending_config_ts = now. apply_config_update (permissionless after
+    // CONFIG_TIMELOCK_SECS elapses) applies pending → live and clears.
+    pub pending_treasury: Option<Pubkey>,
+    pub pending_ops: Option<Pubkey>,
+    pub pending_fee_bps_treasury: Option<u16>,
+    pub pending_fee_bps_ops: Option<u16>,
+    pub pending_config_ts: i64,             // 0 = no pending; non-zero = timestamp of propose
+
+    // ── S2-T1: audit trail — last successful apply ──────────────────
+    pub last_config_update_ts: i64,
 }
 
 impl GlobalConfig {
-    /// 8 (discriminator) + 32*3 (pubkeys) + 2*2 (fee bps) + 1 (bool) + 1 (bump) = 110
-    pub const SPACE: usize = 8 + (32 * 3) + (2 * 2) + 1 + 1;
+    /// Account space:
+    ///   8       discriminator
+    ///   32*3    authority + treasury + ops
+    ///   2*2     fee_bps_treasury + fee_bps_ops
+    ///   1+1     is_paused + bump
+    ///   1+32    pending_authority Option<Pubkey>
+    ///   1+32    pending_treasury Option<Pubkey>
+    ///   1+32    pending_ops Option<Pubkey>
+    ///   1+2     pending_fee_bps_treasury Option<u16>
+    ///   1+2     pending_fee_bps_ops Option<u16>
+    ///   8       pending_config_ts i64
+    ///   8       last_config_update_ts i64
+    /// = 231 bytes
+    pub const SPACE: usize = 8
+        + (32 * 3)            // pubkeys
+        + (2 * 2)             // fee bps
+        + 1 + 1               // is_paused + bump
+        + (1 + 32)            // pending_authority
+        + (1 + 32) + (1 + 32) // pending_treasury + pending_ops
+        + (1 + 2) + (1 + 2)   // pending fee bps fields
+        + 8 + 8;              // pending_config_ts + last_config_update_ts
     pub const SEED: &'static [u8] = b"config";
 }
 
@@ -980,13 +1197,47 @@ pub struct MatchCancelled {
     pub deposits_mask: u16,
 }
 
+/// S2-T1 (Bundle 1): emitted by update_config — proposed but not yet applied.
+/// Off-chain monitors watch this to detect pending governance changes during
+/// the CONFIG_TIMELOCK_SECS visibility window.
 #[event]
-pub struct ConfigUpdated {
+pub struct ConfigProposed {
+    pub pending_treasury: Option<Pubkey>,
+    pub pending_ops: Option<Pubkey>,
+    pub pending_fee_bps_treasury: Option<u16>,
+    pub pending_fee_bps_ops: Option<u16>,
+    pub propose_ts: i64,
+    pub applies_at: i64,
+}
+
+/// S2-T1 (Bundle 1): emitted by apply_config_update — pending→live transition.
+/// Replaces the old ConfigUpdated event (which fired on single-step rotation).
+#[event]
+pub struct ConfigApplied {
     pub authority: Pubkey,
     pub treasury: Pubkey,
     pub ops: Pubkey,
     pub fee_bps_treasury: u16,
     pub fee_bps_ops: u16,
+    pub applied_ts: i64,
+}
+
+/// S2-T1 (Bundle 1): emitted by propose_authority. Off-chain monitors watch
+/// this — combined with AuthorityAccepted, the pair tracks the 2-step rotation.
+/// `replaced_pending` is Some when the propose overwrote an existing pending
+/// proposal (used for cancellation / re-proposal flows).
+#[event]
+pub struct AuthorityProposed {
+    pub current: Pubkey,
+    pub pending: Pubkey,
+    pub replaced_pending: Option<Pubkey>,
+}
+
+/// S2-T1 (Bundle 1): emitted by accept_authority — old → new transition.
+#[event]
+pub struct AuthorityAccepted {
+    pub old: Pubkey,
+    pub new: Pubkey,
 }
 
 /// H043 fix: pause/unpause audit trail for off-chain monitoring
@@ -1066,4 +1317,11 @@ pub enum EscrowError {
     IncompleteRefund,
     #[msg("Account must not be executable")]
     ExecutableNotAllowed,
+    // S2-T1 (Bundle 1) — authority + config rotation errors
+    #[msg("No pending authority — call propose_authority first")]
+    NoPendingAuthority,
+    #[msg("No pending config — call update_config first")]
+    NoPendingConfig,
+    #[msg("Config timelock has not elapsed yet")]
+    TimelockNotElapsed,
 }

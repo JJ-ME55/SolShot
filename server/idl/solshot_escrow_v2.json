@@ -8,6 +8,99 @@
   },
   "instructions": [
     {
+      "name": "accept_authority",
+      "docs": [
+        "S2-T1 (Bundle 1): 2-step authority rotation, step 2.",
+        "Signed by the NEW authority (the one in pending_authority). Atomically",
+        "transfers: authority = pending_authority, pending_authority = None.",
+        "",
+        "This ensures the new key is live (can sign) BEFORE the old key loses",
+        "access — a single-step rotation can't guarantee that."
+      ],
+      "discriminator": [
+        107,
+        86,
+        198,
+        91,
+        33,
+        12,
+        107,
+        160
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "new_authority",
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "apply_config_update",
+      "docs": [
+        "S2-T1 (Bundle 1): Apply pending config fields → live, clear pending state.",
+        "Permissionless — anyone can pay the fee to apply once timelock elapses.",
+        "This ensures announced changes always take effect even if the proposing",
+        "authority becomes unreachable."
+      ],
+      "discriminator": [
+        211,
+        233,
+        51,
+        21,
+        33,
+        87,
+        209,
+        147
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "cancel_match",
       "docs": [
         "Cancel match — refund deposited players via remaining_accounts.",
@@ -321,7 +414,8 @@
       "name": "pause_program",
       "docs": [
         "Emergency pause — halts new match creation + deposits.",
-        "Settle / cancel / permissionless_reclaim remain callable so in-flight funds can exit."
+        "Settle / cancel / permissionless_reclaim remain callable so in-flight funds can exit.",
+        "H043 fix: emits Paused event for off-chain monitoring."
       ],
       "discriminator": [
         91,
@@ -419,6 +513,62 @@
       "args": []
     },
     {
+      "name": "propose_authority",
+      "docs": [
+        "S2-T1 (Bundle 1): 2-step authority rotation, step 1.",
+        "Current authority writes a pending_authority. NOT a transfer yet — old",
+        "key is still authority. accept_authority (signed by new key) is step 2.",
+        "",
+        "Overwrite policy: if pending_authority is already Some, this OVERWRITES",
+        "it. Acts as a free cancellation mechanism — call with the current",
+        "authority's own pubkey to effectively cancel a prior proposal."
+      ],
+      "discriminator": [
+        20,
+        148,
+        236,
+        198,
+        76,
+        119,
+        99,
+        142
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "new_authority",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
       "name": "settle_match",
       "docs": [
         "Settle match — distribute pot to winner, treasury, ops using SNAPSHOT BPS + pubkeys.",
@@ -471,7 +621,8 @@
         {
           "name": "winner",
           "docs": [
-            "Winner: must be one of escrow.players[0..max_players]"
+            "Winner: must be one of escrow.players[0..max_players]",
+            "H025 fix: !executable guard prevents lamport burn on executable accounts (EP-106)."
           ],
           "writable": true
         },
@@ -595,6 +746,9 @@
     },
     {
       "name": "unpause_program",
+      "docs": [
+        "H043 fix: emits Unpaused event for off-chain monitoring."
+      ],
       "discriminator": [
         43,
         162,
@@ -638,9 +792,18 @@
     {
       "name": "update_config",
       "docs": [
-        "Update config fields. All parameters are optional (pass None to keep current value).",
-        "Re-validates distinctness + fee cap after all updates.",
-        "NOTE: changes here do NOT affect in-flight matches — they snapshot at create_match."
+        "S2-T1 (Bundle 1): Propose new treasury/ops/fee BPS values. Writes to",
+        "pending_* fields + sets pending_config_ts. Does NOT apply immediately —",
+        "`apply_config_update` (callable by anyone after CONFIG_TIMELOCK_SECS)",
+        "is the apply step.",
+        "",
+        "Authority rotation is NOT part of this instruction — that goes through",
+        "the 2-step propose_authority/accept_authority flow (no timelock).",
+        "",
+        "All parameters optional; pass None to leave that field unchanged.",
+        "Validates the effective post-apply config (live + pending merge) for",
+        "distinctness + fee cap so callers can't propose an invalid future state.",
+        "NOTE: applied changes do NOT affect in-flight matches — they snapshot at create_match."
       ],
       "discriminator": [
         29,
@@ -681,12 +844,6 @@
         }
       ],
       "args": [
-        {
-          "name": "new_authority",
-          "type": {
-            "option": "pubkey"
-          }
-        },
         {
           "name": "new_treasury",
           "type": {
@@ -744,16 +901,55 @@
   ],
   "events": [
     {
-      "name": "ConfigUpdated",
+      "name": "AuthorityAccepted",
       "discriminator": [
-        40,
-        241,
-        230,
-        122,
-        11,
-        19,
-        198,
-        194
+        166,
+        192,
+        219,
+        188,
+        41,
+        209,
+        195,
+        26
+      ]
+    },
+    {
+      "name": "AuthorityProposed",
+      "discriminator": [
+        244,
+        117,
+        94,
+        112,
+        53,
+        151,
+        35,
+        89
+      ]
+    },
+    {
+      "name": "ConfigApplied",
+      "discriminator": [
+        193,
+        101,
+        90,
+        205,
+        113,
+        125,
+        184,
+        13
+      ]
+    },
+    {
+      "name": "ConfigProposed",
+      "discriminator": [
+        148,
+        34,
+        23,
+        129,
+        45,
+        161,
+        66,
+        192
       ]
     },
     {
@@ -806,6 +1002,32 @@
         131,
         223,
         150
+      ]
+    },
+    {
+      "name": "Paused",
+      "discriminator": [
+        172,
+        248,
+        5,
+        253,
+        49,
+        255,
+        255,
+        232
+      ]
+    },
+    {
+      "name": "Unpaused",
+      "discriminator": [
+        156,
+        150,
+        47,
+        174,
+        120,
+        216,
+        93,
+        117
       ]
     },
     {
@@ -936,7 +1158,7 @@
     {
       "code": 6022,
       "name": "DurationTooLong",
-      "msg": "Duration too long (max 7 days)"
+      "msg": "Duration too long (max 24h)"
     },
     {
       "code": 6023,
@@ -962,11 +1184,87 @@
       "code": 6027,
       "name": "MatchAlreadyStarted",
       "msg": "Match has already started"
+    },
+    {
+      "code": 6028,
+      "name": "IncompleteRefund",
+      "msg": "remaining_accounts must equal count_ones(deposits_mask) — partial refund not allowed"
+    },
+    {
+      "code": 6029,
+      "name": "ExecutableNotAllowed",
+      "msg": "Account must not be executable"
+    },
+    {
+      "code": 6030,
+      "name": "NoPendingAuthority",
+      "msg": "No pending authority — call propose_authority first"
+    },
+    {
+      "code": 6031,
+      "name": "NoPendingConfig",
+      "msg": "No pending config — call update_config first"
+    },
+    {
+      "code": 6032,
+      "name": "TimelockNotElapsed",
+      "msg": "Config timelock has not elapsed yet"
     }
   ],
   "types": [
     {
-      "name": "ConfigUpdated",
+      "name": "AuthorityAccepted",
+      "docs": [
+        "S2-T1 (Bundle 1): emitted by accept_authority — old → new transition."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "old",
+            "type": "pubkey"
+          },
+          {
+            "name": "new",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "AuthorityProposed",
+      "docs": [
+        "S2-T1 (Bundle 1): emitted by propose_authority. Off-chain monitors watch",
+        "this — combined with AuthorityAccepted, the pair tracks the 2-step rotation.",
+        "`replaced_pending` is Some when the propose overwrote an existing pending",
+        "proposal (used for cancellation / re-proposal flows)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "current",
+            "type": "pubkey"
+          },
+          {
+            "name": "pending",
+            "type": "pubkey"
+          },
+          {
+            "name": "replaced_pending",
+            "type": {
+              "option": "pubkey"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "ConfigApplied",
+      "docs": [
+        "S2-T1 (Bundle 1): emitted by apply_config_update — pending→live transition.",
+        "Replaces the old ConfigUpdated event (which fired on single-step rotation)."
+      ],
       "type": {
         "kind": "struct",
         "fields": [
@@ -989,6 +1287,55 @@
           {
             "name": "fee_bps_ops",
             "type": "u16"
+          },
+          {
+            "name": "applied_ts",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ConfigProposed",
+      "docs": [
+        "S2-T1 (Bundle 1): emitted by update_config — proposed but not yet applied.",
+        "Off-chain monitors watch this to detect pending governance changes during",
+        "the CONFIG_TIMELOCK_SECS visibility window."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pending_treasury",
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "pending_ops",
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "pending_fee_bps_treasury",
+            "type": {
+              "option": "u16"
+            }
+          },
+          {
+            "name": "pending_fee_bps_ops",
+            "type": {
+              "option": "u16"
+            }
+          },
+          {
+            "name": "propose_ts",
+            "type": "i64"
+          },
+          {
+            "name": "applies_at",
+            "type": "i64"
           }
         ]
       }
@@ -1025,6 +1372,44 @@
           {
             "name": "bump",
             "type": "u8"
+          },
+          {
+            "name": "pending_authority",
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "pending_treasury",
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "pending_ops",
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "pending_fee_bps_treasury",
+            "type": {
+              "option": "u16"
+            }
+          },
+          {
+            "name": "pending_fee_bps_ops",
+            "type": {
+              "option": "u16"
+            }
+          },
+          {
+            "name": "pending_config_ts",
+            "type": "i64"
+          },
+          {
+            "name": "last_config_update_ts",
+            "type": "i64"
           }
         ]
       }
@@ -1314,6 +1699,33 @@
           },
           {
             "name": "Cancelled"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Paused",
+      "docs": [
+        "H043 fix: pause/unpause audit trail for off-chain monitoring"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Unpaused",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
           }
         ]
       }

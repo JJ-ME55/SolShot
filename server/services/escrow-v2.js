@@ -145,15 +145,20 @@ export async function initializeConfigV2(authorityPubkey, treasuryAddress, opsAd
 }
 
 /**
- * Update config fields. Pass null to keep current value.
- * Note: changes do NOT affect in-flight matches (snapshots are taken at create_match).
+ * S2-T1 (Bundle 1): Propose treasury/ops/fee BPS changes. Writes to pending
+ * state — does NOT apply immediately. After CONFIG_TIMELOCK_SECS (24h) elapses,
+ * anyone can call applyConfigUpdateV2 to apply pending → live.
+ *
+ * Authority rotation is SEPARATE — use proposeAuthorityV2 / acceptAuthorityV2.
+ * The on-chain update_config instruction no longer accepts new_authority.
+ *
+ * Pass null to leave a field unchanged.
  */
-export async function updateConfigV2(newAuthority, newTreasury, newOps, newFeeBpsTreasury, newFeeBpsOps) {
+export async function updateConfigV2(newTreasury, newOps, newFeeBpsTreasury, newFeeBpsOps) {
     if (!program) return { success: false, error: 'EscrowV2 not initialized' };
     try {
         const tx = await program.methods
             .updateConfig(
-                newAuthority ? new PublicKey(newAuthority) : null,
                 newTreasury ? new PublicKey(newTreasury) : null,
                 newOps ? new PublicKey(newOps) : null,
                 newFeeBpsTreasury ?? null,
@@ -161,10 +166,82 @@ export async function updateConfigV2(newAuthority, newTreasury, newOps, newFeeBp
             )
             .accounts({ authority: getEscrowKeypair().publicKey })
             .rpc();
-        console.log(`[EscrowV2] Config updated — TX: ${tx}`);
+        console.log(`[EscrowV2] Config proposed (24h timelock) — TX: ${tx}`);
         return { success: true, txSignature: tx };
     } catch (err) {
         console.error('[EscrowV2] updateConfig failed:', err.message);
+        return { success: false, error: err.message };
+    }
+}
+
+/**
+ * S2-T1 (Bundle 1): Apply pending config → live. Permissionless — anyone can
+ * pay gas to call after CONFIG_TIMELOCK_SECS elapses since update_config.
+ * The on-chain instruction enforces the timelock; this wrapper just pays gas
+ * with whatever keypair is loaded (server authority by default).
+ */
+export async function applyConfigUpdateV2() {
+    if (!program) return { success: false, error: 'EscrowV2 not initialized' };
+    try {
+        const tx = await program.methods
+            .applyConfigUpdate()
+            .accounts({ payer: getEscrowKeypair().publicKey })
+            .rpc();
+        console.log(`[EscrowV2] Config applied (pending → live) — TX: ${tx}`);
+        return { success: true, txSignature: tx };
+    } catch (err) {
+        console.error('[EscrowV2] applyConfigUpdate failed:', err.message);
+        return { success: false, error: err.message };
+    }
+}
+
+/**
+ * S2-T1 (Bundle 1): Step 1 of authority rotation. Current authority signs.
+ * Writes pending_authority = newAuthorityPubkey. accept_authority (step 2,
+ * signed by NEW authority) must follow to complete the transfer.
+ *
+ * Overwrite policy: if pending_authority is already set, this OVERWRITES it.
+ * Useful for cancelling a prior bad proposal (re-propose with current authority's
+ * own pubkey as a no-op revert).
+ */
+export async function proposeAuthorityV2(newAuthorityPubkey) {
+    if (!program) return { success: false, error: 'EscrowV2 not initialized' };
+    try {
+        const tx = await program.methods
+            .proposeAuthority(new PublicKey(newAuthorityPubkey))
+            .accounts({ authority: getEscrowKeypair().publicKey })
+            .rpc();
+        console.log(`[EscrowV2] Authority proposed (${newAuthorityPubkey}) — TX: ${tx}`);
+        return { success: true, txSignature: tx };
+    } catch (err) {
+        console.error('[EscrowV2] proposeAuthority failed:', err.message);
+        return { success: false, error: err.message };
+    }
+}
+
+/**
+ * S2-T1 (Bundle 1): Step 2 of authority rotation. NEW authority must sign.
+ * Caller must construct + sign the TX with the new authority keypair —
+ * this wrapper takes a Keypair (or signer) since the loaded escrow keypair
+ * may be the OLD authority at this point.
+ *
+ * @param {import('@solana/web3.js').Keypair} newAuthoritySigner
+ */
+export async function acceptAuthorityV2(newAuthoritySigner) {
+    if (!program) return { success: false, error: 'EscrowV2 not initialized' };
+    if (!newAuthoritySigner?.publicKey) {
+        return { success: false, error: 'newAuthoritySigner must be a Keypair' };
+    }
+    try {
+        const tx = await program.methods
+            .acceptAuthority()
+            .accounts({ newAuthority: newAuthoritySigner.publicKey })
+            .signers([newAuthoritySigner])
+            .rpc();
+        console.log(`[EscrowV2] Authority accepted by ${newAuthoritySigner.publicKey.toBase58()} — TX: ${tx}`);
+        return { success: true, txSignature: tx };
+    } catch (err) {
+        console.error('[EscrowV2] acceptAuthority failed:', err.message);
         return { success: false, error: err.message };
     }
 }
@@ -208,12 +285,21 @@ export async function getConfigStateV2() {
         const [configPDA] = getConfigPDAV2();
         const config = await program.account.globalConfig.fetch(configPDA);
         return {
+            // Live fields
             authority: config.authority.toBase58(),
             treasury: config.treasury.toBase58(),
             ops: config.ops.toBase58(),
             feeBpsTreasury: config.feeBpsTreasury,
             feeBpsOps: config.feeBpsOps,
             isPaused: config.isPaused,
+            // S2-T1: pending authority (2-step rotation) + pending config (24h timelock)
+            pendingAuthority: config.pendingAuthority ? config.pendingAuthority.toBase58() : null,
+            pendingTreasury: config.pendingTreasury ? config.pendingTreasury.toBase58() : null,
+            pendingOps: config.pendingOps ? config.pendingOps.toBase58() : null,
+            pendingFeeBpsTreasury: config.pendingFeeBpsTreasury ?? null,
+            pendingFeeBpsOps: config.pendingFeeBpsOps ?? null,
+            pendingConfigTs: config.pendingConfigTs ? Number(config.pendingConfigTs) : 0,
+            lastConfigUpdateTs: config.lastConfigUpdateTs ? Number(config.lastConfigUpdateTs) : 0,
         };
     } catch (err) {
         return null;

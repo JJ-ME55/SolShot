@@ -7,6 +7,20 @@ const userSchema = new mongoose.Schema({
         sparse: true,
         index: true
     },
+    // S2-T6 (Bundle 2 / DB H009): wallet rotation audit trail.
+    // Each entry records a wallet that USED TO be on this User doc but
+    // got replaced — Privy can re-provision embedded wallets after
+    // account recovery or key rotation. Without this trail, a stale
+    // wallet would silently propagate to settlement (wrong destination).
+    // Append-only; consumed by reconcile script + future audits.
+    walletHistory: {
+        type: [new mongoose.Schema({
+            address: { type: String, required: true },
+            timestamp: { type: Date, default: Date.now },
+            source: { type: String, default: 'unknown' }, // 'privy-rotation' | 'manual' | 'reconnect' | 'reconcile' | other
+        }, { _id: false })],
+        default: [],
+    },
     uid: {
         type: String,
         unique: true,

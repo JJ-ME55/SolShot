@@ -47,7 +47,14 @@ export function recordFunnelEvent(stage, identity = {}, metadata = {}, source = 
         ? oneShotInsert(doc)
         : FunnelEvent.create(doc);
 
-    op.catch((err) => logger?.warn?.({ err: err.message, stage }, '[Funnel] write failed'));
+    op.catch((err) => {
+        // E11000 (duplicate key) on a one-shot stage is the EXPECTED outcome
+        // when the sparse-unique partial-filter index catches a concurrent
+        // upsert race. The dedupe is working — not a real error. Silently
+        // swallow so the log stays signal-rich.
+        if (err?.code === 11000 && ONE_SHOT_STAGES.has(stage)) return;
+        logger?.warn?.({ err: err.message, stage }, '[Funnel] write failed');
+    });
 }
 
 async function oneShotInsert(doc) {

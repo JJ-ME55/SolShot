@@ -38,9 +38,52 @@ const funnelEventSchema = new mongoose.Schema({
 
 // Compound for the typical aggregation query: stage + time window
 funnelEventSchema.index({ stage: 1, createdAt: -1 });
-// For dedupe lookups in one-shot stages
-funnelEventSchema.index({ stage: 1, walletAddress: 1 });
-funnelEventSchema.index({ stage: 1, telegramUserId: 1 });
+
+// S2-T8 hardening: unique partial-filter indexes for the one-shot stages
+// ('first_deposit', 'first_settle') prevent dedupe races between concurrent
+// upserts. Without these, findOneAndUpdate+upsert can produce duplicate rows
+// when two emissions for the same identity hit the DB nearly simultaneously
+// (e.g. settleMatch fires first_settle for both winner + loser in the same
+// tick). Sparse partial filters ensure non-one-shot stages (register/auth/
+// wallet_linked) remain unconstrained — duplicate emissions there are
+// expected and aggregation handles the unique-identity count.
+//
+// Each one-shot stage gets THREE indexes (wallet/tg/uid) so any identity
+// shape is dedupe-protected. Mongo evaluates the partial filter at upsert
+// time; if the predicate matches, the unique constraint applies.
+funnelEventSchema.index(
+    { stage: 1, walletAddress: 1 },
+    {
+        unique: true,
+        partialFilterExpression: {
+            stage: { $in: ['first_deposit', 'first_settle'] },
+            walletAddress: { $type: 'string' },
+        },
+        name: 'oneshot_dedupe_wallet',
+    }
+);
+funnelEventSchema.index(
+    { stage: 1, telegramUserId: 1 },
+    {
+        unique: true,
+        partialFilterExpression: {
+            stage: { $in: ['first_deposit', 'first_settle'] },
+            telegramUserId: { $type: 'number' },
+        },
+        name: 'oneshot_dedupe_tg',
+    }
+);
+funnelEventSchema.index(
+    { stage: 1, uid: 1 },
+    {
+        unique: true,
+        partialFilterExpression: {
+            stage: { $in: ['first_deposit', 'first_settle'] },
+            uid: { $type: 'string' },
+        },
+        name: 'oneshot_dedupe_uid',
+    }
+);
 
 const FunnelEvent = mongoose.model('FunnelEvent', funnelEventSchema);
 export default FunnelEvent;

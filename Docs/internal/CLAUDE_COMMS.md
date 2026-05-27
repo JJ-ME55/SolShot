@@ -3098,9 +3098,9 @@ All against v2 program `BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N`, GlobalCon
 
 The throwaway drill keypair `8cvQkFd1LV8NpnE5fX6pC2djDZpRTYmqo3fsZEr8XdKc` was used for forward rotation only. Authority rotated back to `HPyVPj2VH9yBirr7FMgAJeDH8xJgaMKy5UnwLkjSnovk` (solshot-dev) — server can still sign normally.
 
-### Things I did NOT do that need notice
+### Correction to "Things I did NOT do"
 
-1. **S2-T7 (refund/settle atomicity) is INVESTIGATIVELY closed, not coding-complete.** Reviewed the existing `withLock(\`settle:\${roomId}\`)` + state machine `MATCH_STATES.SETTLING` gate at `main.js:4183` — that handles steps 3c (concurrent settle race) and 3d (concurrent confirm race) for SolShot's in-memory state. Step 3a (get on-chain depositsMask before refund builders) is NOT done. The `cancelMatchEscrowV2` wrapper still takes `playerAddresses` from caller without on-chain verification. Risk: server-side `wagerStates[].deposits` divergence from on-chain `deposits_mask` → IncompleteRefund stuck SOL. Worth ~2h to fix before mainnet flip. Marked task #16 completed in tracker but be aware of this gap.
+1. **S2-T7 IS fully closed — I was wrong in the original draft of this entry.** JJ shipped `c9b3601` ("refund correctness — derive from on-chain mask") himself at 06:48 BST this morning, before I started the day's work. Covers Step 3a (cancelMatchEscrowV2 + permissionlessReclaim derive refund-target list from on-chain deposits_mask, not caller's list), Step 3c (escrowDepositConfirm dedupes duplicate confirms), and verifies Step 3d (settle race already protected by existing `withLock` + `MATCH_STATES.SETTLING` gate at `main.js:4183`). Also updated `cancelEscrowSafely` to dispatch by playerCount. **S2-T7 = done.** Out-of-scope items per the commit: 3e self-damage Math.abs (game design call, low impact), 3f v2 failedSettlements retry queue + 3g operator alerts (both deferred — v2 inherits dispatcher-pattern resilience for now). My original "this is a gap" note in this entry was based on stale information from yesterday's investigation; the gap was closed overnight.
 
 2. **Tomorrow's apply test.** The pending config update from drill #6 will become apply-able after `pendingConfigTs + 86400s` = approximately `07:43 BST 2026-05-28`. Run `cd server && SOLANA_KEYPAIR_PATH=$HOME/.config/solana/solshot-dev.json node scripts/apply-config-update-v2.mjs`. Should succeed and clear pending state. Net change to live config: zero (we proposed same 700/300 BPS values). Drill #8 ✅.
 
@@ -3129,7 +3129,7 @@ The throwaway drill keypair `8cvQkFd1LV8NpnE5fX6pC2djDZpRTYmqo3fsZEr8XdKc` was u
 ### What's next (the actual ranked list for tomorrow)
 
 1. **Tomorrow ~08:00 BST** — run `apply-config-update-v2.mjs` to verify drill #8 succeeds. 5 min.
-2. **S2-T7 closing pass** — wire `getEscrowStateV2()` into the refund builders so they don't trust server-side state. ~2h.
+2. ~~S2-T7 closing pass~~ — **DONE by JJ in `c9b3601` overnight.**
 3. **S1-T4 Squads** — JJ + Fish + 15 min at v3.squads.so.
 4. **S2-T8 pre-mainnet smoke** — full BOK + integration regression on devnet. Tag `v1-mainnet-rc1`. ~1 day.
 5. **Mainnet flip per V1_LAUNCH_SPRINT §4 checklist** — ~2 hours including smoke + announce.

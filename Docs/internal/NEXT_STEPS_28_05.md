@@ -2,12 +2,15 @@
 
 Single-page mobile-friendly briefing. Read top-to-bottom.
 
+> **Update at end of 2026-05-28 session:** several buckets advanced. Diff
+> summary at the bottom under "What landed since rc1."
+
 ---
 
 ## Where we are
 
 - **Tag:** `v1-mainnet-rc1` at `fabb8e1`
-- **HEAD:** `36a0e40` (3 audit-fix commits + comms entry beyond rc1)
+- **HEAD:** ahead of rc1 by audit fixes + auth replay store + IDL regen + script guards + doc reconcile
 - **Devnet status:** ✅ first successful 4P wagered match landed
   - Match `1fcc67c0`, settle TX `3TkVMUUPrTBqfBjcMqeYkHbPfwSErAkPU8KJpkK6W8AceePm23asc9UfYv98HpSqo2xNn5KQAbjnfQGKso1Qdwbo`
   - Pot 0.4 SOL → 0.36 winner / 0.028 treasury / 0.012 ops (90/7/3)
@@ -17,7 +20,7 @@ Single-page mobile-friendly briefing. Read top-to-bottom.
 
 ## What's left (5 buckets, in order)
 
-### 1. JJ + Fish: Squads multisig (~30 min)
+### 1. JJ + Fish: Squads multisig (~30 min) — STILL BLOCKING
 
 **Where:** https://v3.squads.so → mainnet network
 **Who:** JJ + Fish synced up
@@ -35,143 +38,81 @@ Single-page mobile-friendly briefing. Read top-to-bottom.
 
 ---
 
-### 2. JJ decisions (5 min — answer these 3)
+### 2. JJ decisions — Q1 + Q3 DONE; Q2 (IDL) DONE autonomously
 
-These block the next steps. Answer here or just tell me when you're back.
+**Q1 — CHAIN-N01: client mainnet env vars — RESOLVED.**
+Option B (Vercel-only) applied. Devnet IDs stripped from `client/.env.production`; convention comment in the file documents that Vercel project Environment Variables are now sole source of truth for `REACT_APP_ESCROW_*_PROGRAM_ID` and `REACT_APP_SOLANA_RPC`. JJ still needs to **key the mainnet values into the Vercel dashboard before flip**.
 
-**Q1 — CHAIN-N01: client mainnet env vars**
-- **Option A:** commit mainnet IDs to `client/.env.production` in the repo
-- **Option B:** set them ONLY in Vercel project Environment Variables (recommended — cleaner, no risk of stale repo IDs overriding)
+**Q2 — CHAIN-N02: IDL regeneration — RESOLVED.**
+`anchor build` ran cleanly on JJ's box. `target/idl/solshot_escrow_v2.json` copied into `server/idl/solshot_escrow_v2.json`; `migrate_config` discriminator gone (was the audit's concern). `target/idl/solshot_escrow.json` (v1) also re-synced.
 
-**Q2 — CHAIN-N02: IDL regeneration**
-- Mechanical, not really a decision. After N002 (migrate_config deletion) the on-disk IDL is stale. Needs `anchor build` + copy `target/idl/solshot_escrow_v2.json` → `server/idl/`. **Just confirm when you're ready and I'll walk you through it.**
-
-**Q3 — AUTH-N02: wallet-auth replay store**
-- The 5-min identity-replay window from H003+H004+H006 composition. ~30 LOC in-memory store closes it cleanly.
-- **Option A:** implement now (recommended — closes a CRIT-family chain cheaply)
-- **Option B:** accept as residual risk under V1 small-wager scope, deferred to V2
+**Q3 — AUTH-N02: wallet-auth replay store — RESOLVED.**
+Option A applied. In-memory `Map<signature, expiresAt>` replay store added to `server/middleware/auth.js`, runs after sig verifies inside `handleAuthenticate`. Lazy sweep at >1024 entries. Smoke-tested.
 
 ---
 
-### 3. Rebuild + redeploy to devnet (~30 min)
+### 3. Rebuild + redeploy to devnet (~15 min) — PARTIAL
 
 After audit fixes + JJ decisions:
 
 ```bash
 # From repo root
-anchor build
-# → catches compile errors on N001/N002/N003
-# → regenerates target/idl/solshot_escrow_v2.json (closes CHAIN-N02)
+anchor build  # ✓ DONE — finished clean
+cp target/idl/solshot_escrow_v2.json server/idl/  # ✓ DONE
+cp target/idl/solshot_escrow.json server/idl/  # ✓ DONE
 
-# Copy fresh IDL into server
-cp target/idl/solshot_escrow_v2.json server/idl/
-
-# Re-run BOK proptests — must stay 159/159 green
+# BOK proptests — ✓ DONE, 48 #[test] fns all green
 cargo test --manifest-path programs/solshot-escrow-v2/Cargo.toml
 
-# Upgrade devnet bytecode
+# Upgrade devnet bytecode — STILL TODO (needs JJ on the keyboard + wallet)
 anchor upgrade target/deploy/solshot_escrow_v2.so \
   --program-id BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N \
   --provider.cluster devnet
 
-# Re-run 4P playtest one more time on patched code (S2-T8 smoke)
+# Re-run 4P playtest one more time on patched code (S2-T8 smoke) — STILL TODO
 # → verify N001/N002/N003 don't break anything
 
-# Tag rc2
-git tag -a v1-mainnet-rc2 -m "Audit fixes landed + devnet re-smoke clean"
+# Tag rc2 — STILL TODO (after devnet smoke clean)
+git tag -a v1-mainnet-rc2 -m "Audit fixes landed + auth replay store + script guards + IDL re-sync"
 git push origin v1-mainnet-rc2
 ```
 
 ---
 
-### 4. Mainnet deploy day (~2 hours)
+### 4. Mainnet deploy day (~2 hours) — UNCHANGED
 
 **Pre-flight checklist** (run morning of flip — full version in `Docs/internal/V1_LAUNCH_SPRINT.md` §4):
 - [ ] `v1-mainnet-rc2` tag exists
 - [ ] SOS report: zero HIGH/CRITICAL open ✓
-- [ ] DB report: zero HIGH/CRITICAL open (assuming N002 + replay store land)
+- [ ] DB report: zero HIGH/CRITICAL open (AUTH-N02 + CHAIN-N01 + CHAIN-N02 closed) ✓
 - [ ] Render mainnet env vars staged (not deployed yet)
-- [ ] Vercel mainnet env vars staged
+- [ ] Vercel mainnet env vars staged (per Q1 resolution — Vercel-only is now the convention)
 - [ ] **Vercel Deployment Protection: DISABLED** (the 3.5-day gotcha — see §4.5)
 - [ ] Mainnet RPC chosen (Helius / QuickNode / etc.) + tested
-- [ ] Squads multisig + 3 vaults created on mainnet ✓
+- [ ] Squads multisig + 3 vaults created on mainnet ✓ (Bucket 1)
 - [ ] Treasury + Ops vault PDAs funded with ~0.05 SOL each for rent
 - [ ] Server keypair `solshot-server-authority.json` on Render disk
 - [ ] Bug bounty page drafted
 
-**Deploy sequence:**
-
-```bash
-# 1. Update declare_id! in lib.rs to mainnet ID
-# programs/solshot-escrow-v2/src/lib.rs line ~36:
-#   declare_id!("BNLgn96LqskqcgTTf7cPZ5iHkaKqRdSiCdGzcAw4L7uS");
-
-# 2. Build mainnet binary
-anchor build
-
-# 3. Deploy with Squads Vault 0 as upgrade authority
-solana program deploy \
-  --url mainnet-beta \
-  --program-id target/deploy/solshot_escrow_v2_mainnet-keypair.json \
-  --upgrade-authority <squads_vault_0_pda> \
-  target/deploy/solshot_escrow_v2.so
-
-# 4. Verify deploy
-solana program show BNLgn96LqskqcgTTf7cPZ5iHkaKqRdSiCdGzcAw4L7uS --url mainnet-beta
-# → Upgrade Authority should show Vault 0 PDA
-
-# 5. Initialize config — 3 distinct Squads vault PDAs
-cd server
-ESCROW_PROGRAM_ID_V2=BNLgn96LqskqcgTTf7cPZ5iHkaKqRdSiCdGzcAw4L7uS \
-SOLANA_RPC=https://api.mainnet-beta.solana.com \
-SOLANA_KEYPAIR_PATH=~/.config/solana/solshot-server-authority.json \
-SQUADS_AUTHORITY_PDA=<vault_0_pda> \
-SQUADS_TREASURY_PDA=<vault_1_pda> \
-SQUADS_OPS_PDA=<vault_2_pda> \
-node scripts/init-config-mainnet.mjs
-# → dry-run first, review values
-
-# 6. For real
-INIT_MAINNET_CONFIRM=I_UNDERSTAND_MAINNET_IRREVERSIBLE \
-ESCROW_PROGRAM_ID_V2=... (same env) ... \
-node scripts/init-config-mainnet.mjs
-
-# 7. Flip Render env vars to mainnet:
-#    SOLANA_RPC=<mainnet RPC>
-#    ESCROW_PROGRAM_ID_V2=BNLgn96LqskqcgTTf7cPZ5iHkaKqRdSiCdGzcAw4L7uS
-#    PRIVY_APP_ID + PRIVY_APP_SECRET already correct
-#    Restart Render service
-
-# 8. Flip Vercel env vars to mainnet:
-#    REACT_APP_SOLANA_NETWORK=mainnet-beta
-#    REACT_APP_ESCROW_V2_PROGRAM_ID=BNLgn96LqskqcgTTf7cPZ5iHkaKqRdSiCdGzcAw4L7uS
-#    REACT_APP_SOLANA_RPC=<mainnet RPC>
-#    Trigger Vercel redeploy
-
-# 9. Smoke test — JJ creates 1v1 match at 0.001 SOL wager
-#    → if anything off, rollback procedure in §4 of V1_LAUNCH_SPRINT
-
-# 10. Open the gates:
-#     - Bug bounty page live (solshot.gg/security or Immunefi)
-#     - Tweet / Discord / TG announcement
-```
+**Deploy sequence:** unchanged from prior version of this doc. See `V1_LAUNCH_SPRINT.md` §4 for the runbook.
 
 ---
 
-### 5. Doc rewrites (parallel, non-blocking)
+### 5. Doc rewrites — MECHANICAL SUBSET DONE; VOICE-DEPENDENT SUBSET PENDING
 
-These can happen any time, don't block the flip. Needs your voice for the user-facing tone:
-
-| Doc | Effort | What |
-|---|---|---|
-| `SolShot_Litepaper_v2.2.md → v2.3` | ~2h | Rewrite SHOT section (off-chain), clamp 10P → 4P, update Squads/audit/deploy claims |
-| `security-model.md` | ~1h | Add Bundle 1 governance + audit #3 results |
-| `mainnet-roadmap.md` | ~30min | V1 scope + pre-flip checklist |
-| `architecture.md` | ~30min | Match current code reality |
-| `one-pager.md` | ~15min | Refresh pitch |
-| `how-to-play.md` | ~15min | Verify wager mechanics |
-| `crypto-explainer.md` | ~15min | SHOT framing |
-| `competitive-landscape.md` | ~30min | Refresh |
+| Doc | Status |
+|---|---|
+| `one-pager.md` | ✓ done — line edits to SHOT row, program IDs, By-the-numbers |
+| `competitive-landscape.md` | ✓ done — Differentiator #4 reframed, table row updated, multisig phrasing |
+| `crypto-explainer.md` | ✓ done — player count + treasury reward-pool framing |
+| `how-to-play.md` | ✓ done — player count, "burn"→"spend" softening, Jupiter ticker retired |
+| `architecture.md` | ✓ done — SHOT row, mainnet program ID, 3-vault Squads block, Bundle 1 LANDED |
+| `audit-summary.md` | ✓ done — appended "Audit Pass 3 (2026-05-28)" section + new verdict |
+| `Docs/README.md` | ✓ done — nav entry for SHOT model |
+| `SHOT_TOKEN_MODEL.md` | ✓ already a stub (`Docs/SHOT_TOKEN_MODEL.md`) |
+| **`SolShot_Litepaper_v2.2.md → v2.3`** | **STILL TODO (~2h, needs JJ voice for §08 + §09 + §11 rewrite)** |
+| **`security-model.md`** | **STILL TODO (~1h, needs JJ voice for Bundle 1 LANDED status + audit #3 narrative)** |
+| **`mainnet-roadmap.md`** | **STILL TODO (~1.5h, needs JJ voice for v1-retired-from-mainnet decision narrative)** |
 
 Per-doc line-numbered stale claims at `Docs/internal/DOC_RECONCILE_2026-05-28.md`.
 
@@ -179,26 +120,24 @@ Per-doc line-numbered stale claims at `Docs/internal/DOC_RECONCILE_2026-05-28.md
 
 ## Total wall-clock estimate
 
-**~6-8 hours from rc1 to live mainnet.** Long pole is Squads multisig (~30 min real time but needs Fish synced).
+**~3-5 hours from current HEAD to live mainnet** (long pole is Squads multisig with Fish; doc rewrites can run in parallel to mainnet deploy).
 
 ---
 
 ## What I (Claude) can do for you remotely
 
-If you're on phone/iPad via Claude Code remote-control, I can:
-- Answer questions about any of the audit reports (read `.audit/FINAL_REPORT.md`, `.bulwark/FINAL_REPORT.md`, `Docs/internal/DOC_RECONCILE_2026-05-28.md`)
-- Apply any of the deferred fixes (AUTH-N02 replay store, CHAIN-N01 env vars, doc rewrites)
-- Walk you through `anchor build` errors
+Same as before:
+- Answer questions about any of the audit reports
+- Walk you through anchor upgrade errors
 - Diagnose Render/Vercel deployment issues by reading logs
-- Build the smoke-test sequence
 - Help draft the launch tweet / Discord / TG announcement
 
 **What I can't do without you:**
 - Open a browser to v3.squads.so (you need to do the Squads UI)
 - Sign on the Ledger
 - Trigger Render/Vercel env var changes (you do these in their dashboards)
-- Run `anchor build` (needs the toolchain on your machine)
 - Actually call `solana program deploy --provider.cluster mainnet` (needs your signature)
+- Actually call `anchor upgrade` on devnet (needs your signature)
 
 ---
 
@@ -213,4 +152,16 @@ If you're on phone/iPad via Claude Code remote-control, I can:
 
 ---
 
-When you're back at the keyboard, just say "ready to keep going" and tell me which bucket (1-5) you want to tackle first. If you want me to start something autonomously (e.g. draft the AUTH-N02 replay store + open a PR for review), just say so.
+## What landed since rc1 (2026-05-28 evening session)
+
+Three commits beyond `fabb8e1`:
+- `b941b3b` + `c4371ec` + `0572635` — original audit-fix bundle (CHAIN-N03/N04, AUTH-N03, DATA-N01)
+- `e7098d7` + `36a0e40` — doc reconcile + comms entry
+- `3762389` — this doc (initial version)
+- `d5cbf18` — **AUTH-N02 replay store + CHAIN-N01 env clean**
+- `af96baf` — **7 public doc reconciliation edits**
+- (pending commit) — **IDL re-sync + script guards for accept-authority-v2 + update-config-v2 + apply-config-update-v2 + `_op_guards.mjs` helper**
+
+Closed CRITs/HIGHs in this session: AUTH-N02, CHAIN-N01, CHAIN-N02, plus operator-compromise hardening on 3 sibling ops scripts.
+
+When you're back at the keyboard, just say "ready to keep going" and tell me which bucket (1-5) you want to tackle first. The next blocker is **Squads multisig with Fish (Bucket 1)** — everything else is either done or downstream of that.

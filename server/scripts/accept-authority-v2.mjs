@@ -9,21 +9,26 @@
 // The new-authority keypair MUST already be present in config.pending_authority
 // (set by a prior propose-authority-v2 call). Otherwise the on-chain check
 // rejects with Unauthorized.
+//
+// DB audit #3 AUTH-N03 family fix: mirror the safety guards from
+// propose-authority-v2.mjs — RPC mainnet allowlist when ACCEPT_AUTHORITY_NETWORK=mainnet,
+// dry-run-by-default with ACCEPT_AUTHORITY_CONFIRM=YES gate, pre-flight summary.
 
 import fs from 'fs';
 import { Keypair, Connection } from '@solana/web3.js';
 import { AnchorProvider, Program, Wallet } from '@coral-xyz/anchor';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { assertMainnetRpcAllowlisted, fail, printDryRunReminder } from './_op_guards.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const KEYPAIR_PATH = process.env.NEW_AUTHORITY_KEYPAIR;
-if (!KEYPAIR_PATH) {
-    console.error('Pass NEW_AUTHORITY_KEYPAIR env var (path to new authority keypair JSON).');
-    process.exit(1);
-}
+const CONFIRM = process.env.ACCEPT_AUTHORITY_CONFIRM;
+const IS_MAINNET_ENV = process.env.ACCEPT_AUTHORITY_NETWORK === 'mainnet';
+
+if (!KEYPAIR_PATH) fail('NEW_AUTHORITY_KEYPAIR env var required (path to new authority keypair JSON).');
 
 // Resolve ~ to $HOME on Windows + Unix
 const resolvedPath = KEYPAIR_PATH.startsWith('~')
@@ -44,6 +49,7 @@ console.log('Loaded new authority keypair:', newAuthority.publicKey.toBase58());
 // Build a fresh Anchor program instance signed by THIS keypair (not the
 // server's loaded escrow keypair, which is likely the OLD authority).
 const SOLANA_RPC = process.env.SOLANA_RPC || 'https://api.devnet.solana.com';
+if (IS_MAINNET_ENV) assertMainnetRpcAllowlisted(SOLANA_RPC);
 const connection = new Connection(SOLANA_RPC, 'confirmed');
 const wallet = new Wallet(newAuthority);
 const provider = new AnchorProvider(connection, wallet, {
@@ -71,14 +77,32 @@ if (!preConfig.pendingAuthority || !preConfig.pendingAuthority.equals(newAuthori
     process.exit(1);
 }
 
-console.log('\nAccepting authority...');
+const cluster = IS_MAINNET_ENV ? 'mainnet' : 'devnet';
+
+console.log('\n════════════════════════════════════════════════════════════════════════');
+console.log(`  v2 accept_authority — ${cluster.toUpperCase()}`);
+console.log('════════════════════════════════════════════════════════════════════════');
+console.log(`  RPC                 : ${SOLANA_RPC}`);
+console.log(`  Signer (new auth)   : ${newAuthority.publicKey.toBase58()}`);
+console.log(`  Current authority   : ${preConfig.authority.toBase58()}`);
+console.log(`  Pending authority   : ${preConfig.pendingAuthority.toBase58()}`);
+console.log(`  After this TX       : authority = ${newAuthority.publicKey.toBase58()}, pending = none`);
+console.log('════════════════════════════════════════════════════════════════════════\n');
+
+if (CONFIRM !== 'YES') {
+    printDryRunReminder({ confirmVar: 'ACCEPT_AUTHORITY_CONFIRM', isMainnet: IS_MAINNET_ENV, opLabel: 'accept_authority TX' });
+    process.exit(0);
+}
+
+console.log('Confirmation matched. Accepting authority...');
 try {
     const tx = await program.methods
         .acceptAuthority()
         .accounts({ newAuthority: newAuthority.publicKey })
         .rpc();
     console.log('TX:', tx);
-    console.log('Solscan: https://solscan.io/tx/' + tx + '?cluster=devnet');
+    const explorerCluster = IS_MAINNET_ENV ? '' : `?cluster=${cluster}`;
+    console.log(`Solscan: https://solscan.io/tx/${tx}${explorerCluster}`);
 } catch (err) {
     console.error('accept_authority failed:', err.message);
     process.exit(1);

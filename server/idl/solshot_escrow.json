@@ -57,7 +57,8 @@
         {
           "name": "config",
           "docs": [
-            "Config PDA — provides authority pubkey + pause guard (OC-04, OC-05)"
+            "Config PDA — provides authority pubkey for caller-is-authority check.",
+            "H016 fix: NO pause guard (pause must not lock player exits)."
           ],
           "pda": {
             "seeds": [
@@ -313,8 +314,10 @@
     {
       "name": "pause_program",
       "docs": [
-        "Emergency pause — halts all economic instructions (OC-04).",
-        "Can be called even when already paused (idempotent)."
+        "Emergency pause — halts new commitments (create_match + deposit_wager).",
+        "In-flight funds can still exit via cancel/settle/reclaim (H016 fix).",
+        "Can be called even when already paused (idempotent).",
+        "H043 fix: emits Paused event for off-chain monitoring."
       ],
       "discriminator": [
         91,
@@ -464,7 +467,9 @@
         {
           "name": "winner",
           "docs": [
-            "Winner: must be one of the N registered players (OC-02, ESC-07 — resolves H008, H002, S001)"
+            "Winner: must be one of the N registered players (OC-02, ESC-07 — resolves H008, H002, S001)",
+            "H025 fix: !executable guard prevents authority from snapshotting an executable account",
+            "as a fee/winner destination, which would silently burn lamports per EP-106."
           ],
           "writable": true
         },
@@ -485,7 +490,8 @@
         {
           "name": "config",
           "docs": [
-            "Config PDA — provides validated treasury/ops/authority pubkeys + pause guard (OC-04)"
+            "Config PDA — provides validated treasury/ops/authority pubkeys.",
+            "H016 fix: pause guard removed from settle so in-flight funds can always exit during pause."
           ],
           "pda": {
             "seeds": [
@@ -568,7 +574,7 @@
         {
           "name": "config",
           "docs": [
-            "Config PDA — provides authority validation + pause guard"
+            "Config PDA — provides authority validation. H009 fix: NO pause guard."
           ],
           "pda": {
             "seeds": [
@@ -592,8 +598,9 @@
     {
       "name": "unpause_program",
       "docs": [
-        "Emergency unpause — resumes economic instructions (OC-04).",
-        "Can be called even when already unpaused (idempotent)."
+        "Emergency unpause — resumes new-commitment instructions.",
+        "Can be called even when already unpaused (idempotent).",
+        "H043 fix: emits Unpaused event for off-chain monitoring."
       ],
       "discriminator": [
         43,
@@ -799,6 +806,32 @@
       ]
     },
     {
+      "name": "Paused",
+      "discriminator": [
+        172,
+        248,
+        5,
+        253,
+        49,
+        255,
+        255,
+        232
+      ]
+    },
+    {
+      "name": "Unpaused",
+      "discriminator": [
+        156,
+        150,
+        47,
+        174,
+        120,
+        216,
+        93,
+        117
+      ]
+    },
+    {
       "name": "WagerDeposited",
       "discriminator": [
         31,
@@ -927,6 +960,21 @@
       "code": 6022,
       "name": "MatchAlreadyStarted",
       "msg": "Match has already started"
+    },
+    {
+      "code": 6023,
+      "name": "IncompleteRefund",
+      "msg": "remaining_accounts must equal count_ones(deposits_mask) — partial refund not allowed"
+    },
+    {
+      "code": 6024,
+      "name": "DepositWindowOpen",
+      "msg": "Deposit window still open — wait for deposit deadline before activating partial match"
+    },
+    {
+      "code": 6025,
+      "name": "ExecutableNotAllowed",
+      "msg": "Account must not be executable"
     }
   ],
   "types": [
@@ -1211,6 +1259,33 @@
           },
           {
             "name": "Cancelled"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Paused",
+      "docs": [
+        "H043 fix: pause/unpause audit trail for off-chain monitoring"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Unpaused",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
           }
         ]
       }

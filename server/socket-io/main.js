@@ -3962,17 +3962,34 @@ const mainsocket = (io) => {
                 uid: playerUids[client.id]?.uid || null,
             }, { matchId: rid, wagerSol: ws.amount, txSignature });
 
-            // SRV-18: Emit real-time deposit status to all room members
-            io.sockets.in(rid).emit('escrowDepositStatus', {
-                roomId: rid,
-                deposits: room.players.map(p => ({
-                    socketId: p.socketId,
-                    wallet: ws.wallets?.[p.socketId] || null,
-                    confirmed: !!(ws.deposits?.[p.socketId]),
-                })),
-                numDeposited: Object.keys(ws.deposits || {}).length,
-                totalPlayers: room.players.length,
-            })
+            // SRV-18: Emit real-time deposit status to all room members.
+            //
+            // DB audit #3 DATA-N02 fix: per-recipient projection. Previously
+            // we broadcast every player's full wallet to every other player
+            // in the room. That's a clean PII leak that combines nastily with
+            // any identity-correlation attack — a curious opponent can collect
+            // wallet addresses of everyone they've played against. Now each
+            // recipient sees only their OWN wallet address + the confirmation
+            // status of others (boolean, no address).
+            const numDeposited = Object.keys(ws.deposits || {}).length;
+            const totalPlayers = room.players.length;
+            room.players.forEach((recipient) => {
+                const sock = io.sockets.sockets.get(recipient.socketId);
+                if (!sock) return;
+                sock.emit('escrowDepositStatus', {
+                    roomId: rid,
+                    deposits: room.players.map(p => ({
+                        socketId: p.socketId,
+                        // Only the recipient's own wallet is revealed.
+                        wallet: p.socketId === recipient.socketId
+                            ? (ws.wallets?.[p.socketId] || null)
+                            : null,
+                        confirmed: !!(ws.deposits?.[p.socketId]),
+                    })),
+                    numDeposited,
+                    totalPlayers,
+                });
+            });
 
             const allDeposited = room.players.every(p => ws.deposits && ws.deposits[p.socketId])
 

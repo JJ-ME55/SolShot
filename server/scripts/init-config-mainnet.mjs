@@ -74,8 +74,34 @@ const REQUIRED_CONFIRM = 'I_UNDERSTAND_MAINNET_IRREVERSIBLE';
 
 if (!PROGRAM_ID_ENV) fail('ESCROW_PROGRAM_ID_V2 must be set (mainnet program ID).');
 if (!RPC) fail('SOLANA_RPC must be set to a mainnet RPC URL.');
-if (!/mainnet/i.test(RPC)) {
-    fail(`SOLANA_RPC must point at mainnet (got "${RPC}"). Refuse to init mainnet config against non-mainnet RPC.`);
+// DB audit #3 CHAIN-N04 fix: substring `/mainnet/i.test(RPC)` accepted
+// attacker domains like `mainnet.attacker.com`. Switched to explicit host
+// allowlist of the major reputable mainnet RPC providers. If you need a
+// different mainnet RPC, add its host here after verifying it's legitimate.
+const MAINNET_RPC_HOST_ALLOWLIST = [
+    'api.mainnet-beta.solana.com',
+    'mainnet.helius-rpc.com',
+    'rpc.helius.xyz',                     // older helius host
+    'solana-mainnet.g.alchemy.com',
+    'solana-mainnet.rpc.extrnode.com',
+    'mainnet.rpcpool.com',
+    'rpc.ankr.com',                       // ankr (host varies by path)
+    'solana-api.projectserum.com',
+];
+const isAllowedMainnetRpc = (url) => {
+    try {
+        const host = new URL(url).hostname.toLowerCase();
+        return MAINNET_RPC_HOST_ALLOWLIST.some((h) => host === h || host.endsWith(`.${h}`));
+    } catch {
+        return false;
+    }
+};
+if (!isAllowedMainnetRpc(RPC)) {
+    fail(
+        `SOLANA_RPC host is not in the mainnet allowlist (got "${RPC}").\n` +
+        `Allowed hosts: ${MAINNET_RPC_HOST_ALLOWLIST.join(', ')}\n` +
+        `If you need a different mainnet RPC, add its host to MAINNET_RPC_HOST_ALLOWLIST in this script after verifying it's a legitimate Solana mainnet endpoint.`
+    );
 }
 if (!KP) fail('SOLANA_KEYPAIR_PATH must be set (server authority keypair).');
 if (!AUTH || !TREAS || !OPS) {

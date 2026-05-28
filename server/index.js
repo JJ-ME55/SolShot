@@ -32,7 +32,7 @@ import {
 } from './services/challenge/challenge.js';
 import { lookupUserByTelegramId, getPlayerRank, linkTelegramIdentity } from './services/users.js';
 import { recordFunnelEvent, getFunnelAggregates } from './services/funnel.js';
-import { consumeLinkToken } from './services/walletLinkTokens.js';
+import { consumeLinkToken, peekLinkToken } from './services/walletLinkTokens.js';
 import { requirePrivyAuth, isPrivyAuthConfigured } from './services/privyAuth.js';
 import { mintArcadeSession, verifyArcadeSession } from './services/arcadeSession.js';
 import User from './models/User.js';
@@ -594,7 +594,15 @@ app.post('/api/wallet/link-from-tg-token', requirePrivyAuth({ required: false })
         if (walletAddress.length < 32 || walletAddress.length > 64) {
             return res.status(400).json({ error: 'walletAddress shape invalid' });
         }
-        const entry = consumeLinkToken(token);
+        // DB audit #3 AUTH-N01 fix: peek-then-consume. Previously the token
+        // was consumed BEFORE linkTelegramIdentity ran, so any failure of the
+        // link step (Mongo error, wallet shape rejection inside the helper,
+        // etc.) burned the user's token and locked them out — they'd need
+        // to re-run /link in the bot to mint a fresh one. With peek now,
+        // the token only gets consumed after the link succeeds. Transient
+        // failures are now retry-friendly (S1-T3's client-side retry helper
+        // can hammer until success).
+        const entry = peekLinkToken(token);
         if (!entry) {
             return res.status(404).json({ error: 'token_invalid_or_expired' });
         }
@@ -605,8 +613,13 @@ app.post('/api/wallet/link-from-tg-token', requirePrivyAuth({ required: false })
             firstName: entry.firstName || null,
         });
         if (!updated) {
+            // Token NOT consumed — caller can retry without re-minting.
             return res.status(500).json({ error: 'link_failed' });
         }
+        // Link succeeded — now burn the token. The peek-then-consume race
+        // (someone else consuming between peek and this consume) is bounded
+        // by the single-user nature of magic links (DM'd to one human).
+        consumeLinkToken(token);
         // Funnel: wallet+TG bound via /play magic-link path
         recordFunnelEvent('wallet_linked', {
             walletAddress: updated.walletAddress || walletAddress,

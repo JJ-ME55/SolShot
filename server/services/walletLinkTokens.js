@@ -82,6 +82,34 @@ export function consumeLinkToken(token) {
 }
 
 /**
+ * DB audit #3 AUTH-N01 fix: peek a token without consuming it. Used by
+ * /api/wallet/link-from-tg-token so we can validate the token AND run
+ * the link operation BEFORE burning the token. Previously, a Mongo error
+ * or shape rejection during the link step would burn the user's token
+ * and leave them with no way to retry without a fresh /link command in
+ * the bot. With peek + late-consume, transient failures preserve the
+ * token's usability.
+ *
+ * Race note: another concurrent consume could land between peek and
+ * the eventual consume, but that's the same race we always had (and
+ * acceptable single-user usage — magic links are DM'd to a single human).
+ *
+ * @param {string} token
+ * @returns {TokenEntry|null}
+ */
+export function peekLinkToken(token) {
+    if (!token || typeof token !== 'string') return null;
+    const entry = store.get(token);
+    if (!entry) return null;
+    if (entry.expiresAt < Date.now()) {
+        // Token is expired — clean up but don't return it
+        store.delete(token);
+        return null;
+    }
+    return entry;
+}
+
+/**
  * Periodic sweep so abandoned (minted-but-never-consumed) tokens don't
  * accumulate forever. Runs every SWEEP_INTERVAL_MS once any token has
  * been minted.

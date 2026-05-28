@@ -206,27 +206,10 @@ export async function applyConfigUpdateV2() {
     }
 }
 
-/**
- * S2-T2 migration tool: one-shot reallocation of the GlobalConfig PDA from
- * pre-S2-T1 SPACE (110 bytes) to post-S2-T1 SPACE (231 bytes). Existing
- * live fields preserved; new pending_* fields default to None/0.
- *
- * Devnet-only. Mainnet uses initialize_config with new SPACE from genesis.
- */
-export async function migrateConfigV2() {
-    if (!program) return { success: false, error: 'EscrowV2 not initialized' };
-    try {
-        const tx = await program.methods
-            .migrateConfig()
-            .accounts({ authority: getEscrowKeypair().publicKey })
-            .rpc();
-        console.log(`[EscrowV2] Config migrated (110 → 231 bytes) — TX: ${tx}`);
-        return { success: true, txSignature: tx };
-    } catch (err) {
-        console.error('[EscrowV2] migrateConfig failed:', err.message);
-        return { success: false, error: err.message };
-    }
-}
+// DB audit #3 CHAIN-N03 fix: migrateConfigV2() wrapper removed. The on-chain
+// `migrate_config` instruction was deleted in commit da04b5e (SOS N002).
+// Devnet migration completed 2026-05-27 via TX 2kMPbgLesnfAtV8oaipjggu2hRBpWkC1X56KkwHVhbBYWBKws8XMhdDHt...
+// The corresponding scripts/migrate-config-v2.mjs is also being removed.
 
 /**
  * S2-T1 (Bundle 1): Step 1 of authority rotation. Current authority signs.

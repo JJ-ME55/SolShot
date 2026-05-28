@@ -2343,8 +2343,21 @@ const mainsocket = (io) => {
 
             broadcastRooms(io)
 
-            // Create on-chain escrow for wagered matches
-            if (roomWager > 0 && isEscrowAvailableFor(room.players.length)) {
+            // Create on-chain escrow for wagered matches.
+            //
+            // CRITICAL: gate on room.players.length === room.maxPlayers — escrow
+            // is created ONCE per room, when the final player joins. Previously
+            // this fired on every join: player 2 joins → v1 escrow created;
+            // player 3 joins → v2 escrow created (because shouldUseEscrowV2(3)
+            // flips); player 4 joins → v2 createMatch fails with "Allocate:
+            // account already in use" because the PDA was already created on
+            // player 3's join. Three bugs in one stack of dominoes.
+            //
+            // Gating on maxPlayers also fixes the off-by-one: the escrow is
+            // created with allWallets.length === maxPlayers, not some
+            // intermediate count.
+            const roomFull = room.players.length === room.maxPlayers;
+            if (roomFull && roomWager > 0 && isEscrowAvailableFor(room.players.length)) {
                 // SRV-09: Collect all N player wallets for N-player escrow creation
                 const allWallets = room.players.map(p => ws?.wallets[p.socketId]).filter(Boolean)
                 if (allWallets.length === room.players.length) {

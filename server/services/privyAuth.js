@@ -40,8 +40,31 @@ function getClient() {
         return null;
     }
     privy = new PrivyClient(PRIVY_APP_ID, PRIVY_APP_SECRET);
-    console.log('[privyAuth] Initialized — JWT verification enabled');
+    // Bug 4 (2026-05-28): log APP_ID on init so we can correlate against client's
+    // REACT_APP_PRIVY_APP_ID when "signature verification failed" surfaces. If the
+    // two don't match, JWT signed for app A can never verify against app B's key.
+    console.log(`[privyAuth] Initialized — JWT verification enabled (PRIVY_APP_ID=${PRIVY_APP_ID})`);
     return privy;
+}
+
+/**
+ * Best-effort decode of a JWT's payload WITHOUT signature verification.
+ * Used purely for diagnostic logging on verification failure — we want
+ * to know WHAT failed (audience mismatch, expired, wrong issuer)
+ * without re-trusting the token. Returns null if structure is malformed.
+ */
+function unsafeDecodeForLogging(token) {
+    try {
+        const parts = token.split('.');
+        if (parts.length !== 3) return null;
+        // Base64URL → Base64 → JSON
+        const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
+        const json = Buffer.from(padded, 'base64').toString('utf-8');
+        return JSON.parse(json);
+    } catch {
+        return null;
+    }
 }
 
 /**
@@ -103,7 +126,28 @@ export function requirePrivyAuth(options = {}) {
             req.privyUserId = verified.userId; // Privy DID
             return next();
         } catch (err) {
-            console.warn('[privyAuth] Token verification failed:', err?.message || err);
+            // Bug 4 (2026-05-28): on failure, decode the token payload (no signature
+            // check) so we can see WHAT mismatched. Print: endpoint URL, claim
+            // audience (= which Privy app ID the token was signed FOR), claim
+            // issuer, age relative to issue/exp. If aud !== our PRIVY_APP_ID,
+            // that's the smoking gun for an APP_ID env mismatch.
+            const claims = unsafeDecodeForLogging(token);
+            const now = Math.floor(Date.now() / 1000);
+            const ageSinceIssue = claims?.iat ? now - claims.iat : null;
+            const secsUntilExpiry = claims?.exp ? claims.exp - now : null;
+            const audMatchesEnv = claims?.aud === PRIVY_APP_ID;
+            console.warn('[privyAuth] Token verification failed', {
+                err: err?.message || String(err),
+                endpoint: `${req.method} ${req.path}`,
+                tokenAudience: claims?.aud || '(unparseable)',
+                ourAppId: PRIVY_APP_ID,
+                audMatchesEnv,
+                issuer: claims?.iss || '(unparseable)',
+                privyDid: claims?.sub || '(unparseable)',
+                ageSinceIssueSecs: ageSinceIssue,
+                secsUntilExpiry,
+                expired: secsUntilExpiry != null && secsUntilExpiry < 0,
+            });
             // Soft mode: log + pass through unverified. Caller decides
             // what to do with req.privyAuth = null (e.g. magic-link
             // endpoint has its own primary auth and falls back to it).
@@ -132,7 +176,20 @@ export async function verifyPrivyToken(token) {
     try {
         return await client.verifyAuthToken(token);
     } catch (err) {
-        console.warn('[privyAuth] verifyPrivyToken failed:', err?.message || err);
+        // Bug 4 (2026-05-28): same diagnostic dump as the middleware path.
+        const claims = unsafeDecodeForLogging(token);
+        const now = Math.floor(Date.now() / 1000);
+        console.warn('[privyAuth] verifyPrivyToken failed', {
+            err: err?.message || String(err),
+            tokenAudience: claims?.aud || '(unparseable)',
+            ourAppId: PRIVY_APP_ID,
+            audMatchesEnv: claims?.aud === PRIVY_APP_ID,
+            issuer: claims?.iss || '(unparseable)',
+            privyDid: claims?.sub || '(unparseable)',
+            ageSinceIssueSecs: claims?.iat ? now - claims.iat : null,
+            secsUntilExpiry: claims?.exp ? claims.exp - now : null,
+            expired: claims?.exp ? claims.exp - now < 0 : null,
+        });
         return null;
     }
 }

@@ -1,11 +1,11 @@
-# Stronghold of Security — Final Audit Report
+# Stronghold of Security — Final Audit Report (Audit #3)
 
 **Project:** SolShot Escrow (programs v1 + v2)
-**Audit Date:** 2026-05-07
-**Auditor:** Stronghold of Security v1.0
-**Scope:** Adversarial security analysis of `programs/solshot-escrow/src/lib.rs` (v1, 962 LOC) and `programs/solshot-escrow-v2/src/lib.rs` (v2, 1020 LOC)
-**Audit Number:** #2 (stacked on Audit #1, 2026-02-23 @ `ecfd03b`)
-**Current Ref:** `226c0cd`
+**Audit Date:** 2026-05-28
+**Auditor:** Stronghold of Security v1.0 (delta-focused stacked audit)
+**Scope:** v2 lib.rs Bundle 1 deltas (governance + migrate_config + new state) + recheck of audit #2's 22 confirmed findings + v1 hardening deltas
+**Audit Number:** #3 (stacked on #2 from 2026-05-07 @ `226c0cd`; #1 from 2026-02-23 @ `ecfd03b`)
+**Current Ref:** `fabb8e1` (tag `v1-mainnet-rc1`)
 
 ---
 
@@ -13,1384 +13,904 @@
 
 ### Overall Security Posture
 
-SolShot Escrow comprises two parallel Anchor programs holding native SOL for wagered tank-battle matches: v1 (deployed `4kzr…nH1`, real-time 1v1 to 4-player) and v2 (deployed `BVKX…G7N`, async N-player to 10). v1 has been live-fire tested on devnet (first wagered settlement 2026-05-04) and was previously audited; v2 has had a single 3-player auto-settlement on devnet and **has had no prior audit coverage**. This audit treats both as fresh subjects given the magnitude of the v1 rewrite (~40% modified) and v2's first-time appearance.
+Between audit #2 (May 7) and audit #3 (May 28), the team landed **Bundle 1** (S2-T1 + S2-T2: governance hardening — 2-step authority rotation, 24h config timelock, devnet `migrate_config`) on v2 and also shipped a hardening pass on v1 that closes several prior findings that the HANDOVER doc had pessimistically tagged as "RECHECK". The net effect on the audit #2 risk surface is genuinely substantial. **Two of audit #2's four CRITICAL findings (H023 partial-refund theft, H001 one-step authority transfer) are now RESOLVED in code.** Two CRITICAL findings (H044 single hot wallet for L1+L2, H046 Layer-1 bytecode replacement) remain as operational carry-forward, addressed by the planned Squads-from-day-one mainnet deploy rather than by code change.
 
-The audit produced **50 confirmed/categorized findings** spanning 8 EP categories, with **4 CRITICAL** items dominating the risk surface. The headline finding — **H023 partial-refund theft via `close = caller` sweep** — is a structural fund-theft path verified against the Anchor 0.32.1 `close()` runtime source (`anchor-lang-0.32.1/src/common.rs:6-15`). It allows any registered player (or, in `permissionless_reclaim`, any wallet) to call cancel/reclaim with a partial `remaining_accounts` array and have Anchor's exit hook sweep all un-refunded co-depositor wagers to the caller. **Worst case: 900 SOL stolen per v2 max match.** This finding affects all four refund-loop sites in both programs and was independently flagged by the CPI agent (NOVEL-CPI-02) and the Token/Economic agent (NOVEL-TE-01).
+Bundle 1's architecture closes the H001-family attack chain (H001 + H002 + H011 + H030 + H032 mitigated by the same `propose/accept` + 24h-timelock + effective-state-validation mechanism). The per-match snapshot semantics (pre-existing in v2, unchanged in Bundle 1) preserve in-flight-match integrity across the new pending-config state. Importantly, **H023 — the audit #2 headline CRITICAL (CVSS 9.3 partial-refund theft via `close = caller`) — landed a clean four-site fix** at v1:410-413, v1:489-492, v2:721-724, v2:789-792 (`require!(remaining_accounts.len() == deposits_mask.count_ones())`). The audit #2 HANDOVER doc was wrong about this: it said "Bundle 1 doesn't touch refund loops — likely still open." It did. The fix is verified by proptest regression suites in both programs (`bok_proptest_refund.rs`). H025 (executable-account fee destination) and H016/H009 (v1 pause-griefing) also landed independently in this window. **H039 (v2 unbounded `duration_secs`) was fixed via constant reduction (7d→24h).**
 
-The other three CRITICAL findings reflect SolShot's pre-mainnet hot-wallet posture (acknowledged by JJ in `Docs/internal/PRIOR_AUDIT_DELTA.md` and `OC-13` at `v1:1`): **H001** (one-step authority rotation with no propose/accept), **H044** (single hot wallet `HPyV…nokv` holds both Layer-1 upgrade authority AND Layer-2 application authority — verified live via `solana program show` 2026-05-06), and **H046** (Layer-1 bytecode replacement risk with no timelock or multisig). All three collapse to a single-key dependency: any compromise of `HPyV…nokv` enables total protocol drainage by either layer, with no on-chain recovery path. JJ's stated position: "introduce propose/accept + timelock, or accept the risk" before mainnet.
+The new concerns introduced by Bundle 1 are non-trivial but bounded. **N001 (HIGH — `pending_config_ts` reset DoS)** is a one-liner fix that undermines the 24h timelock's defensive intent under a malicious-authority scenario — every `update_config` call unconditionally re-stamps `pending_config_ts = now`, allowing a compromised authority to stall an apply indefinitely. **N002 (HIGH — `migrate_config` will ship to mainnet)** is an operational rather than code issue — the instruction is documented as devnet-only but has no `#[cfg(feature = "devnet")]` gate, so unless the mainnet build excludes it explicitly, the dead-code remains in production bytecode (exploit value is low because the authority signature gates it, but it's still attack-surface inflation). Several MEDIUMs follow: **N003** (`apply_config_update` not pause-gated — a pre-staged proposal can apply through a defensive pause), **N004** (no `cancel_pending_config` instruction — proposals can only be overwritten, not retracted), **N005** (v2 has no settle deadline, race window is unbounded post-`match_end_ts`), and **N006** (authority-rotation + pending-config inheritance — new authority inherits proposer's pending state, may create stuck-apply collision). All are findings against the **new** code, not regressions.
 
-The audit also identified meaningful **architectural improvements in v2**: per-match snapshot of treasury/ops/BPS at `create_match` (atomic, immutable post-create) genuinely protects in-flight matches from mid-match config rotation — the H001→H002 fee-redirect chain is closed for v2 in-flight matches. Pause guards have been removed from v2's `cancel_match` and `settle_match`, closing the v1 H007 pause-griefing window. The `start_with_depositors` instruction now has a deposit-deadline gate, eliminating the v1 silent-kick attack (H017). However, v2 introduces three new attack surfaces: configurable BPS opens H011 (Layer-2-only fee poisoning, REGRESSION of Feb H028 dismissal), unbounded `duration_secs` enables H039 (8-day fund lockup), and the absence of a settlement deadline expands H035's settle-vs-cancel race window from v1's 50 minutes to v2's 24 hours.
+### Comparison to Audit #2 (May 2026)
 
-### Comparison to Audit #1 (Feb 2026)
-
-| Dimension | Audit #1 (Feb 2026) | Audit #2 (May 2026) |
-|-----------|--------------------|--------------------|
-| Files in scope | 1 (v1 only, 855 LOC) | 2 (v1+v2, 1982 LOC) |
-| Confirmed findings | 12 | 22 (4 CRITICAL + 14 HIGH + 4 MEDIUM) |
-| POTENTIAL findings | 5 | 6 |
-| NOT_VULNERABLE | 17 | 18 |
-| Top severity | CRITICAL (S004 PDA squat, CVSS 9.3) | CRITICAL (H023 partial-refund theft, CVSS 9.3) |
-| v2 coverage | None | Full (first audit) |
-
-Net: The Feb CRITICAL (S004) is **RESOLVED** via `has_one = authority` on `CreateMatch.config` (verified at v1:625, v2:659). H023 takes its place as the new CRITICAL but is structurally distinct.
+| Dimension | Audit #2 (May 7) | Audit #3 (May 28) |
+|---|---|---|
+| Files in scope | 2 (v1+v2, 1,982 LOC) | 2 (v1+v2, 2,450 LOC, +468 LOC delta) |
+| Audit methodology | Full SOS Tier 2 — 50 strategies, 7 parallel context auditors, full coverage verification | Delta-focused stacked — 7 Phase 1 context auditors with prior priors; investigation phases compressed because context auditors did substantive line-ref work + verdicts in-band |
+| Prior CRITICAL status | 4 open | 2 RESOLVED (H023, H001-v2), 2 CARRY-FORWARD (H044, H046) — operational, Squads mitigation planned |
+| Prior HIGH mitigated/resolved | n/a | 10 closed by Bundle 1 + parallel work: H002, H011, H030, H032 mitigated by 24h timelock; H016, H009 fixed by removing v1 pause guards; H017 (v1 silent-kick) RECHECK still open; H024 STILL_OPEN; H025 RESOLVED via `!executable` constraints; H039 RESOLVED via 24h cap; H035 RESOLVED on v1 (constant unification), v2 still open |
+| New findings | n/a | 2 HIGH, 4 MEDIUM, 7 LOW (de-duplicated from across 7 context auditors) |
+| Top CVSS open | 9.3 (H023) | ~7.0 (N001 timelock-reset DoS — but requires authority compromise; gating CVSS PR:H) |
+| Mainnet posture | "BLOCK MAINNET" | Conditional GO — with 3 must-fix items (see §6) + Squads-from-day-one |
 
 ### Key Statistics
 
 | Metric | Count |
-|--------|-------|
-| Total Attack Hypotheses Investigated | 50 |
-| CONFIRMED Vulnerabilities | 22 |
-| POTENTIAL / Conditional | 6 |
-| NOT_VULNERABLE (re-validated) | 18 |
-| STATUS_CHANGED / PARTIAL | 4 |
+|---|---|
+| Prior findings re-statused | 28 (22 CONFIRMED + 6 LOW from audit #2) |
+| Prior CRITICAL — RESOLVED | 2 (H023, H001 on v2) |
+| Prior CRITICAL — CARRY-FORWARD | 2 (H044, H046 — operational) |
+| Prior HIGH — RESOLVED in code | 6 (H011, H030 (v2), H032, H016, H009, H025 + H039) |
+| Prior HIGH — STILL_OPEN | 5 (H024, H017 on v1, H002/H003/H006/H007 (design limits), H042 (no close), H035 on v2) |
+| Prior HIGH — RESOLVED on v1 by constant-unification | 1 (H035-v1) |
+| Prior MEDIUM — STILL_OPEN | 1 (H049 server-side entropy, off-chain) |
+| Prior MEDIUM — RESOLVED | 3 (H018, H025-v2, H033 partial) |
+| Prior LOW — RESOLVED | 5 (H040, H041, H043, H045, plus partial H034) |
+| New findings | 13 (2 HIGH, 4 MEDIUM, 7 LOW) |
+| **Total open findings** | **~14** (2 new HIGH + remaining HIGH carry-forwards + 4 new MEDIUM + carry-forward MEDs + new LOWs) |
 
-### Severity Distribution
+### Severity Distribution (Open Findings)
 
-| Severity | Count | CVSS Range | Action Required |
-|----------|-------|------------|-----------------|
-| **CRITICAL** | 4 | 8.0 – 9.3 | **BLOCK MAINNET DEPLOYMENT** |
-| **HIGH** | 14 | 6.0 – 8.7 | **FIX BEFORE MAINNET** |
-| **MEDIUM** | 4 | 4.0 – 5.9 | Recommended before mainnet |
-| **LOW** | 6 | 0.1 – 3.9 | Address when convenient |
-| NOT_VULNERABLE | 18 | N/A | No action |
-| STATUS_CHANGED | 4 | N/A | Documentation only |
+| Severity | Count | Notes |
+|---|---|---|
+| **CRITICAL** | 2 carry-forward (H044, H046 — operational) | Addressed by Squads multisig at deploy |
+| **HIGH** | 2 new + ~5 carry-forward | N001 (timelock reset), N002 (migrate ships); H024, H017 (v1), H042, H035 (v2), H039 (resolved) |
+| **MEDIUM** | 4 new + ~3 carry-forward | N003-N006 + design-limit H003/H006/H007 |
+| **LOW** | 7 new + ~1 carry-forward | Including 3 `migrate_config` LOWs and several Bundle 1 operational footguns |
 
-### Top 3 Critical Findings (Headline)
-
-| # | ID | Title | Severity | Why It Matters |
-|---|-----|-------|----------|----------------|
-| 1 | **H023** | Partial-refund theft via `close = caller` sweep | CRITICAL (CVSS 9.3) | Up to **900 SOL stealable per v2 max match** in a single TX. No special equipment, single signature. Affects ALL four refund-loop sites. |
-| 2 | **H044 + H046** | Single hot wallet for Layer 1 + Layer 2 + bytecode replacement | CRITICAL (operational) | One key compromise = total protocol drainage. Both layers resolve to `HPyV…nokv`, verified live. |
-| 3 | **H001** | One-step authority transfer (no propose/accept) | CRITICAL (CVSS 8.7) | Single TX rotates governance permanently. Historical analogues: Step Finance $30-40M, Garden $11M, Raydium $4.4M. |
-
-### CVSS Score Summary (Confirmed Findings)
-
-| ID | Finding | CVSS | Vector |
-|----|---------|------|--------|
-| H023 | Partial-refund theft (cancel_match) | 9.3 | `CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:C/C:N/I:H/A:N` |
-| H023* | Partial-refund theft (permissionless_reclaim) | 9.3 | `CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:N/I:H/A:N` |
-| H001 | One-step authority rotation | 8.7 | `CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:C/C:N/I:H/A:H` |
-| H030 | Fee destination hijack (v1 live read) | 8.7 | `CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:C/C:N/I:H/A:N` |
-| H035 | Settle-vs-cancel race | 8.5 | `CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:C/C:N/I:H/A:L` |
-| H044 | Single hot wallet L1+L2 | 8.2 | `CVSS:3.1/AV:N/AC:H/PR:H/UI:N/S:C/C:N/I:H/A:H` |
-| H046 | Layer-1 bytecode replacement | 8.0 | `CVSS:3.1/AV:N/AC:H/PR:H/UI:N/S:C/C:N/I:H/A:H` |
-| H042 | GlobalConfig has no close path | 7.7 | `CVSS:3.1/AV:N/AC:H/PR:H/UI:N/S:C/C:N/I:H/A:H` |
-| H039 | v2 unbounded duration_secs lockup | 7.0 | `CVSS:3.1/AV:N/AC:L/PR:H/UI:R/S:C/C:N/I:L/A:H` |
-| H002 / H011 / H032 | Treasury / BPS rotation chains | 6.8 | `CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:C/C:N/I:H/A:N` |
-| H003 / H006 / H007 | Authority winner fraud / collusion / self-play | 6.8 | `CVSS:3.1/AV:N/AC:H/PR:H/UI:N/S:C/C:N/I:H/A:N` |
-| H017 | v1 silent-kick via start_with_depositors | 6.0 | `CVSS:3.1/AV:N/AC:H/PR:H/UI:N/S:C/C:N/I:L/A:H` |
-| H024 | Non-contiguous deposits_mask | 6.5 | `CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:H` |
-| H016 | Pause-griefing on v1 cancel | 4.9 | `CVSS:3.1/AV:N/AC:H/PR:H/UI:N/S:C/C:N/I:L/A:L` |
-| H009 | Pause-rotate-unpause coup chain (v1) | 6.8 | `CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:C/C:N/I:H/A:N` |
-| H018 | v2 deposit_deadline edge collision | 4.5 | `CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:L/A:L` |
-| H025 | Executable account fee destination | 3.9 | `CVSS:3.1/AV:N/AC:H/PR:H/UI:N/S:U/C:N/I:L/A:L` |
-| H033 | start_with_depositors griefing (v2) | 4.5 | `CVSS:3.1/AV:N/AC:L/PR:H/UI:R/S:U/C:N/I:L/A:L` |
-| H049 | match_id PDA seed entropy | 4.0 | (off-chain) |
-
-**Average CVSS (CRITICAL+HIGH):** 7.6
-**Highest CVSS:** H023 at 9.3
-
-### Top 5 Priority Items
+### Top Priority Items (Pre-Mainnet)
 
 | Priority | ID | Finding | Severity | Location |
-|----------|-----|---------|----------|----------|
-| 1 | H023 | Partial-refund theft via close=caller | CRITICAL | `programs/solshot-escrow/src/lib.rs:393-410, 465-484`; `programs/solshot-escrow-v2/src/lib.rs:502-518, 561-577` |
-| 2 | H044 | Single hot wallet L1+L2 | CRITICAL | Operational (Anchor.toml + on-chain config) |
-| 3 | H046 | Layer-1 bytecode replacement | CRITICAL | Operational (BPF Loader Upgradeable) |
-| 4 | H001 | One-step authority transfer | CRITICAL | `v1:72-108`, `v2:96-142` |
-| 5 | H024 | Non-contiguous deposits_mask unrefundable | HIGH | `v1:393-410, 465-484`; `v2:502-518, 561-577` |
+|---|---|---|---|---|
+| 1 | **N001** | `pending_config_ts` reset DoS — undermines 24h timelock | HIGH | v2:154 |
+| 2 | **N002** | `migrate_config` will ship to mainnet bytecode | HIGH | v2:184-239 |
+| 3 | **N003** | `apply_config_update` not pause-gated | MEDIUM | v2:877-888 |
+| 4 | **H044/H046** | Squads multisig for L1 + separate L2 multisig | CRITICAL (operational) | Operational |
+| 5 | **N005** | v2 has no settle deadline (unbounded race) | MEDIUM | v2:604-671 |
+| 6 | **N004** | No `cancel_pending_config` instruction | MEDIUM | v2:115-168 |
+| 7 | **H024** | Non-contiguous `deposits_mask` stranding | HIGH (carry-forward) | v1:417, v2:727 |
 
 ---
 
-## 2. Scope and Methodology
+## 2. Audit #3 Methodology
 
-### Files Audited
+This is an **abridged, delta-focused stacked audit** building on the audit #2 archive at `.audit-history/2026-05-06-226c0cd/`. The methodology was condensed because the codebase delta is well-scoped (Bundle 1 governance instructions + small v1 hardening + 6 prior-finding fixes) and the context auditors did substantive investigation in-band — they produced line-referenced findings with prior-finding verdicts and severity calls rather than just unstructured observations.
 
-| File | LOC | Status (vs Feb) |
-|------|-----|-----------------|
-| `programs/solshot-escrow/src/lib.rs` | 962 | MAJOR-MODIFIED (~40% rewrite — N-player support, `permissionless_reclaim`, `start_with_depositors`) |
-| `programs/solshot-escrow-v2/src/lib.rs` | 1020 | NEW (first-time audit; per-match snapshot, configurable BPS, async timing) |
-| Test files (`bok_*.rs`) | — | Excluded (regression test coverage) |
+**Phases executed:**
+1. **Phase 0 (Scan)** — INDEX.md + HOT_SPOTS.md + KB_MANIFEST.md
+2. **Phase 1 (Context auditors)** — 7 parallel agents covering Access Control, Arithmetic, State Machine, CPI/External, Token/Economic, Upgrade/Admin, Timing/Ordering. Oracle agent skipped (no oracles in scope, same as audit #2).
+3. **Phase 5 (Final synthesis)** — this report
 
-### Tier and Methodology
+**Phases skipped:** Strategize/Investigate/Coverage as separate phases — the context auditors covered hypothesis generation, line-ref investigation, and severity assignment in-band. The synthesizer de-duplicates and calibrates.
 
-This audit ran the full SOS pipeline at **Tier 2 depth** (50 strategies, 7 parallel context auditors, full coverage verification). Verification agents were **skipped** because both audited files qualify as massive rewrites (per `.audit/HANDOVER.md`); previous findings were carried forward as priors only.
+**Knowledge base used:** Same as audit #2 — `severity-calibration.md`, `common-false-positives.md`, `PATTERNS_INDEX.md`.
 
-**Audit Phases:**
-1. **Phase 0+0.5** — Codebase indexing + static pre-scan (12 risk categories)
-2. **Phase 1+1.5** — 7 parallel context auditors (Access Control, Arithmetic, State Machine, CPI, Token/Economic, Upgrade/Admin, Timing). Oracle category skipped (no oracles in scope).
-3. **Phase 2+3** — Architectural synthesis → 50 attack hypotheses (23 NOVEL, 20 RECHECK, 7 KB-derived)
-4. **Phase 4+4.5** — Priority-ordered investigation in 5 batches; coverage verification
-5. **Phase 5** — Final synthesis (this report)
-
-### Knowledge Base Used
-
-- `severity-calibration.md` — CVSS scoring + qualitative severity floors for fund-theft on Solana
-- `common-false-positives.md` — Cross-referenced for Anchor `init`, has_one, close semantics, atomicity assumptions
-- `PATTERNS_INDEX.md` — ~128 EP patterns, of which OC, EP-083 (upgrade authority), EP-106 (executable accounts), EP-118 (close=caller) directly informed findings
-
-### Coverage Achieved
-
-- Instructions covered: **20/20** (10 unique × 2 programs)
-- EP categories addressed: **8/8 relevant** (Oracle category correctly excluded)
-- Pre-mainnet checklist items: **8/10** (2 minor gaps documented in COVERAGE.md — CHECKLIST-GAP-01 documentation only, CHECKLIST-GAP-02 compute-budget exhaustion at v2 10-player reclaim)
+**Files audited:**
+| File | LOC | Status vs audit #2 |
+|---|---|---|
+| `programs/solshot-escrow/src/lib.rs` | 1,027 | MODIFIED (+97 lines, hardening fixes, no Bundle 1) |
+| `programs/solshot-escrow-v2/src/lib.rs` | 1,423 | MODIFIED (+449 lines, Bundle 1 governance rewrite) |
+| Tests (`bok_proptest_*.rs`) | n/a | NEW (5 files, regression coverage for H023 and pot math) — excluded from finding scope |
 
 ---
 
-## 3. Severity Breakdown
+## 3. Prior Finding Status (Audit #2 → Audit #3)
 
-### All Findings by Severity
+All audit #2 findings mapped to current status. Sort by prior severity, then prior ID.
 
-| ID | Title | Severity | Status | Affects | CVSS | Origin |
-|----|-------|----------|--------|---------|------|--------|
-| H023 | Partial-refund theft via close=caller | CRITICAL | CONFIRMED | v1+v2 | 9.3 | NEW (NOVEL) |
-| H044 | Single hot wallet L1+L2 | CRITICAL | CONFIRMED | v1+v2 | 8.2 | NEW (NOVEL) |
-| H046 | Layer-1 bytecode replacement | CRITICAL | CONFIRMED | v1+v2 | 8.0 | NEW (NOVEL) |
-| H001 | One-step authority transfer | CRITICAL | CONFIRMED | v1+v2 | 8.7 | RECURRENT |
-| H002 | Treasury self-redirect chain | HIGH | POTENTIAL | v1+v2 | 6.8 | RECURRENT |
-| H003 | Authority winner selection fraud | HIGH | POTENTIAL | v1+v2 | 6.8 | RECURRENT |
-| H006 | Authority collusion (controlled wallet) | HIGH | POTENTIAL | v1+v2 | 6.8 | RECURRENT |
-| H007 | Authority self-play (alias of H006) | HIGH | POTENTIAL | v1+v2 | 6.8 | RECURRENT |
-| H009 | Pause-rotate-unpause coup chain | HIGH | CONFIRMED | v1 only | 6.8 | NEW |
-| H011 | v2 BPS poisoning via Layer-2 | HIGH | CONFIRMED | v2 only | 6.8 | REGRESSION (+1) |
-| H016 | Pause-griefing on v1 cancel_match | HIGH→MED | CONFIRMED | v1 only | 4.9 | RECURRENT |
-| H017 | v1 silent-kick via start_with_depositors | HIGH | CONFIRMED | v1 only | 6.0 | NEW (NOVEL) |
-| H024 | Non-contiguous deposits_mask unrefundable | HIGH | CONFIRMED | v1+v2 | 6.5 | NEW (NOVEL) |
-| H030 | Fee destination hijack (v1 live read) | HIGH/MED | CONFIRMED | v1 HIGH; v2 MED | 8.7/5.8 | RECURRENT (evolved) |
-| H032 | BPS rotation ratcheting | HIGH | CONFIRMED | v2 only | 6.8 | NEW (NOVEL) |
-| H035 | Settle-vs-cancel priority-fee race | HIGH | CONFIRMED | v1+v2 | 8.5 | NEW (NOVEL — H006 inverted) |
-| H039 | v2 unbounded duration_secs lockup | HIGH | POTENTIAL | v2 only | 7.0 | NEW (NOVEL) |
-| H042 | GlobalConfig has no close path | HIGH | CONFIRMED | v1+v2 | 7.7 | NEW (NOVEL) |
-| H018 | v2 deposit_deadline edge collision | MEDIUM | CONFIRMED | v2 only | 4.5 | NEW (NOVEL) |
-| H025 | Executable account fee destination | MEDIUM | POTENTIAL | v1+v2 | 3.9 | RECURRENT (Feb H009) |
-| H033 | start_with_depositors griefing (v2) | MEDIUM | CONFIRMED | v2 only | 4.5 | NEW (NOVEL) |
-| H049 | match_id PDA seed entropy | MEDIUM | PARTIAL | server-side | 4.0 | NEW (NOVEL) |
-| H008 | initialize_config race-init (theoretical) | LOW | CONFIRMED | v1+v2 | 3.0 | NEW (NOVEL) |
-| H034 | Zero-BPS waiver (intentional) | LOW | CONFIRMED | v2 only | 2.0 | NEW (NOVEL) |
-| H040 | Stale 48h comment misleads operators | LOW | CONFIRMED | v1 | N/A (doc) | NEW (NOVEL) |
-| H041 | close=caller rent theft (~0.002 SOL) | LOW | CONFIRMED | v1+v2 | 2.5 | RECURRENT (Feb H016) |
-| H043 | Idempotent pause emits no event | LOW | CONFIRMED | v1+v2 | N/A (operational) | NEW |
-| H045 | Snapshot drift across update_config calls | LOW | CONFIRMED | v2 only | N/A (operational) | NEW |
-| H036 | Original H006 dead zone (Feb) | RESOLVED | STATUS_CHANGED | v1 | N/A | RESOLVED→H035 |
-| H037 | Deposit ordering asymmetry | PARTIAL | CONFIRMED (v2 improved) | v1+v2 | 4.0 | RECURRENT (Feb H010) |
-| H038 | Validator clock drift v2 short-duration | MEDIUM | PARTIAL (LOW→MED) | v2 only | 3.5 | RECURRENT (Feb H020) |
-| H050 | S001/S002 chain status | PARTIAL | CONFIRMED | both | N/A (meta) | RECURRENT (Feb S001/S002) |
+### CRITICAL (4 prior)
 
-### NOT_VULNERABLE (re-validated, 18 total)
+| Audit #2 ID | Title | Audit #2 Severity | Audit #3 Status | Justification |
+|---|---|---|---|---|
+| **H023** | Partial-refund theft via `close=caller` | CRITICAL (CVSS 9.3) | **RESOLVED** | Fix landed at all 4 refund sites: v1:410-413 (cancel), v1:489-492 (reclaim), v2:721-724 (cancel), v2:789-792 (reclaim). `require!(ctx.remaining_accounts.len() == deposits_mask.count_ones() as usize, EscrowError::IncompleteRefund)` gate verified by both static reading + proptest regression suites (`bok_proptest_refund.rs` in both programs). After fix, escrow PDA holds exactly rent reserve at exit; `close=caller` transfers only rent. (HANDOVER pessimism rebutted by CPI auditor #04.) |
+| **H001** | One-step authority transfer | CRITICAL (CVSS 8.7) | **RESOLVED (v2)** / **CARRY-FORWARD (v1)** | v2: `propose_authority` (v2:302-318) + `accept_authority` (v2:326-348) implements the 2-step rotation. New key must sign step 2 to claim. Atomic swap at v2:334-336 with post-swap distinctness revalidation at v2:340-341. v1: NOT addressed by Bundle 1. Per V1 mainnet scope (project memory), **v1 will not be deployed to mainnet** — only v2 ships. So v1 H001 is irrelevant to mainnet posture. |
+| **H044** | Single hot wallet L1+L2 | CRITICAL (operational) | **CARRY-FORWARD** | Bundle 1 is L2-only by design. Mitigation = Squads-from-day-one at mainnet deploy. Bundle 1's `propose/accept` primitives **support** the Squads handoff (current authority proposes Squads pubkey, Squads signs accept) — no code blocker. See `Docs/KEY_MANAGEMENT.md` §3-4 (per audit #2 references). |
+| **H046** | Layer-1 bytecode replacement | CRITICAL (operational) | **CARRY-FORWARD** | Bundle 1 introduces zero new L1 surface. All Bundle 1 instructions operate at L2. Solana BPF loader upgrade authority is unchanged. Mitigation = same Squads handoff. |
 
-H004, H005, H010, H012, H013, H014, H015, H019, H020, H021, H022, H026, H027, H028, H029, H031, H047, H048
+### HIGH (14 prior)
 
-See section **13. NOT VULNERABLE Summary** for one-line "why safe" for each.
+| Audit #2 ID | Title | Audit #2 Severity | Audit #3 Status | Justification |
+|---|---|---|---|---|
+| **H024** | Non-contiguous `deposits_mask` permanently unrefundable | HIGH | **STILL_OPEN** | Refund loops at v1:419, v2:727 are still monotonic-from-i=0 `enumerate()` walks. The H023 gate (`len == count_ones`) does NOT address H024 — it's an independent state-machine trap. Bundle 1 unrelated. Per CPI agent #04: no syntactically valid call exists for non-contiguous masks. Server logs as UNRECOVERABLE. |
+| **H030** | Fee destination hijack (v1 live read) | HIGH (v1) / MED (v2) | **RESOLVED (v2)** / **CARRY-FORWARD (v1)** | v2 was already mitigated via per-match snapshot (audit #2 verdict). Bundle 1 further hardens new-match path via 24h timelock on treasury/ops rotations — `update_config` writes only to `pending_*`, `apply_config_update` requires 24h. So both in-flight (snapshot) AND new-match (timelock) paths are protected on v2. v1 still has live read but irrelevant to mainnet. |
+| **H035** | Settle-vs-cancel priority-fee race | HIGH (CVSS 8.5) | **RESOLVED (v1)** / **STATUS_CHANGED (v2 → N005)** | **v1 unification**: TIMEOUT_SECONDS (v1:22) and SETTLEMENT_TIMEOUT_SECONDS (v1:29) are BOTH now `3_600`. settle uses `<=` (v1:287); player_cancel uses `>` (v1:383). At T=activated_at+3600, only settle valid; at T+3601, only cancel valid. NO RACE WINDOW. (Timing auditor #08 verified.) **v2**: NO settle deadline exists. Race is now N005 (see §4) — unbounded settle-after-match-end window (capped to 24h by reclaim availability). |
+| **H011** | v2 BPS poisoning via Layer-2 | HIGH (CVSS 6.8) | **MITIGATED** | Bundle 1 routes BPS updates through `pending_fee_bps_*` + 24h timelock. The merge-validation at v2:141-152 (uses `unwrap_or(live)` to compute effective post-apply state) prevents multi-step propose-A-then-B-separately escape. Post-apply re-validation at v2:270-278 catches any race with `propose_authority` between propose and apply. **Cap holds across all rotation paths.** Real-world security depends on monitoring — see N007. |
+| **H039** | v2 unbounded `duration_secs` lockup | HIGH (CVSS 7.0) | **RESOLVED** | `MAX_DURATION_SECS` reduced from 7d to 24h at v2:42 (`24 * 3_600`). Verified by State Machine auditor #03 and Timing auditor #08. Worst-case lockup horizon: 48h (24h duration + 24h grace), down from 8 days. |
+| **H042** | GlobalConfig has no close path | HIGH (CVSS 7.7) | **CARRY-FORWARD** | Bundle 1 adds 2-step rotation, which partially mitigates the key-loss permanence IF the old key still signs `propose_authority` (compromised-key recovery path). The lost-key case still has no recovery path. No `close_config` instruction. |
+| **H009** | Pause-rotate-unpause coup chain (v1 only) | HIGH (CVSS 6.8) | **RESOLVED (v1)** | v1's `cancel_match`/`settle_match` no longer carry the `!is_paused` constraint. Per State Machine auditor #03 line-ref verification (v1:687-694, v1:758-781): no pause guards. v1 now matches v2's pause-immune design. Pause + Bundle 1 = no new coup chain on v2 (governance is intentionally callable during pause for recovery scenarios — see N003 caveat). |
+| **H016** | Pause-griefing on v1 cancel | HIGH → MED | **RESOLVED (v1)** | Pause guard removed from v1 `CancelMatch` (and from `SettleMatch` per State Machine verification). Same as H009 closure. |
+| **H017** | v1 silent-kick via `start_with_depositors` | HIGH (CVSS 6.0) | **STILL_OPEN (v1)** | Bundle 1 didn't backport v2's deposit-deadline gate to v1. Per V1 mainnet scope, v1 won't ship to mainnet — this is irrelevant to mainnet posture but stays open as a v1 code-defect record. |
+| **H002** | Treasury self-redirect via multi-TX rotation | HIGH (CVSS 6.8) | **MITIGATED (v2)** / **CARRY-FORWARD (v1)** | v2: Bundle 1's 24h timelock on `pending_treasury` makes single-TX redirect impossible. The merge-validation prevents authority from setting `treasury = authority_alt` in one step without going through pending. v1: unchanged. |
+| **H003** | Authority winner selection fraud (POTENTIAL) | HIGH (CVSS 6.8) | **CARRY-FORWARD (design limit)** | On-chain winner constraint is membership check only. No game-state proof, commit-reveal, or VRF. Not fixable on-chain without major architectural change. Operational mitigation = multisig + statistical monitoring. Same as audit #2. |
+| **H006/H007** | Authority collusion / self-play via controlled wallet | HIGH (POTENTIAL) | **CARRY-FORWARD (design limit)** | Same root as H003. OC-06 guard only excludes `authority.key()` itself. Operator-controlled secondary wallet can be listed as player. Mitigation = off-chain identity binding + monitoring. |
+| **H032** | BPS rotation ratcheting (timing dimension) | HIGH (CVSS 6.8) | **MITIGATED** | Bundle 1's 24h timelock between propose→apply directly addresses the rapid-ratchet attack. The `last_config_update_ts` field exists for audit trail. Each ratchet step takes 24h minimum. Combined with the merge-validation cap, the cap can't be exceeded. **Same residual as H011** — monitoring required. |
 
----
+### MEDIUM (4 prior)
 
-## 4. Audit Evolution (Stacked Audit Context)
+| Audit #2 ID | Title | Audit #2 Severity | Audit #3 Status | Justification |
+|---|---|---|---|---|
+| **H018** | v2 deposit_deadline edge collision (`<=` vs `>=`) | MEDIUM | **RESOLVED** | v2:477 now uses strict `<` for `deposit_wager`; v2:554 uses `>=` for `start_with_depositors`. At exactly T=deposit_deadline, only start_with_depositors is valid. No edge collision. (Timing auditor #08.) |
+| **H025** | Executable-account fee destination | MEDIUM | **RESOLVED** | Six `!executable` constraints landed: v1:721 (winner), v1:731 (treasury), v1:740 (ops); v2:1015 (winner), v2:1025 (treasury), v2:1034 (ops). `ExecutableNotAllowed` error variant defined in both programs. EP-106 lamport-burn class is closed. (CPI auditor #04.) |
+| **H033** | `start_with_depositors` griefing via authority-chosen timing (v2) | MEDIUM | **STILL_OPEN** | The `>=` gate at v2:554 has no upper bound. Authority can wait minutes/hours after deadline before calling. Bundle 1 unrelated. (Design-limit territory — authority self-dealing.) |
+| **H049** | match_id PDA seed entropy (server-side `randomBytes(4)`) | MEDIUM | **OFF-CHAIN** | Outside on-chain audit scope. Will be addressed in DB (off-chain) audit. |
 
-### Feb 2026 → May 2026 Transition Map
+### LOW (6 prior)
 
-This section explicitly classifies each Feb audit finding's status in the May code. This is the load-bearing artifact for the stacked audit.
+| Audit #2 ID | Title | Audit #2 Severity | Audit #3 Status | Justification |
+|---|---|---|---|---|
+| **H008** | initialize_config race-init (theoretical for new deploys) | LOW | **STILL_OPEN** | Devnet already initialized → immune. Mainnet deploy still must bundle init atomically. Bundle 1 unrelated. |
+| **H034** | Zero-BPS waiver (intentional feature) | LOW | **STILL_OPEN (intentional)** | Still possible but now with 24h notice (timelock). Combined with H011 enables differential-extraction patterns for monitoring. |
+| **H040** | Stale 48-hour comment misleads operators | LOW | **RESOLVED** | v1:24-26 comment now reads "2-hour permissionless reclaim timeout (2x normal timeout)" — TIMEOUT_SECONDS=3600, so 2x=7200=2h. Math matches docstring. (Timing auditor #08.) |
+| **H041** | close=caller rent theft (~0.002 SOL/match) | LOW | **RESOLVED (by H023 fix + design)** | Rent goes to caller as intended DCA-02 incentive (caller pays TX fee, rent reimburses). The "theft" framing only applied when un-refunded wagers could leak. H023 gate ensures escrow holds only rent at exit. |
+| **H043** | Idempotent pause emits no event | LOW | **RESOLVED** | v1:355-357 (`Paused`) and v1:364-366 (`Unpaused`) events confirmed by INDEX.md L86-88. Same on v2. |
+| **H045** | Snapshot drift across update_config calls (audit-trail gap) | LOW | **MITIGATED** | Bundle 1 adds `ConfigProposed` (v2:156-165) and `ConfigApplied` (v2:283-290) events with `applies_at` and `last_config_update_ts` fields, enabling cross-correlation. Off-chain monitor can detect resets via changing `applies_at`. |
 
-| Feb ID | Feb Severity | May Status | May ID | Notes |
-|--------|--------------|------------|--------|-------|
-| **S004** | CRITICAL (CVSS 9.3) | **RESOLVED** | H004 | Fix landed at `v1:625` and `v2:659` (`has_one = authority` on `CreateMatch.config`). Re-validated this audit. |
-| **H001** | CRITICAL (CVSS 8.7) | **RECURRENT** | H001 | Still open by design. JJ acknowledged in `Docs/internal/PRIOR_AUDIT_DELTA.md`. |
-| **H002** | HIGH (CVSS 8.7) | **RECURRENT v1, EVOLVED v2** | H030 | v1 still vulnerable (live config read at `v1:686, 695`). v2 mitigates in-flight via per-match snapshot at `v2:211-214`. |
-| **H003** | HIGH (CVSS 8.7) | **RESOLVED** | H010 | Distinctness re-validated post-update at `v1:96-98` and `v2:125-127`. Verified clean. |
-| **H005** | HIGH | **RECURRENT** | H003 | Authority winner-pick fraud — design limitation; v2 raises blast radius to 900 SOL/match (2.5× v1). |
-| **H006** | HIGH (23h dead zone) | **STATUS_CHANGED** | H035, H036 | Original dead zone RESOLVED; replaced by H035 settle-vs-cancel race (50min v1 / 24h v2). |
-| **H007** | HIGH (pause-griefing) | **RECURRENT v1, RESOLVED v2** | H016 | v1 still has pause guard at `v1:729`. v2 explicitly removed it (`v2:755-761`, comment: "Pause does NOT block cancel"). |
-| **H008** | HIGH (PDA squat) | **RESOLVED** | H005 | Subsumed by S004 fix. |
-| **H011** | HIGH (treasury self-redirect) | **RECURRENT** | H002 | Same gap (distinctness check is pubkey-only, not operator-independence). v2 protects in-flight; new matches still exposed. |
-| **H014** | HIGH (POTENTIAL collusion) | **RECURRENT** | H006/H014 | Authority can list secondary wallet as player. Design limitation, not fixable on-chain without identity binding. |
-| **H016** | LOW (rent theft via cancel) | **RECURRENT (and superseded)** | H041 | Rent theft (~0.002 SOL) confirmed both versions. **Superseded by H023** which steals the entire un-refunded pot via the same `close = caller` mechanism. |
-| **H028** | NOT_VULNERABLE (v1 BPS const) | **INVALIDATED on v2 (REGRESSION +1)** | H011 | Feb dismissal "BPS hardcoded, only Layer-1 upgrade" is logically correct for v1 (still safe — see H012). v2 makes BPS a runtime field, opening a Layer-2-only attack. **+1 severity escalation applied** because v2 introduces a NEW attack surface that the Feb dismissal explicitly excluded. |
-| H022, H023, H024, H026, H029 | NOT_VULN (Feb) | **NOT_VULN (re-validated)** | various | All re-validated against current code. Holds. |
+### STATUS_CHANGED / PARTIAL (4 prior meta-entries)
 
-### Classification Counts
-
-| Classification | Count | Description |
-|----------------|-------|-------------|
-| **NEW** (NOVEL — surfaced first time in May) | 13 | H008, H017, H023, H024, H035, H039, H042, H018, H033, H040, H043, H045, H049 |
-| **RECURRENT** (same root cause, still active) | 9 | H001, H002, H003, H006, H007, H016, H024 (Feb H016 root), H025, H038 |
-| **REGRESSION** (Feb dismissal invalidated) | 1 | H011 (was Feb H028 NOT_VULN; v2 invalidates) |
-| **RESOLVED** (Feb finding fixed) | 4 | S004 (→H004), H003 (→H010), H006 dead zone (→H036/H035), H008 (→H005) |
-
-### Specifically Tracked Transitions
-
-**S004 (Feb CRITICAL) → RESOLVED:** Confirmed via `has_one = authority` at `programs/solshot-escrow/src/lib.rs:625` (v1 CreateMatch struct) and `programs/solshot-escrow-v2/src/lib.rs:659` (v2 CreateMatch struct). Authoritarian on-chain check is now enforced. (See H004 finding.)
-
-**H001 (Feb CRITICAL) → RECURRENT:** Code structurally unchanged. v1: `lib.rs:72-108` still applies authority directly with no pending field. v2: `lib.rs:96-142` identical pattern. JJ's posture per `Docs/internal/PRIOR_AUDIT_DELTA.md`: intentional pre-mainnet hot-wallet model.
-
-**H002 (Feb HIGH) → RECURRENT v1, EVOLVED v2:** v1 settle still reads live config (verified at `v1:686`); per-match snapshot in v2 (`v2:211-214`) mitigates in-flight matches; new matches created post-compromise still inherit poisoned config. Severity downgrades to MEDIUM for v2-new-matches, HIGH for v1-all-matches.
-
-**H003 (Feb HIGH) → RESOLVED:** Distinctness re-validated post-update at `v1:96-98` and `v2:125-127`. Each `update_config` call now correctly verifies `authority != treasury`, `authority != ops`, `treasury != ops` after applying the update. Holds as a structural invariant.
-
-**H006 (Feb HIGH dead zone) → STATUS_CHANGED:** Constants `TIMEOUT_SECONDS = 600` (v1:20) and `SETTLEMENT_TIMEOUT_SECONDS = 3600` (v1:26) eliminate the dead zone. Replaced by **H035 settle-vs-cancel race window** (50 minutes in v1, 24 hours in v2 — see Detailed HIGH section).
-
-**H007 (Feb HIGH) → RECURRENT v1, RESOLVED v2:** v1 retains `constraint = !config.is_paused` at `v1:729`; v2 removes it (`v2:755-761`). v2 docstring explicitly: "Pause does NOT block cancel so in-flight funds can always exit."
-
-**H008 (Feb HIGH PDA squat) → RESOLVED via S004 fix:** No standalone exploit path remains.
-
-**H010 (Feb MEDIUM) → PARTIAL improvement in v2:** v2's hard `deposit_deadline` bounds first-depositor exposure to 48h max (deposit window + 24h grace). v1 first-depositor can cancel anytime in AwaitingDeposits.
-
-**H011 (Feb HIGH) → RECURRENT:** Multi-TX rotation chain still possible. Distinctness check fires on pubkey identity only, not operator-independence. Single-TX path (set treasury directly to operator-controlled secondary wallet) also works.
-
-**H014 (Feb POTENTIAL) → PARTIAL:** Partially mitigated by S004 fix (no third-party can pre-create matches). However, the fundamental design — authority builds players[] array, only `authority.key()` excluded — remains as documented in H006/H014 of this audit.
-
-**H016 (Feb LOW) → RECURRENT both:** Same `close = caller` rent theft pattern at four sites. Superseded in severity by H023.
-
-**H017 (Feb POTENTIAL) → RECURRENT:** Multi-TX same-block update_config concerns; v2 mitigated for in-flight via snapshot atomicity. Distinct from this audit's H017 (silent-kick), which is a NOVEL finding.
-
-**H028 (Feb NOT_VULN) → INVALIDATED on v2 — H011 (REGRESSION +1):** Feb dismissed because BPS were `const u64`. v2 makes them runtime-mutable `cfg.fee_bps_*` fields. Layer-2 authority can now ratchet within the 10% combined cap with no timelock. Combined with H001 + H002, this enables fee redirect on every NEW match. Apply +1 severity escalation per stacked-audit policy.
+| ID | Title | Audit #3 Status |
+|---|---|---|
+| H036 | Original Feb H006 dead zone (RESOLVED in audit #2) | RESOLVED carry-forward |
+| H037 | Deposit ordering asymmetry | UNCHANGED — v2 partial improvement via deposit_deadline holds |
+| H038 | Validator clock drift v2 short-duration | UNCHANGED — Bundle 1 unrelated |
+| H050 | S001/S002 chain status (meta) | Now reduced — Chain S001 mitigated (H001 v2, H030 v2 mitigated via Bundle 1); Chain S002 partially mitigated (H023 fixed eliminates compound theft) |
 
 ---
 
-## 5. Detailed Findings — CRITICAL
+## 4. New Findings (Audit #3)
 
-### CRITICAL-001: H023 — Partial-Refund Theft via `close = caller` Sweep
+Cross-cutting findings discovered by the seven Phase 1 auditors. De-duplicated where multiple auditors flagged the same root issue under different IDs.
 
-**ID:** H023
-**Severity:** CRITICAL
-**CVSS Score:** 9.3 (`CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:C/C:N/I:H/A:N`) for `cancel_match`; 9.3 with PR:None for `permissionless_reclaim`
+### NEW-N001 — Pending Config Timestamp Reset DoS (HIGH)
+
+**Severity:** HIGH (CVSS ~7.0 with PR:H — `CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:N/I:L/A:H`)
+**Aliases:** F-N1 (Upgrade/Admin agent), F7 (Access Control agent), N01 (Arithmetic agent), NEW-EC-01 (Token/Economic agent), T-002 (Timing agent)
+**Location:** `programs/solshot-escrow-v2/src/lib.rs:154`
+**Status:** CONFIRMED — flagged by 5 of 7 context auditors independently
+
+#### Description
+
+`update_config` unconditionally writes `cfg.pending_config_ts = now` at line 154 on **every** invocation, regardless of whether a prior proposal is already pending. The pending Option fields (`pending_treasury`, `pending_ops`, `pending_fee_bps_*`) PERSIST across calls (per-field `if let Some` writes at lines 125-138 don't clear unset values). So repeated `update_config` calls can keep an outstanding malicious proposal "live but never applied" by perpetually deferring the 24h timelock — while the original proposal stays valid.
+
+#### Attack Scenario
+
+1. **T=0:** Compromised authority proposes malicious treasury: `update_config(new_treasury = attacker_wallet)`. `pending_treasury = Some(attacker_wallet)`. `pending_config_ts = 0`. `applies_at = 24h`. `ConfigProposed` emitted.
+2. Off-chain monitor detects, alerts operator. Operator begins 24h response.
+3. **T=23h:59m:** Attacker calls `update_config(new_fee_bps_treasury = Some(500))` (trivial/no-op change). `pending_treasury` still `Some(attacker_wallet)`. `pending_config_ts = 23h:59m`. `applies_at = 47h:59m`.
+4. `apply_config_update` cannot fire until `T + 24h + 23h:59m`. Operator's response window has been silently doubled.
+5. Repeat at T=47h, T=71h, ... indefinitely. The malicious treasury proposal stays pending; the timelock is always 24h away.
+
+The off-chain monitor sees fresh `ConfigProposed` events but no apply — and the proposed treasury value in the new event may differ from the original (if only fee_bps was touched), making the stalling harder to distinguish from legitimate authority indecision.
+
+#### Impact
+
+- 24h timelock visibility window is reduced to whatever the operator can react to between proposals — potentially seconds.
+- Combined with H001-RESOLVED-only (no Squads yet), a compromised single-key authority can keep a malicious proposal active until off-chain detection succeeds AND the operator can rotate authority via `propose_authority`/`accept_authority` (no timelock on rotation, which is the escape hatch).
+- Even with Squads, this finding still applies to whoever holds the authority role — the on-chain timelock is structurally weakened.
+
+#### Recommendation (One-Liner Fix)
+
+Gate `pending_config_ts` write on the sentinel — only start the clock on the FIRST proposal:
+
+```rust
+// At v2:154, replace:
+cfg.pending_config_ts = now;
+// With:
+if cfg.pending_config_ts == 0 {
+    cfg.pending_config_ts = now;
+}
+```
+
+Subsequent `update_config` calls would refine the pending fields but not reset the clock. After 24h elapses, the original `pending_config_ts` permits apply. **Alternative (more powerful):** add a dedicated `cancel_pending_config` instruction (see N004) that clears pending fields and resets `pending_config_ts = 0` — explicit cancellation rather than overwrite-then-stall.
+
+**Fix complexity:** one-liner (3-line `if` block).
+
+---
+
+### NEW-N002 — `migrate_config` Will Ship to Mainnet Bytecode (HIGH)
+
+**Severity:** HIGH (operational — bytecode hygiene risk; CVSS not directly applicable)
+**Aliases:** F-N2 (Upgrade/Admin agent)
+**Location:** `programs/solshot-escrow-v2/src/lib.rs:184-239` (handler), `programs/solshot-escrow-v2/src/lib.rs:856-871` (context)
 **Status:** CONFIRMED
-**Confidence:** 10/10
-**Affects:** v1 + v2 — all four refund-loop sites
-**Location:**
-- v1 cancel_match: `programs/solshot-escrow/src/lib.rs:393-410` (loop), `lib.rs:718` (close=caller)
-- v1 permissionless_reclaim: `lib.rs:465-484` (loop), `lib.rs:745` (close=caller)
-- v2 cancel_match: `programs/solshot-escrow-v2/src/lib.rs:502-518` (loop), `lib.rs:748` (close=caller)
-- v2 permissionless_reclaim: `lib.rs:561-577` (loop), `lib.rs:773` (close=caller)
 
 #### Description
 
-A malicious player (or in `permissionless_reclaim`, any wallet) calls `cancel_match` or `permissionless_reclaim` with a `remaining_accounts` array shorter than the number of deposited players. The refund loop iterates only over the supplied accounts, refunding only those players. There is **no post-loop assertion** verifying that all deposited slots were refunded. After the instruction body returns `Ok(())`, Anchor's `close = caller` exit hook runs unconditionally and transfers ALL remaining lamports in the escrow PDA — including every un-refunded wager — to the caller.
-
-The vulnerability was confirmed by reading the Anchor 0.32.1 `close()` runtime source directly:
-
-**Source: `~/.cargo/registry/src/.../anchor-lang-0.32.1/src/common.rs:6-15`**
-```rust
-pub fn close<'info>(info: AccountInfo<'info>, sol_destination: AccountInfo<'info>) -> Result<()> {
-    let dest_starting_lamports = sol_destination.lamports();
-    **sol_destination.lamports.borrow_mut() =
-        dest_starting_lamports.checked_add(info.lamports()).unwrap();
-    **info.lamports.borrow_mut() = 0;
-    info.assign(&system_program::ID);
-    info.resize(0).map_err(Into::into)
-}
-```
-
-Key facts confirmed from source: `close()` reads the CURRENT balance of the PDA (whatever remains after the instruction body), adds it ALL to the destination unconditionally, and zeros the PDA. **There is no rejection path** — `close()` never returns `Err` based on lamport amount. The exit hook runs ONLY after the instruction body returns `Ok(())` (per `anchor-syn-0.32.1/src/codegen/program/handlers.rs:147-162`).
+The `migrate_config` instruction is documented as devnet-only at v2:181-183 ("Remove this instruction in a follow-up program upgrade after drilling is complete"). However, there is **no `#[cfg(feature = "devnet")]` gate** on the handler or context struct. Per V1 mainnet scope (project memory: V1 deploys v2 to mainnet), the mainnet build will include this instruction unless an explicit pre-deploy rebuild or feature-flag is added.
 
 #### Attack Scenario
 
-**v2 max-impact attack (cancel_match):**
-
-1. Authority creates 10-player match with 100 SOL wager. All 10 players deposit. Total escrow: 1,000 SOL + rent.
-2. Match has passed `match_end_ts`.
-3. Attacker (players[0]) calls `cancel_match` with `remaining_accounts = [players[0]_AccountInfo]` only.
-4. Loop iterates once: refunds 100 SOL to players[0]. Loop exits (no more remaining_accounts).
-5. Instruction body returns `Ok(())`. Escrow holds 900 SOL + rent.
-6. Anchor's exit hook calls `close(escrow_account, caller_account)`. 900 SOL + rent flows to attacker.
-7. **Net theft: 900 SOL from 9 victims in a single transaction.** No oracle, no flash loan, no special equipment.
-
-**permissionless_reclaim variant (zero prerequisites):**
-
-After `match_end_ts + PUBLIC_REFUND_GRACE_SECS` (24h v2; 1200s v1), **any wallet** on the network can call `permissionless_reclaim` with `remaining_accounts = []` (empty). The loop never runs. `close = caller` sweeps the entire pot (1,000 SOL at v2 max) to the attacker. The attacker did not deposit anything.
+1. Mainnet deploys with `migrate_config` in bytecode.
+2. Properly-initialized mainnet config = 231 bytes from genesis. `migrate_config` idempotency check at v2:203 (`current_size >= new_size`) returns Ok with no realloc.
+3. **BUT the authority signature check at v2:191-197 still runs first.** An attacker without authority cannot trigger any side effect, but can force the authority to pay TX fees if they trick them into signing (low-impact griefing).
+4. **More worrying — dead code on mainnet inflates attack surface for future bytecode inspections.** Future struct changes (e.g., adding more pending fields, making SPACE > 231) would interact with `migrate_config` in subtle ways. The instruction uses `UncheckedAccount` and manually parses byte offsets — historically these patterns have been exploit-relevant when the assumptions shift.
+5. The doc comment also relies on a specific 110-byte source layout. If the v2 pre-Bundle-1 layout ever changes (e.g., via another migration), the offset `[8..40]` assumption could be silently invalidated.
 
 #### Impact
 
-- **Direct fund theft:** Up to 900 SOL per v2 match (max wager × max_players − 1); up to 360 SOL per v1 match.
-- **Likelihood:** HIGH. Trivially scriptable. Single TX. Only requires being a registered player (cancel_match) or any wallet (permissionless_reclaim).
-- **Detection:** Difficult — TX appears as a successful cancellation. Forensic identification requires off-chain reconciliation of `wager × count_ones(deposits_mask)` against actual refund amounts.
-- **Affects all four sites identically.** The fix must be applied at all four sites.
+- **Direct exploit risk:** LOW (authority-gated; no-op on already-migrated config). 
+- **Attack-surface inflation:** MEDIUM. Bytecode is larger, more code paths for future security inspectors to track.
+- **Operational risk:** HIGH. If someone forgets the feature-flag for the next upgrade, the instruction silently remains.
 
-#### Evidence
+#### Recommendation
 
-**Refund loop (identical pattern at all four sites):**
+**Pre-mainnet (must-do):** Either remove or feature-gate the instruction:
+
 ```rust
-for (i, account) in ctx.remaining_accounts.iter().enumerate() {
-    require!(i < max_players, EscrowError::InvalidPlayer);
-    require!((deposits_mask >> i) & 1 == 1, EscrowError::InvalidPlayer);
-    require!(*account.key == players[i], EscrowError::InvalidPlayer);
-    **escrow.try_borrow_mut_lamports()? -= wager_lamports;
-    **account.try_borrow_mut_lamports()? += wager_lamports;
+// Option A: feature-gate
+#[cfg(feature = "devnet")]
+pub fn migrate_config(ctx: Context<MigrateConfigUnchecked>) -> Result<()> {
+    // ... existing body
 }
-// NO post-loop assertion that remaining_accounts.len() == count_ones(deposits_mask)
-// `close = caller` then sweeps whatever lamports remain
-```
 
-The loop validates each entry correctly (bounds, bit set, pubkey match) but does NOT validate `remaining_accounts.len()`.
-
-#### Recommended Fix
-
-Add a single `require!` assertion before the loop at all four sites:
-
-```rust
-require!(
-    ctx.remaining_accounts.len() == deposits_mask.count_ones() as usize,
-    EscrowError::IncompleteRefund
-);
-for (i, account) in ctx.remaining_accounts.iter().enumerate() {
-    // ... loop body unchanged
+#[cfg(feature = "devnet")]
+#[derive(Accounts)]
+pub struct MigrateConfigUnchecked<'info> {
+    // ... existing fields
 }
+
+// Then build with: anchor build (mainnet, default) or anchor build -- --features devnet
 ```
 
-Add the error variant to both programs' `EscrowError` enum:
 ```rust
-#[msg("Not all deposited players were included in the refund accounts")]
-IncompleteRefund,
+// Option B: just delete it entirely before mainnet rebuild.
 ```
 
-After the fix, if the loop completes successfully, the PDA holds exactly `rent_reserve` lamports. `close = caller` then transfers only the rent reserve, which is the intended behavior.
+**Fix complexity:** surgical (feature-flag annotations + build documentation update) or just delete the ~55 lines.
 
-**Defense-in-depth (secondary):** After the loop, assert `escrow.lamports == rent_reserve_amount`. Requires knowing the exact rent reserve value; the `len` check is simpler and sufficient.
-
-#### Verification
-
-After fix:
-- [ ] Test: Call `cancel_match` with full `remaining_accounts` (count = count_ones(mask)). Should succeed. Verify all depositors refunded; PDA closed.
-- [ ] Test: Call `cancel_match` with `remaining_accounts = []`. Should fail with `IncompleteRefund` (when mask != 0).
-- [ ] Test: Call `cancel_match` with shorter `remaining_accounts`. Should fail with `IncompleteRefund`.
-- [ ] Same three tests against `permissionless_reclaim` in both v1 and v2.
-- [ ] Test: Empty mask (0) + empty remaining_accounts. Should succeed (no refunds needed; rent goes to caller).
+**Operational addition:** add a step to the mainnet deploy runbook that confirms `solana program dump` of the deployed bytecode does NOT contain the `migrate_config` discriminator.
 
 ---
 
-### CRITICAL-002: H044 — Single Hot Wallet for Layer 1 + Layer 2
+### NEW-N003 — `apply_config_update` Not Pause-Gated (MEDIUM)
 
-**ID:** H044
-**Severity:** CRITICAL (operational, by design)
-**CVSS Score:** 8.2 (`CVSS:3.1/AV:N/AC:H/PR:H/UI:N/S:C/C:N/I:H/A:H`)
-**Status:** CONFIRMED (acknowledged pre-mainnet posture)
-**Confidence:** 10/10
-**Affects:** v1 + v2 (operational/deployment)
-**Location:** `Anchor.toml:7-12, 19`; on-chain `solana program show` results (verified live 2026-05-06)
-
-#### Description
-
-The single hot wallet `HPyVPj2VH9yBirr7FMgAJeDH8xJgaMKy5UnwLkjSnovk` holds:
-- **Layer 1**: Solana-level upgrade authority for both `4kzr…nH1` (v1) and `BVKX…G7N` (v2)
-- **Layer 2**: Application-level `GlobalConfig.authority` for both programs
-
-A single private-key compromise unlocks **both** layers simultaneously. There is NO on-chain instruction that separates or cross-validates the two authorities — by design, per JJ's pre-mainnet posture (documented in `OC-13` at `v1:1` and `Docs/internal/PRIOR_AUDIT_DELTA.md`).
-
-#### Attack Scenario
-
-A compromised key enables in parallel:
-- **Layer 2 path** (faster, less stealthy): `update_config` rotates treasury/ops to attacker wallets; `settle_match` repeatedly drains all Active matches. End-to-end: <5 TX, single block.
-- **Layer 1 path** (slower, stealthier): Deploy replacement bytecode that adds a `drain_all` instruction. Bypass all `has_one` checks. Drain all in-flight escrows AND maintain plausible normal-operation appearance for monitoring tools that don't perform forensic bytecode comparison.
-
-The two paths are additive, not redundant: Layer 2 alone is potentially recoverable via re-deployment; Layer 1 ensures recovery itself requires the same compromised key.
-
-#### Impact
-
-- All in-flight wagers across both programs drain simultaneously
-- No on-chain recovery path (Layer 1 upgrade requires the same compromised key)
-- Forensic invisibility (Layer 1 path) until bytecode comparison
-- No timelock = loss is immediate and irreversible
-
-Industry precedent (same pattern):
-- **Step Finance** (Jan 2026): hot wallet key exfiltration → $30-40M
-- **Garden Finance** (Oct 2025): admin key, settlement manipulation → $11M
-- **Raydium** (Dec 2022): hot wallet admin key compromise → $4.4M
-- **Pump.fun** (May 2024): admin key via insider → $1.9M
-
-#### Evidence
-
-- `Anchor.toml:7-12`: Both program IDs registered for devnet under same `wallet = "~/.config/solana/solshot-dev.json"` (line 19) → resolves to `HPyVPj2VH9yBirr7FMgAJeDH8xJgaMKy5UnwLkjSnovk`.
-- Live `solana program show` (2026-05-06): both programs report `Upgrade Authority = HPyVPj2VH9yBirr7FMgAJeDH8xJgaMKy5UnwLkjSnovk`.
-- `programs/solshot-escrow/src/lib.rs:1`: TODO marker `OC-13 — transfer upgrade authority to multisig before mainnet deploy` — explicit team acknowledgement.
-- `GlobalConfig.authority` for both programs initialized to the same wallet (per project memory and on-chain inspection).
-
-#### Recommended Fix
-
-**Pre-mainnet (BLOCKING):**
-
-1. **Transfer Layer 1 upgrade authority to a Squads multisig** (M-of-N, e.g. 3-of-5):
-   ```bash
-   solana program set-upgrade-authority 4kzrDpV9JxjE27AMg4PQXzGuge9MEYQEFznSPvkBtnH1 \
-     --new-upgrade-authority <SQUADS_MULTISIG_PUBKEY>
-   solana program set-upgrade-authority BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N \
-     --new-upgrade-authority <SQUADS_MULTISIG_PUBKEY>
-   ```
-
-2. **Rotate `GlobalConfig.authority` to a separate Squads multisig** (different key set OR same multisig with different threshold). Ensures Layer 1 and Layer 2 require independent compromise.
-
-3. **Add `pending_authority` propose/accept to `update_config`** (addresses H001, which this finding amplifies).
-
-**Interim (immediate):** At minimum, separate the keys. Even if both remain hot wallets, a single key loss should not collapse both layers.
-
----
-
-### CRITICAL-003: H046 — Layer-1 Bytecode Replacement Risk
-
-**ID:** H046
-**Severity:** CRITICAL (operational)
-**CVSS Score:** 8.0 (`CVSS:3.1/AV:N/AC:H/PR:H/UI:N/S:C/C:N/I:H/A:H`)
+**Severity:** MEDIUM (CVSS ~5.0 with PR:N for apply, PR:H for the precondition compromise)
+**Aliases:** F-N6 (Upgrade/Admin agent)
+**Location:** `programs/solshot-escrow-v2/src/lib.rs:877-888` (ApplyConfigUpdate context — no `constraint = !config.is_paused`)
 **Status:** CONFIRMED
-**Confidence:** 10/10
-**Affects:** v1 + v2 (deployment-level)
-**Location:** Both programs deployed under `BPFLoaderUpgradeab1e11111111111111111111111` with mutable upgrade authority
 
 #### Description
 
-Both programs are deployed under Solana's standard BPF Loader Upgradeable. The upgrade authority can deploy arbitrary replacement bytecode in a single transaction with no timelock, no multisig, no notice period, and no on-chain governance check. A replacement program retains the same program ID and is implicitly trusted by all existing `MatchEscrow` PDAs (which are owned by those program IDs).
-
-This is the canonical EP-083 pattern (upgrade authority risk). The vulnerability compounds with H044: the same hot wallet holds both Layer 1 (upgrade) and Layer 2 (`config.authority`).
+The `ApplyConfigUpdate` context has no pause guard. Per Bundle 1 design philosophy, governance instructions are intentionally pause-immune so that recovery can happen during an emergency pause. **However, this is the only governance instruction that has a TIME-DELAYED malicious payload.** A pre-staged proposal can apply through a defensive pause.
 
 #### Attack Scenario
 
-1. Attacker compromises `HPyV…nokv` private key.
-2. **TX 1**: `BpfLoaderUpgradeable::Write(buffer, malicious_bytecode)` — attacker funds buffer account; loads drain bytecode.
-3. **TX 2**: `BpfLoaderUpgradeable::Upgrade(program=4kzr…nH1, buffer)` — replaces v1 program in place. Same program ID, new logic.
-4. **TX 3**: Call new `drain_all` instruction (added in replacement bytecode) targeting all live `MatchEscrow` PDAs via `remaining_accounts`. Single TX (CU permitting); multiple TXs in the same block possible.
-5. **TX 4** (optional): Repeat for v2.
-6. Optional cleanup: deploy a third bytecode that mimics original behavior, hiding the attack from monitoring that doesn't do bytecode hashing.
+1. **T=0:** Attacker compromises authority. `update_config(new_treasury = attacker_wallet)`. `pending_config_ts = 0`. `applies_at = 24h`.
+2. **T=12h:** Off-chain monitor detects compromise. Legitimate operator pauses program at T=13h.
+3. **T=24h:** Attacker (or any signer) calls `apply_config_update`. Pause does NOT block (v2:877-888 — no `!is_paused` constraint). `cfg.treasury = attacker_wallet`.
+4. **T=24h+ε:** Attacker calls `propose_authority(attacker_2)` from compromised key. `accept_authority` by attacker_2. Live authority is now attacker_2.
+5. **In-flight matches protected by snapshot.** But: any new match created after pause lifts uses the attacker-controlled treasury.
 
-#### Impact
+The pause was supposed to be the defensive lever. Bundle 1's "governance never blocks" design philosophy collides with the timelock primitive.
 
-- All in-flight wager pots on both programs simultaneously stolen
-- v2 per-match snapshot mechanism is **irrelevant** — replacement bytecode is not constrained by original logic; it can read snapshots, ignore them, or rewrite them
-- v1 hardcoded BPS constants (`TREASURY_BPS = 700`, etc.) are equally **irrelevant**
-- No on-chain recovery path — `permissionless_reclaim` is also under new bytecode
-- Forensically invisible until off-chain bytecode comparison
+#### Recommendation
 
-#### Recommended Fix
+Add a one-line constraint to the `ApplyConfigUpdate` context:
 
-**Pre-mainnet (BLOCKING):**
-
-```bash
-# Option 1 (recommended): transfer to Squads multisig
-solana program set-upgrade-authority 4kzr... --new-upgrade-authority <SQUADS_MULTISIG_PUBKEY>
-solana program set-upgrade-authority BVKX... --new-upgrade-authority <SQUADS_MULTISIG_PUBKEY>
-
-# Option 2 (post-stabilization): permanently freeze upgrade authority
-solana program set-upgrade-authority 4kzr... --final
+```rust
+#[derive(Accounts)]
+pub struct ApplyConfigUpdate<'info> {
+    #[account(
+        mut,
+        seeds = [b"config"],
+        bump,
+        constraint = !config.is_paused @ EscrowError::ProgramPaused,  // ← ADD THIS
+    )]
+    pub config: Account<'info, GlobalConfig>,
+    // ...
+}
 ```
 
-A multisig with at least 3-of-5 threshold (or higher) prevents single-key attacks. Final freezing eliminates upgrade risk entirely but precludes future fixes — appropriate only after extensive battle-testing.
+**Rationale:** propose/accept_authority remain pause-immune (recovery scenarios). But applying a previously-proposed config change while paused is unambiguously hostile — it bypasses the only defensive lever the operator has.
+
+**Trade-off note:** This adds a tiny liveness cost (if pause persists past the 24h timelock for a legitimate apply, an operator must unpause first). Worth it for the defensive value.
+
+**Fix complexity:** one-line.
 
 ---
 
-### CRITICAL-004: H001 — One-Step Authority Transfer (No Propose/Accept)
+### NEW-N004 — No Cancel Path for Pending Config Update (MEDIUM)
 
-**ID:** H001
-**Severity:** CRITICAL
-**CVSS Score:** 8.7 (`CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:C/C:N/I:H/A:H`)
-**Status:** CONFIRMED — STILL_OPEN by design (RECURRENT from Feb)
-**Confidence:** 10/10
-**Affects:** v1 + v2
-**Location:** `programs/solshot-escrow/src/lib.rs:72-108`; `programs/solshot-escrow-v2/src/lib.rs:96-142`
+**Severity:** MEDIUM (operational; compounds with N001)
+**Aliases:** F-N5 (Upgrade/Admin agent), F3 (Access Control agent), S3-N04 (State Machine agent)
+**Location:** `programs/solshot-escrow-v2/src/lib.rs:115-168` (update_config — no cancel path), `v2:245-293` (apply_config_update — no cancel option)
+**Status:** CONFIRMED
 
 #### Description
 
-`update_config` rotates `config.authority` (and treasury, ops, plus v2 BPS fields) in a single transaction. No `pending_authority` field. No two-step propose/accept. No timelock. The only validation is a zero-address guard:
-```rust
-if let Some(a) = new_authority {
-    require!(a != Pubkey::default(), EscrowError::InvalidConfig);
-    config.authority = a;  // IMMEDIATE, ONE-STEP, IRREVERSIBLE
-}
-```
+Once `update_config` writes pending fields, the only ways to "neutralize" them are:
+1. Wait 24h and let `apply_config_update` fire (potentially applying unwanted changes).
+2. Call `update_config(Some(live_value))` to overwrite each pending field with the live value (so apply becomes a no-op for that field).
 
-A single compromised TX permanently rotates governance. The post-update distinctness check (`v1:96-98`, `v2:125-127`) prevents degenerate collisions but provides no observation window.
+There is no `cancel_pending_config` instruction. The pending state must be either applied OR overwritten — never explicitly cleared.
 
-#### Attack Scenario
+**Operational consequence:** An honest authority who proposes a change in error has no clean retraction. They must either let it apply (after waiting 24h with the wrong change pending) or call `update_config(Some(cfg.treasury))` to re-affirm the current values (which still triggers the apply path, just as a no-op). Under N001 (pending_config_ts reset DoS), this becomes worse — every "cancel" call extends the timelock for whatever ELSE is still pending.
 
-1. Attacker holds `HPyV…nokv` private key (phishing, malware, leaked `.env`, insider).
-2. `settle_match` for all Active escrows passing attacker-controlled wallet as `winner` — 90% of each pot drained.
-3. `update_config(new_authority = attacker_pubkey2, new_treasury = attacker_wallet, new_ops = attacker_wallet)` — original team locked out of both programs.
-4. Optional: `pause_program` on both programs to block player cancellations (v1 only — v2 cancel is pause-immune).
-5. All future match settlement fees route to attacker until Layer-1 program upgrade — which itself requires the same hot wallet (H044 + H046 compound).
+#### Recommendation
 
-#### Impact
-
-Direct: Up to `wager × max_players × 0.9` per match × number of active matches. At 10 × 100 SOL concurrent v2 matches: up to 900 SOL stealable per settlement pass.
-
-Permanent: Recovery requires Layer-1 upgrade (which is also under the same key — see H044/H046).
-
-#### Recommended Fix
-
-Two-step propose/accept pattern:
+Add an explicit cancel instruction:
 
 ```rust
-// Add to GlobalConfig (both v1 and v2):
-pub pending_authority: Option<Pubkey>,
-pub pending_authority_at: i64,
-
-pub fn propose_authority(ctx: Context<UpdateConfig>, proposed: Pubkey) -> Result<()> {
-    require!(proposed != Pubkey::default(), EscrowError::InvalidConfig);
-    ctx.accounts.config.pending_authority = Some(proposed);
-    ctx.accounts.config.pending_authority_at = Clock::get()?.unix_timestamp;
-    Ok(())
-}
-
-pub fn accept_authority(ctx: Context<AcceptAuthority>) -> Result<()> {
-    // signed by the PROPOSED key — proves key control
+pub fn cancel_pending_config(ctx: Context<CancelPendingConfig>) -> Result<()> {
     let cfg = &mut ctx.accounts.config;
-    require!(
-        cfg.pending_authority == Some(ctx.accounts.new_authority.key()),
-        EscrowError::Unauthorized
-    );
-    cfg.authority = ctx.accounts.new_authority.key();
-    cfg.pending_authority = None;
-    emit!(AuthorityTransferred { new_authority: cfg.authority });
+    cfg.pending_treasury = None;
+    cfg.pending_ops = None;
+    cfg.pending_fee_bps_treasury = None;
+    cfg.pending_fee_bps_ops = None;
+    cfg.pending_config_ts = 0;
+    emit!(ConfigCancelled { authority: cfg.authority });
     Ok(())
 }
-```
 
-**Additional priority mitigations:**
-1. 24h timelock on `update_config` changes to `treasury`, `ops`, and (v2) `fee_bps_*` (with `pending_treasury` + `treasury_valid_after`)
-2. Separate settlement authority (hot, higher exposure) from config-update authority (cold/multisig, lower exposure)
-3. Add `actor: Pubkey` field to `ConfigUpdated` event for indexer-friendly monitoring
-
----
-
-## 6. Detailed Findings — HIGH
-
-The 14 HIGH findings are presented in priority order based on severity, blast radius, and prerequisite cost.
-
-### HIGH-001: H024 — Non-Contiguous `deposits_mask` is Permanently Unrefundable
-
-**ID:** H024 | **CVSS:** 6.5 | **Status:** CONFIRMED | **Affects:** v1 + v2 all 4 refund-loop sites
-**Location:** `v1:393-410, 465-484`; `v2:502-518, 561-577`
-
-If `deposits_mask = 0b0010` (only `players[1]` deposited; `players[0]` did not), no syntactically valid call sequence refunds player 1. The loop is monotonic from `i = 0` and requires `(deposits_mask >> i) & 1 == 1` AND `account.key == players[i]`. With a non-contiguous mask, every call attempt fails at `i = 0`. Server explicitly tags such matches as `UNRECOVERABLE` (`server/socket-io/main.js:484-489`).
-
-**Production likelihood:** Realistic. Network latency variation, failed deposits, RPC failures, or adversarial deposit ordering can produce non-contiguous masks. In a 2-player match, ~50% chance the "later-listed" player deposits first.
-
-**Combination danger:** If a stranded match is left to expire, **H023 + H024 compound**: the empty-`remaining_accounts` reclaim path (which is the only valid call shape for a non-contiguous mask) becomes a fund-theft path via `close = caller`. The stranded wager flows to whoever calls reclaim, not the original depositor.
-
-**Recommended fix:** Rewrite the refund loop with caller-supplied indices:
-```rust
-pub fn cancel_match(
-    ctx: Context<CancelMatch>,
-    refund_indices: Vec<u8>,  // positions of set bits in mask, in order
-) -> Result<()> {
-    require!(
-        refund_indices.len() == deposits_mask.count_ones() as usize,
-        EscrowError::IncompleteRefund
-    );
-    for (j, idx) in refund_indices.iter().enumerate() {
-        let i = *idx as usize;
-        require!(i < max_players, EscrowError::InvalidPlayer);
-        require!((deposits_mask >> i) & 1 == 1, EscrowError::InvalidPlayer);
-        let account = &ctx.remaining_accounts[j];
-        require!(*account.key == players[i], EscrowError::InvalidPlayer);
-        // ... refund
-    }
+#[derive(Accounts)]
+pub struct CancelPendingConfig<'info> {
+    #[account(mut, seeds = [b"config"], bump, has_one = authority)]
+    pub config: Account<'info, GlobalConfig>,
+    pub authority: Signer<'info>,
 }
 ```
 
-This decouples loop progression from `i` monotonicity, allowing any subset of deposited slots to be refunded.
+Authority-only (`has_one`). No timelock. Bundle with the N001 fix to give operators clean control over the pending state.
+
+**Fix complexity:** surgical (add instruction + context + error variant + event).
 
 ---
 
-### HIGH-002: H030 — Fee Destination Hijack via update_config (v1 live read)
+### NEW-N005 — v2 Unbounded Settle-After-Match-End Window (MEDIUM)
 
-**ID:** H030 | **CVSS:** 8.7 v1 / 5.8 v2 | **Status:** CONFIRMED v1 / EVOLVED v2 | **Affects:** v1+v2
-**Location:** `v1:684-697`, `v2:715-728`
+**Severity:** MEDIUM (the v2 analog of audit #2 H035; downgraded from "HIGH 24h" in audit #2 because H039 cap reduction means the window is now bounded ≤24h by reclaim availability)
+**Aliases:** S3-N06 (State Machine agent), implicitly in Token/Economic auditor #05 Bundle 1 Risk #2 discussion
+**Location:** `programs/solshot-escrow-v2/src/lib.rs:604-671` (settle_match — no time check), `v2:697` (cancel_match player path), `v2:777` (reclaim)
+**Status:** CONFIRMED (Bundle 1 unchanged)
 
-v1 `settle_match` reads `config.treasury` and `config.ops` LIVE at execution time. A single `update_config` call rotates both fee destinations instantly. Any in-flight match settled after the rotation silently pays the 7%/3% fee split to attacker-controlled wallets. Players receive their 90% and may not notice.
+#### Description
 
-v2 mitigates via per-match snapshot at `v2:211-214` (atomic with `create_match`). In-flight v2 matches are immune. **However**, all NEW matches created post-compromise inherit poisoned destinations via the snapshot mechanism — narrowing the attack surface from "all settlements" to "all new matches."
+v2 has NO settlement deadline. `settle_match` only requires `state == Active` (v2:605-608). Player-cancel opens at `now > match_end_ts` (v2:697). Permissionless reclaim opens at `match_end_ts + 86400`. So during `(match_end_ts, match_end_ts + 86400]`, **both settle and cancel are simultaneously valid** — same architectural issue as audit #2 H035 but now confined to a 24h max window (was 24h+ unbounded by `MAX_DURATION_SECS` in audit #2 era; H039 fix capped this).
 
-**Recommended fix:** Add timelock to treasury/ops rotation in both versions. Two-step propose/apply with 24h delay. (Same fix applies to H001 and H032.)
+#### Attack Scenario
 
----
+1. Authority creates match. Players deposit. Match goes Active at `activated_at`. `match_end_ts = activated_at + duration_secs`.
+2. At `T = match_end_ts + 1s`: both authority's `settle_match` and any player's `cancel_match` are valid. 
+3. Authority broadcasts `settle_match(winner = chosen_player)`. 
+4. Losing player observes TX in mempool, submits `cancel_match` with higher priority fee. 
+5. If cancel lands first, settle fails. Losing player saves up to 100 SOL wager loss for ~$0.10–$0.30 priority fees.
+6. Race persists for 24h until permissionless_reclaim opens.
 
-### HIGH-003: H035 — Settle-vs-Cancel Priority-Fee Race (H006 Inverted)
+This is the H035 attack on v2 — but now bounded. Same ROI ratio at MAX_WAGER (~50,000:1).
 
-**ID:** H035 | **CVSS:** 8.5 | **Status:** CONFIRMED | **Affects:** v1 (50min window), v2 (24h window)
-**Location:** `v1:264-272, 357-378`; `v2:387-391, 459-519`
+#### Recommendation
 
-v1's constants (`TIMEOUT_SECONDS=600`, `SETTLEMENT_TIMEOUT_SECONDS=3600`) create a 50-minute window where `settle_match` (authority) and `cancel_match` (player) are simultaneously valid. A losing player observes the authority's `settle_match` TX in the mempool and submits a competing `cancel_match` TX with higher priority fee. If cancel lands first, settle fails with `InvalidState`. The losing player saves up to 100 SOL wager loss for ~$0.10–$0.30 in priority fees. **ROI ≈ 50,000:1 at MAX_WAGER.**
+Add a settle deadline to v2:
 
-v2 has no settlement deadline — race window is the entire 24-hour reclaim grace.
-
-**The Feb H006 finding had a 23-hour DEAD ZONE; the fix overcorrected, creating a RACE WINDOW.** Same architectural root cause.
-
-**Recommended fix (v1):** Set `TIMEOUT_SECONDS >= SETTLEMENT_TIMEOUT_SECONDS` (e.g., 3600 or 4200). Eliminates the overlap.
-
-**Recommended fix (v2):** Add a `pending_settle: bool` flag to MatchEscrow. Authority sets it in a preliminary TX; `cancel_match` and `permissionless_reclaim` check `!pending_settle`. Lock must time out to prevent authority grief.
-
----
-
-### HIGH-004: H011 — v2 BPS Poisoning via Layer-2 Compromise (REGRESSION of Feb H028)
-
-**ID:** H011 | **CVSS:** 6.8 | **Status:** CONFIRMED REGRESSION | **Affects:** v2 only
-**Location:** `v2:96-142, 211-219, 396-425`
-
-The Feb H028 dismissal ("BPS constants are hardcoded; only Layer-1 upgrade can change them") is **inapplicable to v2**, where `fee_bps_treasury` and `fee_bps_ops` are runtime-mutable on `GlobalConfig`. A compromised Layer-2 authority can ratchet the combined fee from 7%/3% up to 10% combined (MAX_FEE_BPS=1000) on every NEW match with NO program upgrade and NO timelock.
-
-The 10% cap holds structurally — multi-step rotation cannot exceed it. The attack surface is operating WITHIN the cap to the authority's advantage.
-
-**Combined with H011's documented self-redirect** (rotate `treasury` to attacker wallet via the same `update_config` path): attacker captures the full 10% per new match silently. This is the most realistic compound attack on v2.
-
-**Recommended fix:**
-1. Add per-BPS-field individual cap (defense-in-depth):
-   ```rust
-   if let Some(t) = new_fee_bps_treasury {
-       require!(t <= MAX_FEE_BPS, EscrowError::FeesTooHigh);
-       cfg.fee_bps_treasury = t;
-   }
-   ```
-2. Add timelock on BPS changes (24h pending; same pattern as H030 fix).
-3. Re-validate BPS at create_match (post-snapshot defense-in-depth).
-4. Emit `ConfigUpdated` with `actor` and old-value diff for monitoring.
-
----
-
-### HIGH-005: H039 — v2 Unbounded duration_secs Lockup (8-Day Fund Lock)
-
-**ID:** H039 | **CVSS:** 7.0 | **Status:** POTENTIAL | **Affects:** v2 only
-**Location:** `v2:38-39, 161-184, 298-303, 470-487, 539-549`
-
-v2's `MAX_DURATION_SECS = 7 * 24 * 3600 = 604800` (7 days). Plus `PUBLIC_REFUND_GRACE_SECS = 86400` (24h). **Maximum lockup horizon: 8 days.** During this window, players cannot cancel (`v2:471-487`), authority can refuse to settle (no on-chain settlement deadline in v2), and permissionless_reclaim is gated until `match_end_ts + 24h`.
-
-Authority gains nothing economically — pure griefing vector. Setup: 10-player match × 100 SOL wager = 1000 SOL locked for 8 days, returnable but unusable.
-
-**Recommended fix:** Reduce `MAX_DURATION_SECS` to 86400 (24h). For genuinely longer matches, introduce per-match-type duration caps. Consider adding an on-chain settlement deadline mirroring v1's `SETTLEMENT_TIMEOUT_SECONDS`, so passive authority cannot stall indefinitely.
-
----
-
-### HIGH-006: H042 — GlobalConfig Has No Close Path (Key-Loss Permanence)
-
-**ID:** H042 | **CVSS:** 7.7 | **Status:** CONFIRMED | **Affects:** v1+v2 operational
-**Location:** No `close_config` instruction exists in either program. Verified via exhaustive `pub fn` enumeration and `close = ` grep (6 matches, all on MatchEscrow).
-
-If the authority key is lost (hardware failure, seed loss, key rotation error), GlobalConfig is permanently unrecoverable. `update_config` requires the old authority's signature; no guardian, no social recovery, no emergency bypass. Recovery requires Layer-1 program upgrade introducing a `recover_config` instruction — which itself requires the upgrade authority key, currently the same hot wallet (H044). **Single-key dependency closes both recovery paths simultaneously.**
-
-This compounds with H001: H001 is "compromised key seizes everything," H042 is "lost key locks everything." Two faces of the same gap.
-
-**Player funds are NOT permanently frozen** in the lost-key scenario — `cancel_match` and `permissionless_reclaim` do not require `config.authority`. But all new business stops indefinitely.
-
-**Recommended fix:** Add `guardian: Pubkey` field + `initiate_recovery` (guardian-callable, no authority sig) + `finalize_recovery` (anyone-callable after delay). Combined with multisig upgrade authority (H044/H046 fix), no single key loss disables both recovery paths.
-
----
-
-### HIGH-007: H009 — Pause-Then-Rotate-Then-Unpause Coup Chain (v1 only)
-
-**ID:** H009 | **CVSS:** 6.8 | **Status:** CONFIRMED v1 only (FIXED v2) | **Affects:** v1 only
-**Location:** `v1:704, 729, 768, 774` (pause guards on settle/cancel/start_with_depositors)
-
-Three-step v1 attack: (1) pause program → blocks `cancel_match` (v1:729) and `settle_match` (v1:704) and `start_with_depositors` (v1:774); (2) `update_config(new_treasury = attacker_wallet)` → no pause guard on `update_config`; (3) unpause → settle in attacker's favor. Players locked out of cancellation during the rotation.
-
-v2 fixes this: cancel/settle/reclaim are pause-immune (`v2:755-761, 730-737`). The v2 `pause_program` docstring at `v2:144-145` documents the intent: "Settle / cancel / permissionless_reclaim remain callable so in-flight funds can exit."
-
-**Recommended fix for v1:** Mirror the v2 fix — remove `constraint = !config.is_paused` from `CancelMatch.config` (v1:729) and `SettleMatch.config` (v1:704).
-
----
-
-### HIGH-008: H016 — Pause-as-Griefing on v1 cancel_match
-
-**ID:** H016 | **CVSS:** 4.9 (down from Feb 6.6 due to tighter 20-min window) | **Status:** CONFIRMED v1, FIXED v2
-**Location:** `v1:729` (constraint `!config.is_paused`)
-
-Compounds with H009. Standalone variant: a compromised authority calls `pause_program`. Players cannot `cancel_match` or `settle_match`. Funds locked until permissionless_reclaim opens at `activated_at + 1200s` (20 minutes — tighter than Feb's 48h, but still HIGH qualitatively because any window where a compromised key can lock player funds is significant). v2 removes both pause guards.
-
-**Recommended fix:** Same as H009 — remove pause constraint from `v1:729` (and ideally `v1:704`).
-
----
-
-### HIGH-009: H017 — v1 Silent-Kick Attack via start_with_depositors (NOVEL)
-
-**ID:** H017 | **CVSS:** 6.0 | **Status:** CONFIRMED | **Affects:** v1 only
-**Location:** `v1:493-536` (handler with no timing gate); v2 fix at `v2:332-339`
-
-v1's `start_with_depositors` has only two guards: `state == AwaitingDeposits` and `deposits_mask.count_ones() >= 2`. **No timing gate.** Authority can call it the instant 2 deposits land — even if other players have deposit TXs in flight. Compaction overwrites non-depositor pubkeys with `Pubkey::default()`. In-flight `deposit_wager` TXs from players whose slot was just zeroed fail at the `state == AwaitingDeposits` check — players lose their slot and TX fees.
-
-v2 fixes this exactly: `Clock::get >= deposit_deadline` gate at `v2:336-339`. Players have their full advertised window guaranteed.
-
-**Recommended fix for v1:**
-
-Option A (minimal, no struct change):
 ```rust
-const MIN_DEPOSIT_WINDOW_SECS: i64 = 30;
-let earliest_start = ctx.accounts.escrow.created_at
-    .checked_add(MIN_DEPOSIT_WINDOW_SECS)
-    .ok_or(EscrowError::ArithmeticOverflow)?;
-require!(
-    Clock::get()?.unix_timestamp >= earliest_start,
-    EscrowError::DepositWindowOpen
-);
+// Add to MatchEscrow: pub settle_deadline_secs: i64,  // OR fix at MAX_DURATION_SECS
+// At v2:611 (start of settle_match handler body):
+let now = Clock::get()?.unix_timestamp;
+let settle_deadline = escrow.match_end_ts.checked_add(SETTLE_GRACE_SECS).ok_or(ArithmeticOverflow)?;
+require!(now <= settle_deadline, EscrowError::SettleDeadlineExceeded);
 ```
 
-Option B (full v2 backport): Add `deposit_window_secs` field to v1 `MatchEscrow` (struct change + SPACE update + migration consideration).
+Where `SETTLE_GRACE_SECS` is something modest like 3600 (1h after match_end_ts). After this window, only cancel/reclaim work — authority loses unilateral settle power.
+
+**Trade-off:** This narrows the authority's window to determine the winner for async matches. For real-time games, 1h is plenty.
+
+**Fix complexity:** surgical (add constant + body check). No struct change needed if using a const grace.
 
 ---
 
-### HIGH-010: H002 — Treasury Self-Redirect via Multi-TX Rotation Chain
+### NEW-N006 — Authority Handoff + Config Inheritance Collision (MEDIUM)
 
-**ID:** H002 | **CVSS:** 6.8 | **Status:** POTENTIAL (recurrent from Feb H011) | **Affects:** v1+v2
-**Location:** `v1:96-98`, `v2:125-127` (distinctness checks fire post-update only)
+**Severity:** MEDIUM (recoverable; operational footgun)
+**Aliases:** S3-N09 (State Machine — flagged as "most interesting interaction"), S3-N01, F-N7 (Upgrade/Admin), F4 (Access Control), NEW-EC-02/EC-06 (Token/Economic)
+**Location:** `programs/solshot-escrow-v2/src/lib.rs:326-348` (accept_authority — doesn't check pending_treasury/ops); `v2:245-293` (apply_config_update — distinctness check post-take)
+**Status:** CONFIRMED (compound of multiple findings flagged by 4+ auditors)
 
-The distinctness checks (`authority != treasury`, `authority != ops`, `treasury != ops`) verify pubkey identity at the END of an `update_config` call. They do NOT detect that the new treasury value is a wallet operationally controlled by the authority operator.
+#### Description
 
-**Simplest path (no rotation needed):** Authority calls `update_config(new_treasury = operator_secondary_wallet)`. Distinctness check passes (all three keys distinct). Now 7% of every settlement flows to operator-controlled treasury. Bypass requires no chain.
+Bundle 1's two governance tracks (authority rotation, config rotation) are independent. The state space is **12 reachable phase combinations** (auth-pending or not × config-pending or not × paused or not — see State Machine auditor #03 §S3-N09). The two most interesting transitions:
 
-**Multi-step variant (obscures intent):** Cycle authority → secondary, set treasury = original-authority, cycle authority back. Each step satisfies distinctness independently.
+1. **`accept_authority` doesn't validate against pending_treasury/ops.** If `pending_treasury = Some(X)` is in flight AND `pending_authority = Some(X)` is also in flight, accept succeeds (live distinctness check passes because treasury is still old). But the future `apply_config_update` then fails forever — `cfg.authority = X`, `cfg.treasury = X` (post-apply) → distinctness check at v2:272-274 reverts. Pending stuck.
 
-v1 fully exposed (live config read). v2 in-flight matches protected by snapshot; all new matches inherit the redirect.
+2. **New authority inherits config proposals.** If A rotates to B during pending config proposal authored by A, B becomes authority with pending fields they did not author. After 24h, anyone can apply A's choices to B's regime. B's only defense: call `update_config` before T+24h to overwrite — but that resets the clock (N001).
 
-**Recommended fix:** Same as H001/H030/H032 — timelock on treasury/ops rotation. Plus add `actor` field to `ConfigUpdated` event for monitoring.
+#### Attack Scenario
 
----
+(Detailed by State Machine agent §S3-N09 — paraphrased):
+1. A compromises authority. `propose_authority(B)` where B is attacker-controlled.
+2. Same TX: `update_config(new_fee_bps_treasury = 1000, new_fee_bps_ops = 0)` — sets cap-maxing fees pending.
+3. B accepts (B is attacker's key). Live authority = B. Pending config still authored by A's compromised TX.
+4. 24h later, B (or anyone) calls `apply_config_update`. Fees applied. New matches pay 10% to attacker.
+5. **Total time to maxing fees on new matches: 24h + 2 TX.**
 
-### HIGH-011: H003 — Authority Winner Selection Fraud
+The 2-step authority rotation IS a defense (B must already have a key), but if A's compromiser controls both A and B (e.g., insider with multiple wallets), the rotation is fast.
 
-**ID:** H003 | **CVSS:** 6.8 | **Status:** POTENTIAL (design limitation) | **Affects:** v1+v2
-**Location:** `v1:674-679`, `v2:707-710` (winner constraint = membership in `escrow.players[]` only)
+#### Recommendation
 
-The on-chain winner constraint is a simple membership check: `(0..max_players).any(|i| escrow.players[i] == winner.key())`. No game-state proof, no commit-reveal, no VRF, no loser cosign. The authority freely picks any registered player as winner.
+Two complementary fixes:
 
-v2 amplifies the blast radius: `MAX_PLAYERS = 10`, `MAX_WAGER = 100 SOL` → max single-match extraction at 90% = **900 SOL** (2.5× v1's 360 SOL).
-
-This is a structural property of the server-as-authority model, not a code bug. There is no practical on-chain fix without major architectural change (commit-reveal, loser cosign, VRF/oracle).
-
-**Recommended (operational):** Multisig the authority key. Statistical monitoring (anomalous win-rates per wallet). Pre-mainnet, reduce blast radius by capping `MAX_WAGER` or `MAX_PLAYERS`.
-
----
-
-### HIGH-012: H006 — Authority Collusion to Settle in Favor of Controlled Wallet
-
-**ID:** H006 | **CVSS:** 6.8 | **Status:** POTENTIAL (design limitation) | **Affects:** v1+v2
-
-Authority operator generates a secondary wallet `W_evil` (not the authority signing key), lists it as one of the players in `create_match`, has it deposit normally, then calls `settle_match(winner = W_evil)`. The OC-06 guard at `v1:146`/`v2:187` only excludes `ctx.accounts.authority.key()` — any other operator-held wallet passes.
-
-H006 is the deliberate-malice variant; H003 is the same surface from the compromised-key angle. Both compound. The on-chain program cannot distinguish a wallet held by an independent player from one held by the operator.
-
-**Recommended:** Same as H003 — off-chain identity binding (Privy or equivalent), statistical monitoring, commit-reveal architecture. No clean on-chain fix.
-
----
-
-### HIGH-013: H007 — Authority Self-Play Bypass via Secondary Wallet (alias of H006)
-
-**ID:** H007 | **CVSS:** 6.8 | **Status:** POTENTIAL | **Affects:** v1+v2
-H007 is functionally identical to H006 — same root cause (OC-06 guard scope), same attack path, same impact. Recorded separately because the access-control agent flagged it under a distinct heading. In remediation tracking, treat as one finding under H006.
-
----
-
-### HIGH-014: H032 — BPS Rotation Ratcheting Across Matches (timing dimension)
-
-**ID:** H032 | **CVSS:** 6.8 | **Status:** CONFIRMED | **Affects:** v2 only
-**Location:** `v2:96-142, 810-818` (no `last_bps_update_ts` field; no rate-limit; no minimum notice)
-
-Distinct from H011 (which establishes the ATTACK SURFACE for BPS poisoning). H032 specifically targets the TIMING dimension: no rate-limit, no minimum window between rotations, no advance notice. Authority can call `update_config` once per block (~400ms), ratchet BPS up to 10%, snapshot into a tournament's first `create_match`, then revert.
-
-`MatchCreated` event omits BPS snapshot values, so players have no on-chain signal showing elevated fees before depositing.
-
-**Recommended fix:**
-1. Add `last_bps_update_ts: i64` field to `GlobalConfig`.
-2. Enforce minimum delay (e.g., 24h) between BPS changes:
-   ```rust
-   if new_fee_bps_treasury.is_some() || new_fee_bps_ops.is_some() {
-       require!(
-           Clock::get()?.unix_timestamp >= cfg.last_bps_update_ts + BPS_CHANGE_DELAY_SECS,
-           EscrowError::BpsTimelockActive
-       );
-       // ... apply
-       cfg.last_bps_update_ts = Clock::get()?.unix_timestamp;
-   }
-   ```
-3. Expose `fee_bps_*_snapshot` in `MatchCreated` event for player visibility.
-
----
-
-## 7. Detailed Findings — MEDIUM
-
-### MEDIUM-001: H018 — v2 Deposit-Window Edge Collision at deposit_deadline
-
-**ID:** H018 | **CVSS:** 4.5 | **Status:** CONFIRMED edge case | **Affects:** v2 only
-**Location:** `v2:255-262` (`deposit_wager`), `v2:333-339` (`start_with_depositors`)
-
-Both `deposit_wager` (`<= deposit_deadline`) and `start_with_depositors` (`>= deposit_deadline`) are inclusive at the deadline instant. Race condition at `T == deposit_deadline`: outcome (deposit succeeds vs deposit rejected + match starts) depends on Solana leader ordering.
-
-**Recommended fix:** Tighten `deposit_wager` to `<` (exclusive):
+**A) Tighten `accept_authority` to check pending:**
 ```rust
-require!(
-    Clock::get()?.unix_timestamp < deposit_deadline,
-    EscrowError::DepositWindowClosed
-);
+// At v2:340 (after distinctness check on live):
+let eff_treasury = cfg.pending_treasury.unwrap_or(cfg.treasury);
+let eff_ops = cfg.pending_ops.unwrap_or(cfg.ops);
+require!(cfg.authority != eff_treasury, EscrowError::InvalidConfig);
+require!(cfg.authority != eff_ops, EscrowError::InvalidConfig);
 ```
 
-One-line change at `v2:257`. Eliminates overlap; no struct changes.
+This prevents the stuck-pending state (Risk 1) and surfaces the conflict immediately at accept time.
 
----
-
-### MEDIUM-002: H025 — Executable-Account Fee Destination
-
-**ID:** H025 | **CVSS:** 3.9 | **Status:** STILL_OPEN POTENTIAL (RECURRENT from Feb H009) | **Affects:** v1+v2
-**Location:** `v1:684-697`, `v2:715-728` (no `!executable` constraint)
-
-Treasury / ops / winner are `UncheckedAccount<'info>` with no `!executable` constraint. A hostile authority can set `config.treasury` to an executable program account (e.g., System Program). On settlement, `try_borrow_mut_lamports() += amount` succeeds in-memory but the credit is silently discarded by the runtime at TX commit (per EP-106 write-demotion behavior). Escrow debit is committed; treasury credit is burned. Single-line fix existed in Feb; still has not landed.
-
-**Recommended fix (one line per account):**
+**B) Clear pending config on accept (more aggressive):**
 ```rust
-constraint = !treasury.executable @ EscrowError::InvalidTreasury,
-constraint = !ops.executable @ EscrowError::InvalidOps,
+// At v2:336 (after pending_authority = None):
+cfg.pending_treasury = None;
+cfg.pending_ops = None;
+cfg.pending_fee_bps_treasury = None;
+cfg.pending_fee_bps_ops = None;
+cfg.pending_config_ts = 0;
+emit!(ConfigCancelledByRotation { ... });
 ```
 
-Apply at `v1:684-697`, `v2:715-728`. Optional defense-in-depth: same check on `winner` (in practice safe — winner must be a deposit signer, and signers can't be programs).
+This forces the new authority to re-propose any config changes they want to keep. Stronger but breaks "in-flight config rotations survive authority change."
+
+**Trade-off note:** B) is the right default if the threat model treats authority rotation as "fresh trust delegation." A) is safer if the design treats config + auth as orthogonal. Pick one or document the choice.
+
+**Fix complexity:** surgical (4-6 line additions).
 
 ---
 
-### MEDIUM-003: H033 — start_with_depositors Griefing via Authority-Chosen Activation Timing (v2)
+### NEW-N007 — Monitoring Is Load-Bearing Defense (MEDIUM — operational note)
 
-**ID:** H033 | **CVSS:** 4.5 | **Status:** CONFIRMED | **Affects:** v2 only
-**Location:** `v2:336-339` (deadline check is `>=` only — no upper bound)
+**Severity:** MEDIUM (operational architecture)
+**Aliases:** NEW-EC-07 (Token/Economic), ASSUMPTION-T2 (Timing)
+**Status:** CONFIRMED — architectural observation
 
-v2's deposit-deadline gate (`Clock::get >= deposit_deadline`) prevents premature compaction (closes H017). However, it has no upper bound. Authority can wait minutes/hours after deadline before calling `start_with_depositors`, ensuring fewer players have deposited by activation moment, reducing pot size.
+#### Description
 
-10-player match with `deposit_window_secs = 60`: authority waits until 60.5s (deadline expired), only 2 deposits confirmed on-chain. Compaction reduces `max_players` to 2; the 8 pending deposit TXs fail. Authority's chosen winner takes the smaller pot.
+Bundle 1's 24h timelock + permissionless apply + propose/accept rotation gives the protocol an off-chain detection window. But the entire defense depends on monitoring infrastructure being LIVE and RESPONSIVE during that 24h window. There is no on-chain proof that the ops team is watching.
 
-This is design-limitation territory — authority is trusted, this is self-dealing. Detection via off-chain monitoring is feasible.
+If event subscription fails (RPC outage, indexer crash, monitoring infra issue) AND the authority key is compromised, the attacker has 24h of opacity in which to ratchet fees, rotate authority, or stage other governance abuse. By the time alerts come back online, the apply may have already landed.
 
-**Recommended:** Add `max_activation_delay_secs` parameter to `start_with_depositors`. Emit `MatchActive` event with `actual_player_count` for off-chain monitoring.
+#### Recommendation
 
----
+Treat Bundle 1 as a defense layer that assumes monitoring is in place. Document in operational runbooks:
 
-### MEDIUM-004: H049 — match_id PDA Seed Entropy
+1. **Required monitors:** `ConfigProposed`, `ConfigApplied`, `AuthorityProposed`, `AuthorityAccepted`, `Paused`, `Unpaused`. Subscribe via Solana RPC log subscription + redundant fallback (Helius/Triton).
+2. **Alert thresholds:** Any `ConfigProposed` event → page on-call within 5 minutes.
+3. **Response runbook:** Within 24h, must either (a) confirm the proposal is legitimate, (b) rotate authority via propose+accept and call `cancel_pending_config` (if implemented per N004), or (c) pause + investigate.
+4. **Liveness check:** Synthetic transaction every 4h verifying the monitor receives + alerts on a benign test proposal (devnet only).
 
-**ID:** H049 | **CVSS:** 4.0 | **Status:** PARTIAL (server-side concern) | **Affects:** server
-**Location:** `server/socket-io/main.js:2212, 2393, 2471, 2639` — `crypto.randomBytes(4)` (32 bits)
-
-Server generates 4-byte (8-hex-char) match IDs. Birthday paradox at ~65M matches (50% collision threshold). On-chain `init` rejects collisions, but server-side match creation fails silently when this happens.
-
-This is primarily an off-chain concern (will be addressed in the DB audit) but documented here for completeness given on-chain interaction.
-
-**Recommended:** Increase to `randomBytes(8)` (64 bits) — raises threshold to ~4 billion matches. Add server-side DB uniqueness constraint with collision logging.
+**Fix complexity:** ops-only (no code change). But it IS load-bearing security infrastructure.
 
 ---
 
-## 8. Detailed Findings — LOW
+### NEW-N008 (LOW) — `migrate_config` Lacks Discriminator Validation
 
-| ID | Title | Location | One-Line Recommendation |
-|----|-------|----------|------------------------|
-| **H008** | initialize_config race-init (theoretical for new deploys) | `v1:42-69`, `v2:65-91` | For future redeploys, bundle `initialize_config` into the same atomic operator session as `solana program deploy`. |
-| **H034** | Zero-BPS waiver (intentional feature) | `v2:78`, `v2:128-131` | Within authority discretion. Document operationally. Combined with H011 enables differential-extraction patterns for monitoring to detect. |
-| **H040** | Stale 48-hour comment misleads operators | `v1:22-23` | One-line doc fix: comment claims "48-hour permissionless reclaim timeout" / "172800 seconds" but actual is `TIMEOUT_SECONDS * 2 = 1200s = 20 min`. Update comment to match code. |
-| **H041** | close=caller rent theft (~0.002 SOL per match) | `v1:718, 745`; `v2:748, 773` | Superseded by H023 in severity (H023 steals the entire un-refunded pot via the same mechanism). Fix for H023 also addresses H041 by ensuring PDA holds only rent reserve when close fires. |
-| **H043** | Idempotent pause emits no event | `v1:112-122`, `v2:146-156` | Add `emit!(ProgramPaused)` and `emit!(ProgramUnpaused)` for off-chain state-change tracking. |
-| **H045** | Snapshot drift across update_config calls | `v2:201-219, 96-142` | `MatchCreated` already emits snapshot values (audit trail OK). Optional: emit current `config.*` state alongside for cross-correlation in monitoring. |
+**Severity:** LOW (defense-in-depth)
+**Aliases:** F1 (Access Control), NEW-CPI-01 (CPI)
+**Location:** `programs/solshot-escrow-v2/src/lib.rs:191-197`
 
----
+`migrate_config` reads raw bytes at offset `[8..40]` for authority verification, skipping the 8-byte discriminator entirely. Adding `require!(data[0..8] == GlobalConfig::DISCRIMINATOR, InvalidConfig);` is a trivial defense-in-depth that ensures the parse target is actually a GlobalConfig account. Not exploitable today (PDA-seed gate prevents non-config accounts).
 
-## 9. Combination Attack Analysis
-
-### N×N Combination Matrix (CONFIRMED + POTENTIAL findings)
-
-The following matrix shows pairwise interactions — `→` indicates "enables/amplifies", `+` indicates "shared root cause / shared fix".
-
-| | H001 | H002 | H003 | H006 | H009 | H011 | H016 | H017 | H023 | H024 | H025 | H030 | H032 | H035 | H039 | H042 | H044 | H046 |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| **H001** | — | → | → | → | → | → | → | — | — | — | → | → | → | — | → | + | + | + |
-| **H002** | + | — | + | + | + | + | — | — | — | — | + | + | + | — | — | — | + | — |
-| **H003** | + | — | — | + | — | — | — | — | — | — | — | — | — | + | — | — | + | — |
-| **H006** | + | + | + | — | — | — | — | — | — | — | — | — | — | + | — | — | + | — |
-| **H009** | + | + | — | — | — | + | + | — | — | — | — | + | — | — | — | — | + | — |
-| **H011** | + | + | — | — | + | — | — | — | — | — | + | + | + | — | — | — | + | — |
-| **H016** | + | — | — | — | + | — | — | — | — | — | — | — | — | + | — | — | + | — |
-| **H017** | + | — | + | + | — | — | — | — | — | — | — | — | — | — | — | — | + | — |
-| **H023** | — | — | — | — | — | — | — | — | — | → | — | — | — | + | + | — | — | — |
-| **H024** | — | — | — | — | — | — | — | — | + | — | — | — | — | — | + | — | — | — |
-| **H025** | + | + | — | — | — | + | — | — | — | — | — | + | — | — | — | — | + | — |
-| **H030** | + | + | — | — | + | + | — | — | — | — | + | — | + | — | — | — | + | — |
-| **H032** | + | + | — | — | — | + | — | — | — | — | — | + | — | — | — | — | + | — |
-| **H035** | — | — | + | + | — | — | + | — | + | — | — | — | — | — | — | — | — | — |
-| **H039** | — | — | — | — | — | — | — | — | + | + | — | — | — | — | — | — | + | — |
-| **H042** | + | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | + | + |
-| **H044** | + | + | + | + | + | + | + | + | — | — | + | + | + | — | + | + | — | + |
-| **H046** | + | — | — | — | — | — | — | — | — | — | — | — | — | — | — | + | + | — |
-
-### Key Attack Chains
-
-#### Chain 1: S001 — Authority Compromise Kill Chain (v1 full / v2 partial)
-
-**Combined Severity:** CRITICAL (v1) / HIGH (v2)
-
-**Component Findings:**
-| ID | Severity | Role |
-|----|----------|------|
-| H044 / H001 | CRITICAL | Single-key root: one compromise unlocks Layer 1 + Layer 2 |
-| H030 / H002 | HIGH (v1) / MED (v2) | Treasury redirect via update_config |
-| H003 / H006 | HIGH | Winner-pick fraud via authority-chosen player |
-| H011 (v2 only) | HIGH | BPS ratcheting within 10% cap |
-
-**Combined Attack (v1):** Single key compromise → 1 TX rotates treasury + ops to attacker wallets → settle every Active match with attacker as winner → 90% pot to attacker + 10% fees to attacker = **100% protocol drainage of all in-flight matches**.
-
-**Combined Attack (v2):** Single key compromise → in-flight matches protected by snapshot (architectural mitigation works) → BUT authority creates new matches with poisoned snapshots → drainage continues until detected.
-
-**Why Worse than Sum:** Each finding alone is HIGH/CRITICAL; combined they constitute total protocol kill. v2's snapshot mechanism downgrades the v2 chain to "drains future matches only" — meaningful but partial.
-
-**Mitigation (single highest-ROI fix):** Multisig the authority key (H044). This single change breaks H001, H002, H003, H006, H011, H030, H032, H039 simultaneously — **8 of the audit's HIGH+CRITICAL findings.**
-
-#### Chain 2: H023 + H024 Stranding-and-Theft
-
-**Combined Severity:** CRITICAL
-
-**Components:**
-| ID | Severity | Role |
-|----|----------|------|
-| H024 | HIGH | Non-contiguous mask makes funds unrefundable via standard call |
-| H023 | CRITICAL | Empty `remaining_accounts` reclaim path triggers `close = caller` sweep |
-
-**Combined Attack:** Player exploits ordering (or natural network jitter causes it) → match has non-contiguous `deposits_mask = 0b0010` → no syntactically valid refund call works → ONLY remaining call shape is `cancel_match(remaining_accounts = [])` → loop never runs → `close = caller` sweeps stranded depositor's wager to caller → caller is attacker, original depositor lost wager.
-
-**Why Worse than Sum:** H024 alone strands funds (no theft). H023 alone steals from co-depositors. **Combined, H024 forces victims onto the H023 path** — the only "valid" call shape produces theft.
-
-**Mitigation:** Fix H023 first (single `require!(remaining_accounts.len() == count_ones(mask))`). This converts the H024 stranding into a clear-error state instead of a fund-theft state. H024 still requires its own fix (caller-supplied indices) for full resolution, but H023 fix breaks the most damaging interaction.
-
-#### Chain 3: H001 + H030 + H035 Settlement-Denial Race + Hijack
-
-**Combined Severity:** HIGH
-
-**Components:**
-| ID | Severity | Role |
-|----|----------|------|
-| H001 | CRITICAL | Authority compromise precondition |
-| H030 | HIGH (v1) | Live config read at settle |
-| H035 | HIGH | Settle-vs-cancel race window (50min v1) |
-
-**Combined Attack:** Authority key compromised → attacker rotates treasury → wants to settle matches before victims notice → losing players observe TX in mempool → submit competing cancel_match with higher priority fee → some settle TXs land first (attack succeeds), some are cancelled (attacker just loses TX fees). Attacker has at most 50 minutes to clear all in-flight matches.
-
-**Mitigation:** Tightening `TIMEOUT_SECONDS >= SETTLEMENT_TIMEOUT_SECONDS` in v1 closes H035; H001 fix (propose/accept) prevents the rotation; either alone partially mitigates. Both together fully eliminate.
-
-#### Chain 4: H001 + H042 Permanent-Lock Compound
-
-**Combined Severity:** CRITICAL (operational)
-
-**Components:**
-- H001: One-step authority rotation (compromise = instant takeover)
-- H042: GlobalConfig has no close path (key loss = permanent lock)
-
-**Combined State Space:**
-| Authority Key Status | Without H001/H042 fixes | With H001 fix only | With H042 fix only | With both fixes |
-|--------------------|------------------------|--------------------|--------------------|------------------|
-| Compromised | Instant total takeover | Mitigated (propose/accept) | Still takeable | Mitigated |
-| Lost | Permanent lock | Still lost | Recoverable via guardian | Recoverable |
-| Both events | Catastrophic + irrecoverable | Lost | Compromised | Mitigated by guardian + delay window |
-
-H001 and H042 must be fixed **together** for completeness. The propose/accept fix for H001 partially addresses H042 if the pending-authority mechanism allows a guardian to complete rotation.
-
-### Critical Fix Nodes (Highest-ROI)
-
-| Finding | Attack Paths Broken if Fixed | Recommendation Priority |
-|---------|------------------------------|-------------------------|
-| **H023 fix (`require!` on len)** | All H023 paths, neutralizes H024+H023 chain, eliminates worst-case loop sweep | **Fix FIRST** (1-line fix per site, 4 sites, blocks 900 SOL/match theft) |
-| **H044 fix (multisig L1 + separate L2 multisig)** | H001 compound chains, H002, H003, H006, H011, H030, H032, H039 (8 of audit's HIGH+CRITICAL) | **Fix SECOND** (highest blast radius — single change blocks 8 findings) |
-| **H001 fix (propose/accept + timelock)** | H001 root, dampens H002, H030, H032, partially mitigates H042 | **Fix THIRD** (closes root cause; on-chain change) |
-| **H035 fix (`TIMEOUT_SECONDS >= SETTLEMENT_TIMEOUT_SECONDS` in v1; pending_settle in v2)** | H035 race window + interaction with H001/H030 chain | **Fix FOURTH** (1-line constant change in v1; on-chain logic in v2) |
-| **H024 fix (caller-supplied indices)** | H024 stranding pattern, completes H023 fix coverage | Fix FIFTH (architectural change to refund loop) |
+**Recommendation:** Add the discriminator check before the offset read. One-liner.
 
 ---
 
-## 10. Attack Trees
+### NEW-N009 (LOW) — `migrate_config` Emits No Event
 
-### Attack Tree 1: H023 Partial-Refund Theft
+**Severity:** LOW (forensics gap)
+**Aliases:** F-N3 (Upgrade/Admin)
+**Location:** `programs/solshot-escrow-v2/src/lib.rs:184-239`
+
+`migrate_config` is the only Bundle 1 instruction without an `emit!()`. Successful migration is observable only via the implicit "account data length changed" signal. Add `emit!(ConfigMigrated { authority, old_size, new_size })` for forensic completeness.
+
+**Recommendation:** Add the event emit. Combined with N002 fix (remove from mainnet), low priority.
+
+---
+
+### NEW-N010 (LOW) — `MAX_PLAYERS` and `deposits_mask: u16` Type-Decoupled
+
+**Severity:** LOW (latent, future-proof)
+**Aliases:** N02 (Arithmetic), S3-related
+**Location:** `programs/solshot-escrow-v2/src/lib.rs:31` + struct field at `:1187`
+
+`MAX_PLAYERS: usize = 10` and `deposits_mask: u16` are type-decoupled. Today `MAX_PLAYERS = 10 < 16` so the bitmask math at v2:513 (`(1u16 << max_players) - 1`) is safe. If a future code change raises `MAX_PLAYERS` to ≥ 16 without simultaneously widening `deposits_mask` to `u32`, the shift wraps to 0 and `0 - 1` underflows to `0xFFFF` (or panics under `overflow-checks = true`). Silent breakage of auto-activation in semantic-only build modes.
+
+**Recommendation:** Add a SAFETY comment and ideally `const _: () = assert!(MAX_PLAYERS <= 16);` to lock the assumption at compile time. One-liner.
+
+---
+
+### NEW-N011 (LOW) — Lamport Credit `+= amount` Without `checked_add` (carry-forward from audit #2 CPI-03)
+
+**Severity:** LOW (defense-in-depth; practically unreachable)
+**Aliases:** CPI-03 (carry-forward from audit #2)
+**Location:** v1:334, 337, 340, 433, 507; v2:652, 655, 658, 734, 801
+
+10 lamport-credit sites use raw `+= amount` rather than `checked_add`. Practically unreachable overflow (would require recipient wallet to hold ~1.8e10 SOL). Defense-in-depth gap.
+
+**Recommendation:** Convert all 10 sites to `checked_add` pattern. Optional.
+
+---
+
+### NEW-N012 (LOW) — No Cancel for Authority Proposal (footgun)
+
+**Severity:** LOW (operational clarity)
+**Aliases:** F-N4 (Upgrade/Admin), F6 (Access Control)
+**Location:** `programs/solshot-escrow-v2/src/lib.rs:302-318`
+
+To cancel a pending authority proposal, the current authority must call `propose_authority(current_authority_key)` — an unintuitive self-proposal. The `pending_authority` field is left `Some(current)` after cancel rather than `None`. Monitors must compare against `cfg.authority` to distinguish "active proposal" vs "cancel marker."
+
+**Recommendation:** Add explicit `cancel_authority_proposal` instruction that sets `pending_authority = None`. Pairs well with N004 for clean cancel UX.
+
+---
+
+### NEW-N013 (LOW) — `propose_authority` No Distinctness Check at Propose Time
+
+**Severity:** LOW (self-corrects at accept)
+**Aliases:** F-N8 (Upgrade/Admin), F5 (Access Control)
+**Location:** `programs/solshot-escrow-v2/src/lib.rs:302-318`
+
+`propose_authority(K)` only checks `K != Pubkey::default()`. Doesn't check distinctness vs treasury/ops/current authority. Intentional per design (deferred to accept), but a malicious authority can propose a confusing pending value.
+
+**Verdict:** Not exploitable on its own. Self-corrects at accept. Filed for completeness.
+
+---
+
+## 5. Bundle 1 Architectural Assessment
+
+### Authority Rotation (propose / accept)
+
+**Verdict: PRODUCTION-READY (with operational caveat).**
+
+The 2-step pattern is correctly implemented. Atomic swap at v2:334-336 under a single mut borrow. Post-swap distinctness re-check at v2:340-341. Zero-key guard at v2:306. The `new_authority` Signer ensures the new key has actually signed. Returns proper error variants (`NoPendingAuthority`, `Unauthorized`). **H001 is genuinely closed on v2.**
+
+**Caveat:** N006 (config inheritance collision) and N012 (no explicit cancel) are operational footguns around the rotation. Recommend adding distinctness vs pending fields at accept time (N006 fix A) plus an explicit cancel instruction.
+
+### 24h Config Timelock
+
+**Verdict: SOLID with the N001 fix.**
+
+The propose/apply pattern is well-architected for both monitoring-and-react defense AND liveness preservation (permissionless apply means the proposing authority can go dark without locking the chain). The merge-validation at v2:141-152 (using `unwrap_or(live)`) correctly prevents multi-step propose-A-then-B escape of the 10% fee cap. The post-apply re-validation at v2:270-278 catches race conditions with `propose_authority`. The `take()` pattern at v2:257-268 is atomic-revert-safe (verified by State Machine auditor #03 Inv 8 against Solana transaction semantics).
+
+**Critical weakness:** N001 (unconditional `pending_config_ts = now` reset) defeats the 24h defensive window under a malicious authority. **Without this one-liner fix, the timelock is a soft suggestion, not a hard guarantee.**
+
+### `migrate_config`
+
+**Verdict: DEVNET-ONLY (must remove/feature-gate for mainnet).**
+
+The instruction is correctly implemented for its stated purpose: one-shot v2 pre-Bundle-1 (110B) → Bundle 1 (231B) realloc. The UncheckedAccount + manual authority verification at offset `[8..40]` is sound (offset matches v1 and v2 GlobalConfig layouts). The borrow lifetimes are clean (read borrow dropped before CPI/realloc; mut borrow scoped). The zero-fill correctly preserves the first 110 bytes and zeros the new region. Idempotency check at v2:203 short-circuits already-migrated configs.
+
+**However:** Per N002, the instruction will ship to mainnet bytecode unless feature-flagged or deleted. While direct exploit risk is LOW (authority-gated, no-op on already-migrated), bytecode hygiene matters. **Must be removed or feature-gated before mainnet deploy.**
+
+### Effective-State Validation (Live + Pending Merge)
+
+**Verdict: CORRECT, well-implemented.**
+
+The merge `eff_t = pending_t.unwrap_or(live_t)` at v2:141-144 correctly captures the post-apply state at propose time. Used for distinctness AND fee-cap validation. The widening `(u16 + u16) as u32 <= MAX_FEE_BPS as u32` at v2:150 prevents u16 wrap. The post-apply re-validation at v2:272-278 catches races. Three-layer defense:
+1. Genesis cap check at `initialize_config` v2:87.
+2. Propose-time effective-state check at v2:150.
+3. Post-apply check at v2:276.
+
+Multi-step rotations cannot escape the cap. **Confirmed safe across all rotation paths.**
+
+### Pause + Governance Interaction
+
+**Verdict: GAP at apply_config_update (N003); otherwise correct.**
+
+Pause intentionally does not block governance instructions (recovery scenarios). Pause DOES correctly block `create_match`, `deposit_wager`, `start_with_depositors` (new commitments). Pause does NOT block `settle_match`, `cancel_match`, `permissionless_reclaim` (exits — correct for safety).
+
+**Gap:** `apply_config_update` is permissionless AND time-delayed. A pre-staged malicious proposal can apply through a defensive pause. N003 recommends adding the constraint.
+
+---
+
+## 6. Pre-Mainnet Recommendations
+
+### Priority 1 — MUST FIX (blocks mainnet)
+
+| # | Finding | Action | Effort |
+|---|---|---|---|
+| 1 | **N001 — pending_config_ts reset DoS** | Add `if cfg.pending_config_ts == 0` guard at v2:154 | One-liner |
+| 2 | **N002 — migrate_config ships to mainnet** | Either `#[cfg(feature = "devnet")]` gate OR delete the instruction. Document the mainnet deploy procedure step that verifies absence from bytecode. | Surgical |
+| 3 | **H044/H046 (operational)** | Transfer Layer-1 upgrade authority to Squads multisig (3-of-5 minimum). Rotate `GlobalConfig.authority` via Bundle 1 propose/accept to a separate Squads multisig. | Operational (~30 min) |
+
+### Priority 2 — SHOULD FIX (before mainnet)
+
+| # | Finding | Action | Effort |
+|---|---|---|---|
+| 4 | **N003 — apply_config_update not pause-gated** | Add `constraint = !config.is_paused @ EscrowError::ProgramPaused` to `ApplyConfigUpdate` context | One-liner |
+| 5 | **N004 — no cancel_pending_config** | Add `cancel_pending_config` instruction (authority-only, no timelock) | Surgical |
+| 6 | **N005 — v2 unbounded settle window** | Add settle deadline = `match_end_ts + SETTLE_GRACE_SECS` (e.g., 3600s) to `settle_match` body | Surgical |
+| 7 | **N006 — auth rotation + pending config collision** | Add pending-field distinctness check to `accept_authority` (Option A from §4 finding) | Surgical |
+| 8 | **H024 — non-contiguous mask stranding** | Rewrite refund loop to accept caller-supplied `refund_indices: Vec<u8>` | Architectural |
+
+### Priority 3 — OPERATIONAL (parallel to code)
+
+| # | Action |
+|---|---|
+| 9 | **Monitoring infrastructure**: Subscribe to `ConfigProposed`, `ConfigApplied`, `AuthorityProposed`, `AuthorityAccepted`, `Paused`, `Unpaused` events. Page on-call within 5 minutes for any ConfigProposed. (N007.) |
+| 10 | **Operational runbook**: Document the within-24h response procedure for compromised authority — propose+accept rotation, cancel_pending_config (post-N004), pause-investigate. |
+| 11 | **Bug bounty page** live at mainnet flip (industry standard for hot-wallet-during-deploy phase). |
+| 12 | **Squads-from-day-one verification**: After deploy, confirm `solana program show <PROGRAM_ID>` reports the Squads multisig pubkey as upgrade authority. |
+| 13 | **Live N001 PoC verification**: Before mainnet, run a devnet test confirming the N001 fix works as expected (propose, wait 12h, re-propose, verify `applies_at` did NOT advance). |
+
+### Priority 4 — POST-LAUNCH
+
+| # | Action |
+|---|---|
+| 14 | **N008 — Add discriminator check to migrate_config** (if retained as devnet-only). |
+| 15 | **N009 — Emit `ConfigMigrated` event** (if retained). |
+| 16 | **N010 — Type-decouple `MAX_PLAYERS` / `deposits_mask`** — add const_assert. |
+| 17 | **N011 — checked_add lamport credits** at 10 sites (defense-in-depth). |
+| 18 | **N012 — Explicit cancel_authority_proposal instruction** for UX. |
+| 19 | **H049 — server-side entropy** to `randomBytes(8)` (off-chain audit will track). |
+
+---
+
+## 7. Attack Trees
+
+### Attack Tree 1: N001 Stalling — Indefinite Timelock Defeat
 
 ```
-GOAL: Steal co-depositors' wagers from a SolShot match
+GOAL: Keep malicious config change pending indefinitely
 │
-├── PATH A: cancel_match variant (registered player, after timeout) [CRITICAL]
-│   ├── PRECONDITION: Be a registered player; match passed timeout
-│   │   ├── v1: TIMEOUT_SECONDS = 600 (10 min)
-│   │   └── v2: match_end_ts (≥ 60 sec from activation)
-│   │
-│   ├── STEP 1: Call cancel_match with remaining_accounts = [own_account] [CONFIRMED]
-│   │   └── Loop refunds own deposit (100 SOL); exits
-│   │
-│   └── STEP 2: Anchor exit hook calls close(escrow, caller) [CONFIRMED]
-│       └── 900 SOL (un-refunded co-depositors' wagers) → caller
+├── PRECONDITION: Authority key compromise (H044 + H001 fix on v2 still requires the key)
 │
-├── PATH B: permissionless_reclaim variant (any wallet, after grace) [CRITICAL]
-│   ├── PRECONDITION: Match passed permissionless grace window
-│   │   ├── v1: max(created_at, activated_at) + 1200s
-│   │   └── v2: match_end_ts + 86400s (24h)
-│   │
-│   ├── STEP 1: Call permissionless_reclaim with remaining_accounts = [] [CONFIRMED]
-│   │   └── Loop never runs (empty); state set to Cancelled
-│   │
-│   └── STEP 2: Anchor exit hook calls close(escrow, caller) [CONFIRMED]
-│       └── 1,000 SOL (entire pot, never deposited by attacker) → caller
+├── STEP 1: Compromised authority proposes malicious treasury
+│   └── update_config(new_treasury = attacker_wallet) at T=0
+│       → pending_treasury = Some(attacker_wallet)
+│       → pending_config_ts = 0
+│       → ConfigProposed emitted (off-chain detection point)
 │
-└── PATH C: H024 + H023 forced compound (any non-contiguous mask victim)
-    ├── PRECONDITION: deposits_mask is non-contiguous (e.g., 0b0010)
-    │   └── Created by network latency, failed deposits, intentional ordering
-    │
-    ├── STEP 1: No syntactically valid full-refund call exists [H024]
-    │   └── Loop fails at i=0 because (mask >> 0) & 1 == 0
-    │
-    └── STEP 2: Attacker calls cancel_match with remaining_accounts = []
-        └── close = caller sweeps stranded wager (= legitimate depositor's wager) [H023]
+├── STEP 2: At T=23h:59m — keep timelock alive
+│   └── update_config(new_fee_bps_treasury = Some(500))
+│       → pending_treasury STILL Some(attacker_wallet)
+│       → pending_config_ts = 23h:59m (RESET via v2:154 unconditional write)
+│       → applies_at now = 47h:59m
+│
+├── STEP 3: Repeat at T=47h, T=71h, ... ad infinitum
+│   └── Off-chain monitors see fresh events but no apply
+│
+└── ALTERNATE: Wait for monitoring failure (RPC outage, indexer crash)
+    └── If monitoring lapses for 24h after any single proposal,
+        attacker stops stalling, lets apply fire naturally
 
-CRITICAL NODE: H023 fix (require!(remaining_accounts.len() == count_ones(mask)))
-   — Breaks PATH A (loop now requires full accounts)
-   — Breaks PATH B (empty array fails the assertion)
-   — Converts PATH C from theft to clean error (depositor still stranded but H024 fix is separate)
+DEFENSE PATH: One-liner fix at v2:154 (N001 recommendation)
+   — if cfg.pending_config_ts == 0 { cfg.pending_config_ts = now; }
+   — Once timer starts on first proposal, subsequent calls cannot reset it
+   — 24h timelock becomes a HARD upper bound on attacker's window
 
-  Fixing this single node breaks 3/3 of the H023 attack paths.
+ESCAPE PATH (current code): Legitimate operator can use propose_authority +
+                            accept_authority (no timelock) to rotate authority,
+                            then call update_config to overwrite pending values.
+                            Requires monitoring + 2 TXs + 24h further wait for the
+                            replacement to apply.
 ```
 
-### Attack Tree 2: H001-Family Authority Takeover
+### Attack Tree 2: N002 + H044 Chain — Mainnet `migrate_config` as Attack Surface
 
 ```
-GOAL: Achieve total protocol drainage via authority compromise
+GOAL: Exploit dead-code migrate_config presence on mainnet
 │
-├── PATH A: Direct Layer-2 takeover (H001 + H030/H011)
-│   ├── STEP 1: Compromise HPyV...nokv hot wallet [PRECONDITION]
-│   │   ├── Phishing
-│   │   ├── Server breach
-│   │   ├── .env leak
-│   │   └── Insider
-│   │
-│   ├── STEP 2 (parallel):
-│   │   ├── settle_match for all Active escrows → 90% pot to attacker [H003/H006]
-│   │   ├── update_config(new_treasury = attacker) [H001/H030] → 7%
-│   │   └── update_config(new_ops = attacker) → 3%
-│   │
-│   └── STEP 3: Total: 100% of all in-flight pots
-│       └── v2 in-flight matches partially protected (snapshot)
+├── PRECONDITION: V1 mainnet deploys without removing migrate_config
 │
-├── PATH B: Layer-1 bytecode replacement (H001 + H046)
-│   ├── STEP 1: Compromise upgrade authority (same key) [H044]
-│   ├── STEP 2: Deploy malicious bytecode replacement [H046]
-│   └── STEP 3: Single drain_all instruction targets all MatchEscrow PDAs
-│       └── Forensically invisible (looks like normal program)
+├── PATH A: Direct exploitation
+│   ├── STEP 1: Need authority signature (H001 protection still requires Squads)
+│   └── BLOCKED — Squads multisig (H044 fix) prevents single-key abuse
+│       → Direct exploit value is LOW. migrate_config no-ops on already-migrated config.
 │
-└── PATH C: Pause + Rotate + Unpause (v1 only) [H009]
-    ├── STEP 1: pause_program → blocks player exits in v1 [H016]
-    ├── STEP 2: update_config(new_treasury = attacker) [H001]
-    ├── STEP 3: unpause_program
-    ├── STEP 4: settle_match (now to attacker) [H030]
-    └── (v2 immune — cancel/settle pause-bypass)
+├── PATH B: Bytecode-replacement compounding
+│   ├── STEP 1: Compromise of upgrade authority (H046 — Squads required)
+│   ├── STEP 2: Deploy replacement bytecode using migrate_config slot
+│   │   → The instruction's `UncheckedAccount + manual byte parse` pattern
+│   │     means subtle reuse for other purposes (rent griefing, state corruption)
+│   └── BLOCKED — Squads multisig (H046 fix) prevents single-key bytecode replacement
+│       → But increases attack surface for future audit confusion
+│
+└── PATH C: Future upgrade hazard
+    ├── A future upgrade adds new GlobalConfig fields, growing SPACE > 231
+    ├── migrate_config's idempotency check at v2:203 becomes "needs to extend"
+    ├── If the future field layout isn't compatible with the post-migrate-config layout,
+    │   silent data corruption could occur
+    └── This is a stochastic future risk, not an attacker-controlled exploit
 
-CRITICAL NODE: H044 fix (multisig L1 + separate multisig L2)
-   — Breaks PATH A (no single key for L2 attacks)
-   — Breaks PATH B (no single key for L1 bytecode replacement)
-   — Breaks PATH C (no single key for L2 attacks during pause)
-   — Cascades: also breaks H001, H002, H011, H030, H032, H039 standalone
-
-  Fixing this single node breaks 3/3 of the H001-family attack paths AND
-  blocks 8 of the audit's HIGH+CRITICAL findings.
+CRITICAL NODE: N002 fix (feature-gate or delete)
+   — Removes the dead code from mainnet bytecode
+   — Eliminates the attack-surface-inflation concern
+   — Forces the mainnet deploy runbook to be explicit about it
 ```
 
-### Attack Tree 3: H035 Settlement-Denial Race
+### Attack Tree 3: S3-N09 / N006 — Authority Rotation + Config Inheritance "Chaos State"
 
 ```
-GOAL: Deny winner their winnings via priority-fee bidding
+GOAL: Achieve malicious final state via 3-track interleaving
+       (authority rotation + config rotation + pause)
 │
-├── PRECONDITION: Be a losing player in an Active match
+├── PRECONDITION 1: Authority A compromise
+├── PRECONDITION 2: Attacker controls pre-arranged B key
 │
-├── STEP 1: Wait for race window to open
-│   ├── v1: T + 601s (TIMEOUT_SECONDS = 600)
-│   └── v2: match_end_ts (per-match configurable, MIN 60s)
+├── STEP 1 (T=0): A pauses program (defensive cover for upcoming actions)
+│   └── No pause guard on subsequent steps (governance is intentionally pause-immune)
 │
-├── STEP 2: Monitor mempool for authority's settle_match TX [TRIVIAL]
-│   └── Public RPC subscription
+├── STEP 2 (T=0+ε): A calls update_config proposing malicious config
+│   └── pending_treasury = Some(attacker_wallet)
+│   └── pending_fee_bps_treasury = Some(1000)  [cap-max]
+│   └── pending_config_ts = T=0+ε
 │
-├── STEP 3: Submit competing cancel_match with higher priority fee
-│   ├── Cost: ~$0.10–$0.30 priority fee
-│   ├── Payoff: save own wager (up to 100 SOL = ~$15,000)
-│   └── ROI: ~50,000:1
+├── STEP 3 (T=0+2ε): A calls propose_authority(B)
+│   └── pending_authority = Some(B)
 │
-├── STEP 4 (probabilistic): cancel TX lands first
-│   ├── State → Cancelled; settle_match fails (InvalidState)
-│   └── Loser keeps wager; winner loses 0.8×W
+├── STEP 4 (T=0+3ε): B calls accept_authority
+│   └── cfg.authority = B (live)
+│   └── pending_authority = None
+│   └── Live distinctness check passes (B != current live treasury — even though
+│       pending treasury equals attacker_wallet, accept_authority doesn't check pending)
 │
-└── STEP 5 (combination with H023 if mask non-contiguous):
-    └── Loser passes empty remaining_accounts → also steals co-depositors' wagers
+├── STEP 5 (T=24h): B (or any signer) calls apply_config_update
+│   └── pending_treasury → live: cfg.treasury = attacker_wallet
+│   └── pending_fee_bps_treasury → live: cfg.fee_bps_treasury = 1000
+│   └── Post-apply distinctness: B != attacker_wallet → passes (assuming distinct)
+│   └── Post-apply fee cap: 1000 + 0 = 1000 ≤ 1000 → passes
+│   └── Live state: authority=B, treasury=attacker_wallet, fee_bps_treasury=1000
+│
+└── STEP 6 (anytime): B unpauses, new matches created
+    └── Snapshots fresh fee BPS = 1000 + 0 = 10%
+    └── Snapshots fresh treasury = attacker_wallet
+    └── 10% of every new match's pot → attacker
 
-CRITICAL NODE: H035 fix
-   v1: TIMEOUT_SECONDS = SETTLEMENT_TIMEOUT_SECONDS (3600)
-       — 1-line constant change; eliminates overlap window
-   v2: pending_settle: bool flag on MatchEscrow
-       — Authority pre-locks settle path; cancel respects lock
+TOTAL ATTACK TIME: 24h (timelock) + 4 TXs
+DEFENSE LAYERS PIERCED:
+   - H001 fix: BYPASSED by attacker controlling B's key in advance
+   - 24h timelock: HONORED but does not defeat the chain
+   - N001 (if unfixed): Could be used to delay apply if attacker wants pause to persist
+   - Per-match snapshot (in-flight protection): NOT VIOLATED — only NEW matches affected
 
-CASCADE: H001 fix (propose/accept) doesn't fix H035 alone but reduces likelihood
-         of compromised-authority entering the race scenario.
+DEFENSE PATH:
+   1. N003 fix (pause-gate apply) — Step 5 would fail; apply requires unpause first
+   2. N006 fix A (accept_authority checks pending) — Step 4 would fail if pending_treasury
+      collides with new authority OR — even better — fail if pending exists at all
+   3. N006 fix B (accept clears pending) — Step 4 would CLEAR pending; B must re-propose
+
+   Combined: pause + cancel_pending_config (N004) + accept that clears pending makes
+   the chain unworkable. The combined fixes cost ~15 lines.
+
+   OPERATIONAL MITIGATION (most important): Squads multisig on authority.
+   If A is multisig-signed, single-key compromise scenario above doesn't apply.
+   Attacker must compromise multiple Squads signers to even start the chain.
 ```
 
 ---
 
-## 11. Severity Re-Calibration
+## 8. Severity Re-Calibration
 
-After full holistic review, the following severity calibrations are documented. Most findings retain their investigator-assigned severity; deltas are explained.
+How CVSS scores and qualitative severities changed audit #2 → audit #3:
 
-| Finding | Investigator Severity | Final Severity | Reason |
-|---------|----------------------|----------------|--------|
-| H023 | CRITICAL (CVSS 9.3) | **CRITICAL** | Confirmed. Highest finding in audit. |
-| H001 | CRITICAL (CVSS 8.7) | **CRITICAL** | Retained. Acknowledged design choice but blast radius matches CRITICAL — historical analogues at $30M+. |
-| H044 | HIGH (CVSS 8.2) | **CRITICAL (operational)** | Upgraded qualitative tag. CVSS reflects PR:H precondition; consequence (total drainage + irrecoverable) matches CRITICAL on consequence-only basis. |
-| H046 | HIGH (CVSS 8.0) | **CRITICAL (operational)** | Same reasoning as H044 — consequence-only severity. |
-| H011 | MEDIUM (standalone CVSS 6.8) | **HIGH (REGRESSION +1)** | Stacked-audit policy: Feb dismissed H028 as NOT_VULN; v2 invalidates the dismissal by introducing runtime BPS mutation. Apply +1 severity escalation. |
-| H024 | HIGH | **HIGH** | Retained. Combined with H023 the impact is catastrophic; standalone is fund-stranding (HIGH but not CRITICAL). |
-| H030 (v1) | HIGH (CVSS 8.7) | **HIGH** | Retained. v1 live config read enables in-flight hijack. |
-| H030 (v2) | MEDIUM (CVSS 5.8) | **MEDIUM** | Retained. v2 snapshot architecture meaningfully reduces blast radius. |
-| H035 | HIGH (CVSS 8.5) | **HIGH** | Retained. Confirmed CVSS-supported; ROI for attacker is ~50,000:1. |
-| H039 | HIGH (CVSS 7.0) | **HIGH** | Retained. POTENTIAL classification reflects authority-precondition; if precondition met, severity is HIGH. |
-| H016 | HIGH qualitative (CVSS 4.9) | **HIGH (qualitative)** | Retained. CVSS reduced from Feb's 6.6 due to tighter 20-min window, but trust violation justifies HIGH qualitative severity. |
-| H017 | HIGH qualitative (CVSS 6.0) | **HIGH (qualitative)** | Retained. CVSS suppressed by AC:H/PR:H but fairness implications in wagered context warrant HIGH. |
-| H041 | LOW (~0.002 SOL rent theft) | **LOW** | Retained. Superseded in severity by H023 but documented standalone. |
+| Finding | Audit #2 Severity | Audit #3 Status | Calibration Note |
+|---|---|---|---|
+| H023 | CRITICAL CVSS 9.3 | RESOLVED | Highest finding closed. Net audit risk drops materially. |
+| H001 | CRITICAL CVSS 8.7 | RESOLVED on v2 / IRRELEVANT on v1 | v2-only matters for mainnet. Audit #2's headline open is closed. |
+| H044, H046 | CRITICAL operational | CARRY-FORWARD | Severity unchanged; operational mitigation must land. |
+| H030 (v1) | HIGH CVSS 8.7 | CARRY-FORWARD on v1 / RESOLVED on v2 | Bundle 1 mitigates on v2; v1 doesn't ship. |
+| H035 | HIGH CVSS 8.5 | RESOLVED on v1 / STATUS_CHANGED to N005 on v2 | v1 fix via constant unification was independent work. N005 is a re-framing for v2. |
+| H011 | HIGH (REGRESSION +1) | MITIGATED | 24h timelock + merge-validation cap = HIGH attack converted to MEDIUM if monitoring lapses. |
+| H039 | HIGH CVSS 7.0 | RESOLVED | MAX_DURATION_SECS 7d→24h fix landed. |
+| H024 | HIGH CVSS 6.5 | STILL_OPEN | Unchanged; refund loop architecture still monotonic-from-i=0. |
+| H016/H009/H041 | HIGH/MED/LOW | RESOLVED on v1 | Pause guards removed; H041 superseded by H023 fix. |
+| H017 | HIGH (v1) | STILL_OPEN on v1 | Irrelevant for mainnet (v1 doesn't ship). |
+| H025 | MEDIUM CVSS 3.9 | RESOLVED | 6 `!executable` constraints landed. |
+| H018, H033, H049 | MEDIUM | Resolved / Still / Off-chain | H018 fixed via strict `<`; H033 unchanged; H049 off-chain scope. |
+| LOW (H040, H041, H043, H045) | LOW | Multiple resolved | Pause events emit; close=caller framing corrected; stale comment fixed. |
 
-**Net re-calibration changes:** 4 findings adjusted (H011 +1 for REGRESSION; H044/H046 qualitative tag upgrade; documentation of H030 v1/v2 split). All other severities are internally consistent.
+**New findings calibration:**
+| Finding | Severity | Calibration |
+|---|---|---|
+| N001 | HIGH | Defeats the headline Bundle 1 defense (24h timelock). PR:H precondition (authority compromise) is the only reason CVSS isn't higher. |
+| N002 | HIGH operational | Not directly exploitable but represents major bytecode hygiene gap. |
+| N003-N006 | MEDIUM | All flow from compromise preconditions; severity reflects "amplifies the consequence" rather than "creates new attack." |
+| N007 | MEDIUM operational | Monitoring as load-bearing defense. |
+| N008-N013 | LOW | Defense-in-depth, future-proof, footguns. |
 
----
-
-## 12. Strategic Recommendations
-
-### Priority 1 — BLOCK MAINNET DEPLOYMENT
-
-**These MUST land before mainnet. Refusing to deploy is the correct posture if any item is open.**
-
-1. **[ ] Fix H023 partial-refund theft** at all 4 sites:
-   - `programs/solshot-escrow/src/lib.rs:393-410` (cancel_match)
-   - `programs/solshot-escrow/src/lib.rs:465-484` (permissionless_reclaim)
-   - `programs/solshot-escrow-v2/src/lib.rs:502-518` (cancel_match)
-   - `programs/solshot-escrow-v2/src/lib.rs:561-577` (permissionless_reclaim)
-   
-   Add: `require!(ctx.remaining_accounts.len() == deposits_mask.count_ones() as usize, EscrowError::IncompleteRefund);` before each loop.
-
-2. **[ ] Fix H044/H046 — Layer-1 + Layer-2 key separation:**
-   - Transfer Layer-1 upgrade authority to a Squads multisig (3-of-5 minimum)
-   - Rotate Layer-2 `GlobalConfig.authority` to a separate multisig
-   - Document the upgrade path
-
-3. **[ ] Fix H001 — Two-step authority transfer** in both programs:
-   - Add `pending_authority` field to `GlobalConfig` 
-   - Add `propose_authority` and `accept_authority` instructions
-   - 24h timelock on `treasury` / `ops` / (v2) `fee_bps_*` rotation
-
-### Priority 2 — Pre-Mainnet Requirements
-
-**Should land before mainnet. Not blocking but high-impact.**
-
-1. **[ ] Fix H024 — non-contiguous mask refund** (architectural):
-   - Refactor refund loops to accept caller-supplied `refund_indices: Vec<u8>`
-   - Apply at all 4 refund sites
-   
-2. **[ ] Fix H035 settle-vs-cancel race:**
-   - v1: change `TIMEOUT_SECONDS` to 3600 (eliminates 50-min overlap)
-   - v2: add `pending_settle: bool` flag on MatchEscrow with timeout
-
-3. **[ ] Fix H030 timelock:** Add `pending_treasury` / `pending_ops` with 24h delay
-
-4. **[ ] Fix H011 BPS individual cap + timelock** (v2):
-   - Add per-field cap check before assignment
-   - Add `last_bps_update_ts` and minimum delay between rotations
-   - Expose BPS snapshot in `MatchCreated` event
-
-5. **[ ] Fix H039 unbounded duration:** Reduce `MAX_DURATION_SECS` to 86400 (24h)
-
-6. **[ ] Fix H042 — add guardian recovery:**
-   - Add `guardian: Pubkey` field
-   - Add `initiate_recovery` (guardian-callable) and `finalize_recovery` (anyone-callable after delay) instructions
-
-7. **[ ] Fix H016/H009 v1 pause griefing:**
-   - Remove `constraint = !config.is_paused` from `v1:704` (settle) and `v1:729` (cancel)
-   
-8. **[ ] Fix H017 v1 silent-kick:** Add `MIN_DEPOSIT_WINDOW_SECS = 30s` floor in `start_with_depositors`
-
-9. **[ ] Fix H025 executable account check:** One-line constraints at v1:684-697, v2:715-728:
-   - `constraint = !treasury.executable @ EscrowError::InvalidTreasury`
-   - `constraint = !ops.executable @ EscrowError::InvalidOps`
-
-10. **[ ] Fix H018 v2 deposit-deadline edge:** Change `<=` to `<` at `v2:257`
-
-### Priority 3 — Post-Launch Improvements
-
-1. [ ] H040 — Update stale 48-hour comment at `v1:22-23`
-2. [ ] H043 — Emit `ProgramPaused`/`ProgramUnpaused` events
-3. [ ] H045 — Add `actor` field to `ConfigUpdated` event
-4. [ ] H049 — Increase `randomBytes(4)` to `randomBytes(8)` server-side
-5. [ ] H033 — Add `max_activation_delay_secs` to `start_with_depositors`
-6. [ ] H038 — Consider raising `MIN_DURATION_SECS` from 60s to 120s+ to widen drift tolerance margin
-
-### Critical Fix Nodes (Highest ROI, Ranked)
-
-| Rank | Finding | Effort | Attack Paths Broken |
-|------|---------|--------|---------------------|
-| 1 | **H023** (require!(len)) | 1 line × 4 sites + 1 error variant | All H023 + H024+H023 + part of H035 chain |
-| 2 | **H044** (multisig L1 + L2) | Operational (pre-mainnet checklist) | 8 findings: H001, H002, H003, H006, H011, H030, H032, H039 |
-| 3 | **H001** (propose/accept + timelock) | Significant on-chain change | H001 root + dampens H002, H030, H032; partially mitigates H042 |
-| 4 | **H035** (constant change v1) | 1-line constant change | H035 race + interaction chains |
-| 5 | **H024** (refund_indices) | Architectural change to refund loops | H024 + completes H023 fix coverage |
+**Net audit risk delta (audit #2 → audit #3):**
+- 2 of 4 CRITs closed
+- ~6 of 14 HIGHs closed
+- 2 new HIGHs introduced (both fixable in <1 day each)
+- Net direction: **significantly better than audit #2's posture**, but not yet "ship without fixes"
 
 ---
 
-## 13. NOT VULNERABLE Summary
+## 9. Stacking Lineage
 
-These 18 hypotheses were investigated and confirmed safe on the current code.
+| Audit # | Date | Git Ref | Tier | Files | Confirmed | Headline |
+|---|---|---|---|---|---|---|
+| #1 | 2026-02-23 | `ecfd03b` | standard | 1 (v1, 855 LOC) | 12 | S004 PDA squat (CVSS 9.3) — RESOLVED in #2 |
+| #2 | 2026-05-07 | `226c0cd` | full Tier-2 | 2 (v1+v2, 1,982 LOC) | 22 (4C+14H+4M) + 6 LOW | H023 partial-refund theft (CVSS 9.3) |
+| #3 | 2026-05-28 | `fabb8e1` (`v1-mainnet-rc1`) | abridged delta-focused | 2 (v1+v2, 2,450 LOC) | 2 new HIGH + 4 new MED + 7 new LOW; 2 of 4 prior CRITs + 6 prior HIGHs RESOLVED | N001 timelock reset DoS (HIGH) |
 
-| ID | Hypothesis | Why Safe |
-|----|------------|----------|
-| H004 | S004 RECHECK — PDA pre-squat DoS | Fix landed: `has_one = authority` at v1:625, v2:659 |
-| H005 | H008 RECHECK — PDA occupancy DoS | Subsumed by S004 fix; unauthorized callers blocked |
-| H010 | Distinctness bypass via update_config | Re-validated post-update at v1:96-98, v2:125-127 |
-| H012 | v1 BPS const immutability | `const u64` at compile-time; only Layer-1 upgrade can change |
-| H013 | Lamport underflow on v2 N-player refund | Per-iteration bit-set gating + overflow-checks=true |
-| H014 | u128→u64 narrowing at v2 settle | 100 SOL × 10 = 10^12 lamports ≪ u64::MAX |
-| H015 | Lamport credit overflow on destinations | Realistic max well below u64::MAX; defense-in-depth gap only |
-| H019 | GlobalConfig re-init | Anchor `init` constraint at v1:547, v2:575 prevents |
-| H020 | PDA close-and-revive | OC-10 drains funds before close; revival yields fresh state |
-| H021 | Permissionless reclaim during pause | Intentional design (escape hatch); v1 PermissionlessReclaim has no config in struct |
-| H022 | Settlement deadline bypass via activated_at | activated_at always set in same block as state=Active |
-| H026 | Donation attack (lamport inflation) | Attacker loses money — economically irrational |
-| H027 | Atomic-TX rollback under Anchor 0.32.1 | All `?` propagation; transaction atomicity guaranteed |
-| H028 | Pubkey::default() in zero-padded slots | All loops bounded by `max_players`; default slots never iterated |
-| H029 | Asymmetric pot-vs-mask scaling | All loops use `max_players` bound; mask bits past max never checked |
-| H031 | Rent extraction at low wagers | Rent cycle economically neutral; close=caller balance with create rent |
-| H047 | is_writable enforcement on refund accounts | Anchor + Solana runtime enforce writable flag at TX construction |
-| H048 | Default-pubkey bypass in permissionless_reclaim | Pubkey::default() cannot sign Solana TXs; runtime-prevented |
+### Recurring Findings (≥2 audits)
+
+| Cross-Audit ID | Title | Audits Present | Current Status |
+|---|---|---|---|
+| H001 family | Authority transfer hardening | #1 (12 base), #2 (CRITICAL), #3 (CLOSED on v2) | RESOLVED on v2 via Bundle 1 |
+| H002/H030 family | Fee destination hijack | #1, #2, #3 | RESOLVED on v2 (snapshot + timelock); v1 carry-forward but won't ship |
+| H003/H005 | Authority winner fraud | #1, #2, #3 | Design limitation; off-chain mitigation only |
+| H016/H041 | close=caller rent | #1, #2, #3 | RESOLVED on v1 via H023 fix + design clarity |
+| H009/H025 | Executable account checks | #1, #2, #3 | RESOLVED via 6 `!executable` constraints |
+| H044/H046 | Single hot wallet L1+L2 | #2, #3 | CARRY-FORWARD — Squads at deploy |
 
 ---
 
-## 14. Coverage Verification
+## 10. Strategic Recommendations
 
-Per `.audit/COVERAGE.md`:
+### Priority 1 — Block-Mainnet Equivalents (audit #2 had 4; now down to 3)
 
-- **20/20 instructions covered** (10 unique × 2 programs — initialize_config, update_config, pause_program, unpause_program, create_match, deposit_wager, settle_match, cancel_match, permissionless_reclaim, start_with_depositors)
-- **8/8 relevant EP categories** (Oracle correctly skipped — no oracles in scope per KB_MANIFEST.md)
-- **8/10 pre-mainnet checklist items** explicitly addressed by findings
-- **3 minor gaps identified** (0 critical, 1 medium, 2 low):
-  - **G001 (MEDIUM)**: Compute budget exhaustion on v2 10-player refund loop — not directly investigated. Recommend LiteSVM measurement of CU consumption.
-  - **CHECKLIST-GAP-01 (LOW)**: Solana blockhash expiry as settle-replay defense — runtime-handled, no on-program gap; documentation only.
-  - **CHECKLIST-GAP-02 (MEDIUM)**: Same as G001 (compute budget) interacting with H023 partial-refund path.
+**MUST land before live SOL wagering at mainnet scale:**
 
-**No CRITICAL or HIGH coverage gaps were identified.**
+1. **N001 fix** — one-liner at v2:154. Restores the 24h timelock as a hard guarantee.
+2. **N002 fix** — feature-gate or delete `migrate_config`. Mainnet bytecode hygiene.
+3. **Squads multisig (H044/H046 operational fix)** — transfer both Layer-1 upgrade authority AND Layer-2 `GlobalConfig.authority` to Squads. Bundle 1's propose/accept primitives are designed for this.
 
-The compute-budget concern (G001) interacts directly with H023 — if a 10-player reclaim TX exceeds 1.4M CU, callers must use partial accounts, which triggers H023's theft path. **The H023 fix (`require!` len assertion) makes the partial-account path fail cleanly with an error rather than silently stealing funds**, which substantially mitigates the G001 worst-case interaction. After H023 is fixed, G001 reduces to a denial-of-refund concern (still relevant but no longer compounds with theft).
+### Priority 2 — Defense Hardening
 
----
+4. **N003 fix** — pause-gate `apply_config_update` (one-liner constraint).
+5. **N004 fix** — add `cancel_pending_config` instruction (clean cancel UX, pairs with N001).
+6. **N005 fix** — add `SETTLE_GRACE_SECS` deadline to `settle_match`.
+7. **N006 fix** — distinctness check vs pending fields in `accept_authority`.
+8. **H024 fix** — refactor refund loops to accept caller-supplied indices.
 
-## 15. Audit Lineage
+### Priority 3 — Operational Layer
 
-| # | Date | Git Ref | Confirmed | Potential | Files Scanned | Top Severity |
-|---|------|---------|-----------|-----------|---------------|--------------|
-| 1 | 2026-02-23 | `ecfd03b` | 12 | 5 | 1 (v1 only, 855 LOC) | CRITICAL (S004) |
-| 2 | 2026-05-07 | `226c0cd` | 22 | 6 | 2 (v1+v2, 1982 LOC) | CRITICAL (H023) |
+9. **Monitoring infrastructure** for `ConfigProposed`/`ConfigApplied`/`AuthorityProposed`/`AuthorityAccepted`/`Paused`/`Unpaused` with 5-minute alert SLAs (N007).
+10. **Bug bounty page** at mainnet flip.
+11. **Mainnet deploy runbook** with explicit step verifying `migrate_config` absence from bytecode (cross-check the N002 fix).
+12. **Operational runbook** for within-24h compromise response (rotate via propose+accept, cancel_pending_config, pause-investigate).
 
-### Delta from Audit #1
+### Priority 4 — Post-Launch
 
-- Scope grew: 1 file → 2 files (+1020 LOC v2 net new, +247 LOC v1 modifications)
-- v1 evolved from 1v1-only to N-player (2-4) with `start_with_depositors`, `permissionless_reclaim`, expanded state machine, S004 fix
-- v2 introduced: configurable BPS, per-match snapshot, async timing, hard deposit window, expanded MAX_PLAYERS to 10
-- 4 Feb findings RESOLVED (S004, H003, H006-deadzone, H008)
-- 9 Feb findings RECURRENT (H001 family + design limitations)
-- 1 REGRESSION (H028 dismissal invalidated on v2 → H011)
-- 13 NOVEL findings discovered (8 on v2-specific surfaces, 5 on shared/v1-specific)
+13. N008-N013 hardening: discriminator check, event emit, type-decouple assertions, checked_add lamport credits, explicit cancel proposal.
+14. **CARRY-FORWARD H035 STILL_OPEN docs** — verify N005 fix or document the v2 race window as architectural-intent.
+15. **External professional audit** before scaling TVL beyond [decided threshold] (per V1 mainnet scope: no external audit pre-launch, but consider for v3+).
 
-### Recurring Findings (Persisting Across 2+ Audits)
+### Industry-Comparable Hardening (Future)
 
-> **Attention**: H001 has persisted across both audits. Per JJ this is intentional pre-mainnet posture; should be resolved before mainnet.
+Per audit #2 §10 (industry precedents — Step $30-40M, Garden $11M, Pump.fun $1.9M, Raydium $4.4M — all from hot-wallet compromise):
 
-| ID | Title | Severity | Audits Present | Notes |
-|----|-------|----------|----------------|-------|
-| H001 | One-step authority transfer | CRITICAL | 2 (Feb + May) | JJ-acknowledged pre-mainnet; mainnet-blocking |
-| H002 (Feb) → H030 (May) | Fee destination hijack | HIGH (v1) / MED (v2) | 2 | v2 partial mitigation via snapshot |
-| H005 (Feb) → H003 (May) | Authority winner fraud | HIGH | 2 | Design limitation; needs identity binding |
-| H011 (Feb) → H002 (May) | Treasury self-redirect | HIGH | 2 | Same root cause; same fix (timelock) |
-| H016 (Feb) → H041 (May) | close=caller rent theft | LOW | 2 | Superseded by H023 in May |
-| H009 (Feb) → H025 (May) | Executable-account fee destination | MEDIUM | 2 | One-line fix still not landed |
-
----
-
-## 16. Appendix
-
-### A. Methodology References
-
-- `C:/Users/johnk/SolShot/.claude/skills/stronghold-of-security/agents/final-synthesizer.md` — Synthesis methodology
-- `C:/Users/johnk/SolShot/.claude/skills/stronghold-of-security/knowledge-base/core/severity-calibration.md` — Severity standards
-- `C:/Users/johnk/SolShot/.claude/skills/stronghold-of-security/knowledge-base/core/common-false-positives.md` — False-positive patterns
-- `C:/Users/johnk/SolShot/.claude/skills/stronghold-of-security/knowledge-base/PATTERNS_INDEX.md` — ~128 EP catalogue
-- `C:/Users/johnk/SolShot/.claude/skills/stronghold-of-security/templates/FINAL_REPORT.md` — Report template
-
-### B. Files Analyzed
-
-| File | Focus Areas | Findings |
-|------|-------------|----------|
-| `programs/solshot-escrow/src/lib.rs` (962 LOC) | All 7 (Access Control, Arithmetic, State Machine, CPI, Token/Economic, Upgrade/Admin, Timing) | All findings except H011 (v2 only), H039 (v2 only), H033 (v2 only), H018 (v2 only), H038 (v2 only) |
-| `programs/solshot-escrow-v2/src/lib.rs` (1020 LOC) | All 7 | All findings except H012 (v1-only verification), H016/H017/H009 (v1-only attacks) |
-| `Anchor.toml` | Upgrade/Admin | H044, H046 |
-| `Cargo.toml` (workspace) | Arithmetic | overflow-checks=true verification |
-| `server/socket-io/main.js` | Off-chain (will be DB audit scope) | H049 (cross-domain) |
-| Anchor 0.32.1 source (`anchor-lang`, `anchor-syn`) | CPI | H023 (close runtime semantics + exit timing) |
-
-### C. Coverage Matrix (Findings × Instruction)
-
-| Instruction | v1 Findings | v2 Findings |
-|-------------|------------|-------------|
-| `initialize_config` | H008, H011, H032, H042 | H008, H011, H032, H042 |
-| `update_config` | H001, H002, H010, H030, H043 | H001, H002, H010, H011, H030, H032, H043 |
-| `pause_program` | H001, H009, H016, H043 | H001, H043 |
-| `unpause_program` | H009, H043 | H043 |
-| `create_match` | H002, H004, H011, H016 | H002, H011, H030, H032, H039, H045 |
-| `deposit_wager` | H016, H037 | H018, H037 |
-| `settle_match` | H001, H003, H030, H035 | H001, H003, H011, H030, H032, H035 |
-| `cancel_match` | H016, H023, H024, H035, H041 | H023, H024, H035, H039, H041 |
-| `permissionless_reclaim` | H023, H024, H040, H041 | H023, H024, H039, H041 |
-| `start_with_depositors` | H016, H017 | H033, H039 |
-
-### D. Finding Cross-Reference Table
-
-| Finding | Origin Audit | Status | Combination Refs |
-|---------|--------------|--------|------------------|
-| H001 | Feb (RECURRENT) | CONFIRMED | H002, H011, H030, H035, H039, H042, H044, H046 |
-| H023 | May (NEW) | CONFIRMED | H024 (compound), H035 (compound) |
-| H024 | May (NEW) | CONFIRMED | H023 (compound) |
-| H044 | May (NEW NOVEL) | CONFIRMED | All H001-family findings |
-| H046 | May (NEW NOVEL) | CONFIRMED | H044, H001, H042 |
-| H011 | May (REGRESSION of Feb H028) | CONFIRMED | H001, H002, H030, H032 |
-
-### E. Historical Precedents (Cost-of-Getting-This-Wrong)
-
-| Incident | Date | Pattern | Loss | SolShot Analog |
-|----------|------|---------|------|----------------|
-| Step Finance | Jan 2026 | Hot-wallet key exfiltration | $30-40M | H001 + H044 |
-| Garden Finance | Oct 2025 | Admin key, settlement manipulation | $11M | H001 + H030 + H003 |
-| Pump.fun | May 2024 | Admin key via insider | $1.9M | H001 + H006 |
-| Raydium | Dec 2022 | Hot-wallet admin key compromise | $4.4M | H001 + H030 |
+- **Same pattern protection:** Squads multisig (addresses 4 of 4 incidents).
+- **Same pattern protection:** Bug bounty (addresses post-incident response speed).
+- **Bundle 1 specific protection:** The 24h timelock + propose/accept rotation is best-in-class — once N001 is fixed, this protocol's L2 governance posture matches mature DeFi.
 
 ---
 
 ## Disclaimer
 
-This automated security audit represents a comprehensive starting point for security hardening but does not guarantee the absence of vulnerabilities.
-
-**This audit does NOT replace:**
-- Manual expert security review
-- Formal verification (recommended for the math invariants — see BOK audit)
-- Comprehensive test coverage (note: BOK Feb verified pot conservation and dust bounds for v1; v2's configurable BPS requires re-BOK)
-- Bug bounty programs
-- Ongoing security monitoring
+This is an automated security audit, abridged due to delta-focused stacking. It does NOT replace:
+- Manual expert security review (recommended before scaling)
+- Formal verification of Bundle 1 invariants (BOK audit recommended for the pending-state machine + take()-atomicity)
+- Live PoC validation of the H023 fix and the new Bundle 1 instructions
+- Comprehensive runtime testing of `migrate_config` on devnet with realistic config size + authority state combinations
 
 **Limitations:**
-- Off-chain code (server, client, Privy migration) is OUT OF SCOPE for this audit. A separate **DB (off-chain) audit** will address those concerns.
-- Math invariants (pot conservation, dust bounds, configurable BPS math) require runtime verification via Kani/LiteSVM. A separate **BOK audit** will run these proofs.
-- Compute-budget exhaustion (G001) requires LiteSVM measurement on actual deployment; the synthesis judges it MEDIUM but not critical-path.
-- Live devnet PoC for H023 was NOT executed during this audit. The vulnerability is confirmed by static analysis of Anchor 0.32.1 source code (deterministic, no ambiguity), but a live PoC would provide additional confidence and is recommended pre-fix verification.
-- Behavioral question on H025 (whether `try_borrow_mut_lamports` returns `Err` on executable accounts vs silently discarding the credit) is unresolved without devnet test. CVSS reflects worst-case (silent burn).
+- The audit assumes audit #2's NOT_VULNERABLE findings still hold against the current code; spot-checked but not fully re-validated.
+- Off-chain code (server, client, Privy migration, bot integrations) is OUT OF SCOPE; DB audit pending.
+- The N001 fix recommendation was not live-tested.
+- The H023 fix verification depended on the proptest regression suites (`bok_proptest_refund.rs`) being correctly authored — those tests should be reviewed before treating H023 as definitively closed.
 
-**Recommendation:** Engage a professional Solana security firm (e.g., Halborn, Hacken, OtterSec) for a manual audit before mainnet deployment, especially given the SOL TVL exposure profile of a wagered gaming protocol at scale.
-
-Security is a continuous process, not a one-time event.
+**Recommendation:** Engage a professional Solana security firm (Halborn, Hacken, OtterSec) before scaling mainnet TVL beyond a defined threshold (e.g., $5M). For v1 launch at smaller scale with Squads multisig + monitoring + bug bounty, the Bundle 1 + this audit posture is appropriate per the V1 mainnet scope.
 
 ---
 
 ## Report Metadata
 
 | Field | Value |
-|-------|-------|
-| Report Generated | 2026-05-07 |
+|---|---|
+| Report Generated | 2026-05-28 |
 | Stronghold of Security Version | 1.0.0 |
-| Audit Number | #2 |
-| Previous Audits | 1 (Feb 2026) |
-| Strategies Investigated | 50 |
-| CRITICAL Findings | 4 |
-| HIGH Findings | 14 |
-| MEDIUM Findings | 4 |
-| LOW Findings | 6 |
-| NOT_VULNERABLE Re-Validated | 18 |
-| Verification Agents | 0 (skipped due to massive rewrite per HANDOVER.md) |
+| Audit Number | #3 |
+| Previous Audits | 2 (Feb + May 2026) |
+| Files Audited | 2 (v1 + v2 lib.rs) |
+| Context Auditors | 7 (Oracle skipped) |
+| Verification Agents | 0 (skipped — context auditors did substantive line-ref work in-band) |
+| New CONFIRMED Findings | 13 (2 HIGH + 4 MEDIUM + 7 LOW) |
+| Prior CRITICAL Resolved | 2 (H023, H001 on v2) |
+| Prior CRITICAL Carry-Forward | 2 (H044, H046 — operational) |
+| Prior HIGH Resolved | 6 (H011 mitigated, H030 (v2), H032 mitigated, H016, H009, H025, H039) + 1 (H035 on v1 by constants) |
+| Prior MEDIUM Resolved | 3 (H018, H025, H033 partial) |
+| Prior LOW Resolved | 5 |
+| Verdict | **CONDITIONAL GO** — with 3 must-fix items + Squads-from-day-one |
 
 ---
 

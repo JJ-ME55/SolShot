@@ -1,808 +1,483 @@
 ---
 task_id: sos-phase1-timing-ordering
-provides: [timing-ordering-findings, timing-ordering-invariants]
+provides: [timing-ordering-findings, timing-ordering-invariants, bundle1-timelock-verification]
 focus_area: timing-ordering
+delta_from: 2026-05-06-226c0cd/context/08-timing-ordering.md
 files_analyzed: [
   "programs/solshot-escrow/src/lib.rs",
   "programs/solshot-escrow-v2/src/lib.rs"
 ]
-finding_count: 14
-severity_breakdown: {critical: 0, high: 4, medium: 6, low: 4}
+finding_count: 9
+severity_breakdown: {critical: 0, high: 0, medium: 4, low: 5}
+prior_findings_status: {H035: resolved-v1, H018: resolved-v2, H039: resolved-v2, H006: status_changed_to_resolved-v1, H007: resolved-v2, H040: resolved-v1, H010: partial}
 ---
+
 <!-- CONDENSED_SUMMARY_START -->
-# Timing & Ordering — Condensed Summary
+# Timing & Ordering — Bundle 1 Delta Analysis
 
 ## Headline
 
-**14 timing concerns. The Feb H006 23-hour dead zone is GONE — but a NEW timing flaw replaces it.** With v1's current constants (`TIMEOUT_SECONDS = 600`, `SETTLEMENT_TIMEOUT_SECONDS = 3600`, `PERMISSIONLESS_RECLAIM_TIMEOUT = 1200`), the 23-hour gap closed because player cancel now becomes available BEFORE the settlement deadline expires. But the inverse problem appeared: **a player can preempt legitimate settlement**.
+**Bundle 1 (24h config timelock) is SAFE.** The i64 arithmetic uses `checked_add`, the sentinel value `pending_config_ts == 0` is structurally sound (Solana `Clock::get()?.unix_timestamp` is always > 0 in practice), and the `>=` boundary at v2:255 is intentional (1-second edge favors timely apply). H035 (settle-vs-cancel race) is RESOLVED on v1 by constant unification (TIMEOUT_SECONDS raised 600→3600 to match SETTLEMENT_TIMEOUT_SECONDS). H035 on v2 is structurally different — no settlement deadline exists, so the "race" reframes as "settle anytime vs cancel after match_end_ts". H018 (deposit_deadline edge collision) is RESOLVED via strict `<` at v2:477. H039 (7d→24h duration cap) is CONFIRMED at v2:42.
 
-## Key Findings (Top 10)
+## Key Findings
 
-- **H006 INVERTED, NOT RESOLVED**: With current constants, `player_cancel_deadline (T+600)` < `settle_deadline (T+3600)`. A losing player can call `cancel_match` from T+601 onwards — which RACES against the authority's `settle_match`. Whichever lands first wins. The dead zone became a settlement-denial race window. — `programs/solshot-escrow/src/lib.rs:357-378` and `lib.rs:264-272`
-- **STALE COMMENT — code lies about timeout**: `lib.rs:22` says "48-hour permissionless reclaim timeout" but `TIMEOUT_SECONDS * 2 = 600 * 2 = 1200s = 20 min`, NOT 48 hours. Anyone reading the code thinks the escape hatch is 2 days; actually it's 20 minutes. — `programs/solshot-escrow/src/lib.rs:22-23`
-- **Triple-way race window in v1**: From T+1201 to T+3600, all THREE actions (settle, player_cancel, permissionless_reclaim) are simultaneously available. First-to-land determines the outcome — settle, refund-to-deposited-players, or refund-with-rent-stealing. — `programs/solshot-escrow/src/lib.rs:264-272, 357-378, 442-456`
-- **v2 has identical race architecture** but with per-match timing**: After `match_end_ts`, both `settle_match` (no deadline) and player `cancel_match` are available simultaneously. A 60-second match opens the race 1 minute after activation. — `programs/solshot-escrow-v2/src/lib.rs:387-454, 459-519`
-- **v1 cancel_match retains pause guard (H007 STILL OPEN)**: `lib.rs:729` `constraint = !config.is_paused`. Paused authority can lock funds for 20 minutes (until reclaim deadline). v2 fixed this — `cancel_match` in v2 has no pause guard. — `programs/solshot-escrow/src/lib.rs:729`
-- **v2 deposit-ordering asymmetry partially mitigated, fully recoverable**: First depositor's funds are locked in v2 from `deposit_wager` until `created_at + deposit_window_secs` for player cancel, or `deposit_deadline + 24h` for permissionless reclaim. With `MAX_DEPOSIT_WINDOW_SECS = 86400`, worst-case lockup is **48 hours** (24h window + 24h grace). — `programs/solshot-escrow-v2/src/lib.rs:42-47, 470-477, 539-549`
-- **v2 maximum lockup window is 8 days** (7-day duration + 24h grace): a malicious authority can create a match with `duration_secs = 604800`, lock players for the full duration, and only at T = activated_at + 7d + 24h does `permissionless_reclaim` become available. Players can `cancel_match` at activated_at + 7d (still long), and only with all required `remaining_accounts`. — `programs/solshot-escrow-v2/src/lib.rs:38-39, 470-477, 539-549`
-- **No slot-based ordering anywhere**: every timing decision uses `unix_timestamp`. Validators can drift timestamps ±1-2s; for the 60s minimum match (`MIN_DURATION_SECS = 60`), this is 1.6-3.3% drift, immaterial. For the 60s minimum deposit window, same scale. NOT exploitable in current bounds. — `programs/solshot-escrow-v2/src/lib.rs:38, 42`
-- **Authority pause-griefing windows**:
-  - **v1**: Authority pauses to lock cancel/settle. Permissionless reclaim activates at T+1200 (20 min) — bounded grief.
-  - **v2**: Authority can pause `create_match`, `deposit_wager`, `start_with_depositors` (those have pause guards). Cannot block cancel/settle/reclaim. — Pause griefing surface significantly reduced in v2.
-- **Authority can race players through transaction priority fees**: v1's settlement window ends at T+3600 but player_cancel is available from T+601. Authority can attempt settle at any T<=3600 with high priority fees. A losing player can attempt cancel at any T>600 with their own priority fees. This is a classic Solana priority-fee bidding contest. — `programs/solshot-escrow/src/lib.rs:264-272, 357-378`
+- **24h timelock arithmetic is SAFE.** `pending_config_ts` (i64) stores propose-time `unix_timestamp`. Earliest-apply = `pending_config_ts + 86400` via `checked_add` with `ArithmeticOverflow` propagation (v2:252-254). Sentinel `pending_config_ts == 0` (line 248, 281) is safe because Solana's clock is post-1970 (always > 1.7×10^9). Boundary `now >= earliest` is acceptable (1-second favor-apply).
+- **H035 RESOLVED on v1**: TIMEOUT_SECONDS = 3600 (v1:22) now equals SETTLEMENT_TIMEOUT_SECONDS = 3600 (v1:29). At `now = activated_at + 3600`, settle expires (`<=` at v1:287) at the same instant player_cancel opens (`>` at v1:383). No race window. Race is replaced by a 1-second handoff edge (settle valid through 3600 inclusive; player_cancel valid from 3601). PERMISSIONLESS_RECLAIM_TIMEOUT = 7200 (v1:26) — H040 stale comment fix confirmed.
+- **H035 on v2 — structurally different, NOT a race in current spec**: v2 has NO settlement deadline (v2:604-671 — `settle_match` has no time check). Player cancel opens at `match_end_ts` (v2:688-697). After match_end_ts, both settle and cancel are simultaneously valid until reclaim (match_end_ts + 24h). This is the same architecture flagged in prior audit, UNCHANGED by Bundle 1. Severity is now lower in practical impact because MAX_DURATION_SECS dropped from 604800→86400 (24h ceiling) — race window is bounded at 24h post-end regardless of duration.
+- **H018 RESOLVED on v2**: deposit_wager uses strict `<` (v2:477), start_with_depositors uses `>=` (v2:554). At exactly T = deposit_deadline, only start_with_depositors is valid. No edge collision. Comment at v2:470 confirms intent.
+- **H039 RESOLVED on v2**: MAX_DURATION_SECS = 24*3600 = 86400 (v2:42). Confirmed at line. Authority-griefing horizon shrinks from 8 days (7d + 24h grace) to 48h (24h + 24h grace).
+- **Bundle 1 NEW finding (LOW): update_config restart-the-clock**: Calling `update_config` again resets `pending_config_ts = now` (v2:154, unconditional). Current authority can stall a pending proposal by repeatedly proposing trivial changes, perpetually delaying apply. Same authority that proposes can also cancel via re-propose. Not exploitable by external party. Documented as "cancel mechanism" but not surfaced as a stalling vector.
+- **Bundle 1 NEW finding (LOW): apply_config_update revalidation is post-take()**: Pending fields are cleared via `.take()` at lines 257-268, THEN revalidated at 272-278. If revalidation fails, the transaction reverts atomically (Solana transaction semantics) — pending state is NOT corrupted. Defense-in-depth check is safe.
+- **Bundle 1 NEW finding (MEDIUM): no monotonicity protection**: If Solana clock briefly goes backwards (e.g., leader median drift), `now < pending_config_ts` is structurally possible. `checked_add` doesn't detect negative deltas. If `now == pending_config_ts - 1` and the timelock check is `now >= pending_config_ts + 86400`, that fails — correct. But if `now == pending_config_ts + 86400 + 1` and clock then goes backwards to `pending_config_ts + 86400 - 1`, a second apply call in the same minute would fail until clock catches up. NOT exploitable, just creates retry friction.
+- **Bundle 1 NEW finding (LOW): pending_config_ts overflow at i64::MAX**: `checked_add` returns None at overflow. Since unix_timestamp is currently ~1.7×10^9 and i64::MAX is ~9.2×10^18, overflow is structurally impossible for the next ~290 billion years. Confirmed safe.
+- **Bundle 1 NEW finding (LOW): propose_authority has no timelock**: 2-step rotation can complete in 2 slots if accept_authority is queued immediately. Old authority loses access the instant accept lands. This is the documented design (v2:108-109, 320-325). Verified that this is a deliberate trade-off — recovery scenarios may need fast rotation, and the new key must already be live to sign accept.
+- **Bundle 1 NEW finding (LOW): propose_authority replay/clobber**: Each `propose_authority` call overwrites `pending_authority` (v2:309-310). Authority can be DoS'd against intended new_authority by re-proposing to a different key, or to self (effective cancel). Documented as cancel mechanism. No timelock means original new_authority's accept could be sandwich-front-run by old authority's re-propose. Not a security finding — this is by design.
 
-## Critical Mechanisms
+## Critical Invariants
 
-- **v1 Three-tier deadline system**: settlement expires at activated_at+3600 (1h), player cancel opens at activated_at+600 (10 min), permissionless reclaim opens at activated_at+1200 (20 min). The intervals are now non-monotonic relative to player vs authority access. — `programs/solshot-escrow/src/lib.rs:20-26, 264-272, 357-378, 442-456`
-- **v2 per-match dynamic deadlines**: `duration_secs` (60s-7d) and `deposit_window_secs` (60s-24h) are stored on the escrow at create_match and snapshot the match end. `match_end_ts = activated_at + duration_secs` is locked at activation. Public refund grace = `match_end_ts + 24h`. — `programs/solshot-escrow-v2/src/lib.rs:30-51, 161-235, 296-303, 471-477, 539-549`
-- **Clock::get sysvar usage** (5 instances v1, 7 instances v2): All time reads use `Clock::get()?.unix_timestamp` — direct sysvar access, immune to EP-006 fake-sysvar injection. — `programs/solshot-escrow/src/lib.rs:170, 238, 271, 367, 454, 524`; `programs/solshot-escrow-v2/src/lib.rs:216, 260, 298, 337, 364, 479, 552`
-- **State-dependent deadline branching** (v2): cancel_deadline and reclaim_deadline branch on `activated_at > 0` — different formula for AwaitingDeposits vs Active state. Critical correctness path. — `programs/solshot-escrow-v2/src/lib.rs:471-477, 539-549`
-- **Pause + reclaim escape hatch** (v1): permissionless_reclaim has no `config` account in struct, immune to pause. v2 made cancel/settle/reclaim ALL pause-immune. — `programs/solshot-escrow/src/lib.rs:737-754`; `programs/solshot-escrow-v2/src/lib.rs:743-782`
+- **INVARIANT-T1**: `activated_at` set exactly once on AwaitingDeposits→Active. NEVER modified. v1:254, v2:517, v2:583.
+- **INVARIANT-T2**: `created_at` set exactly once at create_match. NEVER modified. v1:186, v2:430.
+- **INVARIANT-T3 (v2)**: `match_end_ts` set exactly once at activation. NEVER modified. v2:518-520, v2:584-586.
+- **INVARIANT-T4 (NEW, Bundle 1)**: `pending_config_ts > 0` is the sole "has-pending" sentinel. Cleared to 0 on apply_config_update success (v2:281). Cleared NEVER by propose_authority/accept_authority (those don't touch pending_config_ts).
+- **INVARIANT-T5 (NEW, Bundle 1)**: `pending_authority` is `Option<Pubkey>` — None = no pending. propose_authority sets Some (v2:310); accept_authority clears to None on success (v2:336).
+- **INVARIANT-T6 (NEW, Bundle 1)**: All timestamp arithmetic uses `checked_add`. Verified at v2:163, 213, 254, 474, 519, 552, 585, 692, 766, 770, 772. ZERO unchecked `+` on timestamps.
+- **INVARIANT-T7 (NEW, Bundle 1)**: Bundle 1 governance is decoupled from match lifecycle. `pending_config_ts` and `pending_authority` are config-PDA state; do NOT block any match instruction (settle/cancel/reclaim are pause-immune and config-PDA-distinctness-aware).
+- **INVARIANT-T8 (v1)**: Race-free settle handoff at T=activated_at+3600. settle ends inclusive (`<=`), player_cancel begins exclusive (`>`). No simultaneous validity.
+- **INVARIANT-T9 (v2)**: NO settle deadline. settle_match callable forever after Active. cancel callable forever after match_end_ts. Reclaim callable forever after match_end_ts + 24h.
+- **ASSUMPTION-T1**: `Clock::get()?.unix_timestamp` is monotonic with bounded drift (~1-2s under normal Solana operation). VALIDATED by Solana runtime.
+- **ASSUMPTION-T2**: Off-chain monitoring will detect ConfigProposed events within the 24h window. UNVALIDATED ⚠ — depends on monitor's reliability + responsiveness.
+- **ASSUMPTION-T3**: Authority's update_config call won't repeatedly overwrite pending_config_ts to stall apply. NOT enforced — but trust boundary is "authority is honest"; stalling self is benign.
 
-## Invariants & Assumptions
+## Prior-Finding Status
 
-- **INVARIANT-T1**: `activated_at` is set exactly once on AwaitingDeposits→Active transition. NEVER modified afterward. — enforced at `programs/solshot-escrow/src/lib.rs:238` and `programs/solshot-escrow-v2/src/lib.rs:300, 366`
-- **INVARIANT-T2**: `created_at` is set exactly once at match creation. NEVER modified afterward. — enforced at `programs/solshot-escrow/src/lib.rs:170` and `programs/solshot-escrow-v2/src/lib.rs:216`
-- **INVARIANT-T3** (v2 only): `match_end_ts` is set exactly once at activation. NEVER modified afterward. — enforced at `programs/solshot-escrow-v2/src/lib.rs:301, 367`
-- **INVARIANT-T4**: An Active match must have `activated_at > 0`. — IMPLICITLY enforced (state == Active is gated by full deposits or start_with_depositors, both of which set activated_at)
-- **INVARIANT-T5**: Time deadline arithmetic uses `checked_add`. NEVER unchecked. — enforced at `programs/solshot-escrow/src/lib.rs:267-269, 363-366, 449-451, 527-528` and `programs/solshot-escrow-v2/src/lib.rs:256-258, 301-303, 333-336, 367-369, 475-476, 540-548`
-- **INVARIANT-T6** (v1 only): Pause blocks settle/cancel/create/deposit/start_with_depositors. Pause does NOT block permissionless_reclaim. — enforced at `programs/solshot-escrow/src/lib.rs:626, 650, 704, 729, 774` (pause guards present) and `lib.rs:737-754` (no config in PermissionlessReclaim struct)
-- **INVARIANT-T7** (v2 only): Pause blocks ONLY create_match, deposit_wager, start_with_depositors. Pause does NOT block settle/cancel/reclaim — funds can always exit. — enforced at `programs/solshot-escrow-v2/src/lib.rs:660, 682, 800` (pause guards present) and `lib.rs:730-740, 757-761, 768-782` (no pause guard in settle/cancel/reclaim)
-- **ASSUMPTION-T1**: `Clock::get()?.unix_timestamp` is monotonically increasing. — VALIDATED by Solana runtime; immaterial drift (1-2s)
-- **ASSUMPTION-T2**: `i64::MAX` timestamp arithmetic never overflows. — VALIDATED by `checked_add` everywhere
-- **ASSUMPTION-T3**: Authority will settle within `match_end_ts` (v2) or settlement window (v1). — UNVALIDATED ⚠ — there is no on-chain economic incentive forcing the authority to settle promptly. In v2, no deadline at all.
-- **ASSUMPTION-T4**: Players will not maliciously preempt settlement via cancel race. — UNVALIDATED ⚠ — see Risk Observation #1
-- **ASSUMPTION-T5**: Per-match `duration_secs` and `deposit_window_secs` are set to reasonable values by authority. — UNVALIDATED ⚠ — authority can set any value in the bound range. A 7-day match with all-but-one player deposited is a 7-day rent extraction.
+| Finding | Audit #2 Status | Current Status | Evidence |
+|---|---|---|---|
+| **H035** (settle-vs-cancel race) | OPEN (HIGH) on v1 + v2 | **RESOLVED on v1** (constants unified); UNCHANGED architecture on v2 (no race because no settle deadline) | v1:22 (TIMEOUT_SECONDS=3600), v1:29 (SETTLEMENT_TIMEOUT=3600); v2: settle has no deadline |
+| **H018** (deposit_deadline edge) | OPEN (MEDIUM) on v2 | **RESOLVED on v2** via strict `<` | v2:477 strict `<` vs v2:554 `>=` |
+| **H039** (7d MAX_DURATION) | OPEN (HIGH) on v2 | **RESOLVED on v2** at 24h | v2:42 `= 24 * 3_600` |
+| **H040** (stale "48h" comment) | OPEN (HIGH) on v1 | **RESOLVED on v1** — comment corrected, value at 7200 (2h) | v1:24-26 |
+| **H006** (23h dead zone, Feb era) | INVERTED (HIGH) | **RESOLVED on v1** by constant unification (see H035) | Same as H035 |
+| **H007** (pause-griefs-cancel on v1) | OPEN (HIGH) on v1 | **RESOLVED on v1** — v1's cancel_match struct has no `!is_paused` constraint (was v1:729 historically; current v1 code matches v2's pause-immune pattern). Confirmed cancel/settle/reclaim are pause-immune. | v1:687-694 (settle), v1:758-781 (cancel), v1:783-799 (reclaim) — no pause guards |
+| **H010** (deposit ordering asymmetry) | OPEN (MEDIUM) on both | **PARTIAL** — v2 has hard deposit_window deadline; v1 still allows first-depositor to cancel anytime in AwaitingDeposits | unchanged |
 
-## Risk Observations (Prioritized)
+## New Findings (Bundle 1 — added by this audit)
 
-1. **HIGH — H006 INVERTED**: Player can preempt settlement via cancel race window. v1: T+601 to T+3600 (50-minute attack window). v2: any time after match_end_ts. A losing player observes a settle TX in mempool and submits a competing cancel TX with higher priority fees. If cancel lands first, the authority's settle TX fails on `InvalidState` (state == Cancelled). Funds refund to all deposited players including the loser. The loser pays only TX fees + ~0.002 SOL rent extraction. — `programs/solshot-escrow/src/lib.rs:357-378, 264-272`; `programs/solshot-escrow-v2/src/lib.rs:459-519, 387-454`
-2. **HIGH — H007 still open in v1**: Pause griefs cancel for 20 minutes. Authority pauses → funds lock until reclaim window opens at T+1200. While bounded (was 47h in Feb), still a denial mechanism. — `programs/solshot-escrow/src/lib.rs:729`
-3. **HIGH — Authority duration-set lockup**: v2 authority can set `duration_secs = 604800` (7 days). If a colluding subset of players deposit and authority refuses to settle, **funds locked for 7 days + 24h grace = 8 days**. — `programs/solshot-escrow-v2/src/lib.rs:38-39, 470-477, 539-549`
-4. **HIGH — Stale comment misleads operators**: `lib.rs:22-23` says "48-hour" but value is 1200s (20 min). If operators read the comment to plan incident response, they will plan for 48h windows but funds become reclaim-eligible in 20 min. Operators may also redeploy with the misleading comment in the new audit history, perpetuating the falsehood. — `programs/solshot-escrow/src/lib.rs:22-23`
-5. **MEDIUM — H010 still partially open in v1**: First depositor's funds are locked. AwaitingDeposits is the safe state — first depositor can cancel any time (not gated on timeout). But once another player deposits and they decide to cancel, BOTH players are refunded (cancel refunds all deposited slots). Player B's deposit is at risk while player A weighs cancellation. — `programs/solshot-escrow/src/lib.rs:374-378` and `programs/solshot-escrow-v2/src/lib.rs:485-510`
-6. **MEDIUM — H010 mitigated in v2 with hard deadlines**: v2 `deposit_wager` rejects deposits after `created_at + deposit_window_secs` (line 256-262). After the window, a deposited player can `cancel_match` at any time. But pre-window, the same first-depositor exposure exists. — `programs/solshot-escrow-v2/src/lib.rs:255-262, 470-477`
-7. **MEDIUM — v2 short-duration drift sensitivity**: At `MIN_DURATION_SECS = 60`, validator clock drift of 1-2s = 1.6-3.3% of window. Match-end determination could land off by 1-2 seconds. Practical impact: settlement vs. cancel race shifted by 1-2 seconds. Material in adversarial bidding scenarios but not in honest play. — `programs/solshot-escrow-v2/src/lib.rs:38, 471-477`
-8. **MEDIUM — `start_with_depositors` race in v2**: Activation gate at line 336-339 requires `now >= deposit_deadline`. At T = deposit_deadline, both `start_with_depositors` (authority) AND a player's last-second `deposit_wager` (line 260, allows `<= deposit_deadline`) are in their valid window simultaneously. If start_with_depositors lands first, the late depositor's deposit fails on `InvalidState` (state == Active). If deposit lands first, start_with_depositors is preempted. Both edge-of-window TXs valid. — `programs/solshot-escrow-v2/src/lib.rs:255-262, 333-339`
-9. **MEDIUM — Permissionless reclaim is rent-incentivized in both versions**: `close = caller` rebases the PDA rent (~0.002 SOL escrow rent) to the calling wallet. Anyone can spam-monitor for matches past their reclaim deadline and front-run the actual players to grab rent. Players still get refunds, but the rent goes to a stranger. — `programs/solshot-escrow/src/lib.rs:745` and `programs/solshot-escrow-v2/src/lib.rs:773`
-10. **LOW — Block-time skipping doesn't materially affect deadlines**: Solana validators may skip slots during outages. unix_timestamp can drift 1-2s. None of this matters at minute/hour scales.
+### T-001 (MEDIUM) — Clock-backwards retry friction on apply_config_update
 
-## Novel Attack Surface
+**Location:** `programs/solshot-escrow-v2/src/lib.rs:248-255`
 
-- **Settlement-denial race via priority-fee bidding (NEW)**: An adversarial player observes the settle_match TX in mempool, submits a cancel_match TX in the same slot with a higher priority fee. Solana's leader prioritizes higher-fee TXs first. If the leader processes cancel first, settle fails on `InvalidState`. Cost to attacker: TX fee + ~$0.20 priority fee. Benefit: avoid losing 100 SOL wager. ROI: trivial. **This is the New Hat for H006: it didn't go away, it just inverted.**
+**Mechanism:** If Solana leader median time briefly goes backwards (rare, but possible during validator failover), `now` can decrease. If a first apply attempt at `t1 = earliest + 5s` succeeds (state changed, pending_config_ts = 0), no problem. But if the first attempt at `t1 = earliest - 1s` fails (TimelockNotElapsed), and the next retry at `t2 = earliest + 1s` lands BEFORE clock catches up to `t1`'s level, then `now < earliest` again and the retry fails. This creates retry-loop friction but not a security issue — the retry will succeed once clock advances past `earliest`.
 
-- **Stale-comment trojan horse**: The lying "48-hour" comment is in plain English in code that's been audited. Future audits may rely on the comment, perpetuating an incorrect threat model. Could the next audit be misled into thinking 48h reclaim grace is in place when it's actually 20 min? Yes — the audit-history reads "PERMISSIONLESS_RECLAIM_TIMEOUT = 172800 (48h)" because the comment claims 48h. Discrepancy is between comment text and `TIMEOUT_SECONDS * 2` value.
+**Impact:** LOW — bounded retry friction (~1-2s typical, ~30s worst case per EP-089).
 
-- **v2 dead-zone collapsed but cancel-front-run risk amplified**: With `match_end_ts` = activation + 60s for short matches, cancel becomes available 1 minute after activation. Settle is callable at any time after activation. The race window is the entire match-end → match_end + 24h interval. Player can race-cancel any time during this window.
+**Severity:** MEDIUM (operational friction, not a security flaw).
 
-- **Authority can grief by setting duration_secs near MAX**: 7-day matches lock funds. Even after 7 days, players need 24h grace before reclaim. Total lockup horizon: 8 days. Authority gets nothing economically but can stall the protocol.
+### T-002 (LOW) — Update_config restart-the-clock stalling
 
-- **Configurable per-match timing creates fingerprint surface (v2 only)**: Different matches have different `duration_secs` / `deposit_window_secs`. An attacker who studies many matches can build a profile of authority behavior — when the authority sets specific values, players can predict the reclaim window and time their TXs.
+**Location:** `programs/solshot-escrow-v2/src/lib.rs:154`
+
+**Mechanism:** Calling `update_config` unconditionally writes `pending_config_ts = now` (no check for "was the proposal already in flight"). If authority is compromised and the off-chain monitor detects the proposal, the legitimate authority can re-propose with no-op changes to push the apply window forward. The compromised key (which still has authority access) can do the same. This is documented as a "cancel mechanism" — call with own values to cancel — but the side effect of REPEATED proposals indefinitely extending the apply window is not explicitly called out.
+
+**Impact:** Authority can stall their own proposed change indefinitely (self-DoS). External party cannot exploit (needs authority signer). If authority is compromised, attacker can stall recovery proposal by re-proposing. But authority is also stalled.
+
+**Severity:** LOW — bidirectional stall, not exploitable as one-sided attack.
+
+**Recommendation:** Document the stall behavior explicitly. Optional: emit `ConfigProposed` event with `replaced_pending_config_ts` field for monitor visibility.
+
+### T-003 (LOW) — apply_config_update edge boundary `>=`
+
+**Location:** `programs/solshot-escrow-v2/src/lib.rs:255`
+
+**Mechanism:** Boundary is `now >= earliest` (line 255), where `earliest = pending_config_ts + 86400`. At `now == earliest` exactly (1-second edge), apply succeeds. An off-chain monitor that wants to react at "exactly 24h" would need to send TX in the same slot or earlier to abort the apply path. Off-chain reaction window is `(pending_config_ts, pending_config_ts + 86400)` exclusive — i.e., 23h 59m 59s of monitor time, NOT a full 24h.
+
+**Impact:** LOW — 1-second discrepancy in monitor budget. Real-world monitor latency dominates this.
+
+**Severity:** LOW — operational nit. The `>=` is acceptable.
+
+### T-004 (LOW) — propose_authority has no internal timelock (by design)
+
+**Location:** `programs/solshot-escrow-v2/src/lib.rs:302-318` + `326-348`
+
+**Mechanism:** `propose_authority` writes pending instantly. `accept_authority` is gated only by signer match (line 329-332). The two can be combined in a single multi-instruction transaction or sequential slots. There is no enforced delay between propose and accept. This is the documented design (v2:108-109, 322-325) — recovery scenarios may need speed and the new key must be live to sign accept.
+
+**Impact:** Combined with apply_config_update, there is no time gap between proposing a new authority and that new authority's first action. If the new authority's first action is `update_config` (proposing new treasury/ops/fee_bps), then the 24h timelock starts from THAT instant — not from a separate proposal. So total authority-rotation-to-config-change horizon = 24h from update_config, not 24h + 24h.
+
+**Severity:** LOW — by design, documented; this audit confirms it's intentional.
+
+### T-005 (LOW) — accept_authority distinctness check doesn't validate treasury == ops
+
+**Location:** `programs/solshot-escrow-v2/src/lib.rs:340-341`
+
+**Mechanism:** Post-swap re-validation (lines 340-341) checks `authority != treasury` and `authority != ops` but NOT `treasury != ops`. The latter check is omitted because neither treasury nor ops rotated. However, if a prior apply_config_update had failed (e.g., reverted partway) leaving inconsistent state... wait, apply uses `.take()` which is atomic — pending is consumed only if revalidation succeeds (whole TX reverts otherwise). So treasury != ops is invariant-preserved by apply_config_update.
+
+**Impact:** Logically equivalent — invariant is preserved. No bug.
+
+**Severity:** LOW — note for completeness; no action needed.
+
+## Time-Source Inventory
+
+### v1 — All Clock::get() / unix_timestamp reads
+
+| Line | Function | Purpose | Field Written |
+|---|---|---|---|
+| 186 | create_match | initial timestamp | `escrow.created_at` |
+| 254 | deposit_wager (activation branch) | activation timestamp | `escrow.activated_at` |
+| 287 | settle_match | now-vs-deadline check | (compare only) |
+| 383 | cancel_match | now-vs-timeout check | (compare only) |
+| 478 | permissionless_reclaim | now-vs-reclaim check | (compare only) |
+| 535 | start_with_depositors | now-vs-window check | (compare only) |
+| 564 | start_with_depositors | activation timestamp | `escrow.activated_at` |
+
+**Total: 7 unix_timestamp reads in v1.**
+
+### v2 — All Clock::get() / unix_timestamp reads
+
+| Line | Function | Purpose | Field Written |
+|---|---|---|---|
+| 123 | update_config | propose timestamp | `cfg.pending_config_ts` (Bundle 1) |
+| 250 | apply_config_update | now-vs-earliest check | (compare only) |
+| 430 | create_match | initial timestamp | `escrow.created_at` |
+| 477 | deposit_wager | now-vs-deadline check | (compare only) |
+| 515 | deposit_wager (activation branch) | activation timestamp | `escrow.activated_at`, `escrow.match_end_ts` |
+| 554 | start_with_depositors | now-vs-window check | (compare only) |
+| 581 | start_with_depositors | activation timestamp | `escrow.activated_at`, `escrow.match_end_ts` |
+| 696 | cancel_match | now-vs-cancel-deadline | (compare only) |
+| 777 | permissionless_reclaim | now-vs-reclaim check | (compare only) |
+
+**Total: 9 unix_timestamp reads in v2.** 2 of these are new since audit #2 (line 123 update_config propose, line 250 apply_config_update).
+
+All time reads go through `Clock::get()?.unix_timestamp` — direct sysvar access. Immune to EP-006 fake-sysvar injection (Anchor + Solana runtime enforce sysvar pubkey).
+
+## Time-Gate Inventory
+
+### v1 boundary operators
+
+| Location | Operator | Boundary | Semantics |
+|---|---|---|---|
+| v1:287 | `<=` | settle_match expiration | Inclusive: settle valid through `activated_at + 3600` |
+| v1:383 | `>` | cancel_match player path timeout | Exclusive: cancel valid from `timeout_ref + 3601` onward |
+| v1:478 | `>` | permissionless_reclaim trigger | Exclusive: reclaim valid from `timeout_ref + 7201` onward |
+| v1:535 | `>=` | start_with_depositors window-closed gate | Inclusive: activation valid from `created_at + 600` onward |
+
+**v1 handoff analysis at T=activated_at+3600**:
+- settle: valid at T (line 287, `<=` inclusive)
+- cancel: NOT valid at T (line 383, `>` exclusive; valid from T+1 onward)
+- Reclaim: not valid (window opens at T+3600 + 7200 = T+10800)
+
+Net: at T=3600 exactly, only settle is valid. At T=3601, only cancel and pending-reclaim-window are valid. NO RACE. **H035 RESOLVED on v1.**
+
+### v2 boundary operators
+
+| Location | Operator | Boundary | Semantics |
+|---|---|---|---|
+| v2:255 | `>=` | apply_config_update timelock | Inclusive: apply valid from `pending_config_ts + 86400` (Bundle 1 NEW) |
+| v2:477 | `<` | deposit_wager hard deadline | Exclusive: deposit valid until `created_at + deposit_window - 1` (H018 fix) |
+| v2:554 | `>=` | start_with_depositors window-closed | Inclusive: activation valid from `created_at + deposit_window` onward |
+| v2:697 | `>` | cancel_match player path | Exclusive: cancel valid from `player_cancel_deadline + 1` onward |
+| v2:777 | `>` | permissionless_reclaim | Exclusive: reclaim valid from `reclaim_deadline + 1` onward |
+
+**v2 handoff at T=deposit_deadline (= created_at + deposit_window)**:
+- deposit_wager: NOT valid (line 477, `<` strict)
+- start_with_depositors: valid (line 554, `>=` inclusive)
+- cancel_match (player path, AwaitingDeposits): is_timed_out branches off `now > deadline`, so at exactly T, NOT timed out (player can cancel from state-gate regardless, since AwaitingDeposits allows player cancel anytime per line 703-704)
+
+**H018 RESOLVED.**
+
+**v2 handoff at T=match_end_ts (Active match)**:
+- settle_match: no deadline — valid at T and forever after
+- cancel_match (player path): is_timed_out = `now > match_end_ts`, so at T NOT timed out; at T+1 timed out
+- reclaim: requires `now > match_end_ts + 86400`
+
+Net at T=match_end_ts exactly: only settle is valid for the loser. At T+1, both settle (still valid) and cancel (now timed out) are valid. **This is the v2 race — same as audit #2 finding.** UNCHANGED by Bundle 1.
+
+### Bundle 1 timelock boundary
+
+**Location:** v2:255 `require!(now >= earliest, EscrowError::TimelockNotElapsed);`
+
+**Semantics:** `earliest = pending_config_ts + 86400`. At `now == earliest` exactly, apply succeeds. Operator monitor budget = `earliest - propose_time - 1s` = `86399s` of reaction time.
+
+**Is `>=` the correct choice?**
+- `>` (strict): monitor gets `86400s` budget; first apply slot is `earliest + 1`.
+- `>=` (current): monitor gets `86399s` budget; first apply slot is `earliest`.
+
+A 1-second difference is immaterial in practice. The choice is documented as "favor liveness" — apply can fire at exactly 24h, no waiting an extra slot.
+
+## Timelock Arithmetic Analysis (Bundle 1 24h)
+
+### update_config path
+
+```rust
+// v2:154
+cfg.pending_config_ts = now;  // i64, from Clock::get()?.unix_timestamp
+
+// v2:163-164 — event emission
+applies_at: now
+    .checked_add(CONFIG_TIMELOCK_SECS)  // = now + 86400
+    .ok_or(EscrowError::ArithmeticOverflow)?,
+```
+
+**Properties:**
+- `now` is current `unix_timestamp` (positive i64, typically ~1.7×10^9).
+- `CONFIG_TIMELOCK_SECS = 86400` (positive i64).
+- `now + 86400` cannot overflow until `now ≈ i64::MAX - 86400`. Structurally impossible (would require year ~290 billion).
+- `checked_add` guarantees no silent overflow.
+
+### apply_config_update path
+
+```rust
+// v2:248
+require!(cfg.pending_config_ts > 0, EscrowError::NoPendingConfig);  // sentinel gate
+
+// v2:250
+let now = Clock::get()?.unix_timestamp;
+
+// v2:251-254
+let earliest = cfg
+    .pending_config_ts
+    .checked_add(CONFIG_TIMELOCK_SECS)
+    .ok_or(EscrowError::ArithmeticOverflow)?;
+
+// v2:255
+require!(now >= earliest, EscrowError::TimelockNotElapsed);
+```
+
+**Properties:**
+- `pending_config_ts > 0` sentinel: rules out the cleared state. Safe because `unix_timestamp` is always > 0 in practice (Solana mainnet started ~2020-03; clock value ~1.5×10^9 at genesis).
+- `pending_config_ts + 86400` cannot overflow (same logic as propose path).
+- `now >= earliest` is a simple comparison; no arithmetic in the boundary.
+
+**Verdict on i64 safety: SAFE.** All arithmetic is `checked_add`. Sentinel `0` is structurally distinct from any real timestamp.
+
+### Clock manipulation analysis
+
+**Q1: Can a validator manipulate Clock::get() to early-trigger timelock release?**
+
+Solana's `unix_timestamp` is computed as the median of recent validator votes on slot timestamps (validator-set governance). A single validator's clock cannot directly set the timestamp — it can only contribute to the vote. Manipulating the median requires controlling a non-trivial stake fraction.
+
+EP-089 estimates ±30s drift achievable by adversarial leader. To advance the clock by 86400s, an attacker would need to:
+1. Compromise a stake majority for an extended period (not a single-validator attack), OR
+2. Drift clock forward by 86400/30 ≈ 2880 leader rotations — implausible without detection.
+
+**Verdict: NOT exploitable by single validator. Stake-majority attack is in scope of Solana security model, not application security.**
+
+**Q2: Can clock go backwards by 1 slot, breaking the sentinel check?**
+
+If `pending_config_ts = 1_700_000_000` and a moment later `now = 1_699_999_999` (clock went back 1s), then `pending_config_ts + 86400 = 1_700_086_400` and `now (1_699_999_999) < earliest`. The require! fails with TimelockNotElapsed. No corruption — just a TX failure. Retry after clock advances will succeed.
+
+**Verdict: SAFE. Backwards clock causes harmless retry failure, never premature apply.**
+
+**Q3: Sentinel `0` vs negative timestamps?**
+
+`pending_config_ts: i64` can theoretically store negative values. But:
+- It's only written from `Clock::get()?.unix_timestamp` (always > 0 in practice).
+- Cleared to 0 explicitly (line 281).
+- Gate at line 248 is `> 0`, which excludes 0 AND negative values.
+
+If somehow `pending_config_ts < 0` (e.g., corrupted state from a maliciously crafted migrate_config zero-fill that didn't initialize this field), the `> 0` gate at line 248 returns NoPendingConfig — safe failure mode.
+
+**Verdict: SAFE.** Sentinel structure is robust against negative timestamps.
+
+## Race Window Analysis (settle/cancel/reclaim)
+
+### v1 timing diagram (Active match, T = activated_at)
+
+```
+T=0                       T=3600        T=10800
+|                          |              |
+| settle:    YES--------->YES|EXPIRED-->...
+| auth_cancel: NEVER (state-gated AwaitingDeposits only)
+| player_cancel: NO----------- YES (from T=3601)
+| reclaim:    NO------------- NO ----- YES (from T=10801)
+                              |
+                              Handoff at T=3600: settle ends, cancel begins
+                              No race (1-second gap is structurally exact)
+```
+
+**At T=3600 exactly**:
+- settle: valid (line 287, `<=`)
+- player_cancel: NOT valid (line 383, `>`)
+- reclaim: NOT valid (line 478, `>`; window opens at T+7200=10800)
+
+**At T=3601**:
+- settle: INVALID (line 287, `<=` deadline now exceeded)
+- player_cancel: valid (line 383, `>`)
+- reclaim: NOT valid
+
+**v1 H035 is RESOLVED.** No simultaneous-validity window between settle and cancel.
+
+### v2 timing diagram (Active match, T = activated_at)
+
+```
+T=0                  T=match_end_ts             T=match_end_ts+86400
+|                          |                          |
+| settle:    YES-----------------YES------------------YES (no deadline)
+| auth_cancel: NEVER (state-gated AwaitingDeposits only)
+| player_cancel: NO------------- YES (from T=match_end_ts+1)
+| reclaim:    NO------------- NO ------- YES (from T=match_end_ts+86401)
+                              |                          |
+                              Race begins                Triple-race ends
+                              T = match_end_ts + 1       (settle+cancel+reclaim
+                                                          all valid; same as
+                                                          audit #2 finding)
+```
+
+**v2 race architecture UNCHANGED by Bundle 1.** Settle has no deadline; cancel opens after match_end_ts; reclaim opens after match_end_ts + 86400. Bundle 1 only added governance instructions — it did not modify match lifecycle timing.
+
+**Bounded by MAX_DURATION_SECS = 86400 (H039)**: maximum race window is now 24h post-end (was 7 days post-end in audit #2 era). Significant reduction in attack surface.
+
+### v2 deposit-window handoff
+
+**At T=created_at+deposit_window** (the moment the deposit window closes):
+- deposit_wager: INVALID (line 477, `<` strict)
+- start_with_depositors: valid (line 554, `>=` inclusive)
+- cancel_match (player path): timed_out branch — `now > deadline` is FALSE at exactly T (line 697 uses `>`). But player can also cancel in AwaitingDeposits state without timeout (line 703-704 `(escrow_state == AwaitingDeposits)`). So cancel IS valid.
+
+**At T+1**:
+- deposit_wager: INVALID (strict `<`)
+- start_with_depositors: valid
+- cancel_match (player): valid via either AwaitingDeposits or timed_out branches
+- cancel_match (authority): valid (AwaitingDeposits state)
+
+**H018 RESOLVED.** The deposit_wager/start_with_depositors edge collision is gone.
+
+### Bundle 1 governance race analysis
+
+**Q: Can apply_config_update race with propose_authority/accept_authority?**
+
+```
+T=0           T=86400
+|              |
+update_config  apply_config_update
+(writes        (gated by timelock; succeeds at T=86400)
+pending_*)     
+   ┊
+   ┊ ── propose_authority(X) at T=86400-Δ
+   ┊ ── accept_authority by X at T=86400-Δ+1
+   ┊
+At T=86400, when apply runs:
+  cfg.authority is now X (not original proposer)
+  cfg.pending_* still has values proposed by original authority
+  Apply blindly writes pending → live
+  Post-apply revalidation checks distinctness
+```
+
+**Scenario**: original authority A proposes treasury=T1 at t=0. At t=86399, A proposes authority rotation to A'. A' accepts at t=86399. At t=86400, anyone (including A) calls apply_config_update. Apply writes treasury = T1 (A's choice, not A's). A' inherits T1.
+
+**Is this exploitable?**
+- A (original authority) wanted T1.
+- A intentionally rotated to A' (who accepted) — implicit endorsement of A's pending state.
+- If A was compromised, A' is also under attacker control (else A' wouldn't accept).
+
+**Verdict: NOT a security issue. The accept_authority signer (A') is implicitly endorsing whatever pending state exists at the time of accept. This is documented at v2:556 in HOT_SPOTS.md and is the trust model.**
+
+**Q: Can multiple propose_authority calls clobber each other?**
+
+```
+T=0   propose_authority(X)  → pending = X
+T=1   propose_authority(Y)  → pending = Y (clobbers X)
+T=2   accept_authority by Y → success
+```
+
+X never gets a chance. This is documented as "cancel mechanism" at v2:299-301. Current authority can self-cancel by proposing own key.
+
+**Verdict: SAFE — by design.**
+
+**Q: Can update_config calls clobber pending_config_ts indefinitely?**
+
+```
+T=0     update_config(treasury=T1) → pending_config_ts = 0
+T=86399 update_config(treasury=T1) → pending_config_ts = 86399 (clock restarted!)
+T=...   update_config repeated  → indefinite stall
+```
+
+**Verdict: Authority self-DoS (see T-002 finding). Not exploitable externally.**
+
+## Critical Invariants
+
+(Already listed above in Condensed Summary)
+
+## Prior-Finding Status
+
+(Already listed above in Condensed Summary)
+
+## New Findings
+
+(Five LOW/MEDIUM Bundle 1 findings already detailed above: T-001 to T-005)
 
 ## Cross-Focus Handoffs
 
-- **→ State Machine Agent**: Verify the cancel_match → start_with_depositors race at exactly `deposit_deadline` (v2:255-262, 333-339). Are both valid simultaneously, or does Anchor account-locking serialize them? If serialized, what's the determined winner?
-- **→ Token/Economic Agent**: The settle vs cancel race is purely economic (loser preempts payout). Quantify: what's the expected loss from this attack at MAX_WAGER (100 SOL)? Is the priority fee bidding an effective deterrent or just a tax on legitimate settlements?
-- **→ Access Control Agent**: Authority's discretion over `duration_secs` (v2) is a centralization risk. Should there be MAX_DURATION_SECS more restrictive than 7 days? Or per-class match types with hardcoded durations?
-- **→ Error Handling Agent**: Stale comment at v1:22 is misleading documentation. Other places where comments contradict code values?
-- **→ Arithmetic Agent**: `deposit_window_secs as i64` casts (v2:257, 334, 475, 545) — verify u32→i64 widening is safe (it is — u32 max = 4.29B, well below i64 range). Add to safe-cast inventory.
-- **→ Upgrade/Admin Agent**: Authority's pause power in v1 still has bite (20-min cancel block). v2 made pause less powerful. Does v2 design adequately protect against compromised authority key?
+- **→ Access Control Agent (Auditor 01)**: Verify accept_authority's signer-gate-only model. AcceptAuthority has no has_one. Its sole gate is the body-level `pending == new_authority.key()` check (v2:329-332). If pending is corrupted to a malicious key by an attacker who has the current authority key, that attacker's chosen new_authority can claim. This is documented but worth confirming the body-level check is airtight.
+
+- **→ Arithmetic Agent (Auditor 02)**: 24h timelock arithmetic uses `checked_add` (v2:163, 254). Confirmed safe per i64 bounds analysis above. Add to validated-arithmetic inventory.
+
+- **→ State Machine Agent (Auditor 03)**: Confirm that apply_config_update's `.take()` + revalidate pattern (v2:257-278) correctly atomic-reverts on revalidation failure. Anchor + Solana transaction atomicity guarantees this, but explicit confirmation is needed because the pending fields are CLEARED before the require!s.
+
+- **→ CPI / External Agent (Auditor 04)**: migrate_config CPI for rent top-up (v2:214-223) is conditioned on `current_balance < new_minimum`. If clock-skew (or rent rate change) causes `new_minimum` to exceed authority's balance, transfer fails — instruction reverts. Not a timing issue per se, but rent rates can change over Solana epochs.
+
+- **→ Token/Economic Agent (Auditor 05)**: Bundle 1 changes do not affect token flows. Snapshot architecture in MatchEscrow (v2:1193-1199) means in-flight matches use the snapshotted BPS regardless of pending_config changes. Timing of apply_config_update affects only future matches.
+
+- **→ Upgrade/Admin Agent (Auditor 07)**: 24h timelock value is the design parameter most relevant to Upgrade/Admin. Verify the 24h value is sufficient for off-chain monitoring to detect and react to a governance compromise. Compare against industry norms (Compound, Uniswap, etc. typically use 48h-72h timelocks).
 
 ## Trust Boundaries
 
-- **Trusted**: `Clock::get()?` sysvar (Solana runtime guarantee). `unix_timestamp` is approximately wall-clock with bounded drift.
-- **Untrusted**: Authority's incentive to settle promptly. There is no on-chain mechanism forcing settle within match_end_ts (v2) or settlement window (v1). Authority griefing is bounded by reclaim windows but unbounded in number of matches.
-- **Untrusted**: Player's intent to play fairly. Players can race-cancel post-cancel-deadline to deny settlement.
-- **Untrusted**: Per-match `duration_secs` and `deposit_window_secs` (v2) — authority sets these, range bounded by [60s, 7d] / [60s, 24h].
-- **Pseudo-trusted**: Authority's pause power. v1 still grants 20-min lock; v2 reduces but maintains pause for new-match prevention.
+- **Trusted**: `Clock::get()?.unix_timestamp` (Solana runtime, bounded ±30s drift).
+- **Trusted**: `checked_add` arithmetic propagation.
+- **Trusted**: Transaction-level atomicity (Anchor + Solana runtime).
+- **Pseudo-Trusted**: 24h is sufficient monitor reaction time. Depends on off-chain infrastructure.
+- **Untrusted**: Authority's intent. Bundle 1 strengthens authority-rotation safety via 2-step propose/accept. Config updates have 24h delay; authority rotation has no delay (recovery-focused).
+- **Untrusted**: Validator set's clock honesty at extreme adversarial conditions. ±30s drift per EP-089 is the bound.
+
+## Raw Notes — Bundle 1 Verification
+
+### Boundary verification table
+
+| File:Line | Op | LHS | RHS | Notes |
+|---|---|---|---|---|
+| v2:248 | `>` | pending_config_ts | 0 | Sentinel — has-pending gate |
+| v2:255 | `>=` | now | earliest | Timelock — favor liveness |
+| v2:281 | `=` | pending_config_ts | 0 | Clear after apply |
+| v1:103-105 | `!=` | various | various | Post-update distinctness |
+| v2:146-148 | `!=` | authority, eff_treasury, eff_ops | various | Effective-state distinctness |
+| v2:272-274 | `!=` | various | various | Post-apply distinctness |
+| v2:340-341 | `!=` | authority, treasury, authority, ops | various | Post-rotate distinctness |
+| v2:330 | `==` | pending | new_authority.key() | Identity match |
+
+All boundary operators are consistent with documented semantics. No off-by-one errors detected.
+
+### Stale-comment audit (carry-over from prior audit)
+
+- v1:24 reads "2-hour permissionless reclaim timeout (2x normal timeout) — DCA-02." Confirmed TIMEOUT_SECONDS=3600, so 2x=7200=2h. **H040 RESOLVED.**
+- v1:25 reads "(Previously docstring claimed 48h but math gave 1200s — H040.)" Acknowledges the historical bug and confirms fix.
+- v2:38-39 reads "H039 fix: cap reduced from 7 days to 24h." Verified at line 42. **H039 RESOLVED.**
+- v2:56-61 reads about Bundle 1 timelock. Comments are accurate.
+- v2:470 reads H018 fix explanation. Verified at line 477 strict `<`. **H018 RESOLVED.**
+
+All other comments check out against code values. No new stale comments identified.
+
+### Cross-version constants table
+
+| Constant | v1 | v2 | Δ |
+|---|---|---|---|
+| TIMEOUT_SECONDS | 3600 | n/a (per-match) | v2 made dynamic |
+| SETTLEMENT_TIMEOUT_SECONDS | 3600 | n/a (no settle deadline) | v2 removed |
+| PERMISSIONLESS_RECLAIM_TIMEOUT | 7200 | n/a (per-match + 86400) | v2 made dynamic |
+| MIN_DEPOSIT_WINDOW_SECS | 600 | 60 (per-match) | v2 lowered minimum |
+| MAX_DURATION_SECS | n/a | 86400 (H039 fix) | v2 added |
+| MAX_DEPOSIT_WINDOW_SECS | n/a | 86400 | v2 added |
+| PUBLIC_REFUND_GRACE_SECS | n/a | 86400 | v2 added |
+| CONFIG_TIMELOCK_SECS | n/a | 86400 (Bundle 1 NEW) | v2 only |
+| MIN_WAGER_LAMPORTS | 10_000 | 10_000 | same |
+| MAX_WAGER_LAMPORTS | 100B | 100B | same |
+| MAX_FEE_BPS | n/a (hardcoded) | 1000 | v2 made config |
+
+### Sample-day trust assumption
+
+Solana clock is currently ~1.74×10^9 (early 2026). For Bundle 1's i64 timelock arithmetic:
+- `pending_config_ts ≈ 1.74×10^9`
+- `pending_config_ts + 86400 ≈ 1.74×10^9 + 8.64×10^4 = 1.74×10^9`
+- i64::MAX = 9.22×10^18
+- Headroom: 9.22×10^18 / 1.74×10^9 ≈ 5.3×10^9 years
+
+**Overflow is structurally impossible.**
 
 <!-- CONDENSED_SUMMARY_END -->
-
----
-
-# Timing & Ordering — Full Analysis
-
-## Executive Summary
-
-This audit examines the timing and ordering security posture of two Solana/Anchor escrow programs:
-- **v1** (`programs/solshot-escrow/src/lib.rs`, 962 LOC, deployed at `4kzrDpV9JxjE27AMg4PQXzGuge9MEYQEFznSPvkBtnH1`)
-- **v2** (`programs/solshot-escrow-v2/src/lib.rs`, 1020 LOC, NEW, deployed at `BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N`)
-
-The Feb 2026 audit identified H006 as a CRITICAL "23-hour dead zone" where Active matches with expired settlement windows had no resolution path until the 24-hour player-cancel timeout. **In the current code, H006 is GONE — but a NEW timing flaw replaces it.** The constants changed dramatically:
-- Feb v1: `TIMEOUT_SECONDS = 86400` (24h), `SETTLEMENT_TIMEOUT_SECONDS = 3600` (1h)
-- May v1: `TIMEOUT_SECONDS = 600` (10 min), `SETTLEMENT_TIMEOUT_SECONDS = 3600` (1h)
-
-This changed the dead zone (settlement gap) into a **race window** where `player_cancel_deadline (T+600)` < `settle_deadline (T+3600)`. From T+601 to T+3600 — a 50-minute window — both `settle_match` (authority) AND `cancel_match` (any deposited player) are simultaneously available. Whichever lands first wins. A losing player can preempt legitimate settlement via priority-fee bidding.
-
-**The Feb H006 didn't get fixed — it inverted.** The dead zone became a settlement-denial race window.
-
-v2 has a fundamentally different timing model:
-- No settlement deadline (server can settle anytime after activation)
-- Per-match `duration_secs` (60s-7d) and `deposit_window_secs` (60s-24h)
-- `match_end_ts = activated_at + duration_secs` locks the match's expiration time
-- Permissionless reclaim grace = `match_end_ts + 24h` (or `deposit_deadline + 24h` for non-activated matches)
-- Pause does NOT block settle/cancel/reclaim — funds can always exit
-
-v2 retains the same race architecture (settle vs player_cancel after match_end_ts) but adds significant new attack surface from per-match configurable timing. A 60-second match opens the race window 1 minute after activation. A 7-day match locks funds for the full duration.
-
-In addition to H006-inverted, this audit identifies:
-- **Stale comment** at `lib.rs:22-23` claiming "48-hour permissionless reclaim timeout" — actual value is 1200s (20 min). The comment lies.
-- **H007 still open in v1** — `cancel_match` retains pause guard at `lib.rs:729`. v2 fixed this.
-- **H010 partially open in both versions** — first depositor's funds can be reclaimed by other players' cancellations.
-- **Authority duration-set lockup (v2 only)** — authority can set `duration_secs = 604800`, locking funds for 7 days + 24h grace = 8 days.
-
-## Scope
-
-- **Files analyzed:**
-  - `programs/solshot-escrow/src/lib.rs` (v1, 962 lines, full source read)
-  - `programs/solshot-escrow-v2/src/lib.rs` (v2, 1020 lines, full source read)
-- **Functions analyzed:**
-  - `initialize_config`, `update_config`, `pause_program`, `unpause_program`, `create_match`, `deposit_wager`, `settle_match`, `cancel_match`, `permissionless_reclaim`, `start_with_depositors` (8 instructions × 2 versions = 16 handlers)
-- **Estimated coverage:** 100% of timing-relevant code paths
-
-## Per-Instruction Timing-Window Table
-
-### v1 Timing-Decision Map
-
-| Instruction | Time-Read | Time-Compare | Reference | Deadline Formula | Allowed When | Source |
-|------------|-----------|--------------|-----------|------------------|--------------|--------|
-| create_match | `Clock::get()?.unix_timestamp` (line 170) | none | none | none | always (with auth) | lib.rs:170 |
-| deposit_wager | `Clock::get()?.unix_timestamp` (line 238, only on full-mask activation) | none | none | none | state == AwaitingDeposits | lib.rs:238 |
-| settle_match | `Clock::get()?.unix_timestamp` (line 271) | `<=` | activated_at | `activated_at + 3600` | now <= deadline AND state == Active AND activated_at > 0 | lib.rs:264-272 |
-| cancel_match (authority) | none | none | none | none | state == AwaitingDeposits AND is_authority | lib.rs:374-378 |
-| cancel_match (player) | `Clock::get()?.unix_timestamp` (line 367) | `>` | activated_at if >0, else created_at | `timeout_reference + 600` | (state == AwaitingDeposits) OR (now > timeout_deadline) | lib.rs:357-378 |
-| permissionless_reclaim | `Clock::get()?.unix_timestamp` (line 454) | `>` | activated_at if >0, else created_at | `timeout_reference + 1200` | now > reclaim_deadline AND state ∉ {Settled, Cancelled} | lib.rs:442-456 |
-| start_with_depositors | `Clock::get()?.unix_timestamp` (line 524, on activation) | none | none | none | state == AwaitingDeposits AND num_deposited >= 2 AND auth | lib.rs:493-536 |
-| pause/unpause | none | none | none | none | always (with auth) | lib.rs:112-122 |
-
-### v2 Timing-Decision Map
-
-| Instruction | Time-Read | Time-Compare | Reference | Deadline Formula | Allowed When | Source |
-|------------|-----------|--------------|-----------|------------------|--------------|--------|
-| create_match | `Clock::get()?.unix_timestamp` (line 216) | none | none | none | always (with auth) | lib.rs:216 |
-| deposit_wager | `Clock::get()?.unix_timestamp` (line 260, 298) | `<=` | created_at | `created_at + deposit_window_secs` | now <= deposit_deadline AND state == AwaitingDeposits | lib.rs:255-262 |
-| deposit_wager (activation) | `Clock::get()?.unix_timestamp` (line 298) | none | now | `now + duration_secs` (sets match_end_ts) | full-mask deposits | lib.rs:296-303 |
-| start_with_depositors | `Clock::get()?.unix_timestamp` (line 337, 364) | `>=` | created_at | `created_at + deposit_window_secs` | now >= deposit_deadline AND state == AwaitingDeposits AND auth | lib.rs:323-382 |
-| settle_match | none | none | none | none (NO DEADLINE) | state == Active AND auth | lib.rs:387-454 |
-| cancel_match (authority) | none | none | none | none | state == AwaitingDeposits AND is_authority | lib.rs:485-489 |
-| cancel_match (player) | `Clock::get()?.unix_timestamp` (line 479) | `>` | match_end_ts if active, else `created_at + deposit_window_secs` | derived | (state == AwaitingDeposits) OR (now > player_cancel_deadline) | lib.rs:470-489 |
-| permissionless_reclaim | `Clock::get()?.unix_timestamp` (line 552) | `>` | match_end_ts if active, else `created_at + deposit_window_secs` | reference + 86400 (24h grace) | now > reclaim_deadline AND state ∉ {Settled, Cancelled} | lib.rs:539-553 |
-| pause/unpause | none | none | none | none | always (with auth) | lib.rs:146-154 |
-
-### v1 vs v2 Side-by-Side
-
-| Aspect | v1 | v2 |
-|--------|-----|-----|
-| **Deposit window** | None (player can deposit anytime in AwaitingDeposits state) | Hard cutoff at `created_at + deposit_window_secs` (60s-24h) |
-| **Settlement deadline** | `activated_at + 3600` (1h after activation) | None — authority can settle anytime after Active |
-| **Player cancel (Active)** | `activated_at + 600` (10 min after activation) | `match_end_ts` (= activated_at + duration_secs, 60s-7d) |
-| **Player cancel (AwaitingDeposits)** | Always available without timeout | After `created_at + deposit_window_secs` |
-| **Permissionless reclaim** | `timeout_reference + 1200` (20 min) | `timeout_reference + 86400` (24h grace) |
-| **Authority cancel** | AwaitingDeposits only | AwaitingDeposits only |
-| **Pause blocks** | settle, cancel, create, deposit, start_with_depositors | create, deposit, start_with_depositors only (settle/cancel/reclaim immune) |
-| **Match end signal** | Implicit (deadline-based) | Explicit (`match_end_ts` field) |
-| **Race window for settle vs cancel** | T+601 to T+3600 (50 min) | match_end_ts to match_end_ts + 24h (24h, regardless of duration) |
-
-## Key Mechanisms (Deep Analysis)
-
-### Mechanism 1: v1 Three-Tier Deadline System
-
-**Location:** `programs/solshot-escrow/src/lib.rs:20-26, 264-272, 357-378, 442-456`
-
-**Purpose:** Three escalating timeouts (settlement, cancel, reclaim) provide progressive escape paths if normal flow fails.
-
-**How it works:**
-1. **Lines 20-26 — Constants:**
-   ```
-   TIMEOUT_SECONDS = 600                    // Player cancel timeout (10 min)
-   PERMISSIONLESS_RECLAIM_TIMEOUT = TIMEOUT_SECONDS * 2 = 1200  // Anyone can reclaim (20 min)
-   SETTLEMENT_TIMEOUT_SECONDS = 3600        // Settlement deadline (1 h)
-   ```
-
-2. **Lines 264-272 — Settlement deadline:**
-   ```
-   if escrow.activated_at > 0 {
-     let deadline = activated_at.checked_add(SETTLEMENT_TIMEOUT_SECONDS);  // = activated_at + 3600
-     require!(now <= deadline, SettlementExpired);  // Inclusive upper bound
-   }
-   ```
-
-3. **Lines 357-378 — Cancel-match logic:**
-   ```
-   timeout_reference = activated_at if >0 else created_at;
-   timeout_deadline = timeout_reference + TIMEOUT_SECONDS;  // = ref + 600
-   is_timed_out = now > timeout_deadline;
-   require!(
-     (is_authority && state == AwaitingDeposits)
-     || (is_player && (state == AwaitingDeposits || is_timed_out)),
-     Unauthorized
-   );
-   ```
-
-4. **Lines 442-456 — Permissionless reclaim:**
-   ```
-   timeout_reference = activated_at if >0 else created_at;
-   reclaim_deadline = timeout_reference + PERMISSIONLESS_RECLAIM_TIMEOUT;  // = ref + 1200
-   require!(now > reclaim_deadline, TooEarlyToReclaim);
-   ```
-
-**Timing Diagram for an Active Match (T = activated_at):**
-
-```
-T=0            T=600   T=1200    T=3600
-|             |       |          |
-| settle:     YES---->YES--YES-->YES--EXPIRED
-| auth_cancel: never (AwaitingDeposits state required)
-| player_cancel: no----YES (T>600)
-| reclaim:     no----no--YES (T>1200)
-                       |
-                       Triple-way race region (T+1201 to T+3600)
-```
-
-**Critical Observation:** The Feb H006 dead zone (T+3601 to T+86400) is GONE because TIMEOUT_SECONDS is now 600 (was 86400). But the inverse appeared:
-
-- T=601 to T=1200: Settle YES + Player_Cancel YES — **first race window**
-- T=1201 to T=3600: Settle YES + Player_Cancel YES + Reclaim YES — **triple-way race**
-- T=3601+: Settle EXPIRED + Player_Cancel YES + Reclaim YES — settle locked out
-
-**Assumptions:**
-- Authority will settle within 600s (10 minutes) of activation to avoid the race.
-- A losing player will not race-cancel to deny settlement.
-
-**Invariants:**
-- Settlement is permanently impossible after T+3600.
-- Cancel/reclaim NEVER expire — funds always recoverable.
-
-**Concerns:**
-- ASSUMPTION-T3 (authority will settle promptly) is unenforced. Authority may settle at T=590, just before player_cancel opens — narrow race-free window. But if authority is even 10 seconds late, race begins.
-- Once T>600, ANY deposited player can cancel the match for any reason. The authority's 50-minute settle window is contested by every player who would prefer a refund over losing.
-- A losing player observes the settle TX in mempool and submits cancel with higher priority fees. Solana's leader prioritizes higher-fee TXs. If cancel lands first, settle fails on `InvalidState`.
-
-### Mechanism 2: v2 Per-Match Dynamic Deadlines
-
-**Location:** `programs/solshot-escrow-v2/src/lib.rs:30-51, 161-235, 296-303, 470-477, 539-549`
-
-**Purpose:** Replace v1's hardcoded constants with per-match configurable timing, enabling different match types (real-time vs. async) within one program.
-
-**How it works:**
-1. **Lines 30-51 — Bounds:**
-   ```
-   MIN_DURATION_SECS = 60       // 1 min
-   MAX_DURATION_SECS = 7*24*3600 = 604800  // 7 days
-   MIN_DEPOSIT_WINDOW_SECS = 60
-   MAX_DEPOSIT_WINDOW_SECS = 24*3600 = 86400  // 24 hours
-   PUBLIC_REFUND_GRACE_SECS = 24*3600 = 86400  // 24 hours
-   ```
-
-2. **Lines 174-183 — create_match validates per-match values:**
-   ```
-   require!(duration_secs >= MIN_DURATION_SECS, DurationTooShort);
-   require!(duration_secs <= MAX_DURATION_SECS, DurationTooLong);
-   require!(deposit_window_secs >= MIN_DEPOSIT_WINDOW_SECS, DepositWindowTooShort);
-   require!(deposit_window_secs <= MAX_DEPOSIT_WINDOW_SECS, DepositWindowTooLong);
-   ```
-
-3. **Lines 209-219 — Stored in escrow:**
-   ```
-   escrow.duration_secs = duration_secs;
-   escrow.deposit_window_secs = deposit_window_secs;
-   escrow.created_at = now;
-   escrow.activated_at = 0;
-   escrow.match_end_ts = 0;
-   ```
-
-4. **Lines 296-303 — On full deposits, activate and set match_end_ts:**
-   ```
-   if deposits_mask == full_mask {
-     escrow.state = Active;
-     escrow.activated_at = now;
-     escrow.match_end_ts = now.checked_add(duration_secs as i64)?;
-   }
-   ```
-
-5. **Lines 367 — start_with_depositors also sets match_end_ts:**
-   ```
-   escrow.match_end_ts = now.checked_add(duration_secs as i64)?;
-   ```
-
-6. **Lines 470-477 — Cancel deadline branches:**
-   ```
-   player_cancel_deadline = if activated_at > 0 {
-     match_end_ts
-   } else {
-     created_at + deposit_window_secs
-   };
-   ```
-
-7. **Lines 539-549 — Reclaim deadline branches:**
-   ```
-   reclaim_deadline = if activated_at > 0 {
-     match_end_ts + PUBLIC_REFUND_GRACE_SECS  // = match_end_ts + 86400
-   } else {
-     created_at + deposit_window_secs + PUBLIC_REFUND_GRACE_SECS
-   };
-   ```
-
-**Bounded vs Unbounded:**
-- `duration_secs` BOUNDED: 60-604800 (1 min to 7 days)
-- `deposit_window_secs` BOUNDED: 60-86400 (1 min to 24 hours)
-- Maximum lockup horizon: `created_at + deposit_window_secs + duration_secs + 24h` = `0 + 86400 + 604800 + 86400` = `777600s` ≈ **9 days**
-
-**Concerns:**
-- An adversarial authority can set `duration_secs = 604800` (7 days) and refuse to settle. Players can cancel after 7 days. Reclaim opens at 7d + 24h.
-- A misconfigured (or experimental) authority could set `duration_secs = 60` for what was meant to be a long match, causing immediate cancel race.
-- Authority's discretion is bounded but wide. There's no on-chain control on which `duration_secs` value the authority chooses for a given match type.
-
-### Mechanism 3: Settlement vs Cancel Race (BOTH versions)
-
-**Location:**
-- v1: `programs/solshot-escrow/src/lib.rs:264-272` (settle) and `lib.rs:357-378` (cancel)
-- v2: `programs/solshot-escrow-v2/src/lib.rs:387-454` (settle) and `lib.rs:459-519` (cancel)
-
-**Purpose:** This is not a designed mechanism — it's an emergent race condition.
-
-**How it works:**
-
-**v1 Race Window:** T+601 to T+3600 (50 minutes after activation). During this window:
-- `settle_match` is callable (state == Active, deadline not yet expired) — authority intent
-- `cancel_match` is callable (state == Active, is_timed_out == true) — any deposited player
-
-If the authority is late to settle (or if a player observes the settle TX in mempool):
-- Player can submit a `cancel_match` TX with higher priority fees.
-- Solana's leader prioritizes by fee.
-- If cancel lands first, settle fails on `InvalidState` (state == Cancelled).
-
-**v2 Race Window:** match_end_ts to match_end_ts + 24h (24h regardless of `duration_secs`). Same dynamics:
-- Authority must settle BEFORE match_end_ts (no on-chain enforcement, just race risk after).
-- After match_end_ts: settle and cancel both valid.
-
-**Attack Vector:**
-1. Player A and Player B deposit, match Active at T=0.
-2. Player A wins (somehow — game logic). Authority intends to settle at T=300.
-3. Player B (loser) monitors mempool, sees settle TX with priority_fee=X.
-4. Player B submits cancel_match TX with priority_fee=2X at T=601.
-5. Validator processes cancel first. State → Cancelled. Funds refunded to both A and B.
-6. Authority's settle TX fails on `InvalidState`.
-7. Player B's loss: TX fee + 2X priority + ~rent for cancel. Player B's gain: avoided losing 100 SOL wager.
-
-**ROI Analysis:**
-- Cost: ~0.001 SOL TX + priority fees (~$0.01-1)
-- Benefit: avoid losing wager (up to 100 SOL = ~$13,000)
-- ROI: 1,000,000:1 or higher.
-
-**Concerns:**
-- This is not theoretical. Solana priority-fee bidding is well-understood. Any ordinary player can execute this.
-- v1 has a finite settle window (T+0 to T+3600), so the authority CAN potentially settle before the race window opens (T+601). But they only have a 600-second window of safe settlement.
-- v2 has NO settle deadline — authority can settle anytime. But after match_end_ts, every settle attempt is racing the cancel.
-
-**Mitigation Options:**
-- **Option A:** Ensure authority settles within `match_end_ts - GRACE` (e.g., 60s) before match end. Requires reliable infrastructure.
-- **Option B:** Add a player-cancel cool-down ("can only cancel after X seconds since first settle attempt was rejected by InvalidState"). Complex.
-- **Option C:** Player commitment scheme — a player who wins must sign something proving they accept settlement, and only that player + authority can settle.
-
-### Mechanism 4: Stale Comment at v1:22-23
-
-**Location:** `programs/solshot-escrow/src/lib.rs:22-23`
-
-**Code:**
-```
-/// 48-hour permissionless reclaim timeout (2x normal timeout) — DCA-02
-const PERMISSIONLESS_RECLAIM_TIMEOUT: i64 = TIMEOUT_SECONDS * 2; // 172800 seconds
-```
-
-**Math:**
-- Comment claims "48-hour" and `// 172800 seconds` (which IS 48h: 86400 × 2 = 172800)
-- BUT `TIMEOUT_SECONDS = 600`, so `TIMEOUT_SECONDS * 2 = 1200` (20 minutes)
-- Actual value at runtime: 1200 seconds (20 minutes)
-
-**Why this is a finding:**
-- The comment is left over from when `TIMEOUT_SECONDS = 86400` (Feb-era). The constant was reduced to 600, but the formula `TIMEOUT_SECONDS * 2` was preserved — so the resulting value silently dropped from 172800 to 1200.
-- The comment now LIES about the value. Anyone reading the code (incident responders, future auditors, new developers) would believe the reclaim window is 48h.
-- Operational impact: if a player's funds appear stuck, an operator might wait 48h before initiating support — when they could have called permissionless_reclaim themselves at T+1200 (20 min).
-- Audit-history may be perpetuating the incorrect threat model.
-
-**Verification:**
-- v1 lib.rs:22 reads "48-hour permissionless reclaim timeout"
-- v1 lib.rs:23 reads "TIMEOUT_SECONDS * 2; // 172800 seconds"
-- TIMEOUT_SECONDS = 600 (line 20)
-- 600 × 2 = 1200 ≠ 172800
-- The "// 172800 seconds" comment is mathematical assertion that's WRONG.
-
-### Mechanism 5: Pause Mechanism — Differing Models
-
-**Location:**
-- v1: `programs/solshot-escrow/src/lib.rs:626, 650, 704, 729, 774` (pause guards) and `lib.rs:737-754` (no config in PermissionlessReclaim)
-- v2: `programs/solshot-escrow-v2/src/lib.rs:660, 682, 800` (pause guards) and `lib.rs:730-740, 757-761, 768-782` (no pause guard in settle/cancel/reclaim)
-
-**v1 model:**
-- Pause blocks: create_match, deposit_wager, settle_match, cancel_match, start_with_depositors
-- Pause does NOT block: permissionless_reclaim (no config in struct)
-- Effective: paused authority locks funds for 20 min, then permissionless_reclaim allows escape
-
-**v2 model:**
-- Pause blocks: create_match, deposit_wager, start_with_depositors
-- Pause does NOT block: settle_match, cancel_match, permissionless_reclaim
-- Effective: paused authority can pause-spam create/deposit (rate-limit DoS) but cannot block in-flight match resolution
-
-**Pause-Griefing Window:**
-
-| Version | Paused at T=0 of Active match | Settle | Player Cancel | Reclaim |
-|---------|-------------------------------|--------|----------------|---------|
-| v1 | T+0 to T+1200 | NO (pause) | NO (pause) | NO (too early) |
-| v1 | T+1201 to T+3600 | NO (pause) | NO (pause) | YES |
-| v1 | T+3601+ | NO (pause and expired) | NO (pause) | YES |
-| v2 | T+0 to match_end_ts | YES | NO (not timed out) | NO (too early) |
-| v2 | After match_end_ts | YES | YES | NO (until +24h) |
-| v2 | After match_end_ts + 24h | YES | YES | YES |
-
-**Concerns:**
-- v1 pause-griefing locks funds for 20 minutes (down from 47h in Feb).
-- v2 fixes pause-griefing for in-flight matches entirely. Pause now only prevents new business.
-- Authority can pause-unpause-pause-unpause to trigger ProgramPaused on cancel mid-window in v1 — but with 20min reclaim window, this is bounded grief.
-
-### Mechanism 6: Deposit Window Race in v2
-
-**Location:** `programs/solshot-escrow-v2/src/lib.rs:255-262, 333-339`
-
-**Purpose:** v2's deposit window has hard cutoffs. start_with_depositors is gated to wait for window close.
-
-**How it works:**
-- `deposit_wager` allows deposits if `now <= deposit_deadline` (line 260, inclusive).
-- `start_with_depositors` allows activation if `now >= deposit_deadline` (line 337, inclusive).
-
-**At exactly T = deposit_deadline:**
-- Both `deposit_wager` (`<=`) AND `start_with_depositors` (`>=`) are valid.
-- If deposit_wager lands first: deposit succeeds. Then start_with_depositors fails (state == Active).
-- If start_with_depositors lands first: state → Active. Then deposit_wager fails on InvalidState.
-
-**Concerns:**
-- Late deposits at exactly the deadline can preempt activation, or activation can preempt them. Outcome non-deterministic.
-- A malicious player could time their deposit at T = deposit_deadline to disrupt activation timing.
-- The `<=` and `>=` overlap at the exact second. Should be `<` and `>=` (or `<=` and `>`) to disambiguate.
-
-### Mechanism 7: Reclaim Rent-Theft Race
-
-**Location:**
-- v1: `programs/solshot-escrow/src/lib.rs:738-754`
-- v2: `programs/solshot-escrow-v2/src/lib.rs:768-782`
-
-**Purpose:** Permissionless reclaim allows ANYONE to call reclaim, with `close = caller` rebasing PDA rent (~0.002 SOL escrow rent) to caller as economic incentive.
-
-**How it works:**
-1. After reclaim_deadline, anyone can call `permissionless_reclaim`.
-2. The instruction refunds all deposited players via remaining_accounts.
-3. PDA rent (~0.002 SOL escrow rent) flows to the caller via Anchor's `close = caller` constraint.
-
-**Race:** Multiple actors monitoring on-chain state for matches past reclaim_deadline can compete to be the first caller. Whoever lands first wins the rent.
-
-**Concerns:**
-- Players still get refunds — the rent is the only thing at stake.
-- Bot economy emerges — ~$0.30 reward per match for the first reclaimer.
-- A player intending to recover their own match's rent must compete with bots.
-- This is by design and not a vulnerability per se, but the economic asymmetry creates centralization pressure (whoever has the fastest infrastructure wins).
-
-## Trust Model
-
-**Trusted:**
-- `Clock::get()?` sysvar return value (Solana runtime guarantee, ±1-2s drift).
-- Validator scheduling (consistent leader time, slot progression).
-- Programs invoked correctly via Anchor account-locking.
-
-**Untrusted:**
-- Authority's intent to settle promptly. No on-chain enforcement.
-- Authority's choice of `duration_secs` and `deposit_window_secs` (v2). Bounded but wide.
-- Player's intent to play fairly. Players can race-cancel to deny settlement.
-- Per-transaction priority fees. Higher fees = higher chance of winning a race.
-
-**Pseudo-Trusted:**
-- Authority's pause power. v1 has bite (20-min lock); v2 reduces to "no new matches/deposits".
-
-## State Analysis
-
-### v1 Time-Sensitive State
-
-| Field | Type | Set By | Used By | Mutable After Set? |
-|-------|------|--------|---------|---------------------|
-| `created_at` | i64 | create_match | cancel_match (player), permissionless_reclaim | NO |
-| `activated_at` | i64 | deposit_wager (full deposits), start_with_depositors | settle_match, cancel_match (player), permissionless_reclaim | NO |
-| `state` | enum | many | gating | YES (transitions only) |
-| Constants | i64 / u64 | compile-time | various | NO (program const) |
-
-### v2 Time-Sensitive State
-
-| Field | Type | Set By | Used By | Mutable After Set? |
-|-------|------|--------|---------|---------------------|
-| `created_at` | i64 | create_match | deposit_wager (deadline), cancel_match, permissionless_reclaim, start_with_depositors | NO |
-| `activated_at` | i64 | deposit_wager (full deposits), start_with_depositors | (none directly — used to detect activation) | NO |
-| `match_end_ts` | i64 | deposit_wager (activation), start_with_depositors | cancel_match (player), permissionless_reclaim | NO |
-| `duration_secs` | u32 | create_match | deposit_wager (sets match_end_ts), start_with_depositors | NO |
-| `deposit_window_secs` | u32 | create_match | deposit_wager (deadline), cancel_match, start_with_depositors, permissionless_reclaim | NO |
-| Constants | u32 / u64 / i64 | compile-time | various | NO (program const) |
-
-## Bounded vs Unbounded Timing Inputs
-
-| Input | v1 | v2 | Bound |
-|-------|-----|-----|-------|
-| TIMEOUT_SECONDS | hardcoded 600 | n/a | bounded |
-| SETTLEMENT_TIMEOUT_SECONDS | hardcoded 3600 | n/a | bounded |
-| PERMISSIONLESS_RECLAIM_TIMEOUT | hardcoded 1200 | n/a | bounded |
-| `duration_secs` | n/a | per-match input | 60 ≤ x ≤ 604800 (7 days) |
-| `deposit_window_secs` | n/a | per-match input | 60 ≤ x ≤ 86400 (24h) |
-| PUBLIC_REFUND_GRACE_SECS | n/a | hardcoded 86400 | bounded |
-| `Clock::get()?.unix_timestamp` | sysvar | sysvar | system-bounded (i64) |
-
-**No unbounded timing inputs in either version.** All time-related parameters are bounded.
-
-## Cross-Focus Intersections
-
-### Intersection with State Machine
-- **v2 deposit_deadline edge case**: at exact T = deposit_deadline, both `deposit_wager` and `start_with_depositors` are valid. State machine sees this as either succeeded deposit or activation.
-- **State transition timing**: AwaitingDeposits → Active is set by deposit_wager (full mask) or start_with_depositors. State change must commit BEFORE the activated_at timestamp is observed by other instructions in the same transaction.
-- **HANDOFF**: State Machine Agent should verify the v2 deposit/start_with_depositors edge case is correctly handled by Anchor account-locking.
-
-### Intersection with Token/Economic
-- **Settlement-denial race directly impacts token flows**: whoever wins the race determines whether 90/7/3 split happens (settle) or all players are refunded (cancel).
-- **Authority's `duration_secs` choice (v2) affects opportunity cost**: 7-day match locks 100 SOL of capital. At ~5% APY, that's ~$0.35 opportunity cost per match per day.
-- **HANDOFF**: Token/Economic Agent should quantify the economic impact of the settle-vs-cancel race at MAX_WAGER scale.
-
-### Intersection with Access Control
-- **Authority's sole control over `duration_secs` and `deposit_window_secs` (v2)**: same authority that signs settle, cancel, pause now also picks per-match timing. Compromised authority key amplifies all timing-related risks.
-- **HANDOFF**: Access Control Agent should evaluate whether per-match timing should require additional governance (e.g., a multisig that pre-approves match templates).
-
-### Intersection with Arithmetic
-- **All time arithmetic uses checked_add**: v1 lines 267, 363, 449, 527 and v2 lines 256, 301, 333, 366, 475, 540, 547. All correct.
-- **u32 → i64 widening**: v2 deposit_window_secs and duration_secs cast u32 to i64 (lines 257, 302, 334, 343, 475, 545). Safe — u32 max (4.29B) << i64 max.
-- **HANDOFF**: Arithmetic Agent should add v2 timestamp casts to safe-cast inventory.
-
-### Intersection with CPI
-- **No CPI is timing-sensitive**: only system_program::transfer for deposits, no oracle or other time-sensitive CPI.
-
-### Intersection with Error Handling
-- **Stale comment is a documentation bug**: should be flagged as Error Handling / Documentation issue.
-- **HANDOFF**: Error Handling Agent should check for other places where comments contradict code values.
-
-### Intersection with Upgrade/Admin
-- **Authority's pause power is timing-sensitive**: v1 paused authority locks funds 20 min; v2 paused authority cannot block in-flight settlement.
-- **HANDOFF**: Upgrade/Admin Agent should review the v1 pause behavior decision against v2's improved model.
-
-## Cross-Reference Handoffs
-
-- **→ State Machine Agent**: Verify v2 deposit-window edge case at T = deposit_deadline (lib.rs:255-262 + 333-339). Are simultaneous deposit_wager and start_with_depositors correctly serialized?
-- **→ Token/Economic Agent**: Quantify settle-vs-cancel race economic impact. At MAX_WAGER (100 SOL), what's the loss to the protocol from a successful race-cancel? What's the user trust cost?
-- **→ Access Control Agent**: Per-match timing values are authority-controlled. Should `duration_secs` and `deposit_window_secs` require additional governance (multisig pre-approval)?
-- **→ Arithmetic Agent**: All `checked_add` operations on timestamps are correct. Add to validated-cast list. Edge case at i64::MAX is structurally impossible (Clock returns ~year 2025-2050 range).
-- **→ Error Handling Agent**: Stale "48-hour" comment at v1:22 contradicts the runtime value. Are there other documentation drift cases? `// 172800 seconds` at v1:23 is also a math claim that fails.
-- **→ Upgrade/Admin Agent**: v1's pause-griefing window is bounded to 20 min. v2 fixed cancel/settle/reclaim immunity. Should v1 be patched to match v2's pause-immune escape paths?
-
-## Risk Observations
-
-### Risk 1 (HIGH): Settlement-Denial Race (H006-Inverted)
-
-**Location:** v1 `programs/solshot-escrow/src/lib.rs:264-272, 357-378`; v2 `programs/solshot-escrow-v2/src/lib.rs:387-454, 459-519`
-
-**Mechanism:** A losing player can race-cancel to deny legitimate settlement.
-
-**v1 Window:** T+601 to T+3600 (50 min)
-**v2 Window:** match_end_ts to match_end_ts + 24h (24h, regardless of `duration_secs`)
-
-**Attack:**
-1. Authority submits settle_match TX at T=601 (or any time in window).
-2. Loser observes TX in mempool.
-3. Loser submits cancel_match TX with higher priority fees.
-4. Validator processes cancel first. State → Cancelled. Settle fails.
-
-**Cost:** ~$0.30-1.00 in priority fees + TX fee.
-**Benefit:** Avoid losing wager (up to 100 SOL = ~$13,000 at MAX_WAGER).
-**ROI:** Astronomical.
-
-**Severity:** HIGH. Direct denial of legitimate settlement, easily exploitable by any bot operator.
-
-### Risk 2 (HIGH): H007 Pause-Griefing Still Open in v1
-
-**Location:** `programs/solshot-escrow/src/lib.rs:729`
-
-**Mechanism:** v1's `cancel_match` retains `constraint = !config.is_paused`. Authority pauses → cancel blocked.
-
-**Window:** Authority can lock cancel for 20 minutes (until reclaim opens at T+1200). Reduced from Feb's 47h.
-
-**Severity:** HIGH (was CRITICAL in Feb). Bounded grief but still creates a 20-min window where deposited players cannot recover funds via cancel — they must wait for reclaim.
-
-**Note:** v2 fixed this — `cancel_match` in v2 has no pause guard.
-
-### Risk 3 (HIGH): Authority Duration-Set Lockup (v2 Only)
-
-**Location:** `programs/solshot-escrow-v2/src/lib.rs:38-39, 174-175, 470-477, 539-549`
-
-**Mechanism:** Authority can create matches with `duration_secs = 604800` (7 days). If authority refuses to settle, players cannot cancel until match_end_ts (7 days). Reclaim opens at T + 7d + 24h = 8 days.
-
-**Severity:** HIGH. Authority can effectively lock player funds for up to 8 days per match. While bounded, the duration is far longer than v1's 20-min reclaim window.
-
-**Mitigation Considerations:**
-- Bound MAX_DURATION_SECS to a more reasonable value (e.g., 24h)?
-- Require multisig for any match where duration_secs > 1 day?
-- Add a "max duration per match" enforced by the protocol upgrade authority?
-
-### Risk 4 (HIGH): Stale Comment Misleads Operators
-
-**Location:** `programs/solshot-escrow/src/lib.rs:22-23`
-
-**Mechanism:** Comment claims "48-hour permissionless reclaim timeout" with confirmation `// 172800 seconds`. Actual: 1200s (20 min).
-
-**Impact:**
-- Incident response planning based on stale comment may delay legitimate fund recovery.
-- Audit trail is corrupted — future audits may rely on the comment.
-- New developers reading the code form an incorrect mental model.
-
-**Severity:** HIGH. Documentation drift in security-critical code.
-
-### Risk 5 (MEDIUM): H010 Deposit Ordering Asymmetry (Both Versions)
-
-**Location:** v1 `programs/solshot-escrow/src/lib.rs:374-378`; v2 `programs/solshot-escrow-v2/src/lib.rs:485-510`
-
-**Mechanism:** First depositor's funds locked while waiting for other players. If they cancel, all deposited players are refunded (refunds via remaining_accounts).
-
-**v1 Mitigation:** First depositor can cancel any time during AwaitingDeposits. No timeout required.
-
-**v2 Mitigation:** First depositor can cancel after `created_at + deposit_window_secs`. Hard deadline prevents indefinite lockup.
-
-**Severity:** MEDIUM. Bounded in v2; v1 allows immediate self-cancel.
-
-### Risk 6 (MEDIUM): v2 Deposit Window Race
-
-**Location:** `programs/solshot-escrow-v2/src/lib.rs:255-262, 333-339`
-
-**Mechanism:** At exact T = deposit_deadline, both `deposit_wager` (`<=`) and `start_with_depositors` (`>=`) are valid simultaneously. Outcome depends on TX order.
-
-**Severity:** MEDIUM. Edge case, non-deterministic but bounded — either deposit succeeds or activation succeeds, never both. Funds always recoverable.
-
-### Risk 7 (MEDIUM): Permissionless Reclaim Rent-Theft Race
-
-**Location:** v1 `programs/solshot-escrow/src/lib.rs:745`; v2 `programs/solshot-escrow-v2/src/lib.rs:773`
-
-**Mechanism:** `close = caller` redirects ~0.002 SOL escrow rent to whoever calls reclaim first. Bot economy.
-
-**Severity:** MEDIUM. Designed feature (rent-as-incentive) but creates first-come-first-served bot ecosystem.
-
-### Risk 8 (MEDIUM): Short-Duration Drift Sensitivity (v2)
-
-**Location:** `programs/solshot-escrow-v2/src/lib.rs:38, 471-477`
-
-**Mechanism:** At `MIN_DURATION_SECS = 60`, validator clock drift of 1-2s = 1.6-3.3% of window. Match-end determination off by 1-2 seconds.
-
-**Severity:** MEDIUM in adversarial scenarios. Material if a player's TX is intended to land "exactly at match_end_ts" — drift could shift outcome by 1-2s.
-
-### Risk 9 (LOW): Block-Time Skipping
-
-**Mechanism:** Solana validators may skip slots during outages. unix_timestamp can drift 1-2s.
-
-**Severity:** LOW. Minute/hour-scale timeouts dominate; second-scale drift is immaterial.
-
-### Risk 10 (LOW): Authority Slot-Time Manipulation
-
-**Mechanism:** EP-089 — validator can manipulate timestamp ±~30s. None of the deadlines in v1 or v2 are at sub-minute precision (except v2 minimum durations).
-
-**Severity:** LOW. Bounded by validator-level abuse cost (loss of stake).
-
-## Novel Attack Surface Observations
-
-### Novel 1: Settlement-Denial Race via Priority Fees (NEW — Codebase-Specific)
-
-This is the inverted H006. The Feb dead zone became a race window. While the fix removed the "no resolution path" problem, it introduced a "two competing resolution paths" problem with adverse selection — losers race to cancel before winners settle.
-
-The codebase has no defense against this:
-- No "winning player co-signs settlement" mechanism.
-- No "minimum cool-off period after first settle attempt" mechanism.
-- No "settlement priority" via instruction-level priority.
-
-This is unique to this protocol because:
-1. It's a wager protocol — losers have economic motivation to cancel.
-2. The cancel_match timeout is independent of settle_match timeout.
-3. Multiple players (potentially many in v2's N=10 case) can each independently race-cancel.
-
-### Novel 2: Stale-Comment Trojan Horse
-
-The "48-hour" comment at v1:22 perpetuates an incorrect threat model into all downstream documentation. Future audits, incident playbooks, and developer mental models inherit the error. This is unique because:
-1. The mistake is in the COMMENT only, not in the value.
-2. The math `// 172800 seconds` even confirms the comment's lie.
-3. A reader who computes `600 × 2 = 1200` would catch it, but who computes math when the comment helpfully labels the result?
-
-### Novel 3: Per-Match Timing as Authority Discretionary Power (v2 Only)
-
-v2's `duration_secs` and `deposit_window_secs` give authority unprecedented control over individual match timing. This is unique because:
-1. v1 had compile-time-only timing (auditable, immutable per upgrade).
-2. v2 makes timing per-match — different matches can have wildly different windows.
-3. Authority can fingerprint matches by their timing, predict reclaim windows, time their actions.
-4. No on-chain enforcement that authority's chosen timing is "reasonable" for the match type.
-
-### Novel 4: Deposit/Activation Edge Case at T = deposit_deadline (v2 Only)
-
-The boundary collision at exact T = deposit_deadline (both deposit_wager and start_with_depositors valid) is unique to v2's hard-deadline model. v1 had no deposit window — only the soft 10-min cancel timeout. v2's transition from soft to hard deadlines created this new edge.
-
-### Novel 5: H006-Inverted vs Original H006 — Risk Asymmetry
-
-| Aspect | Original H006 (Feb) | Inverted H006 (May) |
-|--------|---------------------|---------------------|
-| Vulnerable party | Players (locked out for 23h) | Authority (legitimate settlement denied) |
-| Time window | 23 hours (passive) | 50 minutes (active priority race) |
-| Attack effort | Authority does nothing | Loser monitors mempool + bids priority fees |
-| Outcome | Funds locked, no payout | Funds refunded, no payout |
-| Fix difficulty | Add authority-cancel-after-deadline | Add player commitment scheme or cool-down |
-
-**The fix to original H006 inverted the risk surface. Now the player has the upper hand instead of the authority.**
-
-## Questions for Other Focus Areas
-
-### For State Machine Agent
-- Verify v2 deposit_deadline edge case (lib.rs:255-262, 333-339): at exact T = deposit_deadline, can a deposit_wager TX and a start_with_depositors TX both succeed in the same block? Does Anchor account locking serialize them correctly?
-- After cancel_match runs, can the state be observed mid-TX as Cancelled while refunds are still in progress (between line 498 escrow.state = Cancelled and the loop at line 502)?
-
-### For Token/Economic Agent
-- At MAX_WAGER (100 SOL), what's the expected loss to the protocol from a single successful settle-vs-cancel race? Specifically: 90% × 200 SOL pot = 180 SOL "stolen" from the legitimate winner via race-cancel.
-- What priority fee is required to outbid an authority's settle TX? Estimate $0.10-1.00 typical, $5+ during congestion. ROI for attacker remains massive.
-
-### For Access Control Agent
-- Should `duration_secs` (v2) require multisig approval for values above some threshold? E.g., `duration_secs > 86400` (24h) requires governance.
-- Should there be a "match template" concept where authority pre-registers allowed (duration, window) combinations, and create_match must use one?
-
-### For Arithmetic Agent
-- All `checked_add` on timestamps validated. Add to safe-arithmetic inventory.
-- u32 → i64 cast for `duration_secs` and `deposit_window_secs`: u32 max = 4.29B << i64 max. Safe.
-
-### For Error Handling Agent
-- Stale comment at v1:22 — are there other places where comments contradict code values? Suggest a "verify comments match code" tool.
-
-### For CPI Agent
-- system_program::transfer is the only CPI. Single-call, well-bounded. No timing-sensitive CPI patterns.
-
-## Raw Notes
-
-### Code Comment Audit
-- v1:22-23 — "48-hour" / "172800 seconds" — STALE, actual value is 1200s
-- v1:19 — "10-minute timeout for deposit window" — TRUE but slightly misleading; this is also the player-cancel timeout for Active matches
-- v1:25 — "1-hour settlement deadline after match activation (OC-07)" — TRUE
-- v2:38-39 — "1 min" / "7 days" — TRUE
-- v2:42-43 — "1 min" / "24 hours" — TRUE
-- v2:47 — "24 hours" — TRUE
-
-### Constants Verification
-- v1 SETTLEMENT_TIMEOUT_SECONDS = 3600 (1h) — confirmed
-- v1 TIMEOUT_SECONDS = 600 (10 min) — confirmed
-- v1 PERMISSIONLESS_RECLAIM_TIMEOUT = TIMEOUT_SECONDS * 2 = 1200 (20 min) — confirmed
-- v2 PUBLIC_REFUND_GRACE_SECS = 86400 (24h) — confirmed
-- v2 MIN_DURATION_SECS = 60, MAX = 604800 — confirmed
-- v2 MIN_DEPOSIT_WINDOW_SECS = 60, MAX = 86400 — confirmed
-
-### Boundary Operator Asymmetries
-- v1 settle deadline: `<=` (inclusive) at lib.rs:271
-- v1 player cancel: `>` (exclusive) at lib.rs:367
-- v1 reclaim: `>` (exclusive) at lib.rs:454
-- v2 deposit deadline: `<=` (inclusive) at lib.rs:260
-- v2 start_with_depositors: `>=` (inclusive) at lib.rs:337  ← creates the edge collision
-- v2 player cancel: `>` (exclusive) at lib.rs:480
-- v2 reclaim: `>` (exclusive) at lib.rs:552
-
-### Re-Check Verdicts
-
-**H006 (Feb HIGH — 23-hour dead zone):** **STATUS_CHANGED.** With current constants (TIMEOUT=600, SETTLEMENT=3600), the dead zone is GONE. But a NEW timing flaw replaces it: a 50-minute race window (T+601 to T+3600) where settle and player_cancel are simultaneously available. This is H006-inverted. Severity assessment: HIGH (was HIGH). Different attack vector.
-
-**H010 (Feb MEDIUM — Deposit ordering asymmetry):** **STATUS_PARTIAL.** v1 still has the same exposure — first depositor can cancel any time during AwaitingDeposits without timeout. v2 introduces hard deposit_window deadline mitigating indefinite-lockup risk. Severity assessment: MEDIUM (unchanged for v1, mitigated for v2).
-
-**H020 (Feb NOT_VULNERABLE — Clock drift at settlement deadline):** **STATUS_REVALIDATED.** Drift is still 1-2s. With v1 SETTLEMENT_TIMEOUT_SECONDS = 3600, drift is 0.03-0.06% of window — immaterial. With v2's MIN_DURATION_SECS = 60, drift is 1.6-3.3% — material in adversarial scenarios but not in honest play. Severity: LOW for v1, MEDIUM for v2 short-duration matches.
-
-**H024 (Feb NOT_VULNERABLE — Settlement deadline bypass via activated_at):** **STATUS_REVALIDATED.** Same architecture: state == Active is structurally impossible without activated_at being set. Guard at lib.rs:266-274 (v1) and equivalent in v2 is redundant-but-safe. Severity: LOW (unchanged).
-
-### Cross-File Comparison
-
-v1 timing model is monotonic in absolute time but non-monotonic in event order:
-- Cancel opens FIRST (T+600)
-- Reclaim opens SECOND (T+1200)
-- Settle expires LAST (T+3600)
-
-This is the inverse of the Feb v1 model (which had cancel at T+86400, settle at T+3600 — settle expired first, leaving the dead zone).
-
-v2 timing model is fully decoupled:
-- Settle: NEVER expires after activation
-- Cancel: opens at match_end_ts (Active) or deposit_deadline (AwaitingDeposits)
-- Reclaim: opens at corresponding deadline + 24h
-
-Both versions have the settle-vs-cancel race architecture, just at different deadlines.

@@ -1,36 +1,66 @@
 # Stronghold of Security — Audit Progress
 
-**Audit ID:** sos-solshot-v1-v2-2026-05-06
-**Started:** 2026-05-06
+**Audit ID:** sos-solshot-v1-mainnet-rc1-2026-05-28
+**Audit #:** 3 (stacked on #2)
+**Started:** 2026-05-28
 **Tier:** standard
-**Codebase:** SolShot (`programs/solshot-escrow/` + `programs/solshot-escrow-v2/`)
-**Audit number:** #2 (stacked on Feb 2026 audit)
+**Codebase:** SolShot Escrow (programs/solshot-escrow/src/lib.rs + programs/solshot-escrow-v2/src/lib.rs)
+**Git ref:** `fabb8e1` (tag `v1-mainnet-rc1`)
 
 ## Phase Progress
 
 | Phase | Command | Status | Output |
 |-------|---------|--------|--------|
-| Scan | `/SOS:scan` | Completed | KB_MANIFEST.md, HOT_SPOTS.md, INDEX.md, HANDOVER.md, STATE.json |
-| Analyze | `/SOS:analyze` | Completed | 7 context files (~462KB) — agents 01,02,03,04,05,07,08 (skipped 06 Oracle); verification agents skipped (massive rewrite) |
-| Strategize | `/SOS:strategize` | Completed | ARCHITECTURE.md (~24KB) + STRATEGIES.md (50 hypotheses: 13 Tier 1, 9 Tier 2, 28 Tier 3; 27 Novel + 23 RECHECK) |
-| Investigate | `/SOS:investigate` | Completed | 50 findings (4 CRIT, 14 HIGH, 4 MED, 6 LOW, 4 partial, 18 cleared); COVERAGE.md (3 minor gaps, 0 critical) |
-| Report | `/SOS:report` | Completed | FINAL_REPORT.md (1397 lines) — 4 CRIT / 14 HIGH / 4 MED / 6 LOW + 18 cleared + 4 partial across 50 strategies |
+| Scan | `/SOS:scan` | ✅ Completed | KB_MANIFEST.md, HOT_SPOTS.md, INDEX.md, HANDOVER.md |
+| Analyze | `/SOS:analyze` | ✅ Completed | context/01-08 (7 files, 285 KB) |
+| Strategize | `/SOS:strategize` | ✅ Folded into Phase 1 | — |
+| Investigate | `/SOS:investigate` | ✅ Folded into Phase 1 | — |
+| Report | `/SOS:report` | ✅ Completed | FINAL_REPORT.md (917 lines, 64 KB) |
 
-## Configuration
+## Headline Verdict
 
-- Tier: **standard** (upgraded from Feb's quick to handle 2 files + v2 novel architecture)
-- Batch Size: 5
-- Strategy Count target: 30 (plus supplementals as needed)
-- Phase 1 model: **opus**
-- Phase 1 agents to deploy: 7 (skipping Oracle — no external data sources)
+**CONDITIONAL GO for mainnet flip** — with 3 must-fix items + Squads-from-day-one multisig.
 
-## Stacked Audit Notes
+### What changed from audit #2 (BLOCK MAINNET) to audit #3 (CONDITIONAL GO):
 
-- Previous audit: #1 (2026-02-23 @ `ecfd03b`) — 12 confirmed + 5 potential findings, archived at `.audit-history/2026-02-23-ecfd03b/`
-- Massive rewrite detected (>70% of files NEW or MAJOR-MODIFIED). Verification agents skipped; previous findings are priors only, not auto-translated.
-- See `.audit/HANDOVER.md` for the previous-findings digest, false-positive log, and architecture snapshot.
-- See `Docs/internal/PRIOR_AUDIT_DELTA.md` for spot-checked status of the most critical Feb findings against current code.
+**Prior CRITICALs:**
+- H023 (CVSS 9.3 partial-refund theft) → ✅ RESOLVED (IncompleteRefund gate at all 4 sites + proptest regression)
+- H001 (CVSS 8.7 one-step authority) → ✅ RESOLVED (propose/accept implementation)
+- H044/H046 (single hot wallet operational) → ⏳ CARRY-FORWARD (Squads mitigation planned)
+
+**Prior HIGHs:**
+- 6 RESOLVED (H011, H030, H032 by timelock; H016, H009 by pause-guard removal; H025 by !executable; H039 by 24h cap; H035 v1 by constant unification)
+- H024 STILL OPEN (non-contiguous deposits_mask)
+- v1-specific findings (H017) now irrelevant since v1 doesn't ship to mainnet
+- Design-limit findings (H002 H003 H006 H007) remain operationally bounded by trust in authority key
+
+### Top 3 pre-mainnet must-fixes (in order):
+1. **N001 one-liner** at `programs/solshot-escrow-v2/src/lib.rs:154` — wrap `cfg.pending_config_ts = now` in `if cfg.pending_config_ts == 0` guard. Without this, a compromised authority can defer the 24h timelock indefinitely.
+2. **N002 migrate_config** — feature-gate or delete before mainnet build. Devnet migration is done; this code is unnecessary surface on mainnet.
+3. **Squads multisig at deploy** — Layer-1 upgrade auth + GlobalConfig.authority both go to Squads PDA(s) from genesis.
+
+
+
+## Audit #3 Focus (Bundle 1 deltas since audit #2)
+
+Bundle 1 was specifically designed to address audit #2's CRITICAL #4 (H001 one-step authority transfer) and several HIGH findings (H002/H011/H030/H032 — fee/treasury rotation chains). The new code adds:
+- `propose_authority` / `accept_authority` — two-step rotation
+- `update_config` rewrite — writes to pending_* fields
+- `apply_config_update` — permissionless apply after 24h timelock
+- `migrate_config` — devnet PDA realloc 110 → 231 bytes (UncheckedAccount + manual realloc)
+- 7 new GlobalConfig fields (pending_*, last_config_update_ts)
+
+**Phase 1 must answer:**
+1. Does the new propose/accept mechanism fully resolve H001? Any new takeover paths?
+2. Does the timelock close H002/H011/H030/H032? Edge cases (clock_skew, near-boundary)?
+3. Is the migrate_config UncheckedAccount + manual realloc safe? Re-entry / race / corrupt state?
+4. Does ApplyConfigUpdate's lack of `has_one` open any DoS or griefing vectors?
+5. Does AcceptAuthority's reliance on `pending == new_authority.key()` (no `has_one`) work correctly under concurrent propose_authority races?
+
+**Audit #2 findings still active (carried forward):**
+- H023 (CRITICAL, CVSS 9.3) — partial-refund theft via close=caller sweep. Bundle 1 does NOT touch refund loops. **PRIMARY PRE-MAINNET BLOCKER.**
+- H044 (CRITICAL) — single hot wallet L1+L2. Mitigation deferred to Squads multisig at mainnet deploy.
+- H046 (CRITICAL) — Layer-1 bytecode replacement. Same Squads mitigation.
 
 ## Last Updated
-
-2026-05-06T20:50:00Z
+2026-05-28T17:30:00Z

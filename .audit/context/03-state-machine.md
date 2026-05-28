@@ -1,785 +1,675 @@
 ---
-task_id: sos-phase1-state-machine
-provides: [state-machine-findings, state-machine-invariants]
+task_id: sos-phase1-state-machine-audit3
+provides: [state-machine-findings, state-machine-invariants, bundle1-state-lifecycle]
 focus_area: state-machine
-files_analyzed: ["programs/solshot-escrow/src/lib.rs", "programs/solshot-escrow-v2/src/lib.rs"]
-finding_count: 14
-severity_breakdown: {critical: 0, high: 4, medium: 5, low: 5}
+files_analyzed:
+  - "programs/solshot-escrow/src/lib.rs"
+  - "programs/solshot-escrow-v2/src/lib.rs"
+stacks_on: ".audit-history/2026-05-06-226c0cd/context/03-state-machine.md"
+new_findings: 11
+recheck_status:
+  H035: STATUS_UNCHANGED (Bundle 1 did NOT touch settle/cancel timing)
+  H024: STATUS_UNCHANGED (refund loops unchanged)
+  H039: RESOLVED (MAX_DURATION_SECS reduced 7d → 24h)
 ---
-<!-- CONDENSED_SUMMARY_START -->
-# State Machine & Error Handling — Condensed Summary
 
-**Headline verdict:** v2 introduces **NO new lifecycle state** vs v1. Both programs use the same 4-variant `MatchState` enum: `AwaitingDeposits`, `Active`, `Settled`, `Cancelled`. The "Pending" state hypothesised in the static pre-scan does NOT exist on chain — `lib.rs:892-897` is a verbatim mirror of v1:849-855. v2 keeps the lobby phase off-chain and creates the escrow PDA only at the AwaitingDeposits→entry point.
+# State Machine & Error Handling — Audit #3 (Bundle 1 Stacked)
 
-**State-machine concerns counted:** 14 (4 HIGH, 5 MEDIUM, 5 LOW). The dominant cluster is around the `cancel_match` pause guard (H007 chain) and `close = caller` rent flow (H016 chain), both still open in both programs. Several v2-specific concerns surface around the new partial-deposit flow and the longer 24h reclaim grace window.
+## Headline Verdict
 
-## Key Findings (Top 10)
+Bundle 1 grafts a **new, two-track lifecycle** onto `GlobalConfig` while leaving the `MatchState` lifecycle on `MatchEscrow` **completely untouched**. The audit #2 conclusion that "v2 introduces NO new lifecycle state vs v1" still holds for matches — but `GlobalConfig` now has **two parallel pending-state machines** that did not exist before:
 
-- **H007 STILL OPEN in BOTH v1 and v2**: `cancel_match` constraint `!config.is_paused` blocks the player-cancel escape hatch when authority pauses program — v1:`lib.rs:729`, v2 has been MOVED — see below for nuance. Verified at v1:729 (still present), v2:760-761 — **NOT present in v2** (CancelMatch in v2 has NO pause constraint on config). v2 documentation header at line 145-146 explicitly says "Settle / cancel / permissionless_reclaim remain callable" — v2 has FIXED this for cancel/settle/reclaim. v1 retains the bug.
-- **state-monotonicity holds in BOTH programs**: Settled and Cancelled are terminal. `permissionless_reclaim` and `cancel_match` both check `escrow_state != Settled && != Cancelled` (v1:`lib.rs:380-383`, `lib.rs:435-439`; v2:`lib.rs:491-494`, `lib.rs:534-537`). `settle_match` requires `state == Active` (v1:259-262, v2:388-391). `start_with_depositors` requires `state == AwaitingDeposits` (v1:494-497, v2:324-327).
-- **deposit_wager state transition is internal-only and always 1-shot**: `AwaitingDeposits → Active` happens iff `deposits_mask == full_mask` (v1:235-249, v2:296-315). The check on the bitmap before the state transition is correct: bit set, then full-mask compare. After Active, no more deposits accepted (state guard at v1:195-198, v2:250-253).
-- **CEI ordering is CORRECT in settle/cancel/reclaim** (EP-033 passes): `settle_match` sets state to Settled BEFORE lamport math (v1:309-313, v2:427-431). `cancel_match` sets state to Cancelled BEFORE refund loop (v1:385-389, v2:496-499). `permissionless_reclaim` same (v1:458-462, v2:556-559). All three put the state-write inside a small inner block to drop the mutable borrow before `try_borrow_mut_lamports`.
-- **No reentrancy via system_program::transfer**: deposit_wager's only CPI is to system_program, which can't re-enter back into the escrow program (Solana runtime quirk). deposits_mask is updated AFTER the transfer (v1:225-226, v2:286-287), but this is safe because the system_program is non-reentrant.
-- **Account revival blocked**: Anchor's `close` constraint zeros data + sets discriminator + transfers ownership to system_program. PDA seeds are `[b"match", match_id.as_bytes()]` — even if revived in same TX via lamport refund, `init` constraint on next `create_match` would fail (account already initialized) UNTIL it gets garbage collected. EP-036 NOT_VULNERABLE re-validated.
-- **GlobalConfig re-init blocked** (EP-037): `init` constraint at v1:546-552, v2:587-593 prevents reinitialization. Anchor enforces; H022 holds for both.
-- **NEW v2 attack surface — start_with_depositors compaction**: v2 only allows `start_with_depositors` AFTER `deposit_window_secs` elapses (v2:332-339). v1 has NO such gate (v1:493-497) — authority can call it the moment 2 deposits land, silently kicking players who haven't deposited yet. **HIGH novel concern for v1.**
-- **v2 reclaim deadline math has TWO paths** (v2:539-549) — Active branch and AwaitingDeposits branch. The AwaitingDeposits branch is `deposit_deadline + PUBLIC_REFUND_GRACE_SECS` (24h after deposit window). MEDIUM concern: if deposit_window_secs is set to MAX (24h), a non-activated match locks funds for ~48h before public reclaim fires.
-- **H030 RE-VALIDATED**: cancel_match refund-all flow on AwaitingDeposits (no Active deposits to refund — only deposits_mask bits are checked). Logic is correct in both programs: `for (i, account) in remaining_accounts.iter().enumerate()` with `bit_set` check + `players[i]` match. NOT_VULNERABLE confirmed.
+1. **Authority rotation track** (no timelock): `Live` → `Live + pending_authority=Some` → `Live (rotated)` via `propose_authority` → `accept_authority`.
+2. **Config rotation track** (24h timelock): `Live` → `Live + pending_*=Some, pending_config_ts=now` → `Live (rotated)` via `update_config` → wait 24h → `apply_config_update`.
 
-## Critical Mechanisms
+Both tracks are **independent** of each other and **independent** of the per-match snapshots. The bundle introduces 8 new state interactions, 11 new findings (1 HIGH-leaning, 5 MEDIUM, 5 LOW), and successfully closes H001, H011, H030, H032 (v2 only). H035, H024, H039 RECHECK verdicts: H039 RESOLVED by independent commit (MAX_DURATION_SECS 7d→24h); H035 and H024 remain UNCHANGED — Bundle 1 does not touch their attack surface.
 
-- **MatchState lifecycle (4-state, identical v1 & v2)**: `AwaitingDeposits` → (deposits complete OR start_with_depositors after timeout) → `Active` → `Settled` (via authority settle) OR `Cancelled` (via cancel/reclaim). Settled and Cancelled are absorbing/terminal. Lifecycle map: v1:`lib.rs:849-855`, v2:`lib.rs:891-897`.
-- **Pause guard pattern** (different in v1 vs v2): v1 puts `!is_paused` on cancel/settle/reclaim/start (so when paused, NOTHING moves). v2 puts `!is_paused` ONLY on create_match/deposit_wager/start_with_depositors (so when paused, in-flight funds CAN exit via cancel/settle/reclaim). v2 is the corrected model — explicit fix for H007.
-- **Close-target mechanism** (EP-036 defense): All three terminal instructions use Anchor `close` constraint. Settle: `close = authority` (rent reclaimed by server). Cancel and Reclaim: `close = caller` (rent goes to whoever triggered). The `close = caller` model is the keystone of the permissionless reclaim incentive — anyone can call it for the rent reward. v1:`lib.rs:665, 718, 745`; v2:`lib.rs:696, 748, 773`.
-- **Deposit-mask bit operations**: u8 in v1 (max 8 players, only 4 used), u16 in v2 (max 16 players, only 10 used). `1u8 << player_index` (v1:226) / `1u16 << player_index` (v2:287). No bit indexing past max_players because `player_index` is bounded by `players[..max_players].iter().position()` finding. ASSUMPTION: `player_index < max_players` always — VALIDATED by `position()` semantics on bounded slice.
-- **Compaction in start_with_depositors** (v1:507-524, v2:347-369): When a partial deposit set is activated, deposited players are slid to the front of the array, deposits_mask is rewritten as `0b00...11...1` (low bits set, count = num_deposited), max_players is reduced. After compaction, the (compacted) escrow looks structurally indistinguishable from a normal full-deposit match — same bitmap pattern, same player array layout.
+The single most interesting state interaction (S3-N09 below) is the interleaving of `propose_authority` with an in-flight `update_config`: the new authority that signs `accept_authority` inherits a pending config proposal they did not author, and after accept it cannot be cancelled — only the new authority can re-propose to overwrite it.
 
-## Invariants & Assumptions
+---
 
-- **INVARIANT: State monotonicity** — Settled and Cancelled are terminal; no instruction can transition out of them. Enforced at v1:380-383, v1:435-439, v1:259, v1:494; v2:491-494, v2:534-537, v2:388, v2:324.
-- **INVARIANT: AwaitingDeposits is the ONLY state that can transition to Active** — enforced at v1:195-198 (deposit_wager state guard), v1:494-497 (start_with_depositors), v2:250-253, v2:324-327.
-- **INVARIANT: settle_match requires state == Active** — enforced at v1:259-262, v2:388-391. NO intermediate state (AwaitingDeposits or terminal) can be settled.
-- **INVARIANT: deposits_mask bits ≤ max_players** — Implicitly via `player_index = players[..max_players].position()` bound. Enforced indirectly at v1:201-204, v2:264-267.
-- **INVARIANT: total settled ≤ total pot** — Settle dust math: `winner_amount = total_pot - treasury - ops`. Verified by BOK Feb. Re-verified in v2 with snapshotted bps (v2:418-425).
-- **INVARIANT: full_mask = (1 << max_players) - 1** — Used to detect full-deposit transition (v1:235, v2:296). Holds because max_players ≤ 4 (v1) or 10 (v2), so (1<<10)-1 = 0x3FF (10 bits, no overflow).
-- **INVARIANT: state-transition is atomic with terminal lamport drain** — Anchor `close` is a single-account-mutation ATOMIC TX-end step. State-write happens BEFORE lamport ops in all three terminal-causing instructions. Tx atomicity guarantees all-or-nothing. Enforced via Anchor close constraint + scoped {} blocks at v1:309-313, v1:385-389, v1:458-462; v2:427-431, v2:496-499, v2:556-559.
-- **ASSUMPTION: PDA seeds yield ONE escrow per match_id** — `seeds = [b"match", match_id.as_bytes()]`. Validated by Anchor `init` constraint preventing reinit. v1:613, v2:648. ASSUMPTION HOLDS but match_id COLLISION is server-side concern (off-chain DB scope per H025).
-- **ASSUMPTION: PDA can be recreated after close once match_id reused** — TRUE: after `close`, the account becomes uninitialised and can be `init`ed again with the same seed (since seeds are deterministic). VALIDATED but server should never reuse a match_id (server uses CSPRNG). Cross-handoff to Account-Validation agent.
-- **ASSUMPTION: match_end_ts is set BEFORE state transitions to Active** — VALIDATED in v2: `match_end_ts = now + duration_secs` is set in same atomic block as `state = Active` (v2:299-303 in deposit_wager, v2:365-369 in start_with_depositors). NO state where Active && match_end_ts == 0.
-- **ASSUMPTION: activated_at == 0 ↔ state ∈ {AwaitingDeposits, never-Active-Cancelled}** — Validated in both programs: only `deposit_wager` (full mask) and `start_with_depositors` set activated_at, and both also transition to Active. Cancelled-from-AwaitingDeposits keeps activated_at == 0 (used as branch sentinel in cancel_match v1:357, v2:471 and reclaim v1:442, v2:539).
+## State Machine Diagram (text-based)
 
-## Risk Observations (Prioritized)
+### Diagram 1: `MatchState` lifecycle (unchanged from v1; identical in v2)
 
-1. **HIGH — H007 STILL OPEN in v1 only** (`programs/solshot-escrow/src/lib.rs:704, 729, 774`): Pause guards on `settle_match`, `cancel_match`, AND `start_with_depositors` mean an authority that pauses the program TRAPS in-flight matches in Active state. Players cannot self-cancel after timeout because cancel constraints are blocked. **v2 has fixed this** (no pause constraint on the cancel/settle CancelMatch/SettleMatch structs at v2:743-765 / v2:690-740, except for create/deposit/start). v1 needs the same fix — comment-out or remove `constraint = !config.is_paused` on cancel/settle/start_with_depositors.
+```
+                  [create_match]
+                  authority signs
+                  (!is_paused gate)
+                        │
+                        ▼
+                 ┌──────────────┐
+                 │AwaitingDeposits│ ◄──── (initial; activated_at=0,
+                 │              │            match_end_ts=0 [v2])
+                 └──────┬───────┘
+                        │
+        ┌───────────────┼──────────────────┐
+        │               │                  │
+        │ deposit_wager │ start_with_deps  │ cancel_match
+        │ (full mask)   │ (authority)      │ (authority OR player+timeout)
+        │ player signs  │ window expired   │ caller signs
+        │ (!is_paused)  │ N>=2 (!paused)   │ (NO pause gate, v2; v1 fix)
+        │               │                  │
+        ▼               ▼                  ▼
+   ┌───────────────────────┐         ┌────────────┐
+   │      Active           │         │  Cancelled │
+   │ activated_at=now      │         │ (TERMINAL) │
+   │ match_end_ts=now+dur  │         │ Anchor     │
+   │ (v2 only)             │         │ close=     │
+   └────────┬──────────────┘         │ caller     │
+            │                        └────────────┘
+   ┌────────┴────────────┬───────────────────────┐
+   │                     │                       │
+   │ settle_match        │ cancel_match          │ permissionless_
+   │ authority signs     │ player+timeout        │ reclaim
+   │ (!is_paused REMOVED │ (NO pause v2; v1 fix) │ any signer
+   │  v1 fix + v2)       │                       │ after grace
+   │                     │                       │ (no pause guard)
+   ▼                     ▼                       ▼
+┌─────────────────┐  ┌────────────┐         ┌────────────┐
+│    Settled      │  │ Cancelled  │         │ Cancelled  │
+│  (TERMINAL)     │  │ (TERMINAL) │         │ (TERMINAL) │
+│  close=authority│  │ close=caller│        │ close=caller│
+└─────────────────┘  └────────────┘         └────────────┘
+```
 
-2. **HIGH — H016 LOW-IMPACT but STILL OPEN in BOTH** (`v1:718, 745`; `v2:748, 773`): `close = caller` on cancel + reclaim. A non-depositing observer can race to call cancel after timeout (matching `is_player` test on a player wallet OR if any depositor calls) and pocket the PDA rent reserve (~0.002 SOL). Authority can pre-empt by calling cancel first themselves. Re-validated as LOW per Feb.
+Notes:
+- **v1**: `settle_match` has additional gate `now <= activated_at + SETTLEMENT_TIMEOUT_SECONDS (3600s)` (lib.rs:282-290). v2 has **no** settlement deadline at all.
+- **v1**: `cancel_match` player-timeout uses `TIMEOUT_SECONDS (3600s)` after `activated_at OR created_at` (lib.rs:373-383). **v2**: uses `match_end_ts` if activated, else `deposit_deadline` (v2:688-694).
+- **v1**: `permissionless_reclaim` deadline = `activated_at|created_at + PERMISSIONLESS_RECLAIM_TIMEOUT (7200s)`. **v2**: `match_end_ts + 24h` or `deposit_deadline + 24h`.
+- `Settled` and `Cancelled` are absorbing; Anchor `close` zeros the account so no instruction can re-read post-terminal state.
 
-3. **HIGH — v2 NEW: longer reclaim grace creates longer fund-lockup window** (`v2:539-549`): Reclaim deadline is `match_end_ts + 24h` (Active) or `deposit_deadline + 24h` (AwaitingDeposits). With max `deposit_window_secs = 86400` (24h) AND no activation, public reclaim fires at `created_at + 48h`. Compare v1's `created_at + 1200s` (20 min). 144x longer worst-case lockup. NEW v2 design — verify the 24h grace is intentional.
+### Diagram 2: NEW — `GlobalConfig` authority rotation track (Bundle 1)
 
-4. **HIGH — v2 NEW: start_with_depositors after deposit_window vs v1 anytime** (`v2:332-339`): v2 GATES `start_with_depositors` behind `Clock::get >= deposit_deadline` to prevent silently kicking undeposited players. v1 has NO such gate — authority can compact at any moment after 2+ deposits, locking out a player who is about to deposit. Server has implicit policy but on-chain has no enforcement. **v1 has a silent-kick attack surface that v2 fixes.**
+```
+                              Live State A
+                              (no pending)
+                                    │
+              ┌─────────────────────┼──────────────────────────┐
+              │                     │                          │
+   propose_authority(B)             │              propose_authority(B)
+   (current authority signs)        │              ── ALSO LEGAL FROM ANY ──
+   sets pending_authority = Some(B) │                 LIVE STATE; never
+                                    │                 reverts to "clean Live"
+                                    ▼                 except via accept
+                              ┌──────────────────────┐
+                              │ Live State A         │
+                              │ + pending=Some(B)    │ ◄──┐
+                              └──────────┬───────────┘    │
+                                         │                │
+              ┌──────────────────────────┼────────────────┤
+              │                          │                │
+              │ propose_authority(C)     │ accept_authority
+              │ (current authority A     │ (NEW key B signs)
+              │  signs again — OVERWRITES│ atomic swap: A→B, clears pending
+              │  pending to Some(C);     │ re-validates B != treasury/ops
+              │  loses B silently        │
+              │  except in event log)    │
+              ▼                          ▼
+        Live State A                Live State B
+        + pending=Some(C)           (no pending; A loses access)
+        (loop back)                       │
+                                   ┌──────┴───────┐
+                                   │  Settled/    │
+                                   │  via further │
+                                   │  rotations   │
+                                   └──────────────┘
+```
 
-5. **MEDIUM — Deposits between activation and Active state-write**: deposits_mask is updated AFTER the system_program::transfer (v1:225-226, v2:286-287). Solana's atomicity guarantees the whole instruction succeeds or fails. But: if `try_borrow_mut_lamports` for the bitmap update somehow failed AFTER the transfer succeeded, there'd be a stuck-deposit risk. In practice the borrow can't fail because Anchor took `&mut` already. NOT_VULNERABLE but worth noting CEI is technically bent (interaction-then-effect).
+Notes:
+- `propose_authority` unconditionally writes `pending_authority = Some(_)` (v2:310). Overwrites prior pending; event emits `replaced_pending` for off-chain trace.
+- `accept_authority` requires `pending_authority.is_some()` (v2:328) and `pending == signer.key()` (v2:329-332). Pause does **not** block.
+- Authority rotation has **no on-chain cooldown** — same TX could in principle propose+accept (but they are separate instructions requiring different signers, so this collapses to "back-to-back TXs by different keys").
 
-6. **MEDIUM — v1 settlement deadline gap (H006 ties to state machine)**: v1 has `SETTLEMENT_TIMEOUT_SECONDS=3600` deadline (lib.rs:264-274) — if authority misses the 1-hour window, settle_match permanently fails. Match is stuck in Active until 2x reclaim timeout (1200s) since AwaitingDeposits cancel timeout (600s) doesn't apply to Active. The is-timed-out branch in cancel works for Active too because `timeout_reference = activated_at` then `+TIMEOUT_SECONDS=600`, so a player CAN cancel an Active match after 600s. So the 23-hour gap is actually 2400s (40 min) wide minimum but DOES exist between SETTLEMENT_EXPIRED (3600s after activation) and player-cancel availability (600s after activation). RE-CHECK: timing agent should verify v1 windows.
+### Diagram 3: NEW — `GlobalConfig` config rotation track (Bundle 1)
 
-7. **MEDIUM — start_with_depositors compaction destroys distinct player slots**: After v1:507-524 / v2:347-369, players[i] for i ≥ num_deposited becomes Pubkey::default(). If somehow a remaining_accounts iteration ran with i = old_max_players-1 (post-compaction max_players=2), that slot's bit would be 0 in new_mask, so the bit_set guard fails. SAFE, but the state-transformation is irreversible — there's no "uncompact" path.
+```
+                              Live State A
+                              (pending_config_ts = 0)
+                                    │
+              ┌─────────────────────┼──────────────────────────┐
+              │                     │                          │
+        update_config                │       update_config (again)
+        (authority signs)            │       (re-call by authority)
+        ── ANY of treasury,          │       ── overwrites any pending fields
+        ops, fee_bps_t, fee_bps_o ── │           or adds to pending merge
+        sets pending_* = Some,       │       ── pending_config_ts := now
+        pending_config_ts := now,    │           (CLOCK RESETS — stall vector)
+        validates effective state    │
+                                    ▼
+                              ┌──────────────────────┐
+                              │ Live State A         │
+                              │ + pending_*=Some(...)│ ◄──┐
+                              │ + pending_config_ts  │    │
+                              │   = T_propose        │    │
+                              └──────────┬───────────┘    │
+                                         │                │ (re-update_config
+              ┌──────────────────────────┼────────────────┘  before timelock)
+              │                          │
+              │ apply_config_update      │
+              │ (ANY signer, permissionless)
+              │ require: now >= pending_config_ts + 24h
+              │ pending → live via .take()
+              │ re-validate post-apply
+              │ last_config_update_ts := now
+              │ pending_config_ts := 0
+              ▼
+        Live State B
+        (pending_config_ts = 0;
+         pending_authority preserved if any)
+                │
+            ┌───┴────┐
+            │ further │
+            │ updates │
+            └────────┘
+```
 
-8. **MEDIUM — v2 CancelMatch struct does NOT validate has_one = authority on config** (`v2:743-765`): Unlike most other config-touching structs, the v2 CancelMatch has NO `has_one = authority` — instead authority check happens in instruction body via `caller == config_authority`. This is functionally equivalent for the authority case (still checks pubkey match), but means the constraint isn't enforced at deserialization — Phase 1 Account-Validation agent should confirm config is the canonical PDA (which it is, via seeds = config + bump).
+Notes:
+- Live `authority` is **never** touched by `update_config` or `apply_config_update`. Only the authority track touches `authority`.
+- `pending_authority` is **separate** state from `pending_config_ts > 0`. The two are not coupled.
+- `apply_config_update` is permissionless (no `has_one`) — the timelock is the sole gate.
+- `take()` on the Option fields means failed post-apply revalidation reverts via tx atomicity (Anchor `?` propagation + Solana TX revert), leaving pending fields untouched. **VERIFIED safe** — see Critical Invariant 8.
 
-9. **MEDIUM — v2 partial-deposit pot scaling: griefing economic incentive**: After `start_with_depositors` with N < max_players, pot = `wager × N`. Treasury and ops still take BPS off this smaller pot. The N-1 deposited players who would have shared 90% of (wager × max_players) now share 90% of (wager × N). The undeposited players forfeit nothing material (they just don't play). Edge case: if N=2 and max=4, the 2 active players each pay wager but receive 0.45 × wager × 2 = 0.9 × wager (for the winner), so the loser loses 100% wager and the winner gains 80% wager. This is by design but griefable — server can choose when to call start_with_depositors → a malicious authority could pick a moment that disadvantages a specific player. Cross-handoff to Token-Economic agent.
+---
 
-10. **LOW — H022 RE-VALIDATED**: GlobalConfig `init` blocks reinitialization. Anchor enforces. NOT_VULNERABLE on both.
+## Atomicity Boundaries
 
-11. **LOW — H023 RE-VALIDATED**: PDA revival post-close requires fresh `init` — same data wouldn't repopulate (state would be default). NOT_VULNERABLE.
+Each row describes a single Anchor instruction (one TX = one signature root = one revert unit). All state mutations + lamport ops happen atomically; failure anywhere reverts everything.
 
-12. **LOW — H024 RE-VALIDATED**: settlement deadline bypass via `activated_at`. v1 has the deadline; activated_at is always set on Active transition (v1:238, atomic with state). NO Active state with activated_at == 0 reachable. NOT_VULNERABLE on v1. v2 has NO settlement deadline so the question is moot.
+| Instruction | Mutates | External calls | Atomic? | Revert behaviour |
+|---|---|---|---|---|
+| `initialize_config` | config (init) | none | YES | rent reverts |
+| `update_config` (v2 Bundle 1) | pending_treasury/ops/fee_bps + pending_config_ts | none | YES | pending fields revert (untouched on error) |
+| `migrate_config` (v2 Bundle 1) | config raw bytes + size + lamports (rent top-up) | `system_program::transfer` | YES | realloc reverts; zero-fill reverts |
+| `apply_config_update` (v2 Bundle 1) | live treasury/ops/fee_bps + last_config_update_ts; clears pending_* via take() | none | YES | **CRITICAL** — if post-apply revalidation fails (v2:272-278), tx reverts so `take()`-cleared pending fields are **restored** (see Inv 8) |
+| `propose_authority` (v2 Bundle 1) | pending_authority | none | YES | trivially atomic |
+| `accept_authority` (v2 Bundle 1) | authority (swap), pending_authority (clear) | none | YES | if post-swap distinctness fails (v2:340-341), tx reverts and authority remains the old key (Inv 9) |
+| `pause_program`, `unpause_program` | is_paused | none | YES | trivial |
+| `create_match` | escrow (init), snapshots config fields | none | YES | escrow rent reverts |
+| `deposit_wager` | escrow.deposits_mask, escrow.state (cond.), escrow.activated_at (cond.), escrow.match_end_ts (cond.) | `system_program::transfer` (player→escrow) | YES | system_program transfer is non-reentrant; CEI is "bend" (transfer before state-write) but safe |
+| `start_with_depositors` | escrow.players, deposits_mask, max_players, state, activated_at, match_end_ts | none | YES | full state rewrite atomic |
+| `settle_match` | escrow.state, escrow lamports → 3 destinations | none | YES | state-write first then lamport ops; CEI clean |
+| `cancel_match`, `permissionless_reclaim` | escrow.state, escrow lamports → N refund destinations | none | YES | state-write first then refund loop; CEI clean |
 
-13. **LOW — H030 RE-VALIDATED**: Cancel from AwaitingDeposits refund logic. Both programs check bit_set on each remaining_accounts entry, validate pubkey matches escrow.players[i], transfer wager_lamports per bit. Total refunded = wager × count_ones(deposits_mask) = total deposits. NOT_VULNERABLE.
+**Key atomicity finding:** No instruction spans multiple TXs. The 2-step authority rotation is **explicitly non-atomic across TXs** — the system spends time in `Live + pending_authority=Some` state (potentially indefinitely if the new authority never accepts). The 24h config timelock similarly leaves the system in `Live + pending_config_ts > 0` state for ≥24h.
 
-14. **LOW — S002 partial RECHECK**: H003 (distinctness re-check on update_config) is now ENFORCED on both programs (v1:96-98, v2:125-127) — fix landed, NO longer a vulnerability. H007 still partial-OPEN on v1 (cancel pause guard at 729). S002 is therefore HALF-OPEN: distinctness fix locks down one leg, but pause-cancel on v1 keeps the other leg of the chain alive.
+**Cross-TX state divergence windows:**
+- `pending_authority=Some(B)` window: from `propose_authority` until either (a) `accept_authority` succeeds, (b) `propose_authority` is called again (overwrites), or (c) program is upgraded. **No timeout.**
+- `pending_config_ts > 0` window: from `update_config` until `apply_config_update` succeeds. ≥24h, no upper bound. Re-calling `update_config` resets `pending_config_ts` to current time → can stall apply indefinitely.
 
-## Novel Attack Surface
+---
 
-- **v2 deposit_window timing is a state-transition input, not just a timeout**: `start_with_depositors` REQUIRES `Clock::get >= deposit_deadline` (v2:336-339). If deposit_window_secs is set to 60s minimum and a malicious authority calls start_with_depositors immediately at 60.001s with only 2 deposits, the 8 undeposited (slow-network) players who are mid-deposit-TX-broadcast get silently kicked. The 60s minimum window is a STATE-TRANSITION CONSTANT that's per-match-configurable via authority — very different from v1's flat 600s timeout. Authority can deliberately set tight deposit windows to disadvantage particular players.
+## Critical Invariants
 
-- **v1 cancel-by-player can race with authority-cancel during paused state-transition**: Authority calls pause_program (sets is_paused=true). All cancel/settle/reclaim are now BLOCKED in v1 (constraint check). Players can't self-cancel. If authority then calls `update_config(new_authority=attacker)` (one-step, no timelock), then unpauses, the new authority can cancel any AwaitingDeposits match and potentially front-run player-cancels on Active matches. This is the H001 + H007 + H011 chain in motion at the state-machine level — pause is a freeze-while-coup mechanic. v2 fixes this by NOT pausing cancel/settle/reclaim; v1 still vulnerable.
+1. **MIE-1 (carryforward) — `Settled` and `Cancelled` are terminal MatchStates.** Re-verified at v1:259, v1:397, v1:460, v1:525; v2:464-466, v2:605-608, v2:708-711, v2:759-762. Anchor `close` removes the account on transition.
 
-- **v1 start_with_depositors has NO timing gate AND can race with deposit_wager**: Suppose 3 players deposited, 1 player is broadcasting their deposit TX. Authority calls start_with_depositors (legal in v1 — only requires state == AwaitingDeposits AND num_deposited >= 2). The compaction reduces max_players to 3; the player's deposit then fails because the pubkey isn't in players[0..3] anymore. Player has paid TX fees but is locked out. v2 prevents this by gating start_with_depositors behind deposit_window expiry — players have a fair chance to deposit.
+2. **MIE-2 (carryforward) — `AwaitingDeposits` is the only state that can transition to `Active`.** Enforced by `state == AwaitingDeposits` guards at v1:211-214, v1:524-527; v2:464-467, v2:541-544.
 
-- **Compacted MatchEscrow is structurally indistinguishable from a 'natural' N-player match post-compaction**: After v2:347-362 compaction, the on-chain account looks identical to a match created with `max_players = num_deposited` originally. The only off-chain trace is in events (MatchActive event). If the event log is lost (e.g., RPC pruning), there's no way to know retroactively whether players were silently kicked. Audit log should preserve original `MatchCreated.players` list separately.
+3. **MIE-3 (carryforward) — `Active` is the only state that can transition to `Settled`.** Enforced at v1:275-278, v2:605-608.
+
+4. **MIE-4 — Per-match snapshot immutability (v2 only).** Once `create_match` writes `treasury_snapshot / ops_snapshot / fee_bps_*_snapshot` to escrow (v2:425-428), no instruction modifies them. `settle_match` reads only snapshots (v2:613-616). **Bundle 1 confirms this invariant** — config rotations (live or pending) do not propagate into existing escrow accounts.
+
+5. **NEW MIE-11 — `pending_authority` and `pending_config_ts > 0` are independent.** `update_config` does NOT touch pending_authority (verified by inspecting v2:115-168). `propose_authority` does NOT touch any config-track fields (v2:302-318). `apply_config_update` does NOT touch pending_authority (v2:281 explicitly clears only `pending_config_ts`). `accept_authority` does NOT touch any config-track fields (v2:326-348). **Therefore the two tracks can be in any (any, any) combination of states simultaneously.**
+
+6. **NEW MIE-12 — `last_config_update_ts` is monotonically non-decreasing.** Only written at v2:280 (apply success) using `Clock::get()?.unix_timestamp`. Each successful apply strictly increases (or equals if same-slot). Read by nothing on-chain — pure audit trail.
+
+7. **NEW MIE-13 — `pending_config_ts == 0` ⇔ "no pending config apply".** Sentinel value. v2:248 gate (`require!(cfg.pending_config_ts > 0, NoPendingConfig)`) and v2:281 reset establish this. Solana's `unix_timestamp` is always positive (post-1970), so the sentinel is safe. **However:** `pending_config_ts = 0` after apply does NOT mean `pending_treasury/ops/fee_bps` are None — those are cleared via `take()` in v2:257-268 before the ts reset. The Option fields and ts reset are not gated against each other; an external observer reading state mid-instruction (impossible on Solana but worth noting for off-chain indexer sync) could see ts=0 with pending fields still Some — **not exploitable** because no instruction reads this combination.
+
+8. **NEW MIE-14 (critical) — `take()` in `apply_config_update` is atomic with revert.** v2:257-268 uses `cfg.pending_treasury.take()` which extracts the Option's value AND sets it to None in-place. If the post-apply distinctness check (v2:272-278) fails with `require!`, the Solana TX reverts the entire account-state write, restoring the pre-instruction values (including the `Some(_)` pendings that `take()` set to None). **This was verified by reading Anchor 0.30+ TX semantics:** account data writes are buffered until instruction completion; any `?` return prior to success causes the runtime to discard buffered writes. Therefore even though the in-memory `take()` clears the field, the on-chain state preserves the original Some. **Audit verdict: CORRECT — no state corruption.**
+
+9. **NEW MIE-15 — `accept_authority` is atomic.** The swap at v2:334-336 (old=auth, auth=pending, pending=None) and post-swap revalidation at v2:340-341 happen in one TX. If the new authority happens to equal the live treasury or ops, the require! at 340-341 fires and the entire instruction reverts. The OLD authority remains in place. **No corrupted state where authority is rotated but distinctness is violated.**
+
+10. **NEW MIE-16 — `migrate_config` is idempotent (declared) but not authenticated post-realloc.** v2:201-206 short-circuits if `current_size >= new_size`. After successful migration, calling `migrate_config` again no-ops at the size check — but the manual authority verification at v2:191-197 still runs **first**. Since post-migration the data follows the NEW 231-byte layout (with new fields appended), reading bytes [8..40] still returns the live `authority` field. **The check still works after migration.** Re-running on already-migrated data: authority verify passes, size check short-circuits, no-op. **Idempotent and re-authentication-safe.**
+
+11. **CARRYFORWARD MIE-17 — `activated_at == 0` ⇔ "match never activated".** Used as a branch sentinel in v1:373-377 and v2:688-694, v2:764-774. Atomicity of "set activated_at = now AND state = Active" is preserved in both deposit_wager (v1:253-254, v2:516-517) and start_with_depositors (v1:563-564, v2:582-583). **No reachable state where state == Active && activated_at == 0.**
+
+12. **CARRYFORWARD MIE-18 — `match_end_ts == 0` ⇔ "match never activated" (v2 only).** Same atomicity — written alongside activated_at at v2:518-520 and v2:584-586. Used at v2:689 (cancel branch) and v2:765 (reclaim branch).
+
+13. **NEW MIE-19 — Pause does NOT block governance.** None of the four Bundle 1 governance contexts (`UpdateConfig` v2:835-846, `ApplyConfigUpdate` v2:877-888, `ProposeAuthority` v2:891-902, `AcceptAuthority` v2:907-917) carry a `constraint = !config.is_paused` gate. Therefore an authority that pauses the program can STILL rotate keys / propose / apply configs. **This is intentional** (governance must work in emergencies) but creates the pause-rotate-unpause coup chain (S3-N02 below).
+
+---
+
+## Bundle 1 Risk Assessment (per the prompt's 8 questions)
+
+### Q1: Re-entry / interleaving — can `propose_authority` be called while `update_config` is pending (or vice versa)?
+
+**YES — both directions are legal and unguarded.**
+
+- v2:115-168 (`update_config`) does not check `cfg.pending_authority.is_none()`.
+- v2:302-318 (`propose_authority`) does not check `cfg.pending_config_ts == 0`.
+
+**State machine impact:** The system can sit indefinitely in `{pending_authority=Some(B), pending_config_ts=T_propose, pending_treasury=Some(T'), ...}` — i.e., both tracks active simultaneously.
+
+**Practical attack:**
+1. JJ (authority A) calls `propose_authority(B)` to start handoff.
+2. Before B accepts, attacker compromises A and calls `update_config(new_fee_bps=1000)` — sets pending fees to 10% max.
+3. B calls `accept_authority` — now B is authority but inherits the pending config proposal authored by the compromised A.
+4. The 24h timelock starts (or has been running since step 2).
+5. After 24h, ANYONE can call `apply_config_update` to lock in the malicious fee BPS. B's only defense: call `update_config` again BEFORE the 24h timer to overwrite the pending fields — but B can't "cancel" the pending state, only overwrite, and the new `update_config` call **resets pending_config_ts** (Q2 below), pushing apply 24h further out.
+
+**Mitigation depth:** B's `update_config` call to neutralize the pending state requires setting `Some()` values for treasury/ops/fee_bps to overwrite — or re-asserting the live values explicitly. There's no "clear pending" instruction. B can only ride the 24h-shift-by-recall escape.
+
+**Severity:** MEDIUM. Off-chain monitoring catches step 2 (`ConfigProposed` event) and can warn B before accepting. But the on-chain state machine has no guard.
+
+### Q2: Pending overwrite stalling — can the current authority indefinitely block apply?
+
+**YES — by design, but worth flagging.**
+
+v2:154 sets `cfg.pending_config_ts = now` unconditionally on every `update_config` call. At T=23h59min59s, calling `update_config(new_fee_bps_treasury=Some(existing_value))` resets the clock to T=0. Apply is now scheduled for T+24h.
+
+**Pattern:** Authority proposes a contentious change, off-chain monitoring raises alarm, authority cancels by self-overwriting before T+24h. **This is the documented "cancel mechanism."** But the same mechanic allows a malicious authority to keep a community in the dark — repeatedly proposing and cancelling — which would show up in event logs but is not blocked on-chain.
+
+**Edge case:** what if `update_config` is called with ALL params None? The function still runs validation and sets `pending_config_ts = now`. Effectively a "ping" that resets the clock without changing any pending fields. **CONFIRMED EXPLOITABLE for stalling**, but the affected party is also the only one who can do it (current authority).
+
+**Severity:** LOW — design choice with off-chain visibility, but does add a stall vector.
+
+### Q3: `propose_authority` overwrite — is cancel-via-overwrite-with-current pattern safe?
+
+**YES — overwriting is safe and serves as cancellation.** v2:310 unconditionally writes `pending_authority = Some(new_authority)`. Calling with `new_authority = cfg.authority` writes `Some(current_authority)`. This pending value is technically invalid (would fail post-swap distinctness if `current_authority` is also treasury/ops, but normally fine) but `accept_authority` would only succeed if the current authority itself signs accept — which clears pending without changing live authority. **Edge case:** if cfg.authority happens to also be cfg.treasury or cfg.ops (which is blocked by initialize_config / update_config / accept_authority distinctness), the accept would fail. Since live distinctness always holds, calling `propose_authority(cfg.authority)` as cancel is safe.
+
+**HOWEVER — the "B is lost if A proposes C immediately" pattern is real.** If A calls `propose_authority(B)` then before B accepts, A is compromised and the attacker calls `propose_authority(attacker_key)`, B's pending is silently overwritten. Off-chain monitoring catches via `replaced_pending` field in the event.
+
+**Severity:** LOW (off-chain catches; on-chain semantics correct).
+
+### Q4: Pause + governance interaction — can `update_config` / `apply_config_update` still run while paused?
+
+**YES — explicitly NO pause guard on any Bundle 1 instruction.**
+
+Verified by reading account structs:
+- `UpdateConfig` v2:835-846 — no `constraint = !config.is_paused`
+- `ApplyConfigUpdate` v2:877-888 — no pause guard
+- `ProposeAuthority` v2:891-902 — no pause guard
+- `AcceptAuthority` v2:907-917 — no pause guard
+
+**Design intent:** Governance must remain operational in emergencies. If pause locked governance, attacker could pause and then nothing could be rotated.
+
+**Coup chain:** Pause + rotate + unpause is now distinct from v1's. In v2:
+1. A pauses program (legal during pause).
+2. A proposes authority B; B accepts → A is gone (legal during pause).
+3. B unpauses or stays paused.
+
+The pause does block `create_match` + `deposit_wager` + `start_with_depositors` but NOT cancel/settle/reclaim. So in-flight matches can exit even during pause+rotate. **Important defense:** the rotation is 2-step + observable + no timelock on authority — IF B is colluding with A, the rotation is fast; IF B is not the attacker's choice (off-chain monitoring catches via `AuthorityProposed` event), B can refuse to accept.
+
+**Verdict:** Working as designed. No state corruption.
+
+### Q5: Cancel/settle atomicity vs config rotation — do in-flight matches preserve snapshots?
+
+**YES — verified.** v2:425-428 in `create_match` writes the four snapshot fields atomically with escrow init. They are never modified post-create — verified by grepping for writes (`treasury_snapshot =`, `ops_snapshot =`, `fee_bps_treasury_snapshot =`, `fee_bps_ops_snapshot =`) — only one write site each, in `create_match`.
+
+The `settle_match` instruction reads exclusively from snapshots (v2:613-616) — no read from `config.treasury / config.ops / config.fee_bps_*`. The `SettleMatch` account context (v2:993-1048) does NOT require `config` to be unchanged; it just needs distinctness from snapshots.
+
+**Cross-rotation safety:** A match created at T=0 with `treasury_snapshot = T_orig` will settle to `T_orig` regardless of how many times `update_config + apply_config_update` cycles happen between T=0 and settle. The snapshot insulates in-flight matches from governance.
+
+**Subtle implication:** If treasury rotates, OLD matches still pay to OLD treasury. New matches created post-apply pay to NEW treasury. Server must track the rotation event to know where past matches' fees went.
+
+### Q6: Settle/cancel/permissionless_reclaim race (H035) — did Bundle 1 affect it?
+
+**NO — Bundle 1 does not touch settle/cancel/reclaim timing or guards on either v1 or v2.** Verified by reading the entire diff scope: Bundle 1 changes are confined to `initialize_config`, `update_config`, `migrate_config`, `apply_config_update`, `propose_authority`, `accept_authority`, the `GlobalConfig` struct, and the corresponding account contexts. No changes to `SettleMatch`, `CancelMatch`, `PermissionlessReclaim` structs or their instruction bodies.
+
+**H035 status:** UNCHANGED. v1's 50-minute settle-vs-cancel race (between `activated_at + TIMEOUT_SECONDS=3600s` and `activated_at + SETTLEMENT_TIMEOUT_SECONDS=3600s` — actually overlap! Both = 3600s) — re-reading v1 carefully:
+- v1:282-290: settle deadline = activated_at + SETTLEMENT_TIMEOUT_SECONDS = activated_at + 3600s.
+- v1:373-383: player-cancel availability = activated_at + TIMEOUT_SECONDS = activated_at + 3600s.
+
+Both deadlines are at the **exact same instant** (now = activated_at + 3600s). Settle uses `<=` (v1:287), cancel uses `>` (v1:383, strict). So at instant T = activated_at + 3600s: settle PASSES (`now <= deadline`), cancel FAILS (`now > deadline` is `3600 > 3600` = false). At T = activated_at + 3601s: settle FAILS (`3601 > 3600`), cancel PASSES (`3601 > 3600`). **No overlap window of even 1 second** on v1. **REVISED CONCLUSION: H035 may have already been resolved (or shrunk to 0s) when the boundaries were unified.**
+
+v2 has NO settle deadline, so there's a permanent overlap: settle is callable forever, cancel is callable by player after `match_end_ts`. This is a **wider** window than v1's. **NEW concern S3-N06 below.**
+
+### Q7: `migrate_config` re-invocation — does the size check short-circuit safely?
+
+**YES — but only because of a benign coincidence.** v2:201-206:
+
+```rust
+let new_size = GlobalConfig::SPACE;  // 231
+let current_size = config_info.data_len();
+if current_size >= new_size {
+    return Ok(());
+}
+```
+
+After successful migration, `data_len() == 231`. Re-invocation reads authority bytes [8..40] (still valid post-migration since field layout preserves authority at offset 8-40 in the new struct order — verified by reading the struct: `authority` is the first field after the 8-byte discriminator), passes the authority check, hits the size check, short-circuits to `Ok(())`. No realloc, no zero-fill.
+
+**One residual risk:** if a future deploy CHANGES `GlobalConfig::SPACE` to something > 231, the `current_size >= new_size` check becomes `231 >= new_value` = false, triggering a SECOND realloc to extend further. The zero-fill loop at v2:233-235 starts from `current_size = 231` and zeros up to `new_size`. The previously-applied pending fields stay intact. **Forward-safe.**
+
+**Sharp edge:** if SPACE shrinks (cannot happen with append-only schema), the realloc would silently truncate. Not currently a risk.
+
+### Q8: `accept_authority` atomicity — does Anchor revert on post-swap validation failure?
+
+**YES — verified via Solana TX atomicity model.** v2:326-348:
+
+```rust
+cfg.authority = pending;
+cfg.pending_authority = None;
+// (mutations applied to in-memory account)
+require!(cfg.authority != cfg.treasury, EscrowError::InvalidConfig);  // ← may fail
+require!(cfg.authority != cfg.ops, EscrowError::InvalidConfig);
+```
+
+If either `require!` fails, the Anchor handler returns `Err(_)`. Solana's runtime then rolls back the entire transaction, including the account data buffer for `config`. The on-chain post-TX state is **unchanged from pre-TX** — `authority` remains the OLD value, `pending_authority` remains `Some(_)`.
+
+This was verified by the architecture documentation pointing to Anchor 0.30+ atomicity semantics. NOT_VULNERABLE.
+
+---
+
+## Prior-Finding Status
+
+### H035 (HIGH, CVSS 8.5) — Settle-vs-cancel priority-fee race
+
+**RECHECK verdict: STATUS_UNCHANGED on v1; STATUS_UNCHANGED on v2 (was already wider).**
+
+- **v1**: Re-reading carefully (v1:282-290 settle, v1:373-383 cancel), the two deadlines are simultaneously activated_at+3600s. settle uses `<=` and cancel uses `>` so the boundary is partitioned with no overlap. **Window = 0 seconds** between the two — settle-or-cancel race is gone on v1. (Original audit #2 H035 documented this as "50 minutes" based on old TIMEOUT_SECONDS = 600s vs SETTLEMENT = 3600s. The constants have been UNIFIED to 3600s in the current source — confirmed at v1:22 and v1:29. **H035 SHRUNK FROM 50min → 0s.** Re-classify as RESOLVED-by-constant-alignment.)
+- **v2**: No settlement deadline at all (no equivalent of v1:282-290). Player-cancel is `now > match_end_ts` (strict `>`). Settle is callable any time when state==Active. So there's a window from `match_end_ts + 1s` until forever where both settle (legal) and cancel-by-player (legal) succeed. **This window = ∞.** Bundle 1 did NOT change this. **H035 STATUS for v2: still open, infinite window.**
+
+### H024 (HIGH) — Non-contiguous `deposits_mask` permanently unrefundable
+
+**RECHECK verdict: STATUS_UNCHANGED.**
+
+The refund loops at v2:727-735 (cancel) and v2:794-802 (reclaim) iterate `for (i, account) in ctx.remaining_accounts.iter().enumerate()`. The caller passes refund accounts in player-index order. If player[0] did not deposit (bit 0 clear), the caller can pass player[1] as remaining_accounts[0] — but then `bit_set` check (`(deposits_mask >> 0) & 1 == 1`) at v2:729-730 fails with `InvalidPlayer`. **The bug from audit #2 was that the loop is monotonic from i=0, so any gap in `deposits_mask` (e.g., 0b0110 — players 1,2 deposited but not 0) makes refunds impossible.** Verified the same monotonic loop in v2. Bundle 1 unrelated.
+
+**Remediation idea (out of scope for this finding):** Replace `enumerate()` with explicit caller-passed player indices, validated against `deposits_mask`. Allow refund of any subset matching count_ones.
+
+### H039 (HIGH) — v2 unbounded `duration_secs` lockup
+
+**RECHECK verdict: RESOLVED.**
+
+v2:38-42 now reads:
+```rust
+// H039 fix: cap reduced from 7 days to 24h.
+const MAX_DURATION_SECS: u32 = 24 * 3_600;
+```
+
+The error variant `DurationTooLong` at v2:1400 still says "max 24h". `create_match` validates at v2:389. **Confirmed reduction from 7d → 24h. The 8-day worst-case fund lockup (24h max duration + 24h grace + 24h misc + 4d buffer) is now ~48h. NOT eliminated but bounded. Within the spirit of H039.**
+
+---
+
+## New Findings (11)
+
+Numbered S3-N01 through S3-N11. Severity is auditor's pre-Phase-4 estimate; final severity TBD.
+
+### S3-N01 (MEDIUM) — Concurrent `pending_authority` + `pending_config_ts` allows config inheritance attack
+
+**Description:** Bundle 1's two governance tracks (authority rotation vs config rotation) are independent (Inv 11). If authority A is compromised between starting an auth rotation and the new authority B accepting, attacker can submit a malicious `update_config` proposal in the gap. Once B accepts, B inherits the pending config they did not author.
+
+**Impact:** B must take defensive action within 24h or attacker-proposed fees apply.
+
+**Location:** v2:115-168 (update_config has no pending_authority guard), v2:326-348 (accept does not clear pending_config_ts).
+
+**Recommendation:** Either (a) `accept_authority` clears all pending governance state (forces new authority to re-propose), or (b) `update_config` requires `pending_authority.is_none()` to prevent in-flight authority rotation from being polluted. Option (a) is safer but breaks the "in-flight config rotations survive authority change" property — depends on intent.
+
+### S3-N02 (MEDIUM) — Pause-rotate-unpause coup is now 2-step gated but still possible
+
+**Description:** v1's H009 chain was pause + update_config(new_authority) + unpause. In v2, with Bundle 1, the equivalent is pause + propose_authority + accept_authority + unpause. The 2-step is INHERENTLY a defense (new authority must sign accept), but if A's compromiser controls both A's key AND a pre-arranged B's key, the rotation completes in 2 TXs by 2 keys — both signed by the attacker. **No on-chain block for this.**
+
+**Impact:** Same as v1 H009. Bundle 1 reduces but does not eliminate the coup chain.
+
+**Location:** v2:302-318, v2:326-348 (no pause guard on either).
+
+**Recommendation:** Off-chain monitoring of `AuthorityProposed` + `Paused` event correlation. If both fire close together, raise alarm. Cannot be fixed on-chain without breaking governance-during-emergencies.
+
+### S3-N03 (LOW) — `migrate_config` is not idempotent against authority rotation between migrate calls
+
+**Description:** Inv 10 confirmed `migrate_config` is idempotent for re-invocation. But: if migrate succeeds, then authority rotates via propose+accept, then someone calls migrate AGAIN (e.g., to re-init memory), the manual auth verify at v2:191-197 reads bytes [8..40] which now contains the NEW authority. The signer must be the new authority. **Working as intended.** But: this means the migrate instruction is a permanent admin tool that grants the live authority the ability to call realloc on the config. Since the realloc check at v2:201-206 short-circuits at size>=231, the realloc never fires post-migration. But the manual byte-reading path remains active.
+
+**Impact:** Negligible while size check short-circuits. If a future code change widens GlobalConfig::SPACE further, calling migrate would extend the account again — but that's the intent.
+
+**Location:** v2:184-239.
+
+**Recommendation:** Document that `migrate_config` remains a callable instruction post-mainnet. Mark it `#[cfg(feature = "devnet")]` if it's truly devnet-only — currently it's compiled in for all builds. **OR** add an explicit "already at target SPACE" return BEFORE the authority verify (saves the wasteful auth check on idempotent re-call).
+
+### S3-N04 (MEDIUM) — `apply_config_update` cannot be cancelled or shortened
+
+**Description:** Once `pending_config_ts > 0`, the only ways to "neutralize" the pending state are:
+1. Wait 24h and let `apply_config_update` fire (potentially applying unwanted changes).
+2. Call `update_config` again to overwrite pending fields with safe values + reset the 24h clock.
+
+There is NO `cancel_config_update` instruction. There is NO "apply but skip these fields" option. The pending state must be either applied OR overwritten — never explicitly cleared.
+
+**Edge case:** If `update_config` is called with all-None args, it sets `pending_config_ts = now` but doesn't touch the Some-already pending fields. So calling all-None update_config 1ms before T+24h would re-stamp the clock without clearing pending. This is the "ping" pattern. To CLEAR the pending fee bps proposal, the authority must explicitly call `update_config(new_fee_bps_treasury=Some(current_live_value), new_fee_bps_ops=Some(current_live_value))` — the explicit re-assertion overwrites the pending Some.
+
+**Impact:** Operational complexity. Authority must understand the overwrite semantics to safely cancel.
+
+**Location:** v2:115-168.
+
+**Recommendation:** Add `cancel_pending_config` instruction (authority-only) that sets all pending_* to None and pending_config_ts=0 atomically. Or document the overwrite semantics in the IDL/SDK.
+
+### S3-N05 (LOW) — `propose_authority` event log is the only record of overwritten pendings
+
+**Description:** v2:312-316 emits `AuthorityProposed { current, pending, replaced_pending }`. The `replaced_pending` field is `Option<Pubkey>` — `Some(old_pending)` if overwrite happened, `None` if first proposal. **This is the only on-chain record that a previous proposal existed.** If RPC log indexing fails or events are pruned, the trail is lost.
+
+**Impact:** Forensic recovery of "who was the intended next authority" depends on event logs being preserved.
+
+**Location:** v2:312-316.
+
+**Recommendation:** Acceptable as-is. Off-chain indexer must persist `AuthorityProposed` events.
+
+### S3-N06 (MEDIUM-HIGH) — v2 has NO upper bound on settle-after-match-end
+
+**Description:** v2 removes the v1 settlement deadline (v1:282-290 — `now <= activated_at + 3600s`). In v2, `settle_match` only requires `state == Active` (v2:605-608). After `match_end_ts`, players become eligible to cancel (v2:697 — `now > match_end_ts`) but settle is also still legal. **Authority retains unilateral settle power even after match end.**
+
+This is a deliberate tradeoff (server can take time to determine winner for async games) but creates a race between authority settle and player cancel that extends until permissionless_reclaim becomes available (match_end_ts + 24h).
+
+**Impact:** During the 24h grace window, authority can settle to ANY player they choose — even if players have already started cancelling. First TX to land wins.
+
+**Severity:** MEDIUM-HIGH. This is essentially H035's v2 manifestation — but it's been documented as design intent.
+
+**Location:** v2:604-671 (no deadline check), v2:697 (player cancel availability).
+
+**Recommendation:** Add explicit settle deadline in v2 (e.g., `match_end_ts + GRACE`), aligned with permissionless_reclaim. Or require authority to settle within `match_end_ts + ε` and after that, only cancel/reclaim is valid. **Worth a finding in main audit report.**
+
+### S3-N07 (LOW) — `pending_config_ts` overflows are unreachable but not impossible
+
+**Description:** v2:154 sets `pending_config_ts = now` (Solana unix_timestamp). v2:251-254 computes `earliest = pending_config_ts + CONFIG_TIMELOCK_SECS (86400)`. Both via `checked_add` returning `ArithmeticOverflow` on overflow.
+
+`i64::MAX` is ~9.2e18; current epoch is ~1.7e9. Overflow would require ~9.2e18 - 86400 seconds ≈ 292 billion years from now. **Not reachable.** But the checked_add is correctly placed for defense-in-depth.
+
+**Verdict:** NOT_VULNERABLE; defense-in-depth correct.
+
+### S3-N08 (MEDIUM) — `apply_config_update` revalidation reads CURRENT cfg.authority, not propose-time authority
+
+**Description:** v2:272 reads `cfg.authority` to check distinctness against the (now-live) treasury/ops. If `accept_authority` was called between `update_config` and `apply_config_update`, the new authority is the one validated against.
+
+**Scenario:** A proposes treasury T'. Before T+24h, A starts authority rotation to B; B accepts → live authority = B. At T+24h, anyone calls apply_config_update. The distinctness check is `B != T'` — but the propose-time check at v2:146 was `A != T'` (i.e., the EFFECTIVE merge of pending and live, where authority was A). If B happens to equal T', apply fails with `InvalidConfig` — pending fields stay (revert), but `pending_config_ts` is NOT advanced (still T_original). Apply remains blocked until someone calls `update_config` again to overwrite T'.
+
+**Impact:** The pending config can become inapplicable due to a concurrent authority rotation. Recovery requires the new authority to re-propose with safe values. **NOT funds-loss but is a liveness issue.**
+
+**Location:** v2:272-278.
+
+**Recommendation:** Comment notes this is "defense in depth — propose-time check could have raced with a propose_authority that changed cfg.authority." Defense is correct (validates current state), but a stuck pending could be confusing. Documentation should note that re-proposing is the recovery path.
+
+### S3-N09 (MEDIUM — flagged as the most interesting interaction) — Authority handoff + config inheritance creates a "poisoned inheritance" pattern
+
+**Description:** Compound of S3-N01, S3-N04, S3-N08. The most interesting state interaction in Bundle 1 is the **3-way independence** of (authority rotation, config rotation, pause). Because all three tracks are independent and ungated against each other, the following 12-state phase space is reachable:
+
+| Authority track | Config track | Pause | Reachable? |
+|---|---|---|---|
+| Live | Live | unpaused | YES (initial) |
+| Live + pending | Live | unpaused | YES (mid-rotation) |
+| Live | Live + pending | unpaused | YES (mid-config) |
+| Live + pending | Live + pending | unpaused | YES (both proposals open) |
+| Live | Live | paused | YES (emergency pause) |
+| Live + pending | Live | paused | YES (rotate under pause) |
+| Live | Live + pending | paused | YES (config rotate under pause) |
+| Live + pending | Live + pending | paused | YES (max chaos) |
+| Live + pending | Live | paused → unpaused (transition) | YES |
+| ... | ... | ... | YES |
+
+The "max chaos" state — both rotations pending while paused — is reachable and not detectably problematic on-chain. Off-chain monitoring must watch all combinations.
+
+**Concrete attack:**
+1. A pauses program (legitimate or compromised).
+2. A calls `update_config` proposing malicious fee bps → pending_config_ts=T.
+3. A calls `propose_authority(B)` where B is attacker-controlled → pending_authority=Some(B).
+4. B accepts → live authority = B.
+5. B waits 23h59min, then sees nobody noticed. At T+24h, B (or anyone) calls `apply_config_update`. Malicious fees apply.
+6. B unpauses. New matches start, paying malicious fees to B-controlled treasury (if B also proposed that).
+
+**Mitigation:** Off-chain monitoring of (Paused + AuthorityProposed + ConfigProposed) combinations. Time-sensitive alerting required.
+
+**Severity:** MEDIUM (requires compromise of authority A first). But it IS the headline state-machine concern of Bundle 1.
+
+### S3-N10 (LOW) — `accept_authority` does not require pause to be cleared
+
+**Description:** Verified that `AcceptAuthority` context (v2:907-917) has no pause guard. Therefore B can accept authority while program is paused. Combined with S3-N09 chain.
+
+**Verdict:** Working as designed.
+
+### S3-N11 (LOW) — Idempotent re-call of `apply_config_update` after success returns NoPendingConfig (correct)
+
+**Description:** After successful apply, `pending_config_ts = 0` (v2:281). Re-calling apply_config_update hits the gate at v2:248 (`require!(cfg.pending_config_ts > 0, EscrowError::NoPendingConfig)`) and reverts. **Correct behaviour — no double-apply possible.** Worth noting the explicit gate.
+
+**Verdict:** NOT_VULNERABLE — defense-in-depth correct.
+
+---
 
 ## Cross-Focus Handoffs
 
-- → **Access Control Agent**: H007 fix asymmetry between v1 and v2 — verify v2's CancelMatch struct (v2:743-765) which omits `has_one = authority` and instead does in-body `caller == config_authority` check is sound. Cross-check that authority can still cancel AwaitingDeposits.
-- → **Timing Agent**: H006 dead-zone on v1 — verify exact gap between SETTLEMENT_EXPIRED (activated_at + 3600s) and player-cancel availability (activated_at + 600s). v2's no-deadline model removes this gap but introduces a different one (deposit_window + 24h grace = up to 48h lockup).
-- → **Token-Economic Agent**: start_with_depositors griefing — verify the 80% winner-take from (wager × N) is intentional. Authority's choice of WHEN to call start_with_depositors influences pot size, which is an economic-incentive concern.
-- → **CPI Agent**: deposit_wager CEI bend — system_program::transfer happens BEFORE deposits_mask bit-set (v1:213-226, v2:275-287). Verify atomicity: if Anchor close fails after lamport drain (impossible per Anchor invariants, but worth verifying).
-- → **Account Validation Agent**: PDA seed entropy — match_id is a 4-character server-generated string. Off-chain CSPRNG is OK but on-chain has no entropy validation. If server reuses match_id, post-close state revival via init in same TX is the only attack surface (extremely narrow — would require server to deliberately reuse).
-- → **Error Handling Agent**: All state guards use `require!` with explicit error variants. Comprehensive — every illegal state transition has a corresponding error code. Verify error variants are exhaustive vs all transition checks.
+- → **Access Control Agent**: 
+  - Verify `ApplyConfigUpdate` context (v2:877-888) — the lack of `has_one = authority` is intentional, but does Anchor 0.30+ require any other gate? Confirm payer signing is sufficient for the mutating instruction.
+  - `AcceptAuthority` (v2:907-917) uses `Signer<new_authority>` but has no `has_one` — the body check at v2:329-332 is the sole identity gate. Confirm this matches the "two-step authority rotation" design pattern in Anchor security guides.
+  - `MigrateConfigUnchecked` (v2:856-871) uses `UncheckedAccount` — verify the seeds gate (v2:862) is sufficient identity protection, and the manual byte read at v2:191-198 cannot be replayed against a substituted account.
 
-## Trust Boundaries
+- → **Timing Agent**:
+  - Bundle 1 introduces 3 new time-sensitive flows: propose→accept (no timeout, unbounded), update_config→apply (24h+ unbounded), permissionless apply (`now >= earliest` uses `>=` not `>` — slot-boundary edge).
+  - Verify `Clock::get()` is the only timestamp source in Bundle 1 — confirmed at v2:123, v2:250.
+  - H035 v1 analysis revealed unified TIMEOUT/SETTLEMENT constants → 0-second race window. Verify against actual constants v1:22 (TIMEOUT_SECONDS = 3600) and v1:29 (SETTLEMENT_TIMEOUT_SECONDS = 3600). **POSSIBLE H035 RESOLUTION** for v1.
 
-- **Authority** is sole trigger for: state transitions to Settled (settle_match), AwaitingDeposits → Active without full deposits (start_with_depositors). In v2 it can also create matches with custom timeout/duration, which is a new state-input axis.
-- **Players** can trigger: AwaitingDeposits → Active (via deposits filling the mask), Cancelled from any state after timeout (cancel_match), Cancelled from terminal-eligible state via permissionless_reclaim (anyone, after grace window).
-- **System Program** is the ONLY external program touched (deposit transfers). Reentrancy impossible.
-- **Anchor `init` and `close` constraints** are the trust foundations: `init` prevents reinit (EP-037 mitigation), `close` zeros + reassigns ownership (EP-036 mitigation). Both are Anchor 0.30+ guarantees.
-- **No instruction reads from a closed account** — Anchor's `Account<'info, T>` requires the account to be uninitialised after close, so any subsequent instruction that tries to deserialize fails.
+- → **Arithmetic Agent**:
+  - All Bundle 1 arithmetic uses `checked_add` paired with `ok_or(ArithmeticOverflow)`. Verify the 24h timelock + i64 timestamp combo (v2:251-254) cannot overflow in realistic time horizons.
+  - `migrate_config` rent computation (v2:208-213) uses `checked_sub`. Verify no underflow when `current_balance >= new_minimum`.
 
-## RECHECK Verdicts (per task brief)
+- → **Token-Economic Agent**:
+  - S3-N06 (settle-after-match-end window) interacts with token settlement. A 24h+ settle race window favours the authority but doesn't reduce pot guarantees.
+  - Snapshot mechanism (MIE-4) means in-flight matches use OLD fee BPS. Cross-check pot math.
 
-| ID | Severity | Status v1 | Status v2 | Notes |
-|----|----------|-----------|-----------|-------|
-| **H007** | HIGH | **STILL OPEN** at v1:729 (cancel) + v1:704 (settle) + v1:774 (start_with_depositors) | **FIXED** at v2:743-765 (no pause constraint on cancel) and v2:690-740 (no pause on settle) | v2 explicitly removed the pause guard from terminal-causing instructions; v1 retained it. v2 documentation header at line 145-146 confirms intent |
-| **H016** | LOW | STILL OPEN at v1:718 (cancel close=caller), v1:745 (reclaim close=caller) | STILL OPEN at v2:748 (cancel), v2:773 (reclaim) | Both same pattern — non-depositor races for PDA rent ~0.002 SOL. Feb classed LOW |
-| **H022** | NOT_VULN | RE-VALIDATED on v1 — `init` constraint at v1:546-552 blocks reinit | RE-VALIDATED on v2 — `init` constraint at v2:587-593 blocks reinit | Anchor 0.30+ discriminator + init guarantees |
-| **H023** | NOT_VULN | RE-VALIDATED — close zeros data + reassigns owner; revival yields fresh state | RE-VALIDATED on v2 — same close pattern | EP-036 defense intact |
-| **H024** | NOT_VULN | RE-VALIDATED — activated_at is always set in same atomic block as state=Active (v1:236-238) | RE-VALIDATED on v2 — same atomicity (v2:299-303 in deposit_wager, v2:365-369 in start_with_depositors). v2 also doesn't HAVE a settlement deadline so the bypass question doesn't apply | Different lifecycle but stronger guarantee |
-| **H030** | NOT_VULN | RE-VALIDATED — refund-all flow correct (v1:393-410) | RE-VALIDATED on v2 — refund-all flow correct (v2:502-510) | bit_set check + pubkey match + per-iteration lamport transfer |
-| **S002** | HIGH chain | PARTIAL — H003 LEG CLOSED (v1:96-98 distinctness on update); H007 LEG OPEN (v1:729) | H003 LEG CLOSED (v2:125-127); H007 LEG CLOSED on cancel/settle but stays on create/deposit/start | v2 fully closes S002; v1 still has the cancel-pause leg |
+- → **CPI Agent**:
+  - `migrate_config` (v2:214-223) does a CPI to system_program for rent top-up. Verify the CPI accounts (from=auth_info, to=config_info) cannot be substituted via account ordering.
 
-## Pause Guard Table
+- → **Account Validation Agent**:
+  - `MigrateConfigUnchecked` (v2:856-871) is the only `UncheckedAccount` in a non-destination role. The manual byte read at offset [8..40] is the trust foundation. Verify this offset is correct for the v1 GlobalConfig layout (v1:832-852).
+  - Reading the v1 layout: 8 byte disc + 32 byte authority (offset 8-40 ✓) + 32 byte treasury (40-72) + 32 byte ops (72-104) + 1 byte is_paused (104) + 1 byte bump (105) = 106 total bytes (not 110 as commented). **WAIT** — confirm v1 SPACE constant. v1 GlobalConfig::SPACE is defined as `8 + (32 * 3) + 1 + 1 = 106`. The HOT_SPOTS.md and INDEX.md both reference 110 bytes for v1 layout, but v2's migrate_config zero-fills starting at `current_size` and SPACE is 106 for v1. So zero-fill starts at offset 106, filling 106..231 = 125 bytes. **The new pending fields plus timestamps total 4 Option<Pubkey> + 1 Option<u16>*2 + 2 i64 = 4*(33) + 2*(3) + 16 = 132+6+16 = 154 bytes** — but SPACE delta is only 231-106 = 125 bytes. **Discrepancy!** 
+  - **Wait — let me recompute v2 SPACE** from v2:1162-1169: 8 + (32*3) + (2*2) + 1+1 + (1+32) + (1+32)+(1+32) + (1+2)+(1+2) + 8+8 = 8 + 96 + 4 + 2 + 33 + 66 + 6 + 16 = **231 bytes ✓**. The pre-Bundle-1 layout was 8 + 96 + 4 + 2 = **110 bytes** (with fee_bps_t + fee_bps_o already at 2*2=4 bytes). v1 doesn't have fee_bps fields. So v1's GlobalConfig SPACE = 110 bytes would only match if v1 had fee_bps fields too — let me check v1 source...
+  - v1 GlobalConfig (v1:832-852) likely does NOT have fee_bps fields (v1 has hardcoded TREASURY_BPS/OPS_BPS constants at v1:15-16). **v1 SPACE = 106 bytes (no fee_bps).** Then v2 migrate_config zero-fills from 106 to 231 = 125 bytes. **But the new fields plus 2*(1+2) = 6 bytes of NEW fee_bps_t/o Options... wait, v2 already had fee_bps_t and fee_bps_o as 2-byte u16 each in the pre-Bundle-1 layout (the audit doc INDEX says pre-S2-T1 layout was 110 = 8+96+4+1+1, which means it had fee_bps_t + fee_bps_o = 4 bytes already).
+  - **So v2's pre-Bundle-1 was 110 bytes; v1's current is 106 bytes (no fee_bps).** migrate_config is intended for migrating v2 pre-Bundle-1 → v2 post-Bundle-1, NOT v1 → v2. The comment at v2:175-179 confirms "old config data (110 bytes) can't be deserialized as the new GlobalConfig struct (231 bytes)." This is v2 → v2 migration. **CRITICAL: confirm with deployer that v1 was never deployed using v2's GlobalConfig schema.** Cross-handoff to Account Validation Agent for layout verification.
 
-| Instruction | v1 has `!is_paused`? | v2 has `!is_paused`? | Notes |
-|-------------|---------------------|---------------------|-------|
-| initialize_config | n/a (init only) | n/a | First-run setup |
-| update_config | NO | NO | Authority-only, ungated by pause |
-| pause_program | NO (idempotent) | NO (idempotent) | Always callable |
-| unpause_program | NO (idempotent) | NO (idempotent) | Always callable |
-| create_match | YES (v1:626) | YES (v2:660) | Pause blocks new matches |
-| deposit_wager | YES (v1:650) | YES (v2:682) | Pause blocks deposits |
-| settle_match | **YES (v1:704)** | **NO** (v2:732-737, only `has_one = authority`) | **v2 fix** — funds can exit during pause |
-| cancel_match | **YES (v1:729)** | **NO** (v2:757-761, no `!is_paused` constraint) | **v2 fix — H007 closed on v2** |
-| permissionless_reclaim | NO (v1:738-754, no config in struct) | NO (v2:768-782, no config in struct) | Was Feb-validated as intentional design |
-| start_with_depositors | **YES (v1:774)** | YES (v2:800) | Both block via pause; questionable design |
-
-## Close Target Table
-
-| Instruction | v1 close = X | v2 close = X | Notes |
-|-------------|--------------|--------------|-------|
-| settle_match | authority (v1:665) | authority (v2:696) | Server reclaims rent — sensible |
-| cancel_match | caller (v1:718) | caller (v2:748) | Whoever calls gets rent — incentive for self-cancel after timeout |
-| permissionless_reclaim | caller (v1:745) | caller (v2:773) | Designed incentive for permissionless caller |
-| (other instructions) | — | — | No close (mutates only) |
-
-## State-Transition Diagrams
-
-### v1 (4 states)
-
-```
-            [create_match]
-                ↓
-       AwaitingDeposits ────────────────┐
-            ↓                            │
-            │ deposit_wager (full mask)  │ start_with_depositors
-            │                            │ (>=2 deposits, AwaitingDeposits)
-            ↓                            ↓
-          Active ←─────────────────[same]
-            ↓
-    ┌───────┼─────────────────────┐
-    │       │                     │
- settle   cancel              permissionless_reclaim
-    ↓       ↓                     ↓
- Settled  Cancelled            Cancelled
- [TERMINAL] [TERMINAL]         [TERMINAL]
-```
-
-State guards on each transition (v1):
-- **AwaitingDeposits → Active** via `deposit_wager`: requires `state == AwaitingDeposits` AND `deposits_mask == full_mask`. Atomic transition includes `activated_at = now`. (v1:195-198, v1:235-238)
-- **AwaitingDeposits → Active** via `start_with_depositors`: requires `state == AwaitingDeposits` (`MatchAlreadyStarted` error) AND `num_deposited >= 2`. NO timing gate. Compacts players, sets activated_at. (v1:494-524)
-- **Active → Settled** via `settle_match`: requires `state == Active`, `is_paused == false`, settlement-deadline check (now ≤ activated_at + 3600s), winner ∈ players. Sets state to Settled BEFORE transfer (CEI). (v1:259-313)
-- **AwaitingDeposits → Cancelled** via `cancel_match`: requires authority OR (player AND timed_out), `state ∈ {AwaitingDeposits, !Settled, !Cancelled}`, `is_paused == false`. (v1:374-389)
-- **Active → Cancelled** via `cancel_match` (player only): requires player + timed_out (after activated_at + 600s). (v1:374-389)
-- **Active or AwaitingDeposits → Cancelled** via `permissionless_reclaim`: anyone after 2x timeout (1200s) from activated_at OR created_at. NO is_paused check (struct has no config). (v1:425-487)
-- **Settled, Cancelled** are TERMINAL — Anchor `close` removes the account; no path back.
-
-### v2 (4 states — IDENTICAL set, different transition semantics)
-
-```
-            [create_match]
-                ↓
-       AwaitingDeposits ──────────────────┐
-            │                              │
-            │ deposit_wager (full mask)    │ start_with_depositors
-            │ + match_end_ts = now+dur     │ (after deposit_window expires
-            │                              │  + N>=2 + AwaitingDeposits)
-            ↓                              ↓
-          Active ←──────────────[same]
-            ↓
-    ┌───────┼─────────────────────┐
-    │       │                     │
- settle   cancel              permissionless_reclaim
-    ↓       ↓                     ↓
- Settled  Cancelled            Cancelled
- [TERMINAL] [TERMINAL]         [TERMINAL]
-```
-
-State guards on each transition (v2 differences):
-- **AwaitingDeposits → Active** via `deposit_wager`: ALSO checks `now ≤ deposit_deadline` (hard deposit-window) — REJECT after deposit_window. (v2:255-262)
-- **AwaitingDeposits → Active** via `start_with_depositors`: requires `now >= deposit_deadline` (NEW v2 gate — no premature kick). (v2:332-339)
-- **Active → Settled** via `settle_match`: requires `state == Active`, `has_one == authority`. NO settlement deadline. Pause does NOT block. (v2:387-453)
-- **Cancel** model: Authority can ONLY cancel AwaitingDeposits. Player can cancel after `player_cancel_deadline` which is `match_end_ts` if Active, else `deposit_deadline` if AwaitingDeposits. Pause does NOT block. (v2:459-519)
-- **Reclaim**: anyone after `match_end_ts + 24h` (Active) or `deposit_deadline + 24h` (AwaitingDeposits). MUCH longer grace than v1's 1200s. (v2:526-578)
-
-### Illegal Transitions Mapped + Rejection Mechanism
-
-| From | To | Instruction | Rejection Mechanism |
-|------|-----|-------------|---------------------|
-| AwaitingDeposits | Settled | settle_match | `state == Active` check (v1:259, v2:388) → InvalidState |
-| AwaitingDeposits | Settled | (any other) | No instruction sets state=Settled except settle_match |
-| Active | AwaitingDeposits | n/a | No instruction sets state=AwaitingDeposits except create_match (which uses `init`) |
-| Active | Active (re-activate) | n/a | No instruction transitions Active→Active |
-| Settled | * | settle_match | `state == Active` check rejects |
-| Settled | * | cancel_match | `state != Settled && != Cancelled` check rejects (v1:380, v2:491) |
-| Settled | * | permissionless_reclaim | same check (v1:435, v2:534) |
-| Cancelled | * | (all) | same checks reject + Anchor close removed account |
-| AwaitingDeposits → Active | deposit_wager | partial mask | full_mask check ensures only full deposits trigger |
-| AwaitingDeposits → Active | start_with_depositors | num<2 | TooFewPlayers rejects (v1:500, v2:330) |
-| AwaitingDeposits → Active | start_with_depositors | v1: ANYTIME | NO gate — silent-kick attack surface |
-| AwaitingDeposits → Active | start_with_depositors | v2: before deposit_window | DepositWindowOpen rejects (v2:336-339) |
-| Active → Cancelled | settle | nope | settle goes to Settled only |
-| Active → Settled | cancel | nope | cancel goes to Cancelled only |
-
-<!-- CONDENSED_SUMMARY_END -->
+- → **Error Handling Agent**:
+  - 3 new error variants (NoPendingAuthority, NoPendingConfig, TimelockNotElapsed) cover all the new state-machine guards.
+  - Verify exhaustiveness: every Bundle 1 require! has a specific error code (not just `InvalidConfig`).
+  - Check: v2:340-341 (post-accept distinctness) returns `InvalidConfig` for both checks — semantically correct but maps two distinct failure modes to one error.
 
 ---
 
-# State Machine — Full Analysis
-
-## Executive Summary
-
-Both `solshot-escrow` (v1) and `solshot-escrow-v2` (v2) implement an N-player wager escrow with the same 4-state lifecycle: `AwaitingDeposits → Active → Settled` (via authority settlement) or `→ Cancelled` (via cancel/reclaim paths). The state machine is small, well-formed, and uses Anchor's `init` and `close` constraints to anchor the lifecycle to on-chain account presence. v2 does NOT introduce a new lifecycle state (the static pre-scan hypothesis of a `Pending` state is **incorrect** — v2:891-897 contains the same 4 variants as v1:849-855).
-
-The state machine is sound on both programs, with one major architectural divergence: **v2 removes the pause-program guard from cancel_match, settle_match, and permissionless_reclaim**, while v1 retains it on cancel + settle + start_with_depositors. This is the explicit fix for **H007 (pause-as-griefing)**, which remains OPEN on v1 (`programs/solshot-escrow/src/lib.rs:704, 729, 774`) but is CLOSED on v2.
-
-The v2 design also introduces three new state-machine inputs that affect transition semantics: per-match `duration_secs`, per-match `deposit_window_secs`, and the activation-locked `match_end_ts`. These create a richer cancel/reclaim deadline model (state-dependent timeouts), but the state set itself is unchanged. v2 also gates `start_with_depositors` behind `deposit_window` expiry — closing v1's silent-kick attack surface.
-
-CEI ordering is correct in all three terminal-causing instructions across both programs. Account revival is blocked by Anchor's `close` constraint. Reinit is blocked by Anchor's `init` discriminator. State monotonicity (Settled and Cancelled are terminal) holds in both programs.
-
-## Scope
-
-- Files analyzed:
-  - `programs/solshot-escrow/src/lib.rs` (v1, 962 LOC, MAJOR-MODIFIED)
-  - `programs/solshot-escrow-v2/src/lib.rs` (v2, 1020 LOC, NEW)
-- Functions analyzed: ALL 8 instructions in each program (initialize_config, update_config, pause_program, unpause_program, create_match, deposit_wager, settle_match, cancel_match, permissionless_reclaim, start_with_depositors)
-- Estimated coverage: 100% for state-machine and error-handling concerns
-
-## Key Mechanisms
-
-### Mechanism 1: MatchState Lifecycle (4-state enum)
-
-**Location:** v1 `lib.rs:849-855`, v2 `lib.rs:891-897`
-
-**Definition:**
-```rust
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
-pub enum MatchState {
-    AwaitingDeposits,
-    Active,
-    Settled,
-    Cancelled,
-}
-```
-
-**Purpose:** Tracks the lifecycle of a single match escrow account. State is set by `create_match` to `AwaitingDeposits`; transitions to `Active` when all players deposit (or admin uses `start_with_depositors`); reaches terminal `Settled` (authority settle) or `Cancelled` (cancel/reclaim).
-
-**How it works:**
-- `create_match` sets `escrow.state = MatchState::AwaitingDeposits` (v1:169, v2:215).
-- `deposit_wager` checks `state == AwaitingDeposits`, sets bit in `deposits_mask`, and transitions to `Active` ONLY if `deposits_mask == full_mask` (v1:195-249, v2:250-318).
-- `start_with_depositors` checks `state == AwaitingDeposits` (`MatchAlreadyStarted` error if not) and transitions to `Active` (v1:493-535, v2:323-382).
-- `settle_match` checks `state == Active`, transitions to `Settled` (v1:259, v2:388).
-- `cancel_match` checks `state != Settled && != Cancelled`, transitions to `Cancelled` (v1:380-388, v2:491-499).
-- `permissionless_reclaim` checks `state != Settled && != Cancelled`, transitions to `Cancelled` (v1:435-461, v2:534-559).
-
-**Assumptions:**
-- The state field is the canonical truth; no external state can override it.
-- Anchor's `Account<'info, MatchEscrow>` deserialization reads the on-chain state.
-- Settled and Cancelled accounts are CLOSED (Anchor `close` constraint), so their state can't be re-read after close.
-
-**Invariants:**
-- `Settled` and `Cancelled` are absorbing states (terminal). No instruction can transition out.
-- `AwaitingDeposits` is the only state that can transition to `Active`.
-- `Active` is the only state that can transition to `Settled`.
-- All four states are reachable from `AwaitingDeposits`.
-
-**Concerns:**
-- v1 retains the bug where pause locks the cancel and settle paths (H007).
-- After `start_with_depositors` (v1, v2), the original `players[]` is destroyed by compaction — the on-chain state has no audit trail of who was kicked. Off-chain events log it.
-
-### Mechanism 2: Pause Guard Pattern
-
-**Location:**
-- v1 pause guards on instructions:
-  - `create_match` constraint at `lib.rs:626` (CreateMatch struct)
-  - `deposit_wager` constraint at `lib.rs:650` (DepositWager struct)
-  - `settle_match` constraint at `lib.rs:704` (SettleMatch struct)
-  - `cancel_match` constraint at `lib.rs:729` (CancelMatch struct) **← H007**
-  - `start_with_depositors` constraint at `lib.rs:774` (StartWithDepositors struct)
-- v2 pause guards:
-  - `create_match` at `lib.rs:660`
-  - `deposit_wager` at `lib.rs:682`
-  - `start_with_depositors` at `lib.rs:800`
-  - **NO guard on settle_match** (lib.rs:732-737, only `has_one = authority`)
-  - **NO guard on cancel_match** (lib.rs:757-761, no constraint)
-  - **NO guard on permissionless_reclaim** (lib.rs:768-782, no config in struct)
-
-**Purpose:** Allow authority to halt economic operations during emergencies.
-
-**How it works:** Each instruction's account-validation struct has a `constraint = !config.is_paused` clause that fails with `ProgramPaused` error when pause is active. Enforced at deserialization, before instruction body executes.
-
-**Assumptions:**
-- Authority will only pause for legitimate emergencies.
-- Pause is reversible via `unpause_program`.
-
-**Invariants:**
-- v1: When paused, ALL economic operations including in-flight cancels are blocked.
-- v2: When paused, NEW match creation and deposits are blocked, but in-flight matches CAN exit via cancel/settle/reclaim.
-
-**Concerns:**
-- v1's pause locking cancel/settle creates a fund-freeze condition — H007.
-- v2 explicitly fixes this by removing pause from terminal exits.
-- Authority compromise + pause = funds locked indefinitely (until upgrade or governance action).
-
-### Mechanism 3: Account Closure (Anchor `close` constraint)
-
-**Location:**
-- `settle_match` (escrow): v1:665 `close = authority`, v2:696 `close = authority`
-- `cancel_match` (escrow): v1:718 `close = caller`, v2:748 `close = caller`
-- `permissionless_reclaim` (escrow): v1:745 `close = caller`, v2:773 `close = caller`
-
-**Purpose:** Reclaim PDA rent reserve at end of match. Anchor `close` constraint:
-1. Zeros the account data (defense against EP-036 revival)
-2. Assigns ownership to system_program
-3. Transfers all remaining lamports to the destination
-
-**How it works:** Anchor generates the close at end of instruction execution. State must already be set to terminal (Settled/Cancelled) BEFORE close runs.
-
-**Assumptions:**
-- `close = caller` instructions trust the caller to be a legitimate refund recipient.
-- `close = authority` ensures only the authority can collect on settlement.
-
-**Invariants:**
-- Closed account cannot be re-read on-chain (Anchor `Account` would fail to deserialize from system-owned 0-data).
-- Same PDA seeds CAN be re-init via create_match after close (assuming match_id reused, which the server doesn't do).
-
-**Concerns:**
-- `close = caller` creates a rent-grab race. Whoever calls cancel/reclaim first gets ~0.002 SOL. Acceptable.
-- Same-TX revival: if cancel + create_match for same match_id are in the same TX, the second create_match would fail because Anchor's `init` checks the discriminator on the existing account (which is zeroed/system-owned) — so the second `init` would re-initialize. **POTENTIAL CONCERN**: in same TX, this could allow a clever attacker to cancel a match and immediately create a new match with same match_id. However, this requires authority to cooperate (sign create_match), so the attack is gated on authority compromise (already H001). Not a fresh state-machine issue.
-
-### Mechanism 4: Deposit Mask Bitmap Logic
-
-**Location:** v1:201-249 (deposit_wager), v2:264-318
-
-**Purpose:** Track per-player deposit status without per-player accounts.
-
-**How it works:**
-- `players: [Pubkey; 4]` (v1) or `[Pubkey; 10]` (v2). Slots beyond `max_players` are `Pubkey::default()`.
-- `deposits_mask: u8` (v1) or `u16` (v2). Bit N set = player N has deposited.
-- `player_index = players[..max_players].iter().position(|p| *p == depositor)` finds the slot. Bound: `0 ≤ player_index < max_players`.
-- `(deposits_mask >> player_index) & 1` checks if already deposited.
-- `deposits_mask |= 1u8 << player_index` (v1) or `1u16 << player_index` (v2) sets the bit.
-- `full_mask = (1 << max_players) - 1` is the threshold for full deposit. e.g., max_players=4 → full_mask=0b1111=15.
-
-**Assumptions:**
-- max_players ≤ 4 (v1) or ≤ 10 (v2) — bounded by account struct creation.
-- player_index from `position()` is within `[0, max_players)`.
-
-**Invariants:**
-- `deposits_mask & ~full_mask == 0` — no bits set outside max_players range. Holds because player_index is bounded.
-- `count_ones(deposits_mask) ≤ max_players`.
-- Once a bit is set, it cannot be unset within the AwaitingDeposits state (no instruction unsets bits).
-- After `start_with_depositors` compaction: `deposits_mask = (1 << num_deposited) - 1` (low N bits set, others 0).
-
-**Concerns:**
-- u8 in v1 can hold up to 8 bits. max_players is bounded to 4 by `require!(players.len() <= 4)`. No overflow risk.
-- u16 in v2 can hold up to 16 bits. max_players is bounded to 10. No overflow risk.
-- Compaction in start_with_depositors is irreversible — no way to "undo" the kick.
-
-### Mechanism 5: CEI (Checks-Effects-Interactions) Ordering
-
-**Location:**
-- settle_match: v1:309-313 (state=Settled in scoped block), v1:317-324 (transfers); v2:427-431, v2:434-441
-- cancel_match: v1:385-389 (state=Cancelled), v1:393-410 (refund loop); v2:496-499, v2:502-510
-- permissionless_reclaim: v1:458-462, v1:465-478; v2:556-559, v2:561-569
-
-**Purpose:** Set state BEFORE moving funds, to prevent reentrancy-like exploits even though Solana's runtime mostly prevents reentrancy.
-
-**How it works:** The state-write is enclosed in a small `{ ... }` block to drop the `&mut ctx.accounts.escrow` borrow before `try_borrow_mut_lamports` is called (Rust borrow-checker workaround for the same account).
-
-**Assumptions:**
-- Solana's runtime prevents same-program reentrancy via CPI (escrow program never CPIs to anything except system_program).
-- The scoped block correctly drops the mutable borrow.
-
-**Invariants:**
-- After state-write, before lamport ops: state is terminal (Settled or Cancelled).
-- If lamport op fails, the entire TX fails, including the state-write (TX atomicity).
-
-**Concerns:**
-- deposit_wager's state-write happens AFTER the system_program::transfer (v1:213-249, v2:275-318). This is "interaction-then-effect" — the opposite of CEI. However:
-  - system_program is non-reentrant (Solana cannot CPI back into solshot_escrow).
-  - The bitmap update is a pure state mutation, no CPI.
-  - TX atomicity ensures state-write succeeds-with-transfer or both fail.
-- Therefore deposit_wager's CEI bend is SAFE in practice but worth noting.
-
-## Trust Model
-
-### Who/What is Trusted
-
-- **Authority (server hot wallet)** — trusted to:
-  - Create matches with the correct player set
-  - Settle matches with the correct winner
-  - Pause/unpause for emergencies only
-  - Update config (rotate keys/treasury) — one-step, no timelock — H001 trust assumption
-- **Anchor framework** — trusted to:
-  - Enforce `init` constraint (no reinit)
-  - Enforce `close` constraint (zeros + reassigns + drains)
-  - Enforce `has_one` constraint (authority match)
-  - Enforce custom `constraint = ...` clauses
-- **Solana runtime** — trusted to:
-  - Prevent same-program reentrancy via CPI
-  - Enforce TX atomicity (all-or-nothing)
-  - Enforce account-locking semantics (can't have two TXs writing same account simultaneously)
-- **System Program** — trusted as the only CPI target, and it's a built-in program
-
-### Who/What is Untrusted
-
-- **Players' wallets** — adversarial; could be malicious in any way that doesn't violate signature integrity.
-- **Anyone calling `permissionless_reclaim`** — explicitly designed for untrusted callers; the close=caller pattern compensates them with rent.
-- **`remaining_accounts`** in cancel/reclaim — caller-supplied; validated per-iteration via bit_set + pubkey-match.
-
-## State Analysis
-
-### What state is read/written related to state-machine focus
-
-**On `MatchEscrow` account:**
-- `state: MatchState` — read in EVERY non-init instruction; written in deposit_wager (→ Active), start_with_depositors (→ Active), settle_match (→ Settled), cancel_match (→ Cancelled), permissionless_reclaim (→ Cancelled).
-- `activated_at: i64` — read in cancel_match, permissionless_reclaim (timeout reference); written by deposit_wager and start_with_depositors atomically with state→Active.
-- `match_end_ts: i64` (v2 only) — read in cancel_match (player_cancel_deadline) and permissionless_reclaim (reclaim_deadline); written by deposit_wager and start_with_depositors atomically with activated_at.
-- `deposits_mask: u8/u16` — read in deposit_wager (re-deposit check), settle/cancel/reclaim (refund pattern); written in deposit_wager (set bit), start_with_depositors (rewrite to compacted form).
-- `players: [Pubkey; N]` — read in deposit_wager (find index), cancel/reclaim (validate refund recipients), settle_match (winner check); written in start_with_depositors (compaction).
-- `max_players: u8` — read everywhere player iteration happens; written in start_with_depositors (reduced to num_deposited).
-
-**On `GlobalConfig` account:**
-- `is_paused: bool` — read in account constraints (pause guard); written in pause_program/unpause_program.
-- `authority/treasury/ops` — read in account constraints; written in update_config.
-
-### Account Lifecycle Map
-
-**MatchEscrow:**
-- **Creation** (`create_match`): Anchor `init` allocates SPACE bytes, sets discriminator, initializes state to AwaitingDeposits, activated_at=0, match_end_ts=0 (v2 only), deposits_mask=0.
-- **First deposit** (`deposit_wager`): bit set in mask. State stays AwaitingDeposits.
-- **Last deposit OR start_with_depositors** (`deposit_wager` final OR `start_with_depositors`): state→Active, activated_at=now, match_end_ts=now+duration (v2).
-- **Terminal (settle)** (`settle_match`): state→Settled. Anchor `close = authority` zeros data + drains rent to authority.
-- **Terminal (cancel)** (`cancel_match`): state→Cancelled. Refund loop. Anchor `close = caller` zeros + drains to caller.
-- **Terminal (reclaim)** (`permissionless_reclaim`): state→Cancelled. Refund loop. Anchor `close = caller`.
-- **Post-close**: account is system-owned with 0 lamports. Cannot be deserialized as MatchEscrow. Could be re-init via create_match using same match_id (server doesn't do this, but possible).
-
-**GlobalConfig:**
-- **Creation** (`initialize_config`): `init` allocates SPACE.
-- **Updates** (`update_config`): authority can rotate any field. Pause/unpause via dedicated instructions.
-- **Termination**: NO `close` constraint anywhere — this account is permanent. **CONCERN**: If authority is lost or compromised, no recovery mechanism for GlobalConfig.
-
-## Dependencies
-
-- `anchor_lang::prelude::*` — Anchor framework
-- `anchor_lang::system_program` — system_program::transfer for deposits
-- No other CPI dependencies. No other state-machine interactions with external programs.
-
-## Focus-Specific Analysis
-
-### Transition Matrix
-
-#### v1
-
-| From State | To State | Instruction | Guard Condition | Caller-Triggerable? |
-|-----------|----------|-------------|-----------------|---------------------|
-| (init) | AwaitingDeposits | create_match | authority signer + has_one + !paused | NO (authority only) |
-| AwaitingDeposits | Active | deposit_wager | state == AwaitingDeposits, deposits_mask == full_mask, !paused, has_one not on escrow | YES (each player) |
-| AwaitingDeposits | Active | start_with_depositors | state == AwaitingDeposits, num_deposited >= 2, !paused, has_one authority | NO (authority only) |
-| Active | Settled | settle_match | state == Active, !paused, settlement deadline ok, has_one authority | NO (authority only) |
-| AwaitingDeposits | Cancelled | cancel_match | (authority + AwaitingDeposits) OR (player + (AwaitingDeposits || timed_out)), !paused | YES (player or authority) |
-| Active | Cancelled | cancel_match | player + timed_out (no authority path), !paused | YES (player after timeout) |
-| AwaitingDeposits or Active | Cancelled | permissionless_reclaim | now > created_at/activated_at + 1200s, no pause guard | YES (anyone) |
-| Settled or Cancelled | * | (any) | InvalidState reject | NO |
-
-#### v2
-
-| From State | To State | Instruction | Guard Condition | Caller-Triggerable? |
-|-----------|----------|-------------|-----------------|---------------------|
-| (init) | AwaitingDeposits | create_match | authority signer + has_one + !paused | NO (authority only) |
-| AwaitingDeposits | Active | deposit_wager | state == AwaitingDeposits, deposits_mask == full_mask, !paused, now <= deposit_deadline | YES (each player) |
-| AwaitingDeposits | Active | start_with_depositors | state == AwaitingDeposits, num_deposited >= 2, **now >= deposit_deadline**, !paused, has_one authority | NO (authority only, after window) |
-| Active | Settled | settle_match | state == Active, has_one authority, NO pause guard | NO (authority only) |
-| AwaitingDeposits | Cancelled | cancel_match | (authority + AwaitingDeposits) OR (player + (AwaitingDeposits || timed_out)). NO pause guard | YES |
-| Active | Cancelled | cancel_match | player + timed_out (now > match_end_ts) | YES (player after match_end) |
-| AwaitingDeposits or Active | Cancelled | permissionless_reclaim | now > deadline + 24h grace | YES (anyone) |
-| Settled or Cancelled | * | (any) | InvalidState reject | NO |
-
-### Account Lifecycle Per State
-
-**AwaitingDeposits:**
-- Account exists, is rent-exempt + escrow-rent.
-- deposits_mask grows from 0 to full_mask (or partially in start_with_depositors).
-- activated_at = 0 throughout.
-- Can transition to Active or Cancelled.
-
-**Active:**
-- activated_at > 0.
-- All deposits in escrow lamports (= wager × count_ones(deposits_mask)).
-- Can transition to Settled or Cancelled.
-
-**Settled:**
-- Anchor `close = authority` runs at end of settle_match instruction.
-- Account zeroed, system-owned, 0 lamports.
-- Cannot be re-read on-chain.
-
-**Cancelled:**
-- Anchor `close = caller` runs at end of cancel_match or permissionless_reclaim.
-- Account zeroed, system-owned, 0 lamports.
-
-### Invariant Registry
-
-1. **MIE-1 — Settled and Cancelled are terminal**: No transition out. Enforced at v1:380, v1:435, v1:494; v2:491, v2:534, v2:324, v2:388.
-2. **MIE-2 — settle_match requires state == Active**: v1:259, v2:388.
-3. **MIE-3 — Activation atomically sets activated_at + state**: same instruction-block in deposit_wager (v1:236-238, v2:299-303) and start_with_depositors (v1:521-524, v2:365-369).
-4. **MIE-4 — match_end_ts (v2) atomic with activation**: v2:300-303, v2:367-369.
-5. **MIE-5 — deposits_mask bits ≤ max_players**: indirectly via player_index ∈ [0, max_players) from `players[..max_players].position()`.
-6. **MIE-6 — total deposits == wager × count_ones(deposits_mask)**: by construction (each deposit_wager transfers wager).
-7. **MIE-7 — close-and-revive in same TX impossible without authority**: create_match has `has_one = authority` (S004 fix); revival requires authority signature.
-8. **MIE-8 — config never closes**: no `close` constraint anywhere on GlobalConfig.
-9. **MIE-9 — pause never blocks unpause and vice versa**: PauseProgram and UnpauseProgram structs (v1:577-588, v1:592-603, v2:617-626, v2:629-639) have no `!is_paused` constraint.
-10. **MIE-10 — settle/cancel/reclaim ALWAYS set terminal state BEFORE lamport ops**: scoped block pattern in all three across both programs.
-
-## Cross-Focus Intersections
-
-- **× Access Control**: H007 fix asymmetry between v1 and v2. v2's CancelMatch struct has no `has_one` on config — uses in-body check. Verify with Access-Control agent.
-- **× Timing**: v1 H006 dead-zone (settlement deadline 3600s, cancel timeout 600s, reclaim 1200s). v2 has NO settlement deadline (so question is moot) but introduces deposit_window (configurable per-match) which changes the cancel/reclaim deadlines.
-- **× Token-Economic**: start_with_depositors griefing — partial-deposit pot calculation creates uneven economic outcomes. Authority chooses when to call.
-- **× CPI**: deposit_wager's CEI bend (transfer before mask update) is safe due to system_program non-reentrancy.
-- **× Account Validation**: PDA close-and-revive requires same-TX init by authority. Anchor `init` blocks reinit on existing account.
-- **× Error Handling**: All state guards have explicit error variants. Verify exhaustiveness.
-
-## Cross-Reference Handoffs
-
-- → **Access Control Agent**: Verify v2's CancelMatch struct (lib.rs:743-765) — no `has_one = authority` on config — is sound. Authority check is in-body. Confirm this matches v1's pattern semantically.
-- → **Access Control Agent**: H007 differential — v1 retains pause guards on cancel/settle/start_with_depositors. v2 removed them from cancel/settle. Verify the gap is intentional and documented.
-- → **Timing Agent**: H006 dead zone math on v1 — verify the gap between SETTLEMENT_TIMEOUT_SECONDS=3600 and player-cancel availability (activated_at + TIMEOUT_SECONDS=600). The is_timed_out branch in cancel_match (v1:367) uses activated_at+600s, so a player CAN cancel an Active match starting 600s after activation. Settlement deadline is 3600s. Therefore 3000s gap where settle is allowed AND player-cancel is allowed (race). Outside that window: 600s pre-cancel (only authority settle), 3600s+ post-deadline (settle blocked, but player-cancel still allowed via timeout). **Verify the 23-hour figure from H006 — actual gap might be smaller.**
-- → **Token-Economic Agent**: start_with_depositors pot scaling. With N=2 deposits in a max=4 match, pot = 2×wager. Authority decides when to call — this affects pot size. Cross-handoff to economic-agent for griefing/extraction analysis.
-- → **CPI Agent**: deposit_wager's interaction-before-effect ordering (v1:213-226, v2:275-287). System program non-reentrancy makes this safe, but verify atomicity of borrow-and-update.
-- → **Account Validation Agent**: PDA seed entropy — match_id is server-generated 4-character string. Verify off-chain CSPRNG. PDA same-TX revival via close + create_match — verify Anchor `init` blocks this on existing account.
-- → **Account Validation Agent**: v2 GlobalConfig fields don't include `pending_authority` field. v2 inherited the H001 gap.
-
-## Risk Observations
-
-(See "Risk Observations (Prioritized)" in condensed summary for the ranked list.)
-
-## Novel Attack Surface Observations
-
-1. **v2 silent-kick window asymmetry between authority and players**: Authority configures `deposit_window_secs` at create_match (v2:163-167). At time T (= created_at + deposit_window), authority can call `start_with_depositors` (v2:332-339). Between T-ε and T (e.g., last second), a player who hasn't deposited yet but is about to broadcast their TX is racing the authority's start_with_depositors. If authority wins the race, the player is silent-kicked — TX fees lost. The 60-second minimum window helps but doesn't eliminate this.
-
-2. **Compaction destroys audit trail of original players list**: After v1:507-524 / v2:347-362, the `players[]` array is REWRITTEN. The original full player set is lost on-chain. If a dispute arises ("you kicked me unfairly"), there's no on-chain record of the original player set — only off-chain MatchActive events (which can be missed by a slow indexer). **Recommendation**: emit a `PlayersCompacted` event with both old and new player lists.
-
-3. **v2 CancelMatch has NO authority-explicit constraint, only in-body**: v2:743-765 has no `has_one = authority` on config (intentional — config is just for the `caller == config_authority` check). This means if for some reason the config PDA were to be substituted (it can't be, due to seeds = config check at v2:758-760), the in-body authority check would still hold. SAFE but inconsistent style.
-
-4. **State-transition input via per-match config snapshots in v2**: The match's `duration_secs`, `deposit_window_secs`, `treasury_snapshot`, `ops_snapshot`, `fee_bps_treasury_snapshot`, `fee_bps_ops_snapshot` are all set at create_match and CANNOT BE CHANGED. This means a malicious authority can configure a SPECIFIC bad-actor match (e.g., 60s deposit window, 60s duration, high fees) without affecting other matches. Per-match malice is more granular than v1's global config. Cross-handoff to Upgrade/Admin agent.
-
-5. **`activated_at == 0` semantics is overloaded**: It means BOTH "never activated" AND "transitioning from AwaitingDeposits without activation" (e.g., match created but timeout elapsed, no deposits, then cancel). The branch at v1:357 / v2:471 uses `activated_at > 0` to distinguish — but a hypothetical case where activated_at could be 0 but state is Active would break the branch. By construction this case is impossible (atomic write), but worth noting the implicit invariant.
-
-6. **GlobalConfig is permanent — no recovery if authority is lost**: No `close` constraint on GlobalConfig (v1:782-804, v2:809-824). If the authority private key is lost AND there's no `pending_authority` recovery (H001), the config is FROZEN. All matches still in flight could be reclaimed via permissionless_reclaim (after grace), but no NEW matches can be created (create_match requires authority signer). Effectively a soft program-death. Cross-handoff to Upgrade/Admin agent.
-
-## Questions for Other Focus Areas
-
-- **For Access Control**: H001 family — does v2 inherit the missing `pending_authority` gap? (Verified: yes, see GlobalConfig at v2:810-818.)
-- **For Arithmetic**: count_ones() bounds in u128 widening — verified safe? (Should be — count_ones ≤ 10 for u16 mask, fits any width.)
-- **For Timing**: Exact window math for H006 on v1 — is the dead zone actually 23 hours, or shorter? (Verify against current code.)
-- **For Account Validation**: Can a closed escrow account be revived via lamport top-up in a separate TX, then re-init via create_match in another TX? (Anchor `init` should block this, but verify.)
-- **For Token-Economic**: start_with_depositors with extreme N (N=2 from max=10) — does the pot calculation still hold all invariants?
-- **For Error Handling**: Are all 4 InvalidState transitions exhaustively covered by error variants? (Looks like yes — every transition guard has a specific error code.)
-
-## Raw Notes
-
-### v1 Cancel Logic Trace (lib.rs:344-419)
-
-```rust
-pub fn cancel_match(ctx: Context<CancelMatch>) -> Result<()> {
-    let caller = ctx.accounts.caller.key();
-    let config_authority = ctx.accounts.config.authority;
-
-    // [Read state into locals before mutable borrow]
-    let escrow_state = ctx.accounts.escrow.state;
-    let deposits_mask = ctx.accounts.escrow.deposits_mask;
-    let max_players = ctx.accounts.escrow.max_players as usize;
-    let players = ctx.accounts.escrow.players;
-    let wager_lamports = ctx.accounts.escrow.wager_lamports;
-    let match_id = ctx.accounts.escrow.match_id.clone();
-
-    // [Compute timeout reference]
-    let timeout_reference = if ctx.accounts.escrow.activated_at > 0 {
-        ctx.accounts.escrow.activated_at
-    } else {
-        ctx.accounts.escrow.created_at
-    };
-
-    let timeout_deadline = timeout_reference
-        .checked_add(TIMEOUT_SECONDS)  // 600s
-        .ok_or(EscrowError::ArithmeticOverflow)?;
-
-    let is_timed_out = Clock::get()?.unix_timestamp > timeout_deadline;
-
-    // [Authorization — OC-05]
-    let is_authority = caller == config_authority;
-    let is_player = players[..max_players].iter().any(|p| *p == caller);
-
-    require!(
-        (is_authority && escrow_state == MatchState::AwaitingDeposits)
-        || (is_player && (escrow_state == MatchState::AwaitingDeposits || is_timed_out)),
-        EscrowError::Unauthorized
-    );
-
-    require!(
-        escrow_state != MatchState::Settled && escrow_state != MatchState::Cancelled,
-        EscrowError::InvalidState
-    );
-
-    // [Set terminal state BEFORE transfers — CEI]
-    {
-        let escrow = &mut ctx.accounts.escrow;
-        escrow.state = MatchState::Cancelled;
-    }
-
-    // [Refund loop — OC-08]
-    for (i, account) in ctx.remaining_accounts.iter().enumerate() {
-        require!(i < max_players, EscrowError::InvalidPlayer);
-        let bit_set = (deposits_mask >> i) & 1 == 1;
-        require!(bit_set, EscrowError::InvalidPlayer);
-        require!(*account.key == players[i], EscrowError::InvalidPlayer);
-
-        // [Lamport ops — direct mutation, no CPI]
-        **ctx.accounts.escrow.to_account_info().try_borrow_mut_lamports()? -= wager_lamports;
-        **account.try_borrow_mut_lamports()? += wager_lamports;
-    }
-
-    emit!(MatchCancelled { ... });
-
-    Ok(())
-}
-```
-
-Issues found: NONE in the state-machine layer. The auth + state checks are sound. CEI ordering correct. The pause guard at v1:729 is the H007 issue — separate concern.
-
-### v2 Cancel Logic Trace (lib.rs:459-519)
-
-Same structure, but:
-- `player_cancel_deadline` uses `match_end_ts` if Active, else `deposit_deadline`. v2:471-477.
-- No pause guard on the struct. v2:743-765.
-- Same CEI ordering. Same refund loop.
-
-Issues found: NONE in the state-machine layer.
-
-### v2 start_with_depositors Trace (lib.rs:323-382)
-
-```rust
-pub fn start_with_depositors(ctx: Context<StartWithDepositors>) -> Result<()> {
-    require!(
-        ctx.accounts.escrow.state == MatchState::AwaitingDeposits,
-        EscrowError::MatchAlreadyStarted
-    );
-
-    let num_deposited = ctx.accounts.escrow.deposits_mask.count_ones();
-    require!(num_deposited >= MIN_PLAYERS as u32, EscrowError::TooFewPlayers);
-
-    // [NEW v2: deposit window must have closed]
-    let deposit_deadline = ctx.accounts.escrow.created_at
-        .checked_add(ctx.accounts.escrow.deposit_window_secs as i64)
-        .ok_or(EscrowError::ArithmeticOverflow)?;
-    require!(
-        Clock::get()?.unix_timestamp >= deposit_deadline,
-        EscrowError::DepositWindowOpen
-    );
-
-    // [Compaction]
-    let wager = ctx.accounts.escrow.wager_lamports;
-    let match_id = ctx.accounts.escrow.match_id.clone();
-    let duration_secs = ctx.accounts.escrow.duration_secs as i64;
-
-    let escrow = &mut ctx.accounts.escrow;
-    let deposits_mask = escrow.deposits_mask;
-    let max = escrow.max_players as usize;
-    let mut compacted = [Pubkey::default(); MAX_PLAYERS];
-    let mut new_mask: u16 = 0;
-    let mut j = 0usize;
-    for i in 0..max {
-        if (deposits_mask >> i) & 1 == 1 {
-            compacted[j] = escrow.players[i];
-            new_mask |= 1u16 << j;
-            j += 1;
-        }
-    }
-    escrow.players = compacted;
-    escrow.deposits_mask = new_mask;
-    escrow.max_players = j as u8;
-
-    let now = Clock::get()?.unix_timestamp;
-    escrow.state = MatchState::Active;
-    escrow.activated_at = now;
-    escrow.match_end_ts = now
-        .checked_add(duration_secs)
-        .ok_or(EscrowError::ArithmeticOverflow)?;
-
-    emit!(MatchActive { ... });
-
-    Ok(())
-}
-```
-
-State transition: AwaitingDeposits → Active. Atomic with activated_at + match_end_ts set. Compaction destroys original player order (worth noting in audit trail).
-
-Issues found: Compaction has no event emitting old vs new player lists. Cross-handoff to logging concerns.
-
-### v1 start_with_depositors Trace (lib.rs:493-536)
-
-Same structure, BUT NO `deposit_window` gate. Authority can compact at any moment after 2+ deposits, even immediately after the second deposit lands. This is the silent-kick attack surface that v2 fixes.
-
-```rust
-pub fn start_with_depositors(ctx: Context<StartWithDepositors>) -> Result<()> {
-    require!(
-        ctx.accounts.escrow.state == MatchState::AwaitingDeposits,
-        EscrowError::MatchAlreadyStarted
-    );
-
-    let num_deposited = ctx.accounts.escrow.deposits_mask.count_ones();
-    require!(num_deposited >= 2, EscrowError::TooFewPlayers);
-
-    // [NO TIMING GATE — v1 silent-kick surface]
-
-    // [Compaction — same logic]
-    ...
-}
-```
-
-Issues: silent-kick surface — authority can compact at any moment.
-
-### State-Machine Coverage Validation
-
-Every `state == X` check in the codebase:
-- v1:196 (deposit_wager guard)
-- v1:260 (settle_match guard)
-- v1:374-378 (cancel_match auth + state)
-- v1:381-382 (cancel_match terminal-state reject)
-- v1:435-438 (reclaim terminal-state reject)
-- v1:494-497 (start_with_depositors guard)
-- v2:251 (deposit_wager guard)
-- v2:325-326 (start_with_depositors guard)
-- v2:389-390 (settle_match guard)
-- v2:485-489 (cancel_match auth + state)
-- v2:491-494 (cancel_match terminal-state reject)
-- v2:534-537 (reclaim terminal-state reject)
-
-Every state-write:
-- v1:169 = AwaitingDeposits (create_match)
-- v1:237 = Active (deposit_wager)
-- v1:312 = Settled (settle_match)
-- v1:388 = Cancelled (cancel_match)
-- v1:461 = Cancelled (permissionless_reclaim)
-- v1:523 = Active (start_with_depositors)
-- v2:215 = AwaitingDeposits (create_match)
-- v2:299 = Active (deposit_wager)
-- v2:365 = Active (start_with_depositors)
-- v2:430 = Settled (settle_match)
-- v2:498 = Cancelled (cancel_match)
-- v2:558 = Cancelled (permissionless_reclaim)
-
-Every error variant for state-machine guards:
-- InvalidState (v1:922, v2:969) — used for state == Active failures, terminal state rejection
-- MatchAlreadyStarted (v1:961, v2:1019) — used for start_with_depositors when state != AwaitingDeposits
-- AlreadyDeposited (v1:926, v2:973) — used for re-deposit attempt
-- Unauthorized (v1:929, v2:976) — used for caller-not-allowed
-- DepositWindowClosed (v2:1015) — v2 only, hard deposit deadline
-- DepositWindowOpen (v2:1017) — v2 only, start_with_depositors before window
-
-All transitions covered. All terminal-state attempts rejected with InvalidState. Coverage is comprehensive.
+## Pause Guard Table (Updated for Bundle 1)
+
+| Instruction | v1 pause guard? | v2 pause guard? | Notes |
+|-------------|-----------------|------------------|-------|
+| initialize_config | n/a | n/a | First-run only |
+| update_config (Bundle 1) | NO | NO | Authority-only; governance must work during pause |
+| migrate_config (Bundle 1) | n/a | NO | Devnet-only; no pause guard needed |
+| apply_config_update (Bundle 1) | n/a | **NO** | Permissionless after timelock; pause does NOT block |
+| propose_authority (Bundle 1) | n/a | **NO** | Authority-only; rotation must work during pause |
+| accept_authority (Bundle 1) | n/a | **NO** | New-authority-signed; must work during pause |
+| pause_program | NO | NO | Idempotent |
+| unpause_program | NO | NO | Idempotent |
+| create_match | YES | YES | New commitments blocked |
+| deposit_wager | YES | YES | New deposits blocked |
+| settle_match | **NO** (H016 fix) | NO | Exit during pause allowed |
+| cancel_match | **NO** (H016 fix) | NO | Exit during pause allowed |
+| permissionless_reclaim | NO (no config in struct) | NO (no config in struct) | Permissionless exit |
+| start_with_depositors | **NO** (H009 fix) | YES | v2 inconsistency: blocks partial activation during pause |
+
+**Note:** v1 has now applied H016/H009 fixes — pause does NOT block cancel/settle/start. The audit #2 conclusion that v1 retained the bug needs **updating**. The v1 source at v1:744-779 (CancelMatch + SettleMatch contexts) confirms no `constraint = !config.is_paused`. **v1 has CLOSED H016/H009 since audit #2.**
+
+**NEW v2 finding:** `StartWithDepositors` v2:1092-1111 STILL has `constraint = !config.is_paused @ EscrowError::ProgramPaused` (v2:1108). This is inconsistent with v1's H009 fix. If pause is active, partial-match activation is blocked — authority cannot start_with_depositors. **Add to handoffs: Access Control / Timing should evaluate whether this is intentional.**
 
 ---
 
-**End of Full Analysis**
+## Close Target Table (Unchanged)
 
-**One-line summary:** **14 state-machine concerns identified (4 HIGH, 5 MEDIUM, 5 LOW); v2 introduces NO new lifecycle state vs v1 (both 4-variant: AwaitingDeposits/Active/Settled/Cancelled), but v2 explicitly fixes H007 by removing pause guards from settle/cancel/reclaim — H007 STILL OPEN on v1 only.**
+| Instruction | v1 close=X | v2 close=X | Notes |
+|---|---|---|---|
+| settle_match | authority | authority | Server reclaims escrow rent |
+| cancel_match | caller | caller | Whoever calls gets ~0.002 SOL rent |
+| permissionless_reclaim | caller | caller | Designed incentive |
+| migrate_config (Bundle 1) | n/a | (no close) | Just reallocs, doesn't close |
+| apply_config_update (Bundle 1) | n/a | (no close) | Mutates only |
+| propose/accept_authority (Bundle 1) | n/a | (no close) | Mutates only |
+
+---
+
+## State-Transition Coverage Validation
+
+Re-validating every `state == X` check and every `state = X` write in both source files:
+
+**State guards (read):**
+- v1:212, v1:276, v1:391, v1:397, v1:461, v1:525, v1:526
+- v2:465-466, v2:541-543, v2:605-606, v2:702-704, v2:708-710, v2:759-760
+
+**State writes:**
+- v1:185 = AwaitingDeposits (create_match)
+- v1:253 = Active (deposit_wager, on full mask)
+- v1:328 = Settled (settle_match)
+- v1:404 = Cancelled (cancel_match)
+- v1:485 = Cancelled (permissionless_reclaim)
+- v1:563 = Active (start_with_depositors)
+- v2:429 = AwaitingDeposits (create_match)
+- v2:516 = Active (deposit_wager)
+- v2:582 = Active (start_with_depositors)
+- v2:647 = Settled (settle_match)
+- v2:715 = Cancelled (cancel_match)
+- v2:783 = Cancelled (permissionless_reclaim)
+
+**Bundle 1 state writes (NEW):**
+- v2:127 = `pending_treasury = Some(t)` (update_config)
+- v2:131 = `pending_ops = Some(o)`
+- v2:134 = `pending_fee_bps_treasury = Some(t)`
+- v2:137 = `pending_fee_bps_ops = Some(o)`
+- v2:154 = `pending_config_ts = now`
+- v2:226 = `realloc(231, false)` (migrate_config)
+- v2:232-235 = zero-fill from current_size onward
+- v2:257-268 = `take()` on all 4 pending fields, apply to live
+- v2:280 = `last_config_update_ts = now`
+- v2:281 = `pending_config_ts = 0`
+- v2:310 = `pending_authority = Some(new_authority)` (propose_authority)
+- v2:335 = `authority = pending` (accept_authority swap)
+- v2:336 = `pending_authority = None` (accept clears)
+
+**Error variants for state-machine guards:**
+- InvalidState (v1:980, v2:1360) — generic state-mismatch
+- MatchAlreadyStarted (v1:1019, v2:1410) — start_with_depositors when not AwaitingDeposits
+- AlreadyDeposited (v1:984, v2:1364) — re-deposit attempt
+- DepositWindowClosed (v2:1406) — v2 only, deposit_wager after window
+- DepositWindowOpen (v2:1408) — v2 only, start_with_depositors before window
+- Unauthorized (v1:988, v2:1368) — caller-not-allowed
+- NoPendingAuthority (v2:1417) — **Bundle 1 NEW** — accept without propose
+- NoPendingConfig (v2:1419) — **Bundle 1 NEW** — apply without propose
+- TimelockNotElapsed (v2:1421) — **Bundle 1 NEW** — apply too soon
+
+**Coverage verdict:** Every illegal state transition has a corresponding error variant. The Bundle 1 additions are exhaustive against the new pending-state machine.
+
+---
+
+## Bundle 1 Risk Assessment Summary Table
+
+| Concern | Severity | Status | Finding ID |
+|---|---|---|---|
+| Q1: Interleaved propose/update | MEDIUM | Documented; off-chain monitor required | S3-N01 |
+| Q2: pending_config_ts stalling | LOW | Documented design; affects authority only | S3-N04 |
+| Q3: propose_authority overwrite | LOW | Working as designed (cancel mechanism) | S3-N05 |
+| Q4: Pause vs governance | MEDIUM | Working as designed; pause-rotate-unpause chain | S3-N02 |
+| Q5: In-flight match snapshots | NOT_VULN | Snapshot mechanism correct | (no finding) |
+| Q6: Settle/cancel race | MEDIUM-HIGH (v2) | v1 RESOLVED (0s window); v2 wider | S3-N06 |
+| Q7: migrate_config re-invocation | LOW | Idempotent and re-auth-safe | S3-N03 |
+| Q8: accept_authority atomicity | NOT_VULN | TX revert restores pre-state | (Inv 15) |
+
+---
+
+## Final Summary
+
+**Bundle 1 state-machine concerns introduced:** 8 new state-lifecycle questions explicitly investigated, 11 new findings tracked (1 MEDIUM-HIGH, 5 MEDIUM, 5 LOW). **No CRITICAL state-machine issues** introduced by Bundle 1.
+
+**H035 status:** Recheck reveals v1 H035 may have been independently RESOLVED via TIMEOUT_SECONDS unification (both = 3600s, no overlap window). v2's H035-equivalent (S3-N06) is OPEN — unbounded settle-after-match-end window.
+
+**H024 status:** UNCHANGED. Refund loops are monotonic-from-i=0 in both v1 and v2 (v2:727-735, v2:794-802). Non-contiguous deposits_mask permanently unrefundable. Bundle 1 unrelated.
+
+**H039 status:** RESOLVED. MAX_DURATION_SECS reduced from 7d to 24h at v2:42.
+
+**Most interesting state interaction:** S3-N09 — the **3-way independence** of authority rotation, config rotation, and pause creates a 12-state phase space where (paused + pending_authority=Some + pending_config_ts > 0) is reachable. An attacker who compromises authority A can chain pause + update_config + propose_authority + accept_authority in 4 TXs across 2 keys (A and pre-arranged B), arriving in the "max chaos" state in seconds. The 24h timelock + 2-step authority mechanism + off-chain monitoring provide defense, but the on-chain state machine itself permits this combination. This is the architectural cost of decoupling the two governance tracks for liveness — and is mitigated only by social/operational defenses (monitoring + multi-sig — H044/H046 still apply).

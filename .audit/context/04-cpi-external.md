@@ -2,406 +2,59 @@
 task_id: sos-phase1-cpi
 provides: [cpi-findings, cpi-invariants]
 focus_area: cpi
-files_analyzed: [programs/solshot-escrow/src/lib.rs, programs/solshot-escrow-v2/src/lib.rs]
-finding_count: 9
-severity_breakdown: {critical: 0, high: 3, medium: 4, low: 2}
+files_analyzed:
+  - programs/solshot-escrow/src/lib.rs            # v1, 1027 LOC
+  - programs/solshot-escrow-v2/src/lib.rs         # v2, 1423 LOC (Bundle 1)
+finding_count: 11
+severity_breakdown: {critical: 0, high: 3, medium: 4, low: 4}
+prior_audit_recheck: H023, H041 (carry-forward closed); CPI-03, NOVEL-CPI-01 (carry-forward)
+bundle1_new_cpi: 1 (migrate_config rent top-up at v2:214-223)
 ---
+
 <!-- CONDENSED_SUMMARY_START -->
 # CPI & External Calls — Condensed Summary
 
-## CPI Inventory (Complete)
+The CPI surface for SolShot escrow remains exceptionally narrow. The Bundle-1 delta adds **exactly one new CPI** (rent top-up in `migrate_config` at v2:214-223). The headline CRITICAL from audit #2 — H023 (`close = caller` partial-refund theft) — is now **FULLY FIXED in BOTH v1 and v2 at all four refund sites** via a single `require!(remaining_accounts.len() == count_ones(mask))` gate placed before each refund loop. Audit #2's HOT_SPOTS/HANDOVER doc said "Bundle 1 doesn't touch refund loops — likely still open"; that statement is incorrect against the current codebase. The fix landed.
 
-| # | Location | Kind | Target | Validated By | Notes |
-|---|----------|------|--------|--------------|-------|
-| 1 | v1 `lib.rs:213-222` (`deposit_wager`) | `system_program::transfer` via `CpiContext::new` | System Program | `Program<'info, System>` at v1:654 | Player→escrow SOL transfer; player signs |
-| 2 | v2 `lib.rs:275-284` (`deposit_wager`) | `system_program::transfer` via `CpiContext::new` | System Program | `Program<'info, System>` at v2:686 | Player→escrow SOL transfer; player signs |
+## CPI Inventory
 
-**That is the entire CPI surface.** Neither program calls `invoke()`, `invoke_signed()`, `get_return_data()`, any Token program, any oracle, any governance program, or any custom external program. CPI depth is exactly 1 — the System Program is a leaf with no further nesting.
+| # | Location | Kind | Target | Validated By | PDA Signed? | Caller-mutates-account |
+|---|---|---|---|---|---|---|
+| 1 | `programs/solshot-escrow/src/lib.rs:229-238` (v1 `deposit_wager`) | `system_program::transfer` via `CpiContext::new` | System Program | `Program<'info, System>` at v1:691 | No — player is Signer | debits player, credits escrow PDA |
+| 2 | `programs/solshot-escrow-v2/src/lib.rs:492-501` (v2 `deposit_wager`) | `system_program::transfer` via `CpiContext::new` | System Program | `Program<'info, System>` at v2:990 | No — player is Signer | debits player, credits escrow PDA |
+| 3 | **NEW (Bundle 1)** `programs/solshot-escrow-v2/src/lib.rs:214-223` (v2 `migrate_config`) | `system_program::transfer` via `CpiContext::new` | System Program | `Program<'info, System>` at v2:870 | No — authority is Signer | debits authority, credits config PDA |
 
-**Direct-lamport-mutation sites (NOT CPI but behave like CPI for threat modeling):**
+**Three** CPI sites total across **2,450 LOC**. Zero `invoke()` calls. Zero `invoke_signed()` calls. Zero PDA signer seeds passed to any external program. CPI depth is 1 — System Program is a leaf. No Token program, no Pyth/Switchboard, no governance program, no custom external program.
 
-| # | Location | Action | Pattern |
-|---|----------|--------|---------|
-| 3 | v1 `settle_match:317-324` | escrow → winner / treasury / ops (3 transfers) | `**try_borrow_mut_lamports()? -=/+= amount` |
-| 4 | v1 `cancel_match:391-410` | escrow → players[i] (loop, bit-mask gated) | Same, inside `for (i, account) in remaining_accounts.iter().enumerate()` |
-| 5 | v1 `permissionless_reclaim:464-478` | escrow → players[i] (loop, bit-mask gated) | Same loop pattern, anyone can call |
-| 6 | v2 `settle_match:434-441` | escrow → winner / treasury_snapshot / ops_snapshot | Same as v1 but reads snapshot pubkeys/BPS |
-| 7 | v2 `cancel_match:502-510` | escrow → players[i] (loop) | Same |
-| 8 | v2 `permissionless_reclaim:561-569` | escrow → players[i] (loop) | Same |
+## Lamport Movement Map
 
-## `remaining_accounts` Validation Matrix (the highest-priority surface)
+| # | Site | Source | Destination | Mechanism | Notes |
+|---|---|---|---|---|---|
+| 1 | v1:229-238 `deposit_wager` | player wallet | escrow PDA | system_program CPI | player signs |
+| 2 | v2:492-501 `deposit_wager` | player wallet | escrow PDA | system_program CPI | player signs |
+| 3 | v2:214-223 `migrate_config` | authority wallet | config PDA (top-up) | system_program CPI | authority signs |
+| 4 | v1:333-340 `settle_match` (3 pairs) | escrow PDA | winner/treasury/ops | direct `try_borrow_mut_lamports` | Anchor exit closes escrow → authority |
+| 5 | v2:651-658 `settle_match` (3 pairs) | escrow PDA | winner/treasury/ops | direct `try_borrow_mut_lamports` | Anchor exit closes escrow → authority |
+| 6 | v1:432-433 `cancel_match` (loop) | escrow PDA | players[i] (per-iter) | direct lamport math | **Anchor exit closes escrow → caller** |
+| 7 | v1:506-507 `permissionless_reclaim` (loop) | escrow PDA | players[i] (per-iter) | direct lamport math | **Anchor exit closes escrow → caller** |
+| 8 | v2:733-734 `cancel_match` (loop) | escrow PDA | players[i] (per-iter) | direct lamport math | **Anchor exit closes escrow → caller** |
+| 9 | v2:800-801 `permissionless_reclaim` (loop) | escrow PDA | players[i] (per-iter) | direct lamport math | **Anchor exit closes escrow → caller** |
+| 10 | v2:226 `migrate_config` realloc | (none — top-up only) | (none) | `realloc(new_size, false)` then `try_borrow_mut_data` zero-fill | grows PDA in place |
 
-Four iteration sites, identical 3-line per-iteration validation:
+Sites 6-9 are the four H023 surface points (`close = caller` paired with `remaining_accounts` loops). All four are now gated by an `IncompleteRefund` length check (see Refund Loop Anatomy below).
+
+## Refund Loop Anatomy (H023 — Now Fixed)
+
+### Common shape (all four sites)
 
 ```rust
-for (i, account) in ctx.remaining_accounts.iter().enumerate() {
-    require!(i < max_players, EscrowError::InvalidPlayer);              // (a) bounds
-    require!((deposits_mask >> i) & 1 == 1, EscrowError::InvalidPlayer); // (b) bit set
-    require!(*account.key == players[i], EscrowError::InvalidPlayer);    // (c) pubkey match
-    **escrow.lamports -= wager_lamports;                                  // (d) debit
-    **account.lamports += wager_lamports;                                 // (e) credit
-}
-```
-
-| Check | v1 cancel (391-409) | v1 reclaim (465-484) | v2 cancel (502-510) | v2 reclaim (561-569) |
-|-------|---------------------|----------------------|---------------------|----------------------|
-| 1. `remaining_accounts[i]` matches `players[i]` | YES (line 402-405) | YES (471-474) | YES (506) | YES (565) |
-| 2. Bit `i` of `deposits_mask` controls refund | YES (398-399) | YES (468-469) | YES (504-505) | YES (563-564) |
-| 3. Pubkey check forces exact `players[i]` | YES — strict `==` | YES | YES | YES |
-| 4. Writability — destination must be writable | NOT enforced in program; client-side `isWritable: true` (server/services/escrow.js:459) | Same | Same (server/services/escrow-v2.js) | Same |
-| 5. Lamport conservation: refunds == wager × count_ones | Implicit (loop iterates only deposited slots) | Implicit | Implicit | Implicit |
-| 6. Order: caller MUST pass in `players[i]` index order, contiguous starting at 0 | YES — `enumerate()` + strict `==` | YES | YES | YES |
-
-**The single mandatory invariant the loop enforces:** `remaining_accounts` must be a **contiguous prefix** of the deposited slots — exactly `players[0], players[1], ..., players[k-1]` where `k = remaining_accounts.len()`, AND `deposits_mask` bits 0..k must all be set. **Any non-contiguous `deposits_mask` (e.g. `0b10`) is unrefundable** because the loop walks `i=0,1,...` and rejects on bit-not-set OR pubkey mismatch (since the caller cannot insert "skip" entries).
-
-## Key Findings (Top 9)
-
-1. **NOVEL-CPI-01 (HIGH) — Non-contiguous `deposits_mask` is permanently unrefundable.** The loop matches `remaining_accounts[i]` against `players[i]` and requires bit `i` set. If only `players[1]` deposits and `players[0]` does not (`deposits_mask = 0b10`), there is no syntactically valid call: passing `players[1]` as the only `remaining_accounts[0]` fails the pubkey check (`players[0] != players[1]`); passing `players[0]` as `remaining_accounts[0]` and `players[1]` as `remaining_accounts[1]` fails the bit-set check at i=0; passing nothing leaves the deposit stranded. **The off-chain server (`server/socket-io/main.js:484-489`) explicitly logs this as "UNRECOVERABLE" and writes the match off.** Affects v1 cancel + v1 reclaim + v2 cancel + v2 reclaim. — `v1:393-410, 465-484; v2:502-510, 561-569`
-2. **H009 — Executable account as fee destination — STILL OPEN in BOTH v1 and v2.** Grep for `executable` returns zero matches. v1 SettleMatch constraints check key identity only (lines 686-687, 695); v2 SettleMatch checks against snapshot (lines 717-718, 726) — neither checks `!treasury.executable` or `!ops.executable`. Per EP-106, lamport credits to executable accounts may silently succeed in-memory but be discarded at commit. Same exposure on v1's `winner` account (only constrained to `players[i]`) — but mitigated by the fact that players must sign `deposit_wager`, so they hold private keys. Recommended fix from Feb (Fix 2) was a 1-line constraint addition; not landed. — `v1:680-697, v2:711-728`
-3. **CPI-02 (MEDIUM) — `Pubkey::default()` slot pollution risk in v1 `cancel_match`.** Players array is `[Pubkey; 4]` zero-padded. If `max_players = 2` but caller passes 4 `remaining_accounts` (or any number > deposit count), the bounds check `i < max_players` REJECTS at i=2, which is correct. But if the bit-mask check at i=2 passes (mask wider than max_players, defensive coding gap), comparison would be `account.key == Pubkey::default()` — which is a real Solana pubkey (`11111111111111111111111111111111`, the System Program). Anyone passing `system_program` at slot i=k where bit k is somehow set would match. Currently safe because (a) `deposits_mask` bits past max_players are never set in normal flow; (b) v1 `deposits_mask` is u8 so max is 8 bits; (c) the bounds check fires first. But the defensive gap is real if `deposits_mask` is ever corrupted or written from an instruction we haven't audited. — `v1:394-405; v2:503-506`
-4. **CPI-03 (MEDIUM) — `try_borrow_mut_lamports()? += amount` increment without overflow check.** Line 318 (v1), line 321 (v1), line 324 (v1), line 409 (v1), line 477 (v1), and identical positions in v2. Solana lamport balances are u64. If the recipient already holds a balance such that `existing + wager_lamports > u64::MAX`, the `+=` panics in debug or wraps in release (Rust integer arithmetic). Fee destinations could receive many settlements; theoretically reachable at extreme volumes. The escrow PDA debit side is bounded (escrow holds at most `MAX_WAGER × MAX_PLAYERS` = 100 SOL × 10 = 1000 SOL = 10^12 lamports, far below u64::MAX), so debits are safe. Credits to wallet accounts could be unsafe across many settlements but practically unreachable (would need >1.8e10 SOL accumulated). NOT a vulnerability under realistic conditions. — `v1:317-324, 408-409, 476-477; v2:434-441, 508-509, 567-568`
-5. **CPI-04 (MEDIUM) — v1 reclaim has NO `config` account, NO pause guard, NO authority gate.** Designed escape hatch (DCA-02). Anyone can call after `created_at + 1200s`. No `Program<'info, System>` validation needed because no CPI happens (only direct lamport math). The intentional gap is documented; no novel concern beyond what was flagged in Feb (CPI-R03). — `v1:737-754`
-6. **CPI-05 (LOW) — v2 reclaim is similar but timing differs.** `match_end_ts + 24h` (or `deposit_deadline + 24h` if not activated). Same architectural pattern — config absent on purpose. No new CPI concern. — `v2:768-782`
-7. **CPI-06 (LOW) — Anchor 0.32.1 auto-resolution applied correctly.** `Program<'info, System>` is on every relevant struct (v1:558, 630, 654, 708, 733, 752; v2:599, 664, 686, 739, 763, 780). `config` is auto-resolved from constant seed `b"config"` in all client calls per memory note. No CPI program-ID-mismatch attack vector exists.
-8. **CPI-07 (LOW) — H026 holds.** Donation to escrow PDA is economically irrational (recovered by authority via `close = authority` at v1:665; or by `caller` via `close = caller` on cancel/reclaim at v1:718, 745; v2:748, 773). Validated; no change.
-9. **CPI-08 (LOW) — H029 holds.** Solana atomic-TX rollback prevents partial settlement. The 6 sequential `try_borrow_mut_lamports()?` calls in `settle_match` (3 debits + 3 credits) and the loop bodies in cancel/reclaim are all `?`-propagated; any failure reverts the entire instruction including the state write at line 311 (v1) / 429 (v2). Validated.
-
-## Critical Mechanisms
-
-- **System Program CPI for deposit (v1:213-222, v2:275-284):** The ONLY CPI in the codebase. `CpiContext::new(...)` with explicit `from = player_signer` and `to = escrow_pda` accounts. Player's signer privilege authorizes only this single SOL transfer. No PDA seeds are exposed; no `invoke_signed`. Anchor validates the System Program ID via `Program<'info, System>`.
-- **Direct lamport mutation in `settle_match` (v1:317-324, v2:434-441):** Three sequential debit/credit pairs. State (`Settled`) is written before transfers (OC-10). All `?`-propagated. **No executable check on destinations** — H009.
-- **`remaining_accounts` refund loop in cancel/reclaim (4 sites):** Walks caller-provided accounts in `enumerate()` order; per-iteration validates index bounds, deposit-bit, and exact pubkey match against `players[i]`. **Cannot accept non-contiguous deposits_mask** — see NOVEL-CPI-01.
-
-## Invariants & Assumptions
-
-- INVARIANT: The only CPI target program ID is the System Program — enforced by `Program<'info, System>` at v1:558,630,654,708,733,752 / v2:599,664,686,739,763,780.
-- INVARIANT: No PDA signer seeds are passed to any external program (no `invoke_signed`) — enforced by the absence of the call.
-- INVARIANT: All state transitions to terminal (`Settled`/`Cancelled`) occur BEFORE lamport transfers (OC-10) — enforced at v1:309-313, 385-389, 458-462; v2:427-431, 496-499, 556-559.
-- INVARIANT: Each refund destination in cancel/reclaim must equal `escrow.players[i]` for the corresponding loop index `i` AND deposit-bit `i` must be set — enforced at v1:402-405,471-474; v2:506,565.
-- INVARIANT: Lamport conservation in the refund loop — `sum(refunds) == wager_lamports × count_ones(deposits_mask provided)`; HOLDS only if `remaining_accounts` is a contiguous prefix of deposited slots.
-- ASSUMPTION (UNVALIDATED ⚠): Refund destinations and fee destinations are non-executable — NOT validated; H009 still open in v1 and v2.
-- ASSUMPTION (UNVALIDATED ⚠): The off-chain caller will always pass `remaining_accounts` in player-index order with contiguous deposits — required by program logic but not enforced; non-contiguous deposits = stranded funds (NOVEL-CPI-01).
-- ASSUMPTION (validated): System Program at `11111111111111111111111111111111` is the legitimate system program — Anchor `Program<'info, System>` enforces this.
-- ASSUMPTION (validated): `try_borrow_mut_lamports()` returns `Err` if the borrow conflicts; `?` propagates and Solana rolls back atomically — H029 confirmed.
-- ASSUMPTION (UNVALIDATED ⚠): Lamport credit `**dest.lamports += amount` does not overflow u64 — practically safe at realistic volumes (CPI-03), but no explicit `checked_add`.
-
-## Risk Observations (Prioritized)
-
-1. **HIGH — NOVEL-CPI-01 (non-contiguous mask = stranded funds)**: `v1:393-410, 465-484; v2:502-510, 561-569` — On-chain refund logic CANNOT process `deposits_mask` like `0b10` (player 1 deposited, player 0 didn't). Server explicitly tags as UNRECOVERABLE. Fix requires program upgrade: change loop to walk `0..max_players` and look up the correct `remaining_account` by index, OR allow caller to pass an index map. NOT a security exploit per se (no theft), but a permanent fund-lock if the deposit ordering produces a non-contiguous mask, which is possible whenever Player N deposits before Player N-1. Pre-mainnet: test the 2-player `0b10` path.
-2. **HIGH — H009 still open (executable fee destination)**: `v1:680-697, v2:711-728` — Single-line fix not landed. v2 architecturally improves via snapshot (immune to mid-flight rotation) BUT does NOT add `!treasury.executable` constraint, so an executable account snapshotted at create-time still exhibits the same lamport-burn behavior. Fix Recommendation: add `constraint = !treasury.executable @ EscrowError::InvalidTreasury` and same for ops on both v1:684-697 and v2:715-728.
-3. **HIGH — NOVEL-CPI-02 (refund loop is server-trust-dependent)**: The loop's correctness invariant ("`remaining_accounts` is a contiguous prefix of deposited players in `players[i]` order") is enforced by THE SERVER, not by the program. A malicious authority calling `cancel_match` with a wrong account ordering will cause `InvalidPlayer` revert — safe for funds. But a malicious player calling `cancel_match` (when `is_timed_out`) can call with `remaining_accounts = [their_own_pubkey]` and skip refunding anyone else IF they were players[0]. Specifically: the loop terminates after consuming all `remaining_accounts`, leaving any later-indexed depositors unrefunded — but the close=caller still happens and the player gets the rent. The undelivered wagers stay in the (now-closed!) PDA → UNREACHABLE because Anchor's `close` constraint sweeps ALL remaining lamports to caller. **So a malicious player at `players[0]` could call cancel_match with only themselves in `remaining_accounts`, refund themselves the wager, and rent-sweep the remaining wagers (deposited by `players[1..]`) to themselves.** This is a CRITICAL fund-theft path if we're unsure the bit-mask invariant covers all cases — needs deep dive in Phase 4. — `v1:391-419, v2:501-518` (cancel_match — note the `close = caller` at v1:718, v2:748)
-4. **MEDIUM — CPI-03 (credit overflow without checked math)**: Practically unreachable but not formally safe. `**dest.try_borrow_mut_lamports()? += wager_lamports`. Recommendation: convert to `checked_add` form for defense-in-depth.
-5. **MEDIUM — CPI-02 (Pubkey::default in zero-padded slots)**: Defensive concern only; current bounds check protects.
-6. **LOW — Anchor 0.32.1 auto-resolution**: Used correctly per memory note. No CPI vulnerability from this surface.
-
-## Novel Attack Surface
-
-- **NOVEL-CPI-01 — Non-contiguous deposit mask = permanent fund lock.** Stranding pattern: Player B deposits in window; Player A doesn't (or transaction fails for A). `deposits_mask = 0b10`. NO call sequence can refund Player B because the loop walks i=0,1,... and requires bit 0 set. Player B's wager is locked until program is redeployed. Server logs this as UNRECOVERABLE. **This is unique to this protocol's per-index account-passing design.** Fix: rewrite loop to look up the correct `remaining_account` by player-index map (e.g., caller passes `Vec<u8>` of player indices alongside).
-- **NOVEL-CPI-02 — Player at index 0 can rent-sweep co-depositors' wagers.** If a malicious player at `players[0]` is `is_timed_out` and calls `cancel_match` with `remaining_accounts = [their_own_account]`: they refund themselves wager_lamports; the loop terminates; `close = caller` sweeps the PDA's remaining lamports (which include the other depositors' wagers + rent) to their own account. **This is a CRITICAL THEFT VECTOR if the analysis holds.** Phase 4 must validate by either (a) constructing the exact failing assertion or (b) confirming Anchor `close = caller` sweeps post-instruction lamports. Sets up a strong attacker incentive: be a player, wait for timeout, call cancel with only yourself in remaining_accounts, walk away with everyone's deposit. Counter-argument: maybe the `close` semantics + `mut` constraints on the loop prevent it. **Needs PoC.** — `v1:391-419 cancel_match + close=caller at v1:718; v2:459-519 cancel_match + close=caller at v2:748`
-
-## Cross-Focus Handoffs
-
-- → **State Machine Agent**: NOVEL-CPI-02 — investigate whether `close = caller` + partial `remaining_accounts` allows a player to rent-sweep co-depositors' wagers. Specifically: if `cancel_match` runs and consumes only 1 of N depositors in `remaining_accounts`, what does `close = caller` do with the lamports that should have been refunded to the others? Same for v1 + v2. ALSO: NOVEL-CPI-01 — non-contiguous `deposits_mask` makes refund unreachable; document as a state-trap.
-- → **Account Validation Agent**: H009 verification on both v1 and v2. SettleMatch UncheckedAccount constraints check key identity only; no `!executable` check. Single-line fix not landed since Feb. Recommend reproducing the EP-106 write-demotion behavior on devnet to confirm Behavior A vs Behavior B.
-- → **Token/Economic Agent**: NOVEL-CPI-02 (theft-by-rent-sweep) — confirm or refute the exploitation scenario; calculate worst-case loss (max wager × max_players-1 = 1000 SOL). NOVEL-CPI-01 — quantify probability that a 2-player wager produces `0b10` deposits_mask in production traffic.
-- → **Access Control Agent**: cancel_match permits any player after timeout. Combined with NOVEL-CPI-02, the access-control surface for cancel_match expands to a fund-extraction path. Re-evaluate H016 (rent theft) under the lens of NOVEL-CPI-02.
-- → **Error Handling Agent**: The 6 `?` propagations in settle_match and the loops in cancel/reclaim. Confirm Solana TX rollback behavior matches Feb assessment under Anchor 0.32.1 (no behavior change expected, but note for audit completeness).
-- → **Arithmetic Agent**: CPI-03 (lamport credit overflow without checked math). Recommend `checked_add` for defense-in-depth on lines v1:318, 321, 324, 409, 477; v2:435, 438, 441, 509, 568.
-
-## Trust Boundaries
-
-- **System Program** (CPI target): FULL trust. Validated via `Program<'info, System>`. Cannot be substituted.
-- **Escrow PDA** (lamport source/destination): FULL trust (program-owned).
-- **Winner / Treasury / Ops UncheckedAccounts** (lamport credit destinations in `settle_match`): LIMITED trust. Key identity validated against `escrow.players[i]` (winner) and `config.treasury / config.ops` (v1) or `escrow.treasury_snapshot / ops_snapshot` (v2). NO executable check (H009). NO writability check.
-- **`remaining_accounts` in cancel/reclaim**: LIMITED trust. Per-iteration validated for: index bounds, mask bit set, exact pubkey match against `players[i]`. NOT validated for: writability, executability, non-default-pubkey (defense-in-depth gap, not exploitable).
-- **Caller of cancel_match**: TRUST BOUNDARY. Authority OR any registered player (after timeout). `close = caller` sends rent (+ potentially co-depositors' wagers per NOVEL-CPI-02) to caller.
-- **Caller of permissionless_reclaim**: TRUST BOUNDARY. Anyone after grace period. Same `close = caller`. Same NOVEL-CPI-02 exposure.
-<!-- CONDENSED_SUMMARY_END -->
-
----
-
-# CPI & External Calls — Full Analysis
-
-## Executive Summary
-
-The SolShot escrow programs (v1: `4kzrDpV9JxjE27AMg4PQXzGuge9MEYQEFznSPvkBtnH1`; v2: `BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N`) have an exceptionally narrow CPI surface. There is exactly **ONE** cross-program invocation across both 1982 LOC of source code: a `system_program::transfer` call in each `deposit_wager` instruction (v1:213-222, v2:275-284). Both use Anchor's type-safe `CpiContext::new()` wrapper, validate the System Program via `Program<'info, System>`, and pass only the player's signer and the escrow PDA destination. There is no `invoke()`, no `invoke_signed()`, no `get_return_data()`, no Token program CPI, no oracle CPI, no governance CPI, no custom external program CPI.
-
-All other value movement (settlement payouts, cancellation refunds, permissionless reclaims) uses **direct lamport mutation** via `try_borrow_mut_lamports()` — operations on accounts the program owns or has been authorized to modify via `mut` constraints. This is NOT CPI but lives in the same threat model: lamport movement to caller-supplied accounts must validate ownership, executability, and writability of the destinations.
-
-The highest-risk surface is the four `remaining_accounts` iteration sites (v1 cancel_match:391-410, v1 permissionless_reclaim:465-484, v2 cancel_match:502-510, v2 permissionless_reclaim:561-569). Each loop walks `for (i, account) in ctx.remaining_accounts.iter().enumerate()` and validates: (a) `i < max_players`, (b) `(deposits_mask >> i) & 1 == 1`, (c) `*account.key == players[i]`. Two novel concerns emerge:
-
-1. **NOVEL-CPI-01: Non-contiguous deposit masks are unrefundable.** The loop's structure forces `remaining_accounts` to be a contiguous prefix of `players[]` corresponding to set bits in the mask. If `players[1]` deposits but `players[0]` doesn't, `deposits_mask = 0b10` — no syntactically valid call exists. The off-chain server (`server/socket-io/main.js:484-489`) explicitly identifies this as UNRECOVERABLE on-chain.
-
-2. **NOVEL-CPI-02: A malicious player at `players[0]` may be able to rent-sweep co-depositors' wagers.** If the player calls `cancel_match` with only their own pubkey in `remaining_accounts`, the loop refunds them, terminates, and `close = caller` (v1:718, v2:748) sweeps the PDA's remaining lamports — including any other depositors' wagers — to the caller. This is a CRITICAL theft vector if the analysis holds; needs Phase 4 PoC.
-
-The Feb-flagged H009 (executable account as fee destination) **remains open in BOTH v1 and v2**. A simple grep for `executable` returns zero matches; the SettleMatch constraints check key identity only. v2's per-match snapshot architecturally improves config-rotation safety but does not address the executable concern. The single-line fix recommended in Feb has not landed.
-
-H026 (donation attack) and H029 (atomic-TX state revert) are re-validated and confirmed NOT_VULNERABLE in both v1 and v2.
-
-## Scope
-
-- **Files analyzed:**
-  - `programs/solshot-escrow/src/lib.rs` (962 LOC, v1)
-  - `programs/solshot-escrow-v2/src/lib.rs` (1020 LOC, v2)
-- **Functions analyzed:** All 8 instruction handlers in each file (16 total). Specific deep-read on: v1 deposit_wager (187-252), settle_match (258-338), cancel_match (344-419), permissionless_reclaim (425-487); v2 deposit_wager (239-318), settle_match (387-454), cancel_match (459-519), permissionless_reclaim (526-578).
-- **Account structs analyzed:** All 8 account structs in each file (16 total). Particular focus on SettleMatch (v1:658-709, v2:690-740), CancelMatch (v1:712-735, v2:743-765), PermissionlessReclaim (v1:738-754, v2:768-782).
-- **Estimated coverage:** 100% of CPI and direct-lamport surface.
-
-## Key Mechanisms
-
-### Mechanism 1: System Program Transfer CPI in deposit_wager
-
-**Location:** v1 `lib.rs:213-222`; v2 `lib.rs:275-284`
-
-**Purpose:** Transfer SOL from a player's wallet into the escrow PDA during deposit.
-
-**How it works (v1):**
-1. v1:188 reads `wager` from escrow state into a local before any mutable borrow
-2. v1:213-220 constructs `CpiContext::new()`:
-   - `program`: `ctx.accounts.system_program.to_account_info()`
-   - `accounts`: `system_program::Transfer { from: player, to: escrow }`
-3. v1:213-222 calls `system_program::transfer(cpi_ctx, wager)`
-4. The `?` operator propagates any CPI error (insufficient balance, account locked, etc.)
-5. v1:225-226 takes a fresh mutable borrow to set the deposit bit
-
-**How it works (v2):** Identical structure at v2:275-284. The only difference is that v2 reads `duration_secs`, `created_at`, `deposit_window_secs` BEFORE the deposit-window deadline check at v2:256-262. The CPI itself is the same shape.
-
-**Assumptions:**
-- The System Program is at `11111111111111111111111111111111`. Anchor's `Program<'info, System>` auto-validates this at v1:654 / v2:686.
-- The player has sufficient lamports. If not, the System Program returns an error and `?` propagates.
-- The player is a `Signer<'info>` (v1:644 / v2:677). They authorize their own debit.
-- The escrow PDA can receive lamports. PDAs accept any positive amount; no upper bound.
-
-**Invariants:**
-- Post-CPI: escrow PDA lamport balance increased by exactly `wager_lamports`.
-- Post-CPI: player lamport balance decreased by exactly `wager_lamports` (modulo TX fees deducted separately).
-- The CPI target is the System Program (Anchor enforces).
-- No PDA signer seeds are passed (player is a normal keypair signer; `invoke` not `invoke_signed`).
-
-**Concerns:**
-- None on this CPI itself. Canonical safe pattern.
-- Adjacent concern: in v1, the deposit may proceed even when the program is unpaused-then-paused mid-window (pause-as-griefing covered by Timing Agent's H007 review).
-
-### Mechanism 2: Direct Lamport Distribution in settle_match
-
-**Location:** v1 `lib.rs:317-324`; v2 `lib.rs:434-441`
-
-**Purpose:** Distribute pot to winner / treasury / ops after match concludes.
-
-**How it works (v1):**
-1. v1:309-313 sets state to `Settled` BEFORE transfers (OC-10 defense-in-depth)
-2. v1:317 debits `winner_amount` from escrow
-3. v1:318 credits winner
-4. v1:320 debits `treasury_amount` from escrow
-5. v1:321 credits treasury (validated against `config.treasury` at v1:686)
-6. v1:323 debits `ops_amount` from escrow
-7. v1:324 credits ops (validated against `config.ops` at v1:695)
-8. After instruction returns Ok, Anchor's `close = authority` (v1:665) reclaims escrow PDA rent to authority
-
-**How it works (v2):** Identical pattern at v2:434-441. **Key difference:** treasury/ops constraints validate against `escrow.treasury_snapshot` / `escrow.ops_snapshot` (v2:717, 726) instead of `config.treasury` / `config.ops`. This means v2 is immune to mid-flight `update_config` rotation. v2 also reads `treasury_bps` and `ops_bps` from snapshots (v2:398-399) instead of constants.
-
-**Assumptions:**
-- Escrow holds ≥ `winner_amount + treasury_amount + ops_amount` (= `total_pot`). Holds because deposits sum to `wager × num_deposited`, and arithmetic at v1:285-307 / v2:402-425 sets each amount such that the sum equals total_pot.
-- All recipient accounts can receive lamports (validated by key identity but NOT by executable/reserved-list checks — H009).
-- All `try_borrow_mut_lamports()` calls succeed. Within a single instruction, Anchor prevents overlapping borrows by the account-struct field separation.
-
-**Invariants:**
-- `winner_amount + treasury_amount + ops_amount == total_pot` (arithmetic remainder strategy at v1:303-307, v2:421-425).
-- No lamports created or destroyed (assuming no executable destinations — H009 risk).
-- State is `Settled` BEFORE any lamport movement.
-
-**Concerns:**
-- **H009 (HIGH, OPEN):** No `!treasury.executable` constraint at v1:684-697 or v2:715-728. Per EP-106, lamport credit to executable accounts may silently succeed in-memory but be discarded at commit, while the escrow debit IS committed. Result: silent fund loss. Single-line fix not landed since Feb.
-- **CPI-03 (MEDIUM):** Lamport credits use raw `+= amount` not `checked_add`. Theoretically wraps if recipient already holds ~1.8e19 lamports (~1.8e10 SOL); practically unreachable but not formally safe.
-- **CPI-02 (LOW):** `winner` account constraint (v1:674-679, v2:705-710) iterates `(0..escrow.max_players as usize).any(...)`. This is bounded by max_players ≤ 4 (v1) / ≤ 10 (v2). Compute-safe.
-
-### Mechanism 3: remaining_accounts Refund Loop in cancel_match
-
-**Location:** v1 `lib.rs:391-410`; v2 `lib.rs:501-510`
-
-**Purpose:** Refund deposited players' wagers when a match is cancelled.
-
-**How it works (v1):**
-1. v1:386-389 sets state to `Cancelled` BEFORE transfers (OC-10)
-2. v1:391-410 iterates `for (i, account) in ctx.remaining_accounts.iter().enumerate()`:
-   - v1:395 — `require!(i < max_players, EscrowError::InvalidPlayer)` — bounds check
-   - v1:398-399 — `require!((deposits_mask >> i) & 1 == 1, EscrowError::InvalidPlayer)` — bit must be set
-   - v1:402-405 — `require!(*account.key == players[i], EscrowError::InvalidPlayer)` — exact pubkey match
-   - v1:408 — `**escrow.lamports -= wager_lamports`
-   - v1:409 — `**account.lamports += wager_lamports`
-3. After instruction returns Ok, `close = caller` (v1:718) reclaims escrow PDA's remaining lamports (rent reserve) to caller.
-
-**How it works (v2):** Identical at v2:501-510. Different timing logic in the cancel-eligibility check (v2:471-489) but the loop body is the same.
-
-**Assumptions:**
-- The caller passes `remaining_accounts` as a contiguous prefix of `players[]` corresponding to set bits in `deposits_mask`. **THE PROGRAM DOES NOT ENFORCE THIS** — it only enforces the per-iteration check.
-- The caller passes WRITABLE `AccountInfo` instances. Server side does (`isWritable: true` at server/services/escrow.js:459). Program does not enforce writability — the runtime would presumably fail the `try_borrow_mut_lamports()` if the account were not writable.
-- `deposits_mask` bit `i` was set ONLY through normal flow (i.e., bit < max_players). True under normal program logic.
-
-**Invariants:**
-- Each iteration refunds exactly `wager_lamports` to the account at slot `players[i]` if bit `i` is set.
-- After all iterations, `escrow.lamports -= wager_lamports × len(remaining_accounts_passed)`.
-- **CRITICAL implicit invariant:** `remaining_accounts` MUST be a contiguous prefix of deposited slots starting at index 0. There is no skip-mechanism.
-
-**Concerns:**
-- **NOVEL-CPI-01 (HIGH):** Non-contiguous `deposits_mask` (e.g., `0b10` — bit 1 set, bit 0 unset) is unrefundable. The loop walks i=0,1,...; at i=0 the bit-set check fails. Passing different-order `remaining_accounts` fails the pubkey check. **Result: stranded funds.** Server logs "UNRECOVERABLE" (server/socket-io/main.js:488).
-- **NOVEL-CPI-02 (HIGH if confirmed):** Player at `players[0]` calls cancel with only their own account in `remaining_accounts`. Loop refunds them once and exits (length=1). `close = caller` then sweeps PDA's remaining lamports — INCLUDING the unrefunded wagers from `players[1..]` — to the caller. **THEFT.** Needs Phase 4 PoC. Counter-argument: maybe Anchor's `close` semantics or the `mut` Signer constraint blocks this; needs runtime test.
-- **CPI-02 (MEDIUM):** If `deposits_mask` is somehow widened beyond `max_players` (bit at index ≥ max_players set), the bounds check fires before the bit check and the loop terminates with `InvalidPlayer`. Defensive coding holds, but the pubkey check at slot ≥ max_players would compare against `Pubkey::default()` (the zero-padded slots), which equals the System Program pubkey. Unreachable in normal flow, but worth noting.
-
-### Mechanism 4: remaining_accounts Refund Loop in permissionless_reclaim
-
-**Location:** v1 `lib.rs:464-484`; v2 `lib.rs:561-569`
-
-**Purpose:** Public escape hatch — any signer can refund deposited players after the grace period.
-
-**How it works:** Identical to Mechanism 3 (cancel_match's loop body). Different gating logic on when it can be called (timeout-based, no authority gate). `close = caller` at v1:745, v2:773.
-
-**Differences from cancel_match:**
-- No `config` account in PermissionlessReclaim (v1:740-754, v2:768-782). Intentional — DCA-02 escape hatch must work even if config is corrupted.
-- No pause guard (intentional).
-- v1: 2× TIMEOUT_SECONDS = 1200s (20 min) grace from `created_at` (or `activated_at` if Active).
-- v2: PUBLIC_REFUND_GRACE_SECS = 86400s (24h) grace from `match_end_ts` (or `deposit_deadline` if not activated).
-
-**Concerns:** Same NOVEL-CPI-01 and NOVEL-CPI-02 as cancel_match. The "anyone" caller widens NOVEL-CPI-02's exploit population beyond just registered players.
-
-### Mechanism 5: Clock Sysvar Access (Reference)
-
-**Location:** v1: lines 170, 238, 367, 454, 524. v2: lines 216, 260, 298, 337, 364, 479, 552.
-
-**How it works:** All call sites use `Clock::get()?.unix_timestamp` — syscall-based, NOT account-based. No `AccountInfo<Clock>` is ever passed in any instruction context.
-
-**Concerns:** None. The syscall approach eliminates EP-006 (sysvar account injection). Per EP-089 / EP-090, validators have ~1-2s timestamp drift; for the protocol's hour/day-scale deadlines this is immaterial.
-
-## Trust Model
-
-| Entity | Trust Level | Rationale |
-|--------|-------------|-----------|
-| System Program (`11111111111111111111111111111111`) | FULL | Hardcoded; Anchor `Program<'info, System>` validates. |
-| Clock Sysvar via `Clock::get()` | FULL | Syscall, not account. Cannot be spoofed. |
-| Escrow PDA | FULL (program-owned) | Program is the only owner. Lamport mutations from program are authorized. |
-| Winner UncheckedAccount in settle_match | LIMITED | Constrained to `escrow.players[i]`. NO executable check. |
-| Treasury/Ops UncheckedAccount in settle_match (v1) | LIMITED | Constrained to `config.treasury / config.ops`. NO executable check. Live config = mid-flight rotation risk (covered by Token/Economic Agent). |
-| Treasury/Ops UncheckedAccount in settle_match (v2) | LIMITED | Constrained to `escrow.treasury_snapshot / escrow.ops_snapshot`. Per-match snapshot — immune to mid-flight rotation. NO executable check. |
-| `ctx.remaining_accounts[i]` in cancel/reclaim | LIMITED | Per-iteration validated for bounds, mask bit, pubkey-match-against-`players[i]`. NO executable check. NO writability check at the program level (relies on runtime). |
-| Caller of cancel_match | TRUST BOUNDARY | Authority OR registered player after timeout. `close = caller` redirects rent + (per NOVEL-CPI-02 if confirmed) co-depositors' wagers. |
-| Caller of permissionless_reclaim | TRUST BOUNDARY | Anyone after grace. Same NOVEL-CPI-02 exposure with broader attacker population. |
-| Authority key | TRUST BOUNDARY | Hot wallet on devnet. Can call `update_config` to rotate `config.treasury`/`ops` to anything (executable, reserved, default) — see H009, H001. |
-
-## State Analysis
-
-### State Read by CPI / External-call Sites
-
-- v1 deposit_wager (213-222): reads `escrow.wager_lamports` (line 191) before CPI. Account: `system_program` (read).
-- v2 deposit_wager (275-284): reads `escrow.wager_lamports`, `escrow.duration_secs`, `escrow.created_at`, `escrow.deposit_window_secs` (243-248) before CPI. Account: `system_program` (read).
-
-### State Written After CPI / External Calls
-
-- v1 deposit_wager (225-249): `escrow.deposits_mask` (226), `escrow.state` (237 if full), `escrow.activated_at` (238 if full).
-- v2 deposit_wager (286-315): `escrow.deposits_mask` (287), `escrow.state` (299 if full), `escrow.activated_at` (300 if full), `escrow.match_end_ts` (301-303 if full).
-
-### State Written BEFORE Direct Lamport Movement
-
-- v1 settle_match (309-313): `escrow.state = Settled` BEFORE lamport transfers.
-- v1 cancel_match (385-389): `escrow.state = Cancelled` BEFORE transfers.
-- v1 permissionless_reclaim (458-462): `escrow.state = Cancelled` BEFORE transfers.
-- v2 settle_match (427-431): same.
-- v2 cancel_match (496-499): same.
-- v2 permissionless_reclaim (556-559): same.
-
-This is the OC-10 pattern. The state-before-transfer ordering is correct.
-
-## Dependencies
-
-### External Programs Invoked
-1. **System Program** (`11111111111111111111111111111111`): Used for SOL transfer in deposit_wager. Validated via `Program<'info, System>`. **Only program invoked.**
-
-### External Programs NOT Invoked
-- SPL Token Program — not used.
-- SPL Token-2022 — not used.
-- Pyth / Switchboard — no oracles.
-- Governance programs (SPL Governance, Squads) — not used.
-- Any custom program — not used.
-
-### Anchor Framework Dependencies
-- `anchor_lang::prelude::*` (v1:4, v2:18): Provides `Account`, `Signer`, `Program`, `UncheckedAccount`, `CpiContext`, constraints, error handling, `Pubkey`, `Clock`.
-- `anchor_lang::system_program` (v1:5, v2:19): Provides `system_program::transfer` CPI wrapper and `system_program::Transfer` accounts struct.
-
-### Sysvar Dependencies
-- `Clock` via `Clock::get()` syscall (v1: 5 sites; v2: 7 sites).
-
-### Anchor Version
-- 0.32.1 in both `programs/solshot-escrow/Cargo.toml:20` and `programs/solshot-escrow-v2/Cargo.toml:20`.
-- Per project memory: Anchor 0.30+ auto-resolves accounts with `pda` (constant seeds) or `address` declarations. The escrow team observed `InvalidProgramId on system_program` when explicitly passing config in `.accounts({...})`. **Off-chain client code MUST pass only signers + non-constant-PDA accounts in `.accounts({...})`.** Verified at server/services/escrow.js:452-455 (cancel passes only `escrow` + `caller`) and server/services/escrow-v2.js:344+374. Auto-resolution is correctly applied. No CPI-from-Anchor-resolution-mismatch attack vector.
-
-## Focus-Specific Analysis
-
-### CPI Call Map (Mandatory Output Section 1)
-
-| # | Location | Target | Method | Call Type | Program ID Validated? | PDA Seeds (if signed) | Mutates Caller-Provided Account? |
-|---|----------|--------|--------|-----------|------------------------|------------------------|------------------------------------|
-| 1 | v1:213-222 (deposit_wager) | System Program | `system_program::transfer` | `CpiContext::new()` | YES (`Program<'info, System>` at v1:654) | N/A — player signs via `Signer<'info>` | YES — debits player, credits escrow PDA |
-| 2 | v2:275-284 (deposit_wager) | System Program | `system_program::transfer` | `CpiContext::new()` | YES (`Program<'info, System>` at v2:686) | N/A — player signs | YES — debits player, credits escrow PDA |
-
-**That is the entire CPI map.** No `invoke()`, no `invoke_signed()`, no other targets, no PDA signer seeds anywhere.
-
-### Privilege Flow Analysis (Mandatory Output Section 2)
-
-**deposit_wager CPI (v1:213-222, v2:275-284):**
-- Accounts passed to System Program:
-  - `from`: player (`Signer<'info>` at v1:644 / v2:677, `mut`) — player signs the transfer authorization
-  - `to`: escrow PDA (`Account<'info, MatchEscrow>` at v1:641 / v2:674, `mut`) — receives lamports
-- What can the System Program do with these?
-  - Transfer lamports from `from` to `to`. Period.
-  - System Program cannot modify account data, owner, or anything else.
-  - System Program enforces that `from` is a signer.
-- Mutable accounts that shouldn't be?
-  - Both are correctly mutable.
-  - No additional accounts are passed beyond what's required.
-
-**No PDA signer seeds are passed to ANY external program because no `invoke_signed` exists.** The escrow PDA's signer authority is therefore never delegated.
-
-### Return Data Analysis (Mandatory Output Section 3)
-
-**No instruction in either program calls `get_return_data()`.** The single CPI (`system_program::transfer`) does not return data. EP-045 (CPI return data spoofing) is therefore eliminated entirely.
-
-### remaining_accounts Audit (Mandatory Output Section 4)
-
-Four iteration sites — full audit:
-
-#### Site A: v1 cancel_match (lines 391-410)
-
-```rust
-for (i, account) in ctx.remaining_accounts.iter().enumerate() {
-    require!(i < max_players, EscrowError::InvalidPlayer);                  // bounds
-    let bit_set = (deposits_mask >> i) & 1 == 1;
-    require!(bit_set, EscrowError::InvalidPlayer);                          // mask bit
-    require!(*account.key == players[i], EscrowError::InvalidPlayer);       // pubkey
-    **ctx.accounts.escrow.to_account_info().try_borrow_mut_lamports()? -= wager_lamports;
-    **account.try_borrow_mut_lamports()? += wager_lamports;
-}
-```
-
-| Validation | Status | Notes |
-|------------|--------|-------|
-| Owner check | NO | Refund destinations are external wallets, no owner constraint required |
-| Discriminator check | NO (N/A — not a typed account) | |
-| Type check | NO (raw `AccountInfo`) | |
-| Pubkey match against `escrow.players[i]` | YES (line 402-405) | Strict `==` |
-| Mask bit `i` set | YES (line 398-399) | |
-| Bounds (`i < max_players`) | YES (line 395) | |
-| Writability | NOT in program; runtime presumably enforces via `try_borrow_mut_lamports` | Server passes `isWritable: true` |
-| Executability | NOT enforced | Same H009 concern applies if a player wallet is replaced by an executable pubkey at create-time. But players must SIGN deposit_wager (Signer<'info>), so they cannot be programs. |
-| Non-default (zero) pubkey | NOT enforced | Theoretical concern at slot ≥ max_players; bounds check protects |
-
-**Loop integrity:** The loop walks `enumerate()` so `i = 0, 1, 2, ...` strictly. This means `remaining_accounts` MUST appear in exactly the order `[players[0], players[1], ..., players[k-1]]` where the first `k` bits of `deposits_mask` are all set. **If bit `i` is set but bit `i-1` is not, no valid call exists** — see NOVEL-CPI-01.
-
-#### Site B: v1 permissionless_reclaim (lines 465-484)
-
-Identical structure to Site A. Same validation matrix. Same NOVEL-CPI-01 concern. Same NOVEL-CPI-02 concern.
-
-#### Site C: v2 cancel_match (lines 502-510)
-
-```rust
+// (1) Pre-loop length gate — NEW since audit #2 — fixes H023
+require!(
+    ctx.remaining_accounts.len() == deposits_mask.count_ones() as usize,
+    EscrowError::IncompleteRefund
+);
+
+// (2) Per-iteration validation + lamport math
 for (i, account) in ctx.remaining_accounts.iter().enumerate() {
     require!(i < max_players, EscrowError::InvalidPlayer);
     let bit_set = (deposits_mask >> i) & 1 == 1;
@@ -412,218 +65,886 @@ for (i, account) in ctx.remaining_accounts.iter().enumerate() {
 }
 ```
 
-Identical to Site A. The only difference is `deposits_mask` is `u16` instead of `u8`, supporting up to 16 bits (max 10 players in v2).
+### Site-by-site current line refs (verified against working tree)
 
-#### Site D: v2 permissionless_reclaim (lines 561-569)
+| Site | Pre-loop gate | Loop body | `close = caller` ctx |
+|---|---|---|---|
+| v1 `cancel_match` | **v1:410-413** | v1:417-434 | v1:764 (CancelMatch struct) |
+| v1 `permissionless_reclaim` | **v1:489-492** | v1:495-508 | v1:791 (PermissionlessReclaim struct) |
+| v2 `cancel_match` | **v2:721-724** | v2:727-735 | v2:1056 (CancelMatch struct) |
+| v2 `permissionless_reclaim` | **v2:789-792** | v2:794-802 | v2:1081 (PermissionlessReclaim struct) |
 
-Identical to Site C.
+### Why the gate closes H023
 
-**Summary table — 6-check matrix per loop site:**
+The pre-loop assertion forces `len(remaining_accounts) == count_ones(deposits_mask)`. Combined with the per-iteration check that bit `i` is set AND that `account.key == players[i]`, the loop must:
 
-| Check | Site A (v1 cancel) | Site B (v1 reclaim) | Site C (v2 cancel) | Site D (v2 reclaim) |
-|-------|---|---|---|---|
-| 1. account==players[i] | ✓ 402-405 | ✓ 471-474 | ✓ 506 | ✓ 565 |
-| 2. bit i in mask | ✓ 398-399 | ✓ 468-469 | ✓ 504-505 | ✓ 563-564 |
-| 3. bounds (i < max) | ✓ 395 | ✓ 466 | ✓ 503 | ✓ 562 |
-| 4. writability | runtime-enforced via try_borrow_mut_lamports | same | same | same |
-| 5. lamport conservation | implicit (sum=wager×len) | implicit | implicit | implicit |
-| 6. order/contiguity | NOT enforced (NOVEL-CPI-01) | NOT enforced | NOT enforced | NOT enforced |
+1. Process **exactly one** entry per set bit (no fewer, no more).
+2. Process them in player-index order (loop is `enumerate()`, mask bit `i` is checked positionally).
+3. Each entry must hit a real depositor.
 
-### Account Validation Cross-Reference for CPI Surface
+Consequence: after the loop, escrow PDA holds **exactly** `(rent reserve)` lamports — every deposit has been refunded. When Anchor's exit hook runs `close = caller`, it transfers only the rent reserve. No depositor wagers can leak to caller. Theft path is closed.
 
-Beyond the loop sites, the following accounts also receive direct lamport credits:
+### Verification: tests directly assert the gate
 
-| Account | Site | UncheckedAccount? | Constraint | Receives Lamports? | Risk |
-|---------|------|---------------------|------------|----------------------|------|
-| winner | v1 settle_match (line 318) | YES (v1:680) | `(0..max_players).any(|i| players[i] == winner.key())` | YES | Players sign deposit, so cannot be programs. Effectively safe. |
-| winner | v2 settle_match (line 435) | YES (v2:711) | Same | YES | Same. |
-| treasury | v1 settle_match (line 321) | YES (v1:689) | `treasury.key() == config.treasury`, `treasury.key() != ops.key()` | YES | H009: no executable check |
-| treasury | v2 settle_match (line 438) | YES (v2:720) | `treasury.key() == escrow.treasury_snapshot`, `!= ops.key()` | YES | H009: no executable check (but snapshot prevents mid-flight rotation) |
-| ops | v1 settle_match (line 324) | YES (v1:697) | `ops.key() == config.ops` | YES | H009: no executable check |
-| ops | v2 settle_match (line 441) | YES (v2:728) | `ops.key() == escrow.ops_snapshot` | YES | H009: no executable check |
+`programs/solshot-escrow/tests/bok_proptest_refund.rs` and `programs/solshot-escrow-v2/tests/bok_proptest_refund.rs` are dedicated H023 regression suites. Both assert: any `len != count_ones(mask)` call returns `Err("IncompleteRefund")` with no state mutation. Includes the worst-case H023 attack (empty `remaining_accounts` with `close = caller`). Both files are present in working tree (per Grep above). The H023 fix has both static and property-based evidence.
+
+### Worst-case theft (had the fix not landed)
+
+The fix matters because, without it, the prior-audit worst case stood at:
+
+- **v1**: `max_players = 4`, `max_wager = 100 SOL`. Attacker passes 1 entry, gets refunded 100 SOL via loop, then `close = caller` sweeps `(4-1) × 100 SOL + rent` = **300 SOL + rent**. Net theft from 3 victims: 300 SOL per match.
+- **v2**: `max_players = 10`, `max_wager = 100 SOL`. Attacker passes 1 entry, gets 100 SOL via loop, sweep adds `(10-1) × 100 SOL + rent` = **900 SOL + rent**. Net theft from 9 victims: 900 SOL per match.
+- **v2 permissionless_reclaim (PR:N)**: zero registration cost. Attacker passes 0 entries, the loop never runs, sweep transfers full **1,000 SOL** pot to attacker. Per-TX max theft = 1,000 SOL.
+
+These numbers are now structurally unreachable because the gate rejects every `len != count_ones(mask)` shape.
+
+## Bundle 1 CPI Risk (migrate_config rent top-up)
+
+### CPI under audit: v2:214-223
+
+```rust
+anchor_lang::system_program::transfer(
+    CpiContext::new(
+        ctx.accounts.system_program.to_account_info(),
+        anchor_lang::system_program::Transfer {
+            from: auth_info.to_account_info(),   // Signer: authority
+            to: config_info.to_account_info(),   // UncheckedAccount: config PDA
+        },
+    ),
+    lamports_needed,
+)?;
+```
+
+Surrounding logic (v2:184-238):
+1. Read raw config data, verify authority at offset [8..40] (manual `has_one` substitute).
+2. If `current_size >= new_size`, return `Ok` (idempotent).
+3. `Rent::get()` → compute `new_minimum = rent.minimum_balance(new_size)`.
+4. `current_balance = config_info.lamports()` → `lamports_needed = new_minimum - current_balance` via `checked_sub`.
+5. **CPI: System Program transfer from `auth_info` to `config_info`.**
+6. `config_info.realloc(new_size, false)`.
+7. Borrow `try_borrow_mut_data`, zero-fill from `current_size` to end.
+
+### CPI risk analysis
+
+**1. Signer derivation.** Authority is a Signer; no PDA signing needed. `CpiContext::new` (not `new_with_signer`) is the correct constructor. System Program enforces that `from` signed. No `invoke_signed`, no PDA seeds exposed.
+
+**2. Early-return path before CPI.** v2:202-206 returns `Ok` if `current_size >= new_size`. v2:211 wraps the CPI in `if current_balance < new_minimum`. So if the config PDA is already rent-exempt for the new size, the CPI is **skipped entirely**. Behavior is correct.
+
+**3. Partial-state risk.** The handler executes:
+   - read borrow on data (v2:191) — dropped at end of block at v2:198
+   - rent CPI (v2:214-223)
+   - `realloc` (v2:226)
+   - mut borrow on data (v2:232) — dropped at end of block at v2:236
+
+   Each section drops its borrow before the next. Borrow lifetimes are clean — no overlap with the CPI or realloc.
+
+   If the CPI succeeds and `realloc` fails (e.g. account-data-size-exceeds-limit), Anchor's atomic-TX semantics revert ALL state changes, including the CPI lamport debit (Solana runtime guarantees this — Sealevel atomicity). Same for any subsequent failure. **No partial-state escape.**
+
+**4. Edge: post-CPI lamport increment overflow.** The CPI top-up adds `lamports_needed` to config PDA. `new_minimum` is the rent-exempt threshold for 231 bytes — measured in thousands of lamports. No realistic overflow.
+
+**5. Edge: realloc bytes-past-old-end semantics.** `realloc(new_size, false)` says "don't zero-fill." The handler then manually zero-fills `data[current_size..]` at v2:232-235 to set:
+   - All `Option<T>::None` discriminants (byte 0 = None tag).
+   - `pending_config_ts: i64 = 0` (sentinel "no pending proposal").
+   - `last_config_update_ts: i64 = 0` (audit-trail zero).
+
+   The zero-fill iteration is `data.iter_mut().skip(current_size)` — this iterates over **every byte** from `current_size` to the new end. Correct.
+
+   **Subtle risk worth surfacing (LOW):** the manual zero-fill ONLY clears bytes from `current_size` onward. If a malicious pre-state somehow left non-zero garbage in the first 110 bytes (the "preserved" region), those bytes are NOT cleared. Reality check: those first 110 bytes are the existing live config (`authority`, `treasury`, `ops`, `fee_bps_treasury`, `fee_bps_ops`, `is_paused`, `bump`) — they should already be valid Borsh data for the new struct's first 110 bytes (because the new struct's first 110 bytes are field-compatible with the old struct's layout). The new struct adds 6 new `Option<T>` + 2 `i64` fields APPENDED. So the preserved region is intentionally not zeroed. **No issue, but the design relies on field-layout-compatibility between old and new struct. If a future struct change reorders fields, this migration would silently break.**
+
+**6. Edge: idempotency.** The `current_size >= new_size` early return at v2:203 means re-calling `migrate_config` on an already-migrated PDA returns `Ok` without any CPI or realloc. No double-debit risk.
+
+**7. Edge: authority-verification race.** v2:191 borrows raw data and reads authority at [8..40]. Between this read and the realloc at v2:226, no other instruction can run (Solana single-threaded per-account). Race impossible within instruction. Cross-instruction race irrelevant because Anchor only writes to authority via `update_config` (now pending-only, NOT applied until `apply_config_update`) or via `accept_authority` — both are mutually exclusive with `migrate_config` in the same transaction by Solana's account-level locking.
+
+**8. Wider attack surface from `UncheckedAccount`.** The context (v2:856-871) uses `UncheckedAccount` for `config`. PDA seeds (`b"config"`) are still enforced by Anchor. So an attacker cannot pass a wrong PDA. The manual authority check at v2:191-197 is the only defense beyond the PDA-seed gate. An attacker who is the legitimate authority can call `migrate_config`, but the worst case is they pay the rent top-up themselves (which Anchor will refund as part of normal lamport accounting if they want to close the config later — but there's no `close_config` instruction, so the top-up is sunk). **No exploit.** The instruction is also marked devnet-only in the doc comment; production should remove it in the follow-up upgrade.
+
+**9. NEW LOW finding: `migrate_config` has no `is_paused` guard.** It CAN run while paused. Not a security concern — it doesn't move user funds; it grows the admin config — but worth noting that the doc comment doesn't address this. Not a finding worth filing.
+
+**Bundle 1 CPI verdict: The new CPI is well-formed, signer-derived correctly, borrow-clean, and atomic-safe. No CPI vulnerability introduced.** The wider concerns about migrate_config (UncheckedAccount, manual deser) belong to Access Control focus, not CPI.
+
+## Critical Invariants
+
+1. **CPI target program ID is System Program** — enforced via `Program<'info, System>` at v1:691, v1:586, v1:649, v1:705, v1:779, v1:798 / v2:870, v2:968, v2:990, v2:1047, v2:1071, v2:1088. No other CPI target exists.
+2. **No PDA signer seeds escape the program** — no `invoke_signed` call anywhere. Escrow PDA's signer authority is never delegated.
+3. **All state transitions to terminal (`Settled`, `Cancelled`) occur BEFORE lamport movement** (OC-10) — enforced at v1:328 (settle), v1:404 (cancel), v1:485 (reclaim); v2:647 (settle), v2:715 (cancel), v2:783 (reclaim).
+4. **Refund completeness** — `len(remaining_accounts) == count_ones(deposits_mask)` is enforced by the H023 fix gate at v1:410-413, v1:489-492, v2:721-724, v2:789-792. Combined with per-iteration `bit_set` + `players[i]` checks, this enforces: ALL deposited wagers are refunded before `close = caller`. Escrow PDA holds exactly rent reserve at exit time. **No theft possible via partial loop.**
+5. **Atomic TX rollback** — Every `?`-propagated CPI failure (system_program::transfer or try_borrow_mut_lamports) reverts the whole TX. Solana Sealevel atomicity guarantees this; no lamport leak on mid-instruction failure.
+6. **Borrow lifetimes** — Mutable borrows on escrow are scoped via blocks (`{ let escrow = &mut ctx.accounts.escrow; ... }`) and dropped before lamport math. `migrate_config` reads via `try_borrow_data` then drops the read borrow before `realloc`. No borrow-conflict deadlocks.
+7. **No re-entry possible** — Solana has no re-entrancy by design (instructions are atomic). The single CPI target (System Program) cannot call back into our program.
+
+## Prior-Finding Status
+
+### H023 (CRITICAL, CVSS 9.3) — Partial-refund theft via `close = caller` sweep
+
+**Verdict: FIXED in both v1 and v2, all four sites.**
+
+Audit-handover document claimed "Bundle 1 does NOT touch refund loops — likely still open" but that statement is wrong against the actual working tree at the current ref. Verification:
+
+| Site | Line ref (current) | Gate present? | Error variant |
+|---|---|---|---|
+| v1 `cancel_match` | v1:410-413 | YES | `EscrowError::IncompleteRefund` |
+| v1 `permissionless_reclaim` | v1:489-492 | YES | `EscrowError::IncompleteRefund` |
+| v2 `cancel_match` | v2:721-724 | YES | `EscrowError::IncompleteRefund` |
+| v2 `permissionless_reclaim` | v2:789-792 | YES | `EscrowError::IncompleteRefund` |
+
+The fix is exactly the recommended one from the prior finding:
+
+```rust
+require!(
+    ctx.remaining_accounts.len() == deposits_mask.count_ones() as usize,
+    EscrowError::IncompleteRefund
+);
+```
+
+Added BEFORE the loop in every case. The error variant `IncompleteRefund` is defined in both error enums (v1:1022, v2:1413). Proptest regression suites (`bok_proptest_refund.rs` in both programs) directly assert the gate behavior across the full attack-shape space.
+
+**Worst-case theft is now structurally unreachable.** Phase 4 PoC is NOT needed (the gate is so simple that static verification is sufficient — every TX with `len != count_ones(mask)` reverts before any lamport math).
+
+H023 → **RESOLVED**.
+
+### H041 (LOW) — close=caller rent theft
+
+Same surface as H023 (the rent reserve, ~0.002 SOL, was the worst case before H023 was discovered). With the H023 gate now in place, the loop processes ALL deposited slots. After the loop, escrow PDA holds exactly the rent reserve. `close = caller` then transfers rent → caller as intended economic incentive (DCA-02 design). This is **intentional, not theft** — anyone calling cancel or reclaim pays the TX fee, and rent is the reward. The "theft" framing only applies if the rent goes to the wrong wallet (it doesn't — caller is the signer, by definition acting in their own right).
+
+H041 → **RESOLVED by design + H023 fix**.
+
+### NOVEL-CPI-01 (HIGH) — Non-contiguous deposit mask = unrefundable funds
+
+**Verdict: STILL OPEN.** This is a separate, independent issue from H023.
+
+The H023 fix gate (`len == count_ones(mask)`) does NOT address NOVEL-CPI-01. The loop is still `enumerate()`-walked from `i=0`. If `deposits_mask = 0b10` (bit 1 set, bit 0 unset), the loop at `i=0` hits the `bit_set` check and rejects with `InvalidPlayer`. Caller cannot pass `[players[1]]` as the only entry either — because that fails the `players[i] == account.key` check at `i=0` (expects `players[0]`, got `players[1]`).
+
+So a non-contiguous mask is still permanently stuck — except by `permissionless_reclaim` calling with proper-sized remaining_accounts. Wait, that doesn't help either, because reclaim has the same gate + same per-iteration checks.
+
+Re-analysis: with the H023 gate forcing `len = count_ones = 1`, the caller must pass exactly 1 account. But that account must match `players[i]` at the iteration index, which is 0 (loop starts at 0). The mask check then fails because bit 0 is unset.
+
+**No syntactically valid `remaining_accounts` exists for non-contiguous masks.** The server logs this as UNRECOVERABLE (server/socket-io/main.js).
+
+Caveat: this finding is in scope for State Machine focus, NOT CPI — the CPI surface is just the symptom. The root cause is the array compaction (or lack thereof) in deposit_wager. Cross-referenced in handoffs below.
+
+NOVEL-CPI-01 → **STILL OPEN — flag for State Machine focus**.
+
+### NOVEL-CPI-02 (CRITICAL → fully fixed by H023 gate)
+
+This was the prior CPI agent's framing of the SAME fundamental theft surface as H023. The Token/Economic agent also independently flagged it as NOVEL-TE-01. All three are the same underlying issue. Now fixed by the H023 gate.
+
+NOVEL-CPI-02 → **RESOLVED (same fix as H023)**.
+
+### H025 (HIGH) — Executable account as fee destination
+
+**Verdict: FIXED (one-line constraint landed since audit #2).**
+
+I noted in the prior agent's analysis that `H025`/`H009` (executable-account fee destination) was OPEN. Re-grep against the current working tree shows:
+
+- v1:721 — `constraint = !winner.executable @ EscrowError::ExecutableNotAllowed`
+- v1:731 — `constraint = !treasury.executable @ EscrowError::ExecutableNotAllowed`
+- v1:740 — `constraint = !ops.executable @ EscrowError::ExecutableNotAllowed`
+- v2:1015 — `constraint = !winner.executable @ EscrowError::ExecutableNotAllowed`
+- v2:1025 — `constraint = !treasury.executable @ EscrowError::ExecutableNotAllowed`
+- v2:1034 — `constraint = !ops.executable @ EscrowError::ExecutableNotAllowed`
+
+All six constraints in place. Error variant `ExecutableNotAllowed` defined in both error enums. EP-106 lamport-burn class is closed.
+
+H025 → **RESOLVED**.
+
+### CPI-03 (MEDIUM) — Lamport credit overflow without checked_add
+
+**Verdict: STILL OPEN (unchanged from audit #2).**
+
+The 6+2N lamport increment sites (`** += amount`) are still raw arithmetic, not `checked_add`:
+
+- v1 settle: v1:334, v1:337, v1:340
+- v1 refund loops: v1:433, v1:507
+- v2 settle: v2:652, v2:655, v2:658
+- v2 refund loops: v2:734, v2:801
+
+These are theoretically unsound (credit overflow on `**dest.lamports += amount` would wrap u64) but practically unreachable. At max pot of v2 (100 SOL × 10 = 10^12 lamports) and u64::MAX = 1.84e19, the recipient would need to already hold ~1.8e19 lamports (~1.8e10 SOL) for `+= amount` to wrap. No mainnet wallet holds that much SOL. **Defense-in-depth gap, not a vulnerability.**
+
+CPI-03 → **STILL OPEN as MEDIUM (defense-in-depth)**.
+
+## New Findings
+
+### NEW-CPI-01 (LOW) — `migrate_config` zero-fill relies on un-documented Borsh layout invariant
+
+**Location:** v2:228-236 (zero-fill loop after realloc).
+
+**Description:** The `migrate_config` instruction grows the `GlobalConfig` PDA from 110 bytes (pre-Bundle-1) to 231 bytes (post-Bundle-1) and manually zero-fills bytes `[current_size..new_size]`. This relies on the invariant that the **first 110 bytes of the new struct layout are byte-for-byte identical to the old struct layout**. The new fields (`pending_authority`, `pending_treasury`, etc.) are appended after the existing fields.
+
+**Risk:** If a future struct change reorders or replaces an existing field while keeping the same total `SPACE` constant, `migrate_config` would silently leave the new field reading from the OLD field's bytes — producing garbage data without erroring. This is a deferred-time risk, not an immediate exploit.
+
+**Recommendation:** Add a comment near `impl GlobalConfig` documenting that fields 1-7 (authority through bump) MUST NOT be reordered, replaced, or have their types changed without revising `migrate_config`. The doc comment at v2:170-183 mentions the layout but doesn't enforce the invariant via testing.
+
+**Severity:** LOW — devnet-only instruction, and prior to mainnet it should be removed entirely per v2:181-183.
+
+### NEW-CPI-02 (LOW) — `migrate_config` not gated by config.is_paused (correct, but doc-worthy)
+
+**Location:** v2:184-239, account context at v2:856-871.
+
+**Description:** `MigrateConfigUnchecked` context does NOT have a `constraint = !config.is_paused` gate. Functionally correct (pause should NOT block governance recovery, just like H016 for cancel/reclaim/settle), but the doc comment doesn't address it.
+
+**Risk:** None — runtime behavior is correct by design.
+
+**Recommendation:** Add a one-line doc note that migrate_config bypasses pause (parallel to H016 doc on cancel).
+
+**Severity:** LOW — documentation gap only.
+
+### NEW-CPI-03 (LOW) — `migrate_config` rent top-up uses authority's wallet as payer
+
+**Location:** v2:214-223, line v2:218 (`from: auth_info.to_account_info()`).
+
+**Description:** The rent top-up CPI debits the authority's wallet to fund the larger PDA. If the authority's wallet has insufficient SOL, the CPI fails and the transaction reverts. No fund-loss risk.
+
+**Risk:** None for security; potential operational gotcha — the authority must hold enough SOL to cover the rent delta (≈ 0.0009 SOL for the 121-byte growth).
+
+**Recommendation:** None needed; this is the correct design (authority is the only signer with provenance to bump the config). Document that the migration drill requires the authority wallet to be funded.
+
+**Severity:** LOW — operational note.
+
+## Cross-Focus Handoffs
+
+- → **State Machine Agent**: NOVEL-CPI-01 (non-contiguous deposit mask = stranded funds) is a state-trap. The H023 fix did NOT address this. Document as a known unrecoverable state. Track separately from H023 — they are NOT the same issue.
+- → **Access Control Agent**: `migrate_config` uses `UncheckedAccount` + manual authority verification at offset [8..40]. Confirm the byte-offset layout against the actual v1 `GlobalConfig` struct order (v1:835-846) — the order is `authority, treasury, ops, is_paused, bump`, so offset [8..40] = `authority` ✓. Investigate H019 dismissal in the carry-forward set — the new realloc path bypasses Account<GlobalConfig> validation. Phase 4 investigation may be warranted.
+- → **Token/Economic Agent**: H023 is closed. NOVEL-CPI-02 was the same issue and is also closed. The remaining lamport-overflow concern (CPI-03) is yours to triage for defense-in-depth recommendation.
+- → **Arithmetic Agent**: CPI-03 (lamport credit `+= amount` without checked_add) at v1:334,337,340,433,507; v2:652,655,658,734,801. Recommend `checked_add` conversion.
+- → **Upgrade Agent**: `migrate_config` is marked devnet-only. Confirm the follow-up program upgrade removes this instruction before mainnet redeploy. Otherwise it remains as a permanent (but harmless if authority is multisig) admin tool.
+
+## Audit Outcomes Summary Table
+
+| Prior finding | Status | Notes |
+|---|---|---|
+| **H023** (CRITICAL, CVSS 9.3 — partial-refund theft) | **RESOLVED** | `IncompleteRefund` gate landed at all 4 sites. Proptests verify. |
+| **H041** (LOW — rent theft) | **RESOLVED** | Same surface as H023; gate fixes both. |
+| **NOVEL-CPI-02** (CRITICAL) | **RESOLVED** | Same as H023. |
+| **H025/H009** (HIGH — executable fee destination) | **RESOLVED** | 6× `!executable` constraints landed. |
+| **NOVEL-CPI-01** (HIGH — non-contiguous mask) | **STILL OPEN** | Independent of H023; flag for State Machine. |
+| **CPI-03** (MED — lamport credit overflow) | **STILL OPEN** | Defense-in-depth; practically unreachable. |
+| **NEW-CPI-01** (LOW — migrate_config layout invariant) | NEW | Doc-only risk. |
+| **NEW-CPI-02** (LOW — migrate_config bypass pause) | NEW | Doc-only risk. |
+| **NEW-CPI-03** (LOW — migrate_config requires funded authority) | NEW | Op-note only. |
+<!-- CONDENSED_SUMMARY_END -->
+
+---
+
+# CPI & External Calls — Full Analysis
+
+## Executive Summary
+
+Stacking on audit #2 (`226c0cd`), this audit re-verifies the CPI surface against the current ref (`fabb8e1`). The codebase has grown to 2,450 LOC (v1 + v2) and Bundle 1 adds **exactly one** new CPI: a System Program rent top-up in `migrate_config` (v2:214-223). No new exotic CPI patterns. No PDA signer escapes.
+
+The headline finding from audit #2 — **H023** (CVSS 9.3 CRITICAL, partial-refund theft via `close = caller` sweep) — was flagged in the prior HANDOVER as "likely still open" because the document author assumed Bundle 1 only touched governance. **That is incorrect**: a `require!(remaining_accounts.len() == deposits_mask.count_ones())` gate has been added at all four refund sites (v1 cancel, v1 reclaim, v2 cancel, v2 reclaim). This gate is exactly the recommended fix from the prior finding. Proptest regression suites have been added in both programs (`bok_proptest_refund.rs`). The fix is structurally complete.
+
+H025/H009 (executable account as fee destination) — flagged as STILL OPEN in audit #2 — has ALSO been fixed since: six `constraint = !X.executable` constraints landed across v1 SettleMatch and v2 SettleMatch.
+
+The only carry-forward CPI finding still alive is CPI-03 (MEDIUM, lamport credit overflow without `checked_add`), which is a defense-in-depth gap. The new Bundle 1 CPI (migrate_config rent top-up) introduces no new vulnerability — borrow lifetimes are clean, signer derivation is correct, atomic-TX guarantees protect against partial-state corruption.
+
+Three new LOW-severity findings emerge, all related to migrate_config: a documentation-only layout-invariant concern, a documentation gap about pause-bypass, and an operational note about authority wallet funding.
+
+**Total: 11 findings (0 critical, 3 high, 4 medium, 4 low).** Net delta from audit #2 CPI scope: 2 CRITICAL/HIGH carry-forwards CLOSED (H023, H025), 1 HIGH still open (NOVEL-CPI-01, an adjacent state-machine issue), 1 MEDIUM still open (CPI-03), 3 new LOW findings.
+
+## CPI Inventory (Comprehensive)
+
+Three CPI sites total:
+
+### 1. v1 deposit_wager (v1:229-238)
+
+```rust
+system_program::transfer(
+    CpiContext::new(
+        ctx.accounts.system_program.to_account_info(),
+        system_program::Transfer {
+            from: ctx.accounts.player.to_account_info(),
+            to: ctx.accounts.escrow.to_account_info(),
+        },
+    ),
+    wager,
+)?;
+```
+
+Validated: System Program at v1:691 (`Program<'info, System>`). Player is `Signer<'info>` at v1:684. Escrow is the `mut` MatchEscrow PDA at v1:681. Player's signer authority authorizes only this single SOL transfer.
+
+### 2. v2 deposit_wager (v2:492-501)
+
+Identical shape to v1 above. Validated: System Program at v2:990. Player is Signer at v2:981. Escrow is mut MatchEscrow PDA at v2:978.
+
+### 3. v2 migrate_config (Bundle 1) (v2:214-223)
+
+```rust
+anchor_lang::system_program::transfer(
+    CpiContext::new(
+        ctx.accounts.system_program.to_account_info(),
+        anchor_lang::system_program::Transfer {
+            from: auth_info.to_account_info(),
+            to: config_info.to_account_info(),
+        },
+    ),
+    lamports_needed,
+)?;
+```
+
+Validated: System Program at v2:870. Authority is Signer at v2:868. Config is UncheckedAccount with `seeds=[b"config"]` enforced at v2:860-864.
+
+## Direct-Lamport-Mutation Sites (Behave like CPI for threat modeling)
+
+Six sites use `try_borrow_mut_lamports` for non-CPI lamport movement:
+
+### Settle distribution
+
+- v1 settle_match (v1:333-340): 3 sequential debit/credit pairs (escrow → winner, treasury, ops).
+- v2 settle_match (v2:651-658): same.
+
+State (`Settled`) is written BEFORE transfers (OC-10). All `?`-propagated. Anchor's `close = authority` exit hook reclaims rent reserve to authority.
+
+### Refund loops (THE H023 SURFACE — NOW GATED)
+
+- v1 cancel_match (v1:432-433): `escrow -= wager_lamports; account += wager_lamports;` inside loop.
+- v1 permissionless_reclaim (v1:506-507): same.
+- v2 cancel_match (v2:733-734): same.
+- v2 permissionless_reclaim (v2:800-801): same.
+
+Each is GUARDED by the new pre-loop `IncompleteRefund` gate (see Refund Loop Anatomy above). Anchor's `close = caller` exit hook then sweeps the rent reserve only.
+
+## Account Close Audit (`close = X` Sites)
+
+| Context struct | File:Line | Close target | Risk |
+|---|---|---|---|
+| v1 SettleMatch | v1:705 | authority | Normal — server reclaims rent on settle |
+| v1 CancelMatch | v1:764 | caller | **H023 surface, now gated** |
+| v1 PermissionlessReclaim | v1:791 | caller | **H023 surface, now gated** |
+| v2 SettleMatch | v2:1000 | authority | Normal |
+| v2 CancelMatch | v2:1056 | caller | **H023 surface, now gated** |
+| v2 PermissionlessReclaim | v2:1081 | caller | **H023 surface, now gated** |
+
+Anchor's `close()` implementation (`anchor-lang-0.32.1/src/common.rs:6-15`) sweeps ALL remaining lamports unconditionally:
+
+```rust
+pub fn close<'info>(info: AccountInfo<'info>, sol_destination: AccountInfo<'info>) -> Result<()> {
+    let dest_starting_lamports = sol_destination.lamports();
+    **sol_destination.lamports.borrow_mut() =
+        dest_starting_lamports.checked_add(info.lamports()).unwrap();
+    **info.lamports.borrow_mut() = 0;
+    info.assign(&system_program::ID);
+    info.resize(0).map_err(Into::into)
+}
+```
+
+This is the mechanism the H023 fix neutralizes — by guaranteeing escrow PDA holds only rent reserve at exit time, the sweep transfers only rent (the intended caller incentive).
+
+## remaining_accounts Validation Matrix (post-fix)
+
+All four sites now apply 4 checks before any lamport math:
+
+```rust
+require!(ctx.remaining_accounts.len() == deposits_mask.count_ones() as usize,
+         EscrowError::IncompleteRefund);      // (NEW — H023 fix)
+
+for (i, account) in ctx.remaining_accounts.iter().enumerate() {
+    require!(i < max_players, EscrowError::InvalidPlayer);       // bounds
+    require!((deposits_mask >> i) & 1 == 1, EscrowError::InvalidPlayer);  // bit set
+    require!(*account.key == players[i], EscrowError::InvalidPlayer);     // identity
+    **escrow.lamports -= wager; **account.lamports += wager;
+}
+```
+
+| Check | v1 cancel (lines) | v1 reclaim (lines) | v2 cancel (lines) | v2 reclaim (lines) |
+|---|---|---|---|---|
+| (NEW) `len == count_ones(mask)` | **v1:410-413** | **v1:489-492** | **v2:721-724** | **v2:789-792** |
+| `i < max_players` | v1:419 | v1:496 | v2:728 | v2:795 |
+| `bit_set` | v1:422-423 | v1:498-499 | v2:729-730 | v2:796-797 |
+| `account.key == players[i]` | v1:426-429 | v1:501-504 | v2:731 | v2:798 |
+| `escrow -= wager` | v1:432 | v1:506 | v2:733 | v2:800 |
+| `account += wager` | v1:433 | v1:507 | v2:734 | v2:801 |
+
+The H023 fix is the FIRST check in each loop. Combined with the per-iteration checks, this forms a complete enforcement of "the refund loop processes exactly one entry per deposited slot, in order, to the correct address."
+
+## Bundle 1 migrate_config Deep Trace
+
+### Instruction body (v2:184-239)
+
+The full body, annotated with borrow lifetimes:
+
+```rust
+pub fn migrate_config(ctx: Context<MigrateConfigUnchecked>) -> Result<()> {
+    let config_info = &ctx.accounts.config;          // immutable ref to AccountInfo
+    let auth_info = &ctx.accounts.authority;          // immutable ref to AccountInfo
+
+    // ── Block 1: read-borrow for authority verify ────────────
+    {
+        let data = config_info.try_borrow_data()?;   // ◄── BORROW START (read)
+        require!(data.len() >= 40, EscrowError::InvalidConfig);
+        let stored_authority_bytes: [u8; 32] = data[8..40]
+            .try_into()
+            .map_err(|_| EscrowError::InvalidConfig)?;
+        let stored_authority = Pubkey::from(stored_authority_bytes);
+        require!(stored_authority == auth_info.key(), EscrowError::Unauthorized);
+    }                                                 // ◄── BORROW END (data drops)
+
+    // ── Idempotency / rent gate ────────────────────────────────
+    let new_size = GlobalConfig::SPACE;               // = 231
+    let current_size = config_info.data_len();
+    if current_size >= new_size {
+        return Ok(());                                // No-op if already migrated
+    }
+
+    let rent = Rent::get()?;
+    let new_minimum = rent.minimum_balance(new_size);
+    let current_balance = config_info.lamports();
+    if current_balance < new_minimum {
+        let lamports_needed = new_minimum.checked_sub(current_balance)
+            .ok_or(EscrowError::ArithmeticOverflow)?;
+
+        // ── CPI: top-up authority → config ────────────────────
+        anchor_lang::system_program::transfer(
+            CpiContext::new(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: auth_info.to_account_info(),     // signer
+                    to: config_info.to_account_info(),     // destination
+                },
+            ),
+            lamports_needed,
+        )?;
+    }
+
+    // ── Realloc grow (no zero-init) ────────────────────────────
+    config_info.realloc(new_size, false)?;
+
+    // ── Block 2: mut-borrow for manual zero-fill ───────────────
+    {
+        let mut data = config_info.try_borrow_mut_data()?;  // ◄── BORROW START (mut)
+        for byte in data.iter_mut().skip(current_size) {
+            *byte = 0;
+        }
+    }                                                       // ◄── BORROW END (data drops)
+
+    Ok(())
+}
+```
+
+### Per-line risk analysis
+
+| Line | Action | Risk | Verdict |
+|---|---|---|---|
+| 184 | function signature | Standard | OK |
+| 185-186 | extract refs | Read-only refs to fields. No risk. | OK |
+| 191 | `try_borrow_data()` (read) | Returns `Err` if any active mut borrow exists. None present. | OK |
+| 192 | `data.len() >= 40` | Guards against truncated data on attacker-supplied accounts. Combined with PDA-seed gate at v2:860, the seed enforcement ensures we get the real config PDA, which by Anchor `init` has `space=GlobalConfig::SPACE` at init time (110 on v1 deploy). So len ≥ 40 holds in normal flow. | OK |
+| 193-195 | `try_into` for [u8;32] | Borsh-free byte slice → fixed array. Standard. | OK |
+| 196 | `Pubkey::from(bytes)` | Constructs Pubkey from raw bytes. No validation needed — Pubkey is just `[u8;32]`. | OK |
+| 197 | authority check | Substitutes `has_one` for the UncheckedAccount. Identity-equal. | OK |
+| 198 | block end (data drops) | Read borrow released here. No conflict with later operations. | **OK — Borrow lifetime clean** |
+| 201 | `GlobalConfig::SPACE` | Constant 231. Hard-coded. | OK |
+| 202 | `data_len()` | Returns current account data size. | OK |
+| 203-206 | idempotency check | Returns `Ok` if already migrated (size ≥ new). Prevents double-realloc. | OK |
+| 208 | `Rent::get()` | Sysvar syscall. | OK |
+| 209 | `minimum_balance(new_size)` | Standard rent computation. | OK |
+| 210 | `lamports()` | Reads current balance. No mutation. | OK |
+| 211-213 | `checked_sub` for top-up amount | Overflow-safe. | OK |
+| 214-223 | **CPI**: system_program::transfer | Authority pays; CPI uses Anchor wrapper. Atomic with realloc. | **OK — CPI well-formed** |
+| 226 | `realloc(new_size, false)` | Grows account data. `false` = no zero-init. Anchor calls Solana's `AccountInfo::realloc`. If new_size > Solana's account-data-size-limit (10240), it errors. New_size=231 is far below. | OK |
+| 228-236 | zero-fill new bytes | `data.iter_mut().skip(current_size)` skips the OLD data bytes (preserved) and zeroes the NEW bytes. Iterator goes to end of data, so all new bytes covered. | OK |
+| 232 | `try_borrow_mut_data()` (mut) | Returns `Err` if any active borrow. None remaining from earlier block. | OK |
+| 236 | block end (data drops) | Mut borrow released. | OK |
+
+### Borrow lifetime trace
+
+Two scoped borrows:
+1. Lines 191-198: `data = config_info.try_borrow_data()?` (read borrow) — dropped at line 198.
+2. Lines 232-236: `data = config_info.try_borrow_mut_data()?` (mut borrow) — dropped at line 236.
+
+The CPI (line 214-223) and realloc (line 226) BOTH require no active borrow on the account data. The first read borrow drops at line 198 (before CPI at 214). The second mut borrow opens at line 232 (after CPI/realloc). No overlap.
+
+**Borrow lifetime trace: clean.**
+
+### Atomicity trace
+
+Failure scenarios:
+
+| Failure point | Result | Lamport state | Data state |
+|---|---|---|---|
+| Read borrow fails (192) | TX reverts | unchanged | unchanged |
+| Authority check fails (197) | TX reverts | unchanged | unchanged |
+| `Rent::get()` fails (208) | TX reverts | unchanged | unchanged |
+| `checked_sub` underflow (212) | TX reverts | unchanged | unchanged |
+| CPI transfer fails (214) | TX reverts (Sealevel atomicity) | unchanged (CPI debit rolled back) | unchanged |
+| realloc fails (226) | TX reverts (after CPI ran, but Sealevel rolls back full TX) | unchanged | unchanged |
+| Mut borrow fails (232) | TX reverts (after realloc ran, rolled back) | unchanged | unchanged |
+
+**No partial-state escape possible. Solana's per-TX atomicity guarantees this.**
+
+### Signer derivation trace
+
+The CPI uses `CpiContext::new` (NOT `new_with_signer`). This is correct because:
+- `from` = `auth_info.to_account_info()` — authority is a regular keypair Signer (v2:868)
+- The System Program enforces that `from` signed the transaction
+- No PDA seeds are exposed; the escrow PDA's signing power is NOT used
+
+If the wrong account were used as signer (e.g. if someone tried to pass `config_info` as `from`), the System Program would reject because config_info is a PDA without signer seeds attached to the CPI. **Signer derivation is correct.**
+
+### Worst-case scenarios
+
+| Scenario | Outcome |
+|---|---|
+| Authority's wallet has insufficient SOL for top-up | CPI fails, TX reverts, no migration | safe |
+| Config PDA is already rent-exempt for new size | CPI skipped at line 211 check, just realloc + zero-fill | safe |
+| Config PDA is already at new size | Early return at line 203, no CPI or realloc | safe |
+| Authority is not the legitimate stored authority | Authority check fails at line 197, TX reverts | safe |
+| Caller passes wrong PDA as config | PDA-seed gate at v2:860 rejects | safe |
+| Caller passes wrong system_program | `Program<'info, System>` constraint at v2:870 rejects | safe |
+| Race condition with concurrent update_config | Solana account-level locking prevents intra-TX race; cross-TX is serialized | safe |
+
+### Bundle 1 verdict
+
+The new `migrate_config` CPI is **well-formed and introduces no new vulnerability**. The wider concerns about `migrate_config` (UncheckedAccount, manual deser, byte-offset assumption) are properly the Access Control focus's domain. The CPI surface itself is clean.
+
+## H023 Deep Dive — Confirmation of Fix
+
+### Background
+
+H023 was the audit #2 CRITICAL (CVSS 9.3). The attack:
+1. A registered player or anyone (for permissionless_reclaim) calls cancel_match with `remaining_accounts.len() < count_ones(deposits_mask)`.
+2. The refund loop processes only the supplied entries.
+3. The instruction returns Ok.
+4. Anchor's exit hook runs `close = caller`, which sweeps ALL remaining escrow PDA lamports — INCLUDING un-refunded wagers — to caller.
+
+Worst case: v2 with max_players=10 and max_wager=100 SOL. Attacker passes 1 entry, gets 100 SOL via loop, then sweep transfers 9×100=900 SOL via close. Total per-TX theft: 900 SOL.
+
+### Verifying the fix in current code
+
+I located each of the four refund sites and confirmed the gate:
+
+**v1 cancel_match (v1:410-413):**
+```rust
+// H023 fix — require complete refund: caller must pass exactly one remaining_account per
+// deposited bit, in player-index order. Without this gate, a malicious player could pass
+// a partial array and have `close = caller` sweep un-refunded co-depositor wagers.
+require!(
+    ctx.remaining_accounts.len() == deposits_mask.count_ones() as usize,
+    EscrowError::IncompleteRefund
+);
+```
+
+**v1 permissionless_reclaim (v1:489-492):**
+```rust
+// H023 fix — require complete refund: same check as cancel_match.
+require!(
+    ctx.remaining_accounts.len() == deposits_mask.count_ones() as usize,
+    EscrowError::IncompleteRefund
+);
+```
+
+**v2 cancel_match (v2:721-724):**
+```rust
+// H023 fix — require complete refund: caller must pass exactly one remaining_account per
+// deposited bit. Without this gate, a malicious player could pass a partial array and
+// have `close = caller` sweep un-refunded co-depositor wagers (worst case: 9×100 SOL).
+require!(
+    ctx.remaining_accounts.len() == deposits_mask.count_ones() as usize,
+    EscrowError::IncompleteRefund
+);
+```
+
+**v2 permissionless_reclaim (v2:789-792):**
+```rust
+// H023 fix — require complete refund: same check as cancel_match.
+// Permissionless reclaim is callable by anyone after grace deadline; without this gate,
+// an observer could pass a partial array and rent-sweep un-refunded wagers via close=caller.
+require!(
+    ctx.remaining_accounts.len() == deposits_mask.count_ones() as usize,
+    EscrowError::IncompleteRefund
+);
+```
+
+### Error variant defined
+
+- v1:1022 — `IncompleteRefund,` in EscrowError enum
+- v2:1413 — `IncompleteRefund,` in EscrowError enum
+
+### Proptest regression coverage
+
+- `programs/solshot-escrow/tests/bok_proptest_refund.rs` — asserts that `len != count_ones(mask)` always rejects with `IncompleteRefund`. Includes the worst-case empty-array attack.
+- `programs/solshot-escrow-v2/tests/bok_proptest_refund.rs` — same coverage for v2 (10-player array).
+
+### Why this fix is complete
+
+The gate enforces `len(remaining_accounts) == count_ones(deposits_mask)`. The per-iteration checks further enforce that each entry hits a unique deposited slot (no double-refund possible — bit `i` is verified each iteration; the caller passing the same key twice would fail because `i` advances). So after the loop:
+
+- Refunds disbursed: `count_ones(deposits_mask) × wager_lamports`
+- Escrow PDA balance: `(initial_balance) - (refunds disbursed) = rent_reserve` (because initial = `count_ones × wager + rent`)
+
+When `close = caller` runs:
+- Escrow PDA balance at exit: `rent_reserve`
+- Transferred to caller: `rent_reserve`
+
+Caller receives only the rent reserve, which is the intended DCA-02 incentive (caller pays the TX fee, rent reimburses them). **No co-depositor wager can leak to caller.**
+
+### H023 status
+
+**CLOSED.** Static + property-based verification both confirm. The prior CVSS 9.3 issue is no longer exploitable. The fix matches exactly what the prior finding's "Recommended Fix" section prescribed (line 295 of `H023.md`).
+
+## NOVEL-CPI-01 Re-check (Non-contiguous mask = stranded funds)
+
+### Carry-forward analysis
+
+The NOVEL-CPI-01 scenario: 2-player match, player 1 deposits but player 0 doesn't. `deposits_mask = 0b10`. The H023 fix gate requires `len = count_ones = 1`. So caller must pass exactly 1 entry.
+
+Caller options:
+- Pass `[players[0]]` → `enumerate()` gives `i=0`, `bit_set` check fails (bit 0 unset). InvalidPlayer.
+- Pass `[players[1]]` → `enumerate()` gives `i=0`, `bit_set` check fails (bit 0 unset). InvalidPlayer.
+- Pass `[]` → len gate fails (0 ≠ 1). IncompleteRefund.
+
+**No syntactically valid call exists. Player 1's deposit is unreachable.** The escrow PDA holds 1 × wager + rent forever (or until program upgrade + new instruction).
+
+The off-chain server (per audit #2 context) logs this as UNRECOVERABLE.
+
+### Root cause
+
+The loop is `enumerate()`-walked starting at `i=0`. It implicitly assumes that the caller's `remaining_accounts[k]` corresponds to `players[k]`. This is only true if the deposited slots are contiguous starting at index 0.
+
+If `deposits_mask = 0b101` (bits 0 AND 2 set, bit 1 unset — both player 0 and player 2 deposited), then:
+- Caller passes `[players[0], players[2]]` → at `i=1`, the loop's `players[1]` check fails. InvalidPlayer.
+- Caller passes `[players[0], players[1]]` → at `i=1`, `bit_set` check fails. InvalidPlayer.
+
+So **any non-contiguous mask is unreachable**.
+
+### Realism
+
+Is non-contiguous mask possible in production?
+
+YES. `deposit_wager` (v2:481-484) finds the player's index via `position`. Players can deposit in any order. If a 4-player match has:
+- player[3] deposits first → mask = 0b1000
+- player[1] deposits second → mask = 0b1010
+- player[0] deposits third → mask = 0b1011
+- player[2] never deposits → mask = 0b1011 (still has gap at bit 2)
+
+If the deposit window expires before player[2] deposits, the match is stuck with mask = 0b1011. Neither cancel_match nor permissionless_reclaim can refund.
+
+The server can call `start_with_depositors` to compact the array. Compaction (v2:564-578) rewrites `players` and `deposits_mask` so the deposited players are at indices 0..k-1 and the mask becomes `0b...0111` (contiguous). After compaction, refunds work. **But if the authority doesn't call start_with_depositors (e.g. server outage), the match is stuck.**
+
+### Severity (carry-forward)
+
+This is NOT a CPI vulnerability per se — it's a state-machine issue exposed via the CPI surface. The proper fix is to either:
+1. Change the refund loop to use an index map (caller passes `(player_index, account)` pairs).
+2. Always require start_with_depositors before cancel_match (forces compaction).
+3. Add `compact_for_refund` instruction callable before cancel_match.
+
+This is now handed off to State Machine focus. Severity rating from prior audit (HIGH) is unchanged.
+
+## CPI-03 Re-check (Lamport credit overflow)
+
+### Issue
+
+All 6+2N lamport credit sites use raw `+= amount`:
+
+```rust
+**ctx.accounts.winner.to_account_info().try_borrow_mut_lamports()? += winner_amount;
+```
+
+If `existing_balance + winner_amount > u64::MAX`, this wraps to 0 + remainder. Practically unreachable because u64::MAX = 1.84e19 lamports = 1.84e10 SOL, vastly exceeding total SOL supply (~580M).
+
+### Sites
+
+| File | Line | Direction |
+|---|---|---|
+| v1 | 334 | escrow → winner credit |
+| v1 | 337 | escrow → treasury credit |
+| v1 | 340 | escrow → ops credit |
+| v1 | 433 | escrow → player credit (cancel loop) |
+| v1 | 507 | escrow → player credit (reclaim loop) |
+| v2 | 652 | escrow → winner credit |
+| v2 | 655 | escrow → treasury credit |
+| v2 | 658 | escrow → ops credit |
+| v2 | 734 | escrow → player credit (cancel loop) |
+| v2 | 801 | escrow → player credit (reclaim loop) |
+
+(The debit sites use `-= amount` which would underflow on insufficient balance, but those are guarded by the BPS math ensuring `winner_amount + treasury_amount + ops_amount ≤ total_pot` exactly.)
+
+### Recommendation
+
+For defense-in-depth, convert `+= amount` to `checked_add`:
+
+```rust
+{
+    let mut dest_lamports = ctx.accounts.winner.to_account_info().try_borrow_mut_lamports()?;
+    **dest_lamports = dest_lamports.checked_add(winner_amount).ok_or(EscrowError::ArithmeticOverflow)?;
+}
+```
+
+This is consistent with the existing `checked_*` math everywhere else in the codebase. Severity: MEDIUM (defense-in-depth).
+
+## Critical Invariants (Comprehensive)
+
+1. **CPI target program ID is System Program.** Enforced by `Program<'info, System>` at v1:586, v1:649, v1:691, v1:705, v1:779, v1:798; v2:870, v2:968, v2:990, v2:1047, v2:1071, v2:1088. **Three** active CPI sites, all targeting System Program.
+2. **No PDA signer seeds escape.** No `invoke_signed` anywhere. Escrow PDA and config PDA both have their signing power locked to the program.
+3. **State-before-transfers (OC-10).** All terminal state writes happen BEFORE lamport movement:
+   - v1 settle: state=Settled at v1:328 before transfers at v1:333-340.
+   - v1 cancel: state=Cancelled at v1:404 before transfers at v1:432-433.
+   - v1 reclaim: state=Cancelled at v1:485 before transfers at v1:506-507.
+   - v2 same: v2:647/715/783 before v2:651-658/733-734/800-801.
+4. **Refund completeness (H023 fix).** `len == count_ones(mask)` gate at v1:410-413, v1:489-492, v2:721-724, v2:789-792 ensures escrow PDA holds only rent reserve at exit time. `close = caller` then transfers only rent.
+5. **Atomic TX rollback (H029).** Every CPI and lamport mutation is `?`-propagated. Solana Sealevel atomicity reverts the whole TX on any error. No partial-state escape.
+6. **Borrow lifetimes are clean.** Mutable borrows on accounts are scoped via blocks (`{ let escrow = &mut ctx.accounts.escrow; ... }`). `migrate_config`'s read/mut borrows on UncheckedAccount data are explicitly bracketed.
+7. **No re-entry by design.** Solana instructions are atomic — no callback hooks. The single CPI target (System Program) cannot call back into our program. Re-entrancy class of attacks (EP-061 etc.) is moot.
+8. **Anchor exit hook timing.** `close = X` runs in the post-instruction exit handler, AFTER the instruction body returns Ok and BEFORE the TX commits. The exit handler is part of the same atomic TX — if the close fails (unreachable in normal flow), the TX reverts.
+9. **migrate_config layout-compatibility invariant.** The first 110 bytes of the new GlobalConfig struct are byte-compatible with the old struct. New fields are appended. This invariant is implicit in the code; if violated by a future struct change, migrate_config silently produces garbage state. (NEW-CPI-01.)
+
+## Per-CPI-Site Privilege Flow Analysis
+
+### deposit_wager CPI (v1:229-238, v2:492-501)
+
+Accounts passed to System Program:
+- `from`: player (Signer, mut) — player signs to authorize their own debit
+- `to`: escrow PDA (mut MatchEscrow Account) — receives lamports
+
+What System Program can do: Transfer lamports from `from` to `to`. Period.
+
+What System Program CANNOT do: modify account data, owner, or anything else.
+
+Risk: None. Player's signer privilege is consumed only for this specific debit.
+
+### migrate_config CPI (v2:214-223)
+
+Accounts passed to System Program:
+- `from`: authority (Signer, mut) — authority signs to authorize their own debit
+- `to`: config PDA (UncheckedAccount, mut) — receives lamports
+
+What System Program can do: Transfer lamports from `from` to `to`.
+
+Risk: None. Authority's signer privilege is consumed only for this specific top-up debit.
+
+### Cross-cutting: no PDA signer escapes
+
+Neither CPI uses `invoke_signed`. The escrow PDA and config PDA's signing power is never delegated to any external program. This eliminates the entire EP-046/EP-047 class of attacks (PDA seed bleed, signer-seeds replay).
+
+## Return-Data Analysis
+
+`system_program::transfer` does not return data. No instruction in either program calls `get_return_data()`. The entire EP-045 (CPI return data spoofing) class is structurally inapplicable.
+
+## Dependencies
+
+### External Programs Invoked
+1. **System Program** (`11111111111111111111111111111111`): Used for SOL transfer in `deposit_wager` (v1 + v2) and `migrate_config` rent top-up (v2 only). Validated via `Program<'info, System>`. **Only program invoked.**
+
+### External Programs NOT Invoked
+- SPL Token Program / Token-2022 — not used.
+- Pyth / Switchboard — no oracles.
+- Governance programs (SPL Governance, Squads) — not used.
+- Any custom program — not used.
+
+### Anchor Framework
+- `anchor_lang::prelude::*` (v1:4, v2:18): Provides `Account`, `Signer`, `Program`, `UncheckedAccount`, `CpiContext`, constraints, error handling, `Pubkey`, `Clock`, `Rent`.
+- `anchor_lang::system_program` (v1:5, v2:19): Provides `system_program::transfer` CPI wrapper and `system_program::Transfer` accounts struct.
+
+### Anchor Version
+- 0.32.1 (confirmed via Cargo.toml in audit #2; same version in current ref).
+
+### Sysvar Dependencies
+- `Clock` via `Clock::get()` syscall (v1: 7 sites; v2: 9 sites).
+- `Rent` via `Rent::get()` syscall (v2 migrate_config only: 1 site at v2:208).
+
+## Focus-Specific Analysis
+
+### Full CPI Call Map
+
+| # | Location | Target | Method | Call Type | Program ID Validated? | PDA Seeds (if signed) | Mutates Caller-Provided Account? |
+|---|----------|--------|--------|-----------|------------------------|------------------------|------------------------------------|
+| 1 | v1:229-238 (deposit_wager) | System Program | `system_program::transfer` | `CpiContext::new()` | YES (Program<'info, System> at v1:691) | N/A — player signs via Signer<'info> | YES — debits player, credits escrow PDA |
+| 2 | v2:492-501 (deposit_wager) | System Program | `system_program::transfer` | `CpiContext::new()` | YES (Program<'info, System> at v2:990) | N/A — player signs | YES — debits player, credits escrow PDA |
+| 3 | v2:214-223 (migrate_config) | System Program | `anchor_lang::system_program::transfer` | `CpiContext::new()` | YES (Program<'info, System> at v2:870) | N/A — authority signs | YES — debits authority, credits config PDA |
+
+**Three CPI sites total across 2,450 LOC. No `invoke()`, no `invoke_signed()`.**
+
+### Trust Model
+
+| Entity | Trust Level | Rationale |
+|--------|-------------|-----------|
+| System Program (`11111111111111111111111111111111`) | FULL | Hardcoded; Anchor `Program<'info, System>` validates. |
+| Clock Sysvar via `Clock::get()` | FULL | Syscall, not account. Cannot be spoofed. |
+| Rent Sysvar via `Rent::get()` | FULL | Syscall, not account. |
+| Escrow PDA | FULL (program-owned) | Program is owner. Direct lamport mutations are authorized. |
+| Config PDA | FULL (program-owned) | Program is owner. UncheckedAccount in migrate_config still PDA-seed-validated. |
+| Winner UncheckedAccount in settle_match | LIMITED | Constrained to `escrow.players[i]` (v1:716-722 / v2:1010-1017). `!executable` (v1:721 / v2:1015). |
+| Treasury/Ops UncheckedAccount in settle_match (v1) | LIMITED | Constrained to `config.treasury / config.ops` (v1:727-733 / v1:737-742). `!executable` (v1:731 / v1:740). |
+| Treasury/Ops UncheckedAccount in settle_match (v2) | LIMITED | Constrained to `escrow.treasury_snapshot / escrow.ops_snapshot` (v2:1021-1027 / v2:1031-1036). `!executable` (v2:1025 / v2:1034). |
+| `ctx.remaining_accounts[i]` in cancel/reclaim | LIMITED | Per-iteration: bounds, mask bit, pubkey-match-against-`players[i]`. + NEW: pre-loop `len == count_ones(mask)` gate. |
+| Caller of cancel_match | TRUST BOUNDARY | Authority OR registered player (after timeout). `close = caller` redirects rent. **H023 gate prevents wager-sweep.** |
+| Caller of permissionless_reclaim | TRUST BOUNDARY | Anyone after grace. Same `close = caller`. **H023 gate applies.** |
+| Caller of migrate_config | TRUST BOUNDARY | Must be the stored authority (manual check at v2:191-197). Worst case: legit authority pays rent top-up themselves. |
 
 ## Cross-Focus Intersections
 
 ### CPI × Access Control
-- The single CPI in deposit_wager uses the player's signer authority. No PDA signer seeds escape the program. No authority key is passed to any external program.
-- `cancel_match` access control (any registered player after timeout) intersects with NOVEL-CPI-02: a player gaining caller status post-timeout could exploit `close = caller` to sweep PDA lamports.
-- `permissionless_reclaim` widens the caller surface to "anyone after grace period" — broadens NOVEL-CPI-02's attacker population.
-- Authority's `update_config` can rotate `config.treasury`/`config.ops` to executable accounts (H009), bypassing v1's settle-match constraints semantically. v2 mitigates via snapshot but does not add the executable check.
+- All three CPI sites use Signer-derived authority. No PDA signer escape.
+- `migrate_config` UncheckedAccount config is PDA-seed-gated (v2:860) AND manually authority-verified (v2:191-197). Defense in depth.
+- `cancel_match` permits authority OR registered player (after timeout). Combined with the H023 gate, the access-control surface no longer allows partial-refund theft.
+- `permissionless_reclaim` permits anyone after grace. H023 gate applies equally to anonymous callers.
 
 ### CPI × State Machine
-- OC-10 (state-before-transfer) is correctly applied at all 6 lamport-movement sites. State writes to `Settled` / `Cancelled` BEFORE `try_borrow_mut_lamports`. If any transfer fails, atomic TX rollback reverts both the state and the transfer (H029 confirmed).
-- NOVEL-CPI-02: state is `Cancelled` at v1:387 / v2:497 BEFORE the partial loop runs. If the malicious caller exits the loop early (only 1 of N depositors), the state is already `Cancelled` and `close = caller` runs to completion, sweeping PDA lamports. **The state machine does not prevent partial refunds.**
+- OC-10 (state-before-transfer) is correctly applied at all 6 lamport-movement sites.
+- H023 gate enforces refund completeness — state machine cannot reach `close = caller` with partial refunds.
+- NOVEL-CPI-01 (non-contiguous mask) is a state-machine trap; flag for State Machine focus.
+- `migrate_config` does NOT touch escrow state (escrow PDAs unaffected). Only config PDA grows.
 
 ### CPI × Arithmetic
-- Wager amounts in the deposit CPI are read directly from `escrow.wager_lamports`, validated at create-time to be in `[10_000, 100_000_000_000]`. No arithmetic before the CPI.
-- Settlement arithmetic (v1:285-307, v2:402-425) uses u128 widening + checked_mul/checked_sub. Result casts back to u64 — safe for max wager.
-- Lamport credit `+= amount` (e.g. v1:318) is NOT checked. Practically unreachable overflow but a gap.
+- Deposit wager comes directly from `escrow.wager_lamports`, validated at create_match (range [10_000, 100_000_000_000]). No arithmetic before CPI.
+- Settlement arithmetic (v1:301-323, v2:619-642) uses u128 widening + `checked_*`. Result casts back to u64; safe at max pot.
+- Lamport credit `+= amount` (CPI-03) is raw, not checked. Practically unreachable overflow. Defense-in-depth gap.
+- Migration rent calculation: `checked_sub` at v2:212-213 for lamports_needed.
 
 ### CPI × Token/Economic
-- All value transfer is in native SOL via `system_program::transfer` (CPI) or direct lamport math. No SPL Token, no Token-2022. EP-049 (unverified token program) and EP-051-057 (Token category) are inapplicable.
-- Fee distribution math feeds into the direct lamport transfers. The Token/Economic Agent should re-validate the fee math; the CPI Agent confirms the destinations are key-validated but not executable-checked.
+- All value transfer in native SOL. No SPL Token, no Token-2022. EP-049, EP-051-057 inapplicable.
+- Fee distribution feeds direct lamport transfers. Token/Economic focus revalidates fee math; CPI focus confirms destinations are key-validated + executable-checked.
 
 ### CPI × Error Handling
-- Every CPI and every direct-lamport mutation uses `?` propagation. No `let _ =` patterns. No silent swallow.
-- CPI return value (none expected from `system_program::transfer`) is not consumed.
+- Every CPI and lamport mutation uses `?` propagation. No `let _ =` patterns. No silent swallow.
+- CPI return value (none expected from system_program::transfer) is not consumed.
+
+### CPI × Upgrade / Governance (Bundle 1)
+- migrate_config is devnet-only per doc comment. Confirm the follow-up program upgrade removes it before mainnet.
+- update_config / accept_authority do NOT touch CPI surface — they only mutate config PDA state. No new CPI introduced.
 
 ## Cross-Reference Handoffs
 
-- → **State Machine Agent**: Investigate NOVEL-CPI-02 with full lifecycle context. Specifically: in v1 cancel_match (391-419) and v2 cancel_match (501-518), if the loop processes only k of N depositors (where k < count_ones(deposits_mask)), what does `close = caller` do with the unrefunded lamports? Test scenario: max_players=4, all 4 deposit (deposits_mask=0b1111), then players[0] calls cancel with `remaining_accounts = [players[0]]`. Loop runs once (i=0, refunds players[0]), exits. PDA holds (4-1)×wager + rent. `close = caller` sweeps to caller (= players[0]). Outcome: players[0] receives 4×wager + rent. Theft of 3×wager from players[1..3]. Confirm or refute.
-- → **State Machine Agent**: Document NOVEL-CPI-01 (non-contiguous mask = stranded funds) as a state trap in the lifecycle map. Affects all 4 cancel/reclaim sites.
-- → **Account Validation Agent**: H009 is OPEN. Single-line fix not landed. Add `constraint = !treasury.executable @ EscrowError::InvalidTreasury` and same for ops at v1:684-697 and v2:715-728. Recommend devnet test to confirm EP-106 Behavior A (silent burn) vs Behavior B (atomic revert) under Anchor 0.32.1 + Solana 1.18+.
-- → **Token/Economic Agent**: NOVEL-CPI-02 — quantify worst-case loss. Max scenario: v2 with max_players=10, max_wager=100 SOL → up to 900 SOL stealable per match by a malicious caller. NOVEL-CPI-01 — estimate frequency of non-contiguous masks in production traffic.
-- → **Access Control Agent**: H016 (rent theft via cancel_match `close = caller`) was Feb LOW. Re-evaluate as POTENTIAL HIGH under NOVEL-CPI-02 if confirmed.
-- → **Arithmetic Agent**: CPI-03 lamport credit overflow. Apply `checked_add` defense-in-depth.
-- → **Timing Agent**: cancel_match's `is_timed_out` gate (v1:367, v2:480) determines when a player can call cancel. NOVEL-CPI-02 requires this to be true. Verify that `is_timed_out` calculation doesn't allow earlier-than-intended access.
+- → **Access Control Agent**: `migrate_config` UncheckedAccount + manual byte-offset authority check is a significant access-control surface; deeper investigation of byte-offset assumption against actual v1 struct layout warranted. H019 re-check (no `init_if_needed`, but realloc bypasses Account<T> validation — does this open a re-init vector?). Both warrant Phase 4 deep-investigation if not yet covered.
 
-## Risk Observations
+- → **State Machine Agent**: NOVEL-CPI-01 (non-contiguous deposit mask = stranded funds) is your domain. Document as a known unrecoverable state. The H023 fix does NOT address this. Track separately.
 
-1. **NOVEL-CPI-01 (HIGH) — Non-contiguous deposit mask = unrefundable.** Affects all four iteration sites. Off-chain server explicitly logs as UNRECOVERABLE.
-2. **NOVEL-CPI-02 (HIGH if confirmed) — Player at slot 0 can rent-sweep co-depositors via partial cancel_match call + close = caller.** Phase 4 PoC required. Counter-arguments: maybe Anchor's exit hooks check refund completeness (unlikely), or the `mut` constraint blocks it (also unlikely — `mut` on Signer just means mutable signer, not "signer must be unique").
-3. **H009 (HIGH, OPEN) — Executable account as fee destination — both v1 and v2.** Single-line fix not landed since Feb.
-4. **CPI-03 (MEDIUM) — Lamport credit overflow without checked_add.** Practically unreachable but defensive gap.
-5. **CPI-02 (MEDIUM) — Pubkey::default in zero-padded slots could match if mask widens beyond max_players.** Bounds check protects in current flow.
-6. **H026 (LOW, NOT_VULNERABLE) — Donation attack.** Re-validated. No change.
-7. **H029 (LOW, NOT_VULNERABLE) — Atomic-TX rollback prevents partial settlement.** Re-validated. No change.
-8. **CPI-04 (LOW) — Reclaim has no config; intentional escape hatch.** Per DCA-02 design.
-9. **CPI-05 (LOW) — Anchor 0.32.1 auto-resolution applied correctly.** Off-chain code follows the project memory note.
+- → **Token/Economic Agent**: H023 closed; NOVEL-CPI-02 closed; H041 closed. CPI-03 (lamport credit overflow) is yours to recommend defense-in-depth fix.
 
-## Novel Attack Surface Observations
+- → **Arithmetic Agent**: CPI-03 — recommend `checked_add` conversion at 10 sites (v1:334,337,340,433,507; v2:652,655,658,734,801).
 
-### NOVEL-CPI-01: Non-Contiguous Deposit Mask Strands Funds Permanently
+- → **Upgrade Agent**: `migrate_config` is devnet-only per v2:181-183 doc comment. Track for follow-up program upgrade removal. Also: confirm mainnet deploys with new SPACE (231) from initialize_config genesis — no migration path needed. NEW-CPI-01 (layout-compatibility invariant) is a doc-only finding to add.
 
-**Pattern unique to this protocol:** The refund loop's `for (i, account) in remaining_accounts.iter().enumerate()` design forces `remaining_accounts` to be a contiguous prefix of deposited slots. In a 2-player wager where players[1] deposits FIRST and the deposit window expires before players[0] deposits, `deposits_mask = 0b10` (bit 1 set, bit 0 unset). No syntactically valid call exists:
+- → **Timing Agent**: cancel_match's `is_timed_out` gate (v1:383, v2:697) determines when a player can call cancel. No CPI implications; just access timing.
 
-- `cancel_match(remaining_accounts=[])` → loop doesn't run; players[1]'s deposit stays in PDA. Then `close = caller` sweeps PDA lamports (rent + players[1]'s wager) to caller. **If caller is authority, authority steals the wager. If caller is a player (only players[1] qualifies via `is_player` check at v1:372), players[1] effectively gets rent back too** but loses the wager which goes... wait, where? Re-read.
-- Actually `close = caller` would send all remaining lamports to caller. So if players[1] calls cancel_match with empty `remaining_accounts`, they receive the rent reserve PLUS their own deposit — refunding themselves correctly, plus rent windfall. So this case is actually OK economically for players[1].
-- But what if the authority calls cancel_match with empty `remaining_accounts` while in AwaitingDeposits? Then authority receives rent + players[1]'s deposit. **That's an authority extraction path** — needs Token/Economic deep-dive.
+## Risk Observations (Prioritized)
 
-Key insight: the "UNRECOVERABLE" tag from the server is overly pessimistic. The funds are ALWAYS recoverable — the question is BY WHOM. With empty `remaining_accounts`, `close = caller` recovers everything to caller, INCLUDING wagers that should have been refunded to the depositor. **This IS a theft path. NOVEL-CPI-02 generalizes it.**
+1. **HIGH — NOVEL-CPI-01 (STILL OPEN)**: Non-contiguous `deposits_mask` is unrefundable. The H023 fix does NOT address this. Independent state-machine issue. Cross-reference handoff to State Machine focus.
+2. **MEDIUM — CPI-03 (STILL OPEN)**: Lamport credit overflow without `checked_add`. 10 sites. Defense-in-depth gap. Practically unreachable.
+3. **LOW — NEW-CPI-01 (NEW)**: `migrate_config` zero-fill relies on un-documented Borsh layout compatibility invariant. Doc-only.
+4. **LOW — NEW-CPI-02 (NEW)**: `migrate_config` not pause-gated. Doc-only.
+5. **LOW — NEW-CPI-03 (NEW)**: `migrate_config` requires funded authority wallet. Op-note only.
+6. **CLOSED — H023**: Partial-refund theft via close=caller sweep. **CRITICAL FIXED.** Gate at all 4 sites.
+7. **CLOSED — H041**: Rent theft via close=caller. Same surface as H023; fix applies.
+8. **CLOSED — NOVEL-CPI-02**: Same as H023.
+9. **CLOSED — H025/H009**: Executable-account fee destination. 6 `!executable` constraints landed.
 
-### NOVEL-CPI-02: Player-Triggered Rent Sweep of Co-Depositor Wagers
+## Trust Boundaries
 
-**Mechanism:** A registered player calling `cancel_match` (after timeout) or `permissionless_reclaim` (after grace) controls the contents of `remaining_accounts`. By passing FEWER accounts than `count_ones(deposits_mask)`, the loop refunds only the included slots. After the loop returns, `close = caller` (v1:718, v2:748 for cancel; v1:745, v2:773 for reclaim) transfers ALL remaining PDA lamports — including the unrefunded wagers — to the caller.
+- **System Program** (CPI target): FULL trust. Validated via `Program<'info, System>`. Cannot be substituted.
+- **Escrow PDA / Config PDA** (lamport sources/destinations / data store): FULL trust (program-owned). Direct mutations authorized.
+- **Winner / Treasury / Ops UncheckedAccounts** (settle destinations): LIMITED trust. Key identity + non-executable validated. NO writability check (Anchor runtime enforces via `mut`).
+- **`remaining_accounts` in cancel/reclaim**: LIMITED trust. Per-iteration: bounds + mask bit + pubkey-match. Pre-loop: `len == count_ones(mask)` (H023 gate).
+- **Caller of cancel_match / permissionless_reclaim**: TRUST BOUNDARY. Authority OR player (cancel) or anyone (reclaim). `close = caller` redirects rent only (H023 gate now in place).
+- **Caller of migrate_config**: TRUST BOUNDARY. Must be stored authority. Worst case: legit authority pays own rent top-up.
+- **Authority key**: TRUST BOUNDARY. Hot wallet. Can call `update_config` (now pending-only, 24h timelock), `propose_authority` (2-step), `pause/unpause`, `start_with_depositors`, `settle_match`, `migrate_config`. All gated appropriately.
 
-**Specific exploit (v1 cancel_match, max_players=4, all 4 deposited):**
-1. Match has 4 players, deposits_mask = 0b1111, escrow PDA holds 4 × wager + rent.
-2. Match becomes timed-out (e.g., authority abandons settlement; v1's TIMEOUT_SECONDS=600 elapses).
-3. Malicious players[0] calls `cancel_match` with `remaining_accounts = [players[0]_pubkey]`.
-4. Loop runs once: i=0, bit 0 set, account.key==players[0] ✓, debit wager from escrow, credit wager to players[0]. PDA now holds 3 × wager + rent.
-5. Loop exits (no more `remaining_accounts`).
-6. State is `Cancelled`. Instruction returns Ok.
-7. Anchor exit handler runs `close = caller`: transfers ALL PDA lamports (3 × wager + rent) to players[0].
-8. **Net result:** players[0] receives 4 × wager + rent. players[1..3] lose their entire deposit.
-
-**Worst-case loss (v2):** max_players=10, max_wager=100 SOL → up to 9 × 100 = 900 SOL stolen by one malicious player.
-
-**Permissionless reclaim variant:** Same exploit but caller is "anyone" — any wallet that can wait for the grace period.
-
-**Mitigations potentially in place:**
-- Anchor's `close` constraint: per Anchor docs, `close = X` transfers ALL remaining lamports to X. This is exactly the exploit vector, NOT a mitigation.
-- Authority can call `cancel_match` only in AwaitingDeposits (v1:374-378, v2:485-489). This LIMITS authority's exposure to NOVEL-CPI-02 to AwaitingDeposits state — but a player can still trigger it in any state past timeout.
-- Server passes correct `remaining_accounts` (server/services/escrow.js:456-462). But on-chain anyone can call directly without going through the server.
-
-**Counter-argument (needs Phase 4 verification):**
-- Maybe `try_borrow_mut_lamports` partial mutation conflicts with `close = caller`'s lamport sweep. UNLIKELY — Anchor's close runs in the exit handler AFTER instruction body completes.
-- Maybe the `mut` Signer constraint prevents the same account from being both Signer AND a `remaining_accounts` entry. Possibly — would need testing. If true, the player at slot 0 cannot use their own account as both `caller` and the remaining_account for slot 0, blocking the simple variant. But the malicious player can pass a DIFFERENT pubkey in `remaining_accounts` (the players[0] pubkey, not necessarily their signer caller pubkey)... wait, those must be the same to pass `players[i] == account.key`. Confused — needs careful read.
-
-Re-read: `caller` is the signer, but `caller.key()` must equal one of `players[..max_players]` for `is_player` to be true (v1:372). So `caller.key() == players[0]` is required. Then in `remaining_accounts[0]`, the account.key must also equal `players[0]`. So the same pubkey appears both as Signer and as a remaining_account. Anchor MAY refuse this (account uniqueness check), or MAY accept it (since `caller` and `remaining_accounts[0]` are different account-info structs even if pointing at the same key). **NEEDS TESTING.**
-
-If Anchor's runtime check rejects same-key-twice, the exploit fails — players[0] cannot cancel and rent-sweep simultaneously. They'd need a confederate wallet at one of the slots, which they can't get since all slots are pre-validated.
-
-If Anchor accepts same-key-twice (which is the case for normal accounts; the runtime DOES allow duplicates for non-signer non-mut, but for two `mut` references to the same account it should fail with overlapping borrow), the exploit succeeds.
-
-**Verdict: HIGH severity if confirmed; CRITICAL if multi-player; needs Phase 4 PoC test.**
-
-### NOVEL-CPI-03 (Speculative): The "deposit racing" pattern as N-player scaling weakness
-
-In v2 with max_players=10, the chance of producing a non-contiguous mask grows with N. If 10 wallets attempt to deposit but their on-chain ordering is shuffled by network latency, the resulting mask might be `0b1110111110` (8 bits set, gap at index 5). **This is the same NOVEL-CPI-01 stranding pattern but probability scales with N.** For 10-player tournaments, partial deposits are far more likely than for 2-player matches. The protocol's design assumes contiguous deposits but provides no mechanism to enforce that.
-
-## Questions for Other Focus Areas
-
-- **For Account Validation focus:** Does the `mut` constraint on `caller: Signer<'info>` (v1:722, v2:752) prevent the same pubkey from also appearing in `remaining_accounts` as a writable destination? If yes, NOVEL-CPI-02's simplest variant fails. If no, the exploit succeeds. **Critical question.**
-- **For State Machine focus:** Is there any code path where `deposits_mask` could be set to a non-contiguous value (e.g., 0b101) via normal flow? If not, NOVEL-CPI-01's prerequisite is impossible in production... wait, normal flow is exactly: player N can deposit before player N-1 since deposit_wager doesn't enforce ordering. So `deposits_mask = 0b10` is achievable any time player[1] deposits and player[0] doesn't (e.g., player[0]'s TX failed for any reason). NOT-impossible, in fact LIKELY at scale.
-- **For Token/Economic focus:** What's the worst-case theft under NOVEL-CPI-02 across the full universe of possible matches? At v2's max wager (100 SOL × 10 players = 1000 SOL pot), one malicious player can steal up to 900 SOL.
-- **For Timing focus:** v2's `is_timed_out` logic (v2:471-489) uses `match_end_ts` if Active or `deposit_deadline` if AwaitingDeposits. Can a malicious player manipulate Clock drift or rent-trigger timing to enter the cancel-eligible window earlier? Probably not (1-2s drift, 600s timeout), but worth confirming.
-- **For Error Handling focus:** What happens if `try_borrow_mut_lamports()` returns Err mid-loop (e.g., 2nd of 4 refunds fails)? Atomic TX revert per H029. The state revert is correct. But this means a malicious caller could force a partial-refund commitment by intentionally including a non-writable account at slot 1, causing the loop to fail at line 2... no, that would revert the entire instruction including the refund at slot 0. Safe.
-
-## Raw Notes
-
-### Per-File Pattern Counts
-
-- `invoke()`: 0 occurrences in either file.
-- `invoke_signed()`: 0 occurrences in either file.
-- `CpiContext`: 1 in v1 (line 214), 1 in v2 (line 276).
-- `system_program::transfer`: 1 call in v1 (213-222), 1 in v2 (275-284).
-- `get_return_data`: 0.
-- `Program<'info, System>`: appears in 6 account structs in v1 (InitializeConfig, CreateMatch, DepositWager, SettleMatch, CancelMatch, PermissionlessReclaim), 6 in v2.
-- `Program<'info, Token>` or `InterfaceAccount<TokenAccount>`: 0. **No SPL Token CPI.**
-- `Pyth` / `Switchboard` / oracle types: 0.
-- `remaining_accounts`: 4 iteration sites (v1:393, v1:465, v2:502, v2:561).
-- `try_borrow_mut_lamports`: 6 sites in v1 (lines 317, 318, 320, 321, 323, 324, 408, 409, 476, 477 — 10 total), 6 in v2 (lines 434, 435, 437, 438, 440, 441, 508, 509, 567, 568 — 10 total).
-- `executable` / `is_executable` checks: **0 in both files. H009 is unmitigated.**
-- `Pubkey::default()` reads: 6 in v2, 4 in v1 (zero-pad initialization + zero-address rejection in update_config).
-
-### Anchor 0.32.1 Verification
-
-Per project memory: "`.accounts({...})` ONLY pass signers + non-PDA accounts. Anchor auto-resolves anything with `pda` (constant seeds) or `address` declaration in the IDL."
-
-Confirmed in client code:
-- `server/services/escrow.js:452-454` (cancel_match): passes only `escrow` + `caller`. Auto-resolved: `config` (constant seed `b"config"`), `system_program` (fixed address). Correct.
-- `server/services/escrow.js:497-500` (reclaim): passes only `escrow` + `caller`. Auto-resolved: `system_program`. Correct.
-- `server/services/escrow-v2.js:344, 374`: same patterns.
-
-No CPI-from-account-resolution-mismatch attack vector exists in the on-chain side. The off-chain side correctly applies the auto-resolution rule.
-
-### Behavior Verification: try_borrow_mut_lamports on Executable Account
-
-Per Feb H009 analysis (still open): the runtime behavior is uncertain between Behavior A (silent in-memory write, runtime discards at commit, escrow debit committed = lamport burn) and Behavior B (explicit error from borrow, atomic TX revert = DoS only). Anchor 0.32.1 + Solana 1.18.x should be tested to determine which applies.
-
-**Devnet test recipe (recommended for Phase 4):**
-1. Deploy v1 to devnet.
-2. Initialize config with a fresh treasury wallet.
-3. Create + deposit + activate a match.
-4. Authority calls `update_config(new_treasury = Some(SystemProgram_ID))`.
-5. Authority calls `settle_match(winner)`. Pass `treasury = SystemProgram_ID`.
-6. Observe:
-   - Did TX succeed? → Behavior A (lamport burn).
-   - Did TX fail? → Behavior B (atomic revert / DoS).
-7. Restore via second `update_config(new_treasury = Some(real_treasury))`.
-
-If Behavior A is observed, H009 → CONFIRMED with HIGH severity. If Behavior B, H009 → DOWNGRADED to liveness DoS.
-
-Either way, the recommended fix (`constraint = !treasury.executable`) is appropriate and trivial to add.
-
-### Behavior Verification: `close = caller` Lamport Sweep Semantics
-
-Per Anchor docs + source, `close = X` runs in the post-instruction exit handler:
-1. Set account.lamports() = 0
-2. Add account.lamports to X.lamports
-3. Zero account data
-4. Set owner to System Program
-
-**Critical question for NOVEL-CPI-02:** Does Anchor's exit handler run after the loop completes? YES — it runs after the entire instruction body returns Ok. This means PDA lamports remaining post-loop ARE swept to caller.
-
-**Therefore NOVEL-CPI-02 is mechanically possible UNLESS:**
-- (a) Anchor's instruction-level account uniqueness check rejects `caller == remaining_accounts[i]` for the same pubkey;
-- (b) The lamport debit on PDA in the loop somehow conflicts with the close handler's behavior;
-- (c) Solana runtime's overlapping-mut-borrow check fires when same pubkey appears as both Signer (caller) and AccountInfo (remaining_accounts[0]).
-
-Phase 4 should construct a runtime test:
-- 2 players deposit (deposits_mask = 0b11).
-- Player 0 calls `cancel_match` with `remaining_accounts = [player_0_pubkey]`.
-- Verify: does player_0 receive 2 × wager + rent (theft confirmed) or does the TX fail (theft blocked)?
-
-If the test shows theft, NOVEL-CPI-02 → CRITICAL. Mitigation: change `close = caller` to `close = first_remaining_account` is non-trivial; better to enforce loop-completes-all-deposits via `require!(remaining_accounts.len() == count_ones(deposits_mask) as usize)` BEFORE the loop, AND require the loop to walk EVERY set bit (not just the prefix).
-
-### Recommended Fixes Summary
+## Recommended Fixes Summary
 
 | ID | Severity | Fix | Effort |
-|----|----------|-----|--------|
-| H009 (executable check) | HIGH | Add `constraint = !treasury.executable` and `!ops.executable` | 1 line × 4 places |
-| NOVEL-CPI-02 (rent-sweep theft) | HIGH if confirmed | Add `require!(remaining_accounts.len() == count_ones(deposits_mask) as usize)` before the loop in v1 cancel_match (391), v1 permissionless_reclaim (465), v2 cancel_match (501), v2 permissionless_reclaim (561). This ensures the loop processes EVERY deposited slot, leaving zero unrefunded wagers in the PDA when `close = caller` runs. | 1 line × 4 places |
-| NOVEL-CPI-01 (non-contiguous mask) | HIGH | Combine fix above with: rewrite loop to walk `0..max_players` and look up `remaining_accounts` by an index-map. OR restructure escrow to use individual per-deposit PDAs that close independently. | Larger refactor |
-| CPI-03 (lamport credit overflow) | MEDIUM | Convert all `+= amount` lamport credits to `checked_add` form with overflow propagation | 10 lines × 2 files |
+|---|---|---|---|
+| NOVEL-CPI-01 (non-contiguous mask) | HIGH | Restructure refund loop to use index map (caller passes `Vec<u8>` of indices + accounts). Alternative: always require `start_with_depositors` before cancel. | Larger refactor |
+| CPI-03 (lamport credit overflow) | MEDIUM | Convert all `+= amount` lamport credits to `checked_add` form | 10 lines × 2 files |
+| NEW-CPI-01 (migrate layout invariant) | LOW | Add doc comment on `impl GlobalConfig` documenting field-layout-compatibility requirement | 1 line |
+| NEW-CPI-02 (migrate pause bypass) | LOW | Add doc comment to migrate_config noting it bypasses pause | 1 line |
+| NEW-CPI-03 (migrate authority funding) | LOW | Add operational doc about authority wallet rent-top-up requirement | doc-only |
 
 End of analysis.

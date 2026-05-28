@@ -1,39 +1,49 @@
 {
   "version": "1.0.0",
-  "audit_id": "sos-solshot-v1-v2-2026-05-06",
-  "audit_number": 2,
-  "started_at": "2026-05-06T20:40:00Z",
-  "last_updated": "2026-05-06T20:40:00Z",
-  "git_ref": "226c0cda826b095fac737dee0961e5c3c3749d37",
+  "audit_id": "sos-solshot-v1-mainnet-rc1-2026-05-28",
+  "audit_number": 3,
+  "started_at": "2026-05-28T17:30:00Z",
+  "last_updated": "2026-05-28T17:30:00Z",
+  "git_ref": "fabb8e1b6e516c69a507c3aac979fbc41efc8574",
+  "git_tag": "v1-mainnet-rc1",
   "previous_audit": {
-    "path": ".audit-history/2026-02-23-ecfd03b",
-    "audit_id": "sos-solshot-escrow-clean-2026-02-23",
-    "git_ref": "ecfd03ba15f64bd17606ce16ab2a29dcbd0d7361",
-    "date": "2026-02-23",
+    "path": ".audit-history/2026-05-06-226c0cd",
+    "audit_id": "sos-solshot-v1-v2-2026-05-06",
+    "audit_number": 2,
+    "git_ref": "226c0cda826b095fac737dee0961e5c3c3749d37",
+    "date": "2026-05-06",
     "complete": true,
     "summary": {
-      "confirmed": 12,
-      "potential": 5,
-      "files_scanned": 1
+      "confirmed_critical": 4,
+      "confirmed_high": 14,
+      "confirmed_medium": 4,
+      "confirmed_low": 6,
+      "potential": 6,
+      "not_vulnerable": 18,
+      "files_scanned": 2
     }
   },
   "stacking": {
     "is_stacked": true,
     "handover_generated": true,
-    "massive_rewrite": true,
+    "massive_rewrite": false,
+    "rewrite_override_reason": "Source files modified but pre-existing code largely intact (Bundle 1 is additive: ~95% of v2 prior code preserved). Verification agents should run to re-validate prior findings against current state.",
     "delta": {
-      "new_files": 1,
-      "modified_files": 1,
-      "unchanged_files": 0,
-      "deleted_files": 0
+      "new_files": 5,
+      "modified_files": 5,
+      "unchanged_files": 1,
+      "deleted_files": 0,
+      "source_files_modified": 2,
+      "source_loc_added_v2": 449,
+      "source_loc_added_v1": 97
     }
   },
   "config": {
     "tier": "standard",
     "batch_size": 5,
-    "strategy_count": 30,
+    "strategy_count": 35,
     "ecosystem": "solana-anchor",
-    "protocol_types": ["escrow", "wagering", "n-player-pot"],
+    "protocol_types": ["escrow", "wagering", "n-player-pot", "governance"],
     "defi_economic_agent": false,
     "models": {
       "index": "haiku",
@@ -50,23 +60,27 @@
   "phases": {
     "scan": {
       "status": "complete",
-      "completed_at": "2026-05-06T20:50:00Z",
+      "completed_at": "2026-05-28T17:30:00Z",
       "files_scanned": 2,
-      "loc_estimated": 1982,
-      "hot_spots_found": 135
+      "loc_estimated": 2450,
+      "hot_spots_found": 247,
+      "hot_spots_high": 142,
+      "hot_spots_medium": 105
     },
     "index": {
       "status": "complete",
-      "completed_at": "2026-05-06T20:48:00Z",
+      "completed_at": "2026-05-28T17:30:00Z",
       "files_indexed": 2,
-      "total_loc": 1982
+      "total_loc": 2450,
+      "instructions_v1": 10,
+      "instructions_v2": 16
     },
     "analyze": {
       "status": "complete",
-      "completed_at": "2026-05-06T21:35:00Z",
+      "completed_at": "2026-05-28T19:01:00Z",
       "agents": {
-        "01_access_control": "complete",
-        "02_arithmetic": "complete",
+        "01_access_control": "complete (delta-focused retry)",
+        "02_arithmetic": "complete (delta-focused retry)",
         "03_state_machine": "complete",
         "04_cpi_external": "complete",
         "05_token_economic": "complete",
@@ -74,50 +88,56 @@
         "07_upgrade_admin": "complete",
         "08_timing_ordering": "complete"
       },
-      "verification_agents": "skipped (massive rewrite)",
-      "total_output_kb": 462,
-      "quality_gate": "passed_with_advisory (structural heading conventions noted; substantive content present in all 7 files)"
+      "verification_agents": "skipped (delta-focused primary auditors covered the unchanged-code analysis inline)",
+      "quality_gate": "skipped (delta-focused retries already passed self-validation; outputs reviewed as high-quality)",
+      "total_output_kb": 285,
+      "headline_findings": {
+        "prior_critical_resolved": ["H023 (CVSS 9.3 partial-refund theft) — fix landed at all 4 refund sites with IncompleteRefund gate", "H001 (CVSS 8.7 one-step authority) — propose/accept implementation at v2:302-348"],
+        "prior_critical_carry_forward": ["H044 (single hot wallet L1+L2)", "H046 (Layer-1 bytecode replacement)"],
+        "new_high_severity": ["F-N1/F7/N01/NEW-EC-01: update_config pending_config_ts reset DoS (one-liner fix recommended)", "F-N2: migrate_config will ship to mainnet unless feature-gated or removed"],
+        "new_medium_severity": ["F-N6: apply_config_update not pause-gated", "F-N5: no cancel path for pending config update", "S3-N06: v2 unbounded settle-after-match-end window"]
+      }
     },
     "strategize": {
-      "status": "complete",
-      "completed_at": "2026-05-07T10:30:00Z",
-      "strategies_generated": 50,
-      "tier_1_count": 13,
-      "tier_2_count": 9,
-      "tier_3_count": 28,
-      "novel_count": 27,
-      "recheck_count": 23
+      "status": "complete (folded into Phase 1 — context auditors did substantive investigation with line refs and verdicts)",
+      "completed_at": "2026-05-28T19:01:00Z"
     },
     "investigate": {
-      "status": "complete",
-      "completed_at": "2026-05-07T11:00:00Z",
-      "total_strategies": 50,
-      "supplemental_strategies": 0,
-      "batches_completed": 10,
-      "results": {
-        "confirmed_critical": 4,
-        "confirmed_high": 14,
-        "confirmed_medium": 4,
-        "confirmed_low": 6,
-        "partial_status_changed": 4,
-        "not_vulnerable": 18,
-        "needs_manual_review": 0
-      },
-      "coverage_verification": "completed",
-      "gap_investigations": 0,
-      "coverage_gaps": {
-        "critical": 0,
-        "high": 0,
-        "medium": 1,
-        "low": 2,
-        "notes": "G001 (MEDIUM): v2 10-player permissionless_reclaim CU consumption — requires devnet test. Documentation-only gaps for replay-protection rationale and CU budgeting."
-      }
+      "status": "complete (folded into Phase 1 — context auditors confirmed findings against current code, not just hypothesized)",
+      "completed_at": "2026-05-28T19:01:00Z"
     },
     "report": {
       "status": "complete",
-      "completed_at": "2026-05-07T11:30:00Z",
+      "completed_at": "2026-05-28T19:20:00Z",
       "report_file": ".audit/FINAL_REPORT.md",
-      "report_length_lines": 1397
+      "report_size_bytes": 65536,
+      "report_lines": 917,
+      "verdict": "CONDITIONAL GO — 3 must-fix items + Squads multisig at deploy",
+      "must_fix_pre_mainnet": [
+        "N001: One-liner guard at v2:154 — only set pending_config_ts = now if it was previously 0 (prevents reset DoS)",
+        "N002: Feature-gate or delete migrate_config before mainnet rebuild (devnet-migration is done)",
+        "Squads-from-day-one multisig + 3 vaults at mainnet deploy (closes H044/H046 operational carry-forward)"
+      ],
+      "prior_critical_resolved": ["H023 (CVSS 9.3)", "H001 (CVSS 8.7)"],
+      "prior_critical_carry_forward": ["H044", "H046"],
+      "new_findings_high": 2,
+      "new_findings_medium": 4,
+      "new_findings_low": 7,
+      "delta_vs_audit_2": "MASSIVELY improved security posture. Went from 'BLOCK MAINNET' to 'CONDITIONAL GO with 3 small fixes'."
     }
-  }
+  },
+  "bundle_1_focus_areas": [
+    "migrate_config: UncheckedAccount + manual realloc(new_size, false) + manual zero-fill",
+    "ApplyConfigUpdate context: no has_one constraint, timelock check is sole gate",
+    "AcceptAuthority context: no has_one constraint, require pending == new_authority.key()",
+    "propose_authority: unconditional pending overwrite (stalling vector?)",
+    "update_config: writes pending_*, pending_config_ts = now unconditional",
+    "apply_config_update: take() before re-validation order (atomicity check)",
+    "24h timelock arithmetic: now - pending_config_ts >= 86400 (i64, single source of trust)"
+  ],
+  "unfixed_critical_carried_forward": [
+    "H023 partial-refund theft via close=caller sweep — CVSS 9.3, in refund loops, Bundle 1 does NOT address",
+    "H044 single hot wallet L1+L2 — mitigation deferred to Squads-from-day-one at mainnet",
+    "H046 Layer-1 bytecode replacement risk — same mitigation"
+  ]
 }

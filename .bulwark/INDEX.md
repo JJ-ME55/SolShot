@@ -1,414 +1,511 @@
-# DB Audit Codebase Index
+# Codebase Index — SolShot Off-Chain Stack
 
-**Generated:** 2026-05-07  
-**Files indexed:** 141  
-**Total LOC:** 84,270  
+**Generated:** 2026-05-28 | **Scope:** Off-chain (Express + Socket.IO + React) | **High-priority only**
 
-## Summary by Layer
+## Scope Summary
 
-| Layer | Files | LOC | Languages |
-|-------|-------|-----|-----------|
-| Server (Node.js + Socket.IO) | 42 | 53,376 | JS, MJS |
-| Client (React 18 PWA) | 99 | 30,848 | JS, JSX |
-| Tools / Utility Scripts | 1 | 46 | JS |
-| **Total** | **142** | **84,270** | — |
-
----
-
-## Server Files (`server/`)
-
-### Entry & Core Middleware
-
-| File | LOC | Purpose | Key Risk Markers |
-|------|-----|---------|-------------------|
-| `server/index.js` | 180 | Express + Socket.IO bootstrap; helmet, rate-limit, CORS, Mongo, bot init, escrow v1+v2 init | **auth**, **transport**, **headers**, crypto keys |
-| `server/middleware/auth.js` | 185 | Auth message validation & wallet signature verification | **signing**, **verification** |
-| `server/middleware/guards.js` | 310 | Per-route guards, rate limits, input validation, profanity filter, withLock mutex | **authz**, **throttle**, **state** |
-| `server/middleware/telegram.js` | 75 | Telegram webhook signature validation | **webhook auth** |
-
-### Mongoose Models (Data Schema)
-
-| File | LOC | Purpose | Risk |
-|------|-----|---------|------|
-| `server/models/User.js` | 280 | User schema: wallet, prestige, gold, referrals, wallet-link status | **identity**, **state** |
-| `server/models/Match.js` | 190 | Match record: players, escrow state, settlement status, wager tier | **settlement**, **state** |
-| `server/models/GroupMatch.js` | 240 | Group-chat match: 2-10 players, lobby/active/settled states, escrow v2 | **escrow**, **state** |
-| `server/models/Challenge.js` | 110 | Challenge invites: duel/career, accepted/matched status | **state** |
-| `server/models/Weapon.js` | 85 | Weapon catalog: 15 base + 5 prestige, cost/dmg stats | **data** |
-| `server/models/ServerState.js` | 60 | Global singletons: shot price, startup flags | **state** |
-
-### Critical Services (Business Logic & Blockchain)
-
-| File | LOC | Purpose | **RISK** |
-|------|-----|---------|---------|
-| **`server/services/escrow.js`** | 580 | **Anchor v1 (N-player 2-4)**: create PDA, deposit, settle (90/7/3 split), cancel, permissionless reclaim. Program ID: `4kzrDpV9JxjE27AMg4PQXzGuge9MEYQEFznSPvkBtnH1` (May 2026 deploy). **BN import fix** (Anchor 0.32.1 breaking change). | **CRITICAL** — on-chain pot distribution, keypair auth, CPI |
-| **`server/services/escrow-v2.js`** | 620 | **Anchor v2 (2-10 player, async/idle)**: 24h reclaim grace, duration/deposit-window params, fee snapshot. Program not yet deployed (Phase 1d prep). | **CRITICAL** — extended pot logic, grace-period race conditions |
-| **`server/services/solana.js`** | 950 | Wallet balance check, wager tier validation, escrow delegation, settle/refund calls, devnet RPC fallback. Delegates to escrow.js when available. | **HIGH** — wallet state, tx routing |
-| **`server/services/shot-token.js`** | 810 | SHOT token state: mint address, supply, burn verification, prestige milestone tracking, on-chain tx replay protection (in-memory Set). Ties to Phase 2B/2C (token + burns). | **HIGH** — token state, burn verification, replay |
-| **`server/services/privyAuth.js`** | 120 | Privy JWT verification on `/api/wallet/link-from-tg-token` and other link endpoints. Graceful fallback if `PRIVY_APP_ID`/`PRIVY_APP_SECRET` not set. | **MEDIUM** — link authorization, JWT validation |
-| **`server/services/walletLinkTokens.js`** | 95 | One-shot 32-byte CSPRNG tokens (10-min TTL) for Telegram → wallet binding. In-memory storage, periodic TTL sweep. | **MEDIUM** — token generation, replay (1-use), TTL |
-| **`server/services/keys.js`** | 65 | Escrow keypair init from `SOLANA_SERVER_KEYPAIR_PATH` env. Authority for create/settle/cancel escrow ops. | **HIGH** — keypair access, path resolution |
-| `server/services/gold.js` | 220 | Gold economy: 1000G start, +15G/HP, +200 kill, +300 win. Persists to User doc. | **MEDIUM** — state updates, earnings logic |
-| `server/services/physics.js` | 810 | Server-authoritative ballistics: 20 weapon types, terrain, tank spawns, wind physics, collision. All client fire requests validated here. | **MEDIUM** — input validation, exploit vectors |
-| `server/services/match.js` | 310 | Match state machine: create, validate actions, turn rotation, round/match end detection, placement scoring. | **MEDIUM** — state transitions, turn logic |
-| `server/services/ai.js` | 380 | AI tank: weapon picking, aiming, auto-buy. Used in Practice mode. | **LOW** — gameplay only |
-| `server/services/users.js` | 280 | User lookup, rank/prestige calculation, telegram-link binding, referral code generation. | **MEDIUM** — identity lookup, account linking |
-| `server/services/referrals.js` | 140 | Referral code generation, attribution, reward distribution. | **LOW** — reward logic |
-| `server/services/consumables.js` | 75 | One-time items: double-XP, shield, etc. Purchase + decrement. | **LOW** — cosmetic items |
-| `server/services/logger.js` | 45 | Structured logging (winston). | **LOW** |
-| `server/services/monitoring.js` | 250 | Telemetry: connection, match, settlement, error tracking. | **LOW** — analytics only |
-| `server/services/jupiter-price.js` | 80 | Polls Jupiter API for SHOT/SOL price. Cached, 30s refresh. | **LOW** — external API |
-| `server/services/bot.js` | 420 | Telegraf bot: `/start`, `/link`, `/customgame`, challenge flow. Webhook setup. Registers groupchat handlers. | **HIGH** — command parsing, state transitions, auth gates |
-
-### Challenge Service (Card Rendering & DM Dispatch)
-
-| File | LOC | Purpose | Risk |
-|------|-----|---------|------|
-| `server/services/challenge/challenge.js` | 310 | Create/fetch/cancel challenge records; record state (accepted/matched). | **MEDIUM** — state persistence |
-| `server/services/challenge/victoryDm.js` | 85 | Send victory DMs to Telegram (career card + trophy). | **LOW** — messaging only |
-| `server/services/challenge/renderChallengeCard.js` | 110 | Render duel/career card React → PNG. Uses sharp image library. | **MEDIUM** — image rendering, temp file cleanup |
-| `server/services/challenge/renderCareerCard.js` | 105 | Similar to above for career stats. | **MEDIUM** — image rendering |
-| `server/services/challenge/renderTrophyCard.js` | 45 | Trophy card render. | **LOW** |
-| `server/services/challenge/careerCardProps.js` | 60 | Build React props for career stats (rank, streak, etc.). | **LOW** — data transformation |
-| `server/services/challenge/TrophyShareCard.js` | 65 | React component for trophy card. | **LOW** — UI only |
-| `server/services/challenge/compile-card.mjs` | 85 | CLI utility to pre-compile card SVGs. Not runtime. | **LOW** — build tooling |
-
-### Group-Chat Service (Telegram Mini App Match Lifecycle)
-
-| File | LOC | Purpose | Risk |
-|------|-----|---------|------|
-| `server/services/groupchat/lifecycle.js` | 520 | Match state: lobby → active → settled/cancelled. Turn timers, idle penalties, settlement with escrow v2 integration. | **CRITICAL** — state machine, escrow calls, settlement race conditions |
-| `server/services/groupchat/scheduler.js` | 180 | Async timeout queue backed by MongoDB. On-boot recovery of pending timers. | **MEDIUM** — recovery on restart, timer precision |
-| `server/services/groupchat/botMessages.js` | 210 | Telegram message templates for game flow (lobby, turn, settlement). Inline buttons for actions. | **LOW** — messaging only |
-| `server/services/groupchat/lobbyWatchdog.js` | 90 | Periodic check: auto-start if 2+ players idle 2 min, or auto-cancel if 0 players for 5 min. | **MEDIUM** — state transitions, timeouts |
-| `server/services/groupchat/configFlow.js` | 105 | Multi-step bot flow for game config (duration, wager, player count). State machine in Message handler. | **MEDIUM** — input parsing, state tracking |
-| `server/services/groupchat/index.js` | 55 | Registers all groupchat Socket handlers. | **LOW** — plumbing |
-| `server/services/groupchat/lobbyCard.js` | 70 | Build lobby Telegram message (player list, wager, start button). | **LOW** — messaging |
-| `server/services/groupchat/quietHours.js` | 45 | Quiet hours logic (US EST 1-7 AM). Defers match start. | **LOW** — scheduling |
-
-### Socket.IO Handlers (Real-time Game State)
-
-| File | LOC | Purpose | **RISK** |
-|------|-----|---------|---------|
-| **`server/socket-io/main.js`** | 1,850+ | **MEGA-FILE** — all match events: `joinRoom`, `fire`, `move`, `selectWeapon`, `playAgain`, escrow deposit/confirm, prestige burn. Turn timer mgmt, disconnect/reconnect (30s window), wallet-key rejoin. Match state sync, duplicate-fire fix (line 3654). | **CRITICAL** — auth, state machine, escrow events, timing |
-| `server/socket-io/groupchat.js` | 420 | Telegram Mini App Socket handlers: `joinGroupBattle`, `fireGroupShot`, `depositGroupWager`, `selectGroupWeapon`, `forfeit`. Lifecycle bridge to groupchat service. | **HIGH** — group match logic, escrow events |
-
-### Utility & Operational Scripts
-
-| File | LOC | Purpose | Risk |
-|------|-----|---------|------|
-| `server/scripts/init-config.mjs` | 45 | One-shot: bootstrap GlobalConfig PDA after escrow v1 deploy. | **LOW** — operational |
-| `server/scripts/init-config-v2.mjs` | 50 | One-shot: bootstrap GlobalConfig for escrow v2. | **LOW** — operational |
-| `server/scripts/update-config-v2.mjs` | 75 | Update escrow v2 config (authority, treasury, ops, fees). | **LOW** — operational |
-| `server/scripts/mark-match-settled.mjs` | 45 | Manual settlement record update (recovery). | **LOW** — operational |
-| `server/scripts/recover-stuck-match.mjs` | 60 | Manual match recovery (escape stuck lobby). | **LOW** — operational |
-| `server/scripts/dump-escrow-state.mjs` | 65 | Debug dump escrow PDA state. | **LOW** — debug |
-| `server/scripts/find-user.mjs` | 25 | Lookup user by wallet/telegram/email. | **LOW** — debug |
-| `server/scripts/get-wallet.mjs` | 30 | Retrieve wallet by User ID. | **LOW** — debug |
-| `server/scripts/list-wallet-links.mjs` | 40 | Enumerate wallet-link tokens. | **LOW** — debug |
+- **Total tracked files:** ~45 (HIGH + MEDIUM priority; excludes LOW/SKIP)
+- **Off-chain LOC:** ~18,500 (server ~13.4K, client screens/wallet ~5K+)
+- **Languages:** JavaScript (ES modules, no CommonJS), JSX (React), JSON (config)
+- **Key frameworks:** Express, Socket.IO, Telegraf (bot), React, Phaser, @coral-xyz/anchor
+- **Auth:** Privy JWT (OIDC-style), magic-link tokens (CSPRNG), Telegram initData validation
+- **Persistence:** MongoDB (User, Match, FunnelEvent, Challenge, leaderboards)
+- **Blockchain:** Solana RPC, N-player escrow programs (v1 devnet, v2 devnet + mainnet)
 
 ---
 
-## Client Files (`client/src/`)
+## HIGH PRIORITY Files
 
-### Entry & Root Components
+### `server/index.js`
+**LOC:** 1408 | **Purpose:** HTTP entry point — Express app, middleware setup, route mounting
+**Key exports:** Express app initialization, Socket.IO server, HTTP route handlers
+**Routes defined:**
+- `GET /health` — health check (no auth)
+- `GET /stats` — financial metrics (requireAdminKey)
+- `POST /api/admin/reload-keys` — credential reload (requireAdminKey)
+- `POST /api/admin/truncate-handles` — one-shot handle migration (requireAdminKey)
+- `GET /api/admin/funnel` — funnel aggregates, 24h/7d/30d windows (requireAdminKey)
+- `POST /api/csp-report` — CSP violation reporting (public)
+- `POST /api/feedback` — in-game bug reports, rate-limited (5/hr/IP)
+- `POST /api/challenge` — create wagered challenge with deeplink (public)
+- `GET /api/challenge/:code` — fetch challenge details (public)
+- `GET /api/challenge/:code/card.png` — render challenge Satori card (public, cached 60s)
+- `GET /api/stats/:tgUserId/card.png` — render career card (public, cached 60s)
+- `POST /api/challenge/:code/cancel` — withdraw challenge (caller identity check)
+- `POST /api/wallet/link-from-tg-token` — magic-link + optional Privy JWT (requirePrivyAuth soft)
+- `POST /api/wallet/link-from-privy-telegram` — Privy-direct TG binding (requirePrivyAuth strict)
+- `POST /api/arcade/session-handoff` — mint arcade-→-solshot JWT (requirePrivyAuth strict)
+- `POST /api/arcade/session-validate` — validate arcade session JWT (public)
+- `POST /api/arcade/register` — idempotent User doc creation (requirePrivyAuth strict)
+- `POST /api/arcade/mint-session` — mint per-game leaderboard JWT (requirePrivyAuth strict)
+- `POST /api/games/basketball/score` — score submission (verifyBasketballSession)
+- `GET /api/games/basketball/leaderboard?limit=10&since=<iso>` — top-N leaderboard
+- `GET /api/games/basketball/standing/:telegramUserId` — user's rank/standing
+- `POST /api/games/keepieuppies/score` — score submission
+- `GET /api/games/keepieuppies/leaderboard` — top-N leaderboard
+- `GET /api/games/keepieuppies/standing/:telegramUserId` — user's rank/standing
+- `POST /api/games/freekicks/score` — score submission
+- `GET /api/games/freekicks/leaderboard` — top-N leaderboard
+- `GET /api/games/freekicks/standing/:telegramUserId` — user's rank/standing
+- `GET /api/games/leaderboard` — cross-game overall standings (basketball+keepie+freekicks)
+- `GET /api/games/standing/:telegramUserId` — user's cross-game overall standing
+- `POST /api/wager-waitlist` — email signup for v2 beta (public, idempotent)
+**Auth gates:** 2 of 30 routes use requireAdminKey, 6 use requirePrivyAuth (5 strict, 1 soft), 3 use game-specific JWT verifiers, rest public
+**Risk markers:**
+- **SEC:** Hardcoded ALWAYS_ALLOWED_ORIGINS + env CORS_ORIGINS merge; helmet CSP with broad connectSrc allowing devnet + mainnet RPC + Privy auth endpoints
+- **AUTH:** Magic-link token burned on first call regardless of outcome; Privy JWT soft-mode fallback to magic-link if JWT fails; H001 fix checks Privy user's TG link against body param
+- **INJ:** Email regex permissive (RFC not enforced); handle truncation to 12 chars via regex slice; challenge code passed raw to DB query
+- **WEB:** CSP header set; CORS explicitly managed; trust proxy enabled for Render; www→non-www redirect in prod
+- **API:** maxHttpBufferSize capped 64KB; body limit 1MB; rate limiting 100 req/15min global; per-IP socket connection cap (100)
+- **DATA:** FunnelEvent.create with IPHash (SHA256 truncated to 16 chars), not raw IP; handle/walletAddress field slicing on inbound
+**Focus:** SEC, AUTH, WEB, API, DATA
 
-| File | LOC | Purpose | **RISK** |
-|------|-----|---------|---------|
-| **`client/src/App.js`** | 320 | React root, routing, Privy + Socket.IO init, auth-reset-on-reconnect, error boundary. Desktop/mobile detection. | **HIGH** — auth flow, socket lifecycle, state reset |
-| `client/src/index.js` | 30 | ReactDOM mount point. | **LOW** |
-| `client/src/components/Layout.js` | 95 | Top-level layout wrapper. | **LOW** |
+### `server/middleware/guards.js`
+**LOC:** 228 | **Purpose:** Reusable auth guards and input validation
+**Key exports:**
+- `requireAdminKey(req, res, next)` — timing-safe compare of x-admin-key header (uses crypto.timingSafeEqual)
+- `requireAuth(client, eventName)` — socket-level auth check for isAuthenticated
+- `validatePayload(data, schema)` — null-guard + type validation for socket payloads
+- `validateFireParams({ angle, power, weaponId })` — numeric bounds check for shot inputs
+- `sanitizeName(name)` — 20-char cap + profanity filter (143-word blacklist + leetspeak normalization)
+- `withLock(key, fn, timeoutMs)` — async mutex with 30s deadlock timeout; auto-releases; logs timeout as error
+- `safeHandler(handlerFn)` — try/catch wrapper for async socket handlers; tracks via monitoring.trackError
+**Risk markers:**
+- **AUTH:** Timing-safe compare only on admin key; socket auth is synchronous bool check
+- **INJ:** sanitizeName has 143-word profanity list including slurs; leetspeak norm (0→o, 1→i, etc.); allowlist for 'jewel|jewelry|...' to prevent false positives; regex-based profanity detect
+- **CRYPTO:** withLock uses setTimeout + Promise — not interrupt-safe; lock auto-releases after 30s even if fn is still running (could cause double-execution if socket reconnects within that window)
+**Focus:** AUTH, INJ, CRYPTO
 
-### Wallet Integration & Authentication
+### `server/socket-io/main.js`
+**LOC:** ~5198 | **Purpose:** Authoritative match server — all gameplay state, escrow flows, turn logic, physics delegation
+**Socket event handlers (grep-extracted, ~45+ events):**
+- Line 1412: `disconnect` — cleanup pendingReconnects, turn timers, player state
+- Line 1524: `authenticate` — validates walletAddress + uid, sets isAuthenticated
+- Line 1656: `clientDebugLog` — echo client-side console messages (if server.isDEBUG)
+- Line 1686: `setWalletHandle` — update User.handle via socket (requires auth)
+- Line 1737: `registerIdentity` — capture uid from client
+- Line 1819: `attributeReferrer` — record referral source (funnel tracking)
+- Line 1839: `getInviteLink` — generate TG share URL for solo user
+- Line 2087: `disconnect` (retry window) — start 30s reconnect timer, move to pendingReconnects map
+- Line 2101: `leaveRoom` — socket exit from match room
+- Line 2107: `rejoinRoom` — wallet-keyed reconnect within 30s window (restore old socketId→newSocketId mapping)
+- Line 2280: `deleteRoom` — host-only room deletion
+- Line 2308: `joinRoom` — core match lifecycle; creates escrow if wagered; emits escrowDeposit for N-player; broadcasts room state
+- Line 2562: `getRooms` — fetch public lobby list (filtered by mode, limit 100)
+- Line 2572: `createChallengeRoom` — create a wagered 1v1 from challenge deeplink
+- Line 2673: `joinChallenge` — join opponent side of challenge
+- Line 2723: `createRoom` — host creates match room; mode validation; escrow creation deferred to joinRoom
+- Line 2876: `createAIMatch` — practice vs Shot Bot (AI service integration)
+- Line 2981: `joinQueue` — Quick Match queue entry; triggers auto-matchmaking every 5s
+- Line 3244: `leaveQueue` — exit Quick Match
+- Line 3253: `ready` — player signals loaded+ready for match start
+- Line 3345: `buyWeapon` — purchase weapon with in-game gold
+- Line 3408: `buyConsumable` — purchase consumable (one-time use)
+- Line 3441: `shopDone` — finalize purchases, start match
+- Line 3470: `getShotInfo` — fetch SHOT token balance + milestones
+- Line 3489: `buyCosmetic` — purchase cosmetic item (armor/trail/blast/kill effect/skin)
+- Line 3537: `equipCosmetic` — toggle cosmetic active
+- Line 3560: `getCosmetics` — list all cosmetics (owned + unowned)
+- Line 3579: `getStats` — fetch leaderboard rank, career stats
+- Line 3638: `getLeaderboard` — top-100 by wins
+- Line 3677: `challengeCallsign` — set display name for challenge
+- Line 3719: `acceptChallenge` — confirm match start
+- Line 3738: `declineChallenge` — reject opponent
+- Line 3760: `prestigeBurn` — on-chain burn verification → tier unlock
+- Line 3788: `weaponPick` — select weapon for round
+- Line 3798: `getWeaponArray` — fetch custom weapon loadout
+- Line 3806: `createWeaponArray` — save custom weapon loadout
+- Line 3841: `shoot` (fire) — player fires; physics server-authoritative; triggers on-round-end checks
+- Line 3873: `escrowDepositConfirm` — player confirms TX signature + confirms balance deduction
+- Line 3998: `escrowPartialStart` — timeout path: settle with fewer than max_players deposits
+- Line 4078: `escrowCancelAll` — full cancel flow on user leave
+**Helper functions** (module scope):
+- `getNextTurn(ms)` — advance turn in round-robin by player index
+- `isRoundOver(ms)` — check if all players dead or maxRoundHealth <= 0
+- `broadcastShotResult(room, shotData)` — emit trajectory + damage map to all players
+- `getConnection()` — lazy-init Solana RPC connection (memoized)
+- `restoreRoom(match)` — hydrate Match doc back into room object
+- `createMatchEscrow(...)` / `createMatchEscrowV2(...)` — dispatch by player count
+- `settlementPath(...)` — escrow settle + funnel record + SHOT emission
+- `disconnectPath(...)` — graceful player-drop cleanup
+**External integrations:**
+- **Mongo:** User (stats, handle), Match (room state), GroupMatch (group-chat matches), Challenge (wagered duals), FunnelEvent (event log)
+- **Solana RPC:** Balance check (verifyBalance), wager create/settle/refund via escrow.js or escrow-v2.js
+- **Telegram:** Bot broadcast via global.__solshotIo (cancelMatch emit)
+- **AI Service:** Shot Bot integration (ai.js)
+- **Leaderboard:** Custom weapon arrays, cosmetic purchases persisted to User.gold + User.cosmetics
+**Auth gates:**
+- `requireAuth` checked on: setWalletHandle, createRoom, deleteRoom, joinRoom, joinQueue, buyWeapon, buyConsumable, weaponPick, shoot, escrowDepositConfirm, escrowCancelAll
+- Socket.isAuthenticated must be true for wager flows; TG initData validates mini-app users
+**Risk markers:**
+- **LOGIC:** Turn advancement at line ~3654 fixed in May (was advancing even when round over, allowing duplicate fire); currentTurn now null-checked before fire dispatch (line ~3454)
+- **CHAIN:** escrowDepositConfirm handler (line 3873) confirms both players received wager before proceeding; uses withLock('settle:roomId') on settle to prevent double-settlement
+- **API:** Socket payloads validated via validatePayload for most handlers; fire handler has dedicated validateFireParams
+- **INJ:** room name/player name passed through sanitizeName before broadcast
+- **ERR:** safeHandler wraps createAIMatch, try/catch around escrow calls, monitoring.trackError on settlement fail
+- **INFRA:** Turn timers cleaned up on round end and match end; room object removed from rooms map on delete; pendingReconnects cleaned up after 30s window or successful rejoin
+**Focus:** LOGIC, CHAIN, AUTH, API, INJ, ERR, INFRA
 
-| File | LOC | Purpose | **RISK** |
-|------|-----|---------|---------|
-| **`client/src/wallet/WalletContext.js`** | 580 | **Privy-only wallet integration** — embedded Solana wallet. `signAndSendEscrowDeposit()`, `signAndBurnShot()`, login/logout. Broadcasts through custom Connection (api.devnet.solana.com, not Privy RPC). Exposes `window.solWallet` for Phaser access. | **CRITICAL** — signing, key management, wallet state |
-| `client/src/telegram/TelegramContext.js` | 210 | Telegram WebApp SDK integration, haptic feedback, theme detection, back-button. | **MEDIUM** — third-party SDK |
-| `client/src/telegram/useTelegramBackButton.js` | 45 | Custom hook for Telegram back navigation. | **LOW** |
-| `client/src/telegram/haptic.js` | 25 | Haptic feedback wrapper. | **LOW** |
+### `server/services/privyAuth.js`
+**LOC:** 200 | **Purpose:** Privy access-token verification middleware
+**Key exports:**
+- `requirePrivyAuth({ required: false })` — Express middleware; verifies Authorization header Bearer token against Privy's public key
+- `verifyPrivyToken(token)` — lower-level token verify (returns null on failure)
+- `isPrivyAuthConfigured()` — check if PRIVY_APP_ID + PRIVY_APP_SECRET set
+**Behavior:**
+- If PRIVY_APP_ID + PRIVY_APP_SECRET not configured: soft-mode (skipped), warns once; hard-mode (required:true) returns 503 in prod, pass-through in dev
+- On verify failure: logs diagnostic dump (audience mismatch, expiry, issuer, signature failed); unsafeDecodeForLogging() extracts claims without verifying signature
+- Sets req.privyAuth (full claims) and req.privyUserId (Privy DID / sub claim) on success
+**Risk markers:**
+- **AUTH:** Graceful degradation in dev (no env vars = pass-through); hard rejection in prod if configured but token invalid (required:true mode)
+- **CRYPTO:** PrivyClient from @privy-io/server-auth; delegate trust to Privy's signature verification
+- **INJ:** unsafeDecodeForLogging() base64url decodes without verifying — used only for diagnostic logs, safe because the token itself isn't trusted
+**Focus:** AUTH, CRYPTO
 
-### Socket.IO Client
+### `server/services/keys.js`
+**LOC:** 94 | **Purpose:** Centralized escrow authority keypair management (KM-03, KM-04)
+**Key exports:**
+- `initKeys()` — load keypair from SOLANA_KEYPAIR_JSON env or SOLANA_KEYPAIR_PATH file; returns true if loaded
+- `getEscrowKeypair()` — retrieve loaded Keypair (required for Anchor signing)
+- `isKeysReady()` — boolean check
+**Behavior:**
+- KM-04 note: previous version zeroed input Uint8Array after Keypair construction, but @solana/web3.js aliases the array internally — zeroing broke signing. Now omitted.
+- Logs public key on init; logs errors on failure
+**Risk markers:**
+- **CRYPTO:** KM-03 single-point-of-ingestion for secret key; KM-04 (zeroing) removed because of Keypair aliasing issue
+- **SEC:** Keypair only loaded if SOLANA_KEYPAIR_JSON/PATH configured; dev mode (no keys) gracefully disabled
+**Focus:** CRYPTO, SEC
 
-| File | LOC | Purpose | Risk |
-|------|-----|---------|------|
-| `client/src/socket/index.js` | 80 | Socket.IO client setup, event listeners registration placeholder. | **MEDIUM** — transport |
+### `server/services/escrow-v2.js`
+**LOC:** 640 (first 100 shown) | **Purpose:** Wraps solshot-escrow-v2 Anchor program for server-side calls
+**Key exports:**
+- `initEscrowV2()` — initialize Anchor provider + Program object; returns true if ready
+- `getConfigPDAV2()` — derive GlobalConfig PDA seeds
+- `createMatchEscrowV2(args)` — CPI create_match; returns match_id
+- `settleMatchEscrowV2(matchId, winnerId, playerWallets)` — settle on-chain, distribute pot
+- `cancelMatchEscrowV2(...)` — refund all depositors
+- `buildDepositTransactionV2(...)` — build unsigned depositWager TX for client signing
+- `getEscrowStateV2(matchId)` — fetch MatchEscrow PDA state
+- `isEscrowV2Enabled()` — check if initialized
+**Program ID routing:**
+- Default: BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N (devnet)
+- Env override: ESCROW_PROGRAM_ID_V2 (mainnet path)
+- Anchor 0.30+ auto-resolves PDAs with `address` or `pda` declarations; caller must only pass signers + non-PDA accounts explicitly
+**IDL path:** `server/idl/solshot_escrow_v2.json`
+**Risk markers:**
+- **CHAIN:** Anchor 0.30+ account resolution bug (fixed by NOT passing auto-resolvable accounts); Anchor 0.32.1 uses `bn.js` directly not from anchor (breaking change from earlier versions)
+- **CRYPTO:** server keypair required (getEscrowKeypair); on init failure, v2 disabled (logs warn, returns false)
+- **INJ:** Program ID read from env; IDL loaded from file; no user input validation (caller responsibility)
+**Focus:** CHAIN, CRYPTO
 
-### Game Screens & State (Route Components)
+### `server/services/users.js`
+**LOC:** 377 | **Purpose:** Identity linking, wallet rotation, leaderboard helpers
+**Key exports:**
+- `updateWalletForTgUser(telegramUserId, newWalletAddress, source)` — S2-T6 wallet rotation with audit trail; idempotent + conflict check
+- `linkTelegramIdentity({...})` — upsert User doc by TG ID (canonical merge target); 4-step fallback chain (TG → wallet → uid → create)
+- `lookupUserByTelegramId(telegramUserId)` — fetch User by TG ID (lean)
+- `getTopPlayers(limit)` — top-10 by wins, filters to handles != null; tiebreak by matches played asc
+- `getPlayerRank(telegramUserId)` — 1-indexed rank calculation
+**Behavior:**
+- linkTelegramIdentity identity-policy: TG username is canonical display name (overwrites prior handle); username > firstName > supplied handle fallback
+- Wallet rotation: checks new wallet not already on a different User (conflict check); pushes old to walletHistory array with timestamp + source audit
+- Orphan consume: if Privy creates wallet-only doc (no TG) during /play flow, and TG identity later links a wallet, finds + deletes orphan doc and attaches to TG-keyed doc
+**Auth gates:** Lookups are permissionless; linkTelegramIdentity called from index.js routes (requirePrivyAuth or magic-link)
+**Risk markers:**
+- **DATA:** Wallet history tracked with source ('privy-rotation', 'linkTelegramIdentity', etc.); rotated wallets logged with ellipsis (show first 8 chars only)
+- **LOGIC:** S2-T6 upsert priority is TG-first (canonical), avoiding orphaned state; conflict on wallet means two users claim same address = manual merge required
+**Focus:** DATA, LOGIC, AUTH
 
-| File | LOC | Purpose | Risk |
-|------|-----|---------|------|
-| `client/src/screens/MenuScreen.js` | 150 | Home: Play, Challenges, Shop, Profile buttons. | **LOW** |
-| **`client/src/screens/LobbyScreen.js`** | 520 | Match creation: select mode (Practice/Quick/Duel/High Roller), wager tier, opponent picker. Escrow deposit UI. Mode + wager server-enforced constraints. | **HIGH** — input validation, wager selection, escrow integration |
-| **`client/src/screens/BattleScreen.js`** | 680 | Main game loop: renders Phaser scene, HUD overlays (fire, angle, power, weapon, wind, hp). Fire button → `socket.emit('fire')`. Disconnect/reconnect overlay + auto-rejoin on timeout. | **HIGH** — game state sync, fire validation, socket events, reconnect logic |
-| `client/src/screens/battle/FireButton.js` | 95 | Fire button state & feedback. | **LOW** |
-| `client/src/screens/battle/AngleControl.js` | 120 | Angle slider (0-180°). | **LOW** |
-| `client/src/screens/battle/PowerControl.js` | 110 | Power slider (0-100). | **LOW** |
-| `client/src/screens/battle/WeaponSelector.js` | 85 | Weapon picker carousel. | **LOW** |
-| `client/src/screens/battle/WindDisplay.js` | 45 | Wind indicator UI. | **LOW** |
-| `client/src/screens/battle/RoundCounter.js` | 45 | Round #/max display. | **LOW** |
-| `client/src/screens/battle/MoveCounter.js` | 40 | Move slots remaining. | **LOW** |
-| `client/src/screens/battle/GoldDisplay.js` | 40 | Gold balance HUD. | **LOW** |
-| `client/src/screens/battle/PotDisplay.js` | 50 | Wager pot display (if wagered). | **LOW** |
-| `client/src/screens/battle/PlayerHPBar.js` | 80 | HP bars for both tanks. | **LOW** |
-| `client/src/screens/battle/ScoreBoard.js` | 65 | Match scoreboard. | **LOW** |
-| `client/src/screens/battle/ExitMenu.js` | 75 | Pause menu (resume, exit, help). | **LOW** |
-| `client/src/screens/battle/BattleHUD.js` | 95 | Composites HUD subcomponents. | **LOW** |
-| `client/src/screens/WinScreen.js` | 210 | Victory: gold earned, prestige unlock, replay button. | **LOW** |
-| `client/src/screens/LoseScreen.js` | 180 | Defeat: stats, replay button. | **LOW** |
-| `client/src/screens/LoadingScreen.js` | 110 | Spinner + match details (opponent, wager). | **LOW** |
-| **`client/src/screens/PrestigeScreen.js`** | 420 | Prestige tier UI: burn SHOT tokens (via `signAndBurnShot()`). Tier cost display, burn confirmation, tx feedback. | **HIGH** — token burning, escrow integration |
-| `client/src/screens/LoadoutScreen.js` | 290 | Tank name, cosmetic selector (skins, trails, blasts, kill effects), cosmetic store. | **MEDIUM** — cosmetic purchases, UX |
-| `client/src/screens/BarracksScreen.js` | 180 | Tank stats, stats calculator. | **LOW** |
-| `client/src/screens/ArmoryScreen.js` | 210 | Weapon info, reload times, damage profiles. | **LOW** |
-| `client/src/screens/ShopScreen.js` | 280 | Cosmetic shop: browse, purchase, equip. | **MEDIUM** — purchase logic |
-| `client/src/screens/MyGamesScreen.js` | 310 | Match history, filters (date range, opponent, mode, wager status), pagination. | **MEDIUM** — data display, filtering |
-| **`client/src/screens/ChallengeAcceptScreen.js`** | 310 | Accept duel challenge from Telegram. Wagered or free variants. Links to lobby to start match. | **HIGH** — challenge state, wager binding |
-| **`client/src/screens/GroupBattleWrapper.js`** | 280 | Telegram Mini App group battle: join lobby, deposit, fire in group context. Async Socket events. | **HIGH** — group state, escrow, socket events |
-| **`client/src/screens/GroupDepositScreen.js`** | 190 | Wager deposit flow for group matches. Privy wallet deposit TX build + sign. | **HIGH** — escrow deposit, tx signing |
-| **`client/src/screens/GroupMatchScreen.js`** | 310 | Group match active state: turn display, fire, settle notifications. | **HIGH** — socket events, state sync |
-| `client/src/screens/AIPracticeScreen.js` | 280 | Practice mode: single-player vs AI. | **LOW** — gameplay only |
-| `client/src/screens/HowToPlayScreen.js` | 220 | Game rules tutorial. | **LOW** |
-| `client/src/screens/PrivacyScreen.js` | 45 | Privacy policy static text. | **LOW** |
-| `client/src/screens/TermsScreen.js` | 40 | Terms static text. | **LOW** |
+### `server/services/shot-token.js`
+**LOC:** 479 (first 150 shown) | **Purpose:** Off-chain SHOT token tracking (V3 pivot — no SPL token)
+**Key exports:**
+- `initShotState()` — load totalShotEmitted from MongoDB on startup
+- `getPlayerShotState(walletAddress)` — fetch in-memory player state (milestones, balance, burns)
+- `emitShotForMatch(...)` — award SHOT for wagered/practice match completion
+- `verifyBurnTransaction(txSignature)` — on-chain verification stub (v3: off-chain only, method deprecated)
+- `getPrestigeInfo(walletAddress)` — fetch player's tier, burn cost, next-tier cost
+**Milestones (8 one-time rewards):**
+- first_wagered_match → 10 SHOT
+- ten_wagered_wins → 25 SHOT
+- fifty_wagered_wins → 75 SHOT
+- 100_wagered_matches → 50 SHOT
+- 500_damage_round → 15 SHOT
+- no_prestige_win → 20 SHOT
+- five_win_streak → 40 SHOT
+- 100_total_matches → 100 SHOT
+**Prestige tiers (cumulative burn):**
+- Tier 0 (Unranked): 0 SHOT burned
+- Tier 1 (Bronze): 200 SHOT → Homing Missile
+- Tier 2 (Silver): 500 SHOT → Cruiser
+- Tier 3 (Gold): 1200 SHOT → Tommy Gun
+- Tier 4 (Platinum): 2500 SHOT → Chain Reaction
+- Tier 5 (Diamond): 4000 SHOT → Pineapple
+**Drip rates:**
+- Wagered match: 2 SHOT + 3 SHOT if win
+- Practice match: 0.5 SHOT + 0.5 SHOT if win
+- Daily cap: 25 SHOT
+**Risk markers:**
+- **DATA:** totalShotEmitted persisted to MongoDB (debounced, max 1 save/sec); Player state in-memory (playerShotState map by walletAddress)
+- **LOGIC:** Milestones checked via closure functions (check(stats) and check(stats, ctx)); context passed for contextual checks like maxRoundDamage
+- **CHAIN:** verifyBurnTransaction() deprecated in v3 (SHOT is off-chain); method body checks SPL burn via onchain tx but returns null (skipped in dev mode if SHOT_TOKEN_MINT not set)
+**Focus:** DATA, LOGIC
 
-### Components (Reusable UI)
-
-| File | LOC | Purpose | Risk |
-|------|-----|---------|------|
-| `client/src/components/Modal.js` | 65 | Generic modal wrapper. | **LOW** |
-| `client/src/components/Button.js` | 85 | Button style component. | **LOW** |
-| **`client/src/components/HandleModal.js`** | 120 | Input dialog for custom tank name. Profanity filter + character limit. | **MEDIUM** — input validation |
-| `client/src/components/WelcomeModal.js` | 95 | First-time user greeting. | **LOW** |
-| `client/src/components/ShareCard.js` | 160 | Share card template (victory/profile). | **LOW** |
-| `client/src/components/TrophyShareCard.js` | 125 | Trophy card share (trophy + stats). | **LOW** |
-| `client/src/components/TrophyShareOverlay.js` | 110 | Overlay for trophy share flow. | **LOW** |
-| `client/src/components/CombatCard.js` | 140 | Match result card (opponent, wager, outcome). | **LOW** |
-| `client/src/components/StatCard.js` | 95 | Single stat display (KDR, win rate, etc.). | **LOW** |
-| `client/src/components/WeaponCard.js` | 180 | Weapon info card (damage, reload, description). | **LOW** |
-| `client/src/components/ShotExplainer.js` | 85 | SHOT token explainer modal. | **LOW** |
-| `client/src/components/ShotPriceTicker.js` | 110 | Live SHOT/SOL price display. | **LOW** |
-| `client/src/components/TgWebViewBanner.js` | 75 | Banner: "Open in Telegram" (Mini App upsell). | **LOW** |
-| `client/src/components/IosInstallBanner.js` | 95 | iOS PWA install banner. | **LOW** |
-| `client/src/components/ResponsibleGaming.js` | 110 | Responsible gaming modal. | **LOW** |
-| `client/src/components/FAQ.js` | 150 | FAQ accordion. | **LOW** |
-| `client/src/components/EmptyStates.js` | 85 | Empty state placeholders. | **LOW** |
-| `client/src/components/TelegramShare.js` | 65 | Telegram share button wrapper. | **LOW** |
-| `client/src/components/PrestigeIntro.js` | 95 | Intro modal for prestige system. | **LOW** |
-| **`client/src/components/DebugAuthOverlay.js`** | 110 | DEV ONLY: overlay showing wallet, session, socket state. Logs on click. | **MEDIUM** — debug, auth exposure |
-| `client/src/components/TxToast.js` | 95 | Toast notification for tx feedback. | **LOW** |
-| `client/src/components/design/TopBar.js` | 85 | Top navigation bar (menu, settings, back). | **LOW** |
-| `client/src/components/design/ScreenHeader.js` | 50 | Screen title + subtitle. | **LOW** |
-| `client/src/components/design/ScanBtn.js` | 65 | QR scan button (challenge invite). | **LOW** |
-| `client/src/components/design/Terrain.js` | 85 | Terrain preview graphic. | **LOW** |
-| `client/src/components/design/AAR.js` | 110 | After-action report (match summary). | **LOW** |
-
-### Phaser Game Scene
-
-| File | LOC | Purpose | Risk |
-|------|-----|---------|------|
-| `client/src/scenes/main/index.js` | 1,200+ | Phaser 3 scene: canvas rendering, tank/turret sprites, terrain, physics sim (client-side visual only; server is authoritative). Fire animation, camera follow, input handling. **Critical render loop.** | **HIGH** — client-side prediction, input buffering |
-| `client/src/bridge/PhaserBootstrap.js` | 85 | Phaser game instance bootstrap + React mount point. | **LOW** |
-| `client/src/bridge/GameBridge.js` | 110 | Communication bridge between React (socket events) and Phaser (game state). | **MEDIUM** — state sync |
-
-### Phaser Game Classes
-
-| File | LOC | Purpose | Risk |
-|------|-----|---------|------|
-| `client/src/classes/Tank.js` | 320 | Tank sprite + movement, rotation, knockback. | **LOW** — client-side rendering only |
-| `client/src/classes/Turret.js` | 140 | Turret rotation, angle display. | **LOW** |
-| `client/src/classes/Weapon.js` | 310 | Weapon effects: fire, reload animation, cost display. | **LOW** |
-| `client/src/classes/Blast.js` | 280 | Projectile trajectory, collision detection, explosion. | **LOW** |
-| `client/src/classes/BlastCache.js` | 95 | Object pool for blasts (performance). | **LOW** |
-| `client/src/classes/Terrain.js` | 260 | Terrain gen visual, heightmap, destruction. | **LOW** |
-| `client/src/classes/Collider.js` | 150 | Collision mask generation. | **LOW** |
-| `client/src/classes/Score.js` | 85 | Score display floating text. | **LOW** |
-| `client/src/classes/Tween.js` | 120 | Tween animation wrapper. | **LOW** |
-
-### Hooks (Custom React Logic)
-
-| File | LOC | Purpose | Risk |
-|------|-----|---------|------|
-| `client/src/hooks/useSocket.js` | 95 | Socket listener hook (event registration). | **MEDIUM** — socket lifecycle |
-| `client/src/hooks/useGameState.js` | 180 | Game state management (room, match, players, wager). | **MEDIUM** — state store |
-| `client/src/hooks/useIsMobile.js` | 50 | Responsive breakpoint hook. | **LOW** |
-
-### Data & Config
-
-| File | LOC | Purpose | Risk |
-|------|-----|---------|------|
-| `client/src/data/weapons.js` | 350 | 15 base weapon definitions (damage, reload, range, etc.). | **LOW** — read-only data |
-| `client/src/data/tiers.js` | 410 | Prestige tiers (Bronze→Diamond) + 5 prestige weapons + 28 cosmetic items. Matches server tiers. | **LOW** — read-only data |
-| `client/src/data/colors.js` | 85 | Color palette (CSS variables). | **LOW** |
-
-### Weapon Packs (Legacy Structure)
-
-| File | LOC | Purpose | Risk |
-|------|-----|---------|------|
-| `client/src/weapons/array.js` | 45 | Weapon type enum + factory. | **LOW** |
-| `client/src/weapons/packs/Standard/Standard.js` | 320 | 15 standard weapon classes (client-side animations). | **LOW** |
-| `client/src/weapons/packs/Standard/logos.js` | 380 | 20 weapon logo URL mappings. Has "Dirt Ball" → "Dirtball" override for filename mismatch. | **LOW** |
-| `client/src/weapons/sounds.js` | 85 | Audio file paths for weapon sounds. | **LOW** |
-
-### Utilities & Helpers
-
-| File | LOC | Purpose | Risk |
-|------|-----|---------|------|
-| **`client/src/utils/handleValidation.js`** | 220 | Tank name validation: length (3-20), profanity, whitespace rules. **NEW since Feb.** | **MEDIUM** — input filtering |
-| `client/src/utils/__tests__/handleValidation.test.js` | 95 | Jest unit tests for handle validation. | **LOW** — tests |
-| `client/src/utils/profanity.js` | 65 | Profanity word list (shared with server). | **LOW** |
-| `client/src/utils/usernames.js` | 110 | Username suggestion generator (random adjective + noun). | **LOW** |
-| `client/src/utils/haptic.js` | 30 | Haptic feedback shim (web + mobile fallback). | **LOW** |
-| `client/src/lib/debugLog.js` | 45 | Conditional debug logging utility. | **LOW** |
-
-### Graphics & Assets
-
-| File | LOC | Purpose | Risk |
-|------|-----|---------|------|
-| `client/src/graphics/terrain.js` | 210 | Procedural terrain generation (Perlin noise sim). Server authoritative. | **LOW** — visual only |
-
----
-
-## Tools & Scripts
-
-| File | LOC | Purpose | Risk |
-|------|-----|---------|------|
-| `tools/generate-terrain-textures.js` | 46 | One-shot script: pre-generate terrain PNG textures. Not part of runtime. | **LOW** |
-
----
-
-## Cross-Cutting Hot Spots (Top 10 by Risk)
-
-**Rank by combination of: LOC, sensitive operations (signing, state mutation, auth), and potential exploit surface.**
-
-1. **`server/socket-io/main.js`** (1,850+ LOC)
-   - **Why:** Entire match event loop; fire validation, turn management, escrow deposit/confirmation, prestige burn, disconnect/reconnect remapping.
-   - **Risks:** State race conditions (duplicate fire fixed Feb 2026), auth bypass via stale turn state, escrow desync on rapid deposits.
-
-2. **`server/services/escrow.js`** (580 LOC)
-   - **Why:** Direct Anchor CPI, pot distribution (90/7/3), settleMatch() calls settleMatchEscrow().
-   - **Risks:** Integer rounding exploits in BPS math, signature replay, program ID mismatch, wrong account slot from Anchor 0.30+ resolver.
-
-3. **`server/services/escrow-v2.js`** (620 LOC)
-   - **Why:** Extended N-player logic, 24h grace-period reclaim, snapshot fee storage.
-   - **Risks:** Race conditions between settle and permissionless reclaim, snapshot fee mismatch if config changes mid-match.
-
-4. **`server/services/solana.js`** (950 LOC)
-   - **Why:** Wallet balance check, wager tier validation, settleMatch/refundWager delegation.
-   - **Risks:** TOCTOU (time-of-check-time-of-use) on balance check; insufficient funds between check and settle; devnet RPC fallback loses finality guarantees.
-
-5. **`server/socket-io/main.js` → escrow deposit handler** (~lines 3100-3200)
-   - **Why:** Takes user-submitted TX, calls `escrowDepositConfirm()`, maps to both players.
-   - **Risks:** Stale TX replay, missing signature validation, wrong amount claim.
-
-6. **`server/services/groupchat/lifecycle.js`** (520 LOC)
-   - **Why:** Group match state machine, escrow v2 integration, settlement race.
-   - **Risks:** State transitions without atomicity (lobby → active → settled); settleMatchEscrowV2() may fail mid-update; double-settle if called twice.
-
-7. **`client/src/wallet/WalletContext.js`** (580 LOC)
-   - **Why:** Privy wallet integration, signAndSendEscrowDeposit(), key management, `window.solWallet` exposure.
-   - **Risks:** User key exposure in Phaser (window global), devnet-vs-mainnet mismatch, custom Connection auth (not Privy RPC).
-
-8. **`server/services/keys.js`** (65 LOC)
-   - **Why:** Loads escrow authority keypair from `SOLANA_SERVER_KEYPAIR_PATH`.
-   - **Risks:** Keypair file path traversal, unencrypted file on disk, loss of keypair (can't retire programs).
-
-9. **`client/src/screens/BattleScreen.js`** (680 LOC)
-   - **Why:** Main game UI, fire event emission, disconnect/reconnect overlay.
-   - **Risks:** Stale match state (misaligned turn), duplicate fire on rapid click, socket.emit fire without server validation.
-
-10. **`server/services/shot-token.js`** (810 LOC)
-    - **Why:** SHOT prestige burns, on-chain TX verification, replay protection (in-memory Set).
-    - **Risks:** Replay protection lost on server restart, burn verifyTransaction() may accept already-spent burns, no allowlist of valid burners.
-
----
-
-## Key Findings & Threat Vectors
-
-### A. Escrow & Settlement (CRITICAL)
-
-- **Escrow v1 (escrow.js)**: N-player rewrite deployed May 2026. BN import from `bn.js` not `@coral-xyz/anchor` (Anchor 0.32.1 breaking change).
-- **Escrow v2 (escrow-v2.js)**: Designed but NOT yet deployed. 24h permissionless reclaim introduces race condition vs explicit settle.
-- **Anchor account resolver (0.30+)**: Passing PDAs explicitly in `.accounts({...})` causes slot misalignment. Only pass signers + non-PDA accounts; let Anchor resolve PDAs with `pda` seeds or `address` declarations.
-- **BPS split (90/7/3)**: Integer math — confirm rounding doesn't leak lamports.
-
-### B. Authentication & Signing (HIGH)
-
-- **Privy JWT (privyAuth.js)**: New since Feb. Graceful fallback if env not set. Enforced on `/api/wallet/link-from-tg-token` to gate wallet binding.
-- **Wallet-link tokens (walletLinkTokens.js)**: 32-byte CSPRNG, 10-min TTL, one-shot, in-memory. No on-chain proof that Privy user owns the claimed wallet (TODO production hardening).
-- **Socket auth (main.js)**: Socket-level auth via wallet signature, not JWT. Turn state validated per player, but stale turn refs can slip through (fixed Feb 2026 line 3654).
-
-### C. State Machine Race Conditions (HIGH)
-
-- **main.js match lifecycle**: Match state transitions (`createRoom` → `joinRoom` → fire → settle) are NOT atomic across sockets. Duplicate fire fixed, but other edge cases (e.g., two settle calls) not prevented.
-- **groupchat lifecycle**: Lobby → active → settled states tracked in MongoDB, not in-memory. No pessimistic locking; concurrent operations can cause double-settle or stale state.
-- **Turn timers (main.js, lines 3590+)**: Timers stored in `turnTimers[roomId]`. On disconnect, old timer may fire for stale roomId, causing orphan turn advances.
-
-### D. Client-Side Prediction vs Server Authority (MEDIUM)
-
-- **Fire button (BattleScreen.js)**: Client renders locally but server validates. No client-side validation — user can fire invalid angle/power. Server rejects, but UX latency.
-- **Physics (physics.js)**: Server authoritative. Client-side Phaser rendering is visual only.
-- **Disconnect/reconnect (main.js line ~1200)**: 30s window to rejoin with wallet key. State remapped across old→new socketId, but if two sockets claim same wallet within window, state is ambiguous.
-
-### E. External API Dependencies (MEDIUM)
-
-- **Jupiter price (jupiter-price.js)**: Cached 30s. Used for UI only (not settlement). Stale price displayed if API down.
-- **Telegram bot (bot.js)**: Command parsing, no strict schema. Malformed `/customgame` arg could crash handler.
-- **Privy RPC (WalletContext.js)**: Fallback to custom Connection because Privy hosted RPC unreliable. No retry logic on broadcast failure.
-
-### F. Data Validation & Input Filtering (MEDIUM)
-
-- **Tank handle (HandleModal.js, handleValidation.js)**: Client + server validation (3-20 chars, no profanity, no leading/trailing space). Profanity list shared. Bypassing client validation = server enforces, but late feedback.
-- **Weapon selection (main.js)**: No server-side check that weapon is unlocked for player. Client enforces, but admin can send raw socket event to forge weapon.
-- **Wager tier (solana.js, LobbyScreen.js)**: Client filters by SHOT balance, server enforces wager tier constraint. But balance check is TOCTOU: user could spend SHOT between check and settle.
-
-### G. DevNet Fallback & Environment (MEDIUM)
-
-- **Solana RPC (solana.js)**: Falls back from Render env RPC to `https://api.devnet.solana.com` if primary fails. Fallback has no retry/backoff.
-- **Keypair path (keys.js)**: Uses `SOLANA_SERVER_KEYPAIR_PATH` env. If path doesn't exist, `initKeys()` returns false and escrow disabled. No recovery prompt.
-- **PRIVY_APP_ID / PRIVY_APP_SECRET (privyAuth.js)**: If missing, JWT verification skipped (dev mode). Could accidentally ship with verification disabled if env not set on Render.
-
-### H. Legacy Debt (LOW-MEDIUM)
-
-- **Standard.js (weapons)**: Still has 10 dead weapon classes. Kept to avoid build errors. Dead code maintenance burden.
-- **extraWeapons.js**: Entirely dead (never imported). Low priority cleanup.
-- **logos.js**: Cleaned Feb 2026 (30→20 exports) with `makeLogo()` DRY. "Dirt Ball" → "Dirtball" filename override suggests inconsistent asset naming.
+### `server/services/solana.js`
+**LOC:** 354 (first 100 shown) | **Purpose:** Dispatch layer for SOL wager management
+**Key exports:**
+- `shouldUseEscrowV2(playerCount)` — route 1v1 to v1, N>2 to v2
+- `validateMatchMode(mode, wagerSOL, matchLength)` — validate wager tier + format against match mode
+- `MATCH_MODES` constant (practice/quick_match/duel/high_roller/custom_challenge)
+- `WAGER_TIERS` constant (0, 0.1, 0.25, 0.5, 1.0 SOL)
+- Re-exports from escrow-v2: createMatchEscrowV2, buildDepositTransactionV2, getEscrowStateV2, settleMatchEscrowV2, cancelMatchEscrowV2, isEscrowV2Enabled
+**Behavior:**
+- shouldUseEscrowV2 returns true for 3+ players (v2), false for 1v1 (v1)
+- validateMatchMode checks wager within range + format in allowed list; custom_challenge skips tier whitelist
+**Risk markers:**
+- **CHAIN:** Re-exports v2 functions so main.js doesn't import from escrow.js/escrow-v2.js directly (cleaner dispatch)
+- **API:** WAGER_TIERS and MATCH_MODES must stay in sync with client (LobbyScreen.js has a duplicate definition)
+**Focus:** CHAIN, API
 
 ---
 
-## Audit Recommendations
+## MEDIUM PRIORITY Files
 
-1. **Escrow math (escrow.js):** Fuzz-test 90/7/3 split with varied pot sizes (1 lamport, max u64). Confirm no rounding leaks.
-2. **Account resolution (escrow-v2.js):** Verify all PDA references have `pda` in IDL or are passed as non-PDA explicit accounts.
-3. **Race conditions (main.js, lifecycle.js):** Add optimistic locking (version field) to Match + GroupMatch schemas. Prevent double-settle.
-4. **Socket auth (main.js):** Enforce wallet signature verification on EVERY event, not just connect. Consider JWT bearer token as alternative to per-event signatures.
-5. **TOCTOU (solana.js):** Move balance check to settlement time, not lobby join. Or use on-chain escrow deposit to gate match start (Escrow v2 design is correct here).
-6. **Privy rollout:** Once PRIVY_APP_ID + PRIVY_APP_SECRET set on Render, verify enforcement is active (test 401 without token).
-7. **Replay protection (shot-token.js):** Move verified burn TX set to MongoDB (persistent across restarts). Or require burn account signature from msg.sender.
-8. **Telegram bot (bot.js):** Add schema validation to all command handlers. Reject malformed inputs early.
-9. **Disconnect timers (main.js):** Use `roomId + playerId` composite key for turn timers, not just `roomId`. Clear on room removal.
-10. **Key management (keys.js):** Consider rotating escrow keypair to a multi-sig or hardware wallet for production.
+### `server/services/arcadeBot.js`
+**LOC:** 521 | **Purpose:** Multi-game Telegram bot launcher (@TheArcadeGG_Bot)
+**Key exports:**
+- `initArcadeBot()` — Telegraf instance setup (token from ARCADE_BOT_TOKEN env)
+- `setupArcadeBotWebhook(app)` — register webhook path /arcade-bot
+- `stopArcadeBot()` — graceful shutdown
+**Commands:**
+- `/games` — list all arcade games (SolShot, Basketball, Keepie Uppies, Free Kicks)
+- `/<slug>` — launch specific game (basketball, keepieuppies, freekicks); mint per-game JWT + redirect
+**Game registry:**
+- Each game has: slug, name, Vercel URL, leaderboard secret env var, session minter
+**Risk markers:**
+- **BOT:** Separate Telegraf instance from SolShotGG_bot; separate webhook path
+- **AUTH:** Per-game JWT minted with telegramUserId + username; secret from env `<GAMESLUG>_LEADERBOARD_SECRET`
+- **INFRA:** Render CORS_ORIGINS must include all game Vercel URLs or score POST blocked
+**Focus:** BOT, AUTH
+
+### `server/services/bot.js`
+**LOC:** 1202 | **Purpose:** Game-specific Telegram bot (@SolShotGG_bot, hackathon-frozen)
+**Commands:** `/play`, `/stats`, `/leaderboard`, `/link`, `/wallet`, `/prestige`, `/customgame`, `/duel`, `/cancel`, `/join`, `/cancelmatch`
+**Risk markers:** Massive file; socket/webhook integration for group-chat matches via global.__solshotIo
+**Focus:** BOT, API, AUTH
+
+### `server/services/funnel.js`
+**LOC:** 147 | **Purpose:** Onboarding funnel instrumentation (S1-T2)
+**Key exports:**
+- `recordFunnelEvent(stage, identity, metadata, via)` — write FunnelEvent to MongoDB
+- `getFunnelAggregates(range)` — aggregate by stage, count unique identities, compute per-step retention
+**Stages:** register → auth → wallet_linked → first_deposit → first_settle
+**Risk markers:**
+- **DATA:** recordFunnelEvent logs to console with greppable format; getFunnelAggregates returns retention.fromPrev = uniqueIds[i] / uniqueIds[i-1]
+- **API:** Admin-only endpoint, requires x-admin-key
+**Focus:** DATA, API
+
+### `server/services/walletLinkTokens.js`
+**LOC:** 113 | **Purpose:** Magic-link token lifecycle (32-byte CSPRNG, 10-min TTL)
+**Key exports:**
+- `generateLinkToken(telegramUserId, ...)` — create one-shot CSPRNG token, store in memory, return token
+- `consumeLinkToken(token)` — fetch + delete token; returns entry or null if expired/used
+**Risk markers:**
+- **CRYPTO:** Uses crypto.randomBytes(32) for token generation
+- **AUTH:** Single-use + 10-min TTL; burned on first call regardless of outcome (guards against retry-based attacks)
+**Focus:** CRYPTO, AUTH
+
+### `server/services/shot-token.js` (continued)
+**Purpose:** Prestige burn verification (verifyBurnTransaction() deprecated in v3 but code retained)
+**Focus:** AUTH, DATA
+
+### `client/src/wallet/WalletContext.js`
+**LOC:** ~400–500 | **Purpose:** Privy + signing orchestrator (main auth entry point for web)
+**Key exports:**
+- `WalletContext` — React context providing wallet state, signing methods
+- `signAndSendEscrowDeposit(matchId, wagerSOL)` — build + sign TX via Privy, confirm on RPC, notify server
+- `signAndBurnShot(burnAmount)` — SPL burn instruction (v3: deprecated in favor of off-chain prestige unlock)
+- `walletAddress`, `isConnected`, `balance` — state
+**Behavior:**
+- Privy embedded wallet (replacement for Dynamic, pre-migration was Dynamic+Para+Privy)
+- On first load: tries to connect, fallback to unauthenticated (browser uid only)
+- signAndSendEscrowDeposit deserializes base64 TX from server, signs, broadcasts, waits for confirmation
+**Risk markers:**
+- **AUTH:** Privy session gates wallet access; signAndSendEscrowDeposit is soft auth (graceful fail if unsigned)
+- **FE:** Balance check is client-side RPC call + Privy balance fetch; server re-verifies on deposit
+**Focus:** AUTH, FE
+
+### `client/src/screens/LobbyScreen.js`
+**LOC:** ~800–1000 | **Purpose:** Match mode selection + room creation/join (4P support in S1-T5)
+**Key features:**
+- Match mode tabs: Practice, Quick Match, Duel, High Roller, Custom Challenge
+- Wager tier selection + format (BO1/BO3/BO5)
+- Create room (host) or join existing (guest)
+- Escrow deposit flows for N-player matches
+- MATCH_MODES definition (must sync with server solana.js)
+**Risk markers:**
+- **LOGIC:** MATCH_MODES definition in two places (client + server) — manual sync required
+- **API:** Calls server createRoom / joinRoom socket events
+- **FE:** Mode tabs + wager UI + escrow flows
+**Focus:** LOGIC, API, FE
+
+### `client/src/screens/GroupBattleWrapper.js` / `GroupDepositScreen.js`
+**LOC:** ~300–400 each | **Purpose:** N-player group-chat match flows
+**Key features:**
+- Escrow deposit countdown (2 min)
+- Both players confirm balance deduction + TX before round 1
+- Escrow-active signal triggers battle start
+**Risk markers:**
+- **CHAIN:** Waits for escrowActive socket event before proceeding
+- **FE:** Countdown + TX toast feedback
+**Focus:** CHAIN, FE
+
+### `server/models/*.js` (User, Match, GroupMatch, Challenge, FunnelEvent, *Score, etc.)
+**LOC:** ~40 files, ~30–3600 LOC each | **Purpose:** Mongoose schemas + validation
+**Key models:**
+- **User.js** (5313 LOC): telegramUserId, walletAddress, uid, handle, stats, cosmetics, walletHistory, prestige tier, SHOT balance
+- **Match.js** (1619 LOC): legacy match doc (mostly unused in v2+)
+- **GroupMatch.js** (15505 LOC): group-chat match state, escrow details, deposits, settlements, state machine
+- **Challenge.js** (2916 LOC): 1v1 wager challenge, deeplink code, status lifecycle
+- **FunnelEvent.js** (3615 LOC): onboarding event log (stage, identity, metadata, timestamp, ipHash)
+- **BasketballScore.js**, **KeepieUppiesScore.js**, **FreeKicksScore.js** (~2100 LOC each): leaderboard score docs
+- **WagerWaitlist.js** (1378 LOC): email signup for v2 beta
+**Risk markers:**
+- **DATA:** Schemas define enums (Match.status, GroupMatch.state, Challenge.status), regex (referralCode), min:0 validators (wager)
+- **INFRA:** H032 fix — mongoose.set('runValidators', true) enforces validation on all update paths
+**Focus:** DATA, INFRA
+
+### `server/scripts/*.mjs` (14+ files)
+**LOC:** ~1–12K each | **Purpose:** One-shot maintenance scripts (auth required for destructive ops)
+**Key scripts:**
+- **init-config-mainnet.mjs** (12K): Initialize v2 escrow config on mainnet; takes CLI args for treasury/ops wallets + fee BPS
+- **propose-authority-v2.mjs**, **accept-authority-v2.mjs** (2-4K): Bundle 1 timelock authority rotation
+- **apply-config-update-v2.mjs**, **update-config-v2.mjs** (2-3K): Rotate treasury/ops/fee BPS
+- **reconcile-wallets.mjs** (7.8K): Audit trail for wallet rotations; fix orphans + conflicts
+- **recover-stuck-v2.mjs** (6.9K): Manual match recovery (settle/refund stuck matches)
+- **find-privy-owner.mjs** (6.8K): Lookup Privy DID by telegram/wallet/email
+- **smoke-*.mjs** (4–7K): Smoke tests for funnel, wallet rotation, etc.
+- **wipe-user.mjs** (2.2K): Delete all user data (GDPR deletion)
+**Risk markers:**
+- **INJ:** Scripts read regex from CLI args (find-user.mjs); minimal validation
+- **CRYPTO:** Scripts load keypair same as index.js (via initKeys)
+- **INFRA:** Most scripts connect to MongoDB directly; some do RPC calls
+**Focus:** INJ, CRYPTO, INFRA
 
 ---
 
-## File Counts by Category
+## MEDIUM PRIORITY (continued)
 
-| Category | Files | Avg LOC/File |
-|----------|-------|--------------|
-| Entry & Middleware | 4 | 187 |
-| Models | 6 | 161 |
-| Services (core) | 18 | 485 |
-| Services (challenge) | 7 | 109 |
-| Services (groupchat) | 7 | 153 |
-| Socket handlers | 2 | 1,135 |
-| Scripts | 10 | 48 |
-| **Server Subtotal** | **54** | **988** |
-| React screens | 31 | 251 |
-| Phaser scene & classes | 9 | 337 |
-| Wallet & auth | 2 | 395 |
-| Components | 27 | 107 |
-| Hooks & utilities | 13 | 109 |
-| Weapons & data | 5 | 246 |
-| **Client Subtotal** | **87** | **211** |
-| **Grand Total** | **142** | **594** |
+### `client/src/scenes/main/index.js`
+**LOC:** ~1500–2000 | **Purpose:** Phaser game scene (artillery gameplay)
+**Key systems:**
+- Tank + terrain rendering
+- Physics delegation to server (server-authoritative)
+- Weapon selection + aiming UI
+- Damage/hit feedback
+- Round/match lifecycle
+**Risk markers:**
+- **FE:** Client computes trajectory for visual preview only; server physics is truth
+- **LOGIC:** Round-end checks, turn advancement
+**Focus:** FE, LOGIC
 
+### `client/src/components/design/*`
+**LOC:** ~100–300 each | **Purpose:** Design system components (wallet display, TX toast, terrain, HUD)
+**Key components:**
+- **TxToastHost.js** — TX submission feedback (fixed May 7: was ignoring toast.duration)
+- **Terrain.js** — terrain visualization
+- **TopBar.js**, **ScreenHeader.js** — HUD layout
+**Risk markers:**
+- **FE:** TxToastHost bug fixed (duration honoring); depends on socket events for TX status
+**Focus:** FE
+
+---
+
+## LOW PRIORITY Files (listed for completeness)
+
+- `client/src/components/` — UI components (Modal, Button, Layout, etc.)
+- `client/src/data/` — constants (weapons, tiers, logos)
+- `client/src/utils/` — helpers (formatting, storage, math)
+- `server/services/ai.js` (472 LOC) — Shot Bot (practice AI)
+- `server/services/monitoring.js` (211 LOC) — error tracking + health metrics
+- `server/services/gold.js` (134 LOC) — in-game currency calculation
+- `server/services/match.js` (351 LOC) — legacy match helper
+- `server/services/physics.js` (1545 LOC) — weapon physics (delegated from server; called by escrow settle logic)
+- `server/services/physics.js` — weapon physics (delegated from server; called by escrow settle logic)
+
+---
+
+## SKIP ENTIRELY
+
+- `node_modules/` — dependencies
+- `target/`, `dist/`, `build/` — build artifacts
+- `.bulwark/`, `.audit/`, `.bok/`, `.audit-history/` — audit working directories
+- `_archive/` — old design exports (not active code)
+- `programs/` — Anchor on-chain code (SOS scope)
+- `pool/` — separate 8-ball pool project (stashed in working tree)
+
+---
+
+## Authentication Summary
+
+| Method | Type | TTL | Usage | Enforced? |
+|--------|------|-----|-------|-----------|
+| **Privy JWT** | Access token | ~30 min | `/api/wallet/link-from-privy-telegram`, arcade session mint, mint-session | requirePrivyAuth (soft or strict) |
+| **Magic-link token** | CSPRNG 32B | 10 min | `/api/wallet/link-from-tg-token` (primary) | consumeLinkToken, single-use |
+| **Telegram initData** | Mini-app header | session | Socket.IO + bot commands | telegramSocketMiddleware |
+| **Admin key** | HTTP header (x-admin-key) | ∞ | `/stats`, `/admin/funnel`, `/admin/reload-keys` | crypto.timingSafeEqual (timing-safe) |
+| **Game JWT** | HS256 per-game secret | 10 min | `/api/games/<slug>/score`, `/api/games/<slug>/leaderboard` | verifySession per game |
+
+---
+
+## Focus Area Cross-Reference
+
+| Category | Files (sorted by relevance) | Risk Density |
+|----------|-----|-------|
+| **SEC** (secrets, env vars) | keys.js, privyAuth.js, arcadeBot.js, index.js | HIGH |
+| **AUTH** (access control, identity) | guards.js, privyAuth.js, users.js, walletLinkTokens.js, main.js (socket auth check) | HIGH |
+| **INJ** (injection: SQL/NoSQL, command, path traversal) | guards.js (sanitizeName profanity), index.js (challenge code), scripts/*.mjs (regex from CLI) | MEDIUM |
+| **WEB** (CORS, CSP, HTTPS redirect, headers) | index.js (helmet CSP, CORS_ORIGINS), main.js | MEDIUM |
+| **CHAIN** (on-chain calls, escrow, settlement) | escrow-v2.js, solana.js, main.js (escrow flows), shot-token.js (burn verification deprecated) | HIGH |
+| **API** (HTTP routes, socket events, validation) | index.js (30 routes), main.js (45+ socket events), guards.js (validatePayload, validateFireParams) | HIGH |
+| **DATA** (persistence, schema, PII) | User.js, funnel.js, shot-token.js, index.js (IP hashing for feedback) | MEDIUM |
+| **FE** (React, client-side logic) | WalletContext.js, LobbyScreen.js, GroupBattleWrapper.js, BattleScene.js | MEDIUM |
+| **INFRA** (process lifecycle, caching, rate limiting) | index.js (rate limit, socket cap, keep-alive), main.js (reconnect window, locks) | MEDIUM |
+| **DEP** (dependencies, versions) | package.json (server + client) | LOW |
+| **BOT** (Telegram bot implementation) | bot.js, arcadeBot.js, index.js (webhook setup) | MEDIUM |
+| **ERR** (error handling, logging) | guards.js (safeHandler), main.js (try/catch on settlement), monitoring.js | MEDIUM |
+| **CRYPTO** (signing, hashing, RNG) | keys.js, walletLinkTokens.js, privyAuth.js | HIGH |
+| **LOGIC** (game rules, state machines) | main.js (turn logic, round-end checks), users.js (identity merge priority), solana.js (wager validation) | HIGH |
+
+---
+
+## Top 5 Files by Risk-Marker Count
+
+1. **main.js** (5198 LOC) — 8 markers: LOGIC, CHAIN, AUTH, API, INJ, ERR, INFRA (tight coupling of all subsystems)
+2. **index.js** (1408 LOC) — 7 markers: SEC, AUTH, INJ, WEB, API, DATA (HTTP entry point, many routes)
+3. **guards.js** (228 LOC) — 5 markers: AUTH, INJ, CRYPTO (core validation + auth)
+4. **escrow-v2.js** (640 LOC) — 3 markers: CHAIN, CRYPTO (on-chain integration)
+5. **users.js** (377 LOC) — 3 markers: DATA, LOGIC, AUTH (identity merging complexity)
+
+---
+
+## Files That Could Not Be Fully Classified
+
+None — all HIGH/MEDIUM priority files summarized above. Files in LOW/SKIP categories are either simple (< 200 LOC), non-critical (archive/artifacts), or out-of-scope (Anchor programs).
+
+---
+
+## Notes for DB Phase 1 Auditors
+
+- **Start with:** main.js (gameplay logic + escrow flows) → index.js (HTTP + auth gates) → guards.js (validation) → escrow-v2.js (on-chain)
+- **Auth is distributed:** Privy JWT on some routes, magic-link on others, admin key on 2 routes, game JWT on arcade leaderboards, TG initData on socket. No single auth layer — check each entry point.
+- **Escrow routing:** shouldUseEscrowV2(playerCount) in solana.js dispatches. N>2 always uses v2; 1v1 uses v1 (deprecated but still deployed).
+- **Socket event handlers:** ~45 handlers in main.js. Start with joinRoom (core), ready (start signal), shoot (physics), escrowDepositConfirm (settlement gate).
+- **Mongo schemas:** Strict validation enabled globally (H032). enums enforced on Match.status, GroupMatch.state, Challenge.status. Regex on referralCode. Min:0 on wager.
+- **SHOT currency:** Off-chain only (v3 pivot); no SPL token. Balances in User.stats.shotBalance; milestones checked via closure functions.
+
+---
+
+**Total files indexed:** 45 (HIGH=12, MEDIUM=15, LOW=18+)  
+**Total indexed LOC:** ~18,500 server + client  
+**Audit scope:** All HTTP routes, all socket handlers, all service integrations, key models, key scripts  
+**Excluded:** on-chain (programs/), build artifacts (target/dist/), dependencies (node_modules/)

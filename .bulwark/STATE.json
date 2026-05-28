@@ -1,152 +1,101 @@
 {
   "skill": "dinhs-bulwark",
   "version": "1.0.0",
-  "updated": "2026-05-07T08:00:00Z",
-  "audit_id": "db-solshot-2026-05-07",
-  "audit_number": 2,
-  "git_ref": "5f2acec",
-  "config": {
-    "tier": "deep",
-    "batch_size": 5,
-    "ecosystem": "solana-offchain",
-    "protocol_types": ["game-server", "wagering", "wallet-integration", "socket-io-realtime", "group-chat-async", "embedded-wallet-privy"],
-    "models": {
-      "index": "haiku",
-      "phase1": "sonnet",
-      "quality_gate": "haiku",
-      "strategize": "opus",
-      "investigate": "sonnet",
-      "investigate_tier3": "haiku",
-      "coverage": "sonnet",
-      "report": "opus",
-      "verify": "sonnet"
-    },
-    "selected_auditors": [
-      { "id": "SEC-01", "name": "Private Key & Wallet Security" },
-      { "id": "SEC-02", "name": "Secret & Credential Management", "always_select": true },
-      { "id": "AUTH-01", "name": "Authentication Mechanisms" },
-      { "id": "AUTH-03", "name": "Authorization & Access Control" },
-      { "id": "INJ-01", "name": "SQL & NoSQL Injection" },
-      { "id": "INJ-05", "name": "Prototype Pollution & Deserialization" },
-      { "id": "WEB-02", "name": "CORS, CSP & Security Headers" },
-      { "id": "CHAIN-01", "name": "Transaction Construction & Signing" },
-      { "id": "CHAIN-02", "name": "RPC Client & Node Trust" },
-      { "id": "CHAIN-03", "name": "Wallet Integration & Adapter Security" },
-      { "id": "CHAIN-06", "name": "Program Account & PDA Interaction" },
-      { "id": "API-03", "name": "WebSocket & Real-Time Security" },
-      { "id": "DATA-01", "name": "Database & Query Security" },
-      { "id": "DATA-04", "name": "Logging & Information Disclosure", "always_select": true },
-      { "id": "DATA-05", "name": "Encryption & Data Protection" },
-      { "id": "DEP-01", "name": "Package & Dependency Security", "always_select": true },
-      { "id": "ERR-01", "name": "Error Handling & Fail Modes", "always_select": true },
-      { "id": "ERR-02", "name": "Race Conditions & Concurrency" },
-      { "id": "ERR-03", "name": "Rate Limiting & Resource Exhaustion" },
-      { "id": "CRYPTO-01", "name": "Random Number Generation & Nonces" },
-      { "id": "LOGIC-01", "name": "Business Logic & Workflow Security" },
-      { "id": "LOGIC-02", "name": "Financial & Economic Logic", "always_select": true }
-    ],
-    "auditor_count": 22
-  },
-  "phases": {
-    "scan": {
-      "status": "complete",
-      "completed_at": "2026-05-07T08:00:00Z",
+  "updated": "2026-05-28T19:50:00Z",
+  "audit_id": "db-solshot-v1-mainnet-rc1-2026-05-28",
+  "audit_number": 3,
+  "git_ref": "da04b5e",
+  "git_tag": "v1-mainnet-rc1 (+ N001/N002/N003 audit fixes)",
+  "previous_audit": {
+    "path": ".bulwark-history/2026-05-07-5f2acec",
+    "audit_id": "db-solshot-2026-05-07",
+    "audit_number": 2,
+    "git_ref": "5f2acec",
+    "date": "2026-05-07",
+    "complete": true,
+    "tier_prior": "deep",
+    "summary": {
+      "confirmed_critical": 23,
+      "confirmed_high": 40,
+      "confirmed_medium_low": "TBD (from prior FINAL_REPORT)",
       "files_scanned": 142,
-      "loc_estimated": 84270,
-      "static_scan": {
-        "server_npm_audit": "20 vulnerabilities (7 moderate, 13 high) — was 30 in Feb",
-        "client_npm_audit": "47 vulnerabilities (13 low, 8 moderate, 25 high, 1 critical) — was 131 in Feb",
-        "env_files_tracked": 0,
-        "secrets_in_source": 0,
-        "secrets_in_docs": 2,
-        "secrets_in_docs_note": "Both hits in Docs/ are reference text (env var names, grep patterns) — not actual secrets",
-        "keypair_files_in_tree": 0
-      }
-    },
-    "analyze": {
-      "status": "complete",
-      "completed_at": "2026-05-07T11:00:00Z",
-      "agents_completed": 22,
-      "agents_total": 22,
-      "batches_completed": 5,
-      "batches_total": 5,
-      "total_output_kb": 8421,
-      "quality_gate": "skipped (agents produced concrete file:line evidence)",
-      "preliminary_finding_counts": {
-        "critical": 23,
-        "high": 40,
-        "medium": 30,
-        "low": 20,
-        "novel": 8,
-        "note": "Counts will be refined in strategize/investigate phases. Cross-agent corroboration is strong (e.g., wallet rotation gap and refundWager fail-open both confirmed by 2+ independent agents)."
-      }
-    },
-    "strategize": {
-      "status": "complete",
-      "completed_at": "2026-05-07T11:30:00Z",
-      "strategies_generated": 122,
-      "tier_1_count": 40,
-      "tier_2_count": 50,
-      "tier_3_count": 32,
-      "novel_count": 79,
-      "kb_count": 18,
-      "recheck_count": 25,
-      "novel_percent": 65,
-      "novel_target_met": true,
-      "cross_skill_chains": 5
-    },
-    "investigate": {
-      "status": "skipped",
-      "reason": "User chose to skip Phase 4. Tier 1 strategies are already CONFIRMED with file:line evidence from Phase 1 context auditors. Cross-agent corroboration provides sufficient confidence for fix triage. Phase 5 report will synthesize directly from Phase 1 outputs.",
-      "skipped_at": "2026-05-07T11:35:00Z"
-    },
-    "report": {
-      "status": "complete",
-      "completed_at": "2026-05-07T12:00:00Z",
-      "report_file": ".bulwark/FINAL_REPORT.md",
-      "report_lines": 1466,
-      "headline": "23 CRITICAL / 40 HIGH / 30 MEDIUM / 20 LOW. Safe for hackathon devnet; NOT safe for mainnet until Bundles A+B+D land. 5 cross-skill attack chains identified. 2 regressions vs Feb."
-    },
-    "verify": { "status": "pending" }
-  },
-  "cross_skill": {
-    "sos_available": true,
-    "sos_audit_path": ".audit/",
-    "sos_summary": "SOS Audit #2 complete (commit 7296e95). 50 findings: 4 CRIT/14 HIGH/4 MED/6 LOW + 22 NOT_VULNERABLE. 9 fixed in source. Documented at Docs/internal/REMEDIATION_DECISIONS.md.",
-    "bok_available": true,
-    "bok_audit_path": ".bok/",
-    "bok_summary": "BOK Audit #2 complete (commit 5f2acec). 41 invariants verified, 159/159 tests passing. All 9 fix-bundle constants non-regressive.",
-    "gl_available": true,
-    "gl_docs_path": ".docs/",
-    "gl_summary": "Grand Library Feb 2026 docs available — token-economics.md, edge-case-playbook.md, security-model.md, architecture.md, etc."
+      "loc_estimated": 84270
+    }
   },
   "stacking": {
     "is_stacked": true,
     "handover_generated": true,
     "massive_rewrite": false,
+    "rewrite_override_reason": "Many files modified (62K LOC delta across 922 files mostly in arcade + client UI) but core off-chain stack (Express + Socket.IO + Privy + Mongo + Anchor v2 wrappers) is recognizable from #2. Verification agents CAN map prior findings to current line numbers.",
     "delta": {
-      "new_files": 127,
-      "modified_files": 71,
-      "deleted_files": 3,
-      "unchanged_files": 50,
-      "churn_percent": 67,
-      "below_massive_threshold": true,
-      "verification_agents_will_run": true
+      "server_files_modified": 30,
+      "client_files_modified": 33,
+      "new_operational_scripts": 11,
+      "new_models": 2,
+      "deleted_categories": ["SHOT on-chain burn paths (S2-T3/T4 pivot)"]
     }
   },
-  "previous_audit": {
-    "audit_number": 1,
-    "date": "2026-02-24",
-    "git_ref": "ecfd03b",
-    "archive_path": ".bulwark-history/2026-02-24-ecfd03b/",
-    "confirmed_count": 70,
-    "critical_count": 12,
-    "high_count": 34,
-    "medium_count": 18,
-    "low_count": 6,
-    "potential_count": 29,
-    "not_vulnerable_count": 31,
-    "files_scanned": 93,
-    "verdict": "Not safe for production deployment with real funds in its current state."
+  "config": {
+    "tier": "standard",
+    "batch_size": 3,
+    "ecosystem": "solana-offchain",
+    "protocol_types": ["game-server", "wagering", "wallet-integration", "socket-io-realtime", "embedded-wallet-privy", "telegraf-bot", "arcade-hub"],
+    "models": {
+      "index": "haiku",
+      "phase1": "sonnet",
+      "synthesis": "opus"
+    },
+    "selected_auditors": [
+      { "id": "BUNDLE-1", "name": "AUTH / Identity Composition", "covers": ["H001", "H002", "H003", "H004", "H006", "Bug-7-followup"] },
+      { "id": "BUNDLE-2", "name": "CHAIN / TX / Mainnet Operational", "covers": ["new mainnet scripts", "H120-leg-2", "S2-T7-delta"] },
+      { "id": "BUNDLE-3", "name": "DATA / SOCKETS / LOGIC / ERR", "covers": ["H013", "H014", "H015", "H016", "H018", "H019", "H020", "H022", "S2-T6 atomicity", "new admin endpoints"] }
+    ],
+    "auditor_count": 3
+  },
+  "phases": {
+    "scan": {
+      "status": "complete",
+      "completed_at": "2026-05-28T19:50:00Z",
+      "files_scanned": 192,
+      "loc_estimated": 60561,
+      "hot_spots_total": 2000
+    },
+    "analyze": {
+      "status": "complete",
+      "completed_at": "2026-05-28T20:00:00Z",
+      "bundles": {
+        "01_auth_identity": "complete",
+        "02_chain_mainnet": "complete",
+        "03_data_sockets_logic": "complete"
+      },
+      "total_output_kb": 120
+    },
+    "strategize": { "status": "folded_into_bundles" },
+    "investigate": { "status": "folded_into_bundles" },
+    "report": {
+      "status": "complete",
+      "completed_at": "2026-05-28T20:15:00Z",
+      "report_file": ".bulwark/FINAL_REPORT.md",
+      "report_size_bytes": 57854,
+      "report_lines": 601,
+      "verdict": "CONDITIONAL GO + 6 must-fix items (~2 hours Priority 1 + ~1 hour Priority 2 replay-window fix = ~3 hours focused work)",
+      "prior_critical_resolved_count": 10,
+      "prior_critical_open_count": 8,
+      "new_findings_critical": 3,
+      "new_findings_high": 9,
+      "new_findings_medium": 7,
+      "new_findings_low": 3,
+      "top_3_must_fix": [
+        "CHAIN-N01: Update client/.env.production mainnet program IDs (~30 min)",
+        "CHAIN-N02: Regenerate IDL via anchor build, copy to server/idl/ (~15 min)",
+        "AUTH-N01: Move consumeLinkToken() AFTER linkTelegramIdentity success in index.js (~5 min)"
+      ],
+      "joint_mainnet_assessment": "Off-chain stack is mainnet-ready after must-fixes within V1 scope. Combined with SOS audit #3 N001/N002/N003 fixes already landed, the joint posture is significantly closer to launch than prior audit pair."
+    }
+  },
+  "cross_skill": {
+    "sos_available": true,
+    "sos_audit_3_complete": true,
+    "sos_findings_relevant_to_db": ["N001 timelock reset DoS (no off-chain impact)", "N002 migrate_config removed (server wrappers now dead code — flag as cleanup)", "N003 apply pause-gate (no off-chain impact)"]
   }
 }

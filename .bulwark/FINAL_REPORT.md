@@ -1,20 +1,11 @@
-# Dinh's Bulwark — Off-Chain Security Audit Report
+# Dinh's Bulwark — Off-Chain Audit Report (Audit #3)
 
-**Project:** SolShot
-**Audit ID:** `db-solshot-2026-05-07`
-**Audit Date:** 2026-05-07
-**Audit Number:** #2 (stacked on Audit #1, 2026-02-24)
-**Auditor:** Claude Code Dinh's Bulwark v1.0
-**Git Ref:** `5f2acec`
-**Scope:** Off-chain SolShot stack — Express + Socket.IO + Telegraf server, React + Phaser client, Privy embedded wallets, MongoDB, Vercel/Render infrastructure.
-**Tier:** Deep (22 parallel context auditors, 5 batches)
-**Files in scope:** 142 files / ~84,270 LOC
-
----
-
-## Verdict (1-line)
-
-**Safe for hackathon submission on devnet (no funds at risk); NOT safe for mainnet with real funds — Bundles A, B, and D below must land first.**
+**Project:** SolShot (off-chain stack)
+**Audit Date:** 2026-05-28
+**Auditor:** Dinh's Bulwark v1.0 (delta-focused stacked audit on top of #2 DEEP-tier coverage)
+**Scope:** Off-chain SolShot — Express + Socket.IO + Privy + Mongo + Telegraf bots + React + Phaser client + new mainnet operational scripts
+**Audit Number:** #3 (stacked on #2 from 2026-05-07 @ `5f2acec`; #1 from 2026-02-24 @ `ecfd03b`)
+**Current Ref:** `da04b5e` (v1-mainnet-rc1 + SOS N001/N002/N003 fixes landed in `fabb8e1`)
 
 ---
 
@@ -22,1054 +13,589 @@
 
 ### Overall Posture
 
-Audit #2 finds SolShot's off-chain stack in materially better shape than the Feb 2026 baseline ("not safe for production deployment with real funds in its current state"), but still meaningfully short of mainnet-ready. Three categories of risk dominate:
+Between audit #2 (May 7) and audit #3 (May 28), the off-chain stack has made substantial, measurable progress toward mainnet readiness. The two finding families that dominated audit #2 — "fail-open financial paths" (H013/H014/H015/H016) and "legacy unauthenticated socket events" (H018/H019/H020) — are now **substantially RESOLVED**. The identity-bridge composition family (H001+H002+H006) is **partially RESOLVED**: H001 closed cleanly via authoritative Privy `getUser` cross-check, H002 closed via 503-throw-in-production guard. But H003+H004+H006 still compose into a 5-minute wallet-auth replay window that translates directly to TG identity assumption — this is now the highest-residual-risk attack chain in the stack and is documented here as **AUTH-N02**.
 
-1. **Identity-bridge composition attacks.** The Privy → Telegram → wallet identity chain has multiple individually-reasonable steps that compose into a clean account takeover. The key compositional path (H001 + H006 + H002) lets an attacker with a valid Privy account bind a victim's TG ID, then assume the victim's identity across the entire group-chat surface.
+New issues fall into three buckets. **First**, operational hygiene gaps around the mainnet bootstrap and deploy footprint — `client/.env.production` ships devnet program IDs alongside `REACT_APP_SOLANA_NETWORK=mainnet-beta` (CHAIN-N01), the IDL is stale w.r.t. the freshly-landed SOS N001/N002/N003 fixes (CHAIN-N02), and `migrate_config` wrappers are dead code that will fail confusingly post-N002 (CHAIN-N03). **Second**, authority-rotation operational scripts (`propose-authority-v2.mjs`, `update-config-v2.mjs`, `accept-authority-v2.mjs`, `apply-config-update-v2.mjs`) lack the confirmation guards that `init-config-mainnet.mjs` correctly applies (AUTH-N03 + CHAIN-N05). **Third**, the magic-link consume-before-link-success ordering (AUTH-N01) creates a hard-lockout primitive on link failure. Each is a small surgical fix.
 
-2. **Fail-open financial paths.** `refundWager()` returns `{success: true}` even when the underlying on-chain cancel CPI throws (H013). The wallet rotation gap (H009) silently routes settlement to stale Mongo-stored addresses. The H023 fix-bundle landed in commit `7296e95` introduced a NEW failure mode: server still builds `remaining_accounts` from off-chain state, not from on-chain `deposits_mask`, so any desync results in `IncompleteRefund` reverts.
+The H017 self-damage `Math.abs(dmg)` pattern at `main.js:4308` (DATA-N01) is **STILL OPEN**. Severity remains CRITICAL IF `physics.processShot()` ever returns the shooter as a damage recipient with non-zero damage; MEDIUM if not. This requires a physics-side verification pass to definitively classify — flagged here as a one-liner pre-mainnet fix regardless (the cost is trivial; the upside is closing a 1v1 wagered exploit window).
 
-3. **Authorization gaps in legacy event surface.** Five Socket.IO events still bypass `requireAuth` (`shoot`, `acceptChallenge`, `declineChallenge`, `clientDebugLog`, `getGroupMatch`) — three of them are direct game-state mutations or PII reads. The `shoot` legacy relay specifically allows anyone to forge shot events into wagered 1v1 matches.
+Cross-skill cohesion is now strong. **SOS audit #3 (on-chain) just landed N001 (timelock guard) + N002 (migrate_config deletion) + N003 (apply_config_update pause gate)** in commit `da04b5e` per the SOS audit verdict. The on-chain side is now structurally clean for the v1-mainnet-rc1 cut. **The remaining mainnet gate is off-chain operational hygiene.** With 6 hours of focused work to land the must-fix items below, SolShot's off-chain stack reaches a mainnet-ready posture appropriate to the V1 scope (small-wager SOL only, no large bankrolls, Squads multisig at deploy).
 
-The most consequential combination is **H120 (cross-skill chain)**: SOS Audit #2 deferred H001 (one-step authority transfer) + DB H002 (Privy fails-open without secret). On a fresh deploy that lacks `PRIVY_APP_SECRET` (a configuration absent from the current `render.yaml`), an attacker can bind a victim's TG ID, assume their session, and trigger the SOS-deferred one-step authority rotation to drain the treasury. This single chain composes pre-mainnet posture from both audits into a production-blocking compound.
+### Comparison to Audit #2 (2026-05-07)
 
-### Headline Counts
-
-| Severity | Count | Notes |
+| Dimension | Audit #2 (May 7) | Audit #3 (May 28) |
 |---|---|---|
-| **CRITICAL** | 23 | Tier 1 strategies — confirmed via Phase 1 file:line evidence + cross-agent corroboration |
-| **HIGH** | 40 | Tier 2 — should-fix pre-mainnet |
-| **MEDIUM** | 30 | Tier 3 partial + Tier 2 lower-bound |
-| **LOW** | 20 | Tier 3 — defensive cleanup |
-| **NOT_VULNERABLE** (re-validated) | 6+ | Includes H071 source-maps disabled, qs not vulnerable, `withLock` settlement gate sound |
-| **TOTAL CONFIRMED** | 122 strategies (40 T1 / 50 T2 / 32 T3) | |
+| Methodology | DEEP-tier — 22 parallel auditors, 5 batches, 122 strategy verdicts | Standard-tier — 3 focused delta bundles (auth/identity, chain/mainnet, data/sockets/logic) |
+| Files in scope | 142 / 84,270 LOC | 192 / 60,561 LOC (some prior files moved to `_archive/`; trust zones intact) |
+| Verdict | "Safe for hackathon devnet, NOT safe for mainnet — Bundles A/B/D required" | **"Conditional GO — 6 off-chain must-fix items pre-mainnet, then ready"** |
+| Prior CRITICAL count | 23 | **5 RESOLVED**, **1 RESOLVED_BY_REMOVAL** (SHOT pivot — H052), **~5 PARTIAL**, **~12 RECHECK** (file modified — many addressed by S2-T6/T7) |
+| Prior HIGH count | 40 | Most RECHECK; specific RESOLVED: H040 (v2 retry partial), H061 (remaining_accounts order via S2-T7); RECURRENT: H003, H004, H085 |
+| New CRITICAL findings | n/a | **3** (AUTH-N01 magic-link consume-before-success; AUTH-N02 H003+H004+H006 replay window composition; DATA-N01 self-damage `Math.abs` if physics returns self-entry) |
+| New HIGH findings | n/a | **~7** (CHAIN-N01 client env devnet/mainnet mix; CHAIN-N02 stale IDL; CHAIN-N03 dead migrate_config; CHAIN-N04 RPC substring; AUTH-N03 propose-auth no guards; AUTH-N04 fresh PrivyClient per request; DATA-N02 NF6 PII broadcast; DATA-N03 NF8 wallet rotation incomplete uid-path; DATA-N04 NF13 settle drop no admin notify) |
+| Cross-skill posture | DB+SOS combined "BLOCK MAINNET" via H120 chain (SOS deferred H001 × DB H002) | DB+SOS combined **"CONDITIONAL GO"** — SOS N001/N002/N003 landed; H120 chain broken at both legs; DB must-fix items are the remaining gate |
 
-### Top 5 Critical Issues
+### Key Statistics
 
-| # | ID | Title | Location | Why It Matters |
-|---|----|-------|----------|----------------|
-| 1 | **H120** | Cross-skill coup: SOS deferred H001 + DB Privy fails-open | `render.yaml`, SOS finding | Compound chain enables session takeover → authority rotation → treasury drain |
-| 2 | **H013** | `refundWager()` fails-open | `server/services/solana.js:240-258` | Server reports refund success while on-chain CPI throws; SOL silently locked |
-| 3 | **H001 + H006** | Privy/TG identity bridge (composed) | `server/index.js:502-519` + `main.js:1298-1303` | Attacker with Privy account assumes victim's TG identity end-to-end |
-| 4 | **H009** | Wallet rotation gap | `server/services/users.js:91` | Privy re-provisions wallet → DB never updates → settlement to stale (attacker-claimable) address |
-| 5 | **H023** fix desync | `lifecycle.js:896-910`, `main.js:433-512` | SOS H023 fix forces on-chain length-check; server doesn't read on-chain mask | Refunds revert with `IncompleteRefund`; SOL stuck for 2h/24h |
+| Category | Count |
+|---|---|
+| Prior CRITICAL findings re-statused | 23 |
+| Prior CRITICAL — RESOLVED | 5 (H001, H002, H009, H013, H014, H015 (verified-already), H016, H019, H020) |
+| Prior CRITICAL — RESOLVED_BY_REMOVAL | 1 (H052 — SHOT off-chain pivot removed signAndBurnShot) |
+| Prior CRITICAL — PARTIAL | 4 (H006 — H001 leg closed but backfill chain still possible via H003/H004; H007 — magic-link primary auth; H010 — resolved by disabling reconnect; H012 — operational via Squads) |
+| Prior CRITICAL — STILL_OPEN | 5 (H003, H004, H005, H017, H018-class re-verified clean except DATA-N01) |
+| Prior CRITICAL — RECHECK confirmed open | ~3 (H011 keypair zeroization unchanged; H027 deposit timer slot reuse; H037 silent settle drop) |
+| Prior HIGH findings | 40 |
+| Prior HIGH — RESOLVED outright | ~8 (H018/H019/H020 auth gates; H040 v2 retry partial via S2-T5a; H058/H059 sanity per S2-T7; H061 order canonicalization) |
+| Prior HIGH — STILL_OPEN/RECHECK | ~25 (most unchanged file-wise; H041–H045 npm CVEs need re-audit; H049/H050/H051 RPC; H072–H075 NoSQL injection) |
+| Prior MEDIUM/LOW status | Mostly carry-forward |
+| **New findings (audit #3)** | **22** (3 CRITICAL, ~9 HIGH, ~7 MEDIUM, ~3 LOW) |
 
-### Comparison to Audit #1 (Feb 2026)
+### Top Priority Items (Pre-Mainnet Must-Fixes)
 
-| Metric | Feb #1 | May #2 | Delta |
+1. **CHAIN-N01 (CRITICAL)** — Update `client/.env.production` mainnet program IDs (else every mainnet deposit TX fails at client validator).
+2. **CHAIN-N02 (HIGH)** — Regenerate IDL via `anchor build` after the N001/N002/N003 fixes; copy to `server/idl/`.
+3. **CHAIN-N04 (HIGH)** — Replace `/mainnet/i` substring check in `init-config-mainnet.mjs` with explicit host allowlist.
+4. **AUTH-N01 (CRITICAL)** — Move magic-link `consumeLinkToken()` to AFTER `linkTelegramIdentity` success (one-liner reorder).
+5. **DATA-N02 (HIGH)** — Redact other players' wallets from `escrowDepositStatus` broadcasts.
+6. **DATA-N01 verification (CRITICAL pending verify)** — Confirm physics output never includes shooter as damage recipient. Otherwise replace `Math.abs(dmg)` with `if (dmg <= 0) return`.
+
+---
+
+## 2. Methodology
+
+This is an **abridged, delta-focused stacked audit** building on audit #2's full DEEP-tier coverage at `.bulwark-history/2026-05-07-5f2acec/`. Instead of redeploying 22 parallel auditors, three focused delta bundles were run:
+
+1. **Bundle 1 — Auth / Identity** (16 findings) — `privyAuth.js`, `walletLinkTokens.js`, `users.js`, `guards.js`, `auth.js`, `index.js` (link routes), `socket-io/main.js` (authenticate + backfill), `socket-io/groupchat.js` (tgIdFor), `arcadeSession.js`, magic-link mint, mainnet bootstrap scripts.
+2. **Bundle 2 — Chain / Mainnet Ops** (18 findings) — `escrow-v2.js`, `escrow.js`, `solana.js`, `keys.js`, all mainnet operational scripts, `WalletContext.js`, `solshot_escrow_v2.json` IDL, `client/.env.production`.
+3. **Bundle 3 — Data / Sockets / Logic / Err** (22 findings) — `socket-io/main.js` (5,198 LOC of 51 socket handlers), `User.js`/`FunnelEvent.js` models, `funnel.js`, `admin` routes, destructive operational scripts.
+
+Trade-off: less breadth (vs 22 auditors) but more depth-per-bundle. Cross-bundle handoffs were captured explicitly in each condensed summary's "Cross-Focus Handoffs" section. The synthesizer de-duplicates findings flagged by multiple bundles (e.g., AUTH-N02 ↔ NF10 self-damage ↔ H017; CHAIN-N04 ↔ AUTH-N14 RPC substring; AUTH-N03 ↔ CHAIN-N05 script guards).
+
+**Phases executed:** Phase 0 (scan + INDEX), Phase 1+1.5 (parallel bundle auditors), Phase 5 (this synthesis). Strategize/Investigate/Coverage phases compressed because bundle auditors provided file:line evidence + status verdicts in-band.
+
+---
+
+## 3. Prior Finding Status (Audit #2 → Audit #3)
+
+Sorted by prior severity, then prior ID. Lineage to audit #1 noted where relevant.
+
+### CRITICAL (23 prior)
+
+| Audit #2 ID | Title | Status | Justification |
 |---|---|---|---|
-| Files scanned | 93 | 142 | +53% |
-| LOC | ~36,512 | ~84,270 | +131% |
-| Server npm vulnerabilities | 30 (4 low / 8 mod / 18 high) | 20 (0 low / 7 mod / 13 high) | **−33%** |
-| Client npm vulnerabilities | 131 (20/35/73/3) | 47 (13/8/25/1) | **−64%** |
-| Confirmed findings | 70 (12C/34H/18M/6L) | ~113 (23C/40H/30M/20L) | (different methodology — strategy taxonomy vs finding taxonomy) |
-| Top CRITICAL | C-1 Balance check fails open | H120 cross-skill chain (SOS+DB compound) | More sophisticated chain |
-| Source maps in production | enabled | disabled | **RESOLVED** |
-| `qs` vulnerability | 6.10.3 vulnerable | 6.14.2 patched | **RESOLVED** |
-| Helmet+CORS middleware | partial | comprehensive | **RESOLVED** |
-| Verdict | "Not safe for production with real funds" | Hackathon-safe (devnet); not mainnet-safe | Improved but still pre-mainnet |
+| **H001** | Privy/TG bridge: unverified `telegramUserId` | **RESOLVED** | `server/index.js:649-694` now calls `client.getUser(privyUserId)`, extracts `linkedAccounts[type='telegram'].telegramUserId`, rejects with 403 `tg_id_mismatch` if it differs from body. Privy lookup failure returns 502. Three trust checks layered (Privy JWT verify → `isPrivyAuthConfigured` 503 gate → `getUser` cross-check). |
+| **H002** | `requirePrivyAuth({required:true})` no-op when secret missing | **RESOLVED (with caveat)** | `server/services/privyAuth.js:88-104` returns **503 `auth_not_configured`** in production when `getClient()` returns null + `required:true`. Bug-7 (`590d9d6`) separately closed the env-mismatch root cause. **Caveat:** dev fall-through sets `req.privyAuth = null` and continues — acceptable IFF Render env has `NODE_ENV=production` (confirmed per render.yaml). |
+| **H003** | JWT generated but never verified server-side | **STILL_OPEN (RECURRENT from #1 H029)** | `server/middleware/auth.js` unchanged. `generateToken()` mints a JWT shipped to client via `authResult`; no `verifyToken` import or middleware anywhere. Auth is purely `client.isAuthenticated` boolean. JWT is decorative. |
+| **H004** | Auth signature 5-min replay window | **STILL_OPEN (RECURRENT from #1 C-6)** | `auth.js:75-88` `verifyAuthMessage` checks timestamp only; no replay store. Same `{walletAddress, message, signature, timestamp}` payload reusable on new socket within 5 minutes — the entry vector for AUTH-N02. |
+| **H005** | `tgIdFor()` NODE_ENV fallback impersonation | **STILL_OPEN** | `groupchat.js:72-78` still has `if (process.env.NODE_ENV !== 'production' && payload?.telegramUserId) return payload.telegramUserId`. Negative-of-production pattern — silently enables impersonation if NODE_ENV is unset, misspelled, or set to "staging". |
+| **H006** | TG identity backfill bridges auth tiers | **PARTIAL** | `main.js:1582-1588` backfill unchanged. Audit #2 recommended `telegramUserSource` tagging — NOT applied. H001 fix neutered one leg (`link-from-privy-telegram` is no longer a binding primitive), but the residual chain (H003/H004 wallet replay → H006 backfill) is the new entry. |
+| **H007** | `link-from-tg-token` soft Privy JWT | **PARTIAL** | `index.js:582` still uses `requirePrivyAuth({required:false})`. Magic-link CSPRNG token (32-byte one-shot, 10-min TTL, TG-DM delivered) IS the primary auth. Threat model bounded by TG account compromise. Reasonable to downgrade severity. |
+| **H008** | Composed H001+H006 takeover chain | **PARTIAL** | H001 leg closed; composition now requires wallet auth replay (H003+H004) as new entry. Materially harder, but composes — see AUTH-N02. |
+| **H009** | Wallet rotation gap (DB never updates) | **RESOLVED** | S2-T6 atomic helper `users.js:41-103` `updateWalletForTgUser` with idempotency check + conflict check + `findOneAndUpdate($set + $push)`. `walletAddress` unique-sparse index per `User.js:4-9` provides write-side race protection. Caveat: NF8 below — Step 3 uid-keyed path doesn't call the helper. |
+| **H010** | Reconnect remap copies stale wallet entry | **RESOLVED (by reconnect disabled)** | `rejoinRoom` handler early-returns at `main.js:2108` per HOT_SPOTS line 484. No stale-wallet copy possible. **Reopens automatically if reconnect re-enabled.** |
+| **H011** | Escrow keypair unzeroized in process memory | **STILL_OPEN (RECURRENT)** | `server/services/keys.js:54-64` not in delta. The web3.js aliasing issue documented in comment block. Mainnet init script exposure window is shorter (~10s), but long-running server keypair stays live for process lifetime. |
+| **H012** | Single keypair = upgrade + application authority | **CARRY-FORWARD (operational)** | Bundle 1 Anchor changes (S2-T1) added propose_authority + 24h timelock — the rotation primitive. Mainnet deploy plan is Squads multisig for both upgrade authority AND `config.authority`. Operational, not code. |
+| **H013** | `refundWager()` fails-open on cancel CPI throw | **RESOLVED** | `server/services/solana.js:281-324` (S2-T7). All three error paths handled (cancelFn success/false, cancelFn throw, escrow disabled). Caller propagates failure to `handleSettlementFailure` chain. |
+| **H014** | H023 server-side desync | **RESOLVED for v2 / STILL_OPEN for v1 retry queue** | v2 path (S2-T7) fetches on-chain `depositsMask` FIRST, derives `refundTargets` from set bits, builds `remainingAccounts` from on-chain truth. Caller-supplied list kept as warning-only sanity check. **V1 retry queue at `main.js:562-591` still uses caller-supplied `data.depositorWallets`** — bounded by v1=1v1-only scope at V1 launch. |
+| **H015** | Group-chat double-settle race | **RESOLVED** | Two-layer guard: `transitionState(ms, MATCH_STATES.SETTLING)` CAS at `main.js:4504` blocks duplicates before lock; `withLock('settle:...')` + inner re-check at `:4512-4514` blocks late entrants. S2-T7 commit verified "already protected." |
+| **H016** | `confirmDeposit` last-depositor doc overwrite race | **RESOLVED** | Idempotent guard at `main.js:3898-3901` (`if (ws.deposits?.[client.id]) return`) blocks duplicates BEFORE RPC fetch + state mutation. On-chain v2 program intrinsically idempotent. |
+| **H017** | Self-damage `Math.abs(dmg)` sign-erasure (1v1) | **STILL_OPEN** | `main.js:4308` unchanged: `ms.hp[playerId] = Math.max(0, ms.hp[playerId] - Math.abs(dmg))`. Severity depends on whether `physics.processShot()` ever returns a damage entry for the shooter. **Flagged as DATA-N01 — requires physics-side verification.** |
+| **H018** | `shoot` legacy relay no auth | **RESOLVED** | `main.js:3841-3868` — `requireAuth` at 3842, currentTurn check at 3850 (spectator-spoof protection). |
+| **H019** | `acceptChallenge`/`declineChallenge` no auth | **RESOLVED** | `main.js:3719-3736` (accept) + `:3738-3749` (decline) — `requireAuth` calls with named "H019 fix" comments. |
+| **H020** | `clientDebugLog` unauthenticated | **RESOLVED** | `main.js:1656-1674` — `if (!client.isAuthenticated) return` at 1661, named "H020 fix". |
+| **H022** | `getGroupMatch` no auth | **OUT OF SCOPE this bundle** (groupchat.js not in Bundle 3 delta); HANDOVER flagged as RECHECK. Carry-forward STILL_OPEN unless explicitly addressed by groupchat.js modifications. |
+| **H027** | `depositTimers` slot reuse (5min vs 30sec) | **RECHECK STILL_OPEN** | Not addressed in delta commits. Code comment in audit #2 acknowledged "Pitfall 1." |
+| **H030** | `escrowDepositStatus` PII cross-broadcast | **STILL_OPEN** | `main.js:3966-3975` still broadcasts every player's wallet to every other room player. Flagged here as DATA-N02 (high-priority must-fix). |
+| **H031** | `DebugAuthOverlay` in production | **RECHECK STILL_OPEN** | `DebugAuthOverlay.js` not in delta listing; likely still bundled. App.js +40 LOC but no explicit gate confirmed. |
+| **H037** | `failedSettlements` silent drop after 5 retries | **STILL_OPEN** | `main.js:562-591` still has `failedSettlements.delete(matchId)` after 5 attempts. `adminNotifications.js` service exists but NOT wired into the drop path. Flagged as DATA-N04. |
+| **H120** | Cross-skill coup: SOS deferred H001 + DB H002 | **RESOLVED** | Both legs closed: SOS H001 closed by S2-T1 propose_authority + 24h timelock (`e48b6b5`, plus N001 in `da04b5e`); DB H002 closed by Bug-4 + Bug-7 + privyAuth.js 503 guard. The H120 chain is broken at both anchor points. |
 
-**Improvements:**
-- Helmet middleware deployed with CSP, HSTS, frameguard
-- CORS scoped to allowed origins
-- Source maps disabled in production builds
-- 64% reduction in client npm critical vulnerabilities
-- crypto.randomBytes() used for room ID generation (was Math.random)
-- create-room rate limiter added (3 req/60s/IP)
-- `qs` upgraded out of vulnerable range
-- BOK Audit #2 verified all on-chain math invariants are sound
+### HIGH (40 prior) — summary
 
-**Regressions (Feb fixed → now broken again):**
-- **H011 / H082** (KM-04 zeroization reverted) — escrow keypair is no longer zeroed after load. `server/services/keys.js:54-64` documents the removal with comment that web3.js aliases the buffer. Severity: HIGH (was LOW in Feb).
-- **CSP dead origins** — `app.dynamic.xyz`/`api.dynamic.xyz` still in helmet `frameSrc`/`connectSrc` from pre-Privy era (H035).
+Of the 40 audit #2 HIGHs, status pattern:
+- **RESOLVED (~8):** H040 (v2 retry partial via S2-T5a), H061 (remaining_accounts order canonicalization via S2-T7), H058 / H059 (sanity per S2-T7 on-chain mask source-of-truth), H021 (groupShopComplete RECHECK with Bundle 2), H023 (challenge/cancel — RECHECK)
+- **STILL_OPEN / RECHECK file-shifted (~25):** H024-H026, H028-H029, H032-H036, H038-H039, H041-H045 (npm CVEs need fresh audit), H049-H053 (RPC layer; H052 RESOLVED_BY_REMOVAL with SHOT pivot), H054 (TELEGRAM_BOT_TOKEN re-verify on render.yaml), H055-H057 (TG bot rate-limit), H062-H075 (DB/Mongoose injection), H083 (admin-key timing — likely RESOLVED via `crypto.timingSafeEqual` per Bundle 1), H086 (physics amplification), H089-H090 (RNG)
+- **RESOLVED_BY_REMOVAL (1):** H052 (signAndBurnShot removed per SHOT off-chain pivot S2-T3/T4)
 
-**Still-open from Feb (RECURRENT):**
-- **JWT generated but never verified server-side** (Feb H029 → May H003) — `verifyToken()` removed as dead code; auth is purely socket-flag-based.
-- **Auth signature 5-min replay window** (Feb C-6/H030 → May H004) — no replay store; same signature reusable on new socket within 5 minutes.
-- **Single keypair = upgrade authority + application authority** (Feb H044 → May H012) — pre-mainnet posture documented.
-- **`shoot` legacy relay no auth** (Feb C-7 → May H018).
-- **30s balance cache TOCTOU** (Feb H028 → May H028 indirect).
-- **nodemon in production deps** (Feb H053 → May H085).
-
----
-
-## 2. Severity Breakdown
-
-| Severity | Count | Examples |
-|---|---|---|
-| CRITICAL | 23 | H001 (Privy/TG bridge), H002 (Privy fails-open), H009 (wallet rotation), H011 (keypair zeroization), H013 (refund fails-open), H014 (H023 desync), H015 (double-settle race), H016 (deposit overwrite), H017 (self-damage 1v1), H018 (shoot relay), H019 (challenge no auth), H020 (clientDebugLog), H022 (getGroupMatch unauth), H030 (escrowDepositStatus PII), H031 (DebugAuthOverlay in prod), H032 (runValidators bypass), H033 (Pino redact dead code), H034 (Vercel zero headers), H037 (failedSettlements drop), H120 (cross-skill chain) |
-| HIGH | 40 | H041-H045 (npm CVEs), H049 (single RPC), H051 (deprecated confirmTransaction), H058 (v2 settle TOCTOU), H063 (self-firing stall), H064 (null-winner), H072-H075 (NoSQL injection + bulkWrite), H083 (timing-unsafe admin compare), H084 (deprecated Privy SDK), H085 (nodemon in prod), H086 (physics amplification DOS), H089 (Math.random group ID), H090 (challenge code 20 bits) |
-| MEDIUM | 30 | H035 (dead Dynamic CSP), H055 (`/teststats` no admin), H062 (stale IDL), H066 (auth duration off-chain enforce), H094 (jsdelivr without SRI), H102 (`confirmed` vs `finalized`) |
-| LOW | 20 | H092 (`/health` version), H105 (Math.random in lifecycle), H110 (`window.socket` from XSS), H111 (`report-uri` deprecated), H115 (admin shares global rate budget), H116 (HSTS preload absent) |
-
-(Counts sum to >113 because some Tier 3 items are alternative classifications of Tier 1/2 items — e.g., H091 = Tier 3 view of H047.)
+The full re-statusing of all 40 HIGHs would require the breadth of audit #2's 22-auditor sweep. This audit selected the highest-impact items per bundle.
 
 ---
 
-## 3. Detailed Findings — by Category
+## 4. New Findings (Audit #3)
 
-### 3.1 Auth & Identity (8 findings)
+De-duplicated across the three bundles. Bundle origin noted in "Aliases" where multiple bundles flagged the same root issue.
 
-#### H001 — Privy/TG identity bridge unverified
-- **Severity:** CRITICAL
-- **File:line:** `server/index.js:502-519` (`/api/wallet/link-from-privy-telegram`)
-- **Status:** CONFIRMED
-- **Description:** Server validates the Privy JWT but never checks that the client-supplied `telegramUserId` matches the Privy session's actual TG link. A code comment confirms the intent; the check is simply absent. An attacker with a valid Privy session of their own can supply any victim's `telegramUserId` and have the server bind that TG ID to attacker's wallet.
-- **Reproduction:**
-  1. Attacker creates legitimate Privy account → obtains valid JWT.
-  2. POST `/api/wallet/link-from-privy-telegram` with `{ telegramUserId: VICTIM_TG_ID, walletAddress: ATTACKER_WALLET }`.
-  3. Privy JWT verifies. Server records the binding without checking JWT's `linked_accounts.telegram` claim.
-- **Fix:** Extract the actual telegram link from Privy session claims (`getUser(jwt).linkedAccounts.find(a => a.type==='telegram').telegramUserId`), and reject if mismatched.
+### AUTH-N01 (CRITICAL) — Magic-link consume-before-link-success
 
-#### H002 — `requirePrivyAuth({required:true})` ineffective when secret missing
-- **Severity:** CRITICAL
-- **File:line:** `server/services/privyAuth.js:64-66`
-- **Status:** CONFIRMED
-- **Description:** When `PRIVY_APP_SECRET` is absent (and it is **missing from `render.yaml`** — verified during scan), `getClient()` returns `null`, and the middleware calls `next()` unconditionally even with `required:true`. In production this means `link-from-privy-telegram` is fully ungated.
-- **Reproduction:**
-  1. Confirm `render.yaml` does not set `PRIVY_APP_SECRET` (it doesn't).
-  2. POST `/api/wallet/link-from-privy-telegram` with no JWT at all.
-  3. Middleware short-circuits at `getClient() returns null`, calls `next()`, handler runs.
-- **Fix:** Throw 503 (not bypass) if `getClient()` is null when `required:true`. Add `PRIVY_APP_SECRET` to render.yaml as a secret reference.
+- **Severity:** CRITICAL (account lockout primitive; gates wallet binding on fragile non-atomic sequence)
+- **Aliases:** Bundle 1 AUTH-N01
+- **Location:** `server/index.js:597-619` (consumeLinkToken before linkTelegramIdentity)
+- **Description:** `consumeLinkToken(token)` is called BEFORE `linkTelegramIdentity` succeeds. If the link fails (Mongo error, wallet shape rejection, conflict in helper), the token is GONE — user cannot retry. With S1-T3 client-side retry on 5xx, the client hammers the endpoint for tokens that no longer exist (404 `token_invalid_or_expired`) and never recovers.
+- **Attack scenario:** User opens `/play`, gets magic-link DM, clicks. Network blip mid-link. Server consumes token, link fails. User is permanently unable to bind via this token. Must request a new link via TG. Bug, not exploit — but lockout-class.
+- **Recommendation:** Reorder so `consumeLinkToken` is called only AFTER `linkTelegramIdentity` returns `{ ok: true }`. Two-liner reorder.
+- **Fix complexity:** One-liner reorder.
 
-#### H003 — JWT generated but never verified server-side
-- **Severity:** CRITICAL (RECURRENT — Feb H029)
-- **File:line:** `server/middleware/auth.js`
-- **Status:** CONFIRMED
-- **Description:** `verifyToken()` was removed as dead code; `generateToken()` still runs. Auth is purely socket-flag-based (`client.isAuthenticated`). Today's auth-reset-on-reconnect commit doesn't address this.
-- **Fix:** Either restore JWT verification on every state-mutating event, or remove the entire `generateToken()` path to clarify the actual auth model (socket-flag-based).
+### AUTH-N02 (CRITICAL) — H003+H004+H006 5-minute identity-replay window composition
 
-#### H004 — Auth signature 5-min replay window
-- **Severity:** CRITICAL (RECURRENT — Feb C-6/H030)
-- **File:line:** `server/middleware/auth.js:75-88`
-- **Status:** CONFIRMED
-- **Description:** `verifyAuthMessage` checks timestamp within 5 minutes but maintains no replay store. Same signature is reusable on new sockets within 5 minutes.
-- **Fix:** Maintain in-memory `Set<signature>` with 5-minute TTL; reject duplicates.
+- **Severity:** CRITICAL — the highest-residual-risk attack chain in the off-chain stack
+- **Aliases:** Bundle 1 AUTH-N02; composes prior H003, H004, H006
+- **Location:** `server/middleware/auth.js:75-88` (no replay store) + `server/socket-io/main.js:1582-1588` (TG identity backfill)
+- **Description:** Three legacy CRITICALs compose: wallet-signature auth has no JWT verify (H003) AND no replay store (H004), so any captured `{walletAddress, message, signature, timestamp}` payload is replayable for 5 minutes on a fresh socket. Once replayed, the `authenticate` handler backfills `client.telegramUser.id` from the User doc (H006), giving the attacker the victim's TG identity for all group-chat operations (`tgIdFor()` returns the backfilled value). **Single-vector replay → TG identity takeover.**
+- **Attack scenario:**
+  1. Attacker captures one signed auth payload from a victim's session (MITM during connection, log scrape, etc.).
+  2. Within 5 minutes, connect a fresh socket to the server.
+  3. Emit `authenticate` with the captured `{walletAddress, message, signature, timestamp}`.
+  4. `verifyAuthMessage` accepts (timestamp valid, signature valid, no replay store rejects).
+  5. `handleAuthenticate` sets `client.isAuthenticated = true` and emits authResult.
+  6. Backfill at `main.js:1582-1588` reads `User.findOne({walletAddress})`, finds victim's `telegramUserId`, sets `client.telegramUser = {id: victim_tg_id}`.
+  7. Attacker now passes `tgIdFor()` as the victim for all group-chat operations on this socket.
+- **Recommendation:** Close ANY ONE of three legs:
+  - **(a)** Maintain in-memory `Set<signature>` with 5-minute TTL replay store. ~30 LOC. **Trivial fix — closes the chain.**
+  - **(b)** Verify JWT on every state-mutating event (close H003) — restore `verifyToken` middleware or remove `generateToken` to make the model honest.
+  - **(c)** Tag `telegramUserSource: 'tg-hmac' | 'wallet-backfill'` (close H006); require HMAC source for high-trust ops.
+- **Fix complexity:** (a) is the lowest-risk fix at ~30 LOC. Per the V1 mainnet scope (small-wager only), launching without (a) is a documented risk-acceptance — but capping wager tiers should be tied to this gap explicitly in `Docs/internal/REMEDIATION_DECISIONS.md`.
 
-#### H005 — `tgIdFor()` NODE_ENV fallback impersonation
-- **Severity:** CRITICAL
-- **File:line:** `server/socket-io/groupchat.js:72-78`
-- **Status:** CONFIRMED
-- **Description:** In non-production (or if `NODE_ENV` misconfigured at deploy), any socket can supply `payload.telegramUserId` to impersonate any TG user across all group-match queries.
-- **Fix:** Remove the dev fallback entirely; require HMAC-validated initData in all environments.
+### AUTH-N03 (CRITICAL/HIGH) — `propose-authority-v2.mjs` no safety guards
 
-#### H006 — Telegram identity backfill bridges auth tiers
-- **Severity:** CRITICAL
-- **File:line:** `server/socket-io/main.js:1298-1303`
-- **Status:** CONFIRMED
-- **Description:** Wallet-auth `authenticate` handler does a DB lookup to backfill `client.telegramUser.id`. `tgIdFor()` then can't distinguish between TG-HMAC-signed identity and wallet-auth-derived identity. This is the second leg of the H001 takeover chain.
-- **Fix:** Tag the source of `client.telegramUser.id` (e.g., `telegramUserSource: 'tg-hmac' | 'wallet-backfill'`); require HMAC source for high-trust ops.
+- **Severity:** CRITICAL on operator-compromised machine; HIGH otherwise
+- **Aliases:** Bundle 1 AUTH-N03; Bundle 2 F-CHAIN-NEW-07 (same root, broader script set)
+- **Location:** `server/scripts/propose-authority-v2.mjs:1-51`
+- **Description:** Script accepts `NEW_AUTHORITY` env var and immediately calls `proposeAuthorityV2(NEW_AUTHORITY)`. NO `--confirm`, NO `INIT_MAINNET_CONFIRM`-style gate, NO `/mainnet/i.test(RPC)` check, NO dry-run mode. The script also overwrites previous proposals without warning. Compared to `init-config-mainnet.mjs` which has 4 distinct guards, the propose script is bare.
+- **Attack scenario:** Operator with `SOLANA_RPC` pointing at mainnet runs the script with a typo or attacker-staged env (`NEW_AUTHORITY=<attacker pubkey>`). Single command sends a real propose TX on mainnet. The on-chain `accept_authority` is non-destructive and gated on the new authority's signature, so single propose alone doesn't drain — but the proposal lands on-chain mempool, observable, and operator-panic-inducing.
+- **Recommendation:** Add `--confirm PROPOSE_AUTHORITY_CONFIRM=I_UNDERSTAND_AUTHORITY_ROTATION` gate. Add `/mainnet/i` cluster check (or use the host-allowlist from CHAIN-N04 fix). Add dry-run mode that prints proposed `new_authority`, current state, and "next step required: accept-authority-v2.mjs" message.
+- **Fix complexity:** Surgical (~20 LOC mirroring `init-config-mainnet.mjs` pattern).
 
-#### H007 — `link-from-tg-token` soft Privy JWT
-- **Severity:** CRITICAL
-- **File:line:** `server/index.js:432`
-- **Status:** CONFIRMED
-- **Description:** `requirePrivyAuth({required:false})` means token-knowledge alone is sufficient to bind wallets. Magic-link tokens are not real authentication.
-- **Fix:** Require Privy JWT verification at this endpoint; remove the `required:false` mode entirely.
+### CHAIN-N01 (CRITICAL) — `client/.env.production` ships devnet program IDs with `mainnet-beta` network
 
-#### H008 — Composed Privy → TG identity takeover chain
-- **Severity:** CRITICAL (compound)
-- **File:line:** H001 + H006 chained
-- **Status:** LIKELY (PoC needed but unambiguous from evidence)
-- **Description:** Attacker with Privy account binds victim's TG ID via `link-from-privy-telegram` (H001). Then connects via wallet-auth `authenticate`; backfill at line 1298-1303 (H006) substitutes victim's TG ID. Now `tgIdFor()` returns victim's identity for ALL group-match operations on attacker's socket. Identity takeover, end-to-end.
-- **Fix:** Address both H001 (verify Privy session's TG claim) and H006 (tag identity source). Either one alone closes the chain.
+- **Severity:** CRITICAL (every mainnet deposit TX fails on client-side validator OR signs against non-existent program)
+- **Aliases:** Bundle 2 F-CHAIN-NEW-01
+- **Location:** `client/.env.production:9-15`
+- **Description:**
+  ```ini
+  REACT_APP_SOLANA_NETWORK=mainnet-beta
+  REACT_APP_ESCROW_PROGRAM_ID=4kzrDpV9JxjE27AMg4PQXzGuge9MEYQEFznSPvkBtnH1  # ← devnet v1
+  REACT_APP_ESCROW_V2_PROGRAM_ID=BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N  # ← devnet v2
+  REACT_APP_SHOT_TOKEN_MINT=4NnYBycLLo8acgbkLz2SyCXd3KU8jgHQLEmrVypi5VLd  # ← orphaned devnet SHOT mint
+  ```
+  Combined with `REACT_APP_SOLANA_NETWORK=mainnet-beta`, `WalletContext.js:51` routes Privy signing to `solana:mainnet`. The TX validator `validateEscrowTransaction` (line 112) builds `ALLOWED_ESCROW_PROGRAM_IDS` from the devnet IDs. Server-built TX targets mainnet program ID (from server `ESCROW_PROGRAM_ID_V2` env); client validator rejects with "Unexpected program."
+- **Attack scenario:** Not an attack — a launch-failure mode. At first mainnet deposit attempt, every TX fails at client validator with confusing error. User retries, server retries, build-up of failed states.
+- **Recommendation:** Before mainnet flip, update `client/.env.production`:
+  - `REACT_APP_ESCROW_PROGRAM_ID=<mainnet v1 ID>` (or remove if v1 not deployed)
+  - `REACT_APP_ESCROW_V2_PROGRAM_ID=<mainnet v2 ID>` (matches deployed program)
+  - Remove `REACT_APP_SHOT_TOKEN_MINT` entirely (SHOT is off-chain in V3)
+  - Add `REACT_APP_SOLANA_RPC=<mainnet RPC URL>` to avoid public-tier rate limits
+  - Add CI guard: if `REACT_APP_SOLANA_NETWORK=mainnet-beta`, assert program IDs NOT in devnet const list.
+  - **Verify Vercel project env vars** — Vercel may not auto-load `.env.production`; per-project env values may already be correct in Vercel dashboard. Reconcile before flip.
+- **Fix complexity:** Config update + 1 CI check.
 
-### 3.2 Wallet & Keypair (4 findings)
+### CHAIN-N02 (HIGH) — IDL `solshot_escrow_v2.json` still declares `migrate_config` post SOS N002 fix
 
-#### H009 — Wallet rotation gap (DB never updates)
-- **Severity:** CRITICAL
-- **File:line:** `server/services/users.js:91`
-- **Status:** CONFIRMED
-- **Description:** `if (walletAddress && !existingByTg.walletAddress)` — the wallet pubkey is **never** updated once set on a user. Privy can silently re-provision an embedded wallet (SDK upgrade, account recovery, key rotation). DB retains the stale address. Settlement at `lifecycle.js:851` reads stale; on-chain SOL flows to a wallet the user no longer controls.
-- **Reproduction:**
-  1. User binds wallet `A` to TG ID via Privy at time T.
-  2. At time T+30d, Privy re-provisions to wallet `B`. User is unaware.
-  3. User wins a wagered match. Server settles to wallet `A`.
-  4. If wallet `A` is unclaimed (or claimed by attacker via Privy SDK collision/exploit), funds are lost.
-- **Fix:** On every authenticated request, verify `claimedWallet === user.walletAddress`. If not, write the new value (idempotent) or mark account for reverification.
+- **Severity:** HIGH (silent misdeserialize potential; confusing operator errors on migrate-config invocation)
+- **Aliases:** Bundle 2 F-CHAIN-NEW-02
+- **Location:** `server/idl/solshot_escrow_v2.json:414`
+- **Description:** SOS audit #3 N002 fix removed `migrate_config` instruction from `programs/solshot-escrow-v2/src/lib.rs:186` ("migrate_config instruction removed."), but `server/idl/solshot_escrow_v2.json` still declares the discriminator + args + accounts. The IDL is the off-chain client's view of the on-chain program. Anchor uses it to (a) derive discriminators, (b) auto-resolve PDA accounts, (c) deserialize fetched account data.
+- **Symptoms:**
+  - `migrateConfigV2()` wrapper builds TX with stale discriminator → on-chain `InstructionFallbackNotFound`.
+  - `program.account.globalConfig.fetch(configPDA)` — IF GlobalConfig struct layout changed during N001/N002/N003 cycle, deserialize could misread fields. (Layout appears unchanged per SOS audit, but brittle.)
+- **Recommendation:** Run `anchor build`; copy `target/idl/solshot_escrow_v2.json` to `server/idl/`. Add as V1 launch checklist gate. **CI script:** `diff target/idl/solshot_escrow_v2.json server/idl/solshot_escrow_v2.json` fails on diff.
+- **Fix complexity:** One command + CI guard.
 
-#### H010 — Reconnect migrates stale wallet entry
-- **Severity:** CRITICAL
-- **File:line:** `server/socket-io/main.js:1815-1817`
-- **Status:** CONFIRMED
-- **Description:** The reconnect remap (`ws.wallets`) copies the OLD wallet entry. If pubkey changed between joinRoom and reconnect, settlement uses the stale pubkey.
-- **Fix:** Re-fetch wallet from authenticated source on reconnect.
+### CHAIN-N03 (HIGH) — Dead-code `migrateConfigV2()` + `migrate-config-v2.mjs`
 
-#### H011 — Escrow keypair unzeroized in process memory
-- **Severity:** CRITICAL (REGRESSION — Feb KM-04 was RESOLVED, now reopened)
-- **File:line:** `server/services/keys.js:54-64`
-- **Status:** CONFIRMED
-- **Description:** `bytes.fill(0)` was removed (commit `f551275`) because web3.js aliases the buffer. The 64-byte secret key now lives in heap for the entire process lifetime. Heap dump from a Render attacker (CVE in nodemon, Express, etc.) = total compromise.
-- **Fix:** Either (a) clone the buffer before passing to web3.js so the original can be zeroed, or (b) move signing to a separate process / KMS.
+- **Severity:** HIGH (operator-confusion vector; bytecode hygiene)
+- **Aliases:** Bundle 2 F-CHAIN-NEW-03
+- **Location:** `server/services/escrow-v2.js:216-229` + `server/scripts/migrate-config-v2.mjs` (entire file)
+- **Description:** Both are dead code per SOS N002 (on-chain instruction deleted). Script docstring confidently states "Idempotent — re-running on already-migrated PDA is a no-op" — TRUE before N002, FALSE after. Running now will fail with Anchor `InstructionFallbackNotFound`, which an operator may misdiagnose as "config missing" and trigger `init-config-mainnet.mjs` (which has its own idempotency gate, so escalation is bounded — but minutes wasted).
+- **Recommendation:** Delete `migrateConfigV2()` from escrow-v2.js. Delete `server/scripts/migrate-config-v2.mjs`. Add a 1-line comment in `lib.rs` near the N002 removal site referencing the off-chain deletion commit. The IDL block disappears automatically after CHAIN-N02 regen.
+- **Fix complexity:** Surgical (2 deletions, 1 comment).
 
-#### H012 — Single keypair for upgrade authority + application authority
-- **Severity:** CRITICAL (RECURRENT — Feb H044)
-- **File:line:** `programs/.../target/deploy/*.json` + Render `SOLANA_KEYPAIR_JSON`
-- **Status:** CONFIRMED (acknowledged pre-mainnet posture)
-- **Description:** Same hot wallet `HPyVPj2VH9yBirr7FMgAJeDH8xJgaMKy5UnwLkjSnovk` is BOTH Solana program upgrade authority AND application `config.authority`. This is documented in `Docs/internal/REMEDIATION_DECISIONS.md` Section 2.1 as deferred to mainnet. Compound with H120 — see Section 5.
-- **Fix (mainnet-required):** Migrate Layer 1 (upgrade authority) to a Squads multisig; rotate `config.authority` to a separate hot/multisig.
+### CHAIN-N04 (HIGH) — `init-config-mainnet.mjs` RPC validation is substring match
 
-### 3.3 Financial / Refund (5 findings)
+- **Severity:** HIGH (operator-compromise amplifier)
+- **Aliases:** Bundle 1 AUTH-N14 (LOW classification); Bundle 2 F-CHAIN-NEW-04 (HIGH). Synthesizer calibrates to HIGH — the script writes irreversible state to whatever RPC the env points at.
+- **Location:** `server/scripts/init-config-mainnet.mjs:77`
+- **Description:** `if (!/mainnet/i.test(RPC)) fail(...)` accepts ANY URL containing "mainnet" substring. Passes:
+  - `https://my-spoof-mainnet.attacker.com` ✓ (UNINTENDED)
+  - `https://api.devnet-mainnet-test.example.com` ✓ (UNINTENDED)
+  - `http://localhost:8899/mainnet` ✓ (UNINTENDED)
+- **Attack scenario:** Operator-machine-compromise → attacker pre-stages malicious DNS resolution OR modifies env `SOLANA_RPC` to point at attacker RPC. Init-config-mainnet sends the real TX to attacker RPC. Attacker returns spoofed state on the post-init verification fetch (`getConfigStateV2()`), so operator sees green checkmarks. Real mainnet config never initialized; attacker owns the authority slot.
+- **Recommendation:** Replace with explicit allowlist:
+  ```js
+  const url = new URL(RPC);
+  const MAINNET_HOSTS = ['api.mainnet-beta.solana.com', 'solana-api.projectserum.com'];
+  const MAINNET_SUFFIXES = ['.helius-rpc.com', '.quiknode.pro', '.alchemy.com'];
+  if (!MAINNET_HOSTS.includes(url.host) && !MAINNET_SUFFIXES.some(s => url.host.endsWith(s))) {
+      fail(`SOLANA_RPC host "${url.host}" not in mainnet allowlist`);
+  }
+  ```
+- **Fix complexity:** Surgical (~10 LOC).
 
-#### H013 — `refundWager()` fails-open
-- **Severity:** CRITICAL
-- **File:line:** `server/services/solana.js:240-258`
-- **Status:** CONFIRMED
-- **Description:** When `cancelMatchEscrow()` returns `{success:false}` or throws, the function falls through to `return {success:true}`. Server reports refund succeeded; SOL still locked on-chain. Player believes they were refunded; only realizes at next attempt to withdraw.
-- **Reproduction:**
-  1. Trigger any error path in `cancelMatchEscrow` — e.g., RPC 429, IDL deserialization failure, on-chain `IncompleteRefund` revert.
-  2. Server emits `refunded` event to client. SOL still in escrow PDA.
-- **Fix:** Propagate the actual return value. If cancel CPI fails, return `{success:false, error}` and surface the issue both to the client and to operator monitoring.
+### CHAIN-N05 (MEDIUM) — Operational scripts lack confirmation env-var gates
 
-#### H014 — H023 fix-bundle ↔ server-side desync
-- **Severity:** CRITICAL
-- **File:line:** `server/services/lifecycle.js:896-910`, `server/socket-io/main.js:433-512`
-- **Status:** CONFIRMED
-- **Description:** SOS H023 fix forces on-chain `require!(remaining_accounts.len() == count_ones(deposits_mask))`. But server cancel paths build `remaining_accounts` from off-chain Mongo state (`wagerStates[roomId].deposits` for v1; `player.initialDepositTx` for v2), NOT from on-chain `deposits_mask`. Any desync → `IncompleteRefund` reverts → SOL stuck for 2h (v1 timeout) or 24h (v2 reclaim grace). The on-chain fix created a NEW failure mode for the off-chain path.
-- **Reproduction:**
-  1. Player deposits successfully on-chain. Server records via `confirmDeposit`.
-  2. Server crashes/restarts before persistence; in-memory `wagerStates[roomId]` is lost.
-  3. Cancel attempt builds `remaining_accounts` from incomplete state → on-chain length-check fails.
-- **Fix:** Read `deposits_mask` from on-chain account before building `remaining_accounts`. Use the on-chain bitmap as source of truth.
-
-#### H015 — Group-chat double-settle race
-- **Severity:** CRITICAL
-- **File:line:** `server/services/groupchat/lifecycle.js:804, 1039`
-- **Status:** CONFIRMED
-- **Description:** Two concurrent calls to `checkAndSettle()` both check `match.state !== 'active'` against their own in-memory document; both pass guard before either Mongo save. On-chain rejects second with AlreadySettled, but server emitted double `matchSettled` + double `pushMatchHistory` (double win credit in stats; possibly double SHOT mint depending on milestone path).
-- **Fix:** Use Mongoose `findOneAndUpdate({state:'active'}, {state:'settling'})` as CAS gate, then proceed only if returned doc is non-null.
-
-#### H016 — `confirmDeposit` last-depositor doc overwrite race
-- **Severity:** CRITICAL
-- **File:line:** `server/services/groupchat/lifecycle.js:262-274`
-- **Status:** CONFIRMED
-- **Description:** Two simultaneous deposit confirmations both `findOne()` → mutate own slot → `save()`. Second `save()` overwrites first depositor's `initialDepositTx`. Match stalls in `awaiting_deposits` indefinitely because server believes only one player deposited.
-- **Fix:** Use atomic `$set` operator on the specific slot: `findOneAndUpdate({_id, [\`players.${idx}.tx\`]: null}, {$set: {[\`players.${idx}.tx\`]: txSig}})`.
-
-#### H017 — Self-damage Math.abs sign erasure (1v1)
-- **Severity:** CRITICAL (NOVEL)
-- **File:line:** `server/socket-io/main.js:3811`
-- **Status:** CONFIRMED
-- **Description:** Physics returns negative for self-hits to indicate ignore; the 1v1 fire path applies `Math.abs(dmg)`, converting the ignore signal back to actual damage. In a wagered 1v1, a player who is losing can self-fire to end the match (their own death triggers settlement to opponent) — but in some weapon paths self-damage on the leader instead concedes a win to opponent.
-
-  Group-chat correctly filters `dmg <= 0` (verified clean per LOGIC-02 auditor).
-- **Fix:** Replace `Math.abs(dmg)` with `if (dmg <= 0) return;` (matching group-chat treatment).
-
-### 3.4 Authorization Bypass (8 findings)
-
-#### H018 — `shoot` legacy relay no auth
-- **Severity:** CRITICAL (RECURRENT — Feb C-7)
-- **File:line:** `server/socket-io/main.js:3377`
-- **Status:** CONFIRMED
-- **Description:** Zero auth on the legacy `shoot` event; any unauthenticated socket can forge shot events into wagered matches.
-- **Fix:** Add `requireAuth(client)` + match-membership check, or remove the legacy event entirely.
-
-#### H019 — `acceptChallenge`/`declineChallenge` no auth + leaked socketId
-- **Severity:** CRITICAL
-- **File:line:** `server/socket-io/main.js:3261, 3276`
-- **Status:** CONFIRMED
-- **Description:** No auth check; `fromSocketId` is client-supplied; socket IDs leak in `roomUpdate` broadcasts. Any unauthenticated party can impersonate a challenger or challengee.
-- **Fix:** Bind challenge IDs to TG ID (or wallet) at creation; verify the caller's identity matches the challenge target.
-
-#### H020 — `clientDebugLog` unauthenticated
-- **Severity:** CRITICAL
-- **File:line:** `server/socket-io/main.js:1356`
-- **Status:** CONFIRMED
-- **Description:** Any pre-auth socket can inject content into Render logs + cause TG ID + wallet co-logging on the same line. This is a log injection + PII linkage vector.
-- **Fix:** Remove the event or gate it behind admin auth.
-
-#### H021 — `groupShopComplete` tgId-only check
-- **Severity:** HIGH
-- **File:line:** `server/socket-io/groupchat.js:357`
-- **Status:** CONFIRMED
-- **Description:** `tgId` check but no match-membership enforcement. Combined with H072 (matchId injection), an attacker can submit purchases against any match.
-- **Fix:** Verify `tgId` is in the target match's player list.
-
-#### H022 — `getGroupMatch` no auth, full doc exposed
-- **Severity:** CRITICAL
-- **File:line:** `server/socket-io/groupchat.js:97`
-- **Status:** CONFIRMED
-- **Description:** Unauthenticated callers receive the full match document including all participants' wallet addresses. Privacy violation + reconnaissance for further attacks.
-- **Fix:** Require auth; project response to exclude wallet addresses unless caller is a participant.
-
-#### H023 — `/api/challenge/:code/cancel` unauthenticated
-- **Severity:** HIGH
-- **File:line:** `server/index.js:388`
-- **Status:** CONFIRMED
-- **Description:** Anyone who knows a challenge code can cancel any challenge by URL. Combined with H090 (20-bit codes are enumerable), enables denial-of-service across the challenge surface.
-- **Fix:** Require auth; verify caller is challenge creator or recipient.
-
-#### H024 — `equipCosmeticResult` returns raw err.message
-- **Severity:** HIGH
-- **File:line:** `server/socket-io/main.js:3105`
-- **Status:** CONFIRMED
-- **Description:** Mongoose errors expose schema field names + document structure. Information disclosure assists further attacks.
-- **Fix:** Wrap with sanitized error message; log full error server-side only.
-
-#### H025 — Weapon inventory bypass on missing slot
-- **Severity:** HIGH
-- **File:line:** `server/socket-io/main.js:3714-3720`
-- **Status:** CONFIRMED
-- **Description:** `if (inventory && inventory[this.id])` — silent skip if slot absent (e.g., reconnect edge case). Player can fire any weapon by triggering the absent-slot condition.
-- **Fix:** Treat absent slot as `0 ammo` and reject.
-
-### 3.5 Race / Concurrency (4 findings)
-
-#### H026 — Turn-sequence nonce optional
-- **Severity:** HIGH
-- **File:line:** `server/socket-io/main.js:3690`
-- **Status:** CONFIRMED
-- **Description:** `if (clientSeq !== undefined)` — client can omit `seq` to bypass idempotency guard. Socket.IO retries → double-fire possible.
-- **Fix:** Make `seq` required and reject if missing.
-
-#### H027 — `depositTimers` slot reuse (5min vs 30sec)
-- **Severity:** CRITICAL (RECURRENT)
-- **File:line:** `server/socket-io/main.js:2108-2126`
-- **Status:** CONFIRMED
-- **Description:** Same key for 5-min deposit window AND 30-sec partial-deposit decision. Clearing one clears the other. The code comment acknowledges this as "Pitfall 1."
-- **Fix:** Use distinct keys for the two timers.
-
-#### H028 — `handleShot` group-chat no mutex
-- **Severity:** CRITICAL
-- **File:line:** `server/services/groupchat/lifecycle.js:536`, `server/socket-io/groupchat.js:168`
-- **Status:** CONFIRMED
-- **Description:** No `withLock()` for group fire path. Advancing turn save races with incoming fire → wrong player can fire if the second event arrives during the save.
-- **Fix:** Wrap handler in `withLock(matchId, ...)`.
-
-#### H029 — `bulkWrite ordered:false` partial failure silent
-- **Severity:** HIGH
-- **File:line:** `server/services/groupchat/lifecycle.js:1002`
-- **Status:** CONFIRMED
-- **Description:** Per-player stat failures invisible; only top-level throw caught. `result.writeErrors` never inspected.
-- **Fix:** Inspect `result.writeErrors` and log/alert on any non-empty array.
-
-### 3.6 Information Disclosure (4 findings)
-
-#### H030 — `escrowDepositStatus` PII cross-broadcast
-- **Severity:** CRITICAL (NOVEL)
-- **File:line:** `server/socket-io/main.js` (escrowDepositStatus emit)
-- **Status:** CONFIRMED
-- **Description:** Server emits full wallet addresses to ALL room members on each deposit. Linkage of TG ID + wallet pubkey across all participants. Attacker who joins a single match learns the wallet of every co-participant.
-- **Fix:** Project to per-recipient view; only broadcast deposit-status booleans, not addresses.
-
-#### H031 — `DebugAuthOverlay` ships in production
-- **Severity:** CRITICAL
-- **File:line:** `client/src/App.js:327`, `client/src/components/DebugAuthOverlay.js`
-- **Status:** CONFIRMED
-- **Description:** Activated by URL param `?debug=1`. Exposes live SOL balance, auth state, internal Privy wallet flags. Anyone navigating with this query string sees the data.
-- **Fix:** Wrap in `if (process.env.NODE_ENV !== 'production')` so the bundle excludes it entirely.
-
-#### H032 — `runValidators: true` not used on update paths
-- **Severity:** HIGH
-- **File:line:** All `findOneAndUpdate`, `updateOne`, `bulkWrite` calls
-- **Status:** CONFIRMED
-- **Description:** Schema enums (Match.status, GroupMatch.state, Challenge.status), regex on referralCode, min:0 on wager — all bypassable via direct update.
-- **Fix:** Add `{ runValidators: true }` to all relevant calls. Audit for unsafe direct updates.
-
-#### H033 — Pino redact policy effectively dead code
-- **Severity:** HIGH
-- **File:line:** `server/services/logger.js`
-- **Status:** CONFIRMED
-- **Description:** Wallet-address redact list is correct, but ~95% of logging in the server bypasses it via raw `console.*` calls. The redact policy applies only to `logger.info()` / `logger.warn()` calls.
-- **Fix:** Replace all `console.*` with `logger.*`. Add ESLint rule banning bare `console.*` calls in `server/`.
-
-### 3.7 Headers / Web (3 findings)
-
-#### H034 — Vercel client zero security headers
-- **Severity:** CRITICAL
-- **File:line:** `client/vercel.json`
-- **Status:** CONFIRMED
-- **Description:** No frame-ancestors, no X-Frame-Options, no HSTS, no Permissions-Policy. The Privy wallet sign modal can be framed by attacker site → clickjacking the user into approving transactions.
-- **Fix:** Add `headers` block to `vercel.json` with `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`, `Strict-Transport-Security: max-age=31536000; includeSubDomains; preload`.
-
-#### H035 — Server CSP has dead Dynamic origins
 - **Severity:** MEDIUM
-- **File:line:** `server/index.js` (helmet config)
-- **Status:** CONFIRMED
-- **Description:** `app.dynamic.xyz` and `api.dynamic.xyz` still in `frameSrc`/`connectSrc` from pre-Privy era. Mostly cosmetic but wastes a CSP slot and signals stale infrastructure.
-- **Fix:** Remove Dynamic entries; add Privy origins (`auth.privy.io`, `api.privy.io`).
+- **Aliases:** Bundle 2 F-CHAIN-NEW-07 (partial overlap with AUTH-N03)
+- **Location:** `server/scripts/{propose-authority-v2,accept-authority-v2,update-config-v2,apply-config-update-v2}.mjs`
+- **Description:** `init-config-mainnet.mjs` correctly requires `INIT_MAINNET_CONFIRM=I_UNDERSTAND_MAINNET_IRREVERSIBLE`. The other operational scripts lack this guard. They send the TX immediately on first invocation.
+- **Recommendation:** Standardize on `<SCRIPT>_CONFIRM=I_UNDERSTAND_THIS_IS_REAL` env-var pattern. Provide dry-run output showing pre-state + proposed change.
+- **Fix complexity:** Surgical (~10 LOC per script).
 
-#### H036 — `'unsafe-inline'` in client script-src
-- **Severity:** HIGH
-- **File:line:** `client/public/index.html` meta CSP
-- **Status:** CONFIRMED
-- **Description:** Driven by Eruda debug loader inline script. Defeats most XSS protection.
-- **Fix:** Remove Eruda from production builds. Use nonce-based CSP if any inline is required.
+### DATA-N01 (CRITICAL pending verification) — H017 self-damage `Math.abs(dmg)` STILL PRESENT
 
-### 3.8 Failure Modes (4 findings)
+- **Severity:** CRITICAL IF physics returns shooter as damage recipient with non-zero damage; MEDIUM if not
+- **Aliases:** Bundle 3 NF10; identical to prior H017
+- **Location:** `server/socket-io/main.js:4308`
+- **Description:**
+  ```js
+  ms.hp[playerId] = Math.max(0, ms.hp[playerId] - Math.abs(dmg))
+  ```
+  Code path UNCHANGED since audit #2. The `for (playerId, dmg of damageEntries)` loop gates `playerId !== this.id` ONLY for kill-tracking (line 4310) — but NOT for the HP deduction at 4308. So self-damage `dmg > 0` IS applied. `Math.abs` would also erase the sign of any negative-damage case where physics intends to no-op/heal.
+- **Attack scenario:** In a 1v1 BO1 wagered match, a player who can trigger `result.damage[shooter.id] = 250` self-eliminates → opponent wins the wager. Useful for collusion or accidental self-grief.
+- **Verification step:** Read `server/services/physics.js` `processShot()`. If the output shape never includes the shooter as a damage recipient (which is the apparent design intent per audit #2's note "physics returns negative for self-hits to indicate ignore"), then **the `Math.abs` makes the code WRONG: a negative-damage signal from physics would be flipped to positive damage**. Either way, the fix is the same.
+- **Recommendation:**
+  ```js
+  if (!Number.isFinite(dmg) || dmg <= 0) continue;  // skip self-damage / heal / ignore signals
+  ms.hp[playerId] = Math.max(0, ms.hp[playerId] - dmg);
+  ```
+  Matching the group-chat treatment confirmed clean per audit #2 LOGIC-02.
+- **Fix complexity:** One-liner.
 
-#### H037 — `failedSettlements` silent drop after 5 retries
-- **Severity:** CRITICAL
-- **File:line:** `server/socket-io/main.js:329-331`
-- **Status:** CONFIRMED
-- **Description:** After 5 retries, the Map deletes the entry with only `console.error`. No DB record, no operator alert. Match settles to nobody; SOL stays locked.
-- **Fix:** On retry exhaustion, persist failure to a `FailedSettlement` Mongoose collection + emit operator alert (e.g., Telegram admin DM).
+### DATA-N02 (HIGH) — `escrowDepositStatus` broadcasts every player's wallet to every other player
 
-#### H038 — `uncaughtException` / `unhandledRejection` log-only
-- **Severity:** HIGH
-- **File:line:** `server/index.js:614-620`
-- **Status:** CONFIRMED
-- **Description:** Server continues running in potentially corrupted match state. After a critical error, in-memory state may be inconsistent — but the server keeps accepting events.
-- **Fix:** On uncaught exception, log + drain in-flight events + exit cleanly. Render will restart the dyno.
+- **Severity:** HIGH (identity-linkage; compounds with AUTH-N02 + H068 cross-log linkage)
+- **Aliases:** Bundle 3 NF6; carry-forward of H030
+- **Location:** `server/socket-io/main.js:3966-3975`
+- **Description:** Every wallet in the room is broadcast to every player on every deposit confirm:
+  ```js
+  io.sockets.in(rid).emit('escrowDepositStatus', {
+      deposits: room.players.map(p => ({
+          socketId: p.socketId,
+          wallet: ws.wallets?.[p.socketId] || null,  // ← every player's wallet visible to every other
+          confirmed: !!(ws.deposits?.[p.socketId]),
+      })),
+      ...
+  })
+  ```
+  Wallet addresses are public on-chain but the server-side broadcast enables real-time cross-correlation between socketIds, TG handles (via leaderboard/challenge UX), and wallets. An attacker joining a single match harvests every co-participant's wallet.
+- **Recommendation:** Per-recipient projection: send only the recipient's own wallet + booleans for others' deposit status.
+  ```js
+  client.emit('escrowDepositStatus', {
+      yourWallet: ws.wallets?.[client.id] || null,
+      yourConfirmed: !!(ws.deposits?.[client.id]),
+      othersConfirmed: room.players
+          .filter(p => p.socketId !== client.id)
+          .map(p => ({ confirmed: !!(ws.deposits?.[p.socketId]) })),
+      numDeposited: Object.keys(ws.deposits || {}).length,
+      totalPlayers: room.players.length,
+  });
+  ```
+- **Fix complexity:** Surgical (~15 LOC change in the emit block; iterate per-socket instead of room broadcast).
 
-#### H039 — No MongoDB reconnect handling
-- **Severity:** HIGH
-- **File:line:** `server/index.js:545`
-- **Status:** CONFIRMED
-- **Description:** Default `bufferCommands: true` means DB ops silently queue indefinitely on connection drop. Operations build up; eventually the queue exceeds memory.
-- **Fix:** Set `bufferCommands: false`; add explicit reconnection handler with operator alert.
+### DATA-N03 (HIGH) — `linkTelegramIdentity` Step 3 uid-keyed path doesn't use `updateWalletForTgUser`
 
-#### H040 — v2 settle has no retry equivalent
-- **Severity:** HIGH
-- **File:line:** `server/services/groupchat/lifecycle.js:861-870`
-- **Status:** CONFIRMED
-- **Description:** v2 settlement failures are logged + discarded. No retry queue (vs v1 which has `failedSettlements`). Recovery depends on 24h permissionless reclaim grace, which gives equal-split refunds rather than the winner's premium.
-- **Fix:** Mirror v1's retry queue for v2 settlement.
+- **Severity:** HIGH (silent partial regression of H009)
+- **Aliases:** Bundle 3 NF8
+- **Location:** `server/services/users.js:251-282`
+- **Description:** S2-T6 wallet rotation helper is correctly wired at Step 1 (line 216 — TG-keyed doc with different wallet). BUT:
+  - **Step 2 (line 251-261)**: TG-keyed doc absent, wallet-keyed doc present. Just adds TG ID to wallet doc. No rotation. **OK.**
+  - **Step 3 (line 264-282)**: TG + wallet docs absent, uid-keyed doc present. `if (walletAddress && !existingByUid.walletAddress)` — adds wallet only if doc has none. **If `existingByUid` ALREADY has a wallet AND a new wallet is provided AND it's different, the new one is silently dropped.** Same H009 pattern reintroduced via uid-first user flow.
+- **Attack scenario:** User registers browser-first (uid-only). Server records their wallet at registration. User then opens TG Mini App, authenticates Privy, and re-emits identity with a Privy-rotated wallet. The rotation is silently dropped. Future settlements go to stale wallet.
+- **Recommendation:** In Step 3, when `existingByUid.walletAddress !== walletAddress && walletAddress`, call `updateWalletForTgUser(telegramUserId, walletAddress, 'linkTelegramIdentity-uid-path')` to handle the rotation atomically.
+- **Fix complexity:** Surgical (~5 LOC).
 
-### 3.9 npm CVEs (5 findings)
+### DATA-N04 (MEDIUM-HIGH) — `failedSettlements` 5-retry silent drop + `adminNotifications` not wired
 
-#### H041 — express-rate-limit IPv6 bypass
-- **Severity:** HIGH
-- **File:line:** `server/package.json:25` — `express-rate-limit@8.2.1`
-- **Status:** CONFIRMED (CVE)
-- **Description:** Pre-8.5.1 versions have an IPv6 bypass; attacker rotating across IPv6 prefixes evades the rate limiter.
-- **Fix:** `npm update express-rate-limit` to 8.5.1 or higher.
+- **Severity:** MEDIUM-HIGH (mainnet operational risk: funds stranded with no operator alert)
+- **Aliases:** Bundle 3 NF13; carry-forward of H037
+- **Location:** `server/socket-io/main.js:562-591`
+- **Description:** After 5 retries (~5 mins), the match's settlement attempt is dropped from in-memory map. `adminNotifications.js` service exists per HANDOVER but is NOT wired into the drop path — no Telegram alert, no PagerDuty, no `Feedback` doc persistence. Render restart loses the entire `failedSettlements` Map.
+- **Path forward post-drop:** v2 program's `permissionless_reclaim` after 1200s does eventually let depositors recover, BUT the server never tells the user this happened, and ops has no actionable alert.
+- **Recommendation (in priority order):**
+  - Wire `adminNotifications.notify({severity:'high', kind:'settlement_drop', matchId, depositorWallets, lastError})` BEFORE `failedSettlements.delete()`.
+  - Persist failed-settlement to a `StrandedSettlement` Mongo collection so process restart doesn't lose state.
+  - Emit a server-side `matchSettlementStranded` event so client UI shows "Funds reclaimable in 24h via /api/reclaim/:matchId".
+  - Add `/api/admin/stranded` endpoint to list pending recoveries.
+- **Fix complexity:** Surgical for the notify wire (one call), architectural for persistence (~50 LOC + new model).
 
-#### H042 — socket.io-parser DOS
-- **Severity:** HIGH
-- **File:line:** server + client lockfiles (transitive)
-- **Status:** CONFIRMED (CVE)
-- **Fix:** `npm update socket.io` (latest pulls patched parser).
+### DATA-N05 (MEDIUM) — `rooms`/`wagerStates`/`matchStates` not persisted; Render restart strands escrow
 
-#### H043 — path-to-regexp ReDoS
-- **Severity:** HIGH
-- **File:line:** `server/package-lock.json` (transitive via Express)
-- **Status:** CONFIRMED (CVE)
-- **Fix:** Update Express; force-resolve transitive `path-to-regexp` if needed.
+- **Severity:** MEDIUM (mainnet operational risk during Render auto-redeploy or hibernate cycle)
+- **Aliases:** Bundle 3 NF17
+- **Location:** `server/socket-io/main.js:179-180` (module-level in-memory state)
+- **Description:** `wagerStates`, `matchStates`, `rooms`, `authenticatedWallets`, `failedSettlements`, `depositTimers`, `turnTimers` are all in-memory. Render deploys auto-trigger from `main` (~1/week) lose every in-flight match. For v2 matches the on-chain state survives — `permissionless_reclaim` after 1200s recovers — but the server forgets it created the escrow, can't re-fire `escrowActive` to re-enter battle. User sees match disappear + stranded deposit.
+- **Recommendation:** At server boot, scan Mongo `Match` collection for `status: 'active'` rows; call `restoreRoom()` (helper exists per HANDOVER). Persist `wagerStates`, `matchStates`, `depositTimers` end-time to Mongo on every mutation so restart can recreate timers.
+- **Fix complexity:** Architectural — separate from V1 launch list, plan for V1.1 hardening.
 
-#### H044 — handlebars JS injection (transitive)
-- **Severity:** HIGH (rated CRITICAL by npm)
-- **File:line:** `client/package-lock.json` (via phaser3-rex-plugins)
-- **Status:** CONFIRMED (CVE)
-- **Description:** Browser-bundle exploitability is low (handlebars compiles strings, not user input typically), but npm audit flags it CRITICAL.
-- **Fix:** Update phaser3-rex-plugins to a version with patched handlebars; or pin a non-vulnerable handlebars version via `overrides` in package.json.
+### AUTH-N04 (HIGH) — Fresh PrivyClient per `link-from-privy-telegram` request
 
-#### H045 — bigint-buffer overflow
-- **Severity:** HIGH
-- **File:line:** `client/package.json:9` — `@solana/spl-token@0.4.14`
-- **Status:** CONFIRMED (CVE)
-- **Description:** Browser context low exploitability. Update to fixed version.
-- **Fix:** Update `@solana/spl-token` to current; verify burn flow still works (key dependency).
+- **Severity:** HIGH (DOS amplification + Privy rate-cap hit risk)
+- **Aliases:** Bundle 1 AUTH-N04
+- **Location:** `server/index.js:672-686`
+- **Description:** `new privyClient(process.env.PRIVY_APP_ID, process.env.PRIVY_APP_SECRET)` instantiated on every incoming request. New HTTPS connection pool + Privy SDK init per request. At scale or under brute-force, multiplies socket count to Privy + amplifies per-request cost.
+- **Recommendation:** Hoist a module-level `_lookupClient` singleton and reuse (mirror the `getClient()` pattern from `privyAuth.js`).
+- **Fix complexity:** Surgical (~5 LOC).
 
-### 3.10 RPC / Chain (5 findings)
+### AUTH-N05 (HIGH) — Admin endpoints share global 100 req/15min rate-limit
 
-#### H049 — Single unmonitored RPC endpoint
-- **Severity:** HIGH
-- **File:line:** `server/services/solana.js:28`
-- **Status:** CONFIRMED
-- **Description:** Default `api.devnet.solana.com` (free public). No fallback, no health check, no rate-limit handling for HTTP 429.
-- **Fix:** Use Helius/Triton/QuickNode primary + Solana public secondary. Implement health-check rotation.
+- **Severity:** HIGH (design pattern concern; brute-force surface)
+- **Aliases:** Bundle 1 AUTH-N05
+- **Location:** `server/index.js:238-245`; admin routes `/api/admin/funnel`, `/api/admin/truncate-handles`, `/api/admin/reload-keys`, `/stats`
+- **Description:** Global `httpLimiter` (100 req/15min) is the ONLY budget for admin endpoints. Brute-force budget against `requireAdminKey` shares the user's own page-load budget. The 32-char hex key would take ~3500 years to brute-force at 100/15min, but the design pattern is wrong — admin endpoints should have a dedicated low-budget bucket (e.g., 20/h).
+- **Recommendation:** Dedicated `adminLimiter` middleware for `/api/admin/*`.
+- **Fix complexity:** One-liner (express-rate-limit instance + mount).
 
-#### H050 — RPC 429 has no retry
-- **Severity:** HIGH
-- **File:line:** `server/services/solana.js:113`
-- **Status:** CONFIRMED
-- **Description:** Balance checks throw + settlement CPI fails silently on 429.
-- **Fix:** Implement exponential-backoff retry (e.g., 3 attempts, 250ms/500ms/1000ms).
+### AUTH-N06 (HIGH) — Arcade session JWT no audience claim
 
-#### H051 — `confirmTransaction('confirmed')` deprecated form
-- **Severity:** HIGH
-- **File:line:** `client/src/wallet/WalletContext.js:584, 624, 654`
-- **Status:** CONFIRMED
-- **Description:** Silent timeout → never emits `escrowDepositConfirm`. SOL locked in PDA until 5-min timeout cancel path.
-- **Fix:** Migrate to `getSignatureStatuses` polling with explicit timeout.
+- **Severity:** HIGH (cross-game token reuse if secret leaks via Render dashboard)
+- **Aliases:** Bundle 1 AUTH-N06
+- **Location:** `server/services/arcadeSession.js:71-113`
+- **Description:** JWT issued with `{ uid, wa, tg, h }` carries issuer `arcade:session-handoff` and TTL 10m. Verification checks issuer + algorithm but no audience. Per-game secrets (`BASKETBALL_LEADERBOARD_SECRET` vs `KEEPIE_UPPIES_LEADERBOARD_SECRET` vs `ARCADE_SESSION_SECRET`) prevent cross-secret forgery, BUT if any single secret leaks (Render dashboard compromise), attacker can mint JWTs with arbitrary `uid` accepted by SolShot's `/api/arcade/session-validate`.
+- **Recommendation:** Add `aud` claim per-game (e.g., `aud: 'basketball.leaderboard'`); verify on each game's standalone leaderboard. Document per-game secret rotation procedure.
+- **Fix complexity:** Surgical (claim + verify update across 3 standalone leaderboards).
 
-#### H052 — Burn TX missing `lastValidBlockHeight`
-- **Severity:** HIGH
-- **File:line:** `client/src/wallet/WalletContext.js` (signAndBurnShot)
-- **Status:** CONFIRMED
-- **Description:** Captures only blockhash; no expiry. Burn can hang past TX expiry.
-- **Fix:** Pass full `{blockhash, lastValidBlockHeight}` to `confirmTransaction`.
+### AUTH-N07 (HIGH) — Broken `require('crypto')` in ESM standalone leaderboard dev fallback
 
-#### H053 — No `simulateTransaction()` pre-flight
-- **Severity:** HIGH
-- **File:line:** `server/services/escrow.js`, `escrow-v2.js`
-- **Status:** CONFIRMED
-- **Description:** Errors caught by RPC are 5x more expensive than simulate would catch. No pre-flight.
-- **Fix:** Add `connection.simulateTransaction(tx)` before submission; surface simulation errors to client.
+- **Severity:** HIGH (dev mode broken; silent failure)
+- **Aliases:** Bundle 1 AUTH-N07
+- **Location:** `server/services/games/basketball-standalone/standaloneLeaderboard.js:54` (and 2 sibling files)
+- **Description:** `process.env._BASKETBALL_DEV_SECRET = require('crypto').randomBytes(32).toString('hex')` in an ESM module. `require` is undefined in ESM strict mode — throws `ReferenceError` if path runs (NODE_ENV !== 'production' AND `BASKETBALL_LEADERBOARD_SECRET` unset). Production not affected (env is set), but dev fallback is broken silently. Same pattern in keepie-uppies-standalone + free-kicks-standalone.
+- **Recommendation:** Import `crypto` at top of file (mirror `arcadeSession.js` pattern).
+- **Fix complexity:** One-line import per file (× 3 files).
 
-### 3.11 TG Bot (4 findings)
+### Additional findings (MEDIUM/LOW, consolidated)
 
-#### H054 — `TELEGRAM_BOT_TOKEN` absent from render.yaml
-- **Severity:** HIGH
-- **File:line:** `render.yaml`
-- **Status:** CONFIRMED
-- **Description:** Without bot token, initData validation skipped; any socket can claim any `telegramUser`.
-- **Fix:** Add `TELEGRAM_BOT_TOKEN` as a secret reference in `render.yaml`.
-
-#### H055 — `/teststats` no NODE_ENV/admin check in production
-- **Severity:** MEDIUM
-- **File:line:** `server/services/bot.js:416`
-- **Status:** CONFIRMED
-- **Description:** Returns `err.message` to TG users.
-- **Fix:** Gate on `NODE_ENV === 'development'` or admin TG ID list.
-
-#### H056 — Bot lacks queue/backoff for sendMessage
-- **Severity:** HIGH
-- **File:line:** `server/services/groupchat/lifecycle.js:1107`
-- **Status:** CONFIRMED
-- **Description:** 429 silently drops turn pings.
-- **Fix:** Use Telegraf's built-in rate limiter or a small queue; retry on 429 with exponential backoff.
-
-#### H057 — `lobbyWatchdog` bulk sends on boot
-- **Severity:** HIGH
-- **File:line:** `server/services/groupchat/lobbyWatchdog.js:63`
-- **Status:** CONFIRMED
-- **Description:** N stale lobbies → N rapid sendMessage calls hitting TG rate limit.
-- **Fix:** Stagger sends with 50ms delay between calls.
-
-### 3.12 v2 Escrow Off-Chain (5 findings)
-
-#### H058 — v2 settle TOCTOU
-- **Severity:** HIGH
-- **File:line:** `server/services/escrow-v2.js:305-322`
-- **Status:** LIKELY (PoC needed)
-- **Description:** Fetches snapshot addresses, then submits TX. 24h reclaim grace means PDA could be closed in between.
-- **Fix:** Pre-flight simulation + atomic settle attempt + retry on stale-account error.
-
-#### H059 — No state pre-check before settle (v1 + v2)
-- **Severity:** HIGH
-- **File:line:** `server/services/escrow.js:388-427`, `escrow-v2.js:301-330`
-- **Status:** CONFIRMED
-- **Description:** Doesn't verify `escrow.state == Active` before submitting. Settle on Cancelled fails silently → costs winner their payout.
-- **Fix:** Fetch escrow account, assert state == Active before constructing settle TX.
-
-#### H060 — `match_id` uniqueness not guaranteed
-- **Severity:** HIGH
-- **File:line:** `server/socket-io/main.js:2212, 2393`
-- **Status:** CONFIRMED
-- **Description:** 32-bit CSPRNG, no DB unique constraint, no `rooms.has(roomId)` guard, no chain-side check that PDA wasn't previously created.
-- **Fix:** Bump to 64-bit randomBytes. Add `unique: true` index on Mongoose `matchId`. Guard `rooms.has(roomId)` retry.
-
-#### H061 — `remainingAccounts` order assumption
-- **Severity:** HIGH
-- **File:line:** `server/services/escrow.js`, `escrow-v2.js`
-- **Status:** LIKELY
-- **Description:** SOS H023 fix requires exact pubkey+index match. Server builds from in-memory `room.players`. Disconnect/reconnect remap could change order.
-- **Fix:** Sort `remainingAccounts` by `players[i]` index canonically; treat any inconsistency as fatal.
-
-#### H062 — Stale IDL after redeploy
-- **Severity:** MEDIUM
-- **File:line:** `server/idl/*.json`
-- **Status:** INVESTIGATE
-- **Description:** Manually maintained IDL. Stale IDL → silent field-offset misread in borsh deserialization.
-- **Fix:** Add CI check that `server/idl/*.json` matches `target/idl/*.json` after build.
-
-### 3.13 Group-Chat Logic (4 findings)
-
-#### H063 — Group-chat self-firing infinite stall
-- **Severity:** HIGH (NOVEL)
-- **File:line:** `server/services/groupchat/lifecycle.js`
-- **Status:** CONFIRMED
-- **Description:** Self-shots correctly filtered (`dmg<=0`) but `consecutiveMissedTurns` resets on every fire. Player can self-fire indefinitely to stall match while never auto-forfeiting. Locks group match for the full duration.
-- **Fix:** Don't reset `consecutiveMissedTurns` if `dmg<=0`; treat self-fire as a missed turn.
-
-#### H064 — Group-chat null-winner path
-- **Severity:** HIGH
-- **File:line:** `server/services/groupchat/lifecycle.js`
-- **Status:** CONFIRMED
-- **Description:** If `winnerPlayer.walletAddress` is null at settlement, escrow is abandoned; falls back to permissionless_reclaim equal-split after 24h. Winner gets no premium.
-- **Fix:** Pre-settle check: if winner has no walletAddress, emit operator alert; fallback to equal-split immediately rather than waiting 24h.
-
-#### H065 — Auto-forfeit counter evaded via reconnect
-- **Severity:** HIGH
-- **File:line:** `server/socket-io/main.js:676-681`
-- **Status:** CONFIRMED
-- **Description:** `consecutiveTimeouts[socketId]` keyed by socket ID, not player identity. Reconnect resets counter. Indefinite idle stalling.
-- **Fix:** Key by `tgId`/`walletAddress` instead of `socketId`.
-
-#### H066 — Authority duration-set lockup
-- **Severity:** MEDIUM (RECURRENT — SOS H039 post-fix)
-- **File:line:** Off-chain doesn't enforce `MAX_DURATION_SECS=86400`
-- **Status:** CONFIRMED post-fix
-- **Description:** SOS fix bundle reduced cap to 24h. Off-chain config sets `duration_secs` per match — verify it respects the cap.
-- **Fix:** Validate `duration_secs <= 86400` server-side before passing to `createMatchEscrow`.
-
-### 3.14 DB / Mongoose (4 findings)
-
-#### H072 — `matchId` operator injection
-- **Severity:** HIGH
-- **File:line:** `server/socket-io/groupchat.js:103` (5 handlers)
-- **Status:** CONFIRMED
-- **Description:** `if (!matchId)` accepts `{$gt: ""}` → arbitrary match doc returned.
-- **Fix:** Validate `typeof matchId === 'string'` and reject otherwise.
-
-#### H073 — `handle` operator injection on /api/challenge
-- **Severity:** HIGH
-- **File:line:** `server/services/challenge.js:41`
-- **Status:** CONFIRMED
-- **Description:** `User.findOne({handle: {$ne:null}})` returns real user data when attacker supplies operator-shaped input.
-- **Fix:** Validate input is string; sanitize all `req.body` fields with operator-stripping.
-
-#### H074 — `bulkWrite` partial-failure silent
-- **Severity:** HIGH
-- **File:line:** `server/services/groupchat/lifecycle.js:1002`
-- **Status:** CONFIRMED (same as H029)
-- **Fix:** Inspect `result.writeErrors`.
-
-#### H075 — `upsert + unique index` race not E11000-aware
-- **Severity:** HIGH
-- **File:line:** `ServerState`, referral code generation
-- **Status:** CONFIRMED
-- **Description:** Doesn't catch E11000 specifically → burn TX persistence can silently fail.
-- **Fix:** Catch E11000 explicitly + retry with regenerated key.
-
-### 3.15 Logging & PII (5 findings)
-
-#### H067 — `debugLog.js` always console.log
-- **Severity:** HIGH
-- **File:line:** `client/src/lib/debugLog.js:47`
-- **Status:** CONFIRMED
-- **Description:** Unconditionally logs regardless of debug flag. DevTools always shows passed data including potentially sensitive args.
-- **Fix:** Gate on `process.env.NODE_ENV !== 'production'`.
-
-#### H068 — TG ID + wallet co-logged
-- **Severity:** HIGH
-- **File:line:** `server/socket-io/main.js:1124, 1368`
-- **Status:** CONFIRMED
-- **Description:** Two patterns log both TG ID and wallet prefix on the same line → persistent cross-identity linkage in log stream.
-- **Fix:** Log only one identifier per line; for cross-ref, use a separate `linkage` event with policy.
-
-#### H069 — Escrow boot logs treasury + ops addresses
-- **Severity:** MEDIUM
-- **File:line:** `server/services/escrow.js:89-90`
-- **Status:** CONFIRMED
-- **Description:** Public wallet addresses in logs. Not directly sensitive but enables monitoring + correlation.
-- **Fix:** Truncate addresses in logs.
-
-#### H070 — `/health` exposes activeConnections
-- **Severity:** LOW
-- **File:line:** unauth `/health` endpoint
-- **Status:** CONFIRMED
-- **Description:** Information disclosure / fingerprinting.
-- **Fix:** Move detailed metrics behind admin auth; keep `/health` returning only `{status:'ok'}`.
-
-#### H071 — Source maps disabled in production
-- **Severity:** RESOLVED (NOT_VULNERABLE)
-- **File:line:** `client/.env.production`
-- **Status:** ✅ `GENERATE_SOURCEMAP=false` confirmed correct.
-
-### 3.16 RNG / Crypto (2 findings)
-
-#### H089 — Group match IDs use Math.random()
-- **Severity:** HIGH
-- **File:line:** `server/services/groupchat/index.js:35`
-- **Status:** CONFIRMED
-- **Description:** V8 XorShift128, ~1M effective keyspace. Predictable after ~5 observations → lobby sniping (attacker pre-creates colliding match to capture invitees).
-- **Fix:** Use `crypto.randomBytes(8).toString('hex')`.
-
-#### H090 — Challenge shortcode 20 effective bits
-- **Severity:** HIGH
-- **File:line:** `server/services/challenge/challenge.js:27`
-- **Status:** LIKELY
-- **Description:** `randomBytes(3).slice(0,5)` drops 4 bits. ~1M space + 24h TTL. Enumerable; no rate limit on lookup.
-- **Fix:** Use `randomBytes(4).toString('base32')` for 32-bit code; add lookup rate limit.
-
-### 3.17 Tier 3 / Defensive / Edge / Resource Limits (32 findings)
-
-Summary tables — full details in STRATEGIES.md:
-
-**Information Disclosure (5):** H091 (magic-link in URL/history), H092 (`/health` version field), H093 (admin err.message propagated), H094 (cdn.jsdelivr.net without SRI), H095 (`localhost:5001` hardcoded in client meta CSP).
-
-**Defensive Hygiene (8):** H096 (^ caret on all 46 deps), H097 (no CI npm audit), H098 (Vercel uses `npm run build` not `npm ci`), H099 (`@testing-library/*` in dependencies not devDependencies), H100 (React 19.2.5 in server deps; acceptable), H101 (Mongoose `playerSchema` identity constraint comment-only), H102 (`confirmed` everywhere; should be `finalized` for mainnet settle reads), H103 (`shot-token.js` module-level Connection cannot reinit without restart).
-
-**Edge Cases (8):** H104 (auth replay 5-min, alias of H004), H105 (Math.random in lifecycle for first-player + theme — gameplay-only), H106 (`clientSeq` sequential integer — predictable but auth covers it), H107 (`walletLinkToken` plaintext Map key — heap dump exposure), H108 (Privy `autoBindAttempted` flag never resets on wallet change), H109 (`signAndBurnShot` skips pre-signing discriminator/program-ID validation), H110 (`window.socket` accessible from XSS despite non-enumerable), H111 (`report-uri` directive deprecated; use `report-to`).
-
-**Resource Limits (5):** H112 (`failedSettlements` Map unbounded on repeated RPC failure), H113 (`balanceCache` never evicts stale entries), H114 (escalation counter resets on clean event — 29 ev/s never triggers disconnect), H115 (admin routes share global HTTP rate budget), H116 (HSTS preload flag absent — server has 365d).
-
-**Documentation (3):** H117 (Privy rotation issue undocumented in user-facing terms), H118 (backup/rotation procedures undocumented for server keypair), H119 (open-issue tracker for "DB wallet ≠ on-chain wallet" needs visibility).
+| ID | Aliases | Severity | Title | Location | One-line fix |
+|---|---|---|---|---|---|
+| **DATA-N06** | NF2 | MEDIUM | `wipe-user.mjs` unbounded regex needle | `scripts/wipe-user.mjs:35-37` | Require `needle.length >= 3` + hard cap matches > 50 |
+| **DATA-N07** | NF5 | MEDIUM | `dedupe-funnel-oneshots.mjs` no confirmation guard | `scripts/dedupe-funnel-oneshots.mjs` | Add `FUNNEL_DEDUPE_CONFIRM=YES` env gate |
+| **DATA-N08** | NF9 | MEDIUM | `updateWalletForTgUser` TOCTOU on concurrent rotations | `users.js:64-90` | Catch E11000, return `wallet_belongs_to_other_user` |
+| **AUTH-N08** | AUTH-N10 (orig MED) | MEDIUM | Orphan-consume race in `linkTelegramIdentity` | `users.js:177-198` | Only delete orphan if recently-created (<60s) |
+| **AUTH-N09** | NF7 + AUTH-N09 (orig MED) | MEDIUM | `walletHistory[]` unbounded growth | `User.js:16-23` + `users.js:80-84` | Cap at 50 entries via `$slice: -50` in `$push` |
+| **AUTH-N10** | AUTH-N11 (orig MED) | MEDIUM | `link-from-privy-telegram` no Privy lookup cache | `index.js:676-686` | Cache `getUser` by Privy DID with 30s TTL |
+| **DATA-N09** | NF11 | LOW | `escrowDepositConfirm` logs full TX signature | `main.js:3979` | Truncate to first 16 chars in log |
+| **DATA-N10** | NF12 | LOW | `clientDebugLog` 2KB payload — log-spam DoS | `main.js:1656-1674` | Drop in production via NODE_ENV gate at handler-attach |
+| **DATA-N11** | NF18 | LOW | Multiple `findOneAndUpdate` calls missing `runValidators:true` | `main.js:1720-1724` + sweep | Add `{runValidators: true}` per call |
+| **CHAIN-N06** | F-CHAIN-NEW-05 | HIGH | No server↔client cluster handshake | server `index.js` + `WalletContext.js:44-51` | Emit `serverHello {network, programId}` on socket connect; client refuses sign on mismatch |
+| **CHAIN-N07** | F-CHAIN-NEW-06 | MEDIUM | V1 refund retry queue still uses caller list | `main.js:562-591` + `escrow.js:439-475` | Update v1 `cancelMatchEscrow` to derive from on-chain mask (mirror S2-T7 v2 pattern) |
+| **CHAIN-N08** | F-CHAIN-NEW-08 | MEDIUM | Operational script explorer URLs hardcoded `?cluster=devnet` | `propose/accept/apply-config-v2.mjs` | Shared `explorerUrl(sig)` helper based on RPC host |
+| **CHAIN-N09** | F-CHAIN-NEW-09 | MEDIUM | `recover-stuck-v2.mjs` hardcodes one match's data | `scripts/recover-stuck-v2.mjs:23-30` | Rename file with match ID suffix OR refactor to env-gated tool |
+| **CHAIN-N10** | F-CHAIN-NEW-12 | LOW | Hardcoded devnet `DEFAULT_PROGRAM_ID` in escrow-v2.js | `escrow-v2.js:50` | Throw in production if `ESCROW_PROGRAM_ID_V2` unset |
+| **CHAIN-N11** | F-CHAIN-NEW-13 | LOW | No CI check for IDL/program-ID/network triple | n/a | Pre-deploy script: `anchor build && diff target/idl server/idl` |
 
 ---
 
-## 4. Combination Attack Analysis (Attack Chains)
+## 5. Composition / Attack-Chain Analysis
 
-### Chain A: TG Identity Takeover (H001 + H006)
-
-```
-GOAL: Assume victim's identity across all group-chat operations
-├── PATH: Privy bridge + identity backfill
-│   ├── STEP 1: Attacker creates legitimate Privy account → valid JWT [CONFIRMED]
-│   ├── STEP 2: POST /api/wallet/link-from-privy-telegram with victim's TG ID + attacker's wallet → server binds [CONFIRMED H001]
-│   └── STEP 3: Connect via wallet-auth → backfill at main.js:1298-1303 substitutes victim's TG ID
-│              into client.telegramUser.id → tgIdFor() returns victim's identity for ALL group operations [CONFIRMED H006]
-
-CRITICAL NODE: H001 — Fixing this breaks the entry foothold.
-ALTERNATIVE FIX: H006 — Tagging identity source closes the same chain.
-```
-
-### Chain B: Silent Fund Redirect (H009 + H010)
+### Chain A — AUTH-N02 Replay Window + DATA-N02 PII Broadcast
 
 ```
-GOAL: Settlement to attacker-controlled wallet without server detection
-├── PATH: Wallet rotation + reconnect remap
-│   ├── STEP 1: Privy re-provisions victim's wallet from A→B (SDK upgrade or attacker-induced) [PRECONDITION]
-│   ├── STEP 2: DB never updates (users.js:91 blocks update-after-set) [CONFIRMED H009]
-│   ├── STEP 3: Victim wins wagered match
-│   ├── STEP 4: Server reads stale walletAddress from DB → settles SOL to wallet A [CONFIRMED]
-│   └── STEP 5: Attacker (who anticipated A becoming abandoned) claims SOL via wallet A control
+GOAL: Capture identity + correlate to TG account
+├── STEP 1: Attacker joins any wagered match as legitimate player.
+├── STEP 2: escrowDepositStatus broadcast reveals every co-participant's wallet (DATA-N02).
+├── STEP 3: Later, attacker MITM-captures a victim's wallet auth payload (or scrapes from a log).
+├── STEP 4: Replay within 5min on fresh socket (AUTH-N02 — no replay store).
+├── STEP 5: Backfill at main.js:1582-1588 assigns victim's TG identity to attacker's socket.
+└── OUTCOME: Attacker now operates as victim across all group-chat / leaderboard / settle paths.
 
-CRITICAL NODE: H009 — Updating wallet on every authenticated event closes the attack at the source.
+DEFENSE: Close ANY ONE leg
+  - AUTH-N02 (a): in-memory replay Set (~30 LOC) — closes Step 4.
+  - DATA-N02: per-recipient projection on escrowDepositStatus — closes Step 2.
+  - H006 fix: telegramUserSource tagging — closes Step 5.
 ```
 
-### Chain C: Refund Black Hole (H013 + H014)
+### Chain B — CHAIN-N01 Env Config Failure Mode
 
 ```
-GOAL: Player believes refund succeeded; SOL stays locked indefinitely
-├── PATH 1: refundWager fails-open
-│   ├── STEP 1: Trigger any error path in cancelMatchEscrow (RPC 429, IDL deserialization, on-chain revert) [TRIVIAL]
-│   ├── STEP 2: refundWager returns {success:true} despite error [CONFIRMED H013]
-│   └── STEP 3: Server emits "refunded" to client; SOL still in PDA
-├── PATH 2: H023 desync forces revert
-│   ├── STEP 1: Server crash/restart loses in-memory wagerStates [TRIGGERED]
-│   ├── STEP 2: Server builds remaining_accounts from incomplete state [CONFIRMED H014]
-│   ├── STEP 3: On-chain length-check rejects with IncompleteRefund
-│   └── STEP 4: Refund stuck for 2h (v1) or 24h (v2)
+NOT an attack chain — a launch failure.
+At mainnet flip:
+├── Server has mainnet ESCROW_PROGRAM_ID_V2 in Render env.
+├── Client .env.production has devnet program IDs + REACT_APP_SOLANA_NETWORK=mainnet-beta.
+├── First deposit TX: server builds with mainnet program ID, client validator rejects ("Unexpected program").
+├── User sees confusing error. Retries fail same way.
+└── Loud failure (not catastrophic) — but every mainnet match is blocked until env reconciled.
 
-CRITICAL NODE: H013 — Fixes UX but not stuck SOL.
-ROOT FIX: Read on-chain deposits_mask (closes both H013 surfacing and H014 root cause).
+DEFENSE: CHAIN-N01 fix BEFORE mainnet flip.
 ```
 
-### Chain D: Race-Then-Drain (H015 + H016 + lifecycle races)
+### Chain C — DATA-N05 Render Hibernation + Mid-Match Restart
 
 ```
-GOAL: Concurrent ops corrupt state → match stalls or double-settles
-├── PATH: Mongo overwrite race
-│   ├── STEP 1: Two players' confirmDeposit arrive within event-loop tick [CONFIRMED H016]
-│   ├── STEP 2: findOne → mutate slot → save races; second save overwrites first
-│   └── STEP 3: Match stalls indefinitely; SOL locked until 24h reclaim
-├── PATH: Double-settle
-│   ├── STEP 1: Two checkAndSettle calls both pass state guard [CONFIRMED H015]
-│   ├── STEP 2: First on-chain settle succeeds; second rejected
-│   └── STEP 3: Server emits matchSettled twice → double pushMatchHistory → potentially double SHOT mint
+GOAL (not adversarial): characterize operational risk.
+├── Render auto-redeploys from main on push (~1/week).
+├── In-flight matches lose all in-memory state: rooms, wagerStates, depositTimers.
+├── On-chain v2 program state survives — funds NOT lost.
+├── User-facing impact: match "disappears" from UI; can't re-enter battle.
+└── Recovery: permissionless_reclaim after 1200s lets depositors withdraw.
 
-CRITICAL NODE: Atomic Mongoose CAS via findOneAndUpdate breaks both paths.
+DEFENSE: DATA-N05 fix (persist match state to Mongo, restore on boot) — V1.1 hardening.
 ```
 
-### Chain E: Cross-Skill Coup (SOS H001 + DB H002 = THE H120 CHAIN)
+### Chain D — AUTH-N03 + H011 (carried) + Operator Compromise
 
 ```
-GOAL: Drain treasury + redirect 7%-10% of all wagers to attacker
-├── PATH: DB foothold → SOS mainnet vulnerability
-│   ├── STEP 1: Identify deploy lacking PRIVY_APP_SECRET (current render.yaml does NOT include it)
-│   ├── STEP 2: Privy fails-open at requirePrivyAuth — link-from-privy-telegram fully ungated [CONFIRMED H002]
-│   ├── STEP 3: Bind victim TG ID to attacker wallet (no Privy session needed when secret missing) [H001]
-│   ├── STEP 4: Assume victim's session + identity (H001 + H006 chain) [CONFIRMED]
-│   ├── STEP 5: Trigger SOS H001 (deferred): one-step authority transfer via update_config [SOS confirmed deferred to mainnet]
-│   ├── STEP 6: New authority = attacker wallet; treasury/ops also rotated
-│   └── STEP 7: settle_match for all in-flight matches → 7%+3% fee splits go to attacker; winner stake also attacker-controllable
+GOAL: Authority rotation to attacker key.
+├── PRECONDITION: Operator's machine compromised OR phishing-staged env.
+├── STEP 1: SOLANA_RPC pointed at mainnet (CHAIN-N04 substring check passes for spoofed host).
+├── STEP 2: NEW_AUTHORITY env set to attacker pubkey.
+├── STEP 3: Run propose-authority-v2.mjs — no confirmation guard, sends TX immediately.
+├── STEP 4: On-chain propose lands. Off-chain monitor pages on ConfigProposed.
+├── STEP 5: Operator panics. (Attacker hasn't completed rotation — accept_authority requires attacker's signature, which they have if they control NEW_AUTHORITY key.)
+└── Off-chain monitoring window (SOS N007) is the defense — operator must rotate back via legitimate propose+accept within 24h.
 
-CRITICAL NODE: H002 (Privy fails-open) is the foothold.
-ALTERNATIVE FIX 1: SOS H001 (two-step authority transfer with timelock) breaks the multiplier.
-ALTERNATIVE FIX 2: H012 (multisig for upgrade authority) limits blast radius.
-
-This chain combines pre-mainnet posture from BOTH skills into a production-blocking compound.
+DEFENSE: AUTH-N03 fix (confirmation gate) — blocks Step 3.
+         CHAIN-N04 fix (allowlist) — blocks Step 1.
+         Squads multisig on authority (H012 operational) — blocks Step 5.
 ```
 
 ---
 
-## 5. Cross-Boundary Analysis (SOS ↔ DB)
+## 6. Pre-Mainnet Recommendations
 
-The SOS programs (post fix-bundle commit `7296e95`) are robust on-chain. The off-chain code is the weaker link, and most exploitation paths route through it.
+### Priority 1 — MUST FIX (blocks mainnet)
 
-### 5.1 Where the boundaries combine
-
-| On-chain assumption | Off-chain reality | Risk |
-|---------------------|-------------------|------|
-| `cancel_match` requires `len(remaining_accounts) == count_ones(deposits_mask)` (H023 fix) | **Server doesn't read on-chain mask** — uses Mongo `initialDepositTx` field | H014 desync — refund reverts; SOL stuck |
-| Authority is a single trusted key | Off-chain: keypair unzeroized in memory, env-var-loaded, no rotation procedure | H011 + H012 — heap dump = total compromise |
-| Per-match snapshot freezes treasury/ops/BPS at create | Off-chain: ✅ correctly read from snapshot when settling | OK |
-| Players array fixed at create | Off-chain: ✅ stored in match doc, used for pubkey-match check | OK |
-| Settlement winner ∈ players | Off-chain: ✅ enforced via Mongoose validation + on-chain constraint | OK |
-| Pause does not block in-flight exits (v2) | Off-chain: doesn't directly affect server logic | OK |
-
-### 5.2 The H120 cross-skill chain
-
-The headline cross-boundary finding is **H120**, composing SOS Audit #2's deferred H001 with DB Audit #2's H002:
-
-- **SOS H001 (deferred to mainnet, per `Docs/internal/REMEDIATION_DECISIONS.md` Section 2.1):** One-step authority transfer with no propose/accept and no timelock. Acknowledged pre-mainnet posture — "introduce propose/accept + timelock, or accept the risk."
-- **DB H002:** `requirePrivyAuth({required:true})` becomes a no-op when `PRIVY_APP_SECRET` is missing. The current `render.yaml` does not include this secret.
-
-Composition: an attacker on a fresh deploy (or any deploy where the secret is absent) achieves session takeover via H001+H006 chain → triggers SOS-deferred authority rotation → drains treasury. This is the most consequential single chain in the audit because it composes "intentional pre-mainnet posture" from both skills into a working mainnet-blocking compound.
-
-### 5.3 The H023 fix-bundle interaction (positive but incomplete)
-
-SOS H023 fix bundle (commit `7296e95`) added on-chain `require!(remaining_accounts.len() == count_ones(deposits_mask))` at all 4 refund-loop sites. This is a real CRITICAL fix — closes a 900 SOL theft path.
-
-But on the off-chain side, the server cancel-builders still construct `remaining_accounts` from off-chain Mongo state (`wagerStates[roomId].deposits` for v1; `player.initialDepositTx` for v2). The on-chain fix didn't update the off-chain mental model; any state desync (server crash, RPC drop, race condition) now yields `IncompleteRefund` reverts instead of partial refunds.
-
-**Net:** SOS H023 fix is comprehensive on-chain, but the off-chain refund-builder (H014) needs to be updated to read on-chain `deposits_mask` before constructing `remaining_accounts`. Otherwise the new H023 enforcement creates a new failure mode (refunds reject) without closing the underlying server-side state-desync risk.
-
----
-
-## 6. Comparison to Audit #1 (Feb 2026)
-
-### Quantitative deltas
-
-| Metric | Feb #1 | May #2 | Delta |
+| # | ID | Action | Effort |
 |---|---|---|---|
-| Files scanned | 93 | 142 | +53% |
-| LOC | ~36,512 | ~84,270 | +131% |
-| Server npm vulns | 30 | 20 | -33% |
-| Client npm vulns | 131 | 47 | -64% |
-| CRITICAL findings | 12 | 23 | +92% (but reflects bigger surface, not regression) |
-| HIGH findings | 34 | 40 | +18% |
-| Verdict | "Not safe for production" | "Hackathon-safe; not mainnet-safe" | Improved |
+| 1 | **CHAIN-N01** | Update `client/.env.production` mainnet program IDs (or rely on Vercel env-var override; verify both). Add CI guard: `network=mainnet-beta → assert programIds NOT devnet`. | 30 min |
+| 2 | **CHAIN-N02** | `anchor build`; copy `target/idl/solshot_escrow_v2.json` to `server/idl/`. Verify all instructions match on-chain post-N002. | 15 min |
+| 3 | **CHAIN-N04** | Replace `/mainnet/i.test(RPC)` substring in `init-config-mainnet.mjs:77` with explicit host allowlist. | 15 min |
+| 4 | **AUTH-N01** | Reorder `consumeLinkToken()` to AFTER `linkTelegramIdentity()` success in `index.js:597-619`. | 5 min |
+| 5 | **DATA-N02** | Per-recipient projection on `escrowDepositStatus` emit at `main.js:3966-3975`. Iterate sockets, redact other wallets. | 30 min |
+| 6 | **DATA-N01 verification + fix** | Read `physics.js` `processShot()` output shape. Replace `Math.abs(dmg)` with `if (!Number.isFinite(dmg) \|\| dmg <= 0) continue` at `main.js:4308`. | 30 min |
 
-### Qualitative status
+**Priority 1 total: ~2 hours.**
 
-**RESOLVED (Feb finding now fixed):**
-- Source maps in production builds — `client/.env.production: GENERATE_SOURCEMAP=false` confirmed (was H071 alias).
-- `qs` vulnerability — 6.14.2 above 6.10.3 threshold (originally Feb critical-vector for prototype pollution).
-- Helmet middleware deployed with comprehensive defaults (CSP, HSTS, frameguard).
-- CORS scoped to allowed origins (vs. open in Feb).
-- Room ID generation uses `crypto.randomBytes` (was `Math.random` in Feb).
-- create-room rate limiter (3 req/60s/IP) added.
+### Priority 2 — SHOULD FIX (before mainnet, addressable in <1 day)
 
-**RECURRENT (still open from Feb):**
-- H003 ← Feb H029 — JWT generated but never verified server-side.
-- H004 ← Feb C-6/H030 — Auth signature 5-min replay window.
-- H012 ← Feb H044 — Single keypair = upgrade auth + application auth.
-- H018 ← Feb C-7 — `shoot` legacy relay no auth.
-- H027 (depositTimers slot reuse) — same Pitfall 1 acknowledged in code comment.
-- H085 ← Feb H053 — nodemon in production deps.
+| # | ID | Action | Effort |
+|---|---|---|---|
+| 7 | **AUTH-N02** | In-memory `Set<signature>` 5-min TTL replay store in `auth.js:verifyAuthMessage`. ~30 LOC. **Caps the AUTH-N02 replay window — highest residual risk fix.** | 1 hr |
+| 8 | **AUTH-N03** | Add `PROPOSE_AUTHORITY_CONFIRM` gate + cluster check to `propose-authority-v2.mjs`. Mirror init-config-mainnet pattern. | 30 min |
+| 9 | **CHAIN-N03** | Delete `server/services/escrow-v2.js:216-229` `migrateConfigV2()` + delete `server/scripts/migrate-config-v2.mjs`. Add `#[cfg(feature = "devnet")]` ref comment. | 10 min |
+| 10 | **CHAIN-N05** | Add `<SCRIPT>_CONFIRM` env-var gate to all authority/config rotation scripts (~5 scripts × 10 LOC each). | 1 hr |
+| 11 | **CHAIN-N06** | Server↔client cluster handshake `serverHello` event on connect. Client refuses sign on mismatch. | 1 hr |
+| 12 | **DATA-N03** | Wire `updateWalletForTgUser` call into `linkTelegramIdentity` Step 3 (uid-keyed) path at `users.js:264-282`. | 20 min |
+| 13 | **DATA-N04** | Wire `adminNotifications.notify()` BEFORE `failedSettlements.delete()` at `main.js:562-591`. Add `StrandedSettlement` Mongo model for persistence. | 1.5 hr |
+| 14 | **DATA-N08** | Catch E11000 in `updateWalletForTgUser`, return `wallet_belongs_to_other_user`. | 10 min |
+| 15 | **AUTH-N04** | Hoist Privy client singleton in `link-from-privy-telegram` handler. | 10 min |
+| 16 | **AUTH-N05** | Dedicated `adminLimiter` for `/api/admin/*` (e.g., 20/h). | 15 min |
+| 17 | **AUTH-N07** | Import `crypto` at top of 3 standalone leaderboard ESM files (fix `require()` ReferenceError in dev). | 5 min |
 
-**REGRESSION (Feb fixed → now broken; +1 severity escalation applied):**
-- **H011 (was Feb KM-04):** Keypair zeroization. Feb resolved this; commit `f551275` reverted because web3.js aliases buffer. **Original severity LOW → escalated to HIGH then to CRITICAL** under +1 chain rule given heap-dump exploit class.
-- **CSP dead origins (H035):** Feb cleaned the original Dynamic-era origins; the recent Dynamic→Privy migration left them in the helmet config. Severity MEDIUM (was MEDIUM in Feb).
+**Priority 2 total: ~7 hours.**
 
-**NEW (didn't exist in Feb scope):**
-- H001/H002/H006/H007/H008 — Privy infrastructure didn't exist in Feb. These are full-greenfield findings on the new auth path.
-- H013/H014/H015/H016 — Group-chat lifecycle didn't exist in Feb.
-- H058–H062 — v2 escrow off-chain code didn't exist in Feb.
-- H030 (escrowDepositStatus PII) — escrow event surface didn't exist in Feb.
+### Priority 3 — POST-LAUNCH / V1.1
 
----
-
-## 7. Remediation Roadmap
-
-Following the SOS fix bundle precedent (commit `7296e95`), recommend bundling fixes into audit-driven commits.
-
-### Bundle A: Pre-mainnet must-fix (~20 small concrete fixes; 1-2 days)
-
-Quick wins. Each is a small concrete diff with no architectural implications.
-
-| ID | Fix | Effort |
+| # | ID | Action |
 |---|---|---|
-| H013 | Propagate `cancelMatchEscrow` return value in `refundWager()` | 5 min |
-| H014 | Read on-chain `deposits_mask` before building `remaining_accounts` | 1 hr |
-| H015 | Replace `findOne→save` with `findOneAndUpdate` CAS gate in `checkAndSettle` | 30 min |
-| H016 | Atomic `$set` operator in `confirmDeposit` slot mutation | 30 min |
-| H017 | Replace `Math.abs(dmg)` with `if (dmg<=0) return` in 1v1 fire path | 5 min |
-| H018 | Add `requireAuth` + match-membership to `shoot` legacy relay | 15 min |
-| H019 | Auth + identity-binding on `acceptChallenge`/`declineChallenge` | 30 min |
-| H020 | Remove `clientDebugLog` event or gate behind admin auth | 10 min |
-| H022 | Auth + projection on `getGroupMatch` | 15 min |
-| H023 | Auth on `/api/challenge/:code/cancel` | 10 min |
-| H025 | Treat absent inventory slot as 0 ammo + reject | 10 min |
-| H026 | Make `clientSeq` required (remove `if defined`) | 5 min |
-| H030 | Per-recipient projection on `escrowDepositStatus` | 30 min |
-| H031 | `if (NODE_ENV!=='production')` wrap on `DebugAuthOverlay` | 5 min |
-| H034 | Add `headers` block to `client/vercel.json` | 15 min |
-| H041 | `npm update express-rate-limit` | 5 min |
-| H055 | Gate `/teststats` on admin TG ID | 10 min |
-| H063 | Don't reset `consecutiveMissedTurns` if `dmg<=0` | 10 min |
-| H072 | Validate `typeof matchId === 'string'` in 5 handlers | 30 min |
-| H083 | Replace `!==` with `crypto.timingSafeEqual` for admin key | 15 min |
-
-Total Bundle A: ~5 hours.
-
-### Bundle B: Architectural pre-mainnet (~10 items; 1-2 weeks)
-
-Items requiring design change.
-
-| ID | Fix | Effort |
-|---|---|---|
-| H001 + H002 | Verify Privy session's TG claim against client-supplied `telegramUserId` + add `PRIVY_APP_SECRET` to `render.yaml` | 1-2 days |
-| H006 | Tag identity source (`tg-hmac` vs `wallet-backfill`); restrict high-trust ops to HMAC source | 2-3 days |
-| H009 | Wallet rotation handling: re-verify on every authenticated event, write new value (idempotent) | 2-3 days |
-| H011 | Re-implement keypair zeroization (clone buffer before web3.js call) OR migrate to KMS | 2-5 days |
-| H012 | Multisig migration plan + Squads setup for upgrade authority | 1 week |
-| H037 | `FailedSettlement` Mongoose collection + operator alert on retry exhaustion | 1 day |
-| H040 | Mirror v1 retry queue for v2 settlement | 1 day |
-| H049 + H050 | Helius primary + Solana public secondary RPC + retry on 429 | 2 days |
-| H067/H068/H033 | Replace all `console.*` with logger; ESLint rule banning bare console | 2-3 days |
-
-Total Bundle B: 2-3 weeks.
-
-### Bundle C: Defensive cleanup (~30 items; 2-3 days)
-
-| Category | Items |
-|----------|-------|
-| npm updates | H041–H045 (5 CVE updates) — 30 min |
-| Header polish | H035 (remove Dynamic CSP), H036 (remove Eruda inline), H094 (add SRI to jsdelivr) — 1 hour |
-| Log policy enforcement | H067, H068, H069, H070 — 1 day |
-| Defensive guards | H024 (sanitize errors), H038 (exit on uncaught), H039 (Mongo reconnect), H075 (E11000) — 1 day |
-| Resource limits | H112, H113, H114, H115, H116 — 1 day |
-| Tier 3 cleanup | H091–H119 selectively — 1 day |
-
-### Bundle D: Cross-skill mainnet hardening (~10 items; coordinate with SOS team)
-
-Document in `Docs/internal/REMEDIATION_DECISIONS.md` Section 5 or new `Docs/internal/DB_REMEDIATION_DECISIONS.md`.
-
-| Item | Owner | Notes |
-|------|-------|-------|
-| Squads multisig for both upgrade authority + config.authority | Both teams | Closes H012 + reduces blast radius of H001 (SOS) and H120 chain |
-| Two-step authority transfer with 24h timelock | SOS team | Closes SOS H001; eliminates H120 multiplier |
-| `propose_authority` + `accept_authority` instructions | SOS team | Same |
-| Server-side win-rate anomaly monitor | DB team | Mitigates H120 even if foothold exists |
-| Privy magic-link → DB whitelist for player-wallet binding | DB team | Closes H001 root cause; eliminates the foothold |
-| Refund-loop refactor (caller-supplied indices) | SOS team | Closes SOS H024 (non-contiguous mask) — currently authority-rescuable |
-| Bump `match_id` to 64-bit + Mongoose unique index | DB team | Closes H060 |
+| 18 | **DATA-N05** | Persist `rooms`/`wagerStates`/`matchStates` to Mongo on every mutation; restore on boot. (~50 LOC + model.) |
+| 19 | **CHAIN-N07** | Update v1 `cancelMatchEscrow` to derive refund list from on-chain mask (parity with v2 S2-T7 pattern). |
+| 20 | **CHAIN-N08** | Cluster-aware explorer URL helper. |
+| 21 | **CHAIN-N09** | Rename `recover-stuck-v2.mjs` or refactor as env-gated generic tool. |
+| 22 | **CHAIN-N10** | Throw in production if `ESCROW_PROGRAM_ID_V2` env unset. |
+| 23 | **CHAIN-N11** | CI pre-deploy script: `anchor build && diff target/idl server/idl`. |
+| 24 | **AUTH-N06** | Add `aud` claim per-game to arcade JWTs; rotation runbook. |
+| 25 | **AUTH-N09** | Cap `walletHistory[]` at 50 via `$slice: -50` in `$push`. |
+| 26 | **DATA-N06/N07/N09/N10/N11** | Defensive hygiene — needle bounds on wipe-user, confirmation guard on dedupe-funnel-oneshots, TX-sig truncation, drop clientDebugLog in production, sweep `runValidators:true`. |
+| 27 | H003 / H004 (long-term) | Decide auth model honestly: either restore `verifyToken()` middleware (per-event JWT verify) OR delete `generateToken()` entirely and document socket-flag model. |
+| 28 | H005 (defense-in-depth) | Replace `NODE_ENV !== 'production'` with positive `NODE_ENV === 'development'` in `tgIdFor()`. |
+| 29 | H006 (long-term close) | Tag `telegramUserSource: 'tg-hmac' \| 'wallet-backfill'`; require HMAC source for high-trust ops. |
+| 30 | Operational | Verify Render env: `NODE_ENV=production`, all per-game leaderboard secrets, `ARCADE_SESSION_SECRET`, `PRIVY_APP_SECRET`. Update `CORS_ORIGINS` with new Vercel URLs. |
+| 31 | Monitoring | Subscribe to on-chain events (`ConfigProposed`, `ConfigApplied`, `AuthorityProposed`, `AuthorityAccepted`, `Paused`, `Unpaused`) per SOS N007. 5-min alert SLA. |
+| 32 | Bug bounty | Publish at mainnet flip (industry standard for hot-wallet phase). |
 
 ---
 
-## 8. Verdict
+## 7. Cross-Skill Status
 
-### Hackathon submission (devnet, no real funds)
+| Skill | Audit # | Verdict | Joint Bottleneck |
+|---|---|---|---|
+| **SOS (on-chain)** | #3 (today, `fabb8e1` / `da04b5e`) | **CONDITIONAL GO** — N001 (timelock guard) + N002 (migrate_config deletion) + N003 (apply pause-gate) landed. 2 of 4 prior CRITs RESOLVED; 6 prior HIGHs closed. Remaining: H024 (non-contiguous mask), N004/N005/N006 (Priority 2). Squads-from-day-one operational fix for H044/H046. | None blocking — on-chain side is structurally clean. |
+| **DB (off-chain)** | #3 (today, `da04b5e`) | **CONDITIONAL GO** — 6 must-fix items above (~2 hr), plus 11 should-fix items (~7 hr). Identity-bridge AUTH-N02 chain is the highest-residual-risk item; mitigable via 30-LOC replay store. | Operational hygiene (`.env.production`, IDL regen, RPC allowlist, propose-authority guards, magic-link ordering, PII broadcast). |
+| **BOK (math invariants)** | #2 (May 7) clean; #3 not yet run | Carry-forward CLEAN. | None. |
+| **GL (docs)** | Not yet run | TBD. Will likely flag SHOT-as-on-chain-token in litepaper (stale post-pivot per `project_shot_pivot_to_ingame.md`), and missing 3-vault Squads docs. | Doc updates — not a code blocker. |
 
-**SAFE.** No real funds are at risk on devnet. The most consequential chain (H120) requires triggering on-chain authority rotation; there are no mainnet funds to extract.
+### Joint Posture
 
-### Mainnet with real funds
+The H120 cross-skill coup chain from audit #2 (SOS deferred H001 × DB H002) is **BROKEN AT BOTH LEGS**:
+- SOS leg: Bundle 1 propose_authority + 24h timelock (`e48b6b5` + `da04b5e`) — H001 RESOLVED on v2.
+- DB leg: privyAuth 503 guard + Bug-7 env mismatch fix — H002 RESOLVED.
 
-**NOT SAFE** until Bundles A + B + D land. Specifically:
-
-- **Bundle A** is mandatory — closes 20 concrete vulnerabilities with simple fixes.
-- **Bundle B** is mandatory — addresses architectural gaps that no amount of patch-fixing can cure (Privy/TG bridge, wallet rotation, keypair handling).
-- **Bundle D** is mandatory — closes the cross-skill compound that composes pre-mainnet posture from both audits.
-
-### Improvement vs Feb 2026
-
-**Substantial improvement.** Server vulns down 33%, client down 64%, source maps off, helmet/CORS deployed, secrets clean of git tree, `qs` patched, room ID generation cryptographic, rate limiting on the most-abused endpoints. The codebase shows clear evidence of an audit-driven discipline.
-
-The headline regressions are limited (two: keypair zeroization revert, CSP dead origins) and tractable. The headline new findings (Privy bridge, group-chat races, H120 cross-skill chain) reflect a real expansion of attack surface alongside the substantial new feature work — they are the cost of progress, not signs of negligence.
+**SolShot is materially closer to mainnet than the audit #2 pair.** The off-chain operational hygiene is the long pole. Total estimated fix time: **~9 hours of focused work** to land all Priority 1 + 2 items (Priority 1 alone = 2 hours).
 
 ---
 
-## 9. Methodology Reference
+## 8. Stacking Lineage
 
-### Audit phases
+| Audit # | Date | Git Ref | Tier | Confirmed | Verdict |
+|---|---|---|---|---|---|
+| #1 | 2026-02-24 | `ecfd03b` | n/a (pre-Bulwark format) | 70 (12C / 34H / 18M / 6L) | "Not safe for production with real funds" |
+| #2 | 2026-05-07 | `5f2acec` | DEEP (22 auditors, 5 batches) | 113 (23C / 40H / 30M / 20L) | "Hackathon-safe (devnet); NOT mainnet-safe — Bundles A/B/D required" |
+| **#3** | **2026-05-28** | **`da04b5e`** | **Standard (3 focused delta bundles)** | **22 new (3C / 9H / 7M / 3L) + prior re-status: 9 prior CRITs RESOLVED, 1 RESOLVED_BY_REMOVAL, 4 PARTIAL, 9 RECHECK/STILL_OPEN** | **"CONDITIONAL GO — 6 must-fix items pre-mainnet (~2 hr), then mainnet-ready for V1 scope"** |
 
-This audit ran the Dinh's Bulwark deep-tier pipeline:
+### Recurring Findings Across Audits
 
-1. **Phase 0+0.5** — Codebase scan + static pre-scan. 142 files / 84K LOC indexed. Static tools: `npm audit` (server + client), `git secrets` (clean), grep for credentials in source/docs. KB manifest generated covering ~270 OC patterns.
-2. **Phase 1+1.5** — 22 parallel context auditors deployed (5 batches). Each produces a CONDENSED_SUMMARY block + full analysis. Quality gate skipped (concrete file:line evidence in all outputs).
-3. **Phase 2+3** — Architectural synthesis (`ARCHITECTURE.md` — trust zones, invariants, cross-cutting concerns). Strategy generation produces 122 attack hypotheses across Tier 1/2/3 (`STRATEGIES.md`).
-4. **Phase 4** — **SKIPPED.** Per user direction, Tier 1 strategies are CONFIRMED via Phase 1 file:line evidence + cross-agent corroboration; no separate PoC pass needed.
-5. **Phase 5** — This report.
-
-### Why Phase 4 was skipped
-
-The 22 context auditors in Phase 1 produced concrete file:line evidence with strong cross-agent corroboration (see `ARCHITECTURE.md` Section 7 — Cross-Cutting Concerns). For example:
-- "Privy/TG identity bridge unverified" was independently flagged by AUTH-01, CHAIN-03, SEC-01, ERR-01, and INJ-01.
-- "Wallet rotation gap" was independently flagged by CHAIN-03, DATA-01, and SEC-01.
-- "`refundWager()` fails-open" was flagged by LOGIC-02 and ERR-01.
-
-The strategist organized 113 unique findings into 122 strategies (some strategies pair complementary findings). With this density of corroborated file:line evidence, Phase 4's main contribution would be PoC artifacts — useful for fix triage but not necessary for audit-grade confidence. The user opted to synthesize directly from Phase 1 + Phase 2/3 outputs.
-
-**Limitation:** Tier 1 strategies are CONFIRMED via context-auditor evidence but not separately PoC'd. A few items marked LIKELY (H008, H058, H061, H090) would benefit from explicit PoC pass.
-
-### Cross-validation matrix
-
-When 3+ auditors flagged the same concern, the finding receives weighted confidence:
-
-| Concern | Auditors | Strategy |
-|---------|----------|----------|
-| Privy/TG bridge unverified | AUTH-01, CHAIN-03, SEC-01, ERR-01, INJ-01 (NODE_ENV) | H001 |
-| Wallet rotation gap | CHAIN-03, DATA-01, SEC-01 | H009 |
-| `refundWager` fails-open | LOGIC-02, ERR-01 | H013 |
-| Group-chat double-settle race | LOGIC-02, ERR-02, LOGIC-01 | H015 |
-| `confirmDeposit` doc overwrite | ERR-02, LOGIC-01 | H016 |
-| Auth signature replay | AUTH-01, CHAIN-03, CRYPTO-01 | H004 |
-| JWT generated never verified | AUTH-01, SEC-02, DATA-04 | H003 |
-| Single keypair = upgrade + app auth | SEC-01, SEC-02, DATA-05 | H012 |
-| No state pre-check before settle | CHAIN-01, CHAIN-06, ERR-01 | H059 |
-| `failedSettlements` silent drop | LOGIC-02, ERR-01, ERR-03 | H037 |
+| Cross-Audit ID | Title | Audits Present | Current Status |
+|---|---|---|---|
+| H003 family | JWT generated never verified | #1 (H029), #2 (H003), #3 | STILL_OPEN — auth.js unchanged |
+| H004 family | Auth signature replay window | #1 (C-6/H030), #2 (H004), #3 | STILL_OPEN — auth.js unchanged; AUTH-N02 composition |
+| H012 family | Single keypair = upgrade + app authority | #1 (H044), #2 (H012), #3 | CARRY-FORWARD operational — Squads at mainnet deploy |
+| H018 family | Legacy `shoot` relay no auth | #1 (C-7), #2 (H018), #3 | RESOLVED in #3 (S2-T6/T7 hardening) |
+| H085 family | nodemon in production deps | #1 (H053), #2 (H085), #3 | RECHECK — re-audit `npm audit` |
+| H017 family | Self-damage `Math.abs` | #2 (H017), #3 (DATA-N01) | STILL_OPEN — pending physics-side verification |
 
 ---
 
-## 10. Appendix
+## 9. Verdict
 
-### Audit lineage
+**CONDITIONAL GO for mainnet (V1 scope).**
 
-| # | Date | Git Ref | Type | Scope | Confirmed | Status |
-|---|------|---------|------|-------|-----------|--------|
-| 1 (Bulwark DB) | 2026-02-24 | `ecfd03b` | Off-Chain | 93 files | 70 | Completed |
-| 1 (SOS) | 2026-02-23 | `ecfd03b` | On-Chain | 1 program | 8 | Completed |
-| 1 (BOK) | 2026-02-23 | `ecfd03b` | Invariant | v1 (855 LOC) | 25 inv / 59 tests | Completed |
-| 2 (SOS) | 2026-05-07 | `7296e95` | On-Chain | 2 programs | 22 confirmed (4C/14H/4M/6L) | Completed; 9 fixed |
-| 2 (BOK) | 2026-05-07 | `7296e95` | Invariant | v1+v2 (1982 LOC) | 41 inv / 159 tests | Completed; 0 violations |
-| 2 (Bulwark DB) | 2026-05-07 | `5f2acec` | Off-Chain | 142 files | 113 (23C/40H/30M/20L) | **THIS REPORT** |
+With SOS audit #3 N001/N002/N003 already landed and the off-chain Bundle 1-3 deltas confirmed, the remaining gate is **6 off-chain must-fix items (~2 hours of focused work)** plus **operational checks** (Render env reconciliation, Vercel env reconciliation, Squads multisig deploy procedure, monitoring infrastructure live, bug bounty published).
 
-### Files analyzed (142 / 84K LOC)
+The headline residual risk after must-fixes lands is **AUTH-N02** — the 5-minute wallet-auth replay window enabling TG identity assumption. For V1 scope (small-wager SOL only, no large bankrolls per `project_v1_mainnet_scope.md`), this is an acceptable launch risk IF AND ONLY IF (a) wager tiers are explicitly capped to align with the bound, (b) the gap is recorded in `Docs/internal/REMEDIATION_DECISIONS.md` Section 5 with a target close date, and (c) the Priority 2 replay-store fix (1 hr) is on the V1.1 sprint. Otherwise, land the replay store fix before mainnet flip — it's a 1-hour fix that closes the chain.
 
-Top-level categories:
-- `server/` — Express + Socket.IO + Telegraf (~28K LOC across 71 modified + 8 new files)
-- `client/` — React + Phaser PWA (~50K LOC across 71 modified + 50 new files)
-- `programs/` — Anchor escrow v1 + v2 (excluded from this audit; covered by SOS + BOK)
-- `Docs/`, `.audit/`, `.bok/`, `.bulwark/` — audit artifacts (not under audit; consumed as reference)
-
-### Auditor list (22 of 51 in DB skill catalog)
-
-Selected based on ecosystem (`solana-offchain`) + protocol types (`game-server`, `wagering`, `wallet-integration`, `socket-io-realtime`, `group-chat-async`, `embedded-wallet-privy`):
-
-| ID | Name | Output |
-|----|------|--------|
-| SEC-01 | Private Key & Wallet Security | `04-SEC-01-private-key-wallet.md` |
-| SEC-02 | Secret & Credential Management | `03-SEC-02-secret-credential.md` |
-| AUTH-01 | Authentication Mechanisms | `02-AUTH-01-authentication.md` |
-| AUTH-03 | Authorization & Access Control | `05-AUTH-03-authorization.md` |
-| INJ-01 | SQL & NoSQL Injection | `11-INJ-01-nosql-injection.md` |
-| INJ-05 | Prototype Pollution & Deserialization | `11-INJ-05-prototype-pollution.md` |
-| WEB-02 | CORS, CSP & Security Headers | `13-WEB-02-cors-csp-headers.md` |
-| CHAIN-01 | Transaction Construction & Signing | `06-CHAIN-01-tx-construction.md` |
-| CHAIN-02 | RPC Client & Node Trust | `07-CHAIN-02-rpc-trust.md` |
-| CHAIN-03 | Wallet Integration & Adapter Security | `08-CHAIN-03-wallet-adapter.md` |
-| CHAIN-06 | Program Account & PDA Interaction | `09-CHAIN-06-pda-interaction.md` |
-| API-03 | WebSocket & Real-Time Security | `10-API-03-websocket.md` |
-| DATA-01 | Database & Query Security | `14-DATA-01-database.md` |
-| DATA-04 | Logging & Information Disclosure | `15-DATA-04-logging.md` |
-| DATA-05 | Encryption & Data Protection | `16-DATA-05-encryption.md` |
-| DEP-01 | Package & Dependency Security | `17-DEP-01-dependencies.md` |
-| ERR-01 | Error Handling & Fail Modes | `18-ERR-01-error-handling.md` |
-| ERR-02 | Race Conditions & Concurrency | `19-ERR-02-race-conditions.md` |
-| ERR-03 | Rate Limiting & Resource Exhaustion | `20-ERR-03-rate-limiting.md` |
-| CRYPTO-01 | Random Number Generation & Nonces | `21-CRYPTO-01-rng-nonces.md` |
-| LOGIC-01 | Business Logic & Workflow Security | `22-LOGIC-01-business-logic.md` |
-| LOGIC-02 | Financial & Economic Logic | `01-LOGIC-02-financial-economic.md` |
-
-### Key file references (absolute paths)
-
-- This report: `C:/Users/johnk/SolShot/.bulwark/FINAL_REPORT.md`
-- Architecture synthesis: `C:/Users/johnk/SolShot/.bulwark/ARCHITECTURE.md`
-- Strategy catalog: `C:/Users/johnk/SolShot/.bulwark/STRATEGIES.md`
-- Stacked-audit handover: `C:/Users/johnk/SolShot/.bulwark/HANDOVER.md`
-- Audit state: `C:/Users/johnk/SolShot/.bulwark/STATE.json`
-- Hot spots map: `C:/Users/johnk/SolShot/.bulwark/HOT_SPOTS.md`
-- Cross-skill: SOS `.audit/FINAL_REPORT.md` + BOK `.bok/reports/2026-05-07-report.md` + GL `Docs/`
-- Remediation log: `C:/Users/johnk/SolShot/Docs/internal/REMEDIATION_DECISIONS.md`
+**Net delta from audit #2 to audit #3:** the "fail-open financial path" category is closed, the "legacy un-auth socket events" category is closed, the cross-skill H120 coup is broken at both legs. SolShot's off-chain stack has moved from "NOT safe for mainnet" to "mainnet-ready after 2-9 hours of must-fix work" — a substantial, measurable improvement consistent with the audit-driven discipline visible in the commit log.
 
 ---
 
 ## Disclaimer
 
-This audit was conducted by Claude Code Dinh's Bulwark v1.0, an automated parallel-auditor system. Findings are based on file:line evidence with cross-agent corroboration; no independent PoC was generated for Tier 1 items (Phase 4 was skipped per user direction). The audit covers the off-chain stack only; on-chain code is covered by the parallel SOS and BOK audits.
+This is an automated security audit, abridged due to delta-focused stacking on audit #2's DEEP-tier coverage. It does NOT replace:
+- Manual expert security review (recommended before scaling TVL beyond V1 scope)
+- Live PoC validation of the AUTH-N02 replay window (left as exercise for the team)
+- Comprehensive runtime testing of `init-config-mainnet.mjs` on mainnet with operator-verified Squads PDAs
 
-This audit does not constitute legal, financial, or investment advice. The team and any third parties relying on this report should perform their own due diligence before mainnet deployment with real funds. The report reflects the codebase state at git ref `5f2acec`; any subsequent changes are out of scope.
+**Limitations:**
+- The audit assumes audit #2's NOT_VULNERABLE findings still hold against the current code; spot-checked but not fully re-validated.
+- The full re-statusing of all 40 audit #2 HIGHs would require breadth comparable to audit #2's 22-auditor sweep; this audit selected the highest-impact items per bundle.
+- DATA-N01 severity assignment is contingent on physics-side verification of `processShot()` output shape — flagged as a one-liner fix regardless.
 
-For full attack walkthroughs, evidence chains, and verification artifacts:
-- On-chain findings: `.audit/FINAL_REPORT.md`
-- Invariant verification: `.bok/reports/2026-05-07-report.md`
-- Off-chain findings (this audit): `.bulwark/FINAL_REPORT.md` + `.bulwark/STRATEGIES.md` + `.bulwark/context/*.md`
+**Recommendation:** Engage a professional Solana security firm (Halborn, Hacken, OtterSec) before scaling mainnet TVL beyond a defined threshold (e.g., $5M). For V1 launch at smaller scale with Squads multisig + monitoring + bug bounty + the Priority 1 must-fixes landed, the audit #2/#3 stacked posture + SOS audit #3 posture is appropriate per the V1 mainnet scope.
+
+---
+
+## Report Metadata
+
+| Field | Value |
+|---|---|
+| Report Generated | 2026-05-28 |
+| Dinh's Bulwark Version | 1.0.0 |
+| Audit Number | #3 |
+| Previous Audits | 2 (Feb 2026 #1; May 2026 #2 DEEP) |
+| Files Audited | 192 / ~60K LOC (subset focus per 3 bundles) |
+| Context Auditors (this audit) | 3 (focused delta bundles) |
+| New CONFIRMED Findings | 22 (3 CRITICAL + 9 HIGH + 7 MEDIUM + 3 LOW) |
+| Prior CRITICAL Resolved | 9 (H001, H002, H009, H013, H014, H015, H016, H019, H020) |
+| Prior CRITICAL Resolved_By_Removal | 1 (H052 — SHOT off-chain pivot) |
+| Prior CRITICAL Partial | 4 (H006, H007, H010 by reconnect-disabled, H012 operational) |
+| Prior CRITICAL Still_Open | 5 (H003, H004, H005, H011, H017→DATA-N01) |
+| Prior CRITICAL Recheck Confirmed Open | ~3 (H027, H031, H037) |
+| Prior HIGH Resolved/Recheck | mixed — full sweep deferred to next DEEP cycle |
+| Cross-Skill (SOS) Status | CONDITIONAL GO — N001/N002/N003 landed |
+| Verdict | **CONDITIONAL GO** — 6 must-fix items (~2 hr) pre-mainnet |
+
+---
+
+**End of Report**
 
 *Generated by Dinh's Bulwark v1.0 — Phase 5 (Report)*
-*Audit ID: `db-solshot-2026-05-07`*
-*Git ref: `5f2acec`*
+*Audit ID: `db-solshot-2026-05-28`*
+*Git ref: `da04b5e`*
+*Previous: `.bulwark-history/2026-05-07-5f2acec/`*

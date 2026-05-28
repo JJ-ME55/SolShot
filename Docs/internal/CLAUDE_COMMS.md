@@ -3210,3 +3210,145 @@ The throwaway drill keypair `8cvQkFd1LV8NpnE5fX6pC2djDZpRTYmqo3fsZEr8XdKc` was u
 - `reconcile-wallets.mjs` is for pre-mainnet sweep — set PRIVY_APP_ID + PRIVY_APP_SECRET to enable Privy lookup. `--fix` flag applies rotations. Default is report-mode (safe).
 
 — main-claude
+
+---
+
+## 2026-05-28 — STATUS — Big audit + fix marathon. Verdict: CONDITIONAL GO. `[main-claude]`
+
+@johnk Marathon session. We went from playtest-blocked at start of evening to "3 small items + Squads = mainnet" by end. Capturing it all because the context is large and tomorrow-me (or a fresh session) will need this.
+
+### Headline
+
+`v1-mainnet-rc1` is tagged at `fabb8e1`. **9 audit fixes landed since** (`da04b5e` → `e7098d7`). Both SOS #3 and DB #3 verdicts are **CONDITIONAL GO**. The remaining gate items are operational, not architectural.
+
+### What happened today (chronological)
+
+**Morning** — JJ's drill #8 check (apply_config_update 24h timelock): only 14h elapsed, `TimelockNotElapsed` reconfirmed (drill #7 path replayed). No new info, fine.
+
+**Afternoon — 4P playtest debugging.** JJ tried to run a 4P wagered match. First runs failed catastrophically. Render logs revealed FOUR real bugs:
+
+1. **Double `createMatchV2` per room** — server fired create twice for same matchId, second call failed with "account already in use" (the on-chain PDA already existed from first call). Race between joinRoom and escrowDepositConfirm.
+2. **Player count off-by-one** — escrow created as 3p but server tracked 4p, so terrain was permanently blocked at "3/4 deposits confirmed."
+3. **v1 + v2 dual escrow creation** — every match was creating BOTH v1 and v2 escrows. Per V1 mainnet scope, v1 is devnet-only / 1v1. The v1 cancel attempts kept failing with `InvalidPlayer` because v1 escrow had no deposits.
+4. **Privy JWT verification failing** on some sockets with `signature verification failed`.
+
+Fixed in `590d9d6` (gating + count + v1/v2 dispatch).
+
+**Then a 5th bug surfaced**: each Privy user had **2 embedded Solana wallets** instead of 1 — `createOnLogin` + the "belt-and-suspenders" `createWallet` useEffect were both firing. Fixed in `af293ae` (removed the manual `createWallet` fallback). Vercel CI then bounced on a typescript-eslint disable directive in a JS file — fixed in `59dda33`.
+
+**The big diagnostic moment** — adding signature-verification logging to `privyAuth.js` revealed JJ's Render env had `PRIVY_APP_ID=cmoq2wwhm01il0cjuf6ik3p96` while the client's JWTs were signed for app `cmorbf1nk00z10cidg6jitsgm`. Two completely different Privy apps. The whole "trenchdemon69 has multiple wallets" confusion JJ saw earlier was the server looking in the wrong Privy app. JJ updated Render env (both APP_ID + APP_SECRET).
+
+**Then Bug 6 surfaced during the actual playtest** — first player to die clicked "Leave Match" and the server immediately settled the entire 0.4 SOL pot to an arbitrary survivor. Found the cause: `cleanupRoom` at `main.js:~1863` had 1v1-only forfeit logic. For N>2, leaving should mark the player eliminated and let the match continue. Fixed in `fabb8e1` (N>2 leave: zero hp + set alive=false + advance turn + emit playerLeft, return BEFORE 1v1 settle branch).
+
+**Re-tested 4P playtest. SUCCESS.** Match `1fcc67c0` ran end-to-end. 2 players left mid-match. Match continued. Last 2 played to natural end. On-chain settle TX `3TkVMUUPrTBqfBjcMqeYkHbPfwSErAkPU8KJpkK6W8AceePm23asc9UfYv98HpSqo2xNn5KQAbjnfQGKso1Qdwbo`. Pot 0.4 SOL split 0.36 / 0.028 / 0.012. **First successful 4P wagered match on devnet under V1 scope.**
+
+**Tagged `v1-mainnet-rc1`** at `fabb8e1`.
+
+### Audit marathon
+
+**SOS audit #3** (on-chain, stacked on #2 from 2026-05-06):
+- 7 Phase 1 context auditors (skipped Oracle — no external data sources)
+- Used Opus, delta-focused prompts. Two timed out at the SDK 43-min stream-idle limit; spawned slimmer retries that completed cleanly.
+- Final report at `.audit/FINAL_REPORT.md` (64 KB, 917 lines).
+- **Verdict: CONDITIONAL GO.** 2 of 4 prior CRITICALs RESOLVED:
+  - H023 (CVSS 9.3 partial-refund theft) — `IncompleteRefund` gate landed at all 4 refund sites with proptest regression. The audit-#2 HANDOVER was wrong about this — it said "Bundle 1 doesn't touch refund loops." It did.
+  - H001 (CVSS 8.7 one-step authority) — propose/accept implementation at v2:295-348.
+  - H044/H046 carry-forward to Squads.
+- 6 prior HIGHs also RESOLVED (H011/H030/H032 by timelock; H016/H009 by pause-guard removal; H025 by `!executable`; H039 by 24h cap; H035 on v1 by constant unification).
+- 3 NEW must-fix items, all landed in `da04b5e`:
+  - **N001** — `update_config` unconditionally set `pending_config_ts = now` on every call, letting a compromised authority defer the 24h timelock forever. Fix: only stamp if `pending_config_ts == 0`. Also fixed `ConfigProposed.applies_at` to reflect the ORIGINAL pending_config_ts.
+  - **N002** — Deleted `migrate_config` instruction + `MigrateConfigUnchecked` context. Devnet migration is done; mainnet uses initialize_config from genesis. The `UncheckedAccount` + manual realloc was pure attack surface.
+  - **N003** — Added `constraint = !config.is_paused` to `ApplyConfigUpdate` context. Pre-staged config can't apply mid-incident defensive pause.
+
+**DB audit #3** (off-chain, stacked on #2 from 2026-05-07):
+- 3 focused delta bundles (auth/identity, chain/mainnet, data/sockets/logic) instead of #2's 22 parallel auditors. Collapsed strategize+investigate into Phase 1 since context auditors already had line refs + verdicts.
+- Final report at `.bulwark/FINAL_REPORT.md` (57 KB, 601 lines).
+- **Verdict: CONDITIONAL GO.** 10 of 23 prior CRITICALs RESOLVED:
+  - H001 + H002 + H006 (identity-bridge composition) — fully closed
+  - H013 + H014 + H015 + H016 (fail-open financial paths) — closed
+  - H019 + H020 (legacy unauth socket events) — closed
+  - H009 (wallet rotation overwrites) — closed by S2-T6
+  - H052 (SHOT on-chain burn paths) — RESOLVED_BY_REMOVAL (SHOT pivot)
+- **Cross-skill H120 chain (SOS H001 + DB H002) — closed at BOTH legs.**
+- 6 new must-fix items, **5 landed**:
+  - **AUTH-N01** (`b941b3b`) — `/api/wallet/link-from-tg-token` consumed the magic-link token BEFORE the link succeeded. Failure burned the token. Added `peekLinkToken()` for non-destructive read; consume only on success.
+  - **CHAIN-N03** (`b941b3b`) — Removed dead `migrateConfigV2()` wrapper + deleted `server/scripts/migrate-config-v2.mjs` (orphaned after SOS N002).
+  - **CHAIN-N04** (`b941b3b`) — Replaced `/mainnet/i.test(RPC)` substring match in `init-config-mainnet.mjs` with explicit host allowlist (api.mainnet-beta, helius, alchemy, extrnode, rpcpool, ankr, projectserum). The substring would have accepted `mainnet.attacker.com`.
+  - **DATA-N02** (`b941b3b`) — `escrowDepositStatus` broadcast every player's wallet to every other player. Replaced single `io.sockets.in().emit()` with per-recipient projection: each recipient sees only their own wallet, others are anonymized boolean status.
+  - **DATA-N01** (`c4371ec`) — physics.js returns NEGATIVE damage entries for shooter (self-damage marker), and main.js `Math.abs(dmg)` was converting them to actual self-damage. A 1v1 wagered shooter could KO themselves and forfeit the pot. Fixed at both AI + player sites: `if (dmg <= 0) continue;` skips the marker. **Game design impact:** shooters can no longer accidentally self-KO. Pocket Tanks purists may object; for wagered SOL the defense is correct.
+  - **AUTH-N03** (`0572635`) — `propose-authority-v2.mjs` had zero safety guards beyond env var check. Added: pubkey shape validation, mainnet RPC host allowlist (gated by `PROPOSE_AUTHORITY_NETWORK=mainnet`), distinctness pre-flight, DRY RUN by default with `PROPOSE_AUTHORITY_CONFIRM=YES` to execute, post-action chain-state verification. Pattern should be applied to accept-authority-v2, update-config-v2, apply-config-update-v2 in a follow-up.
+- **3 must-fixes deferred** (need JJ decisions or build tooling):
+  - **CHAIN-N01** — `client/.env.production` ships devnet program IDs with `REACT_APP_SOLANA_NETWORK=mainnet-beta`. JJ: commit mainnet IDs to repo, or rely on Vercel env override only?
+  - **CHAIN-N02** — IDL still declares `migrate_config` post N002 deletion. Needs `anchor build` + copy `target/idl/solshot_escrow_v2.json` to `server/idl/`. Needs Anchor 0.32.1 toolchain.
+  - **AUTH-N02** — In-memory replay store for wallet-auth (~30 LOC) to close a 5-min identity-replay window in the H003+H004+H006 composition. Architectural — JJ decides implement now or accept residual under V1 small-wager scope.
+
+**GL doc reconciliation** (lightweight, not formal `/GL:reconcile`):
+- Report at `Docs/internal/DOC_RECONCILE_2026-05-28.md`
+- Triaged 15 user-facing docs: 9 STALE + 1 OBSOLETE + 5 CURRENT
+- Applied quick wins:
+  - `SHOT_TOKEN_MODEL.md` was actively misinforming (described SHOT as Pump.fun SPL with Meteora DAMM, Jupiter aggregation, 70/15/10/5 distribution — none current). Replaced with 60-line redirect to V3 north star + V1 launch sprint + litepaper.
+  - `audit-summary.md` TL;DR refreshed with audit #3 verdicts.
+- Deferred (need JJ's voice):
+  - Litepaper v2.2 → v2.3 (~2h)
+  - `security-model.md` (~1h)
+  - `mainnet-roadmap.md` (~30min)
+  - 4 other user-facing docs
+
+### Drift / corrections from this session
+
+1. **The audit-#2 HANDOVER tagging was wrong about H023.** It said "Bundle 1 doesn't touch refund loops — likely still open." Actually the fix landed at all 4 refund sites with `IncompleteRefund` gate + proptest regression. CPI auditor #04 caught this. Lesson: HANDOVER tagging is heuristic ("did the file change? if yes, RECHECK"). Don't trust tags as ground truth — verify against current code.
+
+2. **My initial Bundle 1 scoping (S2-T1) said `migrate_config` was "devnet-only, remove in follow-up."** Audit #3 N002 caught that "remove in follow-up" hadn't happened. So I removed it. Lesson: explicit "remove this code path before mainnet" comments in source ARE useful — they become audit checklist items.
+
+3. **The `propose-authority-v2.mjs` script was a no-guard time bomb.** I wrote `init-config-mainnet.mjs` with 8 safety guards earlier, but didn't apply the same pattern to the other rotation scripts. Audit caught it as AUTH-N03. Lesson: copy/paste the safety-guards block when writing similar scripts.
+
+4. **`physics.js` self-damage convention was undocumented.** Negative-as-marker is non-obvious. Worth a code comment in `physics.js:calculateDamage` describing the convention + adding the corresponding comment at the `main.js` damage-application site. Done in `c4371ec`.
+
+### TL;DR — what's left before mainnet
+
+1. **JJ + Fish at v3.squads.so** (~30 min) — create the multisig + 3 vaults (Authority / Treasury / Ops). KEY_MANAGEMENT.md §3 has the runbook with verified pubkeys. This unblocks H044/H046 carry-forward.
+
+2. **JJ decisions on 3 audit items:**
+   - CHAIN-N01: commit mainnet IDs to `client/.env.production` OR set in Vercel project env? (recommend Vercel — cleaner)
+   - CHAIN-N02: run `anchor build` + copy IDL (mechanical, no decision really — just needs the toolchain)
+   - AUTH-N02: ~30 LOC replay store now, or accept residual? (recommend implement — closes a CRIT-family chain cheaply)
+
+3. **`anchor build`** the patched program — verifies N001/N002/N003 compile, regenerates IDL (closes CHAIN-N02), produces fresh `.so`. Re-run BOK proptest suite — must stay 159/159 green.
+
+4. **`anchor upgrade` to devnet** — replace the deployed bytecode with the patched version. Re-run S2-T8 smoke (BOK + integration + 4P playtest one more time on the patched code). Tag `v1-mainnet-rc2`.
+
+5. **Mainnet deploy day:**
+   - Update `declare_id!` in `programs/solshot-escrow-v2/src/lib.rs` to `BNLgn96LqskqcgTTf7cPZ5iHkaKqRdSiCdGzcAw4L7uS`
+   - `anchor build` (fresh binary with mainnet ID)
+   - `anchor deploy --provider.cluster mainnet --upgrade-authority <vault-0-pda>`
+   - Run `init-config-mainnet.mjs` with the 3 Squads vault PDAs + `INIT_MAINNET_CONFIRM=I_UNDERSTAND_MAINNET_IRREVERSIBLE`
+   - Flip Render + Vercel env vars to mainnet
+   - Smoke 1v1 wagered match at 0.001 SOL
+   - Open the gates
+
+6. **Doc rewrites** (parallel to deploy, not blocking):
+   - Litepaper v2.3 (rewrite SHOT section, clamp 10P → 4P, fix Squads description)
+   - `security-model.md` (add Bundle 1 + audit #3 results)
+   - `mainnet-roadmap.md` (V1 scope + pre-flip checklist)
+   - 5 other user-facing docs per `DOC_RECONCILE_2026-05-28.md`
+
+Total estimated work: **~6-8 hours from `v1-mainnet-rc1` to live mainnet** (Squads multisig setup is the long pole, ~30 min wall-clock but needs coordination).
+
+### Notable architecture moments to remember
+
+- **physics.js negative damage is a "shooter hit themselves" marker** — not actual damage to apply. main.js `Math.abs` was wrong. The convention is now codified in code comments at both physics.js and main.js sites.
+- **Privy progressive linking** = if you log in with any identifier (email/TG/wallet) that's already on a Privy user, you become that user. This is why JJ's "4 distinct test accounts" all kept collapsing into one trenchdemon69 mega-user. For 4P testing, you need 4 distinct emails Privy has never seen — `+test1/2/3/4` aliases work IF the Privy app has `+`-in-email enabled.
+- **PRIVY_APP_ID and PRIVY_APP_SECRET are app-pair-bound** — you can't mix one app's APP_ID with another's SECRET. JWT verification will fail with `signature verification failed`. Server-side Privy lookups (e.g., `find-privy-owner.mjs`) need BOTH to match the client's app.
+- **Vercel CRA builds with `CI=true` treat warnings as errors.** Eslint rule references must use rules that are actually registered. JS files don't have `@typescript-eslint/no-unused-vars` — use plain `no-unused-vars`.
+
+### Worktree state for cold pickup
+
+- Branch: `main` at `e7098d7`
+- Tag: `v1-mainnet-rc1` at `fabb8e1` (3 commits behind HEAD now — should re-tag as `v1-mainnet-rc2` after the audit-fix landing + anchor rebuild)
+- Untracked: `pool/` (Fish's 8 Ball Pool work), `_archive/` (old project exports), local audit history at `.audit-history/` and `.bulwark-history/` (gitignored)
+- Anchor.toml has `[programs.mainnet]` entry with the reserved mainnet program ID. Mainnet keypair at `target/deploy/solshot_escrow_v2_mainnet-keypair.json` (gitignored).
+- All ops scripts have safety guards (init-config-mainnet, propose-authority-v2). Still need same pattern applied to accept-authority-v2, update-config-v2, apply-config-update-v2.
+- Audit artifacts: `.audit/` (SOS), `.bulwark/` (DB), both with full FINAL_REPORT + context bundles committed.
+- Diagnostic scripts from the trenchdemon69 debugging session: `check-playtest-balances.mjs`, `dump-trenchdemon.mjs`, `find-privy-owner.mjs` (all committed in `server/scripts/`).
+
+— main-claude

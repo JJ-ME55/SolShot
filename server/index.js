@@ -43,20 +43,26 @@ import {
     verifySession as verifyBasketballSession,
     submitScore as submitBasketballScore,
     getLeaderboard as getBasketballLeaderboard,
+    getMyStanding as getBasketballStanding,
     mintSession as mintBasketballSession,
 } from './services/games/basketball-standalone/standaloneLeaderboard.js';
 import {
     verifySession as verifyKeepieUppiesSession,
     submitScore as submitKeepieUppiesScore,
     getLeaderboard as getKeepieUppiesLeaderboard,
+    getMyStanding as getKeepieUppiesStanding,
     mintSession as mintKeepieUppiesSession,
 } from './services/games/keepie-uppies-standalone/standaloneLeaderboard.js';
 import {
     verifySession as verifyFreeKicksSession,
     submitScore as submitFreeKicksScore,
     getLeaderboard as getFreeKicksLeaderboard,
+    getMyStanding as getFreeKicksStanding,
     mintSession as mintFreeKicksSession,
 } from './services/games/free-kicks-standalone/standaloneLeaderboard.js';
+import BasketballScore from './models/BasketballScore.js';
+import KeepieUppiesScore from './models/KeepieUppiesScore.js';
+import FreeKicksScore from './models/FreeKicksScore.js';
 
 dotenv.config()
 
@@ -1007,19 +1013,53 @@ function parseSinceParam(raw) {
     return isNaN(d.getTime()) ? null : d;
 }
 
+// Build the Mongo filter for a since-windowed query. Shared between the
+// leaderboard service calls and the totalPlayers countDocuments() lookups.
+function buildSinceFilter(since) {
+    return since instanceof Date && !isNaN(since.getTime())
+        ? { bestAchievedAt: { $gte: since } }
+        : {};
+}
+
 // GET /api/games/basketball/leaderboard?limit=10&since=<iso>
-//   returns: { ok, leaderboard: [{rank, displayName, bestScore, ...}, ...] }
+//   returns: { ok, leaderboard: [{rank, displayName, bestScore, ...}, ...],
+//             totalPlayers }
 //   since: optional ISO date; filters to users whose `bestAchievedAt` is on
 //          or after that time. Lets the Arcade client drive 24h/7d windows.
+//   totalPlayers: count of players matching the filter — drives the
+//                 `/leaderboard` header's "Players" stat card.
 app.get('/api/games/basketball/leaderboard', async (req, res) => {
     try {
         const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 10));
         const since = parseSinceParam(req.query.since);
-        const leaderboard = await getBasketballLeaderboard({ limit, since });
-        res.json({ ok: true, leaderboard });
+        const [leaderboard, totalPlayers] = await Promise.all([
+            getBasketballLeaderboard({ limit, since }),
+            BasketballScore.countDocuments(buildSinceFilter(since)),
+        ]);
+        res.json({ ok: true, leaderboard, totalPlayers });
     } catch (err) {
         console.error('[GET /api/games/basketball/leaderboard]', err.message);
         res.status(500).json({ error: 'failed to fetch leaderboard' });
+    }
+});
+
+// GET /api/games/basketball/standing/:telegramUserId
+//   returns: { ok, standing: { rank, bestScore, totalSubmissions, displayName,
+//             bestAchievedAt } | null }
+//   Standings are public (same data as the leaderboard), so no auth — the
+//   client decodes the TG identity from its arcade session JWT and queries
+//   by ID. `standing: null` = user has never played this game.
+app.get('/api/games/basketball/standing/:telegramUserId', async (req, res) => {
+    try {
+        const telegramUserId = parseInt(req.params.telegramUserId, 10);
+        if (!Number.isFinite(telegramUserId)) {
+            return res.status(400).json({ error: 'invalid telegramUserId' });
+        }
+        const standing = await getBasketballStanding({ telegramUserId });
+        res.json({ ok: true, standing: standing || null });
+    } catch (err) {
+        console.error('[GET /api/games/basketball/standing]', err.message);
+        res.status(500).json({ error: 'failed to fetch standing' });
     }
 });
 
@@ -1063,11 +1103,29 @@ app.get('/api/games/keepieuppies/leaderboard', async (req, res) => {
     try {
         const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 10));
         const since = parseSinceParam(req.query.since);
-        const leaderboard = await getKeepieUppiesLeaderboard({ limit, since });
-        res.json({ ok: true, leaderboard });
+        const [leaderboard, totalPlayers] = await Promise.all([
+            getKeepieUppiesLeaderboard({ limit, since }),
+            KeepieUppiesScore.countDocuments(buildSinceFilter(since)),
+        ]);
+        res.json({ ok: true, leaderboard, totalPlayers });
     } catch (err) {
         console.error('[GET /api/games/keepieuppies/leaderboard]', err.message);
         res.status(500).json({ error: 'failed to fetch leaderboard' });
+    }
+});
+
+// GET /api/games/keepieuppies/standing/:telegramUserId
+app.get('/api/games/keepieuppies/standing/:telegramUserId', async (req, res) => {
+    try {
+        const telegramUserId = parseInt(req.params.telegramUserId, 10);
+        if (!Number.isFinite(telegramUserId)) {
+            return res.status(400).json({ error: 'invalid telegramUserId' });
+        }
+        const standing = await getKeepieUppiesStanding({ telegramUserId });
+        res.json({ ok: true, standing: standing || null });
+    } catch (err) {
+        console.error('[GET /api/games/keepieuppies/standing]', err.message);
+        res.status(500).json({ error: 'failed to fetch standing' });
     }
 });
 
@@ -1112,92 +1170,144 @@ app.get('/api/games/freekicks/leaderboard', async (req, res) => {
     try {
         const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 10));
         const since = parseSinceParam(req.query.since);
-        const leaderboard = await getFreeKicksLeaderboard({ limit, since });
-        res.json({ ok: true, leaderboard });
+        const [leaderboard, totalPlayers] = await Promise.all([
+            getFreeKicksLeaderboard({ limit, since }),
+            FreeKicksScore.countDocuments(buildSinceFilter(since)),
+        ]);
+        res.json({ ok: true, leaderboard, totalPlayers });
     } catch (err) {
         console.error('[GET /api/games/freekicks/leaderboard]', err.message);
         res.status(500).json({ error: 'failed to fetch leaderboard' });
     }
 });
 
+// GET /api/games/freekicks/standing/:telegramUserId
+app.get('/api/games/freekicks/standing/:telegramUserId', async (req, res) => {
+    try {
+        const telegramUserId = parseInt(req.params.telegramUserId, 10);
+        if (!Number.isFinite(telegramUserId)) {
+            return res.status(400).json({ error: 'invalid telegramUserId' });
+        }
+        const standing = await getFreeKicksStanding({ telegramUserId });
+        res.json({ ok: true, standing: standing || null });
+    } catch (err) {
+        console.error('[GET /api/games/freekicks/standing]', err.message);
+        res.status(500).json({ error: 'failed to fetch standing' });
+    }
+});
+
+// Cross-game aggregator — pulls top-1000 from each game, aggregates in
+// memory by telegramUserId, returns players sorted by total plays.
+//
+// Used by both the overall leaderboard endpoint and the overall standing
+// lookup (so a user's rank is consistent between the LB table and the
+// "Your Standing" card).
+//
+// Fine at current scale (< 100 players). Once we cross ~10k players,
+// swap to an aggregation pipeline ($unionWith + $group) or a periodically-
+// rebuilt summary collection.
+async function buildOverallStandings({ since } = {}) {
+    const [bb, ku, fk] = await Promise.all([
+        getBasketballLeaderboard({ limit: 1000, since }),
+        getKeepieUppiesLeaderboard({ limit: 1000, since }),
+        getFreeKicksLeaderboard({ limit: 1000, since }),
+    ]);
+
+    const players = new Map();
+    function add(rows, gameSlug) {
+        for (const r of rows) {
+            const id = r.telegramUserId;
+            if (id == null) continue;
+            const existing = players.get(id) || {
+                telegramUserId: id,
+                displayName: r.displayName,
+                bestAchievedAt: r.bestAchievedAt,
+                totalPlays: 0,
+                games: new Set(),
+            };
+            existing.totalPlays += r.totalSubmissions || 0;
+            existing.games.add(gameSlug);
+            // Prefer the most recently-active game's display name + timestamp
+            // so renames propagate to the overall board.
+            if (
+                r.bestAchievedAt &&
+                (!existing.bestAchievedAt || r.bestAchievedAt > existing.bestAchievedAt)
+            ) {
+                existing.displayName = r.displayName;
+                existing.bestAchievedAt = r.bestAchievedAt;
+            }
+            players.set(id, existing);
+        }
+    }
+    add(bb, 'basketball');
+    add(ku, 'keepieuppies');
+    add(fk, 'freekicks');
+
+    return [...players.values()].sort((a, b) => {
+        if (b.totalPlays !== a.totalPlays) return b.totalPlays - a.totalPlays;
+        // Tie-break: most recently active wins
+        const at = a.bestAchievedAt?.getTime?.() || 0;
+        const bt = b.bestAchievedAt?.getTime?.() || 0;
+        return bt - at;
+    });
+}
+
 // GET /api/games/leaderboard?limit=10&since=<iso>
 //   Overall arcade leaderboard — ranks players by total plays across all
-//   three standalone games (basketball, keepie-uppies, free-kicks). The
-//   client's "Overall" cabinet tab calls this.
-//
-//   `bestScore` in the response is the total submissions across all games
-//   so the existing client hook formats it the same way as per-game scores.
-//   `gamesPlayed` (0..3) shows how many cabinets the player has touched.
-//
-//   Implementation: pulls top-1000 from each game, aggregates in memory by
-//   telegramUserId. Fine at current scale (< 100 players). Once we cross
-//   ~10k players, swap to an aggregation pipeline ($unionWith + $group) or
-//   a periodically-rebuilt summary collection.
+//   three standalone games. `bestScore` in the response is the total
+//   submissions so the existing client hook formats it the same way as
+//   per-game scores. `gamesPlayed` (0..3) shows how many cabinets the
+//   player has touched. `totalPlayers` is the count of unique players in
+//   the (optionally windowed) aggregate.
 app.get('/api/games/leaderboard', async (req, res) => {
     try {
         const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 10));
         const since = parseSinceParam(req.query.since);
-
-        const [bb, ku, fk] = await Promise.all([
-            getBasketballLeaderboard({ limit: 1000, since }),
-            getKeepieUppiesLeaderboard({ limit: 1000, since }),
-            getFreeKicksLeaderboard({ limit: 1000, since }),
-        ]);
-
-        const players = new Map();
-        function add(rows, gameSlug) {
-            for (const r of rows) {
-                const id = r.telegramUserId;
-                if (id == null) continue;
-                const existing = players.get(id) || {
-                    telegramUserId: id,
-                    displayName: r.displayName,
-                    bestAchievedAt: r.bestAchievedAt,
-                    totalPlays: 0,
-                    games: new Set(),
-                };
-                existing.totalPlays += r.totalSubmissions || 0;
-                existing.games.add(gameSlug);
-                // Prefer the most recently-active game's display name + timestamp
-                // so renames propagate to the overall board.
-                if (
-                    r.bestAchievedAt &&
-                    (!existing.bestAchievedAt || r.bestAchievedAt > existing.bestAchievedAt)
-                ) {
-                    existing.displayName = r.displayName;
-                    existing.bestAchievedAt = r.bestAchievedAt;
-                }
-                players.set(id, existing);
-            }
-        }
-        add(bb, 'basketball');
-        add(ku, 'keepieuppies');
-        add(fk, 'freekicks');
-
-        const sorted = [...players.values()].sort((a, b) => {
-            if (b.totalPlays !== a.totalPlays) return b.totalPlays - a.totalPlays;
-            // Tie-break: most recently active wins
-            const at = a.bestAchievedAt?.getTime?.() || 0;
-            const bt = b.bestAchievedAt?.getTime?.() || 0;
-            return bt - at;
-        });
+        const sorted = await buildOverallStandings({ since });
 
         const leaderboard = sorted.slice(0, limit).map((p, i) => ({
             rank: i + 1,
             telegramUserId: p.telegramUserId,
             displayName: p.displayName,
-            // Hook formats `bestScore` as the displayed number — for overall
-            // the meaningful figure is total plays across all cabinets.
             bestScore: p.totalPlays,
             totalSubmissions: p.totalPlays,
             bestAchievedAt: p.bestAchievedAt,
             gamesPlayed: p.games.size,
         }));
 
-        res.json({ ok: true, leaderboard });
+        res.json({ ok: true, leaderboard, totalPlayers: sorted.length });
     } catch (err) {
         console.error('[GET /api/games/leaderboard]', err.message);
         res.status(500).json({ error: 'failed to fetch overall leaderboard' });
+    }
+});
+
+// GET /api/games/standing/:telegramUserId — cross-game overall standing
+//   Mirror of per-game /standing/:id but for the Overall cabinet.
+app.get('/api/games/standing/:telegramUserId', async (req, res) => {
+    try {
+        const telegramUserId = parseInt(req.params.telegramUserId, 10);
+        if (!Number.isFinite(telegramUserId)) {
+            return res.status(400).json({ error: 'invalid telegramUserId' });
+        }
+        const sorted = await buildOverallStandings();
+        const idx = sorted.findIndex((p) => p.telegramUserId === telegramUserId);
+        if (idx === -1) return res.json({ ok: true, standing: null });
+        const me = sorted[idx];
+        res.json({
+            ok: true,
+            standing: {
+                rank: idx + 1,
+                bestScore: me.totalPlays,
+                totalSubmissions: me.totalPlays,
+                displayName: me.displayName,
+                bestAchievedAt: me.bestAchievedAt,
+                gamesPlayed: me.games.size,
+            },
+        });
+    } catch (err) {
+        console.error('[GET /api/games/standing]', err.message);
+        res.status(500).json({ error: 'failed to fetch overall standing' });
     }
 });
 

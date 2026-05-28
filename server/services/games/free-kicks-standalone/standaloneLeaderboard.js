@@ -23,7 +23,8 @@ import FreeKicksScore from '../../../models/FreeKicksScore.js';
 // ─── JWT config ─────────────────────────────────────────────────────────
 
 const ALG = 'HS256';
-const SESSION_TTL = '24h';
+// Bumped 24h → 30d on 2026-05-28 (see basketball-leaderboard.js for context).
+const SESSION_TTL = '30d';
 const ISSUER = 'arcade-bot:freekicks';
 
 function getSecret() {

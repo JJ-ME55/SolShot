@@ -32,7 +32,11 @@ import BasketballScore from '../../../models/BasketballScore.js';
 // ─── JWT config ─────────────────────────────────────────────────────────
 
 const ALG = 'HS256';
-const SESSION_TTL = '24h';   // user can play multiple games per /basketball tap
+// 30 days — was 24h, but standalone games fail silently on 401 when a stale
+// session is reused. Bumped 2026-05-28 after a user (Elliot, free-kicks)
+// hit a 450 that didn't land because his 24h JWT had expired. New mints
+// get the full 30d; existing 24h JWTs continue expiring as scheduled.
+const SESSION_TTL = '30d';
 const ISSUER = 'arcade-bot:basketball';
 
 function getSecret() {

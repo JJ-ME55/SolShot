@@ -27,6 +27,34 @@ const JWT_SECRET = process.env.JWT_SECRET || (() => {
 })();
 const AUTH_TIMEOUT = 5 * 60 * 1000; // 5 minutes — signature must be recent
 
+// AUTH-N02: in-memory replay store. Keyed by signature; TTL == AUTH_TIMEOUT
+// (past TTL the message's own timestamp check would reject it anyway).
+// Single-process Set — acceptable because the auth flow is short-lived and the
+// signature space is huge; bounded by request volume in the last 5 minutes.
+const seenSignatures = new Map();
+
+function sweepSeenSignatures(now) {
+    if (seenSignatures.size < 1024) return; // amortize: only sweep when it grows
+    for (const [sig, expiresAt] of seenSignatures) {
+        if (expiresAt <= now) seenSignatures.delete(sig);
+    }
+}
+
+export function checkAndRecordSignature(signature, now = Date.now()) {
+    const expiresAt = seenSignatures.get(signature);
+    if (expiresAt && expiresAt > now) {
+        return { fresh: false, reason: 'Signature already used' };
+    }
+    seenSignatures.set(signature, now + AUTH_TIMEOUT);
+    sweepSeenSignatures(now);
+    return { fresh: true };
+}
+
+// Test-only: reset state between cases.
+export function _resetReplayStoreForTests() {
+    seenSignatures.clear();
+}
+
 /**
  * Verify a wallet signature
  *
@@ -122,6 +150,14 @@ export function handleAuthenticate(client, { walletAddress, message, signature, 
     const sigCheck = verifyWalletSignature(walletAddress, message, signature);
     if (!sigCheck.valid) {
         return { success: false, reason: sigCheck.reason };
+    }
+
+    // AUTH-N02: replay store. Record only after signature has verified — keeps
+    // unauth'd traffic from polluting the map. Rejects re-use of an otherwise
+    // valid signature within the AUTH_TIMEOUT window.
+    const replayCheck = checkAndRecordSignature(signature);
+    if (!replayCheck.fresh) {
+        return { success: false, reason: replayCheck.reason };
     }
 
     // Generate JWT

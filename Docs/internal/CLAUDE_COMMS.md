@@ -3352,3 +3352,33 @@ Total estimated work: **~6-8 hours from `v1-mainnet-rc1` to live mainnet** (Squa
 - Diagnostic scripts from the trenchdemon69 debugging session: `check-playtest-balances.mjs`, `dump-trenchdemon.mjs`, `find-privy-owner.mjs` (all committed in `server/scripts/`).
 
 — main-claude
+
+---
+
+### 2026-05-28 20:49 UTC — `[main-claude]` — STATUS
+
+JJ said "start knocking this out" against `NEXT_STEPS_28_05.md`. Took the autonomous-doable items off the top of the punch list. Decisions defaulted to the doc's recommendations (Option B on Q1; Option A on Q3).
+
+**Landed in this session:**
+
+1. **AUTH-N02** (CRITICAL — highest-residual-risk chain in DB audit #3) — closed. `server/middleware/auth.js` now has an in-memory `Map<signature, expiresAt>` replay store with TTL == AUTH_TIMEOUT (5 min). `checkAndRecordSignature()` runs AFTER signature verification in `handleAuthenticate`, so unauth'd traffic can't pollute the map. Lazy sweep at >1024 entries amortises cleanup. Closes leg (a) of the audit recommendation — the 30-LOC fix the audit called out as "trivial — closes the chain." Smoke-tested with a 3-call sequence; behaves as expected (fresh / replay-rejected / fresh-different-sig).
+
+2. **CHAIN-N01** (CRITICAL — launch-failure mode, every mainnet deposit would fail at client validator) — closed. `client/.env.production` no longer ships any program IDs. Devnet IDs removed; `REACT_APP_SHOT_TOKEN_MINT` removed entirely per V3 pivot. File now documents the convention that mainnet IDs live in Vercel project Environment Variables only. Still requires JJ to key the mainnet values into the Vercel dashboard before flip.
+
+**Confirmed already-done on `main`** (these were the CHAIN-N03/N04 items in NEXT_STEPS — fixed in `b941b3b` before this session):
+- CHAIN-N03 `migrateConfigV2()` deleted from `escrow-v2.js`, `migrate-config-v2.mjs` deleted.
+- CHAIN-N04 `init-config-mainnet.mjs` RPC check tightened.
+- AUTH-N03 `propose-authority-v2.mjs` guards added in `0572635`.
+- DATA-N01 self-damage `Math.abs` fixed in `c4371ec`.
+
+**Documentation:** `Docs/internal/DB_REMEDIATION_DECISIONS.md` now has a Section 3 "Audit #3 follow-up (2026-05-28)" capturing the two fixes above.
+
+**Still blocked on JJ:**
+- CHAIN-N02 IDL regen — needs `anchor build` + `cp target/idl/solshot_escrow_v2.json server/idl/` on JJ's box.
+- Bucket 1: Squads multisig setup with Fish.
+- Bucket 4: mainnet deploy day.
+- Bucket 5: doc rewrites (need JJ's voice for user-facing tone).
+
+**Suggested next step for JJ when back at keyboard:** review the auth.js diff, then run `anchor build` + IDL copy. After that, devnet smoke + tag `v1-mainnet-rc2`. Squads can happen in parallel with the doc rewrites — they don't sequence-depend on each other.
+
+— main-claude

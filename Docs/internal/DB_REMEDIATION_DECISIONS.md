@@ -152,6 +152,19 @@ When SolShot moves to mainnet, the following work bundles need to land. Many com
 
 ---
 
+## Section 3 — Audit #3 follow-up (2026-05-28)
+
+Fixes landed in this session, beyond the audit-fix commits already on `main` (`b941b3b`, `c4371ec`, `0572635`).
+
+| ID | Title | Fix | Files |
+|---|---|---|---|
+| **AUTH-N02** | H003+H004+H006 5-minute identity-replay window composition | Added in-memory `Map<signature, expiresAt>` replay store with TTL == AUTH_TIMEOUT (5 min). New `checkAndRecordSignature()` runs after signature has verified inside `handleAuthenticate`; replays return `Signature already used`. Lazy sweep at >1024 entries amortises cleanup. Closes leg (a) of the AUTH-N02 recommendation — the lowest-risk fix per the audit. | `server/middleware/auth.js:28-58, 138-145` |
+| **CHAIN-N01** | `client/.env.production` ships devnet IDs with `mainnet-beta` network | Removed `REACT_APP_ESCROW_PROGRAM_ID`, `REACT_APP_ESCROW_V2_PROGRAM_ID`, and `REACT_APP_SHOT_TOKEN_MINT` from the committed file. Vercel project Environment Variables now sole source of truth for these (Option B in `Docs/internal/NEXT_STEPS_28_05.md` Q1). Comment block documents the convention. SHOT mint removed entirely per V3 pivot. | `client/.env.production:8-19` |
+
+Residual: CHAIN-N02 (IDL regen) still needs `anchor build` + `cp target/idl/solshot_escrow_v2.json server/idl/` on JJ's machine. CHAIN-N01 still needs the mainnet values keyed into the Vercel dashboard before flip.
+
+---
+
 ## Cross-Reference
 
 For full attack walkthroughs, evidence, and severity calibration, see `.bulwark/FINAL_REPORT.md` and individual context files at `.bulwark/context/H*-*.md`.

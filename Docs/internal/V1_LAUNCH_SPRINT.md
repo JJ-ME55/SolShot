@@ -445,27 +445,39 @@ Land all mainnet-blocking code changes: Bundle 1 Anchor, SHOT off-chain conversi
 
 ---
 
-### S2-T8 — Pre-mainnet smoke (devnet)
-**Why:** Final verification before flip. Catches any integration regression between Sprint-2 changes.
+### S2-T8 — Pre-mainnet smoke + audit re-runs (devnet)
+**Why:** Final verification before flip. Catches any integration regression between Sprint-2 changes AND re-audits the code paths that changed since the last security pass.
+
+**Why audits must re-run:**
+- **SOS** (on-chain): Bundle 1 added 4 brand-new instructions to `lib.rs` — `propose_authority`, `accept_authority`, `apply_config_update`, `migrate_config`. The two-step authority handoff, the 24h timelock arithmetic, and especially the manual `UncheckedAccount` realloc in `migrate_config` are all unaudited. Cannot ship to mainnet with unaudited bytecode in upgrade-authority-holding multisig.
+- **DB** (off-chain): the off-chain attack surface has grown — S2-T6 wallet rotation helper, S2-T7 refund derive-from-mask, SHOT off-chain conversion (S2-T3/T4), funnel admin endpoint, wallet-link retry, escrow-v2.js env-override path, new operational scripts (init-config-mainnet, apply-config-update, propose/accept-authority, migrate-config). All of this is post-last-DB-scan.
+- **BOK** (math): low yield — Bundle 1 added no real economic logic, fee math is unchanged. Skip unless SOS or DB flags math.
+- **GL:reconcile**: docs are out of sync after the V3 economy pivot, SHOT-off-chain pivot, V1 scope lock, and the 3-vault Squads correction landed today. Litepaper v2.2, mainnet-roadmap, security-model, deployment-sequence all need a cross-check pass.
 
 **Procedure:**
 1. Devnet running fully hardened code (Bundle 1 + A + 2/3 priorities)
-2. Re-run all 6 playtest scenarios from S2-T5
-3. Run full BOK invariant suite — 159 tests must pass
-4. Verify funnel events emit at every stage
-5. Verify wallet-link retry works (kill server mid-link, retry succeeds)
-6. Verify rotation: rotate config authority via Squads → app-authority, run a full match
-7. Tag `v1-mainnet-rc1` on `main`
+2. **`/SOS:scan` on `programs/solshot-escrow-v2/src/lib.rs`** — focus: Bundle 1 instructions, migrate_config realloc safety, pending-state invariants. Triage findings, fix or document acceptance for each.
+3. **`/DB:scan` on `server/`** — focus: post-T6/T7 deltas, new admin endpoints, SHOT off-chain code path. Triage similarly.
+4. **`/GL:reconcile`** — find contradictions across Docs/. Run `/GL:update` on any docs it flags (litepaper, mainnet-roadmap, security-model, deployment-sequence likely candidates).
+5. Re-run all 6 playtest scenarios from S2-T5
+6. Run full BOK invariant suite — 159 tests must pass (no expected changes since Bundle 1 added no math, but re-run as smoke)
+7. Verify funnel events emit at every stage
+8. Verify wallet-link retry works (kill server mid-link, retry succeeds)
+9. Verify rotation: rotate config authority via Squads → app-authority, run a full match
+10. Tag `v1-mainnet-rc1` on `main`
 
 **Acceptance:**
+- SOS report: no HIGH/CRITICAL open
+- DB report: no HIGH/CRITICAL open
+- GL: docs reconciled, no live contradictions
 - All scenarios green
 - BOK suite green
 - Tag pushed
 - Mainnet flip can proceed with confidence
 
 **Owner:** JJ + Claude
-**Effort:** 1 day
-**Risk:** Anything found here delays flip. Budget for it.
+**Effort:** 2 days (1 audit, 1 smoke + tag)
+**Risk:** Anything found here delays flip. Budget for it. SOS findings on Bundle 1 are the highest-likelihood blocker since that code is unaudited.
 
 ---
 
@@ -473,11 +485,16 @@ Land all mainnet-blocking code changes: Bundle 1 Anchor, SHOT off-chain conversi
 
 ### Pre-flip checklist (run morning of flip)
 - [ ] `v1-mainnet-rc1` tag on `main`
+- [ ] **SOS report: zero HIGH/CRITICAL open** (Bundle 1 audited)
+- [ ] **DB report: zero HIGH/CRITICAL open** (post-T6/T7 server audited)
+- [ ] **GL:reconcile clean** — Docs/litepaper, mainnet-roadmap, security-model, deployment-sequence all consistent with V1 scope + SHOT off-chain + 3-vault Squads
+- [ ] BOK suite green (159 tests pass)
 - [ ] Render mainnet env vars staged (not deployed yet)
 - [ ] Vercel mainnet env vars staged
 - [ ] **Vercel Deployment Protection: disabled OR preview-only** ⚠️ (see §4.5 — this gotcha cost us 3.5 days on devnet, do NOT repeat at mainnet)
 - [ ] Mainnet RPC provider chosen (Helius / QuickNode / Triton — decide before this) + tested
-- [ ] Treasury + ops wallets funded with ~0.5 SOL each for rent
+- [ ] Squads multisig + 3 vaults created on mainnet; test TX through each vault confirmed
+- [ ] Treasury + Ops vault PDAs funded with ~0.05 SOL each for rent
 - [ ] Server keypair (`solshot-server-authority.json`) on Render disk
 - [ ] Bug bounty page drafted (host on solshot.gg/security or Immunefi)
 - [ ] Status page / Discord announcement template ready

@@ -155,7 +155,7 @@ This is a known iOS WebView limitation. It doesn't affect your funds, your walle
 
 ## Group-Chat Wagered Matches
 
-Group-chat matches (started with `/customgame` in a Telegram group) use the same bank-vault model, extended for 2–10 players and an async turn pace.
+Group-chat matches (started with `/customgame` in a Telegram group) use the same bank-vault model, extended for 2–4 players at V1 launch and an async turn pace. (The v2 escrow program supports up to 10 players on-chain; the UI caps at 4P for V1, with 5+ unlocking in a post-V1 expansion.)
 
 **The vault works the same way.** Each player deposits their wager. The pot scales with the number of depositors. Settlement splits 90/7/3 to winner/treasury/ops.
 
@@ -192,7 +192,7 @@ After the grace period (2 hours for 1v1 matches, 24 hours after the match-end ti
 
 SolShot takes a 10% fee on every wagered match. Here's exactly where it goes:
 
-- **7% to the treasury.** Funds development, infrastructure and the SHOT token reward pool.
+- **7% to the treasury.** Funds development, infrastructure and the in-game SHOT economy (server-side ledger; no on-chain reward pool).
 - **3% to operations.** Covers server costs, Solana transaction fees and ongoing maintenance.
 
 The fee is deducted from the total pot at settlement. If two players each wager 0.25 SOL (0.5 SOL total pot), the winner receives 0.45 SOL, the treasury receives 0.035 SOL, and operations receives 0.015 SOL. All three transfers happen in a single atomic transaction. There's no partial payout state.
@@ -239,7 +239,7 @@ The SolShot server can trigger settlement, but it cannot choose where the funds 
 
 There are two escrow programs:
 - **v1.** Used for real-time 1v1 and multi-player duels (Quick Match, Duel, High Roller).
-- **v2.** Used for async Telegram group-chat matches (up to 10 players, 12-hour turns).
+- **v2.** Used for async Telegram group-chat matches (capped at 4 players in the V1 UI; supports up to 10 on-chain for V2 expansion; 12-hour turns).
 
 ### Trustless Settlement
 

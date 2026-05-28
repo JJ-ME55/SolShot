@@ -86,7 +86,7 @@ goes dark.
 | `server/services/gold.js` | Gold economy (1000G start, +15G/HP, +200 kill, +300 win) |
 | `server/services/privyAuth.js` | Privy JWT middleware (`requirePrivyAuth`) |
 | `server/services/walletLinkTokens.js` | Magic-link token generation + redemption |
-| `server/services/shot-token.js` | On-chain SHOT burn verification |
+| `server/services/shot-token.js` | Legacy on-chain SHOT burn verification (deprecated; SHOT pivoted off-chain 2026-05-26 — see V1_LAUNCH_SPRINT.md §S2-T3+T4) |
 | `server/services/groupchat/` | Group-match lifecycle: 8 files listed below |
 | `server/models/` | Mongoose schemas: User, Match, GroupMatch, Challenge |
 | `server/scripts/init-config.mjs` | One-shot GlobalConfig PDA bootstrap script |
@@ -223,11 +223,14 @@ High Roller, and Custom Challenge match modes.
 ### 5. On-chain v2 - `solshot-escrow-v2` (N-player, async) - NEW
 
 **Purpose:** SOL escrow for async Telegram group-chat matches. Designed for chat-paced cadence
-(12-hour turn timers, multi-day matches) with 2–10 players.
+(12-hour turn timers, multi-day matches) with 2–10 players on-chain. **V1 UI caps at 4P**; 5–10P
+unlocks as a post-V1 expansion (V2 scope per `Docs/internal/V3_ARCADE_ECONOMY_NORTH_STAR.md`).
 
 **Location:** `programs/solshot-escrow-v2/src/lib.rs` (1020 LOC)
 
 **Program ID (devnet):** `BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N`
+
+**Program ID (mainnet, reserved 2026-05-27, V1 launch target):** `BNLgn96LqskqcgTTf7cPZ5iHkaKqRdSiCdGzcAw4L7uS`
 
 **State machine:** `AwaitingDeposits → Active → Settled / Cancelled`
 
@@ -506,12 +509,21 @@ This does NOT protect newly created matches post-compromise, and does NOT preven
 | Server (authority hot wallet) | TRUSTED (intentional, pre-mainnet) | Create matches; settle (pick winner); cancel; rotate config; pause |
 | Solana Upgrade Authority | FULLY TRUSTED | Replace bytecode; close program |
 
-**Single-key design (intentional pre-mainnet):** The same hot wallet
+**Single-key design (intentional pre-mainnet, devnet only):** The same hot wallet
 (`HPyVPj2VH9yBirr7FMgAJeDH8xJgaMKy5UnwLkjSnovk`) holds both Solana-level upgrade authority and
-application-level `config.authority` for both programs. JJ has acknowledged this as an explicit
-pre-mainnet decision. A compromise of either role is sufficient for total protocol drainage (SOS
-H044, DB H012). Mainnet plan: Squads multisig for upgrade authority (Layer 1), separate hot wallet
-for application authority (Layer 2).
+application-level `config.authority` for both programs **on devnet**. JJ acknowledged this as an
+explicit devnet decision. A compromise of either role is sufficient for total protocol drainage
+(SOS H044, DB H012).
+
+**Mainnet plan (closes this gap from day one — not migrate-after-deploy):** One Squads 2-of-3
+multisig with **three distinct vault PDAs** (Authority / Treasury / Ops, required because the v2
+program rejects same-PDA collisions: `authority != treasury`, `authority != ops`,
+`treasury != ops`). Vault 0 is the Solana upgrade authority (Layer 1) AND the application
+`config.authority` (Layer 2) — both rotated to the multisig via `anchor deploy --upgrade-authority
+<vault-0-pda>` and `initialize_config(authority = vault-0-pda, treasury = vault-1-pda,
+ops = vault-2-pda)` at the mainnet flip. The only hot key remaining post-flip is
+`solshot-server-authority.json` (Layer 3, server settle/cancel signer). Full runbook in
+`Docs/KEY_MANAGEMENT.md` §3-§4.
 
 ### Trust Zones (off-chain)
 
@@ -558,8 +570,10 @@ From `.audit/ARCHITECTURE.md` Section 3:
 │    Power: rotate config / pause / settle / create / cancel    │
 │           v2 also: rotate fee BPS up to 10% combined         │
 │    Safeguards: distinctness guards, zero-address guard,       │
-│                v2 per-match snapshot for in-flight matches.   │
-│                NO timelock. NO propose/accept (H001 open).    │
+│                v2 per-match snapshot for in-flight matches,   │
+│                24h timelock on apply_config_update + propose/ │
+│                accept_authority — Bundle 1 LANDED 2026-05-27  │
+│                (S2-T1 + S2-T2; H001 CLOSED).                  │
 ├──────────────────────────────────────────────────────────────┤
 │  ON-CHAIN VALIDATION                                          │
 │    has_one = authority on every privileged path               │
@@ -606,7 +620,7 @@ commit-reveal or VRF-based winner selection (SOS H003/H005, deferred to Bundle 4
 | On-chain language | Rust / Anchor | 0.32.1 |
 | On-chain network | Solana | Devnet today; mainnet pending |
 | Database | MongoDB Atlas | Free tier (no at-rest encryption) |
-| Token | SPL Token (SHOT) | 10M supply, mint authority burned, 9 decimals |
+| In-game currency | SHOT (closed economy, off-chain ledger) | Earned via gameplay, spent on prestige + cosmetics. SPL launch path retired 2026-05-26. |
 | Math library | `bn.js` | Imported directly (Anchor 0.32.1 breaking change) |
 
 ---
@@ -688,11 +702,11 @@ requires WSL2 setup.
 The following hardening bundles are required before mainnet. Each is a separate PR + audit-verify
 cycle.
 
-**Bundle 1 - Authority hardening** (closes SOS H001, H002, H030, H032, H042; DB H003, H004, H012)
-- `pending_authority` field + `propose_authority` / `accept_authority` instructions (both programs)
-- 24h timelock on `update_config` for treasury / ops / fee_bps changes
-- Migrate Layer 1 (upgrade authority) to Squads M-of-N multisig
-- Separate server keypair from upgrade authority
+**Bundle 1 - Authority hardening** — **LANDED 2026-05-27** (S2-T1 + S2-T2; closes SOS H001, H002, H030, H032, H042; DB H003 still tracked separately as AUTH-N02)
+- `pending_authority` field + `propose_authority` / `accept_authority` instructions (both programs) — shipped to devnet
+- 24h timelock on `apply_config_update` for treasury / ops / fee_bps changes — shipped to devnet
+- Layer 1 (upgrade authority) and Layer 2 (`config.authority`) BOTH go to Squads Vault 0 at the mainnet flip — anchor deploys with `--upgrade-authority <vault-0-pda>` and `initialize_config(authority = vault-0-pda)` from genesis. No post-deploy migration.
+- `solshot-server-authority.json` (Layer 3) remains as the only hot key, used for `settle_match` and `cancel_match` only.
 
 **Bundle 2 - Wallet & Identity** (closes DB H009, H010, H014, H015, H016)
 - `updateWalletForTgUser()` with versioned audit trail (wallet rotation tracking)

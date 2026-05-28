@@ -2,7 +2,7 @@
 
 ### Artillery duels in your Telegram group chat. Wager SOL. Settle on-chain.
 
-**Last updated:** May 7, 2026. Devnet.  
+**Last updated:** May 28, 2026. Devnet (mainnet flip imminent).  
 **Play:** [solshot.gg](https://solshot.gg) | **Telegram bot:** [@SolShotGG_bot](https://t.me/SolShotGG_bot)
 
 ---
@@ -40,19 +40,19 @@ Server runs all physics. Players only send angle, power and weapon. Nothing the 
 
 | Component | Address |
 |---|---|
-| Escrow v1 (1v1 real-time) | [`4kzrDpV9...`](https://solscan.io/account/4kzrDpV9JxjE27AMg4PQXzGuge9MEYQEFznSPvkBtnH1?cluster=devnet) |
-| Escrow v2 (N-player async) | [`BVKXLUnu...`](https://solscan.io/account/BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N?cluster=devnet) |
-| GlobalConfig PDA | [`92wnuoau...`](https://solscan.io/account/92wnuoauqtxkkxDu22fBWGZMBjfNmvSXfKrsJ8nrfSU4?cluster=devnet) |
-| SHOT token mint | [`4NnYBycL...`](https://solscan.io/token/4NnYBycLLo8acgbkLz2SyCXd3KU8jgHQLEmrVypi5VLd?cluster=devnet) |
+| Escrow v1 (1v1 real-time, devnet only — not on mainnet flip) | [`4kzrDpV9...`](https://solscan.io/account/4kzrDpV9JxjE27AMg4PQXzGuge9MEYQEFznSPvkBtnH1?cluster=devnet) |
+| Escrow v2 — devnet | [`BVKXLUnu...`](https://solscan.io/account/BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N?cluster=devnet) |
+| Escrow v2 — mainnet (reserved 2026-05-27, V1 launch target) | `BNLgn96LqskqcgTTf7cPZ5iHkaKqRdSiCdGzcAw4L7uS` |
+| GlobalConfig PDA (devnet) | [`92wnuoau...`](https://solscan.io/account/92wnuoauqtxkkxDu22fBWGZMBjfNmvSXfKrsJ8nrfSU4?cluster=devnet) |
 
 ### Sample settled matches
 
 - **2026-05-04, 1v1 Quick Match.** First wagered match end-to-end on devnet. Winner +0.18 SOL, Treasury +0.014, Ops +0.006. TX: [`4WSsDsKV...`](https://solscan.io/tx/4WSsDsKVzCugdjsfD6Zg2kHKc7VBcByUKsN5P9CQEMj2ExXuuw9jQJch6eK4Qqu1MY8Ma16Tw1QawJKig5V3b9sf?cluster=devnet)
 - **2026-05-06, 3-player group-chat.** First fully organic N-player auto-settle. No manual intervention. TX: [`4ja8VKpZ...`](https://solscan.io/tx/4ja8VKpZJnQek8xakFWqByyRJ6qG9U7iWeFwqiiZVKGhemVfnWLDLiJYuMdjoN9tKptCxE1Dkzx5d9ZE6D3NqtL1?cluster=devnet)
 
-### SHOT token
+### SHOT in-game currency
 
-10M fixed supply. Mint authority burned at launch, so supply can only decrease. 1.5M in treasury, 8.5M in dev wallet (rewards, team, liquidity). Players burn SHOT to unlock prestige weapon tiers. On-chain burn verification on every upgrade.
+Closed-economy in-game currency. Earned via gameplay (milestones, kills, wins). Spent server-side on prestige tier unlocks and cosmetics. No DEX listing, no secondary market, no on-chain mint. The Pump.fun SPL launch path was abandoned 2026-05-26 — see [`SHOT_TOKEN_MODEL.md`](./SHOT_TOKEN_MODEL.md) for the model description.
 
 ### Access points
 
@@ -150,7 +150,6 @@ Higher-complexity SOS findings (re-entrancy patterns, full formal verification) 
 |---|---|---|
 | **Consumables** | Burn small amounts of SHOT for in-match boosts (Tactical Scope, Smoke Screen, Reinforced Armor, etc.) Lasts 5 matches, all SHOT burned permanently. | Service scaffolded (`server/services/consumables.js`). v1 ships Overcharge only |
 | **Tournaments** | Bracketed multi-round events with guaranteed prize pools and SHOT bonuses | Designed |
-| **SHOT buybacks** | Treasury-funded protocol buyback. Uses a slice of fees to repurchase and burn SHOT from open markets | Designed |
 | **Multi-day marathon modes** | Group-chat turn timers beyond 24h. Capped at 24h today after SOS H039 hardening. Longer modes planned post-mainnet once stuck-match recovery is fully load-tested. | Lobby UI ready, server cap remains 24h |
 | **Expanded leaderboard** | Per-mode boards, weekly resets, season-based prestige rewards | Designed |
 
@@ -174,7 +173,6 @@ All three share the same SHOT economy, Telegram bot and Privy wallet stack.
 | **2 programs** | v1 (1v1 real-time) and v2 (N-player async group-chat) |
 | **3 audits** | SOS, BOK, DB. All reports public, all findings dispositioned |
 | **159 / 159** | BOK math property tests passing |
-| **10M SHOT** | Fixed supply, mint authority burned |
 | **20 weapons** | 15 base plus 5 prestige across BO1 / BO3 / BO5 formats |
 | **28 cosmetics** | 5 categories (PATTERN / TRAIL / BLAST / SKIN / KILL) |
 | **3 auth methods** | Privy: email, Google, Telegram OAuth. No seed phrase |

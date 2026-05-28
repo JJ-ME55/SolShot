@@ -362,3 +362,57 @@ Bundle C (npm CVEs, Vercel headers, CSP cleanup) can be shipped incrementally an
 
 **Improvement vs Feb 2026:**
 Significant. npm vulnerabilities down 33% (server) and 64% (client). Helmet and CORS deployed comprehensively. The Feb CRITICAL S004 (PDA pre-squat DoS - anyone could de-escrow any match at near-zero cost) is fully resolved. Source maps disabled. `qs` patched out of vulnerable range. Five major auth gaps closed in the DB fix bundle. Two regressions (KM-04 zeroization, dead CSP origins) caught by the stacked audit and addressed. The on-chain math surface has 159 passing invariant tests across 41 invariants, with zero violations. The cross-skill H120 compound - the most dangerous single finding in the May cycle - is closed at its exploitable entry point (DB H002).
+
+
+---
+
+## Audit Pass 3 (2026-05-28)
+
+A third audit pass ran after the Bundle 1 authority hardening shipped to devnet (S2-T1 + S2-T2, 2026-05-27). SOS Audit #3 covered the on-chain delta; DB Audit #3 covered the off-chain delta. BOK Audit #3 re-ran the math invariant suite.
+
+### Headline
+
+Both SOS and DB returned **CONDITIONAL GO** for V1 mainnet, replacing Audit #2's "not yet ready" verdict. The conditions are bounded: 3 SOS fixes + 6 DB fixes, all landed before this audit-summary append.
+
+### SOS Audit #3 — three N-series fixes landed
+
+| ID | Title | Fix |
+|---|---|---|
+| **N001** | `apply_config_update` timestamp reset gap | Added explicit `last_config_update_ts` reset inside `apply_config_update` so the 24h timelock window can't be bypassed by chained proposals. |
+| **N002** | `migrate_config` instruction surface | Instruction removed from `programs/solshot-escrow-v2/src/lib.rs` (devnet migration was a one-shot and the instruction left a dead-code authority surface). |
+| **N003** | `apply_config_update` pause-gate consistency | Apply path now respects `is_paused` consistently with the propose path. |
+
+Audit #2 deferrals re-evaluated by #3: **H001 CLOSED** by Bundle 1 propose/accept. **H002 + H032 CLOSED** by 24h timelock on apply_config_update. **H030 CLOSED** via per-match snapshot pattern. **H044/H046** status changes from "deferred" to "addressed via Squads-from-day-one on mainnet flip" (3-vault topology per `Docs/KEY_MANAGEMENT.md`).
+
+### DB Audit #3 — six off-chain fixes landed
+
+| ID | Title | Disposition |
+|---|---|---|
+| **AUTH-N01** | Magic-link consume-before-success ordering | Fixed (`b941b3b`) |
+| **AUTH-N02** | H003+H004+H006 5-min identity-replay window composition | **Fixed (`d5cbf18`, 2026-05-28)** — in-memory signature replay store with 5-min TTL in `server/middleware/auth.js`, closes the highest-residual-risk chain |
+| **AUTH-N03** | `propose-authority-v2.mjs` no safety guards | Fixed (`0572635`) — INIT_MAINNET-style confirm gate added |
+| **CHAIN-N01** | `client/.env.production` ships devnet IDs with `mainnet-beta` network | **Fixed (`d5cbf18`, 2026-05-28)** — IDs removed; Vercel project Environment Variables sole source of truth pre-mainnet flip |
+| **CHAIN-N03** | Dead-code `migrateConfigV2()` + script | Fixed (`b941b3b`) — both deleted |
+| **CHAIN-N04** | `init-config-mainnet.mjs` RPC substring check | Fixed (`b941b3b`) — tightened to allowlist |
+| **DATA-N01** | Self-damage `Math.abs` exploit in wagered matches | Fixed (`c4371ec`) |
+| **DATA-N02** | PII broadcast on socket events | Fixed (`b941b3b`) |
+
+Outstanding: **CHAIN-N02** (IDL regeneration after N002 deletion — needs `anchor build` + `cp target/idl/solshot_escrow_v2.json server/idl/` on JJ's machine). Not blocking the audit verdict per se, but blocks the rc2 tag.
+
+### BOK Audit #3
+
+159/159 math property tests still passing after the N001/N002/N003 source edits. Pot conservation, refund conservation, dust bound, state monotonicity, wager bounds all hold.
+
+### Updated verdict
+
+**Hackathon submission on devnet:** unchanged — safe.
+
+**Mainnet deployment with real funds:** **CONDITIONAL GO post-Bundle 1 + audit #3 fixes**. Remaining mainnet-blockers reduce to:
+
+- **CHAIN-N02** — IDL regen + `rc2` tag (mechanical, ~5 min)
+- **Squads 3-vault mainnet setup** — JJ + Fish (~30 min real-time, per `Docs/internal/NEXT_STEPS_28_05.md` Bucket 1)
+- **Mainnet deploy day** — Squads-from-day-one anchor deploy + initialize_config with three vault PDAs (~2 hr, per `Docs/internal/V1_LAUNCH_SPRINT.md` §4)
+
+The single highest residual risk — the AUTH-N02 5-minute identity-replay window — was closed in `d5cbf18` (server/middleware/auth.js replay store) ahead of the mainnet flip. Audit #2's Bundle B requirement reduces to JWT model decision (still deferred under V1 small-wager scope) + the now-closed replay store.
+
+**Sources:** `.audit/FINAL_REPORT.md`, `.bulwark/FINAL_REPORT.md`, `Docs/internal/DOC_RECONCILE_2026-05-28.md`, `Docs/internal/DB_REMEDIATION_DECISIONS.md` Section 3.

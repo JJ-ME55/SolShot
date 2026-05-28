@@ -15,7 +15,7 @@ This folder (`Docs/`) is the **public-facing project documentation**. Internal t
 | 3 | [**Roadmap**](./ROADMAP.md) - forward-looking 5-phase plan, multi-game / multi-platform / open SDK | 5 min |
 | 4 | [**Litepaper**](./SolShot_Litepaper_v2.2.md) - full project spec (vision, distribution, on-chain programs, security posture) | 20 min |
 | 4b | [Litepaper PDF](./SolShot_Litepaper_v2.2.pdf) - same content, share-friendly format | 20 min |
-| 5 | [**SHOT token model**](./SHOT_TOKEN_MODEL.md) - distribution, emissions, burns, scarcity analysis | 10 min |
+| 5 | [**SHOT in-game currency**](./SHOT_TOKEN_MODEL.md) - closed-economy earn + spend model (SPL token path retired 2026-05-26) | 3 min |
 
 ## 🛡 Deeper context (still public)
 

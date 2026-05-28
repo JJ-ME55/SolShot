@@ -272,7 +272,7 @@ SolShot has a two-sided referral program. Bring someone new in, and **both of yo
 
 ## Playing a Wagered Group-Chat Match (Async / Multi-Player)
 
-This is the Telegram-native experience. Matches can involve 2 to 10 players and run over hours or days, with each player taking their turn whenever they have time.
+This is the Telegram-native experience. Matches involve 2 to 4 players at V1 launch (5+ unlocks post-V1) and run over hours or days, with each player taking their turn whenever they have time.
 
 ### Starting a match
 
@@ -313,12 +313,10 @@ Four buttons:
 
 - **Deploy.** Find a match. This is your go-to. The bright orange one.
 - **Armory.** Browse cosmetic items: skins, patterns, trails, blast effects, kill effects. 28 items across 5 categories. Pay in SHOT (most) or SOL (premium exclusives).
-- **Prestige.** Burn SHOT tokens to unlock prestige tiers and exclusive weapons. More on this below.
+- **Prestige.** Spend SHOT to unlock prestige tiers and exclusive weapons. More on this below.
 - **Barracks.** Customise your tank. Equip cosmetics, change colour, set your loadout.
 
-The header strip on every non-game screen also shows the **live SHOT/SOL price ticker**, pulled from Jupiter every minute, with 24h % change. Watch your token while you play.
-
-(Code: `client/src/components/ShotPriceTicker.js`.)
+The header strip on every non-game screen shows a SHOT balance indicator. (SHOT is a closed in-game currency — no DEX listing, no secondary market, no real-time price feed. Earlier builds previewed a Jupiter-pulled SHOT/SOL price ticker; that path was retired with the 2026-05-26 closed-economy pivot.)
 
 ---
 
@@ -461,7 +459,7 @@ Burn SHOT tokens at the **Prestige** screen to climb tiers. Each tier unlocks an
 | Platinum | 2,500 SHOT | 4,400 | Chain Reaction |
 | Diamond | 4,000 SHOT | 8,400 | Pineapple |
 
-Burns are permanent. Once you burn SHOT for prestige, those tokens are gone forever. This makes prestige genuinely rare. Reaching Diamond takes 8,400 SHOT and hundreds of hours of gameplay.
+Prestige spending is permanent. Once you spend SHOT on a prestige tier, that balance is debited and gone (server-side ledger; the SHOT closed-economy model means there is no on-chain SPL burn — the effect is the same: the SHOT is sunk). This makes prestige genuinely rare. Reaching Diamond takes 8,400 SHOT and hundreds of hours of gameplay.
 
 Each prestige weapon is a real upgrade over the last. The Bronze Homing Missile matches Single Shot damage but adds guidance. The Diamond Pineapple splits into 20 fragments for up to 640 damage. High prestige players have access to 20 weapons versus 15 for everyone else.
 

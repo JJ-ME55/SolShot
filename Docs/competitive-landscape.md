@@ -16,7 +16,7 @@ That gap is where SolShot sits.
 |---|---|---|---|---|---|
 | **Model** | Space MMO, play-to-earn | Turn-based RPG, NFT-focused | Move-to-earn + gaming | NFT/P2E-driven | Skill-based SOL wagering |
 | **Mainnet status** | Partial (showroom modules) | Live (PvE focus) | Live (step tracking) | Testnet or whitepaper | **Live - full game loop** |
-| **Token model** | Dual-token, inflationary | Inflationary rewards | Inflationary rewards | Inflationary | **10M fixed, mint burned** |
+| **Token model** | Dual-token, inflationary | Inflationary rewards | Inflationary rewards | Inflationary | **Closed in-game currency (no token launch risk)** |
 | **Wagering** | No direct wagering | No direct wagering | No direct wagering | No direct wagering | **Trustless PDA escrow** |
 | **Revenue split** | In-game economy | NFT marketplace fees | Token ecosystem | Varies | **90/7/3 on-chain split** |
 | **Security audits** | Disclosed for contracts | Disclosed for contracts | Disclosed for contracts | Rarely disclosed | **3 independent analyses, 0 active CRIT/HIGH** |
@@ -35,19 +35,19 @@ SolShot is not a reward-farming loop. Players wager SOL on 1v1 artillery matches
 
 ### 2. Live, not a whitepaper
 
-The game is deployed on Solana devnet, with mainnet flip pending the audit-fix redeploy. Escrow program on-chain. SHOT token minted, mint authority burned. 20 weapons balanced and playable. 4 match modes running. Judges can open [solshot.gg](https://solshot.gg) and play a match right now. Most competition entries are prototypes or roadmap documents - SolShot is a shipped product.
+The game is deployed on Solana devnet, with mainnet flip pending the audit-fix redeploy. Escrow program on-chain. SHOT in-game currency live (closed economy, off-chain ledger). 20 weapons balanced and playable. 4 match modes running. Judges can open [solshot.gg](https://solshot.gg) and play a match right now. Most competition entries are prototypes or roadmap documents - SolShot is a shipped product.
 
 ### 3. Trustless escrow, not custodial
 
 Player funds go into a PDA derived from the match room ID. The on-chain program enforces the 90/7/3 split, verifies recipients, and settles atomically. The server keypair is an authorized trigger, not an authorized destination - a compromised key cannot redirect funds. Three independent safety layers (server recovery, player cancel, permissionless reclaim) ensure funds are never permanently locked.
 
-### 4. Deflationary token, not inflationary
+### 4. Closed-economy currency, no token launch risk
 
-10M SHOT. Fixed. Mint authority burned - supply can only decrease. Prestige burns are the primary sink: 8,400 SHOT to reach Diamond tier. 1,000 Diamond players would burn nearly the entire supply. Early players are rewarded with genuine scarcity. This is the opposite of the inflationary reward-token model that dominates Solana gaming.
+SHOT is an in-game currency, not a tradable SPL token. Earned through gameplay, spent on prestige tier unlocks and cosmetics, never traded on a DEX. Players don't have to time a token launch, hold through volatility, or worry about secondary-market liquidity. This is deliberately the opposite of the inflationary reward-token model that dominates Solana gaming — and the opposite of the Pump.fun launch model SolShot evaluated and abandoned 2026-05-26.
 
 ### 5. Security-audited, not trust-me
 
-Three independent security analyses covering on-chain logic, off-chain server code, and mathematical verification of escrow arithmetic. Zero active CRITICAL or HIGH findings. Authority centralization is acknowledged transparently, with multisig governance on the v1.2 roadmap. The security posture is documented, not hand-waved.
+Three independent security analyses covering on-chain logic, off-chain server code, and mathematical verification of escrow arithmetic. Zero active CRITICAL or HIGH findings. Authority centralization is closed at mainnet flip by Squads 2-of-3 multisig governance from day one — three distinct vault PDAs (Authority / Treasury / Ops) under a single multisig — not deferred to a later roadmap version. The security posture is documented, not hand-waved.
 
 ---
 

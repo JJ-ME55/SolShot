@@ -192,7 +192,12 @@ function SolShotWalletInner({ children }) {
     const { wallets: privySolanaWallets, ready: privyWalletsReady } = usePrivySolanaWallets();
     const { signMessage: privySignMessageFn } = usePrivySignMessage();
     const { signTransaction: privySignTransactionFn } = usePrivySignTransaction();
-    const { createWallet: privyCreateSolanaWallet } = usePrivyCreateSolanaWallet();
+    // Bug 5 (2026-05-28): usePrivyCreateSolanaWallet kept imported but unused
+    // here — see the long comment further down for context. Keep the import
+    // wired so the SDK's hook plumbing stays initialized; reinstating the
+    // fallback only requires un-commenting the useEffect.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars, no-unused-vars
+    const { createWallet: privyCreateSolanaWallet } = usePrivyCreateSolanaWallet(); // eslint-disable-line no-unused-vars
     // Solana-specific exportWallet — opens an iframe-isolated modal showing
     // the user's embedded wallet address + private-key reveal. usePrivy()
     // also exposes exportWallet but its docs explicitly say "Ethereum
@@ -208,36 +213,20 @@ function SolShotWalletInner({ children }) {
     // Memoized so it's reused across all sign/send/burn callbacks.
     const connection = useMemo(() => new Connection(RPC_URL, 'confirmed'), []);
 
-    // Manual wallet creation after authentication — replaces the broken
-    // `createOnLogin: 'users-without-wallets'` auto-create flow that
-    // crashed in EmbeddedWalletOnAccountCreateScreen with "Cannot
-    // destructure property 'onSuccess' of 'a.createWallet'". This effect
-    // fires once after Privy is ready + authenticated and the user
-    // doesn't have a Solana wallet yet, then calls createWallet directly
-    // (no modal screen, no broken destructure).
-    const [createWalletInFlight, setCreateWalletInFlight] = useState(false);
-    useEffect(() => {
-        if (!privyReady || !privyAuthed || !privyWalletsReady) return;
-        if (privySolanaWallets && privySolanaWallets.length > 0) return;
-        if (createWalletInFlight) return;
-        setCreateWalletInFlight(true);
-        privyCreateSolanaWallet()
-            .then((result) => {
-                console.log('[Privy] Embedded Solana wallet created:', result?.wallet?.address || '(no address returned)');
-            })
-            .catch((err) => {
-                const msg = err?.message || String(err);
-                if (msg.includes('already has an embedded wallet')) {
-                    // Wallet was created in a previous session — useWallets()
-                    // will pick it up on its next render. Not an error.
-                    return;
-                }
-                console.error('[Privy] Failed to create embedded Solana wallet:', msg);
-            })
-            .finally(() => {
-                setCreateWalletInFlight(false);
-            });
-    }, [privyReady, privyAuthed, privyWalletsReady, privySolanaWallets, privyCreateSolanaWallet, createWalletInFlight]);
+    // Bug 5 (2026-05-28): REMOVED — the manual createWallet useEffect was a
+    // fallback for a SDK crash on older @privy-io/react-auth versions. With
+    // 3.23.1 (current) the `embeddedWallets.solana.createOnLogin:
+    // 'users-without-wallets'` config in PRIVY_CONFIG works reliably. Running
+    // BOTH was producing two embedded Solana wallets per Privy user (seen in
+    // dashboard.privy.io — every user shows wallets created at the same minute,
+    // both Solana). The race: Privy's useSolanaWallets reports `ready: true`
+    // with an empty array BEFORE createOnLogin's promise resolves, so our
+    // useEffect fires its own createWallet, then createOnLogin lands too.
+    //
+    // If createOnLogin ever regresses, the symptom is: a logged-in user with
+    // no embedded wallet. The fix at that point is reinstating this fallback
+    // (read git history of this file for the original code) plus a meaningful
+    // ready-signal so the two don't race.
 
     // Pick the active wallet — find the Privy embedded wallet by name.
     // Per Privy docs canonical pattern, `wallets[0]` would pick the wrong

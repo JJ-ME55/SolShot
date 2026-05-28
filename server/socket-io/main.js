@@ -1892,6 +1892,47 @@ const mainsocket = (io) => {
             if (ws && ws.amount > 0 && ms) {
                 const room = findRoom(roomId)
                 if (room && (ms.status === MATCH_STATES.BATTLE || ms.status === MATCH_STATES.WEAPON_SHOP)) {
+                    // Bug 6 (2026-05-28): N-player leave handling. The forfeit-settle
+                    // logic below assumes 1v1 — finds "the opponent" and hands them the
+                    // whole pot. In a 4P match, the first player to leave was triggering
+                    // immediate settlement to an arbitrary surviving tank, ending the
+                    // game for the other 2 players before they could play out the round.
+                    //
+                    // Fix for N>2: skip the on-chain settle. Just remove the leaver
+                    // from the turn rotation and broadcast playerLeft. The remaining
+                    // players keep playing; the natural match-end flow (last-survivor
+                    // / all-rounds-played) fires the real settle for the actual winner.
+                    //
+                    // Edge case: if ALL N players walk away mid-match, no settle ever
+                    // fires. The 24h permissionless_reclaim path on v2 escrow is the
+                    // safety net there.
+                    const isMultiplayer = (room.players?.length || 0) > 2;
+                    if (isMultiplayer) {
+                        // Mark leaver as eliminated in match state — zero HP AND flip
+                        // alive flag (getNextTurn uses alive[], not hp[]). Round-end
+                        // checks use hp[]. Both fields keep the rest of the engine
+                        // consistent. Uses outer-scope `ms`; safe in node's
+                        // single-threaded loop without a lock — no on-chain call here.
+                        if (ms.hp) ms.hp[client.id] = 0;
+                        if (ms.alive) ms.alive[client.id] = false;
+                        // If it's the leaver's turn, advance turn to the next live player.
+                        if (ms.currentTurn === client.id) {
+                            ms.currentTurn = getNextTurn(ms);
+                        }
+                        // Broadcast so remaining clients update HUDs / round-end checks.
+                        io.sockets.in(roomId).emit('playerLeft', {
+                            socketId: client.id,
+                            reason,
+                            remainingPlayerCount: (room.players?.length || 1) - 1,
+                        });
+                        // Detach the leaver from the socket room — they stop receiving
+                        // future broadcasts, can rejoin via reconnect flow if applicable.
+                        client.leave(roomId);
+                        client.roomId = null;
+                        client.isHost = false;
+                        // Don't fall through to 1v1 settle logic.
+                        return;
+                    }
                     // H020: Use lock to prevent concurrent settlement
                     await withLock(`settle:${roomId}`, async () => {
                         const currentMs = matchStates[roomId]

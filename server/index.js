@@ -34,22 +34,28 @@ import { lookupUserByTelegramId, getPlayerRank, linkTelegramIdentity } from './s
 import { recordFunnelEvent, getFunnelAggregates } from './services/funnel.js';
 import { consumeLinkToken } from './services/walletLinkTokens.js';
 import { requirePrivyAuth, isPrivyAuthConfigured } from './services/privyAuth.js';
+import { mintArcadeSession, verifyArcadeSession } from './services/arcadeSession.js';
+import User from './models/User.js';
+import WagerWaitlist from './models/WagerWaitlist.js';
 import { renderCareerCardPng } from './services/challenge/renderCareerCard.js';
 import { buildCareerProps } from './services/challenge/careerCardProps.js';
 import {
     verifySession as verifyBasketballSession,
     submitScore as submitBasketballScore,
     getLeaderboard as getBasketballLeaderboard,
+    mintSession as mintBasketballSession,
 } from './services/games/basketball-standalone/standaloneLeaderboard.js';
 import {
     verifySession as verifyKeepieUppiesSession,
     submitScore as submitKeepieUppiesScore,
     getLeaderboard as getKeepieUppiesLeaderboard,
+    mintSession as mintKeepieUppiesSession,
 } from './services/games/keepie-uppies-standalone/standaloneLeaderboard.js';
 import {
     verifySession as verifyFreeKicksSession,
     submitScore as submitFreeKicksScore,
     getLeaderboard as getFreeKicksLeaderboard,
+    mintSession as mintFreeKicksSession,
 } from './services/games/free-kicks-standalone/standaloneLeaderboard.js';
 
 dotenv.config()
@@ -92,6 +98,16 @@ const ALWAYS_ALLOWED_ORIGINS = [
     'https://sol-shot-basketball.vercel.app',
     'https://sol-shot-keepie-uppies.vercel.app',
     'https://solshot-free-kicks-iota.vercel.app',
+    // The Arcade — parent-brand web hub. Project on jj-me55s-projects.
+    // Vite + React + TS, client-only. Talks to this server via HTTPS
+    // for /api/arcade/* endpoints + leaderboard reads + score writes.
+    //
+    // `the-arcade.vercel.app` (without suffix) is owned by another
+    // Vercel account; Vercel auto-suffixed ours with `-eta`. Same
+    // pattern as `solshot-free-kicks-iota.vercel.app`.
+    'https://the-arcade-eta.vercel.app',
+    'https://the-arcade-jj-me55s-projects.vercel.app',
+    'https://the-arcade-git-main-jj-me55s-projects.vercel.app',
 ];
 const CORS_ORIGINS = Array.from(new Set([
     ...ALWAYS_ALLOWED_ORIGINS,
@@ -692,6 +708,247 @@ app.post(
         } catch (err) {
             console.error('[POST /api/wallet/link-from-privy-telegram]', err.message);
             res.status(500).json({ error: 'failed to link wallet' });
+        }
+    }
+);
+
+// ─── Arcade ↔ SolShot session handoff ──────────────────────────────────
+//
+// arcade.xyz user taps SolShot tile → arcade client mints a handoff JWT
+// here, redirects to solshot.gg/?arcade_token=<jwt>. solshot.gg client
+// validates the token via the sibling endpoint below, displays a welcome
+// banner using the callsign from the token. Token is a hint, not auth —
+// SolShot's real session still goes through Privy (same app, native
+// cross-origin session sharing covers most cases).
+//
+// 10-min TTL, HS256, ARCADE_SESSION_SECRET env var.
+
+// POST /api/arcade/session-handoff
+//   headers: Authorization: Bearer <privy-access-token>  (required)
+//   body: (none)
+//   returns: { token, expiresAt }
+app.post(
+    '/api/arcade/session-handoff',
+    requirePrivyAuth({ required: true }),
+    async (req, res) => {
+        try {
+            const uid = req.privyUserId;
+            if (!uid) {
+                return res.status(401).json({ error: 'privy_session_required' });
+            }
+            // Resolve to the User doc so we can include callsign/wallet/TG
+            // hints in the token. Missing User doc isn't fatal — the handoff
+            // can still carry just the Privy DID.
+            const user = await User.findOne({ uid }).lean().catch(() => null);
+            const token = mintArcadeSession({
+                uid,
+                walletAddress: user?.walletAddress || undefined,
+                telegramUserId: user?.telegramUserId || undefined,
+                handle: user?.handle || undefined,
+            });
+            // expiresAt for client-side display only; the JWT carries
+            // its own exp claim that the validator checks.
+            const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+            res.json({ token, expiresAt });
+        } catch (err) {
+            console.error('[POST /api/arcade/session-handoff]', err.message);
+            res.status(500).json({ error: 'mint_failed' });
+        }
+    }
+);
+
+// POST /api/arcade/session-validate
+//   body: { token: string }
+//   returns: { ok: true, claims: { uid, walletAddress?, telegramUserId?, handle? } }
+//   or:     { ok: false, error: string }
+//
+// Public endpoint — the JWT itself is the auth. SolShot client calls
+// this after reading ?arcade_token=... from the URL.
+app.post('/api/arcade/session-validate', async (req, res) => {
+    try {
+        const { token } = req.body || {};
+        if (!token || typeof token !== 'string') {
+            return res.status(400).json({ ok: false, error: 'token required' });
+        }
+        const claims = verifyArcadeSession(token);
+        res.json({ ok: true, claims });
+    } catch (err) {
+        // Invalid/expired/forged — return 200 with ok:false so the client
+        // can silently drop the welcome banner instead of surfacing an
+        // error. The user is a guest from arcade.xyz; if the hint is
+        // stale, that's fine.
+        res.json({ ok: false, error: err.message || 'invalid_token' });
+    }
+});
+
+// ─── Arcade hub — mint per-game session JWT for web users ──────────────
+//
+// Web users (signed in via Privy on the arcade hub) need a session JWT
+// to submit scores via the per-game endpoints (/api/games/<slug>/score).
+// Bot users get the JWT from the bot; web users mint their own here.
+//
+// Resolves Privy DID → User → telegramUserId, then mints the existing
+// game-specific session JWT bound to that TG identity. Scores then land
+// in the same Mongo collections as bot-submitted scores — true
+// leaderboard unification.
+//
+// Limitation: requires the Privy user to have a linked telegramUserId.
+// Users who signed in via email/Google on the arcade hub but never
+// linked their TG can play but can't submit. Linking happens via
+// SolShot's existing /api/wallet/link-from-privy-telegram or the bot's
+// /link command. Returning 412 here signals "free-play mode" cleanly.
+
+// POST /api/wager-waitlist
+//   body: { email: string, callsign?: string, source?: string }
+//   returns: { ok: true, alreadySignedUp: boolean }
+//
+// Idempotent. Upserts on email — repeat submissions return success
+// without creating duplicate rows. No auth required — anyone with the
+// page open can submit (rate-limiting comes from the global httpLimiter
+// at 100 req / 15 min / IP).
+//
+// Email regex is permissive on purpose; full RFC 5322 validation is
+// overkill for a marketing waitlist. Bad addresses self-select out
+// when we send the v2 beta-access email.
+app.post('/api/wager-waitlist', async (req, res) => {
+    try {
+        const { email, callsign, source } = req.body || {};
+        if (!email || typeof email !== 'string') {
+            return res.status(400).json({ error: 'email required' });
+        }
+        const cleanEmail = email.trim().toLowerCase();
+        if (cleanEmail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+            return res.status(400).json({ error: 'invalid_email' });
+        }
+        const existing = await WagerWaitlist.findOne({ email: cleanEmail }).lean();
+        if (existing) {
+            return res.json({ ok: true, alreadySignedUp: true });
+        }
+        await WagerWaitlist.create({
+            email: cleanEmail,
+            callsign: callsign && typeof callsign === 'string' ? callsign.slice(0, 64) : null,
+            source: source && typeof source === 'string' ? source.slice(0, 64) : 'unknown',
+        });
+        console.log(`[wager-waitlist] new signup from ${cleanEmail} (source=${source || 'unknown'})`);
+        res.json({ ok: true, alreadySignedUp: false });
+    } catch (err) {
+        // Race condition on the unique index — treat as already signed up
+        if (err?.code === 11000) {
+            return res.json({ ok: true, alreadySignedUp: true });
+        }
+        console.error('[POST /api/wager-waitlist]', err?.message || err);
+        res.status(500).json({ error: 'waitlist_failed' });
+    }
+});
+
+// POST /api/arcade/register
+//   headers: Authorization: Bearer <privy-access-token>  (required)
+//   body: (none)
+//   returns: { user: { uid, telegramUserId, handle, walletAddress }, created: boolean }
+//
+// Idempotent. Creates a User doc keyed on the Privy DID if one doesn't
+// exist yet. Closes the orphan gap for users who signed in via Privy
+// on the arcade hub but never touched SolShot — without this, their
+// User doc never gets created and mint-session always returns
+// `tg_not_linked` even after they go off and link TG via the bot
+// (because there's no doc to attach to).
+//
+// Wallet address and TG identity are NOT set here — those flow through
+// the existing /api/wallet/link-* endpoints which validate the linkage
+// against Privy's authoritative records (H001 trust model). Register
+// just plants the seed doc.
+app.post(
+    '/api/arcade/register',
+    requirePrivyAuth({ required: true }),
+    async (req, res) => {
+        try {
+            const uid = req.privyUserId;
+            if (!uid) {
+                return res.status(401).json({ error: 'privy_session_required' });
+            }
+            // Upsert — single Mongo op, atomic, handles race conditions.
+            // `setOnInsert` ensures `uid` is only written on the create
+            // path; existing docs aren't touched. `new: true` returns
+            // the doc post-update (or post-insert).
+            const user = await User.findOneAndUpdate(
+                { uid },
+                { $setOnInsert: { uid } },
+                { upsert: true, new: true, lean: true }
+            );
+            // Mongo doesn't tell us whether this was a create or update
+            // directly from findOneAndUpdate, but we can infer: if the
+            // doc has only `uid` and the auto-managed `_id`+`__v`, it
+            // was just created. Used for telemetry only — caller doesn't
+            // need to act differently on either path.
+            const created = !user.telegramUserId && !user.walletAddress && !user.handle;
+            if (created) {
+                console.log(`[arcade/register] new User for uid=${uid.slice(0, 20)}…`);
+            }
+            res.json({
+                user: {
+                    uid: user.uid,
+                    telegramUserId: user.telegramUserId || null,
+                    handle: user.handle || '',
+                    walletAddress: user.walletAddress || null,
+                },
+                created,
+            });
+        } catch (err) {
+            console.error('[POST /api/arcade/register]', err?.message || err);
+            res.status(500).json({ error: 'register_failed' });
+        }
+    }
+);
+
+// POST /api/arcade/mint-session
+//   query: ?game=basketball|keepieuppies|freekicks
+//   headers: Authorization: Bearer <privy-access-token>  (required)
+//   body: (none)
+//   returns: { session: string, game: string, telegramUserId: number }
+//   or 412: { error: 'tg_not_linked', reason: 'Link Telegram to submit scores' }
+const GAME_MINTERS = {
+    basketball: mintBasketballSession,
+    keepieuppies: mintKeepieUppiesSession,
+    freekicks: mintFreeKicksSession,
+};
+
+app.post(
+    '/api/arcade/mint-session',
+    requirePrivyAuth({ required: true }),
+    async (req, res) => {
+        try {
+            const game = (req.query?.game || '').toString();
+            const minter = GAME_MINTERS[game];
+            if (!minter) {
+                return res.status(400).json({
+                    error: 'invalid_game',
+                    reason: `game must be one of: ${Object.keys(GAME_MINTERS).join(', ')}`,
+                });
+            }
+            const uid = req.privyUserId;
+            if (!uid) {
+                return res.status(401).json({ error: 'privy_session_required' });
+            }
+            const user = await User.findOne({ uid }).lean().catch(() => null);
+            if (!user || !user.telegramUserId) {
+                return res.status(412).json({
+                    error: 'tg_not_linked',
+                    reason: 'Link Telegram to submit scores',
+                });
+            }
+            const session = minter({
+                telegramUserId: user.telegramUserId,
+                telegramUsername: user.username || undefined,
+                firstName: user.handle || undefined,
+            });
+            res.json({
+                session,
+                game,
+                telegramUserId: user.telegramUserId,
+            });
+        } catch (err) {
+            console.error('[POST /api/arcade/mint-session]', err?.message || err);
+            res.status(500).json({ error: 'mint_failed' });
         }
     }
 );

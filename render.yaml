@@ -47,6 +47,11 @@ services:
         value: https://solshot.gg/
       - key: JWT_SECRET
         generateValue: true
+      # Cross-domain session handoff between arcade.xyz and solshot.gg.
+      # JWT shared-secret (HS256). 10-min TTL on tokens. Generated once
+      # on Blueprint setup — persistent across deploys.
+      - key: ARCADE_SESSION_SECRET
+        generateValue: true
       - key: SOLANA_KEYPAIR_JSON
         sync: false
       - key: ADMIN_API_KEY

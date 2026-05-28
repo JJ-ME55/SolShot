@@ -33,7 +33,7 @@ import {
     // unreliable on devnet. useSignTransaction signs only — we broadcast
     // through our own Connection (api.devnet.solana.com) instead.
     useSignTransaction as usePrivySignTransaction,
-    useCreateWallet as usePrivyCreateSolanaWallet,
+    // useCreateWallet removed 2026-05-28 (Bug 5) — createOnLogin handles it
     useExportWallet as usePrivyExportSolanaWallet,
     useFundWallet as usePrivyFundSolanaWallet,
     defaultSolanaRpcsPlugin,
@@ -192,12 +192,10 @@ function SolShotWalletInner({ children }) {
     const { wallets: privySolanaWallets, ready: privyWalletsReady } = usePrivySolanaWallets();
     const { signMessage: privySignMessageFn } = usePrivySignMessage();
     const { signTransaction: privySignTransactionFn } = usePrivySignTransaction();
-    // Bug 5 (2026-05-28): usePrivyCreateSolanaWallet kept imported but unused
-    // here — see the long comment further down for context. Keep the import
-    // wired so the SDK's hook plumbing stays initialized; reinstating the
-    // fallback only requires un-commenting the useEffect.
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars, no-unused-vars
-    const { createWallet: privyCreateSolanaWallet } = usePrivyCreateSolanaWallet(); // eslint-disable-line no-unused-vars
+    // Bug 5 (2026-05-28): usePrivyCreateSolanaWallet hook removed — see the
+    // long comment further down for context. The hook is pure (no side
+    // effects on call), so dropping the call is harmless. Reinstating the
+    // fallback requires re-adding the import + hook call + useEffect.
     // Solana-specific exportWallet — opens an iframe-isolated modal showing
     // the user's embedded wallet address + private-key reveal. usePrivy()
     // also exposes exportWallet but its docs explicitly say "Ethereum

@@ -1,14 +1,40 @@
 # SolShot Audit Summary
 
-**Date:** 2026-05-07
-**Intended audience:** Hackathon judges + future contributors
-**Purpose:** One-stop overview of all three audits SolShot has run. Read this before diving into the full reports.
+**Date:** 2026-05-28 (refreshed after audit #3 + N00X fix landing)
+**Intended audience:** Hackathon judges, future contributors, pre-mainnet review
+**Purpose:** One-stop overview of all audits SolShot has run. Read this before
+diving into the full reports.
 
 ---
 
-## TL;DR
+## TL;DR (post-audit-#3, 2026-05-28)
 
-Three independent audits ran in parallel on 2026-05-07: Stronghold of Security (SOS #2) analyzed the on-chain Anchor escrow programs; Book of Knowledge (BOK #2) ran math invariant verification on both programs; Dinh's Bulwark (DB #2) covered the full off-chain stack (Express + Socket.IO + React + Privy + MongoDB, 142 files / ~84 k LOC). Roughly 25 findings were fixed across two commits (the SOS fix commit SOS, the DB fix commit DB); roughly 50 additional findings were explicitly deferred with documented rationale, a written mainnet plan, and a file:line reference for every item. Nothing was silently dismissed. The cross-skill H120 finding - where SOS deferred H001 (one-step authority rotation) composed with DB H002 (Privy fail-open) into a production-blocking compound - was caught only because both audits ran simultaneously; DB H002 is now closed.
+Two new independent audits ran on the pre-mainnet RC: **SOS #3** (on-chain) and
+**DB #3** (off-chain), both delta-focused stacked audits on top of the prior
+#2 deep coverage. Headline result: **2 of 4 prior CRITICAL on-chain findings
+RESOLVED in code** (H023 partial-refund theft, H001 one-step authority transfer)
+and **10 of 23 prior CRITICAL off-chain findings RESOLVED** (H001+H002+H006
+identity-bridge composition; H013+H014+H015+H016 fail-open financial paths;
+H019+H020 legacy unauth socket events; H009 wallet rotation; H052 SHOT off-chain
+pivot). Both audits issued **CONDITIONAL GO** verdicts for mainnet flip — SOS
+with 3 must-fix items (all landed in commit `da04b5e`), DB with 6 must-fix items
+(5 landed in commits `b941b3b`, `c4371ec`, `0572635`). The remaining audit-#2
+HIGH/CRITICAL items are either operational carry-forward to the Squads-from-
+day-one multisig deploy (H044, H046) or addressable in <1 day of focused work
+(AUTH-N02 replay store, CHAIN-N01 Vercel env, CHAIN-N02 IDL regen).
+
+The cross-skill **H120** finding from audit #2 (SOS H001 + DB H002 composed
+into a production-blocking compound) is **now closed at both legs**:
+- SOS H001 → Bundle 1 (propose_authority + accept_authority two-step + 24h timelock on update_config) landed devnet 2026-05-27, drilled 8/8.
+- DB H002 → privyAuth.js returns 503 in `NODE_ENV=production` when secret absent; Bug 7 (Render env mismatch) resolved 2026-05-28.
+
+## TL;DR (audit #2, 2026-05-07 — historical context)
+
+Three independent audits ran in parallel on 2026-05-07: Stronghold of Security
+(SOS #2), Book of Knowledge (BOK #2) math invariant verification, and Dinh's
+Bulwark (DB #2) off-chain stack coverage. Roughly 25 findings were fixed across
+two commits; roughly 50 additional findings were explicitly deferred with
+documented rationale.
 
 ---
 

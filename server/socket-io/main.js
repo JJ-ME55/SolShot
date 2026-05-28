@@ -1233,10 +1233,15 @@ const mainsocket = (io) => {
                 ms.scores[AI_SOCKET_ID] = (ms.scores[AI_SOCKET_ID] || 0) + dmg;
             }
         }
+        // DB audit #3 DATA-N01 fix: same self-damage guard as the player shot
+        // handler — skip negative entries (physics.js self-damage marker).
+        // For AI matches this is less critical (no wagered SOL), but keeping
+        // consistent with the player path so AI can't accidentally self-KO.
         for (const [playerId, dmg] of Object.entries(result.damage)) {
             if (ms.hp[playerId] === undefined) ms.hp[playerId] = 250;
+            if (dmg <= 0) continue; // skip self-damage marker
             const hpBefore = ms.hp[playerId];
-            ms.hp[playerId] = Math.max(0, ms.hp[playerId] - Math.abs(dmg));
+            ms.hp[playerId] = Math.max(0, ms.hp[playerId] - dmg);
             if (hpBefore > 0 && ms.hp[playerId] <= 0 && playerId !== AI_SOCKET_ID) {
                 ms.kills[AI_SOCKET_ID] = (ms.kills[AI_SOCKET_ID] || 0) + 1;
             }
@@ -4318,11 +4323,24 @@ const mainsocket = (io) => {
                     }
                 }
 
-                // Update HP — apply absolute damage to each affected player
+                // Update HP — apply damage to each affected player.
+                //
+                // DB audit #3 DATA-N01 fix (CRITICAL): skip negative damage
+                // entries. physics.js uses negative values as self-damage
+                // markers (the shooter's entry is negative when their own shot
+                // lands in their splash radius — see server/services/physics.js
+                // calculateDamage). The prior `Math.abs(dmg)` converted those
+                // markers into actual damage applied to the shooter — which in
+                // 1v1 wagered BO1 lets a player KO themselves and forfeit the
+                // SOL pot. With this fix, shooters can no longer self-damage
+                // via their own shot. Pocket Tanks purists may object (self-
+                // hitting is a legitimate strategy in the original), but for
+                // wagered SOL matches the defensive behavior is correct.
                 for (const [playerId, dmg] of Object.entries(result.damage)) {
                     if (ms.hp[playerId] === undefined) ms.hp[playerId] = 250
+                    if (dmg <= 0) continue; // skip self-damage marker
                     const hpBefore = ms.hp[playerId]
-                    ms.hp[playerId] = Math.max(0, ms.hp[playerId] - Math.abs(dmg))
+                    ms.hp[playerId] = Math.max(0, ms.hp[playerId] - dmg)
                     // Track kill: if opponent HP dropped to 0 from this shot
                     if (hpBefore > 0 && ms.hp[playerId] <= 0 && playerId !== this.id) {
                         ms.kills[this.id] = (ms.kills[this.id] || 0) + 1

@@ -999,12 +999,23 @@ app.post('/api/games/basketball/score', async (req, res) => {
     }
 });
 
-// GET /api/games/basketball/leaderboard?limit=10
+// Parse a `?since=<iso>` query param into a Date (or null if absent/malformed).
+// Used by all per-game leaderboard endpoints + the overall aggregator below.
+function parseSinceParam(raw) {
+    if (!raw || typeof raw !== 'string') return null;
+    const d = new Date(raw);
+    return isNaN(d.getTime()) ? null : d;
+}
+
+// GET /api/games/basketball/leaderboard?limit=10&since=<iso>
 //   returns: { ok, leaderboard: [{rank, displayName, bestScore, ...}, ...] }
+//   since: optional ISO date; filters to users whose `bestAchievedAt` is on
+//          or after that time. Lets the Arcade client drive 24h/7d windows.
 app.get('/api/games/basketball/leaderboard', async (req, res) => {
     try {
         const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 10));
-        const leaderboard = await getBasketballLeaderboard({ limit });
+        const since = parseSinceParam(req.query.since);
+        const leaderboard = await getBasketballLeaderboard({ limit, since });
         res.json({ ok: true, leaderboard });
     } catch (err) {
         console.error('[GET /api/games/basketball/leaderboard]', err.message);
@@ -1047,11 +1058,12 @@ app.post('/api/games/keepieuppies/score', async (req, res) => {
     }
 });
 
-// GET /api/games/keepieuppies/leaderboard?limit=10
+// GET /api/games/keepieuppies/leaderboard?limit=10&since=<iso>
 app.get('/api/games/keepieuppies/leaderboard', async (req, res) => {
     try {
         const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 10));
-        const leaderboard = await getKeepieUppiesLeaderboard({ limit });
+        const since = parseSinceParam(req.query.since);
+        const leaderboard = await getKeepieUppiesLeaderboard({ limit, since });
         res.json({ ok: true, leaderboard });
     } catch (err) {
         console.error('[GET /api/games/keepieuppies/leaderboard]', err.message);
@@ -1095,15 +1107,97 @@ app.post('/api/games/freekicks/score', async (req, res) => {
     }
 });
 
-// GET /api/games/freekicks/leaderboard?limit=10
+// GET /api/games/freekicks/leaderboard?limit=10&since=<iso>
 app.get('/api/games/freekicks/leaderboard', async (req, res) => {
     try {
         const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 10));
-        const leaderboard = await getFreeKicksLeaderboard({ limit });
+        const since = parseSinceParam(req.query.since);
+        const leaderboard = await getFreeKicksLeaderboard({ limit, since });
         res.json({ ok: true, leaderboard });
     } catch (err) {
         console.error('[GET /api/games/freekicks/leaderboard]', err.message);
         res.status(500).json({ error: 'failed to fetch leaderboard' });
+    }
+});
+
+// GET /api/games/leaderboard?limit=10&since=<iso>
+//   Overall arcade leaderboard — ranks players by total plays across all
+//   three standalone games (basketball, keepie-uppies, free-kicks). The
+//   client's "Overall" cabinet tab calls this.
+//
+//   `bestScore` in the response is the total submissions across all games
+//   so the existing client hook formats it the same way as per-game scores.
+//   `gamesPlayed` (0..3) shows how many cabinets the player has touched.
+//
+//   Implementation: pulls top-1000 from each game, aggregates in memory by
+//   telegramUserId. Fine at current scale (< 100 players). Once we cross
+//   ~10k players, swap to an aggregation pipeline ($unionWith + $group) or
+//   a periodically-rebuilt summary collection.
+app.get('/api/games/leaderboard', async (req, res) => {
+    try {
+        const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 10));
+        const since = parseSinceParam(req.query.since);
+
+        const [bb, ku, fk] = await Promise.all([
+            getBasketballLeaderboard({ limit: 1000, since }),
+            getKeepieUppiesLeaderboard({ limit: 1000, since }),
+            getFreeKicksLeaderboard({ limit: 1000, since }),
+        ]);
+
+        const players = new Map();
+        function add(rows, gameSlug) {
+            for (const r of rows) {
+                const id = r.telegramUserId;
+                if (id == null) continue;
+                const existing = players.get(id) || {
+                    telegramUserId: id,
+                    displayName: r.displayName,
+                    bestAchievedAt: r.bestAchievedAt,
+                    totalPlays: 0,
+                    games: new Set(),
+                };
+                existing.totalPlays += r.totalSubmissions || 0;
+                existing.games.add(gameSlug);
+                // Prefer the most recently-active game's display name + timestamp
+                // so renames propagate to the overall board.
+                if (
+                    r.bestAchievedAt &&
+                    (!existing.bestAchievedAt || r.bestAchievedAt > existing.bestAchievedAt)
+                ) {
+                    existing.displayName = r.displayName;
+                    existing.bestAchievedAt = r.bestAchievedAt;
+                }
+                players.set(id, existing);
+            }
+        }
+        add(bb, 'basketball');
+        add(ku, 'keepieuppies');
+        add(fk, 'freekicks');
+
+        const sorted = [...players.values()].sort((a, b) => {
+            if (b.totalPlays !== a.totalPlays) return b.totalPlays - a.totalPlays;
+            // Tie-break: most recently active wins
+            const at = a.bestAchievedAt?.getTime?.() || 0;
+            const bt = b.bestAchievedAt?.getTime?.() || 0;
+            return bt - at;
+        });
+
+        const leaderboard = sorted.slice(0, limit).map((p, i) => ({
+            rank: i + 1,
+            telegramUserId: p.telegramUserId,
+            displayName: p.displayName,
+            // Hook formats `bestScore` as the displayed number — for overall
+            // the meaningful figure is total plays across all cabinets.
+            bestScore: p.totalPlays,
+            totalSubmissions: p.totalPlays,
+            bestAchievedAt: p.bestAchievedAt,
+            gamesPlayed: p.games.size,
+        }));
+
+        res.json({ ok: true, leaderboard });
+    } catch (err) {
+        console.error('[GET /api/games/leaderboard]', err.message);
+        res.status(500).json({ error: 'failed to fetch overall leaderboard' });
     }
 });
 

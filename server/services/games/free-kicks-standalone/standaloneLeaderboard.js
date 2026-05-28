@@ -136,9 +136,18 @@ export async function submitScore({ telegramUserId, telegramUsername, firstName,
     return { newBest, bestScore, rank, totalPlayers };
 }
 
-export async function getLeaderboard({ limit = 10 } = {}) {
+/**
+ * @param {Object} [args]
+ * @param {number} [args.limit=10]
+ * @param {Date|null} [args.since=null]  See basketball-leaderboard.js for the
+ *   semantic note on time-window filtering against `bestAchievedAt`.
+ */
+export async function getLeaderboard({ limit = 10, since = null } = {}) {
     const clamped = Math.max(1, Math.min(100, Math.floor(limit)));
-    const rows = await FreeKicksScore.find({})
+    const filter = since instanceof Date && !isNaN(since.getTime())
+        ? { bestAchievedAt: { $gte: since } }
+        : {};
+    const rows = await FreeKicksScore.find(filter)
         .sort({ bestScore: -1, bestAchievedAt: 1 })
         .limit(clamped)
         .lean();

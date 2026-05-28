@@ -189,11 +189,21 @@ export async function submitScore({ telegramUserId, telegramUsername, firstName,
  *
  * @param {Object} [args]
  * @param {number} [args.limit=10]
+ * @param {Date|null} [args.since=null]  Filter to users whose best was achieved
+ *   on/after this date. Lets the client drive 24h/7d/all-time windows. NOTE:
+ *   the schema stores one row per user (only the all-time best). "24h window"
+ *   therefore means "users who set their personal best in the last 24h" —
+ *   surfaces freshly improving players, not literal 24h-of-attempts scores.
+ *   A future schema migration to per-attempt logging would let us return
+ *   true windowed top scores; out of scope until usage justifies it.
  * @returns {Promise<Array<{rank, telegramUserId, displayName, bestScore, bestAchievedAt, totalSubmissions}>>}
  */
-export async function getLeaderboard({ limit = 10 } = {}) {
+export async function getLeaderboard({ limit = 10, since = null } = {}) {
     const clamped = Math.max(1, Math.min(100, Math.floor(limit)));
-    const rows = await BasketballScore.find({})
+    const filter = since instanceof Date && !isNaN(since.getTime())
+        ? { bestAchievedAt: { $gte: since } }
+        : {};
+    const rows = await BasketballScore.find(filter)
         .sort({ bestScore: -1, bestAchievedAt: 1 })
         .limit(clamped)
         .lean();

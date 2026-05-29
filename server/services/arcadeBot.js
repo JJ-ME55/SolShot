@@ -43,6 +43,11 @@ import {
     getLeaderboard as getFreeKicksLeaderboard,
     getMyStanding as getFreeKicksStanding,
 } from './games/free-kicks-standalone/standaloneLeaderboard.js';
+import {
+    mintSession as mintPoolSession,
+    getEloLeaderboard as getPoolEloLeaderboard,
+    getEloStanding as getPoolEloStanding,
+} from './games/pool/poolLeaderboard.js';
 
 const ARCADE_WEBHOOK_PATH = '/api/arcade-webhook';
 
@@ -135,6 +140,25 @@ const GAMES = [
         firstName: ctx.from?.first_name,
     }),
   },
+  {
+    // TS-remake of henshmi/Classic-8-Ball-Pool, deployed under the unified
+    // arcade hub at /play/pool/launch. Backend at SolShot server: ELO,
+    // matchmaking queue, wagered escrow (v2), tournaments, marathon mode,
+    // dual ledgers (Gold + Tickets). Bot launch URL goes live when
+    // /play/pool/launch lands in The-Arcade repo — until then this entry
+    // is dormant; the command is registered but visiting 404s.
+    slug: 'pool',
+    name: '8-Ball Pool',
+    emoji: '🎱',
+    tagline: 'Skill-based 1v1. Async 12h turns, server-authoritative physics.',
+    url: 'https://the-arcade-eta.vercel.app/play/pool/launch',
+    supportsLoginUrl: false,
+    sessionMinter: (ctx) => mintPoolSession({
+        telegramUserId: ctx.from?.id,
+        telegramUsername: ctx.from?.username,
+        firstName: ctx.from?.first_name,
+    }),
+  },
 ];
 
 // Per-game leaderboard config. Maps slug → { rendering metadata, lib }.
@@ -160,6 +184,37 @@ const LEADERBOARDS = {
     getLeaderboard: getFreeKicksLeaderboard,
     getMyStanding: getFreeKicksStanding,
     launchCmd: '/freekicks',
+  },
+  // Pool uses a different leaderboard shape (ELO + rating, not single
+  // bestScore). Adapter functions map the per-game contract onto pool's
+  // richer model — the bot's `/leaderboardpool` shows the ELO board with
+  // rating in place of "Score".
+  pool: {
+    emoji: '🎱',
+    title: '8-BALL POOL · ELO',
+    getLeaderboard: async ({ limit = 10 } = {}) => {
+        const rows = await getPoolEloLeaderboard({ limit });
+        // Adapt to the per-game contract: { rank, displayName, bestScore, bestAchievedAt }
+        return rows.map(r => ({
+            rank: r.rank,
+            telegramUserId: r.telegramUserId,
+            displayName: r.displayName,
+            bestScore: r.rating,
+            bestAchievedAt: null,
+        }));
+    },
+    getMyStanding: async ({ telegramUserId } = {}) => {
+        const s = await getPoolEloStanding({ telegramUserId });
+        if (!s) return null;
+        return {
+            rank: s.rank,
+            displayName: s.displayName,
+            bestScore: s.rating,
+            totalSubmissions: s.matchCount,
+            bestAchievedAt: null,
+        };
+    },
+    launchCmd: '/pool',
   },
 };
 

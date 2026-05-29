@@ -36,6 +36,16 @@ import {
     POOL_REWARDS_CONSTANTS
 } from '../services/poolRewards.js';
 
+import {
+    generateMatchId,
+    generateRackSeed,
+    chooseBreakerIdx,
+    computeAsyncExpiry,
+    computeWallClockExpiry,
+    buildInitialTurnState,
+    POOL_ORCHESTRATOR_CONSTANTS
+} from '../services/poolMatchOrchestrator.js';
+
 let failures = 0;
 
 function assert(cond, msg) {
@@ -327,6 +337,64 @@ assert(marathon.winnerGold === 0, 'marathon round: no G from rewards service (ma
 // Constants exported
 assert(POOL_REWARDS_CONSTANTS.PVP_GOLD_BASE === 20, 'PVP_GOLD_BASE constant exposed');
 assert(POOL_REWARDS_CONSTANTS.VS_COMPUTER_GOLD.insane === 25, 'VS_COMPUTER_GOLD.insane constant exposed');
+
+// ============================================================
+//   ORCHESTRATOR — pure helpers
+// ============================================================
+console.log('\n[ORCHESTRATOR — pure helpers]');
+
+// Match ID format
+const mid1 = generateMatchId();
+assert(/^pm_[0-9a-f]{8}$/.test(mid1), `match ID format pm_<8hex> (got ${mid1})`);
+
+// Two consecutive IDs should differ
+const mid2 = generateMatchId();
+assert(mid1 !== mid2, 'consecutive match IDs differ');
+
+// Rack seed format (32 hex chars)
+const seed1 = generateRackSeed();
+assert(/^[0-9a-f]{32}$/.test(seed1), `rack seed format 32 hex chars (got len ${seed1.length})`);
+const seed2 = generateRackSeed();
+assert(seed1 !== seed2, 'consecutive rack seeds differ');
+
+// chooseBreakerIdx is deterministic + returns 0 or 1
+const breaker1a = chooseBreakerIdx('same-seed');
+const breaker1b = chooseBreakerIdx('same-seed');
+assert(breaker1a === breaker1b, 'chooseBreakerIdx is deterministic');
+assert(breaker1a === 0 || breaker1a === 1, `breaker idx is 0 or 1 (got ${breaker1a})`);
+
+// Across many seeds the distribution should be roughly even (sanity)
+let zeros = 0, ones = 0;
+for (let i = 0; i < 100; i++) {
+    const b = chooseBreakerIdx('seed-' + i);
+    if (b === 0) zeros++; else ones++;
+}
+assert(Math.abs(zeros - ones) < 30, `breaker distribution across 100 seeds within 30% (got ${zeros}/100 zeros)`);
+
+// Async expiry: 12h ahead
+const baseTime = new Date('2026-05-29T12:00:00Z');
+const asyncExp = computeAsyncExpiry(baseTime);
+const asyncDeltaHours = (asyncExp - baseTime) / (60 * 60 * 1000);
+assert(asyncDeltaHours === 12, `async expiry 12h ahead (got ${asyncDeltaHours}h)`);
+
+// Wall-clock expiry: 72h ahead
+const wcExp = computeWallClockExpiry(baseTime);
+const wcDeltaHours = (wcExp - baseTime) / (60 * 60 * 1000);
+assert(wcDeltaHours === 72, `wall-clock expiry 72h ahead (got ${wcDeltaHours}h)`);
+
+// Initial turn state structure
+const turnState = buildInitialTurnState(1);
+assert(turnState.activePlayerIdx === 1, 'initial turn: activePlayerIdx = breakerIdx');
+assert(turnState.isBreakingShot === true, 'initial turn: isBreakingShot=true');
+assert(turnState.isBallInHand === false, 'initial turn: isBallInHand=false (break placement is not BIH)');
+assert(turnState.syncTimerStartedAt === null, 'initial turn: sync timer not started yet');
+assert(turnState.asyncWindowExpiresAt instanceof Date, 'initial turn: asyncWindowExpiresAt is a Date');
+
+// Constants exported
+assert(POOL_ORCHESTRATOR_CONSTANTS.ASYNC_WINDOW_MS === 12 * 60 * 60 * 1000,
+    'ASYNC_WINDOW_MS constant correct');
+assert(POOL_ORCHESTRATOR_CONSTANTS.MATCH_WALL_CLOCK_MS === 72 * 60 * 60 * 1000,
+    'MATCH_WALL_CLOCK_MS constant correct');
 
 // ============================================================
 //   Cleanup

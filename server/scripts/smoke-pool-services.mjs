@@ -56,6 +56,14 @@ import {
     POOL_TOURNAMENT_CONSTANTS
 } from '../services/poolTournaments.js';
 
+import {
+    getNextBot,
+    calculateRoundGold,
+    getMilestoneAt,
+    generateRunId,
+    POOL_MARATHON_CONSTANTS
+} from '../services/poolMarathon.js';
+
 let failures = 0;
 
 function assert(cond, msg) {
@@ -531,6 +539,98 @@ assert(places.get(7) === 5, 'all R1 losers tied at 5th');
 
 // Constants exported
 assert(POOL_TOURNAMENT_CONSTANTS.PRIZE_DISTRIBUTIONS[8].length === 4, 'PRIZE_DISTRIBUTIONS constant correct');
+
+// ============================================================
+//   MARATHON — bot ladder
+// ============================================================
+console.log('\n[MARATHON — bot ladder]');
+
+// Starting on easy, streak 0 → first bot is easy
+const b0 = getNextBot({ startingDifficulty: 'easy', currentStreak: 0 });
+assert(b0.difficulty === 'easy', 'easy/streak 0: bot is easy');
+assert(b0.elo === 600, 'easy bot ELO = 600');
+assert(b0.ladderStep === 0, 'ladder step 0');
+
+// After 3 wins, ladder steps up
+const b3 = getNextBot({ startingDifficulty: 'easy', currentStreak: 3 });
+assert(b3.difficulty === 'medium', `easy/streak 3: bot is medium (got ${b3.difficulty})`);
+assert(b3.elo === 900, 'medium bot ELO = 900');
+
+// After 9 wins, hit insane
+const b9 = getNextBot({ startingDifficulty: 'easy', currentStreak: 9 });
+assert(b9.difficulty === 'insane', `easy/streak 9: bot is insane (got ${b9.difficulty})`);
+
+// After 12 wins (one step past insane), overflow kicks in: insane+1 with ELO 1600
+const b12 = getNextBot({ startingDifficulty: 'easy', currentStreak: 12 });
+assert(b12.difficulty === 'insane', `easy/streak 12: still labelled insane`);
+assert(b12.elo === 1600, `easy/streak 12: ELO = 1600 (got ${b12.elo})`);
+assert(b12.displayName === 'insane+1', `easy/streak 12: displayName = insane+1 (got ${b12.displayName})`);
+
+// Starting on hard, streak 0 → first bot is hard
+const h0 = getNextBot({ startingDifficulty: 'hard', currentStreak: 0 });
+assert(h0.difficulty === 'hard', 'hard/streak 0: bot is hard');
+assert(h0.elo === 1200, 'hard bot ELO = 1200');
+
+// Starting on hard, streak 3 → insane
+const h3 = getNextBot({ startingDifficulty: 'hard', currentStreak: 3 });
+assert(h3.difficulty === 'insane', `hard/streak 3: insane (got ${h3.difficulty})`);
+
+// ============================================================
+//   MARATHON — per-round Gold reward
+// ============================================================
+console.log('\n[MARATHON — per-round Gold]');
+
+// Easy bot, no perfect → base 5 G
+assert(calculateRoundGold({ botElo: 600, perfectTable: false }) === 5,
+    'easy bot non-perfect: 5 G');
+
+// Easy bot, perfect → 5 + 5 bonus
+assert(calculateRoundGold({ botElo: 600, perfectTable: true }) === 10,
+    'easy bot perfect: 10 G');
+
+// Insane bot, no perfect → 5 + (900/100)*1 = 5 + 9 = 14 G
+assert(calculateRoundGold({ botElo: 1500, perfectTable: false }) === 14,
+    `insane bot non-perfect: 14 G (got ${calculateRoundGold({ botElo: 1500, perfectTable: false })})`);
+
+// Insane+5 bot, perfect → high reward
+const highRoundGold = calculateRoundGold({ botElo: 2000, perfectTable: true });
+assert(highRoundGold > 20, `insane+5 perfect: >20 G (got ${highRoundGold})`);
+
+// ============================================================
+//   MARATHON — milestone bonuses
+// ============================================================
+console.log('\n[MARATHON — milestone bonuses]');
+
+assert(getMilestoneAt(1) === null, 'streak 1: no milestone');
+assert(getMilestoneAt(4) === null, 'streak 4: no milestone');
+
+const m5 = getMilestoneAt(5);
+assert(m5 && m5.tickets === 5, `streak 5: +5 TKT (got ${m5?.tickets})`);
+
+const m10 = getMilestoneAt(10);
+assert(m10 && m10.tickets === 15, `streak 10: +15 TKT (got ${m10?.tickets})`);
+
+const m20 = getMilestoneAt(20);
+assert(m20 && m20.tickets === 50, `streak 20: +50 TKT (got ${m20?.tickets})`);
+
+const m50 = getMilestoneAt(50);
+assert(m50 && m50.tickets === 250, `streak 50: +250 TKT (got ${m50?.tickets})`);
+
+assert(getMilestoneAt(100) === null, 'streak 100: no preset milestone (capped at 50)');
+
+// ============================================================
+//   MARATHON — run ID format
+// ============================================================
+console.log('\n[MARATHON — run ID]');
+
+const runId = generateRunId();
+assert(/^mr_[0-9a-f]{8}$/.test(runId), `run ID format mr_<8hex> (got ${runId})`);
+const runId2 = generateRunId();
+assert(runId !== runId2, 'consecutive run IDs differ');
+
+// Constants exported
+assert(POOL_MARATHON_CONSTANTS.LADDER_STEP_WINS === 3, 'LADDER_STEP_WINS = 3');
+assert(POOL_MARATHON_CONSTANTS.MILESTONES.length === 5, 'MILESTONES preset has 5 thresholds');
 
 // ============================================================
 //   Cleanup

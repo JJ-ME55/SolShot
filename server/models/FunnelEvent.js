@@ -11,6 +11,11 @@ import mongoose from 'mongoose';
 //   first_deposit → on-chain wager deposit confirmed for the first time
 //                   for this identity (one-shot per identity)
 //   first_settle  → first wagered match settled on-chain (one-shot)
+//   first_cashout → user TAPPED "cash out for gift cards" — measures
+//                   intent, not completion (we can't observe Bitrefill
+//                   conversion from inside SolShot). Completion data
+//                   comes from the Bitrefill affiliate dashboard.
+//                   See Docs/internal/CIVILIAN_CASHOUT_STRATEGY.md.
 //
 // The wallet-link drop-off fix (commits ~65008af, ~e1ea17e) shipped but
 // has no measurement. This collection is the measurement.
@@ -20,6 +25,7 @@ export const FUNNEL_STAGES = [
     'wallet_linked',
     'first_deposit',
     'first_settle',
+    'first_cashout',
 ];
 
 const funnelEventSchema = new mongoose.Schema({
@@ -56,7 +62,7 @@ funnelEventSchema.index(
     {
         unique: true,
         partialFilterExpression: {
-            stage: { $in: ['first_deposit', 'first_settle'] },
+            stage: { $in: ['first_deposit', 'first_settle', 'first_cashout'] },
             walletAddress: { $type: 'string' },
         },
         name: 'oneshot_dedupe_wallet',
@@ -67,7 +73,7 @@ funnelEventSchema.index(
     {
         unique: true,
         partialFilterExpression: {
-            stage: { $in: ['first_deposit', 'first_settle'] },
+            stage: { $in: ['first_deposit', 'first_settle', 'first_cashout'] },
             telegramUserId: { $type: 'number' },
         },
         name: 'oneshot_dedupe_tg',
@@ -78,7 +84,7 @@ funnelEventSchema.index(
     {
         unique: true,
         partialFilterExpression: {
-            stage: { $in: ['first_deposit', 'first_settle'] },
+            stage: { $in: ['first_deposit', 'first_settle', 'first_cashout'] },
             uid: { $type: 'string' },
         },
         name: 'oneshot_dedupe_uid',

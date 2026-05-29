@@ -926,6 +926,59 @@ function SolShotWalletInner({ children }) {
         }
     }, [privyAuthed, privyFundSolanaWalletFn, privyWallet, refreshBalance]);
 
+    // Civilian cash-out via Bitrefill (gift cards: Amazon UK, Steam, Just Eat,
+    // Spotify, Argos, Uber — 600+ brands). User pays in SOL directly, receives
+    // gift card code by email within ~30 seconds. No KYC under ~$1k Bitrefill
+    // threshold, no bank account needed, no fiat conversion on our side.
+    //
+    // The Bitrefill checkout shows a solana: URI which Privy's embedded wallet
+    // intercepts natively — user never copies/pastes an address.
+    //
+    // Affiliate ID comes from REACT_APP_BITREFILL_REF env var (set in Vercel
+    // project env once JJ completes the Bitrefill Business partner signup at
+    // https://www.bitrefill.com/business). Until set, the link still works —
+    // we just don't earn the ~2-5% commission on conversions.
+    //
+    // See Docs/internal/CIVILIAN_CASHOUT_STRATEGY.md for the full strategy.
+    const openCashOut = useCallback(({ utmMedium = 'solshot-cashout' } = {}) => {
+        if (!walletAddress) {
+            console.warn('[Cashout] no wallet address — Bitrefill needs a SOL destination');
+            return false;
+        }
+        try {
+            // Fire-and-forget funnel tracking. Server endpoint dedupes
+            // per-identity (one-shot stage) so spam-clicks don't pollute.
+            // We don't await — the redirect should be instant.
+            fetch('/api/funnel/cashout-initiated', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    walletAddress,
+                    provider: 'bitrefill',
+                }),
+                keepalive: true, // survives the window.open / tab navigation
+            }).catch(() => {});
+
+            const params = new URLSearchParams({
+                paymentMethod: 'solana',
+                utm_source: 'solshot',
+                utm_medium: utmMedium,
+                utm_campaign: 'v1-launch',
+            });
+            const ref = process.env.REACT_APP_BITREFILL_REF;
+            if (ref) params.set('ref', ref);
+            const url = `https://www.bitrefill.com/buy/?${params.toString()}`;
+
+            // window.open with noopener is safe — Bitrefill is the merchant
+            // of record and we don't need a reference back to the popup.
+            window.open(url, '_blank', 'noopener,noreferrer');
+            return true;
+        } catch (err) {
+            console.warn('[Cashout] openCashOut failed:', err?.message || err);
+            return false;
+        }
+    }, [walletAddress]);
+
     const activeSource = privyWallet ? 'privy' : null;
 
     // Stable identity uid for the User-doc registration flow. Order of
@@ -972,6 +1025,12 @@ function SolShotWalletInner({ children }) {
         // signAndBurnShot removed in V3 pivot — SHOT is off-chain in-game currency
         openPrivyAccount,
         fundWallet,
+        // openCashOut — opens Bitrefill in a new tab with the user's wallet
+        // address handled via SOL payment at checkout. The civilian cash-out
+        // path per Docs/internal/CIVILIAN_CASHOUT_STRATEGY.md. Optional
+        // `utmMedium` lets per-game/screen callers attribute their conversion
+        // separately (e.g. 'menu-cashout' vs 'post-match-cashout').
+        openCashOut,
         // Recovery / linking — for the "secure your account" flow that
         // lets a TG-only user add email as a backup (or vice versa).
         recoveryStatus,
@@ -1012,7 +1071,7 @@ function SolShotWalletInner({ children }) {
     }), [
         balance, refreshBalance, walletAddress, connected, isAuthenticated, authenticate,
         login, logout, shotBalance, prestigeInfo, signAndSendEscrowDeposit, signAndSendGroupDeposit,
-        openPrivyAccount, fundWallet, isFreshSignIn,
+        openPrivyAccount, fundWallet, openCashOut, isFreshSignIn,
         recoveryStatus, linkEmailRecovery, linkTelegramRecovery,
         walletHandle, setWalletHandle,
         activeSource, privyReady, privyAuthed, privyWalletsReady, publicKey, privyWallet,
@@ -1087,6 +1146,7 @@ const LOCAL_DEV_FALLBACK_VALUE = {
     // signAndBurnShot removed in V3 pivot — SHOT is off-chain in-game currency
     openPrivyAccount: async () => false,
     fundWallet: async () => false,
+    openCashOut: () => false,
     isFreshSignIn: false,
     clearFreshSignIn: () => {},
     recoveryStatus: { hasEmail: false, hasTelegram: false, hasExternalWallet: false, needsRecovery: false },

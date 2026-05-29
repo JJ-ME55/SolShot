@@ -412,6 +412,38 @@ app.post('/api/feedback', feedbackLimiter, async (req, res) => {
     }
 });
 
+// ─── Cash-out funnel tracking ────────────────────────────────────────────
+//
+// The client calls this when the user TAPS the "cash out for gift cards"
+// button — measures INTENT, not completion (we can't observe Bitrefill
+// conversion from inside SolShot). Completion data comes from the Bitrefill
+// affiliate dashboard. Fire-and-forget, never blocks the redirect.
+//
+// One-shot per identity (FunnelEvent's sparse-unique partial-filter index
+// dedupes — see server/models/FunnelEvent.js). Subsequent taps from the
+// same identity are silently no-op'd at the DB layer.
+//
+// See Docs/internal/CIVILIAN_CASHOUT_STRATEGY.md §4.4 for the bigger picture.
+app.post('/api/funnel/cashout-initiated', async (req, res) => {
+    try {
+        const { walletAddress, telegramUserId, uid, provider } = req.body || {};
+        // At least one identity must be present, otherwise we can't dedupe
+        // and the event is meaningless for funnel math.
+        if (!walletAddress && !telegramUserId && !uid) {
+            return res.status(400).json({ ok: false, error: 'identity_required' });
+        }
+        recordFunnelEvent(
+            'first_cashout',
+            { walletAddress, telegramUserId, uid },
+            { provider: typeof provider === 'string' ? provider.slice(0, 32) : 'bitrefill' },
+            'http'
+        );
+        return res.json({ ok: true });
+    } catch (err) {
+        console.warn('[Cashout funnel] failed:', err?.message || err);
+        return res.status(500).json({ ok: false, error: 'server_error' });
+    }
+});
 
 // ─── Challenge endpoints (Phase 3 — Telegram Mini App) ───────────────────
 //

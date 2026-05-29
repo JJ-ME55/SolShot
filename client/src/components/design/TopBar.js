@@ -32,6 +32,7 @@ export default function DesignTopBar({
     logout,
     openPrivyAccount,
     fundWallet,
+    openCashOut,
     recoveryStatus,
     linkEmailRecovery,
     linkTelegramRecovery,
@@ -76,6 +77,13 @@ export default function DesignTopBar({
   const doFund = async () => {
     setMenuOpen(false);
     if (fundWallet) await fundWallet({ amount: '0.05' });
+  };
+  // Civilian cash-out — opens Bitrefill in a new tab where the user can spend
+  // their SOL on gift cards (Amazon UK, Steam, Just Eat, etc.). See
+  // Docs/internal/CIVILIAN_CASHOUT_STRATEGY.md.
+  const doCashOut = () => {
+    setMenuOpen(false);
+    if (openCashOut) openCashOut({ utmMedium: 'topbar-cashout' });
   };
   const doManage = async () => {
     setMenuOpen(false);
@@ -268,6 +276,9 @@ export default function DesignTopBar({
                   </button>
                   <button type="button" onClick={doFund} style={menuItemStyle()}>
                     + ADD SOL
+                  </button>
+                  <button type="button" onClick={doCashOut} style={menuItemStyle()}>
+                    💰 CASH OUT (GIFT CARDS)
                   </button>
                   <button type="button" onClick={doManage} style={menuItemStyle()}>
                     EXPORT KEY

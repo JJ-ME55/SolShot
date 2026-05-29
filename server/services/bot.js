@@ -579,6 +579,15 @@ function registerCommands(bot) {
         lines.push(`Next tier: ${next.name.toUpperCase()} · ${remaining.toLocaleString()} SHOT to go`);
       }
 
+      // Civilian cash-out hint. Mentioned only when the user has actual
+      // wagered winnings to cash out — keeps the message tight for new
+      // users who don't need it yet. See Docs/internal/CIVILIAN_CASHOUT_STRATEGY.md.
+      if (solWon > 0) {
+        lines.push('');
+        lines.push('💰 Cash out: spend your SOL on gift cards (Amazon, Steam, Just Eat, Spotify…)');
+        lines.push('Tap "Open Wallet" → ⋯ menu → CASH OUT (GIFT CARDS)');
+      }
+
       await ctx.reply(lines.join('\n'), {
         reply_markup: launchKeyboard('Open Wallet', 'wallet', null, ctx),
       });

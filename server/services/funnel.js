@@ -9,7 +9,7 @@ function isDbConnected() {
     return mongoose.connection.readyState === 1;
 }
 
-const ONE_SHOT_STAGES = new Set(['first_deposit', 'first_settle']);
+const ONE_SHOT_STAGES = new Set(['first_deposit', 'first_settle', 'first_cashout']);
 
 /**
  * Fire-and-forget funnel emission. Never throws, never blocks the caller.

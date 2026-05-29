@@ -29,6 +29,13 @@ import {
     POOL_MATCHMAKING_CONSTANTS
 } from '../services/poolMatchmaking.js';
 
+import {
+    calculatePvpGold,
+    calculateVsComputerGold,
+    calculateRewardBundle,
+    POOL_REWARDS_CONSTANTS
+} from '../services/poolRewards.js';
+
 let failures = 0;
 
 function assert(cond, msg) {
@@ -214,6 +221,112 @@ assert(matchedPairs.length === 0, 'no pair when rating gap (500) exceeds initial
 
 dequeue({ telegramUserId: 6001 });
 dequeue({ telegramUserId: 6002 });
+
+// ============================================================
+//   REWARDS — PvP Gold (ELO-weighted)
+// ============================================================
+console.log('\n[REWARDS — PvP Gold]');
+
+// Equal opponents → base 20 G
+assert(calculatePvpGold(1000, 1000) === 20, `PvP gold equal opp: base 20 (got ${calculatePvpGold(1000, 1000)})`);
+
+// Beat lower opp → less reward (10 G min)
+assert(calculatePvpGold(1000, 800) === 10, `PvP gold beat 200 below: 10 (got ${calculatePvpGold(1000, 800)})`);
+
+// Beat higher opp → more reward
+const beatHigher = calculatePvpGold(1000, 1200);
+assert(beatHigher > 20, `PvP gold beat 200 above: >20 (got ${beatHigher})`);
+
+// Beat much higher → capped at 50 G
+assert(calculatePvpGold(800, 2000) === 50, `PvP gold beat 1200 above: capped at 50 (got ${calculatePvpGold(800, 2000)})`);
+
+// Beat much lower → floored at 10 G
+assert(calculatePvpGold(2000, 800) === 10, `PvP gold beat 1200 below: floored at 10 (got ${calculatePvpGold(2000, 800)})`);
+
+// ============================================================
+//   REWARDS — Vs Computer
+// ============================================================
+console.log('\n[REWARDS — Vs Computer]');
+
+assert(calculateVsComputerGold('easy') === 5,    'vs bot easy: 5 G');
+assert(calculateVsComputerGold('medium') === 10, 'vs bot medium: 10 G');
+assert(calculateVsComputerGold('hard') === 15,   'vs bot hard: 15 G');
+assert(calculateVsComputerGold('insane') === 25, 'vs bot insane: 25 G');
+assert(calculateVsComputerGold('unknown') === 0, 'unknown difficulty: 0 G');
+
+// ============================================================
+//   REWARDS — Bundle composition
+// ============================================================
+console.log('\n[REWARDS — Bundle composition]');
+
+// Practice → all zero
+const practice = calculateRewardBundle({
+    mode: 'practice',
+    winner: { eloAtStart: 1000, isAiBot: false },
+    loser:  { eloAtStart: 1000, isAiBot: false }
+});
+assert(practice.winnerGold === 0 && practice.loserGold === 0 && practice.winnerTickets === 0,
+    'practice: zero rewards');
+
+// Quick PvP: winner gets G + 1 TKT, loser gets only 1 TKT floor
+const quick = calculateRewardBundle({
+    mode: 'quick',
+    winner: { eloAtStart: 1000, isAiBot: false },
+    loser:  { eloAtStart: 1000, isAiBot: false }
+});
+assert(quick.winnerGold === 20, `quick PvP winner G: 20 (got ${quick.winnerGold})`);
+assert(quick.winnerTickets === 1, `quick PvP winner TKT: 1 floor (got ${quick.winnerTickets})`);
+assert(quick.loserGold === 0, `quick PvP loser G: 0 (got ${quick.loserGold})`);
+assert(quick.loserTickets === 1, `quick PvP loser TKT: 1 floor (got ${quick.loserTickets})`);
+
+// Wagered: same G/TKT structure as quick (SOL is settled separately)
+const wagered = calculateRewardBundle({
+    mode: 'wagered',
+    winner: { eloAtStart: 1200, isAiBot: false },
+    loser:  { eloAtStart: 1000, isAiBot: false }
+});
+assert(wagered.winnerGold > 0, 'wagered winner gets G');
+assert(wagered.winnerTickets === 1, 'wagered winner gets 1 TKT floor');
+assert(wagered.loserGold === 0, 'wagered loser gets 0 G');
+
+// Vs Computer (human wins): winner gets flat-per-difficulty G + 1 TKT
+const vsBot = calculateRewardBundle({
+    mode: 'vs_computer',
+    winner: { eloAtStart: 1000, isAiBot: false, aiDifficulty: null },
+    loser:  { eloAtStart: 1000, isAiBot: true,  aiDifficulty: 'hard' }
+});
+// difficulty from loser since they're the bot
+assert(vsBot.winnerGold === 15, `vs bot hard winner G: 15 (got ${vsBot.winnerGold})`);
+assert(vsBot.winnerTickets === 1, `vs bot winner TKT: 1 floor (got ${vsBot.winnerTickets})`);
+assert(vsBot.loserGold === 0 && vsBot.loserTickets === 0, 'vs bot: no rewards for bot loser');
+
+// Vs Computer (bot wins): bot has no ledger; emit nothing
+const vsBotBotWon = calculateRewardBundle({
+    mode: 'vs_computer',
+    winner: { eloAtStart: 1000, isAiBot: true,  aiDifficulty: 'insane' },
+    loser:  { eloAtStart: 1000, isAiBot: false }
+});
+assert(vsBotBotWon.winnerGold === 0 && vsBotBotWon.winnerTickets === 0,
+    'vs bot bot-wins: no rewards (bot has no ledger)');
+
+// Tournament + marathon defer to their own services → all zero from this service
+const tourny = calculateRewardBundle({
+    mode: 'tournament',
+    winner: { eloAtStart: 1100, isAiBot: false },
+    loser:  { eloAtStart: 1050, isAiBot: false }
+});
+assert(tourny.winnerGold === 0, 'tournament round: no G from rewards service (tournament service handles)');
+
+const marathon = calculateRewardBundle({
+    mode: 'marathon',
+    winner: { eloAtStart: 1000, isAiBot: false },
+    loser:  { eloAtStart: 1000, isAiBot: true, aiDifficulty: 'medium' }
+});
+assert(marathon.winnerGold === 0, 'marathon round: no G from rewards service (marathon service handles)');
+
+// Constants exported
+assert(POOL_REWARDS_CONSTANTS.PVP_GOLD_BASE === 20, 'PVP_GOLD_BASE constant exposed');
+assert(POOL_REWARDS_CONSTANTS.VS_COMPUTER_GOLD.insane === 25, 'VS_COMPUTER_GOLD.insane constant exposed');
 
 // ============================================================
 //   Cleanup

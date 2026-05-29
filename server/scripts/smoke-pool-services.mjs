@@ -74,6 +74,14 @@ import {
     POOL_ESCROW_CONSTANTS
 } from '../services/poolEscrow.js';
 
+import {
+    mintSession as mintPoolSession,
+    verifySession as verifyPoolSession,
+    parseSinceParam,
+    clampLimit,
+    POOL_LEADERBOARD_CONSTANTS
+} from '../services/games/pool/poolLeaderboard.js';
+
 let failures = 0;
 
 function assert(cond, msg) {
@@ -774,6 +782,67 @@ assert(provLowResult.ok === true, 'provisional player can stake at low cap (0.05
 // Constants exported
 assert(POOL_ESCROW_CONSTANTS.WINNER_BPS === 9000, 'WINNER_BPS = 9000 (90%)');
 assert(POOL_ESCROW_CONSTANTS.ALLOWED_STAKES_SOL.length === 6, '6 stake tiers configured');
+
+// ============================================================
+//   LEADERBOARD — JWT minting / verification round-trip
+// ============================================================
+console.log('\n[LEADERBOARD — JWT]');
+
+const tok = mintPoolSession({ telegramUserId: 1234567, telegramUsername: 'alice', firstName: 'Alice' });
+assert(typeof tok === 'string' && tok.split('.').length === 3,
+    `mintSession returns a 3-segment JWT (got ${tok && tok.length} chars)`);
+
+const decoded = verifyPoolSession(tok);
+assert(decoded.telegramUserId === 1234567, `verifySession returns telegramUserId (got ${decoded.telegramUserId})`);
+assert(decoded.telegramUsername === 'alice', 'verifySession returns telegramUsername');
+assert(decoded.firstName === 'Alice', 'verifySession returns firstName');
+
+// Mint with only TG ID — optional fields omitted
+const tokMinimal = mintPoolSession({ telegramUserId: 7777 });
+const decodedMinimal = verifyPoolSession(tokMinimal);
+assert(decodedMinimal.telegramUserId === 7777, 'minimal payload: TG ID only');
+assert(decodedMinimal.telegramUsername === undefined, 'no username when not provided');
+
+// Reject malformed token
+let threw = false;
+try { verifyPoolSession('not-a-real-jwt'); } catch (e) { threw = true; }
+assert(threw, 'verifySession rejects malformed token');
+
+// Reject missing TG ID at mint time
+let threwMint = false;
+try { mintPoolSession({ telegramUserId: null }); } catch (e) { threwMint = true; }
+assert(threwMint, 'mintSession rejects missing telegramUserId');
+
+// ============================================================
+//   LEADERBOARD — query param parsing
+// ============================================================
+console.log('\n[LEADERBOARD — param parsing]');
+
+// parseSinceParam
+assert(parseSinceParam(null) === null, 'parseSinceParam(null) → null');
+assert(parseSinceParam(undefined) === null, 'parseSinceParam(undefined) → null');
+assert(parseSinceParam('') === null, 'parseSinceParam("") → null');
+assert(parseSinceParam('not a date') === null, 'parseSinceParam("not a date") → null');
+
+const validDate = parseSinceParam('2026-05-29T00:00:00Z');
+assert(validDate instanceof Date && !isNaN(validDate.getTime()),
+    'parseSinceParam returns valid Date for ISO string');
+
+const passThroughDate = parseSinceParam(new Date('2026-01-01'));
+assert(passThroughDate instanceof Date, 'parseSinceParam passes through Date input');
+
+// clampLimit
+assert(clampLimit('10') === 10, 'clampLimit("10") = 10');
+assert(clampLimit('0') === 1, 'clampLimit("0") clamped to min 1');
+assert(clampLimit('1000') === 100, 'clampLimit("1000") clamped to max 100');
+assert(clampLimit('not a number') === 10, 'clampLimit invalid → default 10');
+assert(clampLimit(undefined) === 10, 'clampLimit undefined → default 10');
+assert(clampLimit('-5') === 1, 'clampLimit negative → clamped to 1');
+
+// Constants exported
+assert(POOL_LEADERBOARD_CONSTANTS.VALID_BOARD_TYPES.length === 5, '5 board types configured');
+assert(POOL_LEADERBOARD_CONSTANTS.VALID_BOARD_TYPES.includes('elo'), 'elo is a valid board type');
+assert(POOL_LEADERBOARD_CONSTANTS.SESSION_TTL === '30d', 'session TTL = 30 days (silent-401 fix)');
 
 // ============================================================
 //   Cleanup

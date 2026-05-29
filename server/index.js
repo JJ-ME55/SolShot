@@ -60,6 +60,14 @@ import {
     getMyStanding as getFreeKicksStanding,
     mintSession as mintFreeKicksSession,
 } from './services/games/free-kicks-standalone/standaloneLeaderboard.js';
+import {
+    mintSession as mintPoolSession,
+    verifySession as verifyPoolSession,
+    getLeaderboard as getPoolLeaderboard,
+    getStanding as getPoolStanding,
+    parseSinceParam as parsePoolSinceParam,
+    clampLimit as clampPoolLimit,
+} from './services/games/pool/poolLeaderboard.js';
 import BasketballScore from './models/BasketballScore.js';
 import KeepieUppiesScore from './models/KeepieUppiesScore.js';
 import FreeKicksScore from './models/FreeKicksScore.js';
@@ -1238,6 +1246,57 @@ app.get('/api/games/freekicks/standing/:telegramUserId', async (req, res) => {
     } catch (err) {
         console.error('[GET /api/games/freekicks/standing]', err.message);
         res.status(500).json({ error: 'failed to fetch standing' });
+    }
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// Pool — different shape from the other arcade games. There is NO score
+// POST endpoint because match outcomes drive the boards implicitly via
+// the orchestrator + ledger services. Two GET endpoints expose the
+// multi-board data + standings.
+// ──────────────────────────────────────────────────────────────────────
+
+// GET /api/games/pool/leaderboard?type=elo&limit=10&since=<iso>&difficulty=<>
+//   type: elo | tickets_earned | marathon_streak | marathon_perfect | tournament_podiums
+//   difficulty: required when type starts with 'marathon_'
+//   returns: { ok, type, leaderboard: [...] }
+app.get('/api/games/pool/leaderboard', async (req, res) => {
+    try {
+        const type = (req.query.type || 'elo').toString();
+        const limit = clampPoolLimit(req.query.limit);
+        const since = parsePoolSinceParam(req.query.since);
+        const difficulty = req.query.difficulty
+            ? String(req.query.difficulty).toLowerCase()
+            : undefined;
+        const leaderboard = await getPoolLeaderboard({ type, limit, since, difficulty });
+        res.json({ ok: true, type, leaderboard });
+    } catch (err) {
+        console.error('[GET /api/games/pool/leaderboard]', err.message);
+        const code = err.message.startsWith('invalid') || err.message.startsWith('difficulty')
+            ? 400 : 500;
+        res.status(code).json({ error: err.message });
+    }
+});
+
+// GET /api/games/pool/standing/:telegramUserId?type=elo&difficulty=<>
+//   returns: { ok, type, standing: { rank, rating, ... } | null }
+app.get('/api/games/pool/standing/:telegramUserId', async (req, res) => {
+    try {
+        const telegramUserId = parseInt(req.params.telegramUserId, 10);
+        if (!Number.isFinite(telegramUserId)) {
+            return res.status(400).json({ error: 'invalid telegramUserId' });
+        }
+        const type = (req.query.type || 'elo').toString();
+        const difficulty = req.query.difficulty
+            ? String(req.query.difficulty).toLowerCase()
+            : undefined;
+        const standing = await getPoolStanding({ type, telegramUserId, difficulty });
+        res.json({ ok: true, type, standing: standing || null });
+    } catch (err) {
+        console.error('[GET /api/games/pool/standing]', err.message);
+        const code = err.message.startsWith('invalid') || err.message.startsWith('difficulty')
+            ? 400 : 500;
+        res.status(code).json({ error: err.message });
     }
 });
 

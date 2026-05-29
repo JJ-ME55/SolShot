@@ -64,6 +64,16 @@ import {
     POOL_MARATHON_CONSTANTS
 } from '../services/poolMarathon.js';
 
+import {
+    validateWageredMatchPreconditions,
+    calculateSettlementSplit,
+    solToLamports,
+    lamportsToSol,
+    isAllowedStake,
+    previewSettlement,
+    POOL_ESCROW_CONSTANTS
+} from '../services/poolEscrow.js';
+
 let failures = 0;
 
 function assert(cond, msg) {
@@ -631,6 +641,139 @@ assert(runId !== runId2, 'consecutive run IDs differ');
 // Constants exported
 assert(POOL_MARATHON_CONSTANTS.LADDER_STEP_WINS === 3, 'LADDER_STEP_WINS = 3');
 assert(POOL_MARATHON_CONSTANTS.MILESTONES.length === 5, 'MILESTONES preset has 5 thresholds');
+
+// ============================================================
+//   ESCROW — unit conversion
+// ============================================================
+console.log('\n[ESCROW — unit conversion]');
+
+assert(solToLamports(1) === 1_000_000_000, '1 SOL = 1B lamports');
+assert(solToLamports(0.05) === 50_000_000, '0.05 SOL = 50M lamports');
+assert(solToLamports(0.01) === 10_000_000, '0.01 SOL = 10M lamports');
+assert(lamportsToSol(1_000_000_000) === 1, '1B lamports = 1 SOL');
+assert(lamportsToSol(50_000_000) === 0.05, '50M lamports = 0.05 SOL');
+
+// ============================================================
+//   ESCROW — settlement split (90/7/3)
+// ============================================================
+console.log('\n[ESCROW — settlement split]');
+
+// 0.05 SOL × 2 players = 0.1 SOL pot = 100M lamports
+// 90% = 90,000,000; 7% = 7,000,000; 3% = 3,000,000
+const split05 = calculateSettlementSplit(solToLamports(0.05));
+assert(split05.pot === 100_000_000, `0.05 stake → pot 100M lamports (got ${split05.pot})`);
+assert(split05.treasury === 7_000_000, `0.05 stake → treasury 7M lamports (got ${split05.treasury})`);
+assert(split05.ops === 3_000_000, `0.05 stake → ops 3M lamports (got ${split05.ops})`);
+assert(split05.winner === 90_000_000, `0.05 stake → winner 90M lamports (got ${split05.winner})`);
+assert(split05.winner + split05.treasury + split05.ops === split05.pot, 'split sums to pot exactly');
+
+// Larger stake: 1 SOL × 2 = 2 SOL pot
+const split1 = calculateSettlementSplit(solToLamports(1));
+assert(split1.pot === 2_000_000_000, '1 SOL stake → pot 2 SOL');
+assert(split1.winner === 1_800_000_000, '1 SOL stake → winner gets 1.8 SOL');
+
+// Settlement preview
+const preview = previewSettlement(0.05);
+assert(preview.winnerSol === 0.09, `0.05 stake preview: winner 0.09 SOL (got ${preview.winnerSol})`);
+assert(preview.treasurySol === 0.007, '0.05 stake preview: treasury 0.007 SOL');
+assert(preview.opsSol === 0.003, '0.05 stake preview: ops 0.003 SOL');
+
+// ============================================================
+//   ESCROW — allowed stakes
+// ============================================================
+console.log('\n[ESCROW — allowed stakes]');
+
+assert(isAllowedStake(0.05) === true, '0.05 SOL is allowed');
+assert(isAllowedStake(0.1) === true, '0.1 SOL is allowed');
+assert(isAllowedStake(5) === true, '5 SOL is allowed (max)');
+assert(isAllowedStake(0.02) === false, '0.02 SOL is NOT allowed');
+assert(isAllowedStake(10) === false, '10 SOL is NOT allowed (above max)');
+assert(isAllowedStake(0) === false, '0 SOL is NOT allowed');
+
+// ============================================================
+//   ESCROW — wagered match preconditions
+// ============================================================
+console.log('\n[ESCROW — preconditions]');
+
+// Happy path: both players have wallets, valid stake, both can wager above 0.05
+const okResult = validateWageredMatchPreconditions({
+    players: [
+        { walletAddress: 'wallet-a', isAiBot: false },
+        { walletAddress: 'wallet-b', isAiBot: false }
+    ],
+    stakeSol: 0.1,
+    eloDocs: [
+        { matchCount: 30, canWagerAboveLowStake: true },
+        { matchCount: 30, canWagerAboveLowStake: true }
+    ]
+});
+assert(okResult.ok === true, 'happy path passes precondition');
+
+// Bot included → reject
+const botResult = validateWageredMatchPreconditions({
+    players: [
+        { walletAddress: 'wallet-a', isAiBot: false },
+        { isAiBot: true }
+    ],
+    stakeSol: 0.05,
+    eloDocs: [{ matchCount: 30 }, null]
+});
+assert(botResult.ok === false && botResult.reason.includes('bot'), 'bot rejected');
+
+// Missing wallet → reject
+const noWalletResult = validateWageredMatchPreconditions({
+    players: [
+        { walletAddress: null, isAiBot: false },
+        { walletAddress: 'wallet-b', isAiBot: false }
+    ],
+    stakeSol: 0.05,
+    eloDocs: [{ matchCount: 30 }, { matchCount: 30 }]
+});
+assert(noWalletResult.ok === false && noWalletResult.reason.includes('wallet'), 'missing wallet rejected');
+
+// Invalid stake → reject
+const badStakeResult = validateWageredMatchPreconditions({
+    players: [
+        { walletAddress: 'a', isAiBot: false },
+        { walletAddress: 'b', isAiBot: false }
+    ],
+    stakeSol: 0.03,
+    eloDocs: [{ matchCount: 30 }, { matchCount: 30 }]
+});
+assert(badStakeResult.ok === false && badStakeResult.reason.includes('0.03'), 'non-allowed stake rejected');
+
+// Anti-smurf: provisional player can't stake above 0.05 SOL
+const smurfResult = validateWageredMatchPreconditions({
+    players: [
+        { walletAddress: 'a', isAiBot: false },
+        { walletAddress: 'b', isAiBot: false }
+    ],
+    stakeSol: 0.5,
+    eloDocs: [
+        { matchCount: 5, canWagerAboveLowStake: false },   // provisional
+        { matchCount: 30, canWagerAboveLowStake: true }
+    ]
+});
+assert(smurfResult.ok === false && smurfResult.reason.includes('anti_smurf'),
+    'provisional player blocked from high stake');
+
+// Provisional CAN play 0.05 (low stake exempt from anti-smurf)
+const provLowResult = validateWageredMatchPreconditions({
+    players: [
+        { walletAddress: 'a', isAiBot: false },
+        { walletAddress: 'b', isAiBot: false }
+    ],
+    stakeSol: 0.05,
+    eloDocs: [
+        { matchCount: 5, canWagerAboveLowStake: false },
+        { matchCount: 30, canWagerAboveLowStake: true }
+    ]
+});
+assert(provLowResult.ok === true, 'provisional player can stake at low cap (0.05)');
+
+// Constants exported
+assert(POOL_ESCROW_CONSTANTS.WINNER_BPS === 9000, 'WINNER_BPS = 9000 (90%)');
+assert(POOL_ESCROW_CONSTANTS.ALLOWED_STAKES_SOL.length === 6, '6 stake tiers configured');
 
 // ============================================================
 //   Cleanup

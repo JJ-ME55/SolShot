@@ -46,6 +46,16 @@ import {
     POOL_ORCHESTRATOR_CONSTANTS
 } from '../services/poolMatchOrchestrator.js';
 
+import {
+    getRound1Pairings,
+    buildBracketSkeleton,
+    getPrizeDistribution,
+    validatePrizeDistribution,
+    computePrizePool,
+    computeFinalPlacements,
+    POOL_TOURNAMENT_CONSTANTS
+} from '../services/poolTournaments.js';
+
 let failures = 0;
 
 function assert(cond, msg) {
@@ -395,6 +405,132 @@ assert(POOL_ORCHESTRATOR_CONSTANTS.ASYNC_WINDOW_MS === 12 * 60 * 60 * 1000,
     'ASYNC_WINDOW_MS constant correct');
 assert(POOL_ORCHESTRATOR_CONSTANTS.MATCH_WALL_CLOCK_MS === 72 * 60 * 60 * 1000,
     'MATCH_WALL_CLOCK_MS constant correct');
+
+// ============================================================
+//   TOURNAMENTS — bracket pairings
+// ============================================================
+console.log('\n[TOURNAMENTS — bracket pairings]');
+
+// 8-player: standard pairings 1v8, 4v5, 2v7, 3v6 → 0-indexed [0,7],[3,4],[1,6],[2,5]
+// (Top half: 1v8 + 4v5; bottom half: 2v7 + 3v6 — keeps 1 and 2 in opposite halves)
+const p8 = getRound1Pairings(8);
+assert(p8.length === 4, `8-player has 4 round-1 matches (got ${p8.length})`);
+assert(p8[0][0] === 0 && p8[0][1] === 7, `8-player match 1: top seed vs bottom (got ${p8[0]})`);
+assert(p8[2][0] === 1 && p8[2][1] === 6, `8-player match 3: 2-seed vs 7-seed (got ${p8[2]})`);
+assert(p8[3][0] === 2 && p8[3][1] === 5, `8-player match 4: 3-seed vs 6-seed (got ${p8[3]})`);
+
+// All seeds appear exactly once
+const seeds8 = new Set(p8.flat());
+assert(seeds8.size === 8, `8-player: all 8 seeds appear exactly once (got ${seeds8.size})`);
+
+// 16-player: 8 round-1 matches
+const p16 = getRound1Pairings(16);
+assert(p16.length === 8, `16-player has 8 round-1 matches`);
+const seeds16 = new Set(p16.flat());
+assert(seeds16.size === 16, `16-player: all 16 seeds appear exactly once`);
+assert(p16[0][0] === 0 && p16[0][1] === 15, `16-player match 1: 1-seed vs 16-seed`);
+
+// 32-player: 16 round-1 matches
+const p32 = getRound1Pairings(32);
+assert(p32.length === 16, `32-player has 16 round-1 matches`);
+const seeds32 = new Set(p32.flat());
+assert(seeds32.size === 32, `32-player: all 32 seeds appear exactly once`);
+
+// ============================================================
+//   TOURNAMENTS — full bracket skeleton
+// ============================================================
+console.log('\n[TOURNAMENTS — bracket skeleton]');
+
+const skel8 = buildBracketSkeleton(8);
+// 8-player has 4 + 2 + 1 = 7 total matches
+assert(skel8.length === 7, `8-player bracket has 7 total matches (got ${skel8.length})`);
+assert(skel8[0].round === 1, 'round-1 match comes first');
+assert(skel8[skel8.length - 1].round === 3, 'finals match comes last');
+assert(skel8[skel8.length - 1].advancesTo === undefined, 'finals has no advancesTo');
+
+// Round 1 → advancesTo round 2 with correct slot
+assert(skel8[0].advancesTo.round === 2, 'R1 match 0 advances to R2');
+assert(skel8[0].advancesTo.slot === 'A', 'R1 match 0 advances to slot A');
+assert(skel8[1].advancesTo.slot === 'B', 'R1 match 1 advances to slot B');
+
+// 16-player skeleton: 8 + 4 + 2 + 1 = 15 matches
+const skel16 = buildBracketSkeleton(16);
+assert(skel16.length === 15, `16-player bracket has 15 total matches (got ${skel16.length})`);
+
+// 32-player skeleton: 16 + 8 + 4 + 2 + 1 = 31 matches
+const skel32 = buildBracketSkeleton(32);
+assert(skel32.length === 31, `32-player bracket has 31 total matches (got ${skel32.length})`);
+
+// ============================================================
+//   TOURNAMENTS — prize distributions
+// ============================================================
+console.log('\n[TOURNAMENTS — prize distributions]');
+
+const dist8 = getPrizeDistribution(8, 'tickets');
+assert(dist8.length === 4, '8-player has 4 prize ranks');
+assert(dist8[0].share === 0.60, '8-player 1st = 60%');
+assert(dist8[0].currency === 'tickets', 'currency stamped on each preset');
+
+const dist16 = getPrizeDistribution(16, 'gold');
+assert(dist16.length === 8, '16-player has 8 prize ranks');
+
+const dist32 = getPrizeDistribution(32, 'tickets');
+assert(dist32.length === 16, '32-player has 16 prize ranks (16-of-32 paid)');
+
+// All distributions sum to 1.0 (within tolerance)
+for (const [size, dist] of [[8, dist8], [16, dist16], [32, dist32]]) {
+    const v = validatePrizeDistribution(dist);
+    assert(v.ok, `${size}-player distribution sums to 1.0 (got ${v.sum})`);
+}
+
+// ============================================================
+//   TOURNAMENTS — prize pool calculation
+// ============================================================
+console.log('\n[TOURNAMENTS — prize pool calc]');
+
+// Daily Free: 8 entrants × 100 G entry, 10% rake, 0 base
+const dailyFree = computePrizePool({ entrantCount: 8, entryCost: 100, prizePoolBase: 0, rakeShare: 0.1 });
+assert(dailyFree.fromEntries === 800, 'daily free: 8 × 100 = 800 from entries');
+assert(dailyFree.rake === 80, 'daily free: 10% rake = 80');
+assert(dailyFree.pool === 720, 'daily free: pool = 800 - 80 = 720');
+
+// Monthly: 32 × 100 TKT entry, 10% rake, 10000 TKT treasury base
+const monthly = computePrizePool({ entrantCount: 32, entryCost: 100, prizePoolBase: 10000, rakeShare: 0.1 });
+assert(monthly.fromEntries === 3200, 'monthly: 32 × 100 = 3200');
+assert(monthly.rake === 320, 'monthly: 10% rake = 320');
+assert(monthly.pool === 12880, 'monthly: pool = 10000 + (3200 - 320) = 12880');
+
+// ============================================================
+//   TOURNAMENTS — placement computation
+// ============================================================
+console.log('\n[TOURNAMENTS — placement computation]');
+
+// Simulated 8-player completed tournament
+const fakeT = {
+    bracketSize: 8,
+    championSeedIdx: 0,                  // seed 0 won
+    entrants: [
+        { seedIdx: 0, eliminated: false, eliminatedAtRound: null }, // champion
+        { seedIdx: 1, eliminated: true, eliminatedAtRound: 3 },     // lost finals = 2nd
+        { seedIdx: 2, eliminated: true, eliminatedAtRound: 2 },     // lost SF = 3rd
+        { seedIdx: 3, eliminated: true, eliminatedAtRound: 2 },     // lost SF = 3rd
+        { seedIdx: 4, eliminated: true, eliminatedAtRound: 1 },     // lost R1 = 5th
+        { seedIdx: 5, eliminated: true, eliminatedAtRound: 1 },
+        { seedIdx: 6, eliminated: true, eliminatedAtRound: 1 },
+        { seedIdx: 7, eliminated: true, eliminatedAtRound: 1 }
+    ]
+};
+
+const places = computeFinalPlacements(fakeT);
+assert(places.get(0) === 1, 'champion = 1st place');
+assert(places.get(1) === 2, 'finals loser = 2nd place');
+assert(places.get(2) === 3, 'SF loser = 3rd place (tie)');
+assert(places.get(3) === 3, 'other SF loser = 3rd place (tie)');
+assert(places.get(4) === 5, 'R1 loser = 5th place');
+assert(places.get(7) === 5, 'all R1 losers tied at 5th');
+
+// Constants exported
+assert(POOL_TOURNAMENT_CONSTANTS.PRIZE_DISTRIBUTIONS[8].length === 4, 'PRIZE_DISTRIBUTIONS constant correct');
 
 // ============================================================
 //   Cleanup

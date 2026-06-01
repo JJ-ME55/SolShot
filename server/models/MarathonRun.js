@@ -1,43 +1,52 @@
 /**
- * MarathonRun — solo high-score session vs progressively harder AI bots.
+ * MarathonRun — solo trick-shot lives mode.
  *
- * One document per run attempt. Per POOL_DESIGN_TARGET.md design spec §3.5
- * + §6, a run is a chain of matches vs bots where each win raises the
- * bot's difficulty. Run ends when player loses OR voluntarily banks the
- * streak.
+ * Per Side Pocket DECISIONS_2026-06-01 §5: marathon is a trick-shot
+ * lives mode (replaces the bot-ladder shape). Player has 3 lives,
+ * attempts curated trick-shot setups from a server-held catalogue,
+ * miss = -1 life, 0 lives = run ends. Voluntary Bank Streak at any
+ * point.
  *
- * Two parallel score axes:
- *   - streak          = consecutive wins (1 → 2 → ...)
- *   - perfectTables   = bots beaten without missing a single shot
+ * Key design points (per DECISIONS doc):
+ *   - NO difficulty floor / NO Easy-Hard picker — one entry mode
+ *   - ONE leaderboard (daily / weekly / all-time scopes), not per-difficulty
+ *   - Internal tier ladder rises automatically as run progresses
+ *   - Milestone TKT bonuses at streaks of 5 / 10 / 20 completed setups
+ *   - Perfect-run bonus (zero misses) at run-end
  *
- * Per-run leaderboards:
- *   - daily / weekly / all-time
- *   - per starting-difficulty board (Easy marathon ≠ Insane marathon)
- *
- * Currency:
- *   - earnedGold rises per round won; milestone TKT bonuses at 5, 10, 20 streak
- *   - solo mode → ELO untouched
+ * Setup catalogue lives in services/pool/marathon-catalogue.js, sourced
+ * from Docs/arcade/pool/design/TRICK_SHOT_LIBRARY_v0.md.
  *
  * Index strategy:
  *   - runId unique → fast lookup
  *   - playerId + endedAt → "my marathon history"
- *   - status + endedAt → leaderboard sweep (top streak in a time window)
- *   - startingDifficulty + status + streak → per-difficulty board ranking
+ *   - status + endedAt + totalScore desc → main leaderboard sweep
+ *   - status + endedAt + longestStreak desc → streak-board variant
  */
 
 import mongoose from 'mongoose';
 
-const botRoundSchema = new mongoose.Schema({
+/**
+ * One entry per setup attempted during a run.
+ * `outcome: completed` advances streak; `lives_exhausted` or `skipped`
+ * end the streak (skipped also advances run but adds no score).
+ */
+const setupRoundSchema = new mongoose.Schema({
     roundNumber:    { type: Number, required: true, min: 1 },
-    botDifficulty:  { type: String, required: true, enum: ['easy','medium','hard','insane'] },
-    botEloEstimate: { type: Number, default: 1000 },
+    setupId:        { type: String, required: true },                  // catalogue id, e.g. 'T1-01'
+    setupTier:      { type: Number, required: true, min: 1, max: 4 },
+    setupName:      { type: String, required: true },
+    winCondition:   { type: String, default: null },                   // 'pot_target_ball:8' etc
+
     matchId:        { type: mongoose.Schema.Types.ObjectId, ref: 'PoolMatch', default: null },
-    won:            { type: Boolean, required: true },
-    perfectTable:   { type: Boolean, default: false },              // zero missed shots
+
+    outcome:        { type: String, required: true, enum: ['completed','lives_exhausted','skipped'] },
+    attemptsThisSetup: { type: Number, default: 1, min: 1 },           // 1-3 attempts (limited by remaining lives)
+    livesUsedThisRound: { type: Number, default: 0, min: 0 },
+
     shotCount:      { type: Number, default: 0 },
-    longestRun:     { type: Number, default: 0 },                   // longest consecutive pots in this rack
     durationMs:     { type: Number, default: 0 },
-    goldEarned:     { type: Number, default: 0 },                   // contribution to run total
+    goldEarned:     { type: Number, default: 0 },                      // base + tier multiplier (no streak bonus here)
     completedAt:    { type: Date, default: Date.now }
 }, { _id: false });
 
@@ -49,22 +58,26 @@ const marathonRunSchema = new mongoose.Schema({
     walletAddress:  { type: String, default: null, index: true },
     callsign:       { type: String, default: null },
 
-    // Configuration
-    startingDifficulty: { type: String, required: true, enum: ['easy','medium','hard','insane'] },
+    // Lives state
+    livesAtStart:    { type: Number, default: 3, min: 1, max: 5 },
+    livesRemaining:  { type: Number, default: 3, min: 0 },
 
-    // Progress (denormalised for board queries)
-    streak:           { type: Number, default: 0, min: 0 },           // consecutive wins
-    perfectTables:    { type: Number, default: 0, min: 0 },           // zero-miss tables
-    highestDifficulty: { type: String, enum: ['easy','medium','hard','insane'], default: 'easy' },
-    longestRunInSingleTurn: { type: Number, default: 0 },              // best single-turn pot streak
+    // Score state (denormalised for leaderboard queries)
+    setupsCompleted:    { type: Number, default: 0, min: 0 },          // count of outcome='completed' rounds
+    setupsAttempted:    { type: Number, default: 0, min: 0 },          // total rounds (completed + skipped + ended)
+    currentStreak:      { type: Number, default: 0, min: 0 },          // consecutive completions (resets on skip/fail)
+    longestStreak:      { type: Number, default: 0, min: 0 },          // best streak in this run
+    perfectRun:         { type: Boolean, default: true },              // flips false on first miss/skip; stays for entire run
+    totalScore:         { type: Number, default: 0, min: 0 },          // sum of tier-weighted scores
+    highestTierReached: { type: Number, default: 1, min: 1, max: 4 },
 
-    // Per-bot history
-    rounds: [botRoundSchema],
+    // Per-setup history (one entry per attempted setup)
+    rounds: [setupRoundSchema],
 
     // Rewards (totals across the run)
     earnedGold:    { type: Number, default: 0 },
     earnedTickets: { type: Number, default: 0 },
-    milestoneTicketsClaimed: [{                                       // which milestone bonuses fired
+    milestoneTicketsClaimed: [{
         atStreak: Number,
         amount: Number,
         claimedAt: Date
@@ -74,21 +87,24 @@ const marathonRunSchema = new mongoose.Schema({
     status: {
         type: String,
         required: true,
-        enum: ['active','ended_loss','ended_cashout','ended_disconnect'],
+        enum: ['active','ended_lives_exhausted','ended_cashout','ended_disconnect'],
         default: 'active',
         index: true
     },
 
-    startedAt: { type: Date, default: Date.now },
-    endedAt:   { type: Date, default: null },
+    startedAt:  { type: Date, default: Date.now },
+    endedAt:    { type: Date, default: null },
     durationMs: { type: Number, default: 0 }
 }, {
     timestamps: true
 });
 
-// Leaderboard sweep — top streaks in a time window per starting difficulty
-marathonRunSchema.index({ startingDifficulty: 1, status: 1, streak: -1, endedAt: -1 });
-marathonRunSchema.index({ startingDifficulty: 1, status: 1, perfectTables: -1, endedAt: -1 });
+// ────────────────────────────────────────────────────────────────────
+// Single leaderboard — score-board + streak-board variants
+// ────────────────────────────────────────────────────────────────────
+
+marathonRunSchema.index({ status: 1, endedAt: -1, totalScore: -1 });
+marathonRunSchema.index({ status: 1, endedAt: -1, longestStreak: -1 });
 
 // "My marathon history"
 marathonRunSchema.index({ telegramUserId: 1, endedAt: -1 });

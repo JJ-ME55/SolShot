@@ -41,7 +41,12 @@ const INITIAL_WINDOW_HALF = 100;        // ±100 around the searcher's rating
 const WINDOW_EXPAND_BY = 50;            // grow ±50 per interval
 const WINDOW_EXPAND_INTERVAL_MS = 10000;
 const MAX_WINDOW_HALF = 400;            // ±400 cap
-const MAX_SEARCH_MS = 60000;            // 60s then timeout
+// Bumped from 60s → 300s (5 min) per Side Pocket DECISIONS §6: once the
+// band hits max expansion at ~60s, we drop the rating gate (cold-start
+// fallback). The remaining 240s gives the fallback time to actually find
+// someone in the queue at any rating. Hard timeout still exists for the
+// "literally no one queued" case.
+const MAX_SEARCH_MS = 300000;
 const SCAN_INTERVAL_MS = 2000;          // background sweep cadence
 
 // Tighter band for wagered matches (skill matters more when SOL on the line)
@@ -253,17 +258,29 @@ function compatible(a, b) {
     // Same format
     if (a.format !== b.format) return false;
 
-    // Rating windows overlap
-    const aLow = a.rating - a.currentHalf;
-    const aHigh = a.rating + a.currentHalf;
-    const bLow = b.rating - b.currentHalf;
-    const bHigh = b.rating + b.currentHalf;
-    if (aHigh < bLow || bHigh < aLow) return false;
-
     // Anti-self-match
     if (a.playerKey === b.playerKey) return false;
 
+    // Rating windows overlap — UNLESS either entry has hit max expansion,
+    // in which case we drop the rating gate entirely. This is the
+    // cold-start fallback per Side Pocket DECISIONS_2026-06-01 §6: at
+    // max expansion, take whoever's available. Stops players staring at
+    // "Searching…" forever when the queue has someone too far away.
+    const aAtMax = a.currentHalf >= maxWindowHalfFor(a.mode);
+    const bAtMax = b.currentHalf >= maxWindowHalfFor(b.mode);
+    if (!aAtMax && !bAtMax) {
+        const aLow = a.rating - a.currentHalf;
+        const aHigh = a.rating + a.currentHalf;
+        const bLow = b.rating - b.currentHalf;
+        const bHigh = b.rating + b.currentHalf;
+        if (aHigh < bLow || bHigh < aLow) return false;
+    }
+
     return true;
+}
+
+function maxWindowHalfFor(mode) {
+    return mode === 'wagered' ? WAGERED_MAX_WINDOW_HALF : MAX_WINDOW_HALF;
 }
 
 function identityKey(identity) {

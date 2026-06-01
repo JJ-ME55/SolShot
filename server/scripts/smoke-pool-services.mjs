@@ -57,12 +57,17 @@ import {
 } from '../services/poolTournaments.js';
 
 import {
-    getNextBot,
-    calculateRoundGold,
-    getMilestoneAt,
     generateRunId,
     POOL_MARATHON_CONSTANTS
 } from '../services/poolMarathon.js';
+import {
+    getSetupById,
+    getSetupsByTier,
+    pickNextSetup,
+    scoreCompletedSetup,
+    perfectRunBonus,
+    MARATHON_CATALOGUE_STATS
+} from '../services/pool/marathon-catalogue.js';
 
 import {
     validateWageredMatchPreconditions,
@@ -559,85 +564,100 @@ assert(places.get(7) === 5, 'all R1 losers tied at 5th');
 assert(POOL_TOURNAMENT_CONSTANTS.PRIZE_DISTRIBUTIONS[8].length === 4, 'PRIZE_DISTRIBUTIONS constant correct');
 
 // ============================================================
-//   MARATHON — bot ladder
+//   MARATHON — catalogue lookup (Side Pocket trick-shot mode)
 // ============================================================
-console.log('\n[MARATHON — bot ladder]');
+console.log('\n[MARATHON — catalogue lookup]');
 
-// Starting on easy, streak 0 → first bot is easy
-const b0 = getNextBot({ startingDifficulty: 'easy', currentStreak: 0 });
-assert(b0.difficulty === 'easy', 'easy/streak 0: bot is easy');
-assert(b0.elo === 600, 'easy bot ELO = 600');
-assert(b0.ladderStep === 0, 'ladder step 0');
+const t1_01 = getSetupById('T1-01');
+assert(t1_01 !== null, 'T1-01 setup exists');
+assert(t1_01.name === 'Open the Door', `T1-01 name = "Open the Door" (got "${t1_01?.name}")`);
+assert(t1_01.tier === 1, 'T1-01 tier = 1');
+assert(t1_01.goldReward === 8, 'T1-01 reward = 8 G');
 
-// After 3 wins, ladder steps up
-const b3 = getNextBot({ startingDifficulty: 'easy', currentStreak: 3 });
-assert(b3.difficulty === 'medium', `easy/streak 3: bot is medium (got ${b3.difficulty})`);
-assert(b3.elo === 900, 'medium bot ELO = 900');
+assert(getSetupById('NONEXISTENT') === null, 'unknown setup id returns null');
 
-// After 9 wins, hit insane
-const b9 = getNextBot({ startingDifficulty: 'easy', currentStreak: 9 });
-assert(b9.difficulty === 'insane', `easy/streak 9: bot is insane (got ${b9.difficulty})`);
-
-// After 12 wins (one step past insane), overflow kicks in: insane+1 with ELO 1600
-const b12 = getNextBot({ startingDifficulty: 'easy', currentStreak: 12 });
-assert(b12.difficulty === 'insane', `easy/streak 12: still labelled insane`);
-assert(b12.elo === 1600, `easy/streak 12: ELO = 1600 (got ${b12.elo})`);
-assert(b12.displayName === 'insane+1', `easy/streak 12: displayName = insane+1 (got ${b12.displayName})`);
-
-// Starting on hard, streak 0 → first bot is hard
-const h0 = getNextBot({ startingDifficulty: 'hard', currentStreak: 0 });
-assert(h0.difficulty === 'hard', 'hard/streak 0: bot is hard');
-assert(h0.elo === 1200, 'hard bot ELO = 1200');
-
-// Starting on hard, streak 3 → insane
-const h3 = getNextBot({ startingDifficulty: 'hard', currentStreak: 3 });
-assert(h3.difficulty === 'insane', `hard/streak 3: insane (got ${h3.difficulty})`);
+const tier1Pool = getSetupsByTier(1);
+assert(tier1Pool.length === 8, `Tier 1 has 8 setups (got ${tier1Pool.length})`);
 
 // ============================================================
-//   MARATHON — per-round Gold reward
+//   MARATHON — auto-ladder (deterministic setup picking)
 // ============================================================
-console.log('\n[MARATHON — per-round Gold]');
+console.log('\n[MARATHON — auto-ladder]');
 
-// Easy bot, no perfect → base 5 G
-assert(calculateRoundGold({ botElo: 600, perfectTable: false }) === 5,
-    'easy bot non-perfect: 5 G');
+const setup0 = pickNextSetup({ setupsAttempted: 0 });
+assert(setup0.tier === 1, 'attempt 0: Tier 1');
 
-// Easy bot, perfect → 5 + 5 bonus
-assert(calculateRoundGold({ botElo: 600, perfectTable: true }) === 10,
-    'easy bot perfect: 10 G');
+const setup2 = pickNextSetup({ setupsAttempted: 2 });
+assert(setup2.tier === 1, 'attempt 2: still Tier 1');
 
-// Insane bot, no perfect → 5 + (900/100)*1 = 5 + 9 = 14 G
-assert(calculateRoundGold({ botElo: 1500, perfectTable: false }) === 14,
-    `insane bot non-perfect: 14 G (got ${calculateRoundGold({ botElo: 1500, perfectTable: false })})`);
+const setup3 = pickNextSetup({ setupsAttempted: 3 });
+assert(setup3.tier === 2, `attempt 3: ladders up to Tier 2 (got T${setup3.tier})`);
 
-// Insane+5 bot, perfect → high reward
-const highRoundGold = calculateRoundGold({ botElo: 2000, perfectTable: true });
-assert(highRoundGold > 20, `insane+5 perfect: >20 G (got ${highRoundGold})`);
+const setup6 = pickNextSetup({ setupsAttempted: 6 });
+assert(setup6.tier === 2 || setup6.tier === 3, `attempt 6: Tier 2 or 3 (got T${setup6.tier})`);
 
-// ============================================================
-//   MARATHON — milestone bonuses
-// ============================================================
-console.log('\n[MARATHON — milestone bonuses]');
+const setup12 = pickNextSetup({ setupsAttempted: 12 });
+assert(setup12.tier === 4, `attempt 12: Tier 4 (got T${setup12.tier})`);
 
-assert(getMilestoneAt(1) === null, 'streak 1: no milestone');
-assert(getMilestoneAt(4) === null, 'streak 4: no milestone');
-
-const m5 = getMilestoneAt(5);
-assert(m5 && m5.tickets === 5, `streak 5: +5 TKT (got ${m5?.tickets})`);
-
-const m10 = getMilestoneAt(10);
-assert(m10 && m10.tickets === 15, `streak 10: +15 TKT (got ${m10?.tickets})`);
-
-const m20 = getMilestoneAt(20);
-assert(m20 && m20.tickets === 50, `streak 20: +50 TKT (got ${m20?.tickets})`);
-
-const m50 = getMilestoneAt(50);
-assert(m50 && m50.tickets === 250, `streak 50: +250 TKT (got ${m50?.tickets})`);
-
-assert(getMilestoneAt(100) === null, 'streak 100: no preset milestone (capped at 50)');
+// Determinism: same input → same output
+const detA = pickNextSetup({ setupsAttempted: 5 });
+const detB = pickNextSetup({ setupsAttempted: 5 });
+assert(detA.id === detB.id, 'same setupsAttempted → same setup id (deterministic)');
 
 // ============================================================
-//   MARATHON — run ID format
+//   MARATHON — scoring (streak bonuses)
+// ============================================================
+console.log('\n[MARATHON — scoring]');
+
+const t1Setup = getSetupById('T1-01');
+
+// No streak: base only
+const s1 = scoreCompletedSetup(t1Setup, { currentStreak: 1 });
+assert(s1.gold === 8, `streak 1: base 8 G only (got ${s1.gold})`);
+assert(s1.tickets === 0, 'streak 1: no milestone TKT');
+
+// Streak 3: +5 bonus
+const s3 = scoreCompletedSetup(t1Setup, { currentStreak: 3 });
+assert(s3.gold === 13, `streak 3: 8 + 5 bonus = 13 (got ${s3.gold})`);
+
+// Streak 5: +15 bonus + 5 TKT milestone
+const s5 = scoreCompletedSetup(t1Setup, { currentStreak: 5 });
+assert(s5.gold === 23, `streak 5: 8 + 15 bonus = 23 (got ${s5.gold})`);
+assert(s5.tickets === 5, `streak 5: 5 TKT milestone (got ${s5.tickets})`);
+assert(s5.milestone?.atStreak === 5, 'streak 5: milestone object populated');
+
+// Streak 10: +30 bonus + 15 TKT
+const s10 = scoreCompletedSetup(t1Setup, { currentStreak: 10 });
+assert(s10.tickets === 15, `streak 10: 15 TKT milestone (got ${s10.tickets})`);
+
+// Streak 20: +60 bonus + 50 TKT
+const s20 = scoreCompletedSetup(t1Setup, { currentStreak: 20 });
+assert(s20.tickets === 50, `streak 20: 50 TKT milestone (got ${s20.tickets})`);
+
+// Streak 6 (between milestones): bonus but no TKT
+const s6 = scoreCompletedSetup(t1Setup, { currentStreak: 6 });
+assert(s6.gold === 23, 'streak 6: 8 + 15 (5+ bracket) = 23');
+assert(s6.tickets === 0, 'streak 6: no milestone (only fires at exact 5/10/20)');
+
+// ============================================================
+//   MARATHON — perfect-run bonus
+// ============================================================
+console.log('\n[MARATHON — perfect-run bonus]');
+
+const bonus = perfectRunBonus();
+assert(bonus.gold === 50, `perfect-run gold bonus = 50 (got ${bonus.gold})`);
+assert(bonus.tickets === 25, `perfect-run ticket bonus = 25 (got ${bonus.tickets})`);
+
+// ============================================================
+//   MARATHON — catalogue stats
+// ============================================================
+console.log('\n[MARATHON — catalogue stats]');
+
+assert(MARATHON_CATALOGUE_STATS.totalSetups > 0, 'catalogue not empty');
+assert(MARATHON_CATALOGUE_STATS.perTier[1] === 8, 'Tier 1 has 8 setups in catalogue stats');
+
+// ============================================================
+//   MARATHON — run ID format (unchanged from prior shape)
 // ============================================================
 console.log('\n[MARATHON — run ID]');
 
@@ -646,9 +666,10 @@ assert(/^mr_[0-9a-f]{8}$/.test(runId), `run ID format mr_<8hex> (got ${runId})`)
 const runId2 = generateRunId();
 assert(runId !== runId2, 'consecutive run IDs differ');
 
-// Constants exported
-assert(POOL_MARATHON_CONSTANTS.LADDER_STEP_WINS === 3, 'LADDER_STEP_WINS = 3');
-assert(POOL_MARATHON_CONSTANTS.MILESTONES.length === 5, 'MILESTONES preset has 5 thresholds');
+// Constants exported (new trick-shot-lives shape)
+assert(POOL_MARATHON_CONSTANTS.DEFAULT_LIVES === 3, 'DEFAULT_LIVES = 3');
+assert(POOL_MARATHON_CONSTANTS.MAX_LIVES === 5, 'MAX_LIVES = 5');
+assert(POOL_MARATHON_CONSTANTS.CATALOGUE_STATS?.totalSetups > 0, 'CATALOGUE_STATS exposed');
 
 // ============================================================
 //   ESCROW — unit conversion

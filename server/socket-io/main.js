@@ -60,6 +60,7 @@ function isEscrowAvailableFor(playerCount) {
 }
 import { recordMatchPlayed, prestigeBurn, getPrestigeInfo, getShotBalance, PRESTIGE_TIERS, loadMilestoneState, saveMilestoneState, getPlayerShotState, SHOT_MILESTONES } from '../services/shot-token.js';
 import { trackConnection, trackDisconnection, trackMatchCreated, trackMatchCompleted, trackMatchCancelled, trackWager, trackSettlement, trackForfeit, trackShot, trackDamage, trackGoldEarned, trackShotEmission, trackShotBurn, trackError } from '../services/monitoring.js';
+import { initPoolSocket, registerPoolHandlers } from './pool.js';
 import { requireAuth, validatePayload, validateFireParams, sanitizeName, withLock, safeHandler } from '../middleware/guards.js';
 import { initAI, cleanupAI, pickWeapon, calculateAim, autoBuyWeapons } from '../services/ai.js';
 import { CONSUMABLES, purchaseConsumable, decrementConsumables, getActiveConsumables, hasConsumable } from '../services/consumables.js';
@@ -1146,6 +1147,12 @@ const mainsocket = (io) => {
     // JUP-02: Start Jupiter price polling on server init (30s interval, cached server-side)
     startPricePolling(30000);
 
+    // Pool — self-contained socket module. Wires matchmaking callbacks
+    // + onMatchFound broadcast. See server/socket-io/pool.js for the
+    // full event surface. Per-client handlers attach inside the
+    // io.on("connection") block via registerPoolHandlers(client, io).
+    initPoolSocket(io);
+
     // ═══ AI TURN SCHEDULING ═══
     // Defined in mainsocket scope so cleanupRoom can access it
     const aiTurnTimers = {}; // { roomId: timeoutId } — prevents double-scheduling
@@ -1395,6 +1402,10 @@ const mainsocket = (io) => {
         client.isHost = false
         client.walletAddress = null
         client.isAuthenticated = false
+
+        // Pool socket handlers — single-line bolt-on. All pool events
+        // live in server/socket-io/pool.js to keep this file untouched.
+        registerPoolHandlers(client, io);
 
         // Send the current queue snapshot to this new socket so the lobby
         // can render "● N WAITING" badges immediately on mount, without

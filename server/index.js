@@ -68,6 +68,7 @@ import {
     parseSinceParam as parsePoolSinceParam,
     clampLimit as clampPoolLimit,
 } from './services/games/pool/poolLeaderboard.js';
+import { simulateShotForClient as simulatePoolShot } from './services/poolSimulation.js';
 import BasketballScore from './models/BasketballScore.js';
 import KeepieUppiesScore from './models/KeepieUppiesScore.js';
 import FreeKicksScore from './models/FreeKicksScore.js';
@@ -1297,6 +1298,39 @@ app.get('/api/games/pool/standing/:telegramUserId', async (req, res) => {
         const code = err.message.startsWith('invalid') || err.message.startsWith('difficulty')
             ? 400 : 500;
         res.status(code).json({ error: err.message });
+    }
+});
+
+// POST /api/games/pool/simulate-shot
+//   Server-authoritative pool shot adjudication. Browser sends current
+//   ball state + shot params; server runs the SAME sim core the browser
+//   ran for the local prediction (services/pool/sim/) and returns the
+//   authoritative result. V2.β socket handler will call into this same
+//   simulatePoolShot() to adjudicate matches in flight.
+//
+//   body: {
+//     initialBalls: SerializableBall[],
+//     shotParams: { power, angle, spinX, spinY },
+//     tableConfig?: TableConfig,    // defaults to DEFAULT_TABLE_CONFIG
+//     physicsConfig?: PhysicsConfig // defaults to DEFAULT_PHYSICS_CONFIG
+//   }
+//   returns: { ok, result: SimulationResult } | { error, detail }
+//
+//   Currently stateless (no PoolMatch persistence) — match-state integration
+//   lands when the socket handlers do. This endpoint stays available as a
+//   verification + replay surface and lets external clients (e.g. spectator
+//   tools) replay shots deterministically.
+app.post('/api/games/pool/simulate-shot', async (req, res) => {
+    try {
+        const { initialBalls, shotParams, tableConfig, physicsConfig, maxTicks } = req.body || {};
+        const out = simulatePoolShot({ initialBalls, shotParams, tableConfig, physicsConfig, maxTicks });
+        if (!out.ok) {
+            return res.status(400).json({ error: 'invalid_input', detail: out.reason });
+        }
+        res.json({ ok: true, result: out.result });
+    } catch (err) {
+        console.error('[POST /api/games/pool/simulate-shot]', err.message);
+        res.status(500).json({ error: 'simulation_failed' });
     }
 });
 

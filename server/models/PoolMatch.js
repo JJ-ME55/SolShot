@@ -97,6 +97,22 @@ const turnStateSchema = new mongoose.Schema({
     isBreakingShot:         { type: Boolean, default: false }
 }, { _id: false });
 
+/**
+ * Single ball snapshot — schema mirrors sim's SerializableBall.
+ * One of these per ball is stored in PoolMatch.currentBallState so that
+ * a player resuming a 12h-async match sees the table EXACTLY as it was
+ * after the previous shot (no client-side replay needed).
+ */
+const ballStateSchema = new mongoose.Schema({
+    id:        { type: Number, required: true, min: 0, max: 15 },
+    color:     { type: String, required: true, enum: ['white','red','yellow','black'] },
+    position:  { x: { type: Number, required: true }, y: { type: Number, required: true } },
+    velocity:  { x: { type: Number, default: 0 }, y: { type: Number, default: 0 } },
+    spinX:     { type: Number, default: 0, min: -1, max: 1 },
+    spinY:     { type: Number, default: 0, min: -1, max: 1 },
+    visible:   { type: Boolean, default: true }
+}, { _id: false });
+
 const poolMatchSchema = new mongoose.Schema({
     matchId: { type: String, required: true, unique: true, index: true },
 
@@ -113,6 +129,13 @@ const poolMatchSchema = new mongoose.Schema({
 
     // Turn state (mutable as match progresses)
     currentTurn: turnStateSchema,
+
+    // Current ball state — populated at rack start, updated after every
+    // simulated shot (server replaces it with sim's finalBalls). Async
+    // resume reads this to render the table EXACTLY as it was after the
+    // last shot. 16 balls total (cue + 1-7 solids + 8 + 9-15 stripes);
+    // visible:false entries represent pocketed balls (kept for ID stability).
+    currentBallState: [ballStateSchema],
 
     // Stake (wagered mode only)
     stake: {

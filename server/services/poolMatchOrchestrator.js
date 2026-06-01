@@ -38,6 +38,7 @@ import crypto from 'crypto';
 import PoolMatch from '../models/PoolMatch.js';
 import { applyMatchResult } from './poolElo.js';
 import { emitMatchEndRewards } from './poolRewards.js';
+import { getStandardRack } from './pool/sim/rack.js';
 
 // ---------------------------------------------------------------------
 // Tuning
@@ -155,6 +156,9 @@ export async function createMatchFromMatchmakingPair(entryA, entryB) {
         }],
         currentRackIdx: 0,
         currentTurn: buildInitialTurnState(breakerIdx),
+        // Seed ball state with the standard rack at break position so
+        // async resume / reconnect can render the table immediately.
+        currentBallState: getStandardRack(),
         stake,
         status: 'pending',
         startedAt: now,
@@ -222,6 +226,7 @@ export async function createVsComputerMatch({ identity, humanElo, difficulty, fo
         }],
         currentRackIdx: 0,
         currentTurn: buildInitialTurnState(breakerIdx),
+        currentBallState: getStandardRack(),
         stake: { amount: 0, currency: null, escrowPDA: null, settlementTx: null, settledAt: null },
         status: 'in_progress',     // vs-computer skips the pending/opponent-reveal step
         startedAt: now,
@@ -229,6 +234,57 @@ export async function createVsComputerMatch({ identity, humanElo, difficulty, fo
     });
 
     return { matchId, match };
+}
+
+/**
+ * Apply a SimulationResult to a match — replaces currentBallState with
+ * the sim's finalBalls and appends the shot to the current rack.
+ *
+ * Called from the socket handler after simulateShotForClient runs.
+ * Idempotent on the shot append (no-op if last shot's takenAt matches).
+ *
+ * @param {string} matchId
+ * @param {object} params
+ * @param {number} params.shooterIdx     - 0 or 1
+ * @param {object} params.shotParams     - what the client sent
+ * @param {SimulationResult} params.simResult - what the sim produced
+ * @returns {Promise<{ ok: boolean, match?: PoolMatch, reason?: string }>}
+ */
+export async function applySimulationResultToMatch(matchId, { shooterIdx, shotParams, simResult }) {
+    const match = await PoolMatch.findOne({ matchId });
+    if (!match) return { ok: false, reason: 'match_not_found' };
+    if (match.status !== 'in_progress') return { ok: false, reason: `status_${match.status}_not_in_progress` };
+    if (shooterIdx !== 0 && shooterIdx !== 1) return { ok: false, reason: 'invalid_shooter_idx' };
+
+    // Append shot to current rack
+    const rack = match.racks[match.currentRackIdx];
+    if (!rack) return { ok: false, reason: 'current_rack_missing' };
+
+    rack.shots.push({
+        shooterIdx,
+        aimAngle:    shotParams.angle,
+        power:       shotParams.power,
+        spinX:       shotParams.spinX,
+        spinY:       shotParams.spinY,
+        cueBallPlacedAt: shotParams.cueBallPlacedAt || undefined,
+        pocketedBalls: simResult.pocketedBallIds || [],
+        firstTouchedBallColor: simResult.firstCollidedBallColor || null,
+        foul:        false,  // Referee-driven foul detection comes in a later commit
+        foulReason:  null,
+        scratch:     simResult.events.some(e => e.type === 'cue_ball_potted'),
+        isBreak:     rack.shots.length === 0,
+        durationMs:  0,
+        takenAt:     new Date()
+    });
+
+    // Replace ball state with sim's final positions
+    match.currentBallState = simResult.finalBalls;
+
+    // Update last-shot timestamp
+    match.lastShotAt = new Date();
+
+    await match.save();
+    return { ok: true, match };
 }
 
 // ---------------------------------------------------------------------
@@ -348,6 +404,7 @@ export default {
     buildInitialTurnState,
     createMatchFromMatchmakingPair,
     createVsComputerMatch,
+    applySimulationResultToMatch,
     finalizeMatch,
     POOL_ORCHESTRATOR_CONSTANTS
 };

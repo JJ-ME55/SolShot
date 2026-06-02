@@ -1334,6 +1334,221 @@ app.post('/api/games/pool/simulate-shot', async (req, res) => {
     }
 });
 
+// ─── Side Pocket Marathon — solo trick-shot lives mode ────────────────
+//
+// V1 endpoints — wire the React Marathon UI to the poolMarathon service
+// (server/services/poolMarathon.js). Auth via verifyPoolSession (the
+// same JWT the bot mints + the hub web flow mints).
+//
+// Flow:
+//   1. POST /start            — create a MarathonRun document, return runId + first setup
+//   2. POST /setup-outcome    — record a setup attempt's outcome
+//                               (completed | lives_exhausted | skipped)
+//                               returns the updated run + next setup (or null if ended)
+//   3. POST /cashout          — voluntary Bank Streak; ends run + applies perfect-run bonus
+//   4. POST /abandon          — end the run with status 'ended_disconnect'
+//   5. GET  /leaderboard      — public top runs, daily/weekly/all-time scopes
+//
+// All mutating endpoints require a valid pool session JWT. The session's
+// telegramUserId becomes the run's identity key — no separate identity
+// param needed.
+
+import {
+    startRun as startMarathonRun,
+    recordSetupOutcome as recordMarathonSetupOutcome,
+    cashOutRun as cashOutMarathonRun,
+    abandonRun as abandonMarathonRun,
+} from './services/poolMarathon.js';
+import MarathonRun from './models/MarathonRun.js';
+
+function verifyPoolSessionFromBody(req) {
+    const { session } = req.body || {};
+    if (!session || typeof session !== 'string') {
+        return { ok: false, status: 400, error: 'session required' };
+    }
+    try {
+        const identity = verifyPoolSession(session);
+        return { ok: true, identity };
+    } catch (err) {
+        return { ok: false, status: 401, error: 'session_invalid_or_expired', detail: err.message };
+    }
+}
+
+// POST /api/games/pool/marathon/start
+//   body: { session, livesAtStart? (default 3) }
+//   returns: { ok, runId, run, firstSetup }
+app.post('/api/games/pool/marathon/start', async (req, res) => {
+    try {
+        const auth = verifyPoolSessionFromBody(req);
+        if (!auth.ok) return res.status(auth.status).json(auth);
+        const result = await startMarathonRun({
+            identity: {
+                telegramUserId: auth.identity.telegramUserId,
+                callsign: auth.identity.telegramUsername || auth.identity.firstName,
+            },
+        });
+        if (!result.ok) return res.status(400).json({ ok: false, error: result.reason });
+        res.json({
+            ok: true,
+            runId: result.runId,
+            run: serializeRun(result.run),
+            firstSetup: result.firstSetup,
+        });
+    } catch (err) {
+        console.error('[POST /api/games/pool/marathon/start]', err.message);
+        res.status(500).json({ ok: false, error: 'start_failed' });
+    }
+});
+
+// POST /api/games/pool/marathon/setup-outcome
+//   body: { session, runId, setupId, outcome, livesUsedThisRound?, shotCount?, durationMs? }
+//   returns: { ok, run, nextSetup, runEnded, gold, milestoneTickets }
+app.post('/api/games/pool/marathon/setup-outcome', async (req, res) => {
+    try {
+        const auth = verifyPoolSessionFromBody(req);
+        if (!auth.ok) return res.status(auth.status).json(auth);
+        const { runId, setupId, outcome, livesUsedThisRound, shotCount, durationMs } = req.body || {};
+        if (!runId || !setupId || !outcome) {
+            return res.status(400).json({ ok: false, error: 'runId, setupId, outcome required' });
+        }
+        // Anti-tamper: ensure the run belongs to the authed user
+        const owns = await runBelongsTo(runId, auth.identity.telegramUserId);
+        if (!owns) return res.status(403).json({ ok: false, error: 'run_not_yours' });
+
+        const result = await recordMarathonSetupOutcome(runId, {
+            setupId, outcome,
+            livesUsedThisRound: Number(livesUsedThisRound) || 0,
+            shotCount: Number(shotCount) || 0,
+            durationMs: Number(durationMs) || 0,
+        });
+        if (!result.ok) return res.status(400).json({ ok: false, error: result.reason });
+        res.json({
+            ok: true,
+            run: serializeRun(result.run),
+            nextSetup: result.nextSetup,
+            runEnded: result.runEnded,
+            gold: result.gold,
+            milestoneTickets: result.milestoneTickets,
+        });
+    } catch (err) {
+        console.error('[POST /api/games/pool/marathon/setup-outcome]', err.message);
+        res.status(500).json({ ok: false, error: 'outcome_failed' });
+    }
+});
+
+// POST /api/games/pool/marathon/cashout
+//   body: { session, runId }
+//   returns: { ok, run, perfectBonusApplied }
+app.post('/api/games/pool/marathon/cashout', async (req, res) => {
+    try {
+        const auth = verifyPoolSessionFromBody(req);
+        if (!auth.ok) return res.status(auth.status).json(auth);
+        const { runId } = req.body || {};
+        if (!runId) return res.status(400).json({ ok: false, error: 'runId required' });
+        const owns = await runBelongsTo(runId, auth.identity.telegramUserId);
+        if (!owns) return res.status(403).json({ ok: false, error: 'run_not_yours' });
+
+        const result = await cashOutMarathonRun(runId);
+        if (!result.ok) return res.status(400).json({ ok: false, error: result.reason });
+        res.json({
+            ok: true,
+            run: serializeRun(result.run),
+            perfectBonusApplied: result.perfectBonusApplied,
+        });
+    } catch (err) {
+        console.error('[POST /api/games/pool/marathon/cashout]', err.message);
+        res.status(500).json({ ok: false, error: 'cashout_failed' });
+    }
+});
+
+// POST /api/games/pool/marathon/abandon
+//   body: { session, runId }
+//   returns: { ok, run }
+app.post('/api/games/pool/marathon/abandon', async (req, res) => {
+    try {
+        const auth = verifyPoolSessionFromBody(req);
+        if (!auth.ok) return res.status(auth.status).json(auth);
+        const { runId } = req.body || {};
+        if (!runId) return res.status(400).json({ ok: false, error: 'runId required' });
+        const owns = await runBelongsTo(runId, auth.identity.telegramUserId);
+        if (!owns) return res.status(403).json({ ok: false, error: 'run_not_yours' });
+
+        const result = await abandonMarathonRun(runId);
+        if (!result.ok) return res.status(400).json({ ok: false, error: result.reason });
+        res.json({ ok: true, run: serializeRun(result.run) });
+    } catch (err) {
+        console.error('[POST /api/games/pool/marathon/abandon]', err.message);
+        res.status(500).json({ ok: false, error: 'abandon_failed' });
+    }
+});
+
+// GET /api/games/pool/marathon/leaderboard?scope=weekly&limit=20
+//   scope: 'daily' | 'weekly' | 'all-time'  (default: weekly)
+//   limit: 1-100  (default 20)
+//   returns: { ok, scope, leaderboard: [{ rank, displayName, totalScore, longestStreak, perfectRun, endedAt }] }
+app.get('/api/games/pool/marathon/leaderboard', async (req, res) => {
+    try {
+        const scope = ['daily', 'weekly', 'all-time'].includes(req.query.scope)
+            ? req.query.scope : 'weekly';
+        const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
+        const since = scope === 'all-time'
+            ? null
+            : new Date(Date.now() - (scope === 'daily' ? 24 : 24 * 7) * 60 * 60 * 1000);
+
+        const filter = { status: { $in: ['ended_lives_exhausted', 'ended_cashout'] } };
+        if (since) filter.endedAt = { $gte: since };
+
+        const runs = await MarathonRun.find(filter)
+            .sort({ totalScore: -1, longestStreak: -1, endedAt: -1 })
+            .limit(limit)
+            .lean();
+
+        const leaderboard = runs.map((r, i) => ({
+            rank: i + 1,
+            displayName: r.callsign || `Player${r.telegramUserId || '?'}`,
+            totalScore: r.totalScore,
+            longestStreak: r.longestStreak,
+            perfectRun: r.perfectRun,
+            endedAt: r.endedAt,
+        }));
+        res.json({ ok: true, scope, leaderboard });
+    } catch (err) {
+        console.error('[GET /api/games/pool/marathon/leaderboard]', err.message);
+        res.status(500).json({ ok: false, error: 'leaderboard_failed' });
+    }
+});
+
+// Helper — projection of MarathonRun for client (no Mongo internals)
+function serializeRun(run) {
+    if (!run) return null;
+    const obj = run.toObject ? run.toObject() : run;
+    return {
+        runId: obj.runId,
+        callsign: obj.callsign,
+        livesAtStart: obj.livesAtStart,
+        livesRemaining: obj.livesRemaining,
+        setupsCompleted: obj.setupsCompleted,
+        setupsAttempted: obj.setupsAttempted,
+        currentStreak: obj.currentStreak,
+        longestStreak: obj.longestStreak,
+        perfectRun: obj.perfectRun,
+        totalScore: obj.totalScore,
+        highestTierReached: obj.highestTierReached,
+        earnedGold: obj.earnedGold,
+        earnedTickets: obj.earnedTickets,
+        status: obj.status,
+        startedAt: obj.startedAt,
+        endedAt: obj.endedAt,
+        durationMs: obj.durationMs,
+    };
+}
+
+async function runBelongsTo(runId, telegramUserId) {
+    if (!runId || !telegramUserId) return false;
+    const r = await MarathonRun.findOne({ runId }).select('telegramUserId').lean();
+    return r && r.telegramUserId === telegramUserId;
+}
+
 // Cross-game aggregator — pulls top-1000 from each game, aggregates in
 // memory by telegramUserId, returns players sorted by total plays.
 //

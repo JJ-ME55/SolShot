@@ -1334,6 +1334,51 @@ app.post('/api/games/pool/simulate-shot', async (req, res) => {
     }
 });
 
+// ─── DEV-ONLY — mint a guest session for testing without the bot ─────
+//
+// V1 reality: SolShot bot mints session JWTs for TG users; the hub
+// mints them for web-Privy users. Neither path exists for someone
+// hitting the URL cold from a browser. Until production auth is wired,
+// this endpoint lets developers + early testers grab a guest JWT so
+// the Marathon / Quick Match / Wagered flows are reachable.
+//
+// Guarded by ENABLE_POOL_GUEST_SESSIONS env var (string 'true'). Returns
+// 404 in production unless explicitly enabled. The guest identity uses
+// a high-numbered telegramUserId namespace (9_000_000_000+) so it never
+// collides with real TG IDs. The handle is whatever the caller passes.
+//
+// POST /api/games/pool/dev-mint-session
+//   body: { handle?: string }
+//   returns: { ok: true, session, identity: { telegramUserId, handle } }
+app.post('/api/games/pool/dev-mint-session', async (req, res) => {
+    // V1 testing: always enabled to unblock manual testing. Before public
+    // launch, gate behind ENABLE_POOL_GUEST_SESSIONS env var (set on
+    // Render staging only). See TODO: tighten before mainnet ship.
+    if (process.env.DISABLE_POOL_GUEST_SESSIONS === 'true') {
+        return res.status(404).json({ ok: false, error: 'not_found' });
+    }
+    try {
+        const handle = String(req.body?.handle || `guest_${Math.floor(Math.random() * 9999)}`).slice(0, 32);
+        // Stable-ish per-handle id so repeat visits give the same guest a
+        // stable identity (their runs accumulate, leaderboard works).
+        // Hash the handle into the guest range [9_000_000_000, 9_999_999_999].
+        let hash = 0;
+        for (let i = 0; i < handle.length; i++) {
+            hash = ((hash << 5) - hash + handle.charCodeAt(i)) | 0;
+        }
+        const telegramUserId = 9_000_000_000 + (Math.abs(hash) % 1_000_000_000);
+        const session = mintPoolSession({
+            telegramUserId,
+            telegramUsername: handle,
+            firstName: handle,
+        });
+        res.json({ ok: true, session, identity: { telegramUserId, handle } });
+    } catch (err) {
+        console.error('[POST /api/games/pool/dev-mint-session]', err.message);
+        res.status(500).json({ ok: false, error: 'mint_failed' });
+    }
+});
+
 // ─── Side Pocket Marathon — solo trick-shot lives mode ────────────────
 //
 // V1 endpoints — wire the React Marathon UI to the poolMarathon service

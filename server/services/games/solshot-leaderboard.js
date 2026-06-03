@@ -28,11 +28,16 @@ import User from '../../models/User.js';
  *
  * @param {Object} [args]
  * @param {number} [args.limit=10]
- * @param {number} [args.minMatches=10]  Filter out players with fewer
- *   than this many matches (avoids infinity-K/D from 1-0 record holders).
+ * @param {number} [args.minMatches=1]  Filter out players with fewer
+ *   than this many matches. Default 1 means anyone who has played at
+ *   least once appears. Bumped down from 10 (2026-06-03) — the higher
+ *   threshold was hiding 80%+ of the SolShot roster from the Arcade
+ *   leaderboard surface. K/D normalisation (`max(1, deaths)`) already
+ *   handles the 1-0 infinity case so 1-match players don't break the
+ *   sort.
  * @returns {Promise<Array>}
  */
-export async function getSolShotLeaderboard({ limit = 10, minMatches = 10 } = {}) {
+export async function getSolShotLeaderboard({ limit = 10, minMatches = 1 } = {}) {
     const clamped = Math.max(1, Math.min(100, Math.floor(limit)));
     const minM = Math.max(1, Math.floor(minMatches));
 
@@ -61,7 +66,7 @@ export async function getSolShotLeaderboard({ limit = 10, minMatches = 10 } = {}
  * @param {number} [args.minMatches=10]  Same threshold as the LB query.
  * @returns {Promise<Object|null>}
  */
-export async function getSolShotStanding({ telegramUserId, minMatches = 10 } = {}) {
+export async function getSolShotStanding({ telegramUserId, minMatches = 1 } = {}) {
     if (!Number.isFinite(telegramUserId)) return null;
 
     const me = await User.findOne({ telegramUserId })

@@ -1264,13 +1264,18 @@ app.get('/api/games/freekicks/standing/:telegramUserId', async (req, res) => {
 // 10-match floor is illustrative — tune on live data.
 // ──────────────────────────────────────────────────────────────────────
 
-// GET /api/games/solshot/leaderboard?limit=10&minMatches=10
+// GET /api/games/solshot/leaderboard?limit=10&minMatches=1
 app.get('/api/games/solshot/leaderboard', async (req, res) => {
     try {
         const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 10));
-        const minMatches = Math.max(1, parseInt(req.query.minMatches, 10) || 10);
+        const minMatches = Math.max(1, parseInt(req.query.minMatches, 10) || 1);
         const leaderboard = await getSolShotLeaderboard({ limit, minMatches });
-        const totalPlayers = leaderboard.length === limit ? null : leaderboard.length;
+        // Total eligible players (matching the filter) — separate count so
+        // the LB hero's "Players" stat reflects the full roster, not just
+        // the slice we returned. Was previously broken (conditional null).
+        const totalPlayers = await User.countDocuments({
+            'stats.matchesPlayed': { $gte: minMatches },
+        });
         res.json({ ok: true, leaderboard, totalPlayers });
     } catch (err) {
         console.error('[GET /api/games/solshot/leaderboard]', err.message);
@@ -1285,7 +1290,7 @@ app.get('/api/games/solshot/standing/:telegramUserId', async (req, res) => {
         if (!Number.isFinite(telegramUserId)) {
             return res.status(400).json({ error: 'invalid telegramUserId' });
         }
-        const minMatches = Math.max(1, parseInt(req.query.minMatches, 10) || 10);
+        const minMatches = Math.max(1, parseInt(req.query.minMatches, 10) || 1);
         const standing = await getSolShotStanding({ telegramUserId, minMatches });
         res.json({ ok: true, standing: standing || null });
     } catch (err) {

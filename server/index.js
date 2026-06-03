@@ -33,7 +33,7 @@ import {
 import { lookupUserByTelegramId, getPlayerRank, linkTelegramIdentity } from './services/users.js';
 import { recordFunnelEvent, getFunnelAggregates } from './services/funnel.js';
 import { consumeLinkToken, peekLinkToken } from './services/walletLinkTokens.js';
-import { requirePrivyAuth, isPrivyAuthConfigured } from './services/privyAuth.js';
+import { requirePrivyAuth, isPrivyAuthConfigured, verifyPrivyToken, getTelegramAccountFromPrivy } from './services/privyAuth.js';
 import { mintArcadeSession, verifyArcadeSession } from './services/arcadeSession.js';
 import User from './models/User.js';
 import WagerWaitlist from './models/WagerWaitlist.js';
@@ -1019,41 +1019,95 @@ app.post(
 
 // ─── Basketball Hoops standalone — score leaderboard ───────────────────
 //
-// The standalone basketball client (solshot-basketball.vercel.app) submits
-// scores here. Requests are gated by a JWT minted by the arcade bot at
-// /basketball launch time — that JWT carries the player's TG identity, so
-// every submission is verifiably tied to a Telegram user without requiring
-// wallet signature. Cheating mitigation is "good-enough" for v1 (signed JWT
-// stops easy forgery; client-side replay is possible but socially deterred
-// in groups). When Fish's Phase 4 server rewrite lands, wagered matches
-// write to this same leaderboard schema via a server-authoritative path
-// that bypasses the JWT.
+// Two auth paths accepted on score submission:
+//   1. `Authorization: Bearer <privyToken>` — for web users who signed in
+//      via Privy (TG OAuth, email, Google, wallet). Server verifies token,
+//      fetches the user's linked TG account, writes the score under that
+//      telegramUserId. Returns 403 telegram_not_linked if Privy user has
+//      no TG link (email-only). Client surfaces "Link Telegram to save."
+//   2. `body.session` (legacy JWT) — for bot-arrived users. JWT carries
+//      the TG identity directly; server verifies signature with the per-
+//      game secret.
+// Either works; never both. Cheating mitigation is "good-enough" for v1
+// (signed tokens stop forgery; client-side replay possible but capped by
+// per-JWT rate limits). V2 wagered matches bypass score-POST entirely
+// via the server-authoritative match lifecycle.
 //
-// CORS: solshot-basketball.vercel.app must be in CORS_ORIGINS env (or the
-// global cors() middleware will block the cross-origin request).
+// CORS: solshot-basketball.vercel.app + the-arcade-eta.vercel.app must
+// be in CORS_ORIGINS (or the global cors() middleware blocks the request).
+
+/**
+ * Shared identity resolver for score-submit endpoints.
+ *
+ * Returns { ok: true, identity: { telegramUserId, telegramUsername, firstName } }
+ * on success, or { ok: false, status, error, [message|detail] } for the
+ * various failure modes (no auth, invalid Privy, invalid JWT, no TG link).
+ *
+ * Privy Bearer takes precedence over JWT. If both are present we use Privy
+ * (the modern path) and ignore the JWT.
+ */
+async function resolveScoreIdentity(req, verifyGameJwt) {
+    const authHeader = req.headers.authorization || '';
+    const bearer = authHeader.match(/^Bearer\s+(.+)$/i)?.[1];
+
+    if (bearer) {
+        const claims = await verifyPrivyToken(bearer);
+        if (!claims?.userId) {
+            return { ok: false, status: 401, error: 'privy_invalid' };
+        }
+        const tg = await getTelegramAccountFromPrivy(claims.userId);
+        if (!tg) {
+            return {
+                ok: false,
+                status: 403,
+                error: 'telegram_not_linked',
+                message: 'Link Telegram to save scores',
+            };
+        }
+        return {
+            ok: true,
+            identity: {
+                telegramUserId: tg.telegramUserId,
+                telegramUsername: tg.username,
+                firstName: tg.firstName,
+            },
+        };
+    }
+
+    const session = req.body?.session;
+    if (session && typeof session === 'string') {
+        try {
+            const identity = verifyGameJwt(session);
+            return { ok: true, identity };
+        } catch (err) {
+            return { ok: false, status: 401, error: 'session_invalid_or_expired', detail: err.message };
+        }
+    }
+
+    return { ok: false, status: 400, error: 'no_auth', message: 'Sign in to save your score' };
+}
 
 // POST /api/games/basketball/score
-//   body: { score: number, session: string }
+//   Headers: Authorization: Bearer <privyToken>  (preferred)
+//   Body:    { score: number, session?: string } (session = legacy JWT)
 //   returns: { ok, newBest, bestScore, rank, totalPlayers }
 app.post('/api/games/basketball/score', async (req, res) => {
     try {
-        const { score, session } = req.body || {};
-        if (!session || typeof session !== 'string') {
-            return res.status(400).json({ error: 'session required' });
-        }
+        const { score } = req.body || {};
         if (!Number.isFinite(score) || score < 0) {
             return res.status(400).json({ error: 'score must be a non-negative number' });
         }
-        let identity;
-        try {
-            identity = verifyBasketballSession(session);
-        } catch (err) {
-            return res.status(401).json({ error: 'session_invalid_or_expired', detail: err.message });
+        const resolved = await resolveScoreIdentity(req, verifyBasketballSession);
+        if (!resolved.ok) {
+            const body = { error: resolved.error };
+            if (resolved.detail) body.detail = resolved.detail;
+            if (resolved.message) body.message = resolved.message;
+            return res.status(resolved.status).json(body);
         }
         const result = await submitBasketballScore({
-            telegramUserId: identity.telegramUserId,
-            telegramUsername: identity.telegramUsername,
-            firstName: identity.firstName,
+            telegramUserId: resolved.identity.telegramUserId,
+            telegramUsername: resolved.identity.telegramUsername,
+            firstName: resolved.identity.firstName,
             score,
         });
         res.json({ ok: true, ...result });
@@ -1130,23 +1184,21 @@ app.get('/api/games/basketball/standing/:telegramUserId', async (req, res) => {
 //   returns: { ok, newBest, bestScore, rank, totalPlayers }
 app.post('/api/games/keepieuppies/score', async (req, res) => {
     try {
-        const { score, session } = req.body || {};
-        if (!session || typeof session !== 'string') {
-            return res.status(400).json({ error: 'session token required' });
-        }
+        const { score } = req.body || {};
         if (!Number.isFinite(score)) {
             return res.status(400).json({ error: 'numeric score required' });
         }
-        let identity;
-        try {
-            identity = verifyKeepieUppiesSession(session);
-        } catch (err) {
-            return res.status(401).json({ error: 'session_invalid_or_expired', detail: err.message });
+        const resolved = await resolveScoreIdentity(req, verifyKeepieUppiesSession);
+        if (!resolved.ok) {
+            const body = { error: resolved.error };
+            if (resolved.detail) body.detail = resolved.detail;
+            if (resolved.message) body.message = resolved.message;
+            return res.status(resolved.status).json(body);
         }
         const result = await submitKeepieUppiesScore({
-            telegramUserId: identity.telegramUserId,
-            telegramUsername: identity.telegramUsername,
-            firstName: identity.firstName,
+            telegramUserId: resolved.identity.telegramUserId,
+            telegramUsername: resolved.identity.telegramUsername,
+            firstName: resolved.identity.firstName,
             score,
         });
         res.json({ ok: true, ...result });
@@ -1197,23 +1249,21 @@ app.get('/api/games/keepieuppies/standing/:telegramUserId', async (req, res) => 
 //   returns: { ok, newBest, bestScore, rank, totalPlayers }
 app.post('/api/games/freekicks/score', async (req, res) => {
     try {
-        const { score, session } = req.body || {};
-        if (!session || typeof session !== 'string') {
-            return res.status(400).json({ error: 'session token required' });
-        }
+        const { score } = req.body || {};
         if (!Number.isFinite(score)) {
             return res.status(400).json({ error: 'numeric score required' });
         }
-        let identity;
-        try {
-            identity = verifyFreeKicksSession(session);
-        } catch (err) {
-            return res.status(401).json({ error: 'session_invalid_or_expired', detail: err.message });
+        const resolved = await resolveScoreIdentity(req, verifyFreeKicksSession);
+        if (!resolved.ok) {
+            const body = { error: resolved.error };
+            if (resolved.detail) body.detail = resolved.detail;
+            if (resolved.message) body.message = resolved.message;
+            return res.status(resolved.status).json(body);
         }
         const result = await submitFreeKicksScore({
-            telegramUserId: identity.telegramUserId,
-            telegramUsername: identity.telegramUsername,
-            firstName: identity.firstName,
+            telegramUserId: resolved.identity.telegramUserId,
+            telegramUsername: resolved.identity.telegramUsername,
+            firstName: resolved.identity.firstName,
             score,
         });
         res.json({ ok: true, ...result });

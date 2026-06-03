@@ -197,3 +197,44 @@ export async function verifyPrivyToken(token) {
 export function isPrivyAuthConfigured() {
     return !!(PRIVY_APP_ID && PRIVY_APP_SECRET);
 }
+
+/**
+ * Fetch a Privy user's Telegram-linked account, if any.
+ *
+ * Called by the score-submit endpoints after verifying a Privy access
+ * token to determine WHICH telegramUserId to write the score under. If
+ * the user signed in via TG OAuth (or later called linkTelegram()),
+ * Privy stores the bound TG identity in user.linkedAccounts[].
+ *
+ * Returns { telegramUserId, username, firstName } on success, or null
+ * if the Privy user isn't linked to Telegram (email/Google/wallet-only).
+ * Client surfaces "Link Telegram to save scores" inline error in that case.
+ *
+ * @param {string} privyUserId — the `userId` claim from a verified Privy token
+ * @returns {Promise<{telegramUserId:number, username:string|null, firstName:string|null} | null>}
+ */
+export async function getTelegramAccountFromPrivy(privyUserId) {
+    const client = getClient();
+    if (!client || !privyUserId) return null;
+    try {
+        // PrivyClient.getUser returns the full user including linkedAccounts.
+        const user = await client.getUser(privyUserId);
+        const linked = Array.isArray(user?.linkedAccounts) ? user.linkedAccounts : [];
+        const tg = linked.find((a) => a && a.type === 'telegram');
+        if (!tg) return null;
+        const tgIdRaw = tg.telegramUserId ?? tg.subject ?? null;
+        const tgId = tgIdRaw != null ? Number(tgIdRaw) : null;
+        if (!Number.isFinite(tgId)) return null;
+        return {
+            telegramUserId: tgId,
+            username: tg.username || null,
+            firstName: tg.firstName || null,
+        };
+    } catch (err) {
+        console.warn('[privyAuth] getTelegramAccountFromPrivy failed', {
+            privyUserId,
+            err: err?.message || String(err),
+        });
+        return null;
+    }
+}

@@ -61,6 +61,10 @@ import {
     mintSession as mintFreeKicksSession,
 } from './services/games/free-kicks-standalone/standaloneLeaderboard.js';
 import {
+    getSolShotLeaderboard,
+    getSolShotStanding,
+} from './services/games/solshot-leaderboard.js';
+import {
     mintSession as mintPoolSession,
     verifySession as verifyPoolSession,
     getLeaderboard as getPoolLeaderboard,
@@ -1246,6 +1250,46 @@ app.get('/api/games/freekicks/standing/:telegramUserId', async (req, res) => {
         res.json({ ok: true, standing: standing || null });
     } catch (err) {
         console.error('[GET /api/games/freekicks/standing]', err.message);
+        res.status(500).json({ error: 'failed to fetch standing' });
+    }
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// SolShot leaderboard — K/D + Win% scorecard model (NOT points-based).
+// Ranks players by K/D ratio (rate-based per V3 Rule 2). Service in
+// services/games/solshot-leaderboard.js derives the row shape from
+// User.stats; same fields the trophy / career share cards already use.
+//
+// Min-match threshold filters out new players with skewed ratios. The
+// 10-match floor is illustrative — tune on live data.
+// ──────────────────────────────────────────────────────────────────────
+
+// GET /api/games/solshot/leaderboard?limit=10&minMatches=10
+app.get('/api/games/solshot/leaderboard', async (req, res) => {
+    try {
+        const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 10));
+        const minMatches = Math.max(1, parseInt(req.query.minMatches, 10) || 10);
+        const leaderboard = await getSolShotLeaderboard({ limit, minMatches });
+        const totalPlayers = leaderboard.length === limit ? null : leaderboard.length;
+        res.json({ ok: true, leaderboard, totalPlayers });
+    } catch (err) {
+        console.error('[GET /api/games/solshot/leaderboard]', err.message);
+        res.status(500).json({ error: 'failed to fetch leaderboard' });
+    }
+});
+
+// GET /api/games/solshot/standing/:telegramUserId
+app.get('/api/games/solshot/standing/:telegramUserId', async (req, res) => {
+    try {
+        const telegramUserId = parseInt(req.params.telegramUserId, 10);
+        if (!Number.isFinite(telegramUserId)) {
+            return res.status(400).json({ error: 'invalid telegramUserId' });
+        }
+        const minMatches = Math.max(1, parseInt(req.query.minMatches, 10) || 10);
+        const standing = await getSolShotStanding({ telegramUserId, minMatches });
+        res.json({ ok: true, standing: standing || null });
+    } catch (err) {
+        console.error('[GET /api/games/solshot/standing]', err.message);
         res.status(500).json({ error: 'failed to fetch standing' });
     }
 });

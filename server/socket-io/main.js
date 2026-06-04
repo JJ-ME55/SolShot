@@ -68,6 +68,7 @@ function isEscrowAvailableFor(playerCount) {
 import { recordMatchPlayed, prestigeBurn, getPrestigeInfo, getShotBalance, PRESTIGE_TIERS, loadMilestoneState, saveMilestoneState, getPlayerShotState, SHOT_MILESTONES } from '../services/shot-token.js';
 import { trackConnection, trackDisconnection, trackMatchCreated, trackMatchCompleted, trackMatchCancelled, trackWager, trackSettlement, trackForfeit, trackShot, trackDamage, trackGoldEarned, trackShotEmission, trackShotBurn, trackError } from '../services/monitoring.js';
 import { initPoolSocket, registerPoolHandlers } from './pool.js';
+import { initCritterKartSocket, registerCritterKartHandlers } from './critter-kart.js';
 import { requireAuth, validatePayload, validateFireParams, sanitizeName, withLock, safeHandler } from '../middleware/guards.js';
 import { initAI, cleanupAI, pickWeapon, calculateAim, autoBuyWeapons } from '../services/ai.js';
 import { CONSUMABLES, purchaseConsumable, decrementConsumables, getActiveConsumables, hasConsumable } from '../services/consumables.js';
@@ -1160,6 +1161,12 @@ const mainsocket = (io) => {
     // io.on("connection") block via registerPoolHandlers(client, io).
     initPoolSocket(io);
 
+    // Critter Kart — same pattern as pool. Boots matchmaking queue +
+    // race lifecycle driver. See server/socket-io/critter-kart.js for
+    // the full event surface (critterkart:joinQueue / joinRace / ready /
+    // input / etc.). Per-client handlers attach below alongside pool.
+    initCritterKartSocket(io);
+
     // ═══ AI TURN SCHEDULING ═══
     // Defined in mainsocket scope so cleanupRoom can access it
     const aiTurnTimers = {}; // { roomId: timeoutId } — prevents double-scheduling
@@ -1413,6 +1420,11 @@ const mainsocket = (io) => {
         // Pool socket handlers — single-line bolt-on. All pool events
         // live in server/socket-io/pool.js to keep this file untouched.
         registerPoolHandlers(client, io);
+
+        // Critter Kart socket handlers — same single-line bolt-on
+        // pattern. Events under critterkart:* namespace, fully isolated
+        // from SolShot/pool socket flow.
+        registerCritterKartHandlers(client, io);
 
         // Send the current queue snapshot to this new socket so the lobby
         // can render "● N WAITING" badges immediately on mount, without

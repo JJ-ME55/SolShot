@@ -115,6 +115,11 @@ function buildRow(user) {
     // — a 5-0 player ranks as K/D 5, not infinity. Keeps the sort stable.
     const kdRatio = +(kills / Math.max(1, deaths)).toFixed(2);
 
+    // SECURITY: telegramUserId is included in this internal row shape so
+    // getSolShotStanding() can find the requesting user by id when
+    // computing their rank. The leaderboard endpoint (see index.js)
+    // strips it before responding to the public — same pattern as the
+    // basketball/keepie-uppies/free-kicks services.
     return {
         telegramUserId: user?.telegramUserId,
         displayName: formatDisplayName(user),

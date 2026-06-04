@@ -383,6 +383,33 @@ const feedbackLimiter = rateLimit({
     legacyHeaders: false,
     message: { ok: false, error: 'rate_limited' },
 });
+
+// Score-submit rate limiter — prevents replay floods and macro abuse.
+// Keyed by JWT signature (or Privy token prefix) when available so a
+// shared IP (e.g. office NAT, mobile carrier CGNAT) doesn't throttle
+// legitimate users on the same wifi. Falls back to IP if neither auth
+// header is present.
+//
+// Limits chosen to allow a 60s-per-game replay loop (50/min generous)
+// while blocking macros that fire dozens of submits a second:
+//   • 50 submits per minute per identity (1 every 1.2s steady-state)
+//   • 200 submits per 24h per identity (cap on the daily abuse ceiling)
+// AAA hardening pass 2026-06-03.
+const scoreSubmitLimiter = rateLimit({
+    windowMs: 60 * 1000,         // 1 minute window
+    max: 50,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => {
+        const authHeader = req.headers.authorization || '';
+        const bearer = authHeader.match(/^Bearer\s+(.+)$/i)?.[1];
+        if (bearer) return `privy:${bearer.slice(-32)}`;
+        const session = req.body?.session;
+        if (typeof session === 'string') return `jwt:${session.slice(-32)}`;
+        return `ip:${req.ip}`;
+    },
+    message: { ok: false, error: 'rate_limited', detail: 'too many submissions; slow down' },
+});
 app.post('/api/feedback', feedbackLimiter, async (req, res) => {
     try {
         const { message, kind, contextHint, handle, walletAddress } = req.body || {};
@@ -1091,7 +1118,7 @@ async function resolveScoreIdentity(req, verifyGameJwt) {
 //   Headers: Authorization: Bearer <privyToken>  (preferred)
 //   Body:    { score: number, session?: string } (session = legacy JWT)
 //   returns: { ok, newBest, bestScore, rank, totalPlayers }
-app.post('/api/games/basketball/score', async (req, res) => {
+app.post('/api/games/basketball/score', scoreSubmitLimiter, async (req, res) => {
     try {
         const { score } = req.body || {};
         if (!Number.isFinite(score) || score < 0) {
@@ -1182,7 +1209,7 @@ app.get('/api/games/basketball/standing/:telegramUserId', async (req, res) => {
 // POST /api/games/keepieuppies/score
 //   body: { score: number, session: string }
 //   returns: { ok, newBest, bestScore, rank, totalPlayers }
-app.post('/api/games/keepieuppies/score', async (req, res) => {
+app.post('/api/games/keepieuppies/score', scoreSubmitLimiter, async (req, res) => {
     try {
         const { score } = req.body || {};
         if (!Number.isFinite(score)) {
@@ -1247,7 +1274,7 @@ app.get('/api/games/keepieuppies/standing/:telegramUserId', async (req, res) => 
 // POST /api/games/freekicks/score
 //   body: { score: number, session: string }
 //   returns: { ok, newBest, bestScore, rank, totalPlayers }
-app.post('/api/games/freekicks/score', async (req, res) => {
+app.post('/api/games/freekicks/score', scoreSubmitLimiter, async (req, res) => {
     try {
         const { score } = req.body || {};
         if (!Number.isFinite(score)) {
@@ -1319,7 +1346,11 @@ app.get('/api/games/solshot/leaderboard', async (req, res) => {
     try {
         const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 10));
         const minMatches = Math.max(1, parseInt(req.query.minMatches, 10) || 1);
-        const leaderboard = await getSolShotLeaderboard({ limit, minMatches });
+        const rawLeaderboard = await getSolShotLeaderboard({ limit, minMatches });
+        // SECURITY: strip telegramUserId from public LB response — PII
+        // leak. Keep the service-level row shape with telegramUserId so
+        // the standing endpoint (which fetches one user) can find them.
+        const leaderboard = rawLeaderboard.map(({ telegramUserId: _omit, ...rest }) => rest);
         // Total eligible players (matching the filter) — separate count so
         // the LB hero's "Players" stat reflects the full roster, not just
         // the slice we returned. Was previously broken (conditional null).
@@ -1762,9 +1793,10 @@ app.get('/api/games/leaderboard', async (req, res) => {
         const since = parseSinceParam(req.query.since);
         const sorted = await buildOverallStandings({ since });
 
+        // SECURITY: telegramUserId stripped from overall LB response —
+        // PII leak. See basketball-leaderboard.js for the per-game fix.
         const leaderboard = sorted.slice(0, limit).map((p, i) => ({
             rank: i + 1,
-            telegramUserId: p.telegramUserId,
             displayName: p.displayName,
             bestScore: p.totalPlays,
             totalSubmissions: p.totalPlays,

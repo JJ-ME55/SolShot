@@ -32,11 +32,12 @@ import BasketballScore from '../../../models/BasketballScore.js';
 // ─── JWT config ─────────────────────────────────────────────────────────
 
 const ALG = 'HS256';
-// 30 days — was 24h, but standalone games fail silently on 401 when a stale
-// session is reused. Bumped 2026-05-28 after a user (Elliot, free-kicks)
-// hit a 450 that didn't land because his 24h JWT had expired. New mints
-// get the full 30d; existing 24h JWTs continue expiring as scheduled.
-const SESSION_TTL = '30d';
+// 7 days — was 30d. Tightened 2026-06-03 as part of the AAA hardening
+// pass: shorter session window shrinks the steal-and-replay surface
+// without hurting UX (casuals replay weekly; bot users get fresh JWTs
+// each `/basketball` tap anyway). Existing 30d JWTs continue expiring
+// on their original schedule.
+const SESSION_TTL = '7d';
 const ISSUER = 'arcade-bot:basketball';
 
 function getSecret() {
@@ -211,9 +212,13 @@ export async function getLeaderboard({ limit = 10, since = null } = {}) {
         .sort({ bestScore: -1, bestAchievedAt: 1 })
         .limit(clamped)
         .lean();
+    // SECURITY: do NOT include telegramUserId in the public LB response.
+    // The display name is what the UI shows; TG id is PII and was an
+    // unnecessary leak (anyone could scrape the LB to map names → TG
+    // user ids). Stripped 2026-06-03 as part of the AAA hardening pass.
+    // Standing endpoints still return TG id for the requesting user only.
     return rows.map((r, i) => ({
         rank: i + 1,
-        telegramUserId: r.telegramUserId,
         displayName: formatDisplayName(r),
         bestScore: r.bestScore,
         bestAchievedAt: r.bestAchievedAt,

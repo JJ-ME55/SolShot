@@ -23,8 +23,9 @@ import FreeKicksScore from '../../../models/FreeKicksScore.js';
 // ─── JWT config ─────────────────────────────────────────────────────────
 
 const ALG = 'HS256';
-// Bumped 24h → 30d on 2026-05-28 (see basketball-leaderboard.js for context).
-const SESSION_TTL = '30d';
+// Tightened 30d → 7d on 2026-06-03 (see basketball-leaderboard.js — AAA
+// hardening pass: shrinks steal-and-replay surface; bot taps refresh).
+const SESSION_TTL = '7d';
 const ISSUER = 'arcade-bot:freekicks';
 
 function getSecret() {
@@ -152,9 +153,11 @@ export async function getLeaderboard({ limit = 10, since = null } = {}) {
         .sort({ bestScore: -1, bestAchievedAt: 1 })
         .limit(clamped)
         .lean();
+    // SECURITY: telegramUserId stripped from public LB response — PII leak.
+    // See basketball-leaderboard.js for context. Standing endpoints still
+    // return TG id for the requesting user only.
     return rows.map((r, i) => ({
         rank: i + 1,
-        telegramUserId: r.telegramUserId,
         displayName: formatDisplayName(r),
         bestScore: r.bestScore,
         bestAchievedAt: r.bestAchievedAt,

@@ -818,12 +818,15 @@ export function registerCritterKartHandlers(client, io) {
                 });
             }
             ackOk(ack, { raceId: race.raceId });
-            // Close the lobby room since the race takes over.
-            io.to(lobbyRoomName(lobby.lobbyId)).emit('lobby:closed', {
-                lobbyId: lobby.lobbyId,
-                reason: 'race_started',
-                raceId: race.raceId,
-            });
+            // DELIBERATELY do NOT emit lobby:closed here. Fish's
+            // LobbyScreen (screens.tsx:292) handles lobby:closed by
+            // calling onLeave() which routes back to menu — that would
+            // immediately undo the race:start transition because both
+            // events arrive in the same socket batch and React commits
+            // both state updates together (race:start sets mpRace and
+            // go('race'); lobby:closed then calls go('menu')).
+            // The lobby is marked 'starting' in Mongo via markStarting
+            // above; it'll auto-expire via TTL.
         } catch (err) {
             logger.error('[lobby:start]', { error: err.message });
             ackError(ack, 'start_failed', err.message);

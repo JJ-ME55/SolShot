@@ -48,6 +48,11 @@ import {
     getEloLeaderboard as getPoolEloLeaderboard,
     getEloStanding as getPoolEloStanding,
 } from './games/pool/poolLeaderboard.js';
+import {
+    mintSession as mintCritterKartSession,
+    getLeaderboard as getCritterKartLeaderboard,
+    getMyStanding as getCritterKartStanding,
+} from './games/critter-kart-standalone/standaloneLeaderboard.js';
 
 const ARCADE_WEBHOOK_PATH = '/api/arcade-webhook';
 
@@ -159,6 +164,28 @@ const GAMES = [
         firstName: ctx.from?.first_name,
     }),
   },
+  {
+    // React + Three.js kart racer, lifted from BillionaireBonkClub/critter-kart
+    // by fishyboy-claude (commit 0c8ac388 on arcade/critter-kart, 2026-06-04).
+    // Career-aggregate scoring (Mario Kart Grand Prix style): position points
+    // accumulate, server tracks totalPoints / races / wins / podiums /
+    // bestLapTime — see services/games/critter-kart-standalone/.
+    //
+    // URL points at the preview deploy (the-arcade-critter-kart.vercel.app
+    // builds from arcade/critter-kart branch) until the game is promoted
+    // into the main hub at thearcade.gg/play/critter-kart/launch.
+    slug: 'critterkart',
+    name: 'Critter Kart',
+    emoji: '🏎️',
+    tagline: '6-player kart racing. Grand Prix scoring — points add up across races.',
+    url: 'https://the-arcade-critter-kart.vercel.app/play/critter-kart/launch',
+    supportsLoginUrl: false,
+    sessionMinter: (ctx) => mintCritterKartSession({
+        telegramUserId: ctx.from?.id,
+        telegramUsername: ctx.from?.username,
+        firstName: ctx.from?.first_name,
+    }),
+  },
 ];
 
 // Per-game leaderboard config. Maps slug → { rendering metadata, lib }.
@@ -215,6 +242,16 @@ const LEADERBOARDS = {
         };
     },
     launchCmd: '/pool',
+  },
+  critterkart: {
+    // Career-aggregate (Mario Kart Grand Prix) — bestScore is totalPoints,
+    // totalSubmissions is races. The leaderboard service emits a row
+    // matching the per-game contract directly, so no adapter needed.
+    emoji: '🏎️',
+    title: 'CRITTER KART · GRAND PRIX',
+    getLeaderboard: getCritterKartLeaderboard,
+    getMyStanding: getCritterKartStanding,
+    launchCmd: '/critterkart',
   },
 };
 

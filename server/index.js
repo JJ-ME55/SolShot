@@ -73,6 +73,13 @@ import {
     clampLimit as clampPoolLimit,
 } from './services/games/pool/poolLeaderboard.js';
 import { simulateShotForClient as simulatePoolShot } from './services/poolSimulation.js';
+import {
+    mintSession as mintCritterKartSession,
+    verifySession as verifyCritterKartSession,
+    submitRace as submitCritterKartRace,
+    getLeaderboard as getCritterKartLeaderboard,
+    getMyStanding as getCritterKartStanding,
+} from './services/games/critter-kart-standalone/standaloneLeaderboard.js';
 import BasketballScore from './models/BasketballScore.js';
 import KeepieUppiesScore from './models/KeepieUppiesScore.js';
 import FreeKicksScore from './models/FreeKicksScore.js';
@@ -126,6 +133,12 @@ const ALWAYS_ALLOWED_ORIGINS = [
     'https://the-arcade-eta.vercel.app',
     'https://the-arcade-jj-me55s-projects.vercel.app',
     'https://the-arcade-git-main-jj-me55s-projects.vercel.app',
+    // Per-game preview Vercel projects — separate deploys for in-flight
+    // game branches (shootout, critter-kart). Each tracks its arcade/<slug>
+    // branch on JJ-ME55/The-Arcade. Lets us test isolated before merging
+    // into the hub at thearcade.gg.
+    'https://the-arcade-shootout.vercel.app',
+    'https://the-arcade-critter-kart.vercel.app',
 ];
 const CORS_ORIGINS = Array.from(new Set([
     ...ALWAYS_ALLOWED_ORIGINS,
@@ -1057,6 +1070,10 @@ const GAME_MINTERS = {
     basketball: mintBasketballSession,
     keepieuppies: mintKeepieUppiesSession,
     freekicks: mintFreeKicksSession,
+    // Kebab key matches the hub's useArcadeSessionMint('critter-kart')
+    // call. Distinct from the bot's slash slug 'critterkart' which TG
+    // requires hyphenless. They're two different namespaces.
+    'critter-kart': mintCritterKartSession,
 };
 
 app.post(
@@ -1383,6 +1400,92 @@ app.get('/api/games/freekicks/standing/:telegramUserId', async (req, res) => {
         res.json({ ok: true, standing: standing || null });
     } catch (err) {
         console.error('[GET /api/games/freekicks/standing]', err.message);
+        res.status(500).json({ error: 'failed to fetch standing' });
+    }
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// Critter Kart — career-aggregate (Mario Kart Grand Prix) leaderboard.
+//
+// Differs from the skill-game endpoints above: payload carries position
+// + best-lap time + race time, not a single 'score'. Server aggregates
+// into CritterKartCareer doc per player. Race finish increments
+// totalPoints / races / wins / podiums and conditionally updates
+// bestLapTimeMs. Sorted by totalPoints DESC.
+//
+// Game lives at /play/critter-kart/launch on the hub. Initial preview
+// deploy at the-arcade-critter-kart.vercel.app from arcade/critter-kart
+// branch — both URLs in ALWAYS_ALLOWED_ORIGINS above.
+//
+// POST /api/games/critter-kart/score
+//   body: { score|points, pos, bestLapMs?, raceTimeMs?, session?: string }
+//   `score` is the legacy field Fish's wrapper sends — kept as alias of
+//   `points` for one-step backwards compat.
+//   returns: { ok, newRecord, totalPoints, races, wins, podiums,
+//              bestLapTimeMs, rank, totalPlayers }
+app.post('/api/games/critter-kart/score', scoreSubmitLimiter, async (req, res) => {
+    try {
+        const { score, points, pos, bestLapMs, raceTimeMs } = req.body || {};
+        const pointsValue = Number.isFinite(points) ? points
+                          : Number.isFinite(score) ? score
+                          : NaN;
+        if (!Number.isFinite(pointsValue)) {
+            return res.status(400).json({ error: 'numeric points required (alias: score)' });
+        }
+        if (!Number.isFinite(pos)) {
+            return res.status(400).json({ error: 'numeric pos required (race finishing position, 1-based)' });
+        }
+        const resolved = await resolveScoreIdentity(req, verifyCritterKartSession);
+        if (!resolved.ok) {
+            const body = { error: resolved.error };
+            if (resolved.detail) body.detail = resolved.detail;
+            if (resolved.message) body.message = resolved.message;
+            return res.status(resolved.status).json(body);
+        }
+        const result = await submitCritterKartRace({
+            telegramUserId: resolved.identity.telegramUserId,
+            telegramUsername: resolved.identity.telegramUsername,
+            firstName: resolved.identity.firstName,
+            points: pointsValue,
+            pos,
+            bestLapMs: Number.isFinite(bestLapMs) ? bestLapMs : null,
+            raceTimeMs: Number.isFinite(raceTimeMs) ? raceTimeMs : null,
+        });
+        res.json({ ok: true, ...result });
+    } catch (err) {
+        console.error('[POST /api/games/critter-kart/score]', err.message);
+        res.status(500).json({ error: 'failed to submit race result' });
+    }
+});
+
+// GET /api/games/critter-kart/leaderboard?limit=10&since=<iso>
+app.get('/api/games/critter-kart/leaderboard', async (req, res) => {
+    try {
+        const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 10));
+        const since = parseSinceParam(req.query.since);
+        const leaderboard = await getCritterKartLeaderboard({ limit, since });
+        // Total player count comes free from a separate countDocuments —
+        // the service doesn't expose its own model for buildSinceFilter,
+        // so derive count from the leaderboard query for now. Cheap.
+        const totalPlayers = leaderboard.length === limit ? -1 : leaderboard.length;
+        res.json({ ok: true, leaderboard, totalPlayers });
+    } catch (err) {
+        console.error('[GET /api/games/critter-kart/leaderboard]', err.message);
+        res.status(500).json({ error: 'failed to fetch leaderboard' });
+    }
+});
+
+// GET /api/games/critter-kart/standing/:telegramUserId
+app.get('/api/games/critter-kart/standing/:telegramUserId', async (req, res) => {
+    try {
+        const telegramUserId = parseInt(req.params.telegramUserId, 10);
+        if (!Number.isFinite(telegramUserId)) {
+            return res.status(400).json({ error: 'invalid telegramUserId' });
+        }
+        const standing = await getCritterKartStanding({ telegramUserId });
+        res.json({ ok: true, standing: standing || null });
+    } catch (err) {
+        console.error('[GET /api/games/critter-kart/standing]', err.message);
         res.status(500).json({ error: 'failed to fetch standing' });
     }
 });

@@ -117,13 +117,12 @@ const ALWAYS_ALLOWED_ORIGINS = [
     'https://sol-shot-basketball.vercel.app',
     'https://sol-shot-keepie-uppies.vercel.app',
     'https://solshot-free-kicks-iota.vercel.app',
-    // The Arcade — parent-brand web hub. Project on jj-me55s-projects.
-    // Vite + React + TS, client-only. Talks to this server via HTTPS
-    // for /api/arcade/* endpoints + leaderboard reads + score writes.
-    //
-    // `the-arcade.vercel.app` (without suffix) is owned by another
-    // Vercel account; Vercel auto-suffixed ours with `-eta`. Same
-    // pattern as `solshot-free-kicks-iota.vercel.app`.
+    // The Arcade — parent-brand web hub. Custom domain since 2026-06-04.
+    // `the-arcade-eta.vercel.app` (auto-suffix from when `the-arcade`
+    // collided with another Vercel account) stays in the allowlist as
+    // a fallback for any cached link or in-flight bot deep-link.
+    'https://thearcade.gg',
+    'https://www.thearcade.gg',
     'https://the-arcade-eta.vercel.app',
     'https://the-arcade-jj-me55s-projects.vercel.app',
     'https://the-arcade-git-main-jj-me55s-projects.vercel.app',

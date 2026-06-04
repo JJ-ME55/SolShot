@@ -89,14 +89,14 @@ const GAMES = [
     emoji: '🏀',
     tagline: 'Timed rapid-fire arcade hoops. 20s clock, hot-streak bonuses.',
     // Now served from the unified arcade hub (JJ-ME55/The-Arcade repo,
-    // deployed at the-arcade-eta.vercel.app, route /play/basketball/launch).
+    // deployed at thearcade.gg, route /play/basketball/launch).
     // Phase 2 IA flip (2026-05-28) split /play/<slug> into a game-detail
     // page (editorial / wager slip / how-to-play) and /play/<slug>/launch
     // which mounts the Phaser scene. Bot users skip the detail page and
     // land directly on the launch URL — same one-tap UX as before.
     // Previous standalone Vercel `sol-shot-basketball.vercel.app` stays
     // live as a fallback for ~30 days post-cutover (see playbook §Cleanup).
-    url: 'https://the-arcade-eta.vercel.app/play/basketball/launch',
+    url: 'https://thearcade.gg/play/basketball/launch',
     supportsLoginUrl: false,
     // Leaderboard binding — append a signed JWT to the launch URL so the
     // game client can submit scores tied to this TG user. Client reads
@@ -116,7 +116,7 @@ const GAMES = [
     name: 'Keepie Uppies',
     emoji: '⚽',
     tagline: 'Tap the ball, keep it off the ground. How long can you go?',
-    url: 'https://the-arcade-eta.vercel.app/play/keepie-uppies/launch',
+    url: 'https://thearcade.gg/play/keepie-uppies/launch',
     supportsLoginUrl: false,
     sessionMinter: (ctx) => mintKeepieUppiesSession({
         telegramUserId: ctx.from?.id,
@@ -132,7 +132,7 @@ const GAMES = [
     name: 'Free-Kick Madness',
     emoji: '🥅',
     tagline: 'Bend it past the wall. Targets, bonus boards, fire-ball hat-tricks.',
-    url: 'https://the-arcade-eta.vercel.app/play/free-kicks/launch',
+    url: 'https://thearcade.gg/play/free-kicks/launch',
     supportsLoginUrl: false,
     sessionMinter: (ctx) => mintFreeKicksSession({
         telegramUserId: ctx.from?.id,
@@ -151,7 +151,7 @@ const GAMES = [
     name: '8-Ball Pool',
     emoji: '🎱',
     tagline: 'Skill-based 1v1. Async 12h turns, server-authoritative physics.',
-    url: 'https://the-arcade-eta.vercel.app/play/pool/launch',
+    url: 'https://thearcade.gg/play/pool/launch',
     supportsLoginUrl: false,
     sessionMinter: (ctx) => mintPoolSession({
         telegramUserId: ctx.from?.id,

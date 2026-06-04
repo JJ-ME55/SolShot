@@ -57,8 +57,23 @@ import {
     markDnf,
     cancelRace,
     findActiveRaceForPlayer,
+    createRace,
+    fillWithBots,
 } from '../services/games/critter-kart/lifecycle.js';
 import { RaceRunner } from '../services/games/critter-kart/sim/runner.js';
+import {
+    listOpenLobbies,
+    getLobby,
+    createLobby,
+    requestJoin,
+    decideRequest,
+    setReady as lobbySetReady,
+    leaveLobby,
+    markStarting,
+    markClosed,
+    toLobbyStateWire,
+    toLobbySummaryWire,
+} from '../services/games/critter-kart/lobbyService.js';
 import CritterKartRace from '../models/CritterKartRace.js';
 
 // ──────────────────────────────────────────────────────────────────────
@@ -490,6 +505,252 @@ export function registerCritterKartHandlers(client, io) {
     // ── critterkart:input (Session 1 legacy) ──────────────────────────
     // Pre-Session-2b clients may still send this. Drop silently.
     client.on('critterkart:input', () => { /* Session 1 legacy — no-op */ });
+
+    // ════════════════════════════════════════════════════════════════════
+    // LOBBY — custom-game host-controlled flow (Session 2d)
+    // ════════════════════════════════════════════════════════════════════
+    //
+    // Identity for lobby events comes from the socket handshake auth
+    // (client passed {telegramUserId, sessionJwt} on connect — see
+    // net/client.ts). We also accept telegramUserId in payload as a
+    // fallback for clients that haven't migrated.
+    function identityFromPayload(payload) {
+        const auth = client.handshake?.auth || {};
+        const fromAuth = auth.telegramUserId;
+        const fromPayload = payload?.telegramUserId;
+        const tg = (typeof fromAuth === 'number' && fromAuth) || fromPayload;
+        return {
+            telegramUserId: tg,
+            telegramUsername: auth.telegramUsername || payload?.telegramUsername || null,
+            firstName: auth.firstName || payload?.firstName || null,
+        };
+    }
+    const lobbyRoomName = (lobbyId) => `critter-kart:lobby:${lobbyId}`;
+
+    // ── lobby:list ────────────────────────────────────────────────────
+    client.on('lobby:list', async (_payload, ack) => {
+        try {
+            const lobbies = await listOpenLobbies();
+            const wire = lobbies.map(toLobbySummaryWire);
+            // Reply via dispatched event (mirrors Fish's stub shape) AND ack.
+            client.emit('lobby:listing', { lobbies: wire });
+            ackOk(ack, { lobbies: wire });
+        } catch (err) {
+            logger.error('[lobby:list]', { error: err.message });
+            ackError(ack, 'list_failed', err.message);
+        }
+    });
+
+    // ── lobby:create ──────────────────────────────────────────────────
+    client.on('lobby:create', async (payload, ack) => {
+        try {
+            const { telegramUserId, telegramUsername, firstName } = identityFromPayload(payload);
+            if (!telegramUserId) return ackError(ack, 'identity_required');
+            const lobby = await createLobby({
+                name: payload?.name,
+                cap: payload?.cap,
+                hostTelegramUserId: telegramUserId,
+                hostUsername: telegramUsername,
+                hostFirstName: firstName,
+                socketId: client.id,
+            });
+            registerClientIdentity(client, telegramUserId);
+            client.join(lobbyRoomName(lobby.lobbyId));
+            const wire = toLobbyStateWire(lobby);
+            client.emit('lobby:created', { lobby: wire });
+            ackOk(ack, { lobby: wire });
+        } catch (err) {
+            logger.error('[lobby:create]', { error: err.message });
+            ackError(ack, 'create_failed', err.message);
+        }
+    });
+
+    // ── lobby:join ────────────────────────────────────────────────────
+    // Sends a join request to the host (always pending — host accepts).
+    client.on('lobby:join', async (payload, ack) => {
+        try {
+            const { telegramUserId, telegramUsername, firstName } = identityFromPayload(payload);
+            if (!telegramUserId) return ackError(ack, 'identity_required');
+            const { lobbyId } = payload || {};
+            if (!lobbyId) return ackError(ack, 'lobbyId_required');
+            const { lobby, requestId, alreadyMember } = await requestJoin({
+                lobbyId,
+                telegramUserId,
+                telegramUsername,
+                firstName,
+                socketId: client.id,
+            });
+            registerClientIdentity(client, telegramUserId);
+            // Joiner subscribes to the lobby room early so they receive
+            // lobby:state broadcasts even while pending.
+            client.join(lobbyRoomName(lobby.lobbyId));
+            const wire = toLobbyStateWire(lobby);
+            if (alreadyMember) {
+                client.emit('lobby:joined', { lobby: wire });
+                ackOk(ack, { lobby: wire, alreadyMember: true });
+                return;
+            }
+            // Notify host of the pending join request
+            io.to(lobbyRoomName(lobby.lobbyId)).emit('lobby:state', { lobby: wire });
+            io.to(lobbyRoomName(lobby.lobbyId)).emit('lobby:joinRequest', {
+                lobbyId: lobby.lobbyId,
+                requestId,
+                username: lobby.pendingRequests.find(p => p.requestId === requestId)?.displayName,
+            });
+            ackOk(ack, { requestId });
+        } catch (err) {
+            logger.error('[lobby:join]', { error: err.message });
+            ackError(ack, 'join_failed', err.message);
+        }
+    });
+
+    // ── lobby:decision ────────────────────────────────────────────────
+    client.on('lobby:decision', async (payload, ack) => {
+        try {
+            const { telegramUserId } = identityFromPayload(payload);
+            if (!telegramUserId) return ackError(ack, 'identity_required');
+            const { requestId, accept, lobbyId: lobbyIdFromPayload } = payload || {};
+            if (!requestId) return ackError(ack, 'requestId_required');
+            // Find the lobby — payload may omit lobbyId; fall back to the
+            // socket's joined rooms.
+            let lobbyId = lobbyIdFromPayload;
+            if (!lobbyId) {
+                for (const room of client.rooms) {
+                    if (room.startsWith('critter-kart:lobby:')) {
+                        lobbyId = room.slice('critter-kart:lobby:'.length);
+                        break;
+                    }
+                }
+            }
+            if (!lobbyId) return ackError(ack, 'lobbyId_unknown');
+            const { lobby, accepted, requester } = await decideRequest({
+                lobbyId,
+                hostTelegramUserId: telegramUserId,
+                requestId,
+                accept,
+            });
+            const wire = toLobbyStateWire(lobby);
+            io.to(lobbyRoomName(lobby.lobbyId)).emit('lobby:state', { lobby: wire });
+            // Notify the requester of the outcome
+            const reqClient = findClientByTgId(requester.telegramUserId);
+            if (reqClient) {
+                if (accepted) reqClient.emit('lobby:joined', { lobby: wire });
+                else reqClient.emit('lobby:declined', { lobbyId: lobby.lobbyId });
+            }
+            ackOk(ack, { accepted });
+        } catch (err) {
+            logger.error('[lobby:decision]', { error: err.message });
+            ackError(ack, 'decision_failed', err.message);
+        }
+    });
+
+    // ── lobby:ready ───────────────────────────────────────────────────
+    client.on('lobby:ready', async (payload, ack) => {
+        try {
+            const { telegramUserId } = identityFromPayload(payload);
+            if (!telegramUserId) return ackError(ack, 'identity_required');
+            const { lobbyId, ready } = payload || {};
+            if (!lobbyId) return ackError(ack, 'lobbyId_required');
+            const lobby = await lobbySetReady({ lobbyId, telegramUserId, ready });
+            const wire = toLobbyStateWire(lobby);
+            io.to(lobbyRoomName(lobby.lobbyId)).emit('lobby:state', { lobby: wire });
+            ackOk(ack);
+        } catch (err) {
+            logger.error('[lobby:ready]', { error: err.message });
+            ackError(ack, 'ready_failed', err.message);
+        }
+    });
+
+    // ── lobby:leave ───────────────────────────────────────────────────
+    client.on('lobby:leave', async (payload, ack) => {
+        try {
+            const { telegramUserId } = identityFromPayload(payload);
+            if (!telegramUserId) return ackError(ack, 'identity_required');
+            const { lobbyId } = payload || {};
+            if (!lobbyId) return ackError(ack, 'lobbyId_required');
+            const result = await leaveLobby({ lobbyId, telegramUserId });
+            if (!result) return ackOk(ack);
+            const wire = toLobbyStateWire(result.lobby);
+            if (result.closed) {
+                io.to(lobbyRoomName(result.lobby.lobbyId)).emit('lobby:closed', {
+                    lobbyId: result.lobby.lobbyId,
+                    reason: 'host_left',
+                });
+            } else {
+                io.to(lobbyRoomName(result.lobby.lobbyId)).emit('lobby:state', { lobby: wire });
+            }
+            client.leave(lobbyRoomName(result.lobby.lobbyId));
+            ackOk(ack);
+        } catch (err) {
+            logger.error('[lobby:leave]', { error: err.message });
+            ackError(ack, 'leave_failed', err.message);
+        }
+    });
+
+    // ── lobby:start ───────────────────────────────────────────────────
+    // Host transitions lobby → race. Server calls createRace with the
+    // lobby members + bot-fills to MAX_PLAYERS. Then broadcasts
+    // critterkart:matched to every member with the raceId, mirroring
+    // the matchmaker callback shape so MultiplayerLayer doesn't care
+    // whether it got here via Quick Race or Custom Lobby.
+    client.on('lobby:start', async (payload, ack) => {
+        try {
+            const { telegramUserId } = identityFromPayload(payload);
+            if (!telegramUserId) return ackError(ack, 'identity_required');
+            const { lobbyId } = payload || {};
+            if (!lobbyId) return ackError(ack, 'lobbyId_required');
+            const lobby = await getLobby(lobbyId);
+            if (!lobby) return ackError(ack, 'lobby_not_found');
+            if (lobby.hostTelegramUserId !== telegramUserId) {
+                return ackError(ack, 'not_host');
+            }
+            if (lobby.state !== 'open') {
+                return ackError(ack, 'lobby_not_open', `state: ${lobby.state}`);
+            }
+            const humans = lobby.members.map(m => ({
+                telegramUserId: m.telegramUserId,
+                displayName: m.displayName,
+                socketId: m.socketId,
+                isBot: false,
+            }));
+            // Bot-fill the remainder (lifecycle helper)
+            const MAX = 6;
+            const players = fillWithBots(humans, MAX);
+            const { race } = await createRace({ players });
+            await markStarting({
+                lobbyId,
+                hostTelegramUserId: telegramUserId,
+                raceId: race.raceId,
+            });
+            // Emit critterkart:matched to every human (same shape as
+            // matchmaker's onMatchFound callback). MultiplayerLayer
+            // listens for this and transitions to race:join.
+            for (const player of humans) {
+                const c = findClientByTgId(player.telegramUserId);
+                if (!c) continue;
+                c.emit('critterkart:matched', {
+                    raceId: race.raceId,
+                    launchUrl: buildLaunchUrl(race.raceId, null),
+                    players: race.players.map(p => ({
+                        displayName: p.displayName,
+                        isBot: p.isBot,
+                        kartId: p.kartId,
+                    })),
+                    format: race.format,
+                });
+            }
+            ackOk(ack, { raceId: race.raceId });
+            // Close the lobby room since the race takes over.
+            io.to(lobbyRoomName(lobby.lobbyId)).emit('lobby:closed', {
+                lobbyId: lobby.lobbyId,
+                reason: 'race_started',
+                raceId: race.raceId,
+            });
+        } catch (err) {
+            logger.error('[lobby:start]', { error: err.message });
+            ackError(ack, 'start_failed', err.message);
+        }
+    });
 
     // ── disconnect ────────────────────────────────────────────────────
     //

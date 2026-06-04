@@ -454,10 +454,34 @@ function registerCommands(bot) {
   // automatically gets its own /<slug> command with no extra wiring.
   for (const game of GAMES) {
     bot.command(game.slug, async (ctx) => {
-      const keyboard = { inline_keyboard: [[buildGameButton(game, ctx)]] };
+      // Special-case critterkart: 2-button menu (Quick Race multiplayer
+      // + Solo vs Bots). The Quick Race button appends ?queue=1 to the
+      // launch URL so the hub auto-enqueues; Solo is the bare URL.
+      // Other games get the standard 1-button keyboard.
+      let inline_keyboard;
+      if (game.slug === 'critterkart') {
+        const soloBtn = buildGameButton(game, ctx);
+        // Clone the button + append ?queue=1 — buildGameButton already
+        // appended ?session=<jwt> if a sessionMinter is wired. We just
+        // need to add the queue param to whichever URL it produced.
+        const queueBtn = (() => {
+          const b = { ...soloBtn };
+          const u = (b.url || b.login_url?.url) ?? game.url;
+          const sep = u.includes('?') ? '&' : '?';
+          const queueUrl = `${u}${sep}queue=1`;
+          if (b.login_url) b.login_url = { url: queueUrl };
+          else b.url = queueUrl;
+          b.text = '🏁 Quick Race';
+          return b;
+        })();
+        soloBtn.text = '🤖 Solo vs Bots';
+        inline_keyboard = [[queueBtn], [soloBtn]];
+      } else {
+        inline_keyboard = [[buildGameButton(game, ctx)]];
+      }
       await ctx.reply(
         `${game.emoji} <b>${game.name}</b>\n\n${game.tagline}\n\nTap below to launch.`,
-        { parse_mode: 'HTML', reply_markup: keyboard }
+        { parse_mode: 'HTML', reply_markup: { inline_keyboard } }
       );
     });
   }

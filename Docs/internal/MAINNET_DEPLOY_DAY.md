@@ -20,20 +20,13 @@ Single-page, ordered runbook for flipping SolShot v2 escrow to mainnet. Prepared
 
 ---
 
-## 🔴 STEP 0 — MUST FIX FIRST: 1v1 escrow dispatch
+## ✅ STEP 0 — 1v1 escrow dispatch — RESOLVED 2026-06-04
 
-`server/services/solana.js`:
-```js
-export function shouldUseEscrowV2(playerCount) {
-    return playerCount > 2;   // BUG for mainnet: routes 1v1 to v1
-}
-```
-Mainnet is **v2-only**, so 1v1 (2-player) must use v2. Change to `playerCount >= 2`.
-Then:
-1. Re-test a **1v1 wagered match via v2 on devnet** (confirms v2 2-player works through the server, not just the anchor test).
-2. Re-tag `v1-mainnet-rc3`.
-
-Until this lands, mainnet 1v1 wagering is broken.
+`shouldUseEscrowV2` changed `> 2` → `>= 2` in `server/services/solana.js`, so all
+wagered matches (1v1 included) route through v2 — required because mainnet is
+v2-only. Validated on devnet via `server/scripts/smoke-v2-1v1.mjs`: v2 accepted a
+2-player create (PDA `8BsZKMGY…`, `maxPlayers: 2`) and cleanly cancelled. Tagged
+`v1-mainnet-rc3`.
 
 ---
 

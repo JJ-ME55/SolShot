@@ -117,8 +117,15 @@ After §3 is complete and the three Squads vault PDAs (Authority/Treasury/Ops) a
 #    Anchor.toml [programs.mainnet].solshot_escrow_v2:
 #    BNLgn96LqskqcgTTf7cPZ5iHkaKqRdSiCdGzcAw4L7uS
 
-# 2. Build mainnet binary
-anchor build
+# 2. Build mainnet binary.
+#    GOTCHA (Windows + McAfee, confirmed 2026-06-04): McAfee real-time scanning
+#    locks each host .exe as link.exe writes it, so the IDL step of a full
+#    `anchor build` dies with LNK1104. Two ways through:
+#      (a) temporarily disable McAfee Real-Time Scanning for this one build, OR
+#      (b) `anchor build --no-idl` — builds the deployable .so (McAfee only touches
+#          host exes, not the BPF build) and reuse the committed server/idl IDL,
+#          which is current as long as the escrow source is unchanged.
+anchor build   # or: anchor build --no-idl  (see gotcha above)
 
 # 3. Deploy with Squads Authority vault (Vault 0) as upgrade auth from genesis
 solana program deploy \

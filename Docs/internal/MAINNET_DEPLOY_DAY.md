@@ -70,8 +70,10 @@ v2-only. Validated on devnet via `server/scripts/smoke-v2-1v1.mjs`: v2 accepted 
 5. **Build + deploy the program** (see `KEY_MANAGEMENT.md` §4 for exact commands):
    - Swap `declare_id!` in `programs/solshot-escrow-v2/src/lib.rs` → `BNLgn96…` (see branch note below).
    - `anchor build` (disable McAfee real-time for this build, or `anchor build --no-idl`).
-   - `solana program deploy --url mainnet-beta --program-id target/deploy/solshot_escrow_v2_mainnet-keypair.json --upgrade-authority 9f1M7tXb3zqRS7JGuSFjzDjPf4UPhKs1W9uu5wrfqLZb target/deploy/solshot_escrow_v2.so`
-   - Verify: `solana program show BNLgn96… --url mainnet-beta` → Upgrade Authority = `9f1M…` (Authority Squad vault).
+   - `solana config set --url mainnet-beta --keypair <funded-deployer-keypair>` (~3 SOL; disposable fee-payer, not a Squad signer, not cold).
+   - `solana program deploy --program-id target/deploy/solshot_escrow_v2_mainnet-keypair.json target/deploy/solshot_escrow_v2.so` — **do NOT** add `--upgrade-authority <vault>` (that flag needs a signer; a PDA can't sign).
+   - **Immediately** hand off authority: `solana program set-upgrade-authority BNLgn96… --new-upgrade-authority 9f1M… --skip-new-upgrade-authority-signer-check` (CLI, unilateral — Squad doesn't sign; ✅ verified on devnet 2026-06-04).
+   - Verify: `solana program show BNLgn96…` → Authority = `9f1M…` (Authority Squad vault) before trusting it.
 6. **Initialize config** (one-shot): `node server/scripts/init-config-mainnet.mjs` with `SQUADS_AUTHORITY_PDA=9f1M…`, `SQUADS_TREASURY_PDA=5zLEY…`, `SQUADS_OPS_PDA=6vism…`, `ESCROW_PROGRAM_ID_V2=BNLgn96…`, mainnet `SOLANA_RPC`, `SOLANA_KEYPAIR_PATH=~/.config/solana/solshot-server-authority.json`, then `INIT_MAINNET_CONFIRM=I_UNDERSTAND_MAINNET_IRREVERSIBLE`.
 7. **Redeploy** Render (server picks up mainnet env) + Vercel (client picks up mainnet env). ← go-live.
 8. **Verify on-chain**: program authority = Squads vault; `getConfigState` shows correct authority/treasury/ops; `isPaused === false`.

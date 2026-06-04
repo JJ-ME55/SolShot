@@ -47,12 +47,12 @@ Two layers of authority exist on a Solana program:
 2. **Layer 2 — Application authority.** The `config.authority` field stored inside `GlobalConfig`. Used by `update_config` and related governance instructions in the Anchor program.
 
 With **Squads-from-day-one**:
-- At mainnet deploy: `anchor deploy --provider.cluster mainnet --upgrade-authority <squads-vault-0-pda>`. Layer 1 = multisig from genesis.
+- At mainnet deploy: `solana program deploy` (deployer is initial authority), then **immediately** `solana program set-upgrade-authority <prog> --new-upgrade-authority <vault> --skip-new-upgrade-authority-signer-check` to hand Layer 1 to the multisig. The one-step `deploy --upgrade-authority <PDA>` does NOT work — that flag needs a signer and a vault PDA can't sign (verified on devnet 2026-06-04).
 - Immediately after deploy: server calls `initialize_config(authority: <vault-0>, treasury: <vault-1>, ops: <vault-2>, ...)`. Layer 2 + fee destinations = multisig from genesis. Three distinct vault PDAs, one per Squad (three separate 2-of-3 Squads — V4 paywalls multi-vault, see §8 2026-06-04) — required because the program rejects same-PDA collisions.
-- The original deployer keypair is **never the authority** at any point.
+- The deployer keypair is the authority ONLY for the brief window between deploy and the set-upgrade-authority handoff (seconds, on your trusted machine) — then never again. It is a disposable hot fee-payer, not a Squad signer and not a cold wallet.
 
 This eliminates:
-- The "rotation window" attack — between deploy-with-hot-key and rotate-to-multisig, the hot key briefly has god-mode. Day-one multisig closes this window.
+- The "rotation window" — between deploy and handoff the deployer briefly has god-mode. This is **minimized to seconds** (run the handoff immediately), not fully eliminated: the Solana CLI can't set a non-signing PDA as authority at deploy time, so a brief deployer-authority window is unavoidable. Mitigation: run deploy → set-upgrade-authority back-to-back on a trusted machine and verify the authority is the vault before walking away.
 - The need to store `solshot-upgrade-authority.json` and `solshot-app-authority.json` as files anywhere. They don't exist.
 - A whole class of "leaked from JJ's laptop" attack vectors. The only secret material the team holds for governance is each signer's individual wallet seed phrase, distributed across separate humans + hardware.
 
@@ -127,17 +127,31 @@ After §3 is complete and the three Squads vault PDAs (Authority/Treasury/Ops) a
 #          which is current as long as the escrow source is unchanged.
 anchor build   # or: anchor build --no-idl  (see gotcha above)
 
-# 3. Deploy with Squads Authority vault (Vault 0) as upgrade auth from genesis
-solana program deploy \
-  --url mainnet-beta \
-  --program-id target/deploy/solshot_escrow_v2_mainnet-keypair.json \
-  --upgrade-authority 9f1M7tXb3zqRS7JGuSFjzDjPf4UPhKs1W9uu5wrfqLZb \
-  target/deploy/solshot_escrow_v2.so
-#   ^ Authority Squad vault PDA
+# Point the CLI at mainnet with your funded DEPLOYER wallet (~3 SOL; just a
+# fee-payer — NOT a Squad signer, does NOT need to be cold). It is the program's
+# initial upgrade authority for the few seconds between steps 3 and 4.
+solana config set --url mainnet-beta --keypair <path-to-deployer-keypair>
 
-# 4. Verify upgrade authority
-solana program show BNLgn96LqskqcgTTf7cPZ5iHkaKqRdSiCdGzcAw4L7uS --url mainnet-beta
-# → "Upgrade Authority" should show the Authority Squad vault 9f1M7tXb3zqRS7JGuSFjzDjPf4UPhKs1W9uu5wrfqLZb
+# 3. Deploy. You CANNOT pass the Squad vault to --upgrade-authority: that flag is
+#    a SIGNER arg and a PDA can't sign. Deploy with the default authority (the
+#    deployer), then hand off in step 4.
+solana program deploy \
+  --program-id target/deploy/solshot_escrow_v2_mainnet-keypair.json \
+  target/deploy/solshot_escrow_v2.so
+
+# 4. Hand upgrade authority to the Authority Squad vault — CLI, unilateral. The
+#    Squad does NOT sign; --skip-new-upgrade-authority-signer-check lets the
+#    deployer set a non-signing PDA as the new authority. Do this IMMEDIATELY
+#    after deploy (the deployer holds authority until it runs).
+#    ✅ Verified on devnet 2026-06-04: throwaway program 9bu1jWZb… → authority
+#    set to 9f1M7tXb… via exactly this command.
+solana program set-upgrade-authority BNLgn96LqskqcgTTf7cPZ5iHkaKqRdSiCdGzcAw4L7uS \
+  --new-upgrade-authority 9f1M7tXb3zqRS7JGuSFjzDjPf4UPhKs1W9uu5wrfqLZb \
+  --skip-new-upgrade-authority-signer-check
+
+# 5. Verify upgrade authority is now the Squad vault
+solana program show BNLgn96LqskqcgTTf7cPZ5iHkaKqRdSiCdGzcAw4L7uS
+# → "Authority" MUST read 9f1M7tXb3zqRS7JGuSFjzDjPf4UPhKs1W9uu5wrfqLZb before you trust it
 ```
 
 Then initialize the config via the server. The server keypair signs `initialize_config`, but passes the three **distinct** Squads vault PDAs as authority/treasury/ops:

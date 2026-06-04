@@ -56,6 +56,7 @@ import {
     settleRace,
     markDnf,
     cancelRace,
+    findActiveRaceForPlayer,
 } from '../services/games/critter-kart/lifecycle.js';
 import CritterKartRace from '../models/CritterKartRace.js';
 
@@ -67,6 +68,68 @@ import CritterKartRace from '../models/CritterKartRace.js';
 const clientByTgId = new Map();
 /** Map<socketId, telegramUserId>. For reverse lookup on disconnect. */
 const tgIdBySocketId = new Map();
+
+// ──────────────────────────────────────────────────────────────────────
+// Reconnect grace — mirrors SolShot's pendingReconnects/disconnectTimers
+// ──────────────────────────────────────────────────────────────────────
+//
+// When a socket drops mid-race, we don't immediately mark the player as
+// DNF. Instead we start a 30s timer; if the player reconnects (via
+// critterkart:joinRace) before it fires, the timer is cancelled and
+// their kart resumes as if nothing happened (Session 2 will preserve
+// the actual kart velocity/position over the gap — for now the gap is
+// just "your kart didn't input for N seconds").
+//
+// Window calibration: SolShot uses 10min for slow turn-based artillery.
+// Critter Kart races are 60-120s, so the player who drops at second 30
+// of a 90s race has at most 60s left to play. 30s grace is half a race
+// — long enough to recover from a transient blip, short enough that
+// remaining humans aren't waiting for a ghost.
+//
+// Stored shape: Map<telegramUserId, { timer, raceId, scheduledAt }>.
+const RECONNECT_GRACE_MS = 30_000;
+const pendingReconnects = new Map();
+
+function startReconnectGrace({ telegramUserId, raceId }) {
+    // Cancel any existing pending — start fresh
+    cancelReconnectGrace({ telegramUserId });
+    const timer = setTimeout(() => {
+        pendingReconnects.delete(telegramUserId);
+        markDnf({ raceId, telegramUserId }).catch(err => {
+            logger.error('[critter-kart] grace-expiry markDnf failed', {
+                raceId, telegramUserId, error: err.message,
+            });
+        });
+        logger.info('[critter-kart] reconnect grace expired → DNF', {
+            raceId, telegramUserId, windowMs: RECONNECT_GRACE_MS,
+        });
+        // Session 2: swap kart to bot AI control here, then broadcast
+        // critterkart:state so other racers see the AI takeover.
+    }, RECONNECT_GRACE_MS);
+    // Don't keep Node alive on this timer if the process is shutting down
+    if (typeof timer.unref === 'function') timer.unref();
+    pendingReconnects.set(telegramUserId, {
+        timer,
+        raceId,
+        scheduledAt: Date.now(),
+    });
+    logger.info('[critter-kart] reconnect grace started', {
+        raceId, telegramUserId, windowMs: RECONNECT_GRACE_MS,
+    });
+}
+
+function cancelReconnectGrace({ telegramUserId }) {
+    const pending = pendingReconnects.get(telegramUserId);
+    if (!pending) return false;
+    clearTimeout(pending.timer);
+    pendingReconnects.delete(telegramUserId);
+    logger.info('[critter-kart] reconnect grace cancelled (player reconnected)', {
+        raceId: pending.raceId,
+        telegramUserId,
+        elapsedMs: Date.now() - pending.scheduledAt,
+    });
+    return true;
+}
 
 function registerClientIdentity(client, telegramUserId) {
     if (!telegramUserId) return;
@@ -253,11 +316,27 @@ export function registerCritterKartHandlers(client, io) {
             registerClientIdentity(client, telegramUserId);
             client.join(raceRoomName(raceId));
 
+            // Cancel any pending reconnect-grace timer — this socket
+            // IS the reconnect. If their kart had been about to DNF,
+            // it's saved.
+            const wasReconnect = cancelReconnectGrace({ telegramUserId });
+
             // Update the player's current socketId in the race doc
             await CritterKartRace.updateOne(
                 { raceId, 'players.telegramUserId': telegramUserId },
                 { $set: { 'players.$.socketId': client.id } },
             );
+
+            if (wasReconnect) {
+                // Tell other racers the player is back — useful for HUD
+                // (in Session 2 this'll switch their "disconnected"
+                // indicator off in the HUD).
+                broadcastToRace(io, raceId, 'critterkart:state', {
+                    state: race.state,
+                    raceId,
+                    reconnected: telegramUserId,
+                });
+            }
 
             // Push current race state to the joiner — they may be a
             // late re-connect mid-race.
@@ -344,12 +423,52 @@ export function registerCritterKartHandlers(client, io) {
     client.on('critterkart:input', () => { /* Session 2 */ });
 
     // ── disconnect ────────────────────────────────────────────────────
-    client.on('disconnect', () => {
+    //
+    // Behaviour split by player state:
+    //   • Queued (no active race): dequeue immediately.
+    //   • In an active race (matched / loading / countdown / racing /
+    //     finished): start the reconnect-grace timer. If the same player
+    //     comes back on a fresh socket via critterkart:joinRace within
+    //     RECONNECT_GRACE_MS, the timer is cancelled and they resume.
+    //     Otherwise the timer fires and the kart is DNF'd (Session 2
+    //     swaps the DNF for AI-takeover so the race keeps full kart count).
+    client.on('disconnect', async () => {
         const tgId = unregisterClient(client);
         if (!tgId) return;
-        // Best-effort: remove from queue if they were waiting. Don't
-        // touch active races — let the race lifecycle handle DNF when
-        // the player explicitly leaves or times out.
+
+        // Concurrency note: if this player's socket was already replaced
+        // (e.g. they opened a second tab and clientByTgId already moved
+        // to the new socket), unregisterClient may return null. In that
+        // case the new socket is still bound and we skip the grace.
+        // Don't start a grace timer for a player who's actually still
+        // online via another socket.
+
+        try {
+            const activeRace = await findActiveRaceForPlayer({ telegramUserId: tgId });
+            if (activeRace) {
+                startReconnectGrace({
+                    telegramUserId: tgId,
+                    raceId: activeRace.raceId,
+                });
+                // Optionally tell other racers; useful for HUD "(disconnected)"
+                // overlay. In Session 2 this will be backed by the kart
+                // status field rather than an ad-hoc broadcast.
+                broadcastToRace(io, activeRace.raceId, 'critterkart:state', {
+                    state: activeRace.state,
+                    raceId: activeRace.raceId,
+                    disconnected: tgId,
+                    graceMs: RECONNECT_GRACE_MS,
+                });
+                return;   // Don't dequeue — they're in a race, not the queue
+            }
+        } catch (err) {
+            logger.warn('[critter-kart] disconnect: findActiveRace failed', {
+                telegramUserId: tgId, error: err.message,
+            });
+            // Fall through to dequeue — better to clean up than leak
+        }
+
+        // Not in a race → clean up the queue entry if present
         dequeue({ telegramUserId: tgId }).catch(err => {
             logger.warn('[critter-kart] disconnect dequeue failed', {
                 telegramUserId: tgId, error: err.message,

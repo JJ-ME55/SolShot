@@ -341,8 +341,10 @@ export async function cancelRace({ raceId, reason }) {
 }
 
 // ── markDnf ────────────────────────────────────────────────────────────
-// Called on disconnect mid-race. Player's kart becomes bot-controlled
-// (Session 2 wires the AI takeover); for Session 1, just mark status.
+// Called on disconnect mid-race AFTER the grace window expires (see
+// disconnect handler in server/socket-io/critter-kart.js). Player's
+// kart becomes bot-controlled in Session 2 (AI takeover); for now,
+// just mark status.
 export async function markDnf({ raceId, telegramUserId }) {
     const race = await CritterKartRace.findOneAndUpdate(
         { raceId, 'players.telegramUserId': telegramUserId },
@@ -352,6 +354,33 @@ export async function markDnf({ raceId, telegramUserId }) {
     if (!race) return null;
     logger.info('[critter-kart] player DNF', { raceId, telegramUserId });
     return race;
+}
+
+// ── findActiveRaceForPlayer ────────────────────────────────────────────
+// Returns the race doc if the given Telegram user is currently in a
+// race that hasn't terminated. Used by the disconnect handler to decide
+// whether to apply a reconnect-grace window.
+//
+// "Active" = race state is one of {matched, loading, countdown, racing,
+// finished} — finished is included because settlement may still be in
+// flight and a reconnecting player could legitimately want their final
+// result pushed. Excludes {settled, cancelled}.
+//
+// Also excludes players who are already DNF — once you've timed out,
+// you can't restore.
+const ACTIVE_RACE_STATES = ['matched', 'loading', 'countdown', 'racing', 'finished'];
+export async function findActiveRaceForPlayer({ telegramUserId }) {
+    if (!telegramUserId) return null;
+    const race = await CritterKartRace.findOne({
+        state: { $in: ACTIVE_RACE_STATES },
+        players: {
+            $elemMatch: {
+                telegramUserId,
+                status: { $ne: 'dnf' },
+            },
+        },
+    }).lean();
+    return race || null;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────

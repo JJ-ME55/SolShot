@@ -29,6 +29,13 @@ import {
 // at create time so subsequent state queries hit the correct program.
 // Sprint 2 Bundle 1 will retire v1 entirely; until then this is the bridge.
 async function createMatchEscrowFor(matchId, wagerSOL, playerAddresses) {
+    // Distinct-wallet guard: the on-chain escrow rejects duplicate player
+    // wallets (SamePlayer / error 6001). Catch it here so a malformed match
+    // fails fast with a clear message and zero wasted TX, instead of bubbling
+    // up a cryptic AnchorError. Covers every caller (room-join, queue, playAgain).
+    if (new Set(playerAddresses).size !== playerAddresses.length) {
+        return { success: false, error: 'duplicate_wallet', message: 'Every player must use a distinct wallet — the same wallet cannot fill more than one slot in a wagered match.' }
+    }
     if (shouldUseEscrowV2(playerAddresses.length)) {
         return createMatchEscrowV2(
             matchId,
@@ -2347,6 +2354,19 @@ const mainsocket = (io) => {
                 // Room requires a wager — joiner must have a wallet
                 if (!joinerWallet) {
                     client.emit('joinRoomError', { reason: 'Wallet required for wagered matches' })
+                    room.players.pop()
+                    return
+                }
+
+                // Wallet dedup (mirrors the queue path's A6): prevent the same
+                // wallet from occupying two slots in a wagered room. The N-player
+                // room path previously lacked this guard, so a player joining from
+                // two sessions on one wallet formed a match the on-chain escrow then
+                // rejected with SamePlayer (6001). Catch it here with a clear message.
+                const walletAlreadySeated = Object.entries(ws.wallets || {})
+                    .some(([sid, w]) => w && w === joinerWallet && sid !== client.id)
+                if (walletAlreadySeated) {
+                    client.emit('joinRoomError', { reason: 'This wallet is already in the match — join from a different wallet to play.' })
                     room.players.pop()
                     return
                 }

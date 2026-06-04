@@ -186,7 +186,13 @@ const GAMES = [
     name: 'Critter Kart',
     emoji: '🏎️',
     tagline: '6-player kart racing. Grand Prix scoring — points add up across races.',
-    url: 'https://thearcade.gg/play/critter-kart/launch',
+    // TEMPORARY: point at preview (the-arcade-critter-kart.vercel.app)
+    // while multiplayer testing is in progress on arcade/critter-kart
+    // branch. thearcade.gg = main branch, doesn't have multiplayer
+    // (Session 1/2 work) yet — that lives on arcade/critter-kart.
+    // Promote arcade/critter-kart → main when ready, then flip this
+    // back to https://thearcade.gg/play/critter-kart/launch.
+    url: 'https://the-arcade-critter-kart.vercel.app/play/critter-kart/launch',
     supportsLoginUrl: false,
     sessionMinter: (ctx) => mintCritterKartSession({
         telegramUserId: ctx.from?.id,

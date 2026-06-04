@@ -280,6 +280,63 @@ app.get('/', (req, res) => {
 app.get('/health', healthCheck)
 app.get('/stats', requireAdminKey, getStats)  // IM-02: auth guard on financial metrics
 
+// Arcade /status page consumes this — pings server uptime, mongo, and a
+// per-game LB endpoint to surface honest "all systems · floor open" or
+// "<game> · LB down" states. Cheap (just one Mongo ping + 4 counts).
+// Public — no PII, no admin data, just up/down per surface.
+app.get('/api/arcade/status', async (req, res) => {
+    const startedAt = Date.now();
+    const checks = {};
+    const probe = async (label, fn) => {
+        const t0 = Date.now();
+        try {
+            await fn();
+            checks[label] = { ok: true, latencyMs: Date.now() - t0 };
+        } catch (err) {
+            checks[label] = { ok: false, error: err?.message || 'unknown', latencyMs: Date.now() - t0 };
+        }
+    };
+
+    // Mongo ping — countDocuments({}) on a small collection is the
+    // cheapest "are we connected and serving" probe.
+    await probe('mongo', async () => {
+        if (mongoose.connection.readyState !== 1) {
+            throw new Error('mongoose not connected (readyState=' + mongoose.connection.readyState + ')');
+        }
+        // Tiny query — limits how slow a bad mongo can make this endpoint.
+        await Promise.race([
+            BasketballScore.estimatedDocumentCount(),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('mongo timeout')), 3000)),
+        ]);
+    });
+
+    // Per-game LB sanity — each is a single countDocuments on a small
+    // indexed collection. Bounded to 3s each so a flaky LB doesn't
+    // wedge the status endpoint.
+    await Promise.all([
+        probe('basketball_lb', () => Promise.race([
+            BasketballScore.estimatedDocumentCount(),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 3000)),
+        ])),
+        probe('keepieuppies_lb', () => Promise.race([
+            KeepieUppiesScore.estimatedDocumentCount(),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 3000)),
+        ])),
+        probe('freekicks_lb', () => Promise.race([
+            FreeKicksScore.estimatedDocumentCount(),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 3000)),
+        ])),
+    ]);
+
+    const allOk = Object.values(checks).every((c) => c.ok);
+    res.status(allOk ? 200 : 503).json({
+        ok: allOk,
+        checks,
+        elapsedMs: Date.now() - startedAt,
+        serverTime: new Date().toISOString(),
+    });
+});
+
 // KM-05: Protected key reload endpoint (IM-02: auth via requireAdminKey middleware)
 app.post('/api/admin/reload-keys', requireAdminKey, (req, res) => {
     if (process.platform === 'linux') {

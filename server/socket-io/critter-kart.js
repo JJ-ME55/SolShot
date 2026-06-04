@@ -275,6 +275,25 @@ export function initCritterKartSocket(io) {
                         })),
                         format: race.format,
                     });
+                    // Also emit match:found / race:start (Fish's UI shape)
+                    const memberWire = race.players.map((p, idx) => ({
+                        username: p.displayName,
+                        slot: idx,
+                        kartId: p.kartId,
+                        isBot: p.isBot,
+                    }));
+                    c.emit('match:found', {
+                        raceId: race.raceId,
+                        roomId: race.raceId,
+                        launchUrl: buildLaunchUrl(race.raceId, null),
+                        members: memberWire,
+                        format: race.format,
+                    });
+                    c.emit('race:start', {
+                        roomId: race.raceId,
+                        startAtMs: Date.now() + 4000,
+                        members: memberWire,
+                    });
                 }
                 logger.info('[critter-kart] match-found broadcast', {
                     raceId: race.raceId,
@@ -357,6 +376,42 @@ export function registerCritterKartHandlers(client, io) {
             ackOk(ack);
         } catch (err) {
             ackError(ack, 'dequeue_failed', err.message);
+        }
+    });
+
+    // ── match:enqueue / match:cancel (Fish's UI alias names) ──────────
+    // Fish's screens.tsx Quick Match button emits match:enqueue {} (no
+    // telegramUserId — picks it up from handshake auth). Bridge to the
+    // existing matchmaking pipeline.
+    client.on('match:enqueue', async (payload, ack) => {
+        try {
+            const auth = client.handshake?.auth || {};
+            const telegramUserId = (typeof auth.telegramUserId === 'number' && auth.telegramUserId)
+                || payload?.telegramUserId;
+            if (!telegramUserId) return ackError(ack, 'identity_required');
+            registerClientIdentity(client, telegramUserId);
+            await enqueue({
+                telegramUserId,
+                telegramUsername: auth.telegramUsername || null,
+                firstName: auth.firstName || null,
+                socketId: client.id,
+            });
+            client.emit('match:queued', { waitMs: 0 });
+            ackOk(ack);
+        } catch (err) {
+            logger.error('[match:enqueue]', { error: err.message });
+            ackError(ack, 'enqueue_failed', err.message);
+        }
+    });
+    client.on('match:cancel', async (_payload, ack) => {
+        try {
+            const auth = client.handshake?.auth || {};
+            const telegramUserId = (typeof auth.telegramUserId === 'number' && auth.telegramUserId);
+            if (!telegramUserId) return ackError(ack, 'identity_required');
+            await dequeue({ telegramUserId });
+            ackOk(ack);
+        } catch (err) {
+            ackError(ack, 'cancel_failed', err.message);
         }
     });
 
@@ -725,9 +780,20 @@ export function registerCritterKartHandlers(client, io) {
             // Emit critterkart:matched to every human (same shape as
             // matchmaker's onMatchFound callback). MultiplayerLayer
             // listens for this and transitions to race:join.
+            const memberWire = race.players.map((p, i) => ({
+                username: p.displayName,
+                slot: i,
+                kartId: p.kartId,
+                isBot: p.isBot,
+            }));
+            const startAtMs = Date.now() + 4000;   // countdown ~3s after this emit
             for (const player of humans) {
                 const c = findClientByTgId(player.telegramUserId);
                 if (!c) continue;
+                // Emit BOTH event-name shapes so Fish's lobby UI
+                // (race:start listener in screens.tsx) and the new
+                // MultiplayerLayer (critterkart:matched listener) both
+                // hear it. Fully redundant payload.
                 c.emit('critterkart:matched', {
                     raceId: race.raceId,
                     launchUrl: buildLaunchUrl(race.raceId, null),
@@ -736,6 +802,18 @@ export function registerCritterKartHandlers(client, io) {
                         isBot: p.isBot,
                         kartId: p.kartId,
                     })),
+                    format: race.format,
+                });
+                c.emit('race:start', {
+                    roomId: race.raceId,
+                    startAtMs,
+                    members: memberWire,
+                });
+                c.emit('match:found', {
+                    raceId: race.raceId,
+                    roomId: race.raceId,
+                    launchUrl: buildLaunchUrl(race.raceId, null),
+                    members: memberWire,
                     format: race.format,
                 });
             }

@@ -49,9 +49,7 @@ import {
     getEloStanding as getPoolEloStanding,
 } from './games/pool/poolLeaderboard.js';
 import {
-    // mintSession import dropped — sessionMinter on the GAMES entry is
-    // commented out until short-opaque-token swap-out lands. See the
-    // comment on the critterkart GAMES entry for full context.
+    mintSession as mintCritterKartSession,
     getLeaderboard as getCritterKartLeaderboard,
     getMyStanding as getCritterKartStanding,
 } from './games/critter-kart-standalone/standaloneLeaderboard.js';
@@ -76,7 +74,7 @@ const ARCADE_WEBHOOK_PATH = '/api/arcade-webhook';
  *                       only — TG rejects login_url in groups). False
  *                       falls back to plain `url:` everywhere.
  *
- * Bot's registered domain is currently `solshot.gg` (per JJ's /setdomain
+ * Bot's registered domain is currently `thearcade.gg` (per JJ's /setdomain
  * for @TheArcadegg, 2026-05-15). SolShot lives there; Basketball is on
  * `solshot-basketball.vercel.app` (different host) so it stays plain
  * `url:` until/unless we point a subdomain at it.
@@ -88,7 +86,14 @@ const GAMES = [
     emoji: '🎯',
     tagline: '2D artillery duels on Solana. Real-money 1v1.',
     url: 'https://www.solshot.gg/',
-    supportsLoginUrl: true,
+    // FALSE since 2026-06-04 — bot's /setdomain swapped to `thearcade.gg`
+    // (commit a880f64). With true, this button emitted `login_url:
+    // solshot.gg`, which TG rejects against the new registered domain,
+    // breaking ALL replies that contained it (/solshot direct AND /games
+    // which iterates GAMES). DM-specific (groups skip the login_url
+    // branch). Tradeoff: SolShot launches without TG's auto-handshake
+    // — users Privy-log-in inside solshot.gg as before.
+    supportsLoginUrl: false,
   },
   {
     slug: 'basketball',
@@ -182,21 +187,11 @@ const GAMES = [
     tagline: '6-player kart racing. Grand Prix scoring — points add up across races.',
     url: 'https://the-arcade-critter-kart.vercel.app/play/critter-kart/launch',
     supportsLoginUrl: false,
-    // sessionMinter DELIBERATELY OMITTED until short-opaque-tokens land.
-    // With 6 games in the /games keyboard, appending a ~250-char JWT to
-    // each button URL pushed the reply_markup payload over a TG limit
-    // (DM only; groups don't get session-bound URLs). Symptom: /games
-    // silently failed in DM after critter-kart was added but worked in
-    // groups. Removing this minter shortens critter-kart's button URL
-    // back to the bare hub link.
-    //
-    // Trade-off: a TG user tapping THIS button from inside /games won't
-    // pre-mint a session — the hub's web-side Privy → server mint
-    // (useArcadeSessionMint) takes over on page load. Direct /critterkart
-    // command flow still works (1 button keyboard, no payload pressure).
-    //
-    // Restore the minter once short-token swap-out endpoint is live —
-    // see Docs/internal/CLAUDE_COMMS.md follow-ups (planned task #21).
+    sessionMinter: (ctx) => mintCritterKartSession({
+        telegramUserId: ctx.from?.id,
+        telegramUsername: ctx.from?.username,
+        firstName: ctx.from?.first_name,
+    }),
   },
 ];
 

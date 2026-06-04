@@ -58,6 +58,10 @@ const provider = new AnchorProvider(connection, wallet, {
 });
 const idlPath = path.join(__dirname, '..', 'idl', 'solshot_escrow_v2.json');
 const idl = JSON.parse(fs.readFileSync(idlPath, 'utf-8'));
+// The committed IDL's `address` is devnet (BVKXL). Anchor 0.30+ binds the Program
+// to idl.address, so honor ESCROW_PROGRAM_ID_V2 the same way escrow-v2.js does —
+// otherwise this targets the devnet program/config on a mainnet RPC.
+if (process.env.ESCROW_PROGRAM_ID_V2) idl.address = process.env.ESCROW_PROGRAM_ID_V2;
 const program = new Program(idl, provider);
 
 // Probe current config state before

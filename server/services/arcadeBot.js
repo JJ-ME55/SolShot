@@ -49,7 +49,9 @@ import {
     getEloStanding as getPoolEloStanding,
 } from './games/pool/poolLeaderboard.js';
 import {
-    mintSession as mintCritterKartSession,
+    // mintSession import dropped — sessionMinter on the GAMES entry is
+    // commented out until short-opaque-token swap-out lands. See the
+    // comment on the critterkart GAMES entry for full context.
     getLeaderboard as getCritterKartLeaderboard,
     getMyStanding as getCritterKartStanding,
 } from './games/critter-kart-standalone/standaloneLeaderboard.js';
@@ -180,11 +182,21 @@ const GAMES = [
     tagline: '6-player kart racing. Grand Prix scoring — points add up across races.',
     url: 'https://the-arcade-critter-kart.vercel.app/play/critter-kart/launch',
     supportsLoginUrl: false,
-    sessionMinter: (ctx) => mintCritterKartSession({
-        telegramUserId: ctx.from?.id,
-        telegramUsername: ctx.from?.username,
-        firstName: ctx.from?.first_name,
-    }),
+    // sessionMinter DELIBERATELY OMITTED until short-opaque-tokens land.
+    // With 6 games in the /games keyboard, appending a ~250-char JWT to
+    // each button URL pushed the reply_markup payload over a TG limit
+    // (DM only; groups don't get session-bound URLs). Symptom: /games
+    // silently failed in DM after critter-kart was added but worked in
+    // groups. Removing this minter shortens critter-kart's button URL
+    // back to the bare hub link.
+    //
+    // Trade-off: a TG user tapping THIS button from inside /games won't
+    // pre-mint a session — the hub's web-side Privy → server mint
+    // (useArcadeSessionMint) takes over on page load. Direct /critterkart
+    // command flow still works (1 button keyboard, no payload pressure).
+    //
+    // Restore the minter once short-token swap-out endpoint is live —
+    // see Docs/internal/CLAUDE_COMMS.md follow-ups (planned task #21).
   },
 ];
 

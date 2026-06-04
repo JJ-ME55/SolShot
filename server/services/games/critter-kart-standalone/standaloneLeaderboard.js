@@ -26,7 +26,11 @@ import CritterKartCareer from '../../../models/CritterKartCareer.js';
 // ─── JWT config ─────────────────────────────────────────────────────────
 
 const ALG = 'HS256';
-const SESSION_TTL = '30d';
+// 7d — matches the 2026-06-03 AAA hardening pass on basketball /
+// keepie-uppies / free-kicks leaderboards. Bumped down from the 30d
+// initial value to shrink the steal-and-replay window. Re-launching
+// the bot mints a fresh JWT, so no UX impact for active players.
+const SESSION_TTL = '7d';
 const ISSUER = 'arcade-bot:critterkart';
 
 function getSecret() {
@@ -206,9 +210,11 @@ export async function getLeaderboard({ limit = 10, since = null } = {}) {
         .sort({ totalPoints: -1, lastRaceAt: 1 })
         .limit(clamped)
         .lean();
+    // SECURITY: telegramUserId stripped from public LB response — PII leak.
+    // See basketball-leaderboard.js for context (2026-06-03 AAA hardening).
+    // Standing endpoint still returns TG id for the requesting user only.
     return rows.map((r, i) => ({
         rank: i + 1,
-        telegramUserId: r.telegramUserId,
         displayName: formatDisplayName(r),
         // Shape-compatible: skill games expose `bestScore`, racer exposes
         // `totalPoints`. The hub's useLeaderboardData adapter knows the

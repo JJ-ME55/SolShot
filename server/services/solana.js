@@ -39,7 +39,10 @@ export const V2_DEFAULT_DEPOSIT_WINDOW_SECS = 120;    // 2 min — matches v1 cl
 // Single source of truth; main.js dispatches by calling this. After Bundle 1
 // lands (Sprint 2), this returns true unconditionally and v1 is retired.
 export function shouldUseEscrowV2(playerCount) {
-    return playerCount > 2;
+    // V1 mainnet scope is v2-only. v2 is the N-player (2-10) program and handles
+    // 1v1 too, so ALL wagered matches route through v2. (Was `> 2`, which sent 1v1
+    // to the v1 program — v1 is not deployed on mainnet, so that broke 1v1 wagering.)
+    return playerCount >= 2;
 }
 
 // Re-export v2 functions so socket-io/main.js can import everything from
@@ -231,11 +234,11 @@ export async function settleMatch(winnerAddress, loserAddress, wagerSOL, matchId
     const totalPot = wagerSOL * playerCount;
     const settlement = calculateSettlement(totalPot);
 
-    // S2-T5a (2026-05-26): dispatch by playerCount. 1v1 → v1 (proven path).
-    // 3P/4P → v2 (the program that actually has these matches' escrow PDAs).
-    // Without this, 3P/4P forfeits + match-ends silently fail because the
-    // server calls v1's settleMatchEscrow against a matchId that only
-    // exists in v2 — stuck funds until permissionless_reclaim @ 24h.
+    // Dispatch by playerCount — must match the program the escrow was CREATED
+    // with (createMatchEscrowFor uses the same shouldUseEscrowV2). As of the
+    // v2-only mainnet scope, shouldUseEscrowV2 returns true for all counts >= 2,
+    // so every wagered match (1v1 included) settles via v2. Mismatching the
+    // create/settle program leaves funds stuck until permissionless_reclaim.
     const useV2 = shouldUseEscrowV2(playerCount);
 
     if (matchId && useV2 && isEscrowV2Enabled()) {
@@ -289,8 +292,9 @@ export async function refundWager(playerAddress, wagerSOL, matchId, playerAddres
     // making callers believe the refund succeeded while SOL remained
     // locked on-chain.
     //
-    // S2-T5a (2026-05-26): playerAddresses.length is the deposited-player count.
-    // Dispatch to v2 cancel if N > 2 — same reason as settleMatch above.
+    // playerAddresses.length is the deposited-player count. Dispatch via
+    // shouldUseEscrowV2 (v2-only scope → all counts >= 2 use v2), matching the
+    // program the escrow was created + settled with.
     const refundUsesV2 = playerAddresses && shouldUseEscrowV2(playerAddresses.length);
     const cancelFn = refundUsesV2 ? cancelMatchEscrowV2 : cancelMatchEscrow;
     const cancelEscrowAvailable = refundUsesV2 ? isEscrowV2Enabled() : isEscrowEnabled();

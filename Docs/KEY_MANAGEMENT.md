@@ -19,7 +19,7 @@ This doc is the **source of truth** for:
 
 | Key | Role | Location | Privilege | Rotateable |
 |---|---|---|---|---|
-| **Squads multisig — 3 vaults** | One multisig (2-of-3 signers), three distinct vault PDAs: **Vault 0 = Authority** (upgrade auth + config governance), **Vault 1 = Treasury** (7% fee dest), **Vault 2 = Ops** (3% fee dest). On-chain `initialize_config` rejects passing the same PDA for any two roles (`require!(authority != treasury); require!(authority != ops); require!(treasury != ops);`). | On-chain PDAs (Squads v3 program `SMPLecH534NA9acpos4G6x7uf3LWbCAwZQE9e8ZekMu`) | Highest. Can redeploy programs, rotate config, drain fee destinations — all gated through the same 2-of-3 signer set. | Via Squads UI (add/remove signers, change threshold) |
+| **Squads governance — 3 Squads** | **Three separate Squads V4 multisigs** (each 2-of-3, same signer set: JJ hot + Fish + Ledger), one vault each — V4 gates multiple vaults per Squad behind the $49/mo Pro plan, so three free Basic Squads is the no-subscription path (see §8 2026-06-04). Roles + vault PDAs (all distinct, all 2-of-3 verified live on-chain 2026-06-04): **Authority** `9f1M7tXb3zqRS7JGuSFjzDjPf4UPhKs1W9uu5wrfqLZb` (upgrade auth + config governance), **Treasury** `5zLEYTj8JdMPJyFWdHwRH69fMdxvrE96H16q7a2SxQiE` (7% fee dest), **Operations** `6vism6PVY5mg34tpzwueiJhko49soncAfkPrrRW2yYvy` (3% fee dest). On-chain `initialize_config` rejects same-PDA collisions (`require!(authority != treasury); require!(authority != ops); require!(treasury != ops);`). | On-chain vault PDAs (Squads V4 program `SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf`, app.squads.so) | Highest. Can redeploy programs, rotate config, drain fee destinations — all gated through the same 2-of-3 signer set. | Via Squads UI — note: rotating a signer must be repeated on **each of the 3 Squads** |
 | **JJ hot signer** | One of 3 Squads signers | JJ local wallet (Phantom / Solflare / hardware) | Single signature toward 2-of-3 threshold | Via Squads UI |
 | **Fish hot signer** | One of 3 Squads signers | Fish local wallet (Phantom mainnet). Pubkey `311auAZEvCVX2oBaW7AYMcSnby3UDaTN1uJYuuPWkXwo` (provided 2026-05-26). | Single signature toward 2-of-3 threshold | Via Squads UI |
 | **Cold Ledger** | One of 3 Squads signers, recovery role | Ledger Nano hardware, stored offline by JJ. Pubkey `4XoQgPxxLFNSc19A3TPqpfcvptEQ5g2DYmnaRLkYTFLV` (derived 2026-05-26). | Single signature toward 2-of-3 threshold. Only used if a hot signer is lost. | Squads UI (with 2 existing signers approving) |
@@ -48,7 +48,7 @@ Two layers of authority exist on a Solana program:
 
 With **Squads-from-day-one**:
 - At mainnet deploy: `anchor deploy --provider.cluster mainnet --upgrade-authority <squads-vault-0-pda>`. Layer 1 = multisig from genesis.
-- Immediately after deploy: server calls `initialize_config(authority: <vault-0>, treasury: <vault-1>, ops: <vault-2>, ...)`. Layer 2 + fee destinations = multisig from genesis. Three distinct vault PDAs under one multisig — required because the program rejects same-PDA collisions.
+- Immediately after deploy: server calls `initialize_config(authority: <vault-0>, treasury: <vault-1>, ops: <vault-2>, ...)`. Layer 2 + fee destinations = multisig from genesis. Three distinct vault PDAs, one per Squad (three separate 2-of-3 Squads — V4 paywalls multi-vault, see §8 2026-06-04) — required because the program rejects same-PDA collisions.
 - The original deployer keypair is **never the authority** at any point.
 
 This eliminates:
@@ -77,27 +77,29 @@ The Bundle 1 Anchor instructions (`propose_authority` / `accept_authority` / `ap
 
 4. **(Recommended) Verify seed restore on a second device.** Take a second unused Ledger from the stash, set it up using the recovery procedure, enter the SolShot seed phrase, derive Solana account 0. Confirm the pubkey matches what you recorded in step 3. If it does, the seed phrase is correctly backed up. Wipe the second Ledger and put it back in the stash (or keep it as a hot spare). This verification is cheap insurance against bad seed transcription.
 
-5. **Create the multisig.** Go to https://v3.squads.so/ on **mainnet** (top-right network selector). Connect JJ's hot wallet (Phantom). Click "Create Squad":
-   - **Members:** JJ hot pubkey, Fish hot pubkey, Ledger cold pubkey (3 total)
+5. **Create three separate Squads.** Go to https://app.squads.so/ (Squads **V4** — `v3.squads.so` is deprecated, see §8 2026-06-04) on **mainnet** (top-right network selector). Connect JJ's hot wallet. **Why three Squads, not one Squad with three vaults:** V4 gates additional vaults ("Add Account") behind the **$49/mo Pro** plan. Three free Basic Squads (each ~0.1 SOL one-time deploy fee) give the same three distinct PDAs under the same 2-of-3, with no subscription. Create each Squad with:
+   - **Members:** JJ hot pubkey, Fish hot pubkey (`311au…`), Ledger cold pubkey (`4XoQ…`) — 3 total
    - **Threshold:** 2 (any 2 of 3 must sign)
-   - **Squad name:** "SolShot Mainnet Governance"
-   - **Initial vault name:** "Authority" (this becomes Vault 0)
-   - **Initial deposit:** ~0.05 SOL (covers rent + first few TX fees)
+   - **Names — match the role exactly so nobody signs the wrong action:** "SolShot Authority", "SolShot Treasury", "SolShot Operations"
+   - Fund each with a little SOL for the deploy fee + rent
 
-6. **Add two more vaults to the same Squad.** In the Squad detail page, click "Add Vault" twice:
-   - **Vault 1 name:** "Treasury" — receives 7% fees, governed by the same 2-of-3.
-   - **Vault 2 name:** "Ops" — receives 3% fees, same governance.
+6. **Record each Squad's vault ("Account 1") PDA + its role.** Mainnet values (created + verified 2026-06-04):
+   - **Authority** → `9f1M7tXb3zqRS7JGuSFjzDjPf4UPhKs1W9uu5wrfqLZb` — becomes the **program upgrade authority**, the most critical one
+   - **Treasury** → `5zLEYTj8JdMPJyFWdHwRH69fMdxvrE96H16q7a2SxQiE`
+   - **Operations** → `6vism6PVY5mg34tpzwueiJhko49soncAfkPrrRW2yYvy`
 
-   We need three distinct PDAs because the on-chain program enforces:
-   `require!(authority != treasury); require!(authority != ops); require!(treasury != ops);`. One multisig with three vaults gives us three PDAs under one signer set.
+   Confirm all three distinct — the program enforces `require!(authority != treasury); require!(authority != ops); require!(treasury != ops);`. (A Treasury==Operations duplicate was caught and corrected during the 2026-06-04 setup — double-check before deploy.)
 
-7. **Record all three vault PDAs.** Squads shows each on its detail page. You'll pass:
-   - `anchor deploy --upgrade-authority <vault-0-pda>` (Authority)
-   - `initialize_config(authority: <vault-0>, treasury: <vault-1>, ops: <vault-2>, ...)` via `init-config-mainnet.mjs`
+7. **Verify membership on each Squad.** The PDA tells you nothing about who controls it — open each Squad → Owners and confirm members = JJ + Fish + Ledger, threshold = 2. A Squad accidentally left at 1-of-1 is a single point of failure holding real money.
 
-8. **Test each vault with a no-op TX.** Create one proposal per vault that sends 0.001 SOL out to JJ's hot wallet. JJ signs, Fish signs, executes. Confirm SOL moves on-chain for all three. This validates the 2-of-3 flow per vault before you bet the program on it.
+8. **Test the 2-of-3 on each Squad.** Send 0.001 SOL out of each vault → two members approve → execute → confirm on-chain. The two signers can be **JJ-hot + Ledger** (Fish not required) — this doubles as a live test that the cold recovery key actually signs. ✅ **All three Squads passed 2-of-3 on-chain 2026-06-04.**
 
-8. **Lock down access:**
+   **Ledger gotchas discovered during that test (they WILL bite again — recovery, signer rotation, etc.):**
+   - The cold key was derived in **Ledger Live** (path `m/44'/501'/0'`). **Phantom uses a different path and cannot reach `4XoQ…TFLV`** — it shows a different account entirely. **Use Solflare** to connect the Ledger: it exposes a derivation-path picker → choose the "Ledger Live" path → select the account matching `4XoQ…TFLV`.
+   - **Enable Blind signing** on the Ledger Solana app (on-device: Settings → Blind signing → Enabled). Without it the device auto-**declines** every Squads approval — this was the cause of the "keeps being declined" failures.
+   - The cold device is a **Nano S**. It signed the test fine, but the Nano S's small memory can choke on larger transactions. If a future big op (e.g. a program upgrade) declines *with* blind signing on, suspect the Nano S size limit — a **Nano X / S Plus** is the safer long-term device.
+
+9. **Lock down access:**
    - Confirm JJ and Fish each have their hot signer seed phrases backed up (paper, offline)
    - Lock the Ledger in a safe / safety deposit box
    - Document each signer's recovery procedure in their personal records (separate from this repo)
@@ -122,12 +124,13 @@ anchor build
 solana program deploy \
   --url mainnet-beta \
   --program-id target/deploy/solshot_escrow_v2_mainnet-keypair.json \
-  --upgrade-authority <squads_vault_0_pda> \
+  --upgrade-authority 9f1M7tXb3zqRS7JGuSFjzDjPf4UPhKs1W9uu5wrfqLZb \
   target/deploy/solshot_escrow_v2.so
+#   ^ Authority Squad vault PDA
 
 # 4. Verify upgrade authority
 solana program show BNLgn96LqskqcgTTf7cPZ5iHkaKqRdSiCdGzcAw4L7uS --url mainnet-beta
-# → "Upgrade Authority" should show Vault 0 PDA
+# → "Upgrade Authority" should show the Authority Squad vault 9f1M7tXb3zqRS7JGuSFjzDjPf4UPhKs1W9uu5wrfqLZb
 ```
 
 Then initialize the config via the server. The server keypair signs `initialize_config`, but passes the three **distinct** Squads vault PDAs as authority/treasury/ops:
@@ -138,9 +141,9 @@ cd server/
 ESCROW_PROGRAM_ID_V2=BNLgn96LqskqcgTTf7cPZ5iHkaKqRdSiCdGzcAw4L7uS \
 SOLANA_RPC=https://api.mainnet-beta.solana.com \
 SOLANA_KEYPAIR_PATH=~/.config/solana/solshot-server-authority.json \
-SQUADS_AUTHORITY_PDA=<vault_0_pda> \
-SQUADS_TREASURY_PDA=<vault_1_pda> \
-SQUADS_OPS_PDA=<vault_2_pda> \
+SQUADS_AUTHORITY_PDA=9f1M7tXb3zqRS7JGuSFjzDjPf4UPhKs1W9uu5wrfqLZb \
+SQUADS_TREASURY_PDA=5zLEYTj8JdMPJyFWdHwRH69fMdxvrE96H16q7a2SxQiE \
+SQUADS_OPS_PDA=6vism6PVY5mg34tpzwueiJhko49soncAfkPrrRW2yYvy \
 node scripts/init-config-mainnet.mjs
 
 # Review output, then execute for real
@@ -251,5 +254,8 @@ Follow §5 rotation procedure. Treasury is NOT at risk (gated on Squads). Worst 
 | 2026-05-26 | Initial doc. Generated `solshot-server-authority.json` (pubkey `CgcAZJf6U5LFkUzPRhcx217prT76uUV3vUdae7QU3wmC`). Squads multisig + Ledger purchase pending JJ + Fish coordination. | JJ + Claude (Sprint 1 S1-T4) |
 | 2026-05-26 | Cold Ledger initialized from JJ's stash (fresh seed, never reused). Solana app installed + opened on device. Cold signer pubkey: `4XoQgPxxLFNSc19A3TPqpfcvptEQ5g2DYmnaRLkYTFLV`. | JJ |
 | 2026-05-26 | Fish provided his mainnet Phantom pubkey for the Squads multisig: `311auAZEvCVX2oBaW7AYMcSnby3UDaTN1uJYuuPWkXwo`. All 3 signers ready; Squads create itself awaits JJ + Fish at the UI together. | Fish (via JJ) |
+| 2026-06-04 | **Platform switched v3 → V4.** A live deprecation banner on `v3.squads.so` ("Swaps on v3 are no longer supported, migrate to app.squads.so") surfaced while creating the Squad, so mainnet governance moves to the actively-supported Squads **V4** app (`app.squads.so`, program `SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf`). A throwaway v3 Squad (vault `G6N3…9dfy`, ~0.001 SOL) created during the v3 attempt is abandoned. §1 + §3 updated to V4. | JJ + Claude |
+| 2026-06-04 | **Structure changed: one multisig/3 vaults → 3 separate Squads.** V4 paywalls additional vaults per Squad behind the $49/mo Pro plan, so the multi-vault plan would have cost $588/yr. Used three free Basic Squads instead (each ~0.1 SOL one-time deploy), same 2-of-3 signer set, one vault each. | JJ + Claude |
+| 2026-06-04 | **Bucket 1 COMPLETE — 3 Squads created + verified on mainnet.** Each 2-of-3 (JJ hot + Fish `311au…` + Ledger `4XoQ…`): **Authority** vault `9f1M7tXb3zqRS7JGuSFjzDjPf4UPhKs1W9uu5wrfqLZb`, **Treasury** vault `5zLEYTj8JdMPJyFWdHwRH69fMdxvrE96H16q7a2SxQiE`, **Operations** vault `6vism6PVY5mg34tpzwueiJhko49soncAfkPrrRW2yYvy`. Membership + threshold verified per Squad; live 2-of-3 test send passed on all three (signed JJ-hot + Ledger, confirming the cold recovery key works). Ledger gotchas (Solflare for Ledger-Live path, blind-signing, Nano S size risk) logged in §3 step 8. | JJ + Claude |
 
 When you complete the Squads setup, append a row with the multisig vault PDA + JJ hot pubkey + the create TX hash.

@@ -20,21 +20,17 @@ Single-page mobile-friendly briefing. Read top-to-bottom.
 
 ## What's left (5 buckets, in order)
 
-### 1. JJ + Fish: Squads multisig (~30 min) — STILL BLOCKING
+### 1. JJ + Fish: Squads multisig — ✅ DONE 2026-06-04
 
-**Where:** https://v3.squads.so → mainnet network
-**Who:** JJ + Fish synced up
-**Why:** closes the only remaining audit CRITs (H044 single hot wallet L1+L2, H046 bytecode replacement). Nothing else moves until this is done.
+**Done on:** https://app.squads.so (Squads **V4** — v3 deprecated, see `KEY_MANAGEMENT.md` §8) → mainnet
+**Closes:** the remaining audit CRITs (H044 single hot wallet L1+L2, H046 bytecode replacement).
 
-**Steps** (full runbook at `Docs/KEY_MANAGEMENT.md` §3):
-1. Connect JJ Phantom hot wallet
-2. Create Squad: JJ hot + Fish hot + cold Ledger as members, threshold 2
-   - Fish pubkey: `311auAZEvCVX2oBaW7AYMcSnby3UDaTN1uJYuuPWkXwo`
-   - Cold Ledger pubkey: `4XoQgPxxLFNSc19A3TPqpfcvptEQ5g2DYmnaRLkYTFLV`
-3. Squad name: "SolShot Mainnet Governance", Initial vault: "Authority"
-4. Add Vault 1 "Treasury" + Vault 2 "Ops" to same Squad
-5. Record all 3 vault PDAs (you'll need them in step 4 deploy)
-6. Send 0.001 SOL out from each vault as test → confirm 2-of-3 works for all 3 vaults
+**What shipped — 3 separate Basic Squads** (V4 paywalls multi-vault per Squad at $49/mo, so three free Squads instead of one), each 2-of-3 = JJ hot + Fish (`311au…`) + Ledger (`4XoQ…`):
+- **Authority** vault → `9f1M7tXb3zqRS7JGuSFjzDjPf4UPhKs1W9uu5wrfqLZb` (→ program upgrade authority)
+- **Treasury** vault → `5zLEYTj8JdMPJyFWdHwRH69fMdxvrE96H16q7a2SxQiE`
+- **Operations** vault → `6vism6PVY5mg34tpzwueiJhko49soncAfkPrrRW2yYvy`
+
+Membership + threshold verified per Squad; live 2-of-3 test send passed on all three (signed JJ-hot + Ledger — confirms the cold recovery key works). Ledger gotchas (Solflare for the Ledger-Live derivation path, on-device blind-signing, Nano S size risk) logged in `KEY_MANAGEMENT.md` §3 step 8. These three PDAs are now baked into the §4 deploy commands.
 
 ---
 
@@ -64,16 +60,27 @@ cp target/idl/solshot_escrow.json server/idl/  # ✓ DONE
 # BOK proptests — ✓ DONE, 48 #[test] fns all green
 cargo test --manifest-path programs/solshot-escrow-v2/Cargo.toml
 
-# Upgrade devnet bytecode — STILL TODO (needs JJ on the keyboard + wallet)
+# Upgrade devnet bytecode — ✅ DONE 2026-06-04
+#   slot 467075992, TX 64z9HFNwohatQhYAJMoM6wqpMRtze76n2cAYtXg9q3w8guDP7H9ch1xyxscWoWQv81NjMkTcU3XmFBcjdNzEJMkY
+#   authority intact (HPyVPj…novk), .so sha256 db2dba48…07bba02
 anchor upgrade target/deploy/solshot_escrow_v2.so \
   --program-id BVKXLUnukU9cyTAWojsQPfLWHq4CyJY7CLG59bBVSG7N \
   --provider.cluster devnet
 
-# Re-run 4P playtest one more time on patched code (S2-T8 smoke) — STILL TODO
-# → verify N001/N002/N003 don't break anything
+# Smoke — ✅ DONE 2026-06-04, re-scoped to the surface that actually changed:
+#   N001/N002/N003 are all config-governance (timelock / migrate removal / pause-gate);
+#   the match path (create/deposit/settle/split) is byte-identical (grep-proven) and was
+#   already proven by live match 1fcc67c0. Validated instead:
+#     • migrate_config absent from deployed IDL + bytecode (N002)
+#     • config account intact post-upgrade — 231 bytes, owned by v2 program; server re-read clean
+#     • N001/N003 logic covered by BOK proptests (48 green)
+#     • bonus: a live SamePlayer rejection during testing proved create_match validation works
+#   Did NOT run the destructive propose/pause cycle on shared devnet (24h timelock + pause
+#   disruption for negligible gain). Also added a dupe-wallet guard (server/socket-io/main.js)
+#   so a same-wallet double-join fails with a clear message instead of the cryptic on-chain SamePlayer.
 
-# Tag rc2 — STILL TODO (after devnet smoke clean)
-git tag -a v1-mainnet-rc2 -m "Audit fixes landed + auth replay store + script guards + IDL re-sync"
+# Tag rc2 — done at HEAD (includes arcade/pool commits already on main; escrow source unchanged since da04b5e)
+git tag -a v1-mainnet-rc2 -m "Audit fixes + dupe-wallet guard; devnet v2 upgraded + smoke validated"
 git push origin v1-mainnet-rc2
 ```
 
@@ -89,8 +96,8 @@ git push origin v1-mainnet-rc2
 - [ ] Vercel mainnet env vars staged (per Q1 resolution — Vercel-only is now the convention)
 - [ ] **Vercel Deployment Protection: DISABLED** (the 3.5-day gotcha — see §4.5)
 - [ ] Mainnet RPC chosen (Helius / QuickNode / etc.) + tested
-- [ ] Squads multisig + 3 vaults created on mainnet ✓ (Bucket 1)
-- [ ] Treasury + Ops vault PDAs funded with ~0.05 SOL each for rent
+- [x] 3 Squads (Authority/Treasury/Operations) created + 2-of-3 verified on mainnet ✓ (Bucket 1, 2026-06-04)
+- [ ] Treasury + Operations vault PDAs funded with ~0.05 SOL each for rent (deployer keypair pays the initial program deploy, not the Authority vault; the Authority vault only pays for future Squads-executed upgrades)
 - [ ] Server keypair `solshot-server-authority.json` on Render disk
 - [ ] Bug bounty page drafted
 

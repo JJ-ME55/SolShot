@@ -178,14 +178,15 @@ const GAMES = [
     // accumulate, server tracks totalPoints / races / wins / podiums /
     // bestLapTime — see services/games/critter-kart-standalone/.
     //
-    // URL points at the preview deploy (the-arcade-critter-kart.vercel.app
-    // builds from arcade/critter-kart branch) until the game is promoted
-    // into the main hub at thearcade.gg/play/critter-kart/launch.
+    // Promoted from preview to the main hub 2026-06-04: code merged from
+    // arcade/critter-kart into main (see The-Arcade @ critter-kart wire-up
+    // commit). URL now points at the production thearcade.gg domain;
+    // preview deploy stays live for Fish's iteration loop.
     slug: 'critterkart',
     name: 'Critter Kart',
     emoji: '🏎️',
     tagline: '6-player kart racing. Grand Prix scoring — points add up across races.',
-    url: 'https://the-arcade-critter-kart.vercel.app/play/critter-kart/launch',
+    url: 'https://thearcade.gg/play/critter-kart/launch',
     supportsLoginUrl: false,
     sessionMinter: (ctx) => mintCritterKartSession({
         telegramUserId: ctx.from?.id,

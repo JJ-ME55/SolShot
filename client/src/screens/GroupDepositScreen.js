@@ -367,7 +367,7 @@ export default function GroupDepositScreen({ navigate, screenData = {} }) {
 
                         {phase === 'building' && <div style={styles.status}>Building deposit transaction…</div>}
                         {phase === 'signing' && <div style={styles.status}>Sign in your wallet…</div>}
-                        {phase === 'confirming' && <div style={styles.status}>Confirming on devnet…</div>}
+                        {phase === 'confirming' && <div style={styles.status}>Confirming on-chain…</div>}
 
                         <button
                             style={(phase !== 'ready' || insufficientBalance) ? styles.btnDisabled : styles.btnPrimary}

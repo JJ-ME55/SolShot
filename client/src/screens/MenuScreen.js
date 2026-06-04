@@ -162,7 +162,7 @@ function MenuScreen({ navigate }) {
 
         {/* Network badge — factual, no fake online count */}
         <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--muted)', letterSpacing: '0.2em' }}>
-          <span style={{ color: statusColor }} title={isConnected ? 'Connected to server' : 'Disconnected. Reconnecting…'}>●</span> DEVNET
+          <span style={{ color: statusColor }} title={isConnected ? 'Connected to server' : 'Disconnected. Reconnecting…'}>●</span> {process.env.REACT_APP_SOLANA_NETWORK === 'mainnet-beta' ? 'MAINNET' : 'DEVNET'}
         </div>
       </div>
 
@@ -233,7 +233,7 @@ function MobileMenu({ navigate, callsign, shotBalance, solBalance, secondary, st
             position: 'absolute', bottom: 4, left: '50%', transform: 'translateX(-50%)',
             fontFamily: 'var(--f-mono)', fontSize: 8, color: 'var(--muted)', letterSpacing: '0.2em', whiteSpace: 'nowrap',
           }}>
-            <span style={{ color: statusColor }} title={isConnected ? 'Connected to server' : 'Disconnected. Reconnecting…'}>●</span> DEVNET
+            <span style={{ color: statusColor }} title={isConnected ? 'Connected to server' : 'Disconnected. Reconnecting…'}>●</span> {process.env.REACT_APP_SOLANA_NETWORK === 'mainnet-beta' ? 'MAINNET' : 'DEVNET'}
           </div>
         </div>
 

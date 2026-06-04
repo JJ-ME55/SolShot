@@ -87,3 +87,6 @@ Assets/screenshots/
 
 # Claude Code colosseum-copilot tool lock — regenerated per-session
 skills-lock.json
+
+# Helius RPC API key (secret) — never commit
+.HeliusRPC.txt

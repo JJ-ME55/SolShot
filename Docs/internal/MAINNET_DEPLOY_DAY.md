@@ -35,7 +35,7 @@ v2-only. Validated on devnet via `server/scripts/smoke-v2-1v1.mjs`: v2 accepted 
 | Var | Value | Note |
 |---|---|---|
 | `NODE_ENV` | `production` | |
-| `SOLANA_RPC` | _your mainnet RPC_ | Helius/QuickNode — provision + test first |
+| `SOLANA_RPC` | `https://mainnet.helius-rpc.com/?api-key=<key>` | key in `.HeliusRPC.txt` (gitignored) |
 | `ESCROW_PROGRAM_ID_V2` | `BNLgn96LqskqcgTTf7cPZ5iHkaKqRdSiCdGzcAw4L7uS` | mainnet v2 |
 | `SOLANA_KEYPAIR_JSON` | _contents of `solshot-server-authority.json`_ | the `[..]` byte array; pubkey `CgcAZJf6…` |
 | `TREASURY_WALLET` | `5zLEYTj8JdMPJyFWdHwRH69fMdxvrE96H16q7a2SxQiE` | Treasury Squad vault |
@@ -51,7 +51,7 @@ v2-only. Validated on devnet via `server/scripts/smoke-v2-1v1.mjs`: v2 accepted 
 |---|---|---|
 | `REACT_APP_SOLANA_NETWORK` | `mainnet-beta` | |
 | `REACT_APP_ESCROW_V2_PROGRAM_ID` | `BNLgn96LqskqcgTTf7cPZ5iHkaKqRdSiCdGzcAw4L7uS` | required |
-| `REACT_APP_SOLANA_RPC` | _your mainnet RPC_ | required (avoid public-tier limits) |
+| `REACT_APP_SOLANA_RPC` | `https://mainnet.helius-rpc.com/?api-key=<key>` | same Helius key as server |
 | `REACT_APP_WAGERED_ENABLED` | `true` | enable wagering |
 | `REACT_APP_ESCROW_PROGRAM_ID` | **leave UNSET** | v1 not on mainnet |
 | keep as-is | `REACT_APP_SERVER_URL`, `REACT_APP_PRIVY_APP_ID` | unchanged |
@@ -60,7 +60,7 @@ v2-only. Validated on devnet via `server/scripts/smoke-v2-1v1.mjs`: v2 accepted 
 
 ## Ordered deploy-day steps
 
-1. **Provision mainnet RPC** (Helius/QuickNode) — create endpoint, test a `getHealth`.
+1. **Mainnet RPC — already in hand ($0).** A Helius key already exists in `.HeliusRPC.txt` (gitignored). Helius keys are cross-cluster, so use the same key on the mainnet host: `https://mainnet.helius-rpc.com/?api-key=<key from .HeliusRPC.txt>`. That host is on this script's allowlist. (Optionally test with a `getHealth` call.) No new account, no new cost.
 2. **Fund wallets** (mainnet SOL):
    - **Deployer/CLI wallet** (the one in `solana config` for the deploy): ~3 SOL for program rent + fees.
    - **Server-authority** `CgcAZJf6…`: ~0.2 SOL for ongoing create/settle tx fees.

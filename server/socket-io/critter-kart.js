@@ -58,6 +58,7 @@ import {
     cancelRace,
     findActiveRaceForPlayer,
 } from '../services/games/critter-kart/lifecycle.js';
+import { RaceRunner } from '../services/games/critter-kart/sim/runner.js';
 import CritterKartRace from '../models/CritterKartRace.js';
 
 // ──────────────────────────────────────────────────────────────────────
@@ -93,8 +94,34 @@ const pendingReconnects = new Map();
 function startReconnectGrace({ telegramUserId, raceId }) {
     // Cancel any existing pending — start fresh
     cancelReconnectGrace({ telegramUserId });
-    const timer = setTimeout(() => {
+    const timer = setTimeout(async () => {
         pendingReconnects.delete(telegramUserId);
+
+        // Session 2b — AI takeover instead of plain DNF. If the runner
+        // is still alive, find this player's kart and swap it to bot
+        // control. The kart keeps racing under AI, the race goes the
+        // full distance, and the player's settled position reflects
+        // wherever the AI took them. Cheat-resistant for wagered mode:
+        // a player can't force-DC mid-race to dodge a losing finish.
+        try {
+            const race = await CritterKartRace.findOne({ raceId }).lean();
+            const player = race?.players?.find(p => p.telegramUserId === telegramUserId);
+            const runner = getRunner(raceId);
+            if (runner && player) {
+                runner.convertKartToBot(player.kartId);
+                logger.info('[critter-kart] reconnect grace expired → AI takeover', {
+                    raceId, telegramUserId, kartId: player.kartId,
+                    windowMs: RECONNECT_GRACE_MS,
+                });
+                return;
+            }
+        } catch (err) {
+            logger.warn('[critter-kart] grace-expiry AI-takeover failed; falling back to DNF', {
+                raceId, telegramUserId, error: err.message,
+            });
+        }
+
+        // Fallback: race already ended OR runner is gone — record DNF.
         markDnf({ raceId, telegramUserId }).catch(err => {
             logger.error('[critter-kart] grace-expiry markDnf failed', {
                 raceId, telegramUserId, error: err.message,
@@ -103,8 +130,6 @@ function startReconnectGrace({ telegramUserId, raceId }) {
         logger.info('[critter-kart] reconnect grace expired → DNF', {
             raceId, telegramUserId, windowMs: RECONNECT_GRACE_MS,
         });
-        // Session 2: swap kart to bot AI control here, then broadcast
-        // critterkart:state so other racers see the AI takeover.
     }, RECONNECT_GRACE_MS);
     // Don't keep Node alive on this timer if the process is shutting down
     if (typeof timer.unref === 'function') timer.unref();
@@ -129,6 +154,32 @@ function cancelReconnectGrace({ telegramUserId }) {
         elapsedMs: Date.now() - pending.scheduledAt,
     });
     return true;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Live RaceRunner registry — one per active race
+// ──────────────────────────────────────────────────────────────────────
+//
+// Session 2b: the server-authoritative tick loop now drives racing
+// (replacing Session 1's fake 15s sleep). Each in-flight race has a
+// RaceRunner instance from sim/runner.js spinning at 60Hz. Lookups:
+//   - race:input socket events → applyInput()
+//   - reconnect grace expiry → convertKartToBot()
+//   - lifecycle finish → onFinish callback drives settleRace + broadcast
+const runnersByRaceId = new Map();
+
+function getRunner(raceId) {
+    return runnersByRaceId.get(raceId) || null;
+}
+
+function registerRunner(raceId, runner) {
+    runnersByRaceId.set(raceId, runner);
+}
+
+function disposeRunner(raceId) {
+    const r = runnersByRaceId.get(raceId);
+    if (r) r.stop();
+    runnersByRaceId.delete(raceId);
 }
 
 function registerClientIdentity(client, telegramUserId) {
@@ -416,11 +467,29 @@ export function registerCritterKartHandlers(client, io) {
         }
     });
 
-    // ── critterkart:input ─────────────────────────────────────────────
-    // Session 2 wires this to the physics tick. Session 1: drop on the
-    // floor — no warning so the client doesn't spam logs when it's
-    // testing the connection.
-    client.on('critterkart:input', () => { /* Session 2 */ });
+    // ── race:input ────────────────────────────────────────────────────
+    // Per-frame input from a human-controlled kart. Forwarded to the
+    // RaceRunner which buffers + applies at the next physics tick.
+    // Clamped + sequence-checked inside applyInput().
+    //
+    // Volume note: clients send at ~30Hz, RaceRunner ticks at 60Hz. We
+    // accept inputs faster than tick rate (latest-wins) so client jitter
+    // doesn't cause server-side input gaps.
+    //
+    // No ack — input is fire-and-forget. The server's snapshot stream
+    // carries ackSeq so the client can reconcile.
+    client.on('race:input', (payload) => {
+        if (!payload || typeof payload !== 'object') return;
+        const { raceId, kartId, seq, steer, throttle, brake, drift } = payload;
+        if (!raceId || !kartId) return;
+        const runner = getRunner(raceId);
+        if (!runner) return;
+        runner.applyInput({ kartId, seq, steer, throttle, brake, drift });
+    });
+
+    // ── critterkart:input (Session 1 legacy) ──────────────────────────
+    // Pre-Session-2b clients may still send this. Drop silently.
+    client.on('critterkart:input', () => { /* Session 1 legacy — no-op */ });
 
     // ── disconnect ────────────────────────────────────────────────────
     //
@@ -478,17 +547,13 @@ export function registerCritterKartHandlers(client, io) {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Race timing driver — runs the countdown + (Session 1: fake) race
+// Race timing driver — Session 2b: server-authoritative physics tick
 // ──────────────────────────────────────────────────────────────────────
 //
-// Session 1: counts down 3 seconds, transitions to racing, waits a
-// fake "race-time" (15 seconds for now so it's testable), then resolves
-// with random positions and settles.
-//
-// Session 2: this is replaced/extended — countdown still mechanical,
-// then the physics tick loop runs at 20Hz, snapshots emit at 15Hz,
-// race ends when all karts finish or hard timeout.
-const FAKE_RACE_DURATION_MS = 15_000;
+// Drives the race from countdown through to settled. Session 1 used a
+// 15s fake sleep here; Session 2b replaces that with a RaceRunner
+// spinning at 60Hz that emits 20Hz snapshots. The race ends when all
+// karts cross the finish line OR when the 5min hard timeout fires.
 
 async function runCountdownAndRace(io, raceId) {
     try {
@@ -506,35 +571,90 @@ async function runCountdownAndRace(io, raceId) {
             raceId,
         });
 
-        // SESSION 1 PLACEHOLDER: wait + resolve random.
-        // Session 2 swaps this for the real physics tick loop.
-        await sleep(FAKE_RACE_DURATION_MS);
+        // Hydrate the race doc to spin up a RaceRunner with the actual
+        // matched players (humans + bot fill from matchmaker).
+        const race = await CritterKartRace.findOne({ raceId }).lean();
+        if (!race) throw new Error(`race ${raceId} not found at racing transition`);
 
-        const race = await finishRace({ raceId, resolveStub: true });
-
-        // Run settlement (writes career updates)
-        const { results } = await settleRace({ raceId });
-
-        // Broadcast final
-        const settled = await CritterKartRace.findOne({ raceId }).lean();
-        broadcastToRace(io, raceId, 'critterkart:final', {
+        // RaceRunner spins up + ticks at 60Hz, emits 20Hz snapshots to
+        // the race room, and fires onFinish when all karts have crossed
+        // the line (or the 5min timeout hits).
+        const runner = new RaceRunner({
             raceId,
-            positions: settled.players
-                .slice()
-                .sort((a, b) => (a.finishPosition || 99) - (b.finishPosition || 99))
-                .map(p => ({
-                    kartId: p.kartId,
-                    displayName: p.displayName,
-                    isBot: p.isBot,
-                    pos: p.finishPosition,
-                    totalTimeMs: p.finishTimeMs,
-                    bestLapMs: p.bestLapMs,
-                    points: p.pointsAwarded,
-                })),
-            careerUpdates: results,
+            players: race.players.map(p => ({
+                kartId: p.kartId,
+                displayName: p.displayName,
+                isBot: p.isBot,
+                // weight from racer roster — left default for now; can
+                // pass through from Fish's ROSTER once the wire carries
+                // racer id on join
+            })),
+            onSnapshot: (snap) => {
+                broadcastToRace(io, raceId, 'race:snapshot', snap);
+            },
+            onFinish: async ({ positions, reason }) => {
+                try {
+                    disposeRunner(raceId);
+                    // Hand the runner's authoritative positions to the
+                    // lifecycle finishRace → settleRace path. positions
+                    // already match the shape lifecycle expects.
+                    await finishRace({ raceId, positions });
+                    const { results } = await settleRace({ raceId });
+
+                    // Broadcast final to clients (mirror Session 1's
+                    // critterkart:final shape so existing UI keeps
+                    // working until Session 2c reshapes it).
+                    const settled = await CritterKartRace.findOne({ raceId }).lean();
+                    broadcastToRace(io, raceId, 'critterkart:final', {
+                        raceId,
+                        reason,
+                        positions: settled.players
+                            .slice()
+                            .sort((a, b) => (a.finishPosition || 99) - (b.finishPosition || 99))
+                            .map(p => ({
+                                kartId: p.kartId,
+                                displayName: p.displayName,
+                                isBot: p.isBot,
+                                pos: p.finishPosition,
+                                totalTimeMs: p.finishTimeMs,
+                                bestLapMs: p.bestLapMs,
+                                points: p.pointsAwarded,
+                            })),
+                        careerUpdates: results,
+                    });
+                    logger.info('[critter-kart] race settled', {
+                        raceId, reason, finishCount: positions.length,
+                    });
+                } catch (settleErr) {
+                    logger.error('[critter-kart] settle failed after race end', {
+                        raceId, reason, error: settleErr.message,
+                    });
+                    broadcastToRace(io, raceId, 'critterkart:error', {
+                        event: 'race',
+                        reason: 'settle_failed',
+                        detail: settleErr.message,
+                    });
+                }
+            },
+            onError: (err) => {
+                logger.error('[critter-kart] runner errored mid-race', {
+                    raceId, error: err.message,
+                });
+                disposeRunner(raceId);
+                cancelRace({ raceId, reason: 'runner_error' }).catch(() => {});
+                broadcastToRace(io, raceId, 'critterkart:error', {
+                    event: 'race',
+                    reason: 'runner_error',
+                    detail: err.message,
+                });
+            },
         });
+
+        registerRunner(raceId, runner);
+        runner.start();
     } catch (err) {
         logger.error('[critter-kart] race driver failed', { raceId, error: err.message });
+        disposeRunner(raceId);
         await cancelRace({ raceId, reason: 'driver_error' }).catch(() => {});
         broadcastToRace(io, raceId, 'critterkart:error', {
             event: 'race',

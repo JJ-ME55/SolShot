@@ -30,8 +30,13 @@ import { SUNNY_MEADOW } from './sunnyMeadow.js';
 
 const PHYSICS_HZ = 60;
 const PHYSICS_DT = 1 / PHYSICS_HZ;
-const SNAPSHOT_HZ = 20;
-const SNAPSHOT_EVERY_N_TICKS = PHYSICS_HZ / SNAPSHOT_HZ;   // 3
+// 30Hz snapshot rate — smaller interpolation distance for the client
+// than 20Hz (33ms gap instead of 50ms), so lerped motion stays close to
+// truth even when the server's physics make sharp moves (drift snap,
+// item hit). PHYSICS_HZ=60 → SNAPSHOT_EVERY_N_TICKS=2. Bandwidth cost is
+// trivial (~500B per snapshot × 30 × 6 karts = 90KB/s per match).
+const SNAPSHOT_HZ = 30;
+const SNAPSHOT_EVERY_N_TICKS = PHYSICS_HZ / SNAPSHOT_HZ;   // 2
 const PHYSICS_INTERVAL_MS = 1000 / PHYSICS_HZ;             // ~16.67ms
 const MAX_RACE_DURATION_MS = 5 * 60 * 1000;                // 5min hard timeout
 const DEFAULT_KART_WEIGHT = 1.0;

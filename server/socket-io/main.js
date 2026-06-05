@@ -1499,8 +1499,24 @@ const mainsocket = (io) => {
         }
 
         const originalOnevent = client.onevent
+        // Events that are inherently high-frequency by design and don't
+        // need cap-counting. Critter Kart streams race:input at 30Hz —
+        // already at the cap by itself, so ANY other event tips the
+        // budget and triggers the 90-drop disconnect. The race:input
+        // handler is cheap (buffer-latest-per-kart) and the server is
+        // authoritative for physics, so flooding gains nothing.
+        const RL_EXEMPT_EVENTS = new Set(['race:input'])
         client.onevent = function(packet) {
             const now = Date.now()
+            const eventName = packet.data && packet.data[0]
+
+            // Hot-path bypass: exempt events skip the cap entirely +
+            // skip getting recorded in the ring (so they don't push
+            // other events out either).
+            if (RL_EXEMPT_EVENTS.has(eventName)) {
+                originalOnevent.call(client, packet)
+                return
+            }
 
             // Count events in current window
             const eventCount = ringCount(eventRing, eventHead, eventRing.length, now, RL_WINDOW_MS)
@@ -1527,8 +1543,7 @@ const mainsocket = (io) => {
                 dropCount = 0
             }
 
-            // Check fire-specific rate limit
-            const eventName = packet.data && packet.data[0]
+            // (eventName already extracted above)
             if (eventName === 'fire' || eventName === 'shoot') {
                 const fireCount = ringCount(fireRing, fireHead, fireRing.length, now, RL_WINDOW_MS)
                 if (fireCount >= RL_MAX_FIRES) {

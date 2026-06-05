@@ -421,37 +421,39 @@ export function registerCritterKartHandlers(client, io) {
     // immediately sends this. Server validates membership + joins the
     // socket to the race room so broadcasts reach them.
     client.on('critterkart:joinRace', async (payload, ack) => {
-        logger.info('[VERBOSE joinRace] received', { socketId: client.id, payload });
+        // PINO: object first, message second.
+        logger.info({ socketId: client.id, payload }, '[VERBOSE joinRace] received');
         try {
             const { raceId, telegramUserId } = payload || {};
             if (!raceId || !telegramUserId) {
-                logger.warn('[VERBOSE joinRace] REJECT — missing fields', { raceId, telegramUserId });
+                logger.warn({ raceId, telegramUserId }, '[VERBOSE joinRace] REJECT — missing fields');
                 return ackError(ack, 'raceId_and_telegramUserId_required');
             }
             const race = await CritterKartRace.findOne({ raceId }).lean();
             if (!race) {
-                logger.warn('[VERBOSE joinRace] REJECT — race not found', { raceId });
+                logger.warn({ raceId }, '[VERBOSE joinRace] REJECT — race not found');
                 return ackError(ack, 'race_not_found');
             }
             const player = race.players.find(p => p.telegramUserId === telegramUserId);
             if (!player) {
-                logger.warn('[VERBOSE joinRace] REJECT — player not in race', {
-                    raceId, telegramUserId,
-                    racePlayerIds: race.players.map(p => p.telegramUserId),
-                });
+                logger.warn(
+                    { raceId, telegramUserId, racePlayerIds: race.players.map(p => p.telegramUserId) },
+                    '[VERBOSE joinRace] REJECT — player not in race',
+                );
                 return ackError(ack, 'not_in_race');
             }
             if (['settled', 'cancelled'].includes(race.state)) {
-                logger.warn('[VERBOSE joinRace] REJECT — race terminal', { raceId, state: race.state });
+                logger.warn({ raceId, state: race.state }, '[VERBOSE joinRace] REJECT — race terminal');
                 return ackError(ack, 'race_terminal', `race state: ${race.state}`);
             }
 
             // Update socket binding + join the race room
             registerClientIdentity(client, telegramUserId);
             client.join(raceRoomName(raceId));
-            logger.info('[VERBOSE joinRace] OK — joined room', {
-                socketId: client.id, raceId, telegramUserId, kartId: player.kartId, room: raceRoomName(raceId),
-            });
+            logger.info(
+                { socketId: client.id, raceId, telegramUserId, kartId: player.kartId, room: raceRoomName(raceId) },
+                '[VERBOSE joinRace] OK — joined room',
+            );
 
             // Cancel any pending reconnect-grace timer — this socket
             // IS the reconnect. If their kart had been about to DNF,
@@ -564,14 +566,41 @@ export function registerCritterKartHandlers(client, io) {
     //
     // No ack — input is fire-and-forget. The server's snapshot stream
     // carries ackSeq so the client can reconcile.
+    // Per-socket race:input traffic counter — used by the per-second
+    // heartbeat below to detect "client stopped sending input" which is
+    // the symptom of asset-loading freeze, rAF death, or client tab
+    // backgrounded. If a socket's input stream goes silent for ~30s,
+    // Render's load balancer will tear down the otherwise-idle WS.
+    let raceInputCount = 0;
+    let lastRaceInputAt = 0;
+    let lastRaceInputKartId = null;
     client.on('race:input', (payload) => {
         if (!payload || typeof payload !== 'object') return;
         const { raceId, kartId, seq, steer, throttle, brake, drift } = payload;
         if (!raceId || !kartId) return;
+        raceInputCount++;
+        lastRaceInputAt = Date.now();
+        lastRaceInputKartId = kartId;
         const runner = getRunner(raceId);
         if (!runner) return;
         runner.applyInput({ kartId, seq, steer, throttle, brake, drift });
     });
+    // Once-per-second heartbeat: how many race:input events did this
+    // socket emit in the last second? If ZERO during an active race
+    // ↘ client side rAF isn't running or socket isn't sending → WS
+    // will idle-disconnect.
+    const inputHeartbeat = setInterval(() => {
+        const count = raceInputCount;
+        raceInputCount = 0;
+        if (count > 0) {
+            // PINO API: object FIRST then message
+            logger.info(
+                { socketId: client.id, count, kartId: lastRaceInputKartId, msSinceLast: Date.now() - lastRaceInputAt },
+                '[VERBOSE race:input] heartbeat',
+            );
+        }
+    }, 1000);
+    client.on('disconnect', () => clearInterval(inputHeartbeat));
 
     // ── critterkart:input (Session 1 legacy) ──────────────────────────
     // Pre-Session-2b clients may still send this. Drop silently.
@@ -938,9 +967,10 @@ export function registerCritterKartHandlers(client, io) {
                     });
                 });
             }, 1500);
-            logger.info('[VERBOSE lobby:start] runCountdownAndRace scheduled', {
-                raceId: race.raceId, delayMs: 1500,
-            });
+            logger.info(
+                { raceId: race.raceId, delayMs: 1500 },
+                '[VERBOSE lobby:start] runCountdownAndRace scheduled',
+            );
             // DELIBERATELY do NOT emit lobby:closed here. Fish's
             // LobbyScreen (screens.tsx:292) handles lobby:closed by
             // calling onLeave() which routes back to menu — that would
@@ -967,21 +997,22 @@ export function registerCritterKartHandlers(client, io) {
     //     Otherwise the timer fires and the kart is DNF'd (Session 2
     //     swaps the DNF for AI-takeover so the race keeps full kart count).
     client.on('disconnect', async (reason) => {
-        // Heavy diagnostic logging: every disconnect prints its reason +
-        // which rooms the socket was in + how long it lived. Without
-        // this, mid-race DNFs look identical to legitimate exits.
         // socket.io reasons: 'transport close', 'ping timeout', 'server
         // disconnect', 'client disconnect', 'transport error', etc.
         const rooms = Array.from(client.rooms || []);
-        logger.warn('[VERBOSE disconnect] socket closed', {
-            socketId: client.id,
-            reason: reason || 'unknown',
-            rooms,
-            handshakeAuth: client.handshake?.auth ? {
-                telegramUserId: client.handshake.auth.telegramUserId,
-                game: client.handshake.auth.game,
-            } : null,
-        });
+        // CORRECT PINO SYNTAX — object FIRST, message SECOND.
+        // The old `.warn('msg', {data})` order silently DROPPED the data
+        // object across this entire file's logs. Fixed 2026-06-05.
+        logger.warn(
+            {
+                socketId: client.id,
+                reason: reason || 'unknown',
+                rooms,
+                tgUserId: client.handshake?.auth?.telegramUserId,
+                game: client.handshake?.auth?.game,
+            },
+            '[VERBOSE disconnect] socket closed',
+        );
         const tgId = unregisterClient(client);
         if (!tgId) return;
 
@@ -1071,15 +1102,13 @@ async function runCountdownAndRace(io, raceId) {
             })),
             onSnapshot: (snap) => {
                 broadcastToRace(io, raceId, 'race:snapshot', snap);
-                // Sparse heartbeat — every 100th snapshot (~5 sec at
-                // 20 Hz) so logs aren't flooded but we can verify the
-                // runner is actually emitting + the race-room broadcast
-                // is happening. snap.tick increments per server tick.
                 if (snap.tick % 100 === 0) {
                     const roomSize = io.sockets.adapter.rooms.get(raceRoomName(raceId))?.size || 0;
-                    logger.info('[VERBOSE snapshot] heartbeat', {
-                        raceId, tick: snap.tick, kartsInSnap: snap.karts?.length || 0, roomSize,
-                    });
+                    // PINO: object first, message second.
+                    logger.info(
+                        { raceId, tick: snap.tick, kartsInSnap: snap.karts?.length || 0, roomSize },
+                        '[VERBOSE snapshot] heartbeat',
+                    );
                 }
             },
             onFinish: async ({ positions, reason }) => {

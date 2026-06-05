@@ -600,7 +600,16 @@ export function registerCritterKartHandlers(client, io) {
     client.on('lobby:create', async (payload, ack) => {
         try {
             const { telegramUserId, telegramUsername, firstName } = identityFromPayload(payload);
-            if (!telegramUserId) return ackError(ack, 'identity_required');
+            logger.info('[VERBOSE lobby:create] received', {
+                socketId: client.id,
+                identityFromPayload: { telegramUserId, telegramUsername, firstName },
+                handshakeAuth: client.handshake?.auth,
+                payload,
+            });
+            if (!telegramUserId) {
+                logger.warn('[VERBOSE lobby:create] REJECT: no identity', { socketId: client.id });
+                return ackError(ack, 'identity_required');
+            }
             const lobby = await createLobby({
                 name: payload?.name,
                 cap: payload?.cap,
@@ -613,9 +622,13 @@ export function registerCritterKartHandlers(client, io) {
             client.join(lobbyRoomName(lobby.lobbyId));
             const wire = toLobbyStateWire(lobby);
             client.emit('lobby:created', { lobby: wire });
+            logger.info('[VERBOSE lobby:create] OK', {
+                lobbyId: lobby.lobbyId,
+                wire,
+            });
             ackOk(ack, { lobby: wire });
         } catch (err) {
-            logger.error('[lobby:create]', { error: err.message });
+            logger.error('[lobby:create]', { error: err.message, stack: err.stack });
             ackError(ack, 'create_failed', err.message);
         }
     });
@@ -625,6 +638,12 @@ export function registerCritterKartHandlers(client, io) {
     client.on('lobby:join', async (payload, ack) => {
         try {
             const { telegramUserId, telegramUsername, firstName } = identityFromPayload(payload);
+            logger.info('[VERBOSE lobby:join] received', {
+                socketId: client.id,
+                identityFromPayload: { telegramUserId, telegramUsername, firstName },
+                handshakeAuth: client.handshake?.auth,
+                payload,
+            });
             if (!telegramUserId) return ackError(ack, 'identity_required');
             const { lobbyId } = payload || {};
             if (!lobbyId) return ackError(ack, 'lobbyId_required');
@@ -703,15 +722,39 @@ export function registerCritterKartHandlers(client, io) {
     client.on('lobby:ready', async (payload, ack) => {
         try {
             const { telegramUserId } = identityFromPayload(payload);
-            if (!telegramUserId) return ackError(ack, 'identity_required');
+            logger.info('[VERBOSE lobby:ready] received', {
+                socketId: client.id,
+                tgFromIdentity: telegramUserId,
+                handshakeAuth: client.handshake?.auth,
+                payload,
+            });
+            if (!telegramUserId) {
+                logger.warn('[VERBOSE lobby:ready] REJECT: no identity', { socketId: client.id });
+                return ackError(ack, 'identity_required');
+            }
             const { lobbyId, ready } = payload || {};
-            if (!lobbyId) return ackError(ack, 'lobbyId_required');
+            if (!lobbyId) {
+                logger.warn('[VERBOSE lobby:ready] REJECT: no lobbyId', { socketId: client.id, payload });
+                return ackError(ack, 'lobbyId_required');
+            }
             const lobby = await lobbySetReady({ lobbyId, telegramUserId, ready });
             const wire = toLobbyStateWire(lobby);
+            const roomMembers = await io.in(lobbyRoomName(lobby.lobbyId)).fetchSockets();
+            logger.info('[VERBOSE lobby:ready] OK + broadcasting', {
+                lobbyId, telegramUserId, ready,
+                roomName: lobbyRoomName(lobby.lobbyId),
+                socketsInRoom: roomMembers.map(s => s.id),
+                wire,
+            });
             io.to(lobbyRoomName(lobby.lobbyId)).emit('lobby:state', { lobby: wire });
             ackOk(ack);
         } catch (err) {
-            logger.error('[lobby:ready]', { error: err.message });
+            logger.error('[VERBOSE lobby:ready] THREW', {
+                socketId: client.id,
+                error: err.message,
+                stack: err.stack,
+                payload,
+            });
             ackError(ack, 'ready_failed', err.message);
         }
     });

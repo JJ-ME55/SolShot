@@ -1490,6 +1490,53 @@ app.get('/api/games/critter-kart/standing/:telegramUserId', async (req, res) => 
     }
 });
 
+// GET /api/games/critter-kart/debug/lobbies — list all active lobbies
+// + members for live debugging. No auth — public read; lobby contents
+// aren't sensitive (just display names) and this is a temporary debug
+// surface during multiplayer rollout. Remove or auth-gate before
+// public launch.
+app.get('/api/games/critter-kart/debug/lobbies', async (req, res) => {
+    try {
+        const { default: CritterKartLobby } = await import('./models/CritterKartLobby.js');
+        const lobbies = await CritterKartLobby.find({
+            state: { $in: ['open', 'starting'] },
+        })
+            .sort({ createdAt: -1 })
+            .limit(20)
+            .lean();
+        res.json({
+            ok: true,
+            count: lobbies.length,
+            lobbies: lobbies.map(l => ({
+                lobbyId: l.lobbyId,
+                name: l.name,
+                state: l.state,
+                cap: l.cap,
+                hostTelegramUserId: l.hostTelegramUserId,
+                hostUsername: l.hostUsername,
+                raceId: l.raceId,
+                createdAt: l.createdAt,
+                lastActiveAt: l.lastActiveAt,
+                members: l.members.map(m => ({
+                    telegramUserId: m.telegramUserId,
+                    displayName: m.displayName,
+                    isHost: m.isHost,
+                    isReady: m.isReady,
+                    socketId: m.socketId,
+                })),
+                pendingRequests: l.pendingRequests.map(p => ({
+                    requestId: p.requestId,
+                    telegramUserId: p.telegramUserId,
+                    displayName: p.displayName,
+                })),
+            })),
+        });
+    } catch (err) {
+        console.error('[GET /api/games/critter-kart/debug/lobbies]', err.message);
+        res.status(500).json({ error: 'failed to fetch lobbies', detail: err.message });
+    }
+});
+
 // ──────────────────────────────────────────────────────────────────────
 // SolShot leaderboard — K/D + Win% scorecard model (NOT points-based).
 // Ranks players by K/D ratio (rate-based per V3 Rule 2). Service in

@@ -195,6 +195,50 @@ function disposeRunner(raceId) {
     const r = runnersByRaceId.get(raceId);
     if (r) r.stop();
     runnersByRaceId.delete(raceId);
+    runnerEmptyStartAt.delete(raceId);
+}
+
+// Per-race "first empty at" timestamps — when roomSize transitions to 0,
+// we record the wall-clock. After RUNNER_EMPTY_TIMEOUT_MS of continuous
+// emptiness, the runner is disposed even if Mongo state never finalised.
+// Prevents the leak observed 2026-06-05: races where every player DNF'd
+// kept ticking at 60Hz forever (e.g. raceId 75c0-dURgnU still emitting
+// snapshots 90+ minutes after all sockets disconnected). RaceRunner
+// CPU/memory grows linearly with leaked races; on Pro tier (1 CPU) ~5
+// concurrent abandoned runners would max out the box.
+const RUNNER_EMPTY_TIMEOUT_MS = 60_000;
+const RUNNER_CLEANUP_INTERVAL_MS = 15_000;
+const runnerEmptyStartAt = new Map();
+
+function startRunnerCleanupTicker(io) {
+    setInterval(() => {
+        const now = Date.now();
+        for (const raceId of Array.from(runnersByRaceId.keys())) {
+            const room = io.sockets.adapter.rooms.get(raceRoomName(raceId));
+            const roomSize = room?.size || 0;
+            if (roomSize > 0) {
+                runnerEmptyStartAt.delete(raceId);
+                continue;
+            }
+            // roomSize === 0: track how long it's been empty
+            if (!runnerEmptyStartAt.has(raceId)) {
+                runnerEmptyStartAt.set(raceId, now);
+                continue;
+            }
+            const emptyFor = now - runnerEmptyStartAt.get(raceId);
+            if (emptyFor >= RUNNER_EMPTY_TIMEOUT_MS) {
+                logger.warn(
+                    { raceId, emptyMs: emptyFor },
+                    '[critter-kart] disposing abandoned runner (no sockets in race room)',
+                );
+                disposeRunner(raceId);
+            }
+        }
+    }, RUNNER_CLEANUP_INTERVAL_MS);
+    logger.info(
+        { emptyTimeoutMs: RUNNER_EMPTY_TIMEOUT_MS, intervalMs: RUNNER_CLEANUP_INTERVAL_MS },
+        '[critter-kart] runner cleanup ticker started',
+    );
 }
 
 function registerClientIdentity(client, telegramUserId) {
@@ -250,6 +294,8 @@ export function initCritterKartSocket(io) {
     if (initialized) return;
     initialized = true;
     serverIo = io;
+
+    startRunnerCleanupTicker(io);
 
     configureMatchmaking({
         onMatchFound: (race, humanPlayers) => {

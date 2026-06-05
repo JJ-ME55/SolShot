@@ -906,6 +906,41 @@ export function registerCritterKartHandlers(client, io) {
                 });
             }
             ackOk(ack, { raceId: race.raceId });
+
+            // CRITICAL: kick off the countdown + race runner.
+            //
+            // The old matchmaking flow relied on each client emitting
+            // `critterkart:ready` after the scene loaded, which would
+            // trigger runCountdownAndRace when `allReady === true`.
+            // The lobby-based flow added in this session bypassed
+            // critterkart:ready entirely (lobby:ready already proved
+            // readiness before race creation), so the race was being
+            // STUCK in 'matched' state forever — no countdown, no
+            // RaceRunner, no snapshots. Each client mounted the race
+            // screen, sat idle, and ~30s later the WebSocket
+            // timed out → reconnect grace → DNF.
+            //
+            // Diagnosed 2026-06-05 evening: server logs showed
+            // joinRace OK x2 followed by zero snapshot heartbeats
+            // (heartbeat logs would fire every 100 ticks = ~5s).
+            //
+            // Fix: schedule runCountdownAndRace 1.5s after race
+            // creation. The delay gives clients time to receive
+            // race:start, run startMpRace, emit critterkart:joinRace,
+            // and have the server-side handler call client.join() to
+            // bind the socket to the race broadcast room. Without this
+            // delay, the 3-2-1 countdown broadcast would fire into an
+            // empty room.
+            setTimeout(() => {
+                runCountdownAndRace(io, race.raceId).catch(err => {
+                    logger.error('[critter-kart] countdown/race driver failed (lobby trigger)', {
+                        raceId: race.raceId, error: err.message,
+                    });
+                });
+            }, 1500);
+            logger.info('[VERBOSE lobby:start] runCountdownAndRace scheduled', {
+                raceId: race.raceId, delayMs: 1500,
+            });
             // DELIBERATELY do NOT emit lobby:closed here. Fish's
             // LobbyScreen (screens.tsx:292) handles lobby:closed by
             // calling onLeave() which routes back to menu — that would

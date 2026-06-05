@@ -5,6 +5,11 @@ import {
   createDefaultHitboxTemplate,
 } from '../../services/games/shootout/sim/hitboxes.js';
 
+// Plan deviation: the Checkpoint 1 plan prescribed tests for HITBOX_ZONES
+// and createHitboxSet — neither exist in the source TS. HITBOX_ZONES is a TS
+// type union (no runtime shape); createHitboxSet lives in combat.ts and will
+// port with sim/combat.js in Task A.3. Source is the truth.
+
 test('zone multipliers — head 4x, chest 1x, stomach 1.25x, arms 1x, legs 0.75x', () => {
   assert.equal(ZONE_MULTIPLIERS.head, 4.0);
   assert.equal(ZONE_MULTIPLIERS.chest, 1.0);

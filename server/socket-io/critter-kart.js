@@ -759,7 +759,34 @@ export function registerCritterKartHandlers(client, io) {
             if (lobby.hostTelegramUserId !== telegramUserId) {
                 return ackError(ack, 'not_host');
             }
-            if (lobby.state !== 'open') {
+            // If the lobby is already 'starting', the race was created
+            // but the client transition failed for SOME reason (network
+            // hiccup, race condition with first emit, browser tab not
+            // foreground). Don't reject — re-emit race:start for the
+            // existing race so the retry catches.
+            if (lobby.state === 'starting' && lobby.raceId) {
+                const existing = await CritterKartRace.findOne({ raceId: lobby.raceId }).lean();
+                if (existing) {
+                    logger.info('[critter-kart/lobby] re-emit race:start (lobby already starting)', {
+                        lobbyId, raceId: lobby.raceId,
+                    });
+                    const memberWire = existing.players.map((p, i) => ({
+                        username: p.displayName,
+                        slot: i,
+                        kartId: p.kartId,
+                        isBot: p.isBot,
+                    }));
+                    io.to(lobbyRoomName(lobby.lobbyId)).emit('race:start', {
+                        roomId: existing.raceId,
+                        startAtMs: Date.now(),
+                        members: memberWire,
+                    });
+                    return ackOk(ack, { raceId: existing.raceId, retry: true });
+                }
+                // Lobby says starting but no race doc found — fall through
+                // to create one fresh (rare edge case, probably TTL)
+            }
+            if (lobby.state !== 'open' && lobby.state !== 'starting') {
                 return ackError(ack, 'lobby_not_open', `state: ${lobby.state}`);
             }
             const humans = lobby.members.map(m => ({

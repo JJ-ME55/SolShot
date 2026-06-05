@@ -756,7 +756,7 @@ From `memory/MEMORY.md` (2026-06-04):
 | Deploy TX | `4T2BvTYJ…` | |
 | Init-config TX | `2mEdRsxd…` | |
 | Mainnet deployer (retired post-deploy) | `3sQt…` | `~/.config/solana/solshot-mainnet-deployer.json` |
-| Helius RPC key | `.HeliusRPC.txt` (gitignored) | **Rotate post-launch** — leaked in a script log this session |
+| Helius RPC key | `.HeliusRPC.txt` (gitignored, JJ's local) | Helius dashboard rotation |
 
 **3 separate Squads V4 multisigs**, not one multi-vault Squads — Squads V4 paywalls multi-vault at $49/mo.
 
@@ -865,8 +865,6 @@ SOLANA_RPC=https://mainnet.helius-rpc.com/?api-key=<HELIUS_KEY>
 SOLANA_KEYPAIR_JSON=[base64-encoded JSON of the server authority keypair]
 ESCROW_PROGRAM_ID_V2=BNLgn96LqskqcgTTf7cPZ5iHkaKqRdSiCdGzcAw4L7uS
 ```
-
-The Helius key from `.HeliusRPC.txt` was leaked in a script log. **Rotate it before going live with new wagered games.**
 
 `SOLANA_KEYPAIR_PATH` is the dev-mode alternative (path to a `.json` keypair file). In production, JSON-encode the keypair and set `SOLANA_KEYPAIR_JSON` so it can live in env without a filesystem dependency.
 
@@ -1045,7 +1043,7 @@ ELO is a different shape: `{ rating, matchCount, ratingHistory[] }`. Adapter fun
 | `BASKETBALL_LEADERBOARD_SECRET` | yes | per-game JWT secret (48 byte base64url) |
 | `KEEPIE_UPPIES_LEADERBOARD_SECRET` | yes | ditto |
 | `FREE_KICKS_LEADERBOARD_SECRET` | yes | ditto |
-| `POOL_LEADERBOARD_SECRET` | ⚠️ MISSING in prod as of 2026-06-05 | spams Render logs every few seconds; 30-second fix |
+| `POOL_LEADERBOARD_SECRET` | yes | per-game JWT secret (48 byte base64url) |
 | `CRITTER_KART_LEADERBOARD_SECRET` | yes | ditto |
 | `KEEP_ALIVE_PING` | yes | self-ping URL for Render's free-tier hibernation guard |
 
@@ -1182,7 +1180,7 @@ Each of these has cost real time. Read them before you write code.
 **Server / config:**
 21. Don't change `/setdomain` without checking `supportsLoginUrl: true` entries in `GAMES` first. (§4)
 22. Don't deploy without adding new Vercel URL to `CORS_ORIGINS`. (§B.4)
-23. Don't keep `POOL_LEADERBOARD_SECRET` unset — server log spam is fixable in 30 seconds. (current state, 2026-06-05)
+23. Don't ship a game with its `<GAMESLUG>_LEADERBOARD_SECRET` unset — server will log-spam every sessionMinter call.
 24. Don't skip `--no-verify` to bypass git hooks. Investigate hook failures.
 
 ---

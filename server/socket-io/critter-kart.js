@@ -421,22 +421,37 @@ export function registerCritterKartHandlers(client, io) {
     // immediately sends this. Server validates membership + joins the
     // socket to the race room so broadcasts reach them.
     client.on('critterkart:joinRace', async (payload, ack) => {
+        logger.info('[VERBOSE joinRace] received', { socketId: client.id, payload });
         try {
             const { raceId, telegramUserId } = payload || {};
             if (!raceId || !telegramUserId) {
+                logger.warn('[VERBOSE joinRace] REJECT — missing fields', { raceId, telegramUserId });
                 return ackError(ack, 'raceId_and_telegramUserId_required');
             }
             const race = await CritterKartRace.findOne({ raceId }).lean();
-            if (!race) return ackError(ack, 'race_not_found');
+            if (!race) {
+                logger.warn('[VERBOSE joinRace] REJECT — race not found', { raceId });
+                return ackError(ack, 'race_not_found');
+            }
             const player = race.players.find(p => p.telegramUserId === telegramUserId);
-            if (!player) return ackError(ack, 'not_in_race');
+            if (!player) {
+                logger.warn('[VERBOSE joinRace] REJECT — player not in race', {
+                    raceId, telegramUserId,
+                    racePlayerIds: race.players.map(p => p.telegramUserId),
+                });
+                return ackError(ack, 'not_in_race');
+            }
             if (['settled', 'cancelled'].includes(race.state)) {
+                logger.warn('[VERBOSE joinRace] REJECT — race terminal', { raceId, state: race.state });
                 return ackError(ack, 'race_terminal', `race state: ${race.state}`);
             }
 
             // Update socket binding + join the race room
             registerClientIdentity(client, telegramUserId);
             client.join(raceRoomName(raceId));
+            logger.info('[VERBOSE joinRace] OK — joined room', {
+                socketId: client.id, raceId, telegramUserId, kartId: player.kartId, room: raceRoomName(raceId),
+            });
 
             // Cancel any pending reconnect-grace timer — this socket
             // IS the reconnect. If their kart had been about to DNF,
@@ -916,7 +931,22 @@ export function registerCritterKartHandlers(client, io) {
     //     RECONNECT_GRACE_MS, the timer is cancelled and they resume.
     //     Otherwise the timer fires and the kart is DNF'd (Session 2
     //     swaps the DNF for AI-takeover so the race keeps full kart count).
-    client.on('disconnect', async () => {
+    client.on('disconnect', async (reason) => {
+        // Heavy diagnostic logging: every disconnect prints its reason +
+        // which rooms the socket was in + how long it lived. Without
+        // this, mid-race DNFs look identical to legitimate exits.
+        // socket.io reasons: 'transport close', 'ping timeout', 'server
+        // disconnect', 'client disconnect', 'transport error', etc.
+        const rooms = Array.from(client.rooms || []);
+        logger.warn('[VERBOSE disconnect] socket closed', {
+            socketId: client.id,
+            reason: reason || 'unknown',
+            rooms,
+            handshakeAuth: client.handshake?.auth ? {
+                telegramUserId: client.handshake.auth.telegramUserId,
+                game: client.handshake.auth.game,
+            } : null,
+        });
         const tgId = unregisterClient(client);
         if (!tgId) return;
 
@@ -1006,6 +1036,16 @@ async function runCountdownAndRace(io, raceId) {
             })),
             onSnapshot: (snap) => {
                 broadcastToRace(io, raceId, 'race:snapshot', snap);
+                // Sparse heartbeat — every 100th snapshot (~5 sec at
+                // 20 Hz) so logs aren't flooded but we can verify the
+                // runner is actually emitting + the race-room broadcast
+                // is happening. snap.tick increments per server tick.
+                if (snap.tick % 100 === 0) {
+                    const roomSize = io.sockets.adapter.rooms.get(raceRoomName(raceId))?.size || 0;
+                    logger.info('[VERBOSE snapshot] heartbeat', {
+                        raceId, tick: snap.tick, kartsInSnap: snap.karts?.length || 0, roomSize,
+                    });
+                }
             },
             onFinish: async ({ positions, reason }) => {
                 try {

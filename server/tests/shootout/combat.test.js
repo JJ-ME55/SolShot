@@ -284,6 +284,37 @@ test('testHitscan: hitNormal on sphere points outward from center', () => {
   assert.ok(result.hitNormal.z < -0.9, `expected z ≈ -1, got ${result.hitNormal.z}`);
 });
 
+test('testHitscan: hitNormal on chest box is axis-aligned (-z front face)', () => {
+  // Chest box at center (0, 1.36, 5), halfExtents (0.19, 0.16, 0.15). Front face
+  // is at z = 4.85. Ray from (0, 1.36, 0) along +z enters that face → normal points
+  // back toward shooter: (0, 0, -1). Exercises the box-face branch of
+  // computeHitNormal that the sphere head test never reaches.
+  const target = makeTarget('t', 0, 5);
+  const result = testHitscan(
+    { x: 0, y: 1.36, z: 0 },
+    { x: 0, y: 0, z: 1 },
+    [target],
+    'shooter',
+  );
+  assert.ok(result);
+  assert.equal(result.zone, 'chest');
+  assert.ok(result.hitNormal.z < -0.9, `expected z ≈ -1, got ${result.hitNormal.z}`);
+  assert.ok(Math.abs(result.hitNormal.x) < 0.1, `expected x ≈ 0, got ${result.hitNormal.x}`);
+  assert.ok(Math.abs(result.hitNormal.y) < 0.1, `expected y ≈ 0, got ${result.hitNormal.y}`);
+});
+
+// NOTE: a capsule-perpendicular hitNormal test would naturally belong here,
+// but the source's rayCapsuleIntersect cylinder-body math has a sign error
+// in the closest-approach formula — it computes (v·w)/|w|² where it should
+// compute -(v·w)/|w|², so perpendicular rays return a t<0 and silently miss.
+// All existing capsule tests get away with it because they use rays parallel
+// to the capsule axis (the parallel branch returns earlier via cap-sphere
+// intersection). This is a faithful-port artifact; tracking it as an
+// upstream issue against BillionaireBonkClub/shootout's src/engine/hitboxes.ts
+// alongside the computeHitNormal degenerate-capsule NaN (I-1 from A.3 review).
+// Capsule-hitNormal coverage will land once the upstream is fixed and we
+// re-sync this port.
+
 // ---------- testEnvironmentHit (placeholder) ----------
 
 test('testEnvironmentHit: returns null (Three.js placeholder)', () => {

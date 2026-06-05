@@ -84,6 +84,13 @@ export async function createRace({ players, format = {} }) {
         throw new Error(`createRace: max ${MAX_PLAYERS} players, got ${players.length}`);
     }
 
+    // Cycle through Fish's regular roster for kart-character assignment.
+    // Founders ('jj', 'fish') are playerOnly per Fish's Racer spec —
+    // not used for auto-assignment. 6 players = 4 regulars + 2 dupes,
+    // which is fine for race feel (weight 1.0/1.3/0.8/1.3 covers it).
+    const ROSTER_RACER_IDS = ['rusty', 'shelly', 'pip', 'bruno'];
+    const racerIdForSlot = (i) => ROSTER_RACER_IDS[i % ROSTER_RACER_IDS.length];
+
     const raceId = newRaceId();
     const race = await CritterKartRace.create({
         raceId,
@@ -98,6 +105,7 @@ export async function createRace({ players, format = {} }) {
             telegramUserId: p.telegramUserId ?? null,
             displayName: p.displayName,
             kartId: `kart-${i}`,
+            racerId: p.racerId || racerIdForSlot(i),    // Fish-roster character
             isBot: !!p.isBot,
             socketId: p.socketId ?? null,
             joinedAt: new Date(),

@@ -280,6 +280,7 @@ export function initCritterKartSocket(io) {
                         username: p.displayName,
                         slot: idx,
                         kartId: p.kartId,
+                        racerId: p.racerId || 'rusty',
                         isBot: p.isBot,
                     }));
                     c.emit('match:found', {
@@ -817,6 +818,7 @@ export function registerCritterKartHandlers(client, io) {
                         username: p.displayName,
                         slot: i,
                         kartId: p.kartId,
+                        racerId: p.racerId || 'rusty',
                         isBot: p.isBot,
                     }));
                     io.to(lobbyRoomName(lobby.lobbyId)).emit('race:start', {
@@ -854,6 +856,7 @@ export function registerCritterKartHandlers(client, io) {
                 username: p.displayName,
                 slot: i,
                 kartId: p.kartId,
+                racerId: p.racerId || 'rusty',
                 isBot: p.isBot,
             }));
             const startAtMs = Date.now() + 4000;   // countdown ~3s after this emit

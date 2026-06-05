@@ -30,6 +30,7 @@ const racePlayerSchema = new mongoose.Schema({
     telegramUserId:   { type: Number, default: null },  // null for bots
     displayName:      { type: String, required: true },
     kartId:           { type: String, required: true },  // unique within race
+    racerId:          { type: String, default: 'rusty' },  // Fish-roster character id
     isBot:            { type: Boolean, required: true, default: false },
 
     socketId:         { type: String, default: null },   // current socket; null if disconnected

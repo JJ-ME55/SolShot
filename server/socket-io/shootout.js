@@ -77,16 +77,89 @@ export function registerShootoutHandlers(client, io) {
     });
 
     // ── shootout:lobby:join ──────────────────────────────────────────
-    // Implemented in D.3.
+    client.on('shootout:lobby:join', async (payload, ack) => {
+        try {
+            const res = await lobbyService.joinLobbyByCode({
+                code: payload?.code,
+                telegramUserId: payload?.telegramUserId,
+                telegramUsername: payload?.telegramUsername,
+                firstName: payload?.firstName,
+                socketId: client.id,
+            });
+            if (res?.error) return ack?.({ error: res.error });
+            const room = lobbyRoomName(res.lobby.lobbyId);
+            client.join(room);
+            io.to(room).emit('shootout:lobby:state', { lobby: res.lobby });
+            ack?.({
+                ok: true,
+                lobbyId: res.lobby.lobbyId,
+                ...(res.alreadyMember ? { alreadyMember: true } : {}),
+            });
+        } catch (err) {
+            logger.error({ err }, 'shootout:lobby:join failed');
+            ack?.({ error: 'internal' });
+        }
+    });
 
     // ── shootout:lobby:leave ─────────────────────────────────────────
-    // Implemented in D.4.
+    // When the last member leaves, lobbyService.leaveLobby returns
+    // { ok, closed: true, lobby } — we surface that as a
+    // shootout:lobby:closed broadcast (reason='empty') instead of the
+    // usual state broadcast, so any straggling sockets in the room
+    // (e.g. a slow re-render) can react.
+    client.on('shootout:lobby:leave', async (payload, ack) => {
+        try {
+            const res = await lobbyService.leaveLobby({
+                lobbyId: payload?.lobbyId,
+                telegramUserId: payload?.telegramUserId,
+            });
+            if (res?.error) return ack?.({ error: res.error });
+            const room = lobbyRoomName(res.lobby.lobbyId);
+            if (res.closed) {
+                io.to(room).emit('shootout:lobby:closed', {
+                    lobbyId: res.lobby.lobbyId,
+                    reason: 'empty',
+                });
+            } else {
+                io.to(room).emit('shootout:lobby:state', { lobby: res.lobby });
+            }
+            client.leave(room);
+            ack?.({ ok: true, ...(res.closed ? { closed: true } : {}) });
+        } catch (err) {
+            logger.error({ err }, 'shootout:lobby:leave failed');
+            ack?.({ error: 'internal' });
+        }
+    });
 
     // ── shootout:lobby:ready ─────────────────────────────────────────
-    // Implemented in D.4.
+    client.on('shootout:lobby:ready', async (payload, ack) => {
+        try {
+            const res = await lobbyService.setReady({
+                lobbyId: payload?.lobbyId,
+                telegramUserId: payload?.telegramUserId,
+                ready: payload?.ready,
+            });
+            if (res?.error) return ack?.({ error: res.error });
+            const room = lobbyRoomName(res.lobby.lobbyId);
+            io.to(room).emit('shootout:lobby:state', { lobby: res.lobby });
+            ack?.({ ok: true });
+        } catch (err) {
+            logger.error({ err }, 'shootout:lobby:ready failed');
+            ack?.({ error: 'internal' });
+        }
+    });
 
     // ── shootout:lobby:list ──────────────────────────────────────────
-    // Implemented in D.4.
+    // Read-only — no room broadcast, answer goes back in the ack.
+    client.on('shootout:lobby:list', async (_payload, ack) => {
+        try {
+            const lobbies = await lobbyService.listOpenLobbies();
+            ack?.({ ok: true, lobbies });
+        } catch (err) {
+            logger.error({ err }, 'shootout:lobby:list failed');
+            ack?.({ error: 'internal' });
+        }
+    });
 }
 
 export default { initShootoutSocket, registerShootoutHandlers };

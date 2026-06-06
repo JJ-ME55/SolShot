@@ -43,11 +43,15 @@ import {
     getLeaderboard as getFreeKicksLeaderboard,
     getMyStanding as getFreeKicksStanding,
 } from './games/free-kicks-standalone/standaloneLeaderboard.js';
-import {
-    mintSession as mintPoolSession,
-    getEloLeaderboard as getPoolEloLeaderboard,
-    getEloStanding as getPoolEloStanding,
-} from './games/pool/poolLeaderboard.js';
+// Pool imports parked 2026-06-05 — pool entry removed from GAMES +
+// LEADERBOARDS while the canvas lift is outstanding. poolLeaderboard.js
+// module + Mongo data are untouched; uncomment to restore the bot
+// surface alongside re-adding the GAMES/LEADERBOARDS entries below.
+// import {
+//     mintSession as mintPoolSession,
+//     getEloLeaderboard as getPoolEloLeaderboard,
+//     getEloStanding as getPoolEloStanding,
+// } from './games/pool/poolLeaderboard.js';
 import {
     mintSession as mintCritterKartSession,
     getLeaderboard as getCritterKartLeaderboard,
@@ -152,25 +156,16 @@ const GAMES = [
         firstName: ctx.from?.first_name,
     }),
   },
-  {
-    // TS-remake of henshmi/Classic-8-Ball-Pool, deployed under the unified
-    // arcade hub at /play/pool/launch. Backend at SolShot server: ELO,
-    // matchmaking queue, wagered escrow (v2), tournaments, marathon mode,
-    // dual ledgers (Gold + Tickets). Bot launch URL goes live when
-    // /play/pool/launch lands in The-Arcade repo — until then this entry
-    // is dormant; the command is registered but visiting 404s.
-    slug: 'pool',
-    name: '8-Ball Pool',
-    emoji: '🎱',
-    tagline: 'Skill-based 1v1. Async 12h turns, server-authoritative physics.',
-    url: 'https://thearcade.gg/play/pool/launch',
-    supportsLoginUrl: false,
-    sessionMinter: (ctx) => mintPoolSession({
-        telegramUserId: ctx.from?.id,
-        telegramUsername: ctx.from?.username,
-        firstName: ctx.from?.first_name,
-    }),
-  },
+  // 8-Ball Pool removed from the public bot catalogue 2026-06-05.
+  // The canvas lift from arcade/8-ball-pool isn't done; visiting
+  // /play/pool/launch on thearcade.gg 404s and the /pool slash command
+  // was a dead-end. Removing the entry here drops it from /games + from
+  // the registered slash commands so the bot reflects what users can
+  // actually play (5 live cabinets: SolShot, Basketball, Keepie Uppies,
+  // Free Kicks, Critter Kart). LEADERBOARDS.pool is intentionally KEPT
+  // below — the ELO board has real historical data and `/leaderboardpool`
+  // is still useful for archive queries even with no live entry surface.
+  // Restore this entry when /play/pool/launch lands in The-Arcade repo.
   {
     // React + Three.js kart racer, lifted from BillionaireBonkClub/critter-kart
     // by fishyboy-claude (commit 0c8ac388 on arcade/critter-kart, 2026-06-04).
@@ -226,37 +221,13 @@ const LEADERBOARDS = {
     getMyStanding: getFreeKicksStanding,
     launchCmd: '/freekicks',
   },
-  // Pool uses a different leaderboard shape (ELO + rating, not single
-  // bestScore). Adapter functions map the per-game contract onto pool's
-  // richer model — the bot's `/leaderboardpool` shows the ELO board with
-  // rating in place of "Score".
-  pool: {
-    emoji: '🎱',
-    title: '8-BALL POOL · ELO',
-    getLeaderboard: async ({ limit = 10 } = {}) => {
-        const rows = await getPoolEloLeaderboard({ limit });
-        // Adapt to the per-game contract: { rank, displayName, bestScore, bestAchievedAt }
-        return rows.map(r => ({
-            rank: r.rank,
-            telegramUserId: r.telegramUserId,
-            displayName: r.displayName,
-            bestScore: r.rating,
-            bestAchievedAt: null,
-        }));
-    },
-    getMyStanding: async ({ telegramUserId } = {}) => {
-        const s = await getPoolEloStanding({ telegramUserId });
-        if (!s) return null;
-        return {
-            rank: s.rank,
-            displayName: s.displayName,
-            bestScore: s.rating,
-            totalSubmissions: s.matchCount,
-            bestAchievedAt: null,
-        };
-    },
-    launchCmd: '/pool',
-  },
+  // Pool leaderboard entry removed from the bot 2026-06-05 — pool is
+  // off the floor entirely (see GAMES note above). PoolEloLeaderboard /
+  // PoolEloStanding services + their Mongo data are untouched; restoring
+  // the bot surface is a 3-line re-paste from git history. The pool
+  // ELO adapter that lived here used `getPoolEloLeaderboard` /
+  // `getPoolEloStanding` from ./games/pool/poolLeaderboard.js to map
+  // ELO rating → bestScore for the shared leaderboard contract.
   critterkart: {
     // Career-aggregate (Mario Kart Grand Prix) — bestScore is totalPoints,
     // totalSubmissions is races. The leaderboard service emits a row

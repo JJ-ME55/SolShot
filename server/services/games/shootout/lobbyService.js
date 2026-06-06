@@ -235,3 +235,32 @@ export async function setReady({ lobbyId, telegramUserId, ready }) {
     await lobby.save();
     return { ok: true, lobby: lobby.toObject() };
 }
+
+// ── Start match ──────────────────────────────────────────────────────
+
+/**
+ * Host pulls the trigger. Stamps matchId on the lobby, assigns slots
+ * 0..n-1 in join order, and transitions to 'STARTING'. The lifecycle
+ * layer reads back members + slots + teams from the returned doc to
+ * create the ShootoutMatch and seed the sim. We don't import lifecycle
+ * here to avoid a circular dep.
+ */
+export async function startMatch({ lobbyId, telegramUserId }) {
+    const lobby = await ShootoutLobby.findOne({ lobbyId });
+    if (!lobby) return { error: 'lobby_not_found' };
+    if (lobby.hostTelegramUserId !== telegramUserId) return { error: 'not_host' };
+    if (lobby.state !== 'READY') return { error: 'not_ready' };
+
+    const matchId = newId('match');
+    lobby.matchId = matchId;
+    lobby.state = 'STARTING';
+    for (let i = 0; i < lobby.members.length; i += 1) {
+        lobby.members[i].slot = i;
+    }
+    lobby.lastActiveAt = new Date();
+    await lobby.save();
+    logger.info('[shootout/lobby] starting', {
+        lobbyId, matchId, host: telegramUserId, count: lobby.members.length,
+    });
+    return { ok: true, matchId, lobby: lobby.toObject() };
+}

@@ -114,3 +114,53 @@ export async function createLobby({
     logger.error('[shootout/lobby] create exhausted retries', { err: lastErr?.message });
     throw lastErr || new Error('create_failed');
 }
+
+// ── Join ─────────────────────────────────────────────────────────────
+
+export async function joinLobbyByCode({
+    code, telegramUserId, telegramUsername, firstName, socketId,
+}) {
+    const lobby = await ShootoutLobby.findOne({ code });
+    if (!lobby) return { error: 'lobby_not_found' };
+
+    // Idempotent re-join: same telegramUserId already a member → update
+    // socketId and return the existing lobby (no dup, no state change).
+    const existing = lobby.members.find(m => m.telegramUserId === telegramUserId);
+    if (existing) {
+        if (socketId !== undefined) existing.socketId = socketId || null;
+        lobby.lastActiveAt = new Date();
+        await lobby.save();
+        return { ok: true, lobby: lobby.toObject(), alreadyMember: true };
+    }
+
+    // Capacity: respect either an already-FULL state or a stale-state
+    // doc whose members array is already at cap (defensive against
+    // race between findOne and prior save).
+    if (lobby.state === 'FULL' || lobby.members.length >= lobby.cap) {
+        return { error: 'lobby_full' };
+    }
+
+    const displayName = formatDisplayName({ telegramUsername, firstName, telegramUserId });
+    const slotIndex = lobby.members.length;
+    lobby.members.push({
+        telegramUserId,
+        telegramUsername: telegramUsername || null,
+        firstName: firstName || null,
+        displayName,
+        socketId: socketId || null,
+        isHost: false,
+        isReady: false,
+        // Alternating red/blue by join order: 0=red, 1=blue, 2=red, 3=blue.
+        // Final slots are assigned at startMatch (member.slot).
+        team: slotIndex % 2 === 0 ? 'red' : 'blue',
+        slot: -1,
+    });
+
+    if (lobby.members.length >= lobby.cap) lobby.state = 'FULL';
+    lobby.lastActiveAt = new Date();
+    await lobby.save();
+    logger.info('[shootout/lobby] joined', {
+        lobbyId: lobby.lobbyId, code, joiner: telegramUserId, state: lobby.state,
+    });
+    return { ok: true, lobby: lobby.toObject() };
+}

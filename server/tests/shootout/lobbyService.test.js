@@ -18,6 +18,7 @@ import ShootoutLobby from '../../models/ShootoutLobby.js';
 import {
     generateLobbyCode,
     createLobby,
+    joinLobbyByCode,
     listOpenLobbies,
 } from '../../services/games/shootout/lobbyService.js';
 
@@ -135,6 +136,158 @@ test('createLobby retries on unique code collision (E11000)', async () => {
         assert.equal(createMock.mock.callCount(), 3);
     } finally {
         createMock.mock.restore();
+    }
+});
+
+// ── C.3 joinLobbyByCode ──────────────────────────────────────────────
+
+// Helper: build a mutable lobby doc that supports .save() like a Mongo doc.
+function fakeLobby({ code = 'ABCDEF', mode = '2v2', cap = 4, state = 'OPEN',
+                     members = [], matchId = null, hostTelegramUserId = 1 } = {}) {
+    const doc = {
+        lobbyId: 'lobby-x',
+        code, mode, cap, state, matchId,
+        hostTelegramUserId,
+        members,
+        closedAt: null,
+        lastActiveAt: new Date(0),
+        async save() { return this; },
+        toObject() {
+            // shallow snapshot — sufficient for assertions
+            return { ...this, members: this.members.map(m => ({ ...m })) };
+        },
+    };
+    return doc;
+}
+
+function hostMember(overrides = {}) {
+    return {
+        telegramUserId: 1, telegramUsername: 'host', firstName: null,
+        displayName: '@host', socketId: 'sock-host',
+        isHost: true, isReady: false, team: 'red', slot: -1,
+        ...overrides,
+    };
+}
+
+test('joinLobbyByCode: OPEN with room → adds member with blue team (still OPEN if not at cap)', async () => {
+    const lobby = fakeLobby({ members: [hostMember()], cap: 4, mode: '2v2' });
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobby);
+    try {
+        const res = await joinLobbyByCode({
+            code: 'ABCDEF', telegramUserId: 2, telegramUsername: 'mate', socketId: 'sock-2',
+        });
+        assert.equal(res.ok, true);
+        assert.equal(res.lobby.members.length, 2);
+        assert.equal(res.lobby.members[1].telegramUserId, 2);
+        assert.equal(res.lobby.members[1].team, 'blue');
+        assert.equal(res.lobby.members[1].isHost, false);
+        assert.equal(res.lobby.members[1].displayName, '@mate');
+        assert.equal(res.lobby.members[1].socketId, 'sock-2');
+        assert.equal(res.lobby.state, 'OPEN'); // 2/4, not full yet
+    } finally {
+        findMock.mock.restore();
+    }
+});
+
+test('joinLobbyByCode: FULL lobby returns lobby_full', async () => {
+    const lobby = fakeLobby({
+        state: 'FULL',
+        members: [hostMember(), { telegramUserId: 2, displayName: '@b', isHost: false }],
+        cap: 2,
+        mode: '1v1',
+    });
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobby);
+    try {
+        const res = await joinLobbyByCode({ code: 'ABCDEF', telegramUserId: 3 });
+        assert.equal(res.ok, undefined);
+        assert.equal(res.error, 'lobby_full');
+    } finally {
+        findMock.mock.restore();
+    }
+});
+
+test('joinLobbyByCode: members at cap (but state not yet FULL) also returns lobby_full', async () => {
+    const lobby = fakeLobby({
+        state: 'OPEN', // race condition: stale state but actually full
+        members: [hostMember(), { telegramUserId: 2, displayName: '@b', isHost: false }],
+        cap: 2,
+        mode: '1v1',
+    });
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobby);
+    try {
+        const res = await joinLobbyByCode({ code: 'ABCDEF', telegramUserId: 3 });
+        assert.equal(res.error, 'lobby_full');
+    } finally {
+        findMock.mock.restore();
+    }
+});
+
+test('joinLobbyByCode: unknown code → lobby_not_found', async () => {
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => null);
+    try {
+        const res = await joinLobbyByCode({ code: 'ZZZZZZ', telegramUserId: 9 });
+        assert.equal(res.error, 'lobby_not_found');
+    } finally {
+        findMock.mock.restore();
+    }
+});
+
+test('joinLobbyByCode: re-join by same telegramUserId is idempotent + updates socketId', async () => {
+    const lobby = fakeLobby({
+        members: [hostMember(), {
+            telegramUserId: 2, telegramUsername: 'mate', firstName: null,
+            displayName: '@mate', socketId: 'old-sock',
+            isHost: false, isReady: false, team: 'blue', slot: -1,
+        }],
+        cap: 4,
+    });
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobby);
+    try {
+        const res = await joinLobbyByCode({
+            code: 'ABCDEF', telegramUserId: 2, socketId: 'new-sock',
+        });
+        assert.equal(res.ok, true);
+        assert.equal(res.lobby.members.length, 2); // no dup
+        const mate = res.lobby.members.find(m => m.telegramUserId === 2);
+        assert.equal(mate.socketId, 'new-sock');
+    } finally {
+        findMock.mock.restore();
+    }
+});
+
+test('joinLobbyByCode: last seat fills → state OPEN → FULL', async () => {
+    const lobby = fakeLobby({
+        state: 'OPEN',
+        cap: 2,
+        mode: '1v1',
+        members: [hostMember()],
+    });
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobby);
+    try {
+        const res = await joinLobbyByCode({ code: 'ABCDEF', telegramUserId: 2 });
+        assert.equal(res.ok, true);
+        assert.equal(res.lobby.state, 'FULL');
+    } finally {
+        findMock.mock.restore();
+    }
+});
+
+test('joinLobbyByCode: 2v2 team assignment alternates red/blue by index', async () => {
+    const lobby = fakeLobby({
+        state: 'OPEN', cap: 4, mode: '2v2',
+        members: [hostMember()],
+    });
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobby);
+    try {
+        const r1 = await joinLobbyByCode({ code: 'ABCDEF', telegramUserId: 2 });
+        assert.equal(r1.lobby.members[1].team, 'blue');
+        const r2 = await joinLobbyByCode({ code: 'ABCDEF', telegramUserId: 3 });
+        assert.equal(r2.lobby.members[2].team, 'red');
+        const r3 = await joinLobbyByCode({ code: 'ABCDEF', telegramUserId: 4 });
+        assert.equal(r3.lobby.members[3].team, 'blue');
+        assert.equal(r3.lobby.state, 'FULL');
+    } finally {
+        findMock.mock.restore();
     }
 });
 

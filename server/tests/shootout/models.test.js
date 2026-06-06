@@ -15,6 +15,7 @@ import ShootoutLobby, {
   LOBBY_MIN_CAP, LOBBY_MAX_CAP, LOBBY_MODES,
 } from '../../models/ShootoutLobby.js';
 import ShootoutMatch from '../../models/ShootoutMatch.js';
+import ShootoutStats from '../../models/ShootoutStats.js';
 
 test('ShootoutLobby model loads + exports caps + modes', () => {
   assert.equal(LOBBY_MIN_CAP, 2);
@@ -62,4 +63,21 @@ test('ShootoutMatch has players array + dcDuringMatch tracker', () => {
   assert.ok(Array.isArray(m.players));
   assert.deepEqual(m.dcDuringMatch, []);
   assert.equal(m.winnerTeam, null);
+});
+
+// -------- ShootoutStats (Task B.3) --------
+
+test('ShootoutStats model loads + unique telegramUserId', () => {
+  assert.equal(ShootoutStats.modelName, 'ShootoutStats');
+  const idx = ShootoutStats.schema.path('telegramUserId');
+  assert.ok(idx.options.unique || idx._index?.unique);
+});
+
+test('ShootoutStats defaults: totals=0, rawKD=0, rankScore=0', () => {
+  const s = new ShootoutStats({ telegramUserId: 1, displayName: 'Test' });
+  assert.equal(s.totalKills, 0);
+  assert.equal(s.totalDeaths, 0);
+  assert.equal(s.totalMatches, 0);
+  assert.equal(s.rawKD, 0);
+  assert.equal(s.rankScore, 0);
 });

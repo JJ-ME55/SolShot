@@ -164,3 +164,50 @@ export async function joinLobbyByCode({
     });
     return { ok: true, lobby: lobby.toObject() };
 }
+
+// ── Leave ────────────────────────────────────────────────────────────
+
+export async function leaveLobby({ lobbyId, telegramUserId }) {
+    const lobby = await ShootoutLobby.findOne({ lobbyId });
+    if (!lobby) return { error: 'lobby_not_found' };
+
+    const idx = lobby.members.findIndex(m => m.telegramUserId === telegramUserId);
+    if (idx < 0) {
+        // Non-member — defensively no-op. Don't bump activity.
+        return { ok: true, lobby: lobby.toObject() };
+    }
+
+    const wasHost = lobby.members[idx].isHost
+        || lobby.hostTelegramUserId === telegramUserId;
+    lobby.members.splice(idx, 1);
+
+    if (lobby.members.length === 0) {
+        // Last out closes the lobby.
+        lobby.state = 'CLOSED';
+        lobby.closedAt = new Date();
+        await lobby.save();
+        logger.info('[shootout/lobby] closed (last member left)', { lobbyId });
+        return { ok: true, closed: true, lobby: lobby.toObject() };
+    }
+
+    if (wasHost) {
+        // Transfer host token to next-joined (now first) member.
+        lobby.members[0].isHost = true;
+        lobby.hostTelegramUserId = lobby.members[0].telegramUserId;
+    }
+    if (lobby.state === 'FULL' && lobby.members.length < lobby.cap) {
+        lobby.state = 'OPEN';
+    }
+    // Leaving while READY drops the ready-state — caller's invariant is
+    // "READY = all-ready AND at-cap"; with fewer members we're no longer
+    // at cap.
+    if (lobby.state === 'READY' && lobby.members.length < lobby.cap) {
+        lobby.state = 'OPEN';
+    }
+    lobby.lastActiveAt = new Date();
+    await lobby.save();
+    logger.info('[shootout/lobby] left', {
+        lobbyId, leaver: telegramUserId, wasHost, state: lobby.state,
+    });
+    return { ok: true, lobby: lobby.toObject() };
+}

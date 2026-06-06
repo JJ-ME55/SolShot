@@ -14,6 +14,7 @@ import assert from 'node:assert/strict';
 import ShootoutLobby, {
   LOBBY_MIN_CAP, LOBBY_MAX_CAP, LOBBY_MODES,
 } from '../../models/ShootoutLobby.js';
+import ShootoutMatch from '../../models/ShootoutMatch.js';
 
 test('ShootoutLobby model loads + exports caps + modes', () => {
   assert.equal(LOBBY_MIN_CAP, 2);
@@ -41,4 +42,24 @@ test('ShootoutLobby members default to empty array', () => {
   });
   assert.deepEqual(lobby.members, []);
   assert.equal(lobby.state, 'OPEN');
+});
+
+// -------- ShootoutMatch (Task B.2) --------
+
+test('ShootoutMatch model loads', () => {
+  assert.equal(ShootoutMatch.modelName, 'ShootoutMatch');
+});
+
+test('ShootoutMatch enforces mode enum (1v1, 2v2)', () => {
+  const modePath = ShootoutMatch.schema.path('mode');
+  assert.deepEqual(modePath.enumValues.sort(), ['1v1', '2v2']);
+});
+
+test('ShootoutMatch has players array + dcDuringMatch tracker', () => {
+  const m = new ShootoutMatch({
+    matchId: 'match-1', lobbyId: 'lobby-1', mode: '1v1',
+  });
+  assert.ok(Array.isArray(m.players));
+  assert.deepEqual(m.dcDuringMatch, []);
+  assert.equal(m.winnerTeam, null);
 });

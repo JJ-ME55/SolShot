@@ -211,3 +211,27 @@ export async function leaveLobby({ lobbyId, telegramUserId }) {
     });
     return { ok: true, lobby: lobby.toObject() };
 }
+
+// ── Ready ────────────────────────────────────────────────────────────
+
+export async function setReady({ lobbyId, telegramUserId, ready }) {
+    const lobby = await ShootoutLobby.findOne({ lobbyId });
+    if (!lobby) return { error: 'lobby_not_found' };
+    const member = lobby.members.find(m => m.telegramUserId === telegramUserId);
+    if (!member) return { error: 'not_member' };
+
+    member.isReady = !!ready;
+
+    // FULL → READY when everyone's ready. READY → FULL the moment
+    // anyone un-readies. Pre-FULL states (OPEN) don't transition — you
+    // can flip the flag but the gate doesn't open until at cap.
+    if (lobby.state === 'FULL' && lobby.members.every(m => m.isReady)) {
+        lobby.state = 'READY';
+    } else if (lobby.state === 'READY' && !lobby.members.every(m => m.isReady)) {
+        lobby.state = 'FULL';
+    }
+
+    lobby.lastActiveAt = new Date();
+    await lobby.save();
+    return { ok: true, lobby: lobby.toObject() };
+}

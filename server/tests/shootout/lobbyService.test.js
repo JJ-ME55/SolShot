@@ -20,6 +20,7 @@ import {
     createLobby,
     joinLobbyByCode,
     leaveLobby,
+    setReady,
     listOpenLobbies,
 } from '../../services/games/shootout/lobbyService.js';
 
@@ -376,6 +377,90 @@ test('leaveLobby: non-member of existing lobby is a no-op', async () => {
         assert.equal(res.ok, true);
         assert.equal(res.lobby.members.length, 1);
         assert.equal(res.lobby.state, 'OPEN');
+    } finally {
+        findMock.mock.restore();
+    }
+});
+
+// ── C.5 setReady ─────────────────────────────────────────────────────
+
+test('setReady: flips member isReady true → false → true', async () => {
+    const lobby = fakeLobby({
+        state: 'FULL', cap: 2, mode: '1v1',
+        members: [
+            hostMember(),
+            { telegramUserId: 2, displayName: '@b', isHost: false, isReady: false, team: 'blue' },
+        ],
+    });
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobby);
+    try {
+        let res = await setReady({ lobbyId: 'lobby-x', telegramUserId: 2, ready: true });
+        assert.equal(res.ok, true);
+        assert.equal(res.lobby.members[1].isReady, true);
+        res = await setReady({ lobbyId: 'lobby-x', telegramUserId: 2, ready: false });
+        assert.equal(res.lobby.members[1].isReady, false);
+    } finally {
+        findMock.mock.restore();
+    }
+});
+
+test('setReady: all members ready while FULL → state READY', async () => {
+    const lobby = fakeLobby({
+        state: 'FULL', cap: 2, mode: '1v1',
+        members: [
+            hostMember({ isReady: true }),
+            { telegramUserId: 2, displayName: '@b', isHost: false, isReady: false, team: 'blue' },
+        ],
+    });
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobby);
+    try {
+        const res = await setReady({ lobbyId: 'lobby-x', telegramUserId: 2, ready: true });
+        assert.equal(res.lobby.state, 'READY');
+    } finally {
+        findMock.mock.restore();
+    }
+});
+
+test('setReady: one un-readies while READY → back to FULL', async () => {
+    const lobby = fakeLobby({
+        state: 'READY', cap: 2, mode: '1v1',
+        members: [
+            hostMember({ isReady: true }),
+            { telegramUserId: 2, displayName: '@b', isHost: false, isReady: true, team: 'blue' },
+        ],
+    });
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobby);
+    try {
+        const res = await setReady({ lobbyId: 'lobby-x', telegramUserId: 2, ready: false });
+        assert.equal(res.lobby.state, 'FULL');
+        assert.equal(res.lobby.members[1].isReady, false);
+    } finally {
+        findMock.mock.restore();
+    }
+});
+
+test('setReady: unknown lobby returns lobby_not_found', async () => {
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => null);
+    try {
+        const res = await setReady({ lobbyId: 'nope', telegramUserId: 1, ready: true });
+        assert.equal(res.error, 'lobby_not_found');
+    } finally {
+        findMock.mock.restore();
+    }
+});
+
+test('setReady: non-member returns not_member', async () => {
+    const lobby = fakeLobby({
+        state: 'FULL', cap: 2, mode: '1v1',
+        members: [
+            hostMember(),
+            { telegramUserId: 2, displayName: '@b', isHost: false, team: 'blue' },
+        ],
+    });
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobby);
+    try {
+        const res = await setReady({ lobbyId: 'lobby-x', telegramUserId: 999, ready: true });
+        assert.equal(res.error, 'not_member');
     } finally {
         findMock.mock.restore();
     }

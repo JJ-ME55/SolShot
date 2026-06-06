@@ -22,6 +22,10 @@
  *    a shot is not silently dropped). Preserved verbatim.
  *  - Reload ammo refills at 50% of reloadTime (CS:S Decision D8).
  *  - `getAmmo` returns a shallow copy so callers can't mutate internal state.
+ *  - Source switch-cases in `update()` declare bare `const` per case (legal in
+ *    TS, where the compiler emits per-case lets). Ported with `case ...: { ... }`
+ *    blocks because JS scopes `const` to the entire switch, not the case.
+ *    Behavior identical; semantics preserved.
  */
 
 export const SOURCE_COMMIT = '5531febdc6c6289f0d12a05352acb2fad7a08a60'; // bump on every Fish-sync

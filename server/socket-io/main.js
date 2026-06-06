@@ -69,6 +69,7 @@ import { recordMatchPlayed, prestigeBurn, getPrestigeInfo, getShotBalance, PREST
 import { trackConnection, trackDisconnection, trackMatchCreated, trackMatchCompleted, trackMatchCancelled, trackWager, trackSettlement, trackForfeit, trackShot, trackDamage, trackGoldEarned, trackShotEmission, trackShotBurn, trackError } from '../services/monitoring.js';
 import { initPoolSocket, registerPoolHandlers } from './pool.js';
 import { initCritterKartSocket, registerCritterKartHandlers } from './critter-kart.js';
+import { initShootoutSocket, registerShootoutHandlers } from './shootout.js';
 import { requireAuth, validatePayload, validateFireParams, sanitizeName, withLock, safeHandler } from '../middleware/guards.js';
 import { initAI, cleanupAI, pickWeapon, calculateAim, autoBuyWeapons } from '../services/ai.js';
 import { CONSUMABLES, purchaseConsumable, decrementConsumables, getActiveConsumables, hasConsumable } from '../services/consumables.js';
@@ -1167,6 +1168,12 @@ const mainsocket = (io) => {
     // input / etc.). Per-client handlers attach below alongside pool.
     initCritterKartSocket(io);
 
+    // Shootout — same single-module pattern. Checkpoint 1: lobby flow
+    // only (shootout:lobby:create / join / leave / ready / list). The
+    // input -> snapshot loop and combat land in Checkpoint 2. See
+    // server/socket-io/shootout.js for the full event surface.
+    initShootoutSocket(io);
+
     // ═══ AI TURN SCHEDULING ═══
     // Defined in mainsocket scope so cleanupRoom can access it
     const aiTurnTimers = {}; // { roomId: timeoutId } — prevents double-scheduling
@@ -1425,6 +1432,10 @@ const mainsocket = (io) => {
         // pattern. Events under critterkart:* namespace, fully isolated
         // from SolShot/pool socket flow.
         registerCritterKartHandlers(client, io);
+
+        // Shootout socket handlers — events under shootout:* namespace,
+        // fully isolated from SolShot/pool/critter-kart socket flow.
+        registerShootoutHandlers(client, io);
 
         // Send the current queue snapshot to this new socket so the lobby
         // can render "● N WAITING" badges immediately on mount, without

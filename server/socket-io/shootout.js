@@ -22,16 +22,22 @@
  *                             ack: { ok } | { error }
  *     shootout:lobby:list     { }
  *                             ack: { ok, lobbies } | { error }
+ *     shootout:lobby:start    { lobbyId, telegramUserId }
+ *                             ack: { ok, matchId } | { error }
+ *     shootout:joinMatch      { matchId, telegramUserId }
+ *                             ack: { ok, slot } | { error }
  *
  *   Server → Room (room = lobby:<lobbyId>):
  *     shootout:lobby:state    { lobby }
  *     shootout:lobby:closed   { lobbyId, reason }
  *
+ *   Server → individual socket (NEVER a broadcast — see gotcha #5):
+ *     shootout:match:start    { matchId, lobbyId, mode, startAtMs,
+ *                               members, yourSlot }
+ *
  * Future (Checkpoint 2/3, intentionally NOT here yet):
- *     shootout:lobby:start    { lobbyId, telegramUserId }   — Task E.3
- *     shootout:joinMatch      { matchId, telegramUserId }   — Task E.3
  *     shootout:input          InputFrame                    — Checkpoint 2
- *     shootout:match:start    { matchId, ... }              — Task E.3
+ *     shootout:snapshot       SnapshotFrame                 — Checkpoint 2
  *
  * Auth: V1 trusts telegramUserId in payload (verified by the JWT layer
  * at connection time). A later phase bumps this to handshake-bound
@@ -42,6 +48,22 @@
 
 import logger from '../services/logger.js';
 import * as lobbyService from '../services/games/shootout/lobbyService.js';
+import * as lifecycle from '../services/games/shootout/lifecycle.js';
+import { ShootoutRunner } from '../services/games/shootout/sim/runner.js';
+
+// ── Module-level state ───────────────────────────────────────────────
+// One ShootoutRunner per in-flight match, keyed by matchId. Populated by
+// shootout:lobby:start, drained by Checkpoint 3's settle/cleanup path.
+//
+// Exported with a leading underscore as a TEST-ONLY hook so unit tests
+// can seed and inspect. Production code never touches this directly —
+// the handlers below are the only writers.
+export const _activeMatches = new Map(); // matchId → ShootoutRunner
+
+// Room name for match broadcasts. Single source of truth so the start
+// handler (which DOES NOT join) and the joinMatch handler (which DOES)
+// can't drift.
+const matchRoomName = (matchId) => `match:${matchId}`;
 
 // Room naming — single source of truth so we can't drift between
 // :create, :join, :leave callsites.
@@ -159,6 +181,104 @@ export function registerShootoutHandlers(client, io) {
             logger.error({ err }, 'shootout:lobby:list failed');
             ack?.({ error: 'internal' });
         }
+    });
+
+    // ── shootout:lobby:start ─────────────────────────────────────────
+    //
+    // Host pulls the trigger. lobbyService.startMatch stamps matchId on
+    // the lobby (READY → STARTING). lifecycle.createMatchFromLobby
+    // builds the descriptor. ShootoutRunner is parked in _activeMatches
+    // so the per-socket shootout:joinMatch can find it.
+    //
+    // TWO GOTCHA FIXES baked in here that Critter Kart had to patch at
+    // run-time — every reviewer should re-read both before touching
+    // this handler:
+    //
+    // GOTCHA #1 — DO NOT socket.join(matchRoom) on this handler.
+    //   Snapshots will start firing once Checkpoint 2 lands; if we join
+    //   the broadcast room here and the client's screen-mount is async,
+    //   the client misses the early ticks and silently runs its own
+    //   local sim → desync. The fix: the client emits shootout:joinMatch
+    //   AFTER its screen mounts; only then does the server bind the
+    //   socket to the match room. See the :joinMatch handler below.
+    //
+    // GOTCHA #5 — DO NOT broadcast match:start to the lobby room.
+    //   A single io.to(lobbyRoom).emit('shootout:match:start', payload)
+    //   would deliver the same payload to every member-socket. Each
+    //   client then does an Array.find by username to figure out its
+    //   own slot. Two devices logged into the same TG account → same
+    //   username → both find slot 0 first → both think they're slot 0
+    //   → match desync. The fix: emit to EACH member-socket
+    //   INDIVIDUALLY with that socket's own yourSlot value baked in.
+    client.on('shootout:lobby:start', async (payload, ack) => {
+        try {
+            const startRes = await lobbyService.startMatch({
+                lobbyId: payload?.lobbyId,
+                telegramUserId: payload?.telegramUserId,
+            });
+            if (startRes?.error) return ack?.({ error: startRes.error });
+
+            const matchRes = await lifecycle.createMatchFromLobby({ lobby: startRes.lobby });
+            if (matchRes?.error) return ack?.({ error: matchRes.error });
+
+            const runner = new ShootoutRunner({ match: matchRes.match, io });
+            _activeMatches.set(matchRes.match.matchId, runner);
+
+            // GOTCHA #5: per-socket emit with each socket's own yourSlot.
+            // GOTCHA #1: NO socket.join(matchRoomName(...)) here.
+            for (const m of matchRes.match.members) {
+                const lobbyMember = startRes.lobby.members.find(
+                    (lm) => lm.telegramUserId === m.telegramUserId,
+                );
+                if (!lobbyMember?.socketId) continue;
+                const memberSock = io.sockets.sockets.get(lobbyMember.socketId);
+                if (!memberSock) continue;
+                memberSock.emit('shootout:match:start', {
+                    matchId:   matchRes.match.matchId,
+                    lobbyId:   matchRes.match.lobbyId,
+                    mode:      matchRes.match.mode,
+                    startAtMs: matchRes.match.startedAt,
+                    members:   matchRes.match.members,
+                    yourSlot:  m.slot,
+                });
+            }
+
+            logger.info('[shootout] match starting', {
+                matchId: matchRes.match.matchId,
+                lobbyId: matchRes.match.lobbyId,
+                members: matchRes.match.members.length,
+            });
+            ack?.({ ok: true, matchId: matchRes.match.matchId });
+        } catch (err) {
+            logger.error({ err }, 'shootout:lobby:start failed');
+            ack?.({ error: 'internal' });
+        }
+    });
+
+    // ── shootout:joinMatch ───────────────────────────────────────────
+    //
+    // The client emits this AFTER receiving shootout:match:start AND
+    // mounting its in-match screen. Only at that point is the socket
+    // safe to bind to the broadcast room — see gotcha #1 above.
+    //
+    // The ack carries the authoritative slot for this socket. Clients
+    // already received yourSlot in match:start; re-acking it here is
+    // belt-and-braces for the read-after-mount flow.
+    client.on('shootout:joinMatch', (payload, ack) => {
+        const matchId        = payload?.matchId;
+        const telegramUserId = payload?.telegramUserId;
+        const runner = _activeMatches.get(matchId);
+        if (!runner) return ack?.({ error: 'match_not_found' });
+        const member = runner.match.members.find(
+            (m) => m.telegramUserId === telegramUserId,
+        );
+        if (!member) return ack?.({ error: 'not_a_member' });
+
+        // GOTCHA #1: this is the ONLY place the socket enters the match
+        // room. Snapshots emitted by the runner (Checkpoint 2) will
+        // reach this socket from here on.
+        client.join(runner.roomName);
+        ack?.({ ok: true, slot: member.slot });
     });
 }
 

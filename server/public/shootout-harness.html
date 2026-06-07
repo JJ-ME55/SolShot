@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<!--
+  Shootout two-tab E2E demo harness (Phase C Checkpoint 1, Task F.1).
+
+  Drives the full lobby + match-start path against the existing handlers
+  in server/socket-io/shootout.js without any front-end build step.
+
+  Static-served by Express (see server/index.js — `app.use(express.static('public'))`).
+  Loads socket.io-client from the server-bundled /socket.io/socket.io.js
+  endpoint that Socket.IO exposes by default (CSP-safe under 'self';
+  pinned to the exact server-side socket.io version, no CDN drift).
+
+  ── Manual test plan ──────────────────────────────────────────────────
+  Pre-req: server running with MONGODB_URI set (npm run dev in /server).
+
+  1. Tab A: http://localhost:5001/shootout-harness.html?u=111
+  2. Tab B: http://localhost:5001/shootout-harness.html?u=222
+  3. Tab A: pick 1v1, click Create lobby — note the 6-char code.
+  4. Tab B: paste code, click Join — both tabs show 2/2 members.
+  5. Both tabs: click Ready — state flips FULL → READY.
+  6. Tab A (host): click Start match — BOTH tabs receive
+     shootout:match:start with DIFFERENT yourSlot (Tab A: 0, Tab B: 1).
+     Both tabs auto-emit shootout:joinMatch and log ack { ok, slot }.
+
+  This file is intentionally ugly. ~200 lines, plain JS, zero deps.
+-->
+<head>
+  <meta charset="utf-8" />
+  <title>Shootout harness</title>
+  <style>
+    body { font: 13px/1.4 monospace; margin: 0; padding: 8px; background: #111; color: #ddd; }
+    h1   { font-size: 14px; margin: 0 0 6px; color: #fff; }
+    h2   { font-size: 12px; margin: 8px 0 4px; color: #aaa; text-transform: uppercase; letter-spacing: 0.05em; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+    .panel { border: 1px solid #333; padding: 6px; margin-bottom: 6px; background: #181818; }
+    button { background: #2a4; color: #000; border: 0; padding: 4px 10px; font-family: inherit; cursor: pointer; }
+    button:disabled { background: #444; color: #777; cursor: not-allowed; }
+    button.danger { background: #c33; color: #fff; }
+    input, select { background: #222; color: #eee; border: 1px solid #444; padding: 3px 5px; font-family: inherit; }
+    .code { font-size: 18px; color: #fc3; font-weight: bold; letter-spacing: 0.15em; }
+    .member { padding: 2px 0; }
+    .me { color: #fc3; }
+    pre { margin: 0; white-space: pre-wrap; word-break: break-all; }
+    #log { height: 240px; overflow-y: scroll; background: #000; padding: 4px; border: 1px solid #333; font-size: 11px; }
+    .emit { color: #6cf; }
+    .ack  { color: #fc3; }
+    .evt  { color: #6f6; }
+    .err  { color: #f66; }
+    .meta { color: #888; }
+  </style>
+</head>
+<body>
+  <h1>Shootout harness — <span id="whoami"></span></h1>
+
+  <div class="panel">
+    <h2>Create lobby</h2>
+    <div class="row">
+      <select id="mode"><option value="1v1">1v1</option><option value="2v2">2v2</option></select>
+      <button id="btnCreate">Create lobby</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Join by code</h2>
+    <div class="row">
+      <input id="joinCode" placeholder="ABC123" maxlength="8" style="text-transform: uppercase" />
+      <button id="btnJoin">Join</button>
+    </div>
+  </div>
+
+  <div class="panel" id="lobbyPanel" style="display:none">
+    <h2>Lobby</h2>
+    <div>id <code id="lobbyId"></code> · code <span class="code" id="lobbyCode"></span> · mode <code id="lobbyMode"></code> · state <code id="lobbyState"></code></div>
+    <div id="memberList" style="margin-top:6px"></div>
+    <div class="row" style="margin-top:6px">
+      <button id="btnReady">Ready</button>
+      <button id="btnStart" style="display:none">Start match</button>
+      <button id="btnLeave" class="danger">Leave</button>
+    </div>
+  </div>
+
+  <div class="panel" id="matchPanel" style="display:none">
+    <h2>Match</h2>
+    <pre id="matchInfo"></pre>
+  </div>
+
+  <h2>Event log</h2>
+  <div id="log"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <!--
+    NOTE: the harness logic lives in shootout-harness.js next door, NOT inline.
+    Helmet's CSP allows scripts from 'self' but not 'unsafe-inline' — an inline
+    <script> block would be silently blocked and the buttons would no-op.
+  -->
+  <script src="/shootout-harness.js"></script>
+</body>
+</html>

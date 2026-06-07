@@ -69,6 +69,7 @@ import { recordMatchPlayed, prestigeBurn, getPrestigeInfo, getShotBalance, PREST
 import { trackConnection, trackDisconnection, trackMatchCreated, trackMatchCompleted, trackMatchCancelled, trackWager, trackSettlement, trackForfeit, trackShot, trackDamage, trackGoldEarned, trackShotEmission, trackShotBurn, trackError } from '../services/monitoring.js';
 import { initPoolSocket, registerPoolHandlers } from './pool.js';
 import { initCritterKartSocket, registerCritterKartHandlers } from './critter-kart.js';
+import { initShootoutSocket, registerShootoutHandlers } from './shootout.js';
 import { requireAuth, validatePayload, validateFireParams, sanitizeName, withLock, safeHandler } from '../middleware/guards.js';
 import { initAI, cleanupAI, pickWeapon, calculateAim, autoBuyWeapons } from '../services/ai.js';
 import { CONSUMABLES, purchaseConsumable, decrementConsumables, getActiveConsumables, hasConsumable } from '../services/consumables.js';
@@ -1167,6 +1168,12 @@ const mainsocket = (io) => {
     // input / etc.). Per-client handlers attach below alongside pool.
     initCritterKartSocket(io);
 
+    // Shootout — same single-module pattern. Checkpoint 1: lobby flow
+    // only (shootout:lobby:create / join / leave / ready / list). The
+    // input -> snapshot loop and combat land in Checkpoint 2. See
+    // server/socket-io/shootout.js for the full event surface.
+    initShootoutSocket(io);
+
     // ═══ AI TURN SCHEDULING ═══
     // Defined in mainsocket scope so cleanupRoom can access it
     const aiTurnTimers = {}; // { roomId: timeoutId } — prevents double-scheduling
@@ -1426,6 +1433,10 @@ const mainsocket = (io) => {
         // from SolShot/pool socket flow.
         registerCritterKartHandlers(client, io);
 
+        // Shootout socket handlers — events under shootout:* namespace,
+        // fully isolated from SolShot/pool/critter-kart socket flow.
+        registerShootoutHandlers(client, io);
+
         // Send the current queue snapshot to this new socket so the lobby
         // can render "● N WAITING" badges immediately on mount, without
         // waiting for the next queue mutation to broadcast.
@@ -1505,7 +1516,13 @@ const mainsocket = (io) => {
         // budget and triggers the 90-drop disconnect. The race:input
         // handler is cheap (buffer-latest-per-kart) and the server is
         // authoritative for physics, so flooding gains nothing.
-        const RL_EXEMPT_EVENTS = new Set(['race:input'])
+        //
+        // Shootout's `shootout:input` is the same shape — also 30Hz
+        // sustained from each client during a match. Without exempting
+        // it, a single Shootout player on top of normal lobby chatter
+        // burns the whole budget. See the multiplayer plan, Day 1 / Task 4
+        // (gotcha #2 — "shootout:input MUST be in RL_EXEMPT_EVENTS").
+        const RL_EXEMPT_EVENTS = new Set(['race:input', 'shootout:input'])
         client.onevent = function(packet) {
             const now = Date.now()
             const eventName = packet.data && packet.data[0]

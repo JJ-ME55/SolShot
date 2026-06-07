@@ -4,6 +4,8 @@
 // so the H002 hard-503 path has its required env var documented as sync:false.
 import express from "express";
 import http from "http";
+import path from "path";
+import { fileURLToPath } from "url";
 import * as socket from "socket.io";
 import cors from 'cors';
 import helmet from 'helmet';
@@ -272,6 +274,14 @@ app.use(httpLimiter)
 // H008: Reduce body parser limit from 30mb to 1mb — no endpoint needs 30mb
 app.use(express.json({limit: "1mb", extended: true}))
 app.use(express.urlencoded({limit: "1mb", extended: true}))
+
+// Shootout E2E demo harness (Phase C Checkpoint 1, Task F.1). Serves
+// server/public/ statically so http://<host>/shootout-harness.html
+// resolves to the two-tab dev harness. Dev-only — no PII, no auth, no
+// sensitive bytes live in server/public/.
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+app.use(express.static(path.join(__dirname, 'public')))
 
 mainsocket(io)
 

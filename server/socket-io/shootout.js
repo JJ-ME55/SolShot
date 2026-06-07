@@ -328,6 +328,58 @@ export function registerShootoutHandlers(client, io) {
         });
     });
 
+    // ── shootout:fire ────────────────────────────────────────────────
+    //
+    // Server-authoritative hitscan. Client sends ray origin/dir + a
+    // clientTickFired so the runner can lag-comp rewind. On a hit, we
+    // broadcast shootout:match:hit to the room so every client renders
+    // the blood VFX / hit-marker / kill feed; on a miss we ack quietly
+    // (the shooter still gets predictive local feedback either way).
+    //
+    // Rate-limit lives at the main.js level via RL_EXEMPT_EVENTS — fire
+    // is NOT exempted, so the global per-event RL applies as a coarse
+    // anti-spam (the runner's per-weapon fireRate enforcement lands in
+    // a later checkpoint).
+    client.on('shootout:fire', (payload, ack) => {
+        try {
+            const matchId = payload?.matchId;
+            const slot    = payload?.slot;
+            if (matchId == null || slot == null) {
+                return ack?.({ error: 'bad_payload' });
+            }
+            const runner = _activeMatches.get(matchId);
+            if (!runner) return ack?.({ error: 'no_match' });
+
+            const res = runner.resolveFire(slot, {
+                seq:             payload.seq,
+                fromX:           payload.fromX,
+                fromY:           payload.fromY,
+                fromZ:           payload.fromZ,
+                dirX:            payload.dirX,
+                dirY:            payload.dirY,
+                dirZ:            payload.dirZ,
+                clientTickFired: payload.clientTickFired,
+                weaponType:      payload.weaponType,
+            });
+            if (!res?.ok) return ack?.({ error: res?.reason || 'miss' });
+
+            io.to(runner.roomName).emit('shootout:match:hit', {
+                shooterSlot: slot,
+                victimSlot:  res.victim,
+                zone:        res.zone,
+                damageDealt: res.damageDealt,
+                killed:      res.killed,
+                isHeadshot:  res.isHeadshot,
+                weaponType:  payload.weaponType,
+                remainingHp: res.remainingHp,
+            });
+            ack?.({ ok: true });
+        } catch (err) {
+            logger.error({ err }, 'shootout:fire failed');
+            ack?.({ error: 'internal' });
+        }
+    });
+
     // ── shootout:joinMatch ───────────────────────────────────────────
     //
     // The client emits this AFTER receiving shootout:match:start AND

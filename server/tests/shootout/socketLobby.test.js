@@ -970,6 +970,153 @@ test('shootout:lobby:start auto-starts the runner (Day 2: runner.start() in hand
     }
 });
 
+// ── Day 2 / Phase 2 — shootout:fire ──────────────────────────────────
+//
+// Lag-comp hitscan submission. On hit, server emits match:hit to the
+// room; on miss/error the ack carries a reason and no broadcast fires.
+
+test('registerShootoutHandlers: shootout:fire registered', () => {
+    const client = makeFakeClient();
+    registerShootoutHandlers(client, makeFakeIo());
+    assert.ok(client.handlers.has('shootout:fire'),
+        'expected handler for shootout:fire');
+});
+
+test('shootout:fire — unknown matchId acks no_match without broadcast', async () => {
+    _stopAndClearActiveMatches();
+    const client = makeFakeClient();
+    const io = makeFakeIo();
+    registerShootoutHandlers(client, io);
+    let ackResult;
+    await client.handlers.get('shootout:fire')(
+        { matchId: 'nope', slot: 0 },
+        (r) => { ackResult = r; },
+    );
+    assert.equal(ackResult.error, 'no_match');
+    const hits = io.emitted.filter(e => e.evt === 'shootout:match:hit');
+    assert.equal(hits.length, 0);
+});
+
+test('shootout:fire — missing matchId/slot acks bad_payload', async () => {
+    _stopAndClearActiveMatches();
+    const client = makeFakeClient();
+    registerShootoutHandlers(client, makeFakeIo());
+    let ackResult;
+    await client.handlers.get('shootout:fire')({}, (r) => { ackResult = r; });
+    assert.equal(ackResult.error, 'bad_payload');
+});
+
+test('shootout:fire — hit case broadcasts match:hit and acks ok', async () => {
+    _stopAndClearActiveMatches();
+    const lobbyDoc = readyLobbyDoc({
+        lobbyId: 'L-fire',
+        hostTelegramUserId: 1,
+        members: [
+            { telegramUserId: 1, telegramUsername: 'a', socketId: 'sock-a', displayName: '@a' },
+            { telegramUserId: 2, telegramUsername: 'b', socketId: 'sock-b', displayName: '@b' },
+        ],
+    });
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobbyDoc);
+    try {
+        const host  = makeFakeClient(); host.id  = 'sock-host';
+        const sockA = makeFakeClient(); sockA.id = 'sock-a';
+        const sockB = makeFakeClient(); sockB.id = 'sock-b';
+        const io = makeFakeIo();
+        io.sockets.sockets.set('sock-a', sockA);
+        io.sockets.sockets.set('sock-b', sockB);
+
+        registerShootoutHandlers(host, io);
+        registerShootoutHandlers(sockA, io);
+        let ackStart;
+        await host.handlers.get('shootout:lobby:start')(
+            { lobbyId: 'L-fire', telegramUserId: 1 },
+            (r) => { ackStart = r; },
+        );
+        // Pin slot 1 at (0,0,5) with history at tick 0
+        const runner = _activeMatches.get(ackStart.matchId);
+        const v = runner.players.get(1);
+        v.state.x = 0; v.state.y = 0; v.state.z = 5; v.state.yaw = 0;
+        v.ring[0] = { tick: 0, x: 0, y: 0, z: 5, yaw: 0, pitch: 0 };
+        runner.tick = 6;
+
+        let ackFire;
+        await sockA.handlers.get('shootout:fire')({
+            matchId: ackStart.matchId,
+            slot: 0,
+            seq: 1,
+            fromX: 0, fromY: 1.6, fromZ: 0,
+            dirX: 0, dirY: -0.04, dirZ: 1,
+            clientTickFired: 6,
+            weaponType: 'AK47',
+        }, (r) => { ackFire = r; });
+
+        assert.equal(ackFire.ok, true);
+        const hitEmit = io.emitted.find(e => e.evt === 'shootout:match:hit'
+            && e.room === `match:${ackStart.matchId}`);
+        assert.ok(hitEmit, 'expected match:hit broadcast');
+        assert.equal(hitEmit.payload.shooterSlot, 0);
+        assert.equal(hitEmit.payload.victimSlot, 1);
+        assert.ok(hitEmit.payload.damageDealt > 0);
+        assert.equal(hitEmit.payload.weaponType, 'AK47');
+    } finally {
+        findMock.mock.restore();
+        _stopAndClearActiveMatches();
+    }
+});
+
+test('shootout:fire — miss case acks miss, no broadcast', async () => {
+    _stopAndClearActiveMatches();
+    const lobbyDoc = readyLobbyDoc({
+        lobbyId: 'L-miss',
+        hostTelegramUserId: 1,
+        members: [
+            { telegramUserId: 1, telegramUsername: 'a', socketId: 'sock-a', displayName: '@a' },
+            { telegramUserId: 2, telegramUsername: 'b', socketId: 'sock-b', displayName: '@b' },
+        ],
+    });
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobbyDoc);
+    try {
+        const host  = makeFakeClient(); host.id  = 'sock-host';
+        const sockA = makeFakeClient(); sockA.id = 'sock-a';
+        const sockB = makeFakeClient(); sockB.id = 'sock-b';
+        const io = makeFakeIo();
+        io.sockets.sockets.set('sock-a', sockA);
+        io.sockets.sockets.set('sock-b', sockB);
+
+        registerShootoutHandlers(host, io);
+        registerShootoutHandlers(sockA, io);
+        let ackStart;
+        await host.handlers.get('shootout:lobby:start')(
+            { lobbyId: 'L-miss', telegramUserId: 1 },
+            (r) => { ackStart = r; },
+        );
+        const runner = _activeMatches.get(ackStart.matchId);
+        const v = runner.players.get(1);
+        v.state.x = 0; v.state.y = 0; v.state.z = 999; // far away
+        v.ring[0] = { tick: 0, x: 0, y: 0, z: 999, yaw: 0, pitch: 0 };
+        runner.tick = 6;
+
+        let ackFire;
+        await sockA.handlers.get('shootout:fire')({
+            matchId: ackStart.matchId,
+            slot: 0,
+            seq: 1,
+            fromX: 0, fromY: 1.6, fromZ: 0,
+            dirX: 1, dirY: 0, dirZ: 0, // perpendicular — miss
+            clientTickFired: 6,
+            weaponType: 'AK47',
+        }, (r) => { ackFire = r; });
+
+        assert.equal(ackFire.ok, undefined);
+        assert.equal(ackFire.error, 'miss');
+        const hits = io.emitted.filter(e => e.evt === 'shootout:match:hit');
+        assert.equal(hits.length, 0);
+    } finally {
+        findMock.mock.restore();
+        _stopAndClearActiveMatches();
+    }
+});
+
 // ── Day 1 / Task 4 — shootout:input ──────────────────────────────────
 //
 // Fire-and-forget per-frame input → runner.setInput. The handler must

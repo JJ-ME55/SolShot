@@ -350,17 +350,24 @@ export class ShootoutRunner {
         // ── Build ray ────────────────────────────────────────────
         // dir must be normalized; defensive normalize even though the
         // client should send a unit vector.
-        const dirLen = Math.hypot(fire.dirX, fire.dirY, fire.dirZ) || 1;
+        // Coerce numeric defensively — `Number(undefined) || 0` lets 0
+        // pass through cleanly (which `|| 0` would also do; using
+        // Number.isFinite guards against NaN from non-numeric junk).
+        const dx = Number.isFinite(fire?.dirX) ? fire.dirX : 0;
+        const dy = Number.isFinite(fire?.dirY) ? fire.dirY : 0;
+        const dz = Number.isFinite(fire?.dirZ) ? fire.dirZ : 0;
+        const dirLen = Math.hypot(dx, dy, dz);
+        if (dirLen < 1e-6) return { ok: false, reason: 'bad_dir' };
         const ray = {
             origin: {
-                x: Number(fire.fromX) || 0,
-                y: Number(fire.fromY) || 0,
-                z: Number(fire.fromZ) || 0,
+                x: Number.isFinite(fire?.fromX) ? fire.fromX : 0,
+                y: Number.isFinite(fire?.fromY) ? fire.fromY : 0,
+                z: Number.isFinite(fire?.fromZ) ? fire.fromZ : 0,
             },
             dir: {
-                x: (Number(fire.dirX) || 0) / dirLen,
-                y: (Number(fire.dirY) || 0) / dirLen,
-                z: (Number(fire.dirZ) || 1) / dirLen,
+                x: dx / dirLen,
+                y: dy / dirLen,
+                z: dz / dirLen,
             },
         };
 

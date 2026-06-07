@@ -255,6 +255,36 @@ export function registerShootoutHandlers(client, io) {
         }
     });
 
+    // ── shootout:input ───────────────────────────────────────────────
+    //
+    // Per-frame movement / look input from a connected match client.
+    // 30Hz sustained — must be in RL_EXEMPT_EVENTS (see
+    // server/socket-io/main.js, gotcha #2 from the multiplayer brief).
+    //
+    // No ack — input is fire-and-forget. The runner is authoritative; a
+    // dropped frame is no worse than 33ms of stale input, and the next
+    // frame supersedes it. Out-of-order seq is dropped inside
+    // runner.setInput.
+    //
+    // No payload validation beyond shape checking — runner.setInput
+    // coerces numerics and clamps booleans defensively.
+    client.on('shootout:input', (payload) => {
+        const matchId = payload?.matchId;
+        const slot    = payload?.slot;
+        if (matchId == null || slot == null) return;
+        const runner = _activeMatches.get(matchId);
+        if (!runner) return;
+        runner.setInput(slot, {
+            seq:       payload.seq,
+            moveX:     payload.moveX,
+            moveZ:     payload.moveZ,
+            lookYaw:   payload.lookYaw,
+            lookPitch: payload.lookPitch,
+            jump:      payload.jump,
+            crouch:    payload.crouch,
+        });
+    });
+
     // ── shootout:joinMatch ───────────────────────────────────────────
     //
     // The client emits this AFTER receiving shootout:match:start AND

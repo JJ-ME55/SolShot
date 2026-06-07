@@ -1516,7 +1516,13 @@ const mainsocket = (io) => {
         // budget and triggers the 90-drop disconnect. The race:input
         // handler is cheap (buffer-latest-per-kart) and the server is
         // authoritative for physics, so flooding gains nothing.
-        const RL_EXEMPT_EVENTS = new Set(['race:input'])
+        //
+        // Shootout's `shootout:input` is the same shape — also 30Hz
+        // sustained from each client during a match. Without exempting
+        // it, a single Shootout player on top of normal lobby chatter
+        // burns the whole budget. See the multiplayer plan, Day 1 / Task 4
+        // (gotcha #2 — "shootout:input MUST be in RL_EXEMPT_EVENTS").
+        const RL_EXEMPT_EVENTS = new Set(['race:input', 'shootout:input'])
         client.onevent = function(packet) {
             const now = Date.now()
             const eventName = packet.data && packet.data[0]

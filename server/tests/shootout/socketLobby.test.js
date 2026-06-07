@@ -19,6 +19,9 @@
 
 import { test, mock } from 'node:test';
 import { strict as assert } from 'node:assert';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve as resolvePath } from 'node:path';
 
 import ShootoutLobby from '../../models/ShootoutLobby.js';
 import {
@@ -830,6 +833,113 @@ test('shootout:joinMatch — not_a_member if telegramUserId is not on the match'
         );
         assert.equal(ackResult.error, 'not_a_member');
         assert.equal(stranger.joined.includes(`match:${ackStart.matchId}`), false);
+    } finally {
+        findMock.mock.restore();
+        _activeMatches.clear();
+    }
+});
+
+// ── Day 1 / Task 4 — shootout:input ──────────────────────────────────
+//
+// Fire-and-forget per-frame input → runner.setInput. The handler must
+// be registered, must short-circuit on unknown matchId without
+// throwing, and must forward the input fields to the runner.
+
+test('registerShootoutHandlers: shootout:input registered', () => {
+    const client = makeFakeClient();
+    registerShootoutHandlers(client, makeFakeIo());
+    assert.ok(client.handlers.has('shootout:input'),
+        'expected handler for shootout:input');
+});
+
+test('shootout:input — unknown matchId is a silent no-op (no throw, no side effect)', () => {
+    _activeMatches.clear();
+    const client = makeFakeClient();
+    registerShootoutHandlers(client, makeFakeIo());
+    // Must not throw.
+    assert.doesNotThrow(() => {
+        client.handlers.get('shootout:input')({
+            matchId: 'nope', slot: 0, seq: 1, moveZ: 1,
+        });
+    });
+});
+
+test('shootout:input — missing matchId/slot is a silent no-op', () => {
+    _activeMatches.clear();
+    const client = makeFakeClient();
+    registerShootoutHandlers(client, makeFakeIo());
+    assert.doesNotThrow(() => {
+        client.handlers.get('shootout:input')({});
+    });
+    assert.doesNotThrow(() => {
+        client.handlers.get('shootout:input')(null);
+    });
+});
+
+test('RL_EXEMPT_EVENTS in main.js includes shootout:input (gotcha #2)', () => {
+    // The exempt set lives inside a per-connection closure in main.js,
+    // so we can't import it directly. The robust-enough smoke check:
+    // grep the source file for the literal 'shootout:input' in the
+    // RL_EXEMPT_EVENTS line. If a future refactor moves the set out of
+    // the closure, swap this for a direct import.
+    const here    = dirname(fileURLToPath(import.meta.url));
+    const mainSrc = readFileSync(resolvePath(here, '../../socket-io/main.js'), 'utf8');
+    const m = mainSrc.match(/RL_EXEMPT_EVENTS\s*=\s*new Set\(\[(.*?)\]\)/);
+    assert.ok(m, 'expected RL_EXEMPT_EVENTS set literal in main.js');
+    assert.ok(m[1].includes("'shootout:input'") || m[1].includes('"shootout:input"'),
+        'expected RL_EXEMPT_EVENTS to include shootout:input');
+});
+
+test('shootout:input — happy path forwards to runner.setInput', async () => {
+    _activeMatches.clear();
+    const lobbyDoc = readyLobbyDoc({
+        lobbyId: 'L-input',
+        hostTelegramUserId: 1,
+        members: [
+            { telegramUserId: 1, telegramUsername: 'a', socketId: 'sock-a', displayName: '@a' },
+            { telegramUserId: 2, telegramUsername: 'b', socketId: 'sock-b', displayName: '@b' },
+        ],
+    });
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobbyDoc);
+    try {
+        const host  = makeFakeClient(); host.id  = 'sock-host';
+        const sockA = makeFakeClient(); sockA.id = 'sock-a';
+        const sockB = makeFakeClient(); sockB.id = 'sock-b';
+        const io = makeFakeIo();
+        io.sockets.sockets.set('sock-a', sockA);
+        io.sockets.sockets.set('sock-b', sockB);
+
+        registerShootoutHandlers(host, io);
+        registerShootoutHandlers(sockA, io);
+
+        let ackStart;
+        await host.handlers.get('shootout:lobby:start')(
+            { lobbyId: 'L-input', telegramUserId: 1 },
+            (r) => { ackStart = r; },
+        );
+
+        // Runner is now in _activeMatches. Setting input via the socket
+        // handler should reach the runner's players[0].lastInput.
+        const runner = _activeMatches.get(ackStart.matchId);
+        assert.ok(runner, 'runner exists');
+        runner.start();
+        try {
+            sockA.handlers.get('shootout:input')({
+                matchId: ackStart.matchId,
+                slot:    0,
+                seq:     7,
+                moveX:   0,
+                moveZ:   1,
+                lookYaw: 1.23,
+                jump:    false,
+            });
+            const p = runner.players.get(0);
+            assert.equal(p.lastInput.moveZ, 1);
+            assert.equal(p.lastInput.lookYaw, 1.23);
+            assert.equal(p.lastInputSeq, 7);
+        } finally {
+            runner.stop();
+        }
     } finally {
         findMock.mock.restore();
         _activeMatches.clear();

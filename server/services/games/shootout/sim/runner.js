@@ -31,6 +31,9 @@
 import { integrateMovement, spawnStateForSlot, neutralInput } from './physics.js';
 import { MOVEMENT_TUNING } from './tuning.js';
 import { SimBot } from './simBot.js';
+import { createHitboxSet, updateHitboxPositions, testHitscan } from './combat.js';
+import { DamageSystem } from './damage.js';
+import { weaponConfig, WeaponType } from './weapons.js';
 
 const TICK_HZ        = 60;
 const SNAPSHOT_HZ    = 20;
@@ -38,6 +41,38 @@ const TICK_MS        = 1000 / TICK_HZ;
 const SNAPSHOT_MS    = 1000 / SNAPSHOT_HZ;
 const TICK_DT        = 1 / TICK_HZ;
 const RING_CAPACITY  = 60; // 1s of history @ 60Hz — Day 2 lag-comp scratch
+
+// Day 2 lag-comp: maximum rewind in ticks. 15 ticks @ 60Hz = 250ms,
+// matching the brief's cap. Older fire frames are rejected as 'expired'.
+const MAX_REWIND_TICKS = 15;
+// Day 2 interp delay: 100ms / 6 ticks. Both client and server agree
+// to render/resolve 6 ticks behind realtime so snapshots can interpolate.
+const INTERP_DELAY_TICKS = 6;
+
+// Approximate Mixamo-skeleton bone heights (meters) relative to feet at
+// y=0. Synthesized from the client's PlayerModel proportions — these
+// only need to be close enough for chest/head hitboxes to land where
+// the visible character is. Crouching scales the standing heights to
+// CROUCH_BONE_SCALE.
+const BONE_HEIGHTS_STANDING = Object.freeze({
+    Head:       1.65,
+    Chest:      1.40,
+    Spine:      1.15,
+    'UpperArm.L': 1.42, 'Hand.L': 0.90,
+    'UpperArm.R': 1.42, 'Hand.R': 0.90,
+    'Thigh.L':   0.95,  'Foot.L': 0.05,
+    'Thigh.R':   0.95,  'Foot.R': 0.05,
+});
+const CROUCH_BONE_SCALE = 0.7;
+// Sideways offset for arms/legs (in meters, applied along the
+// yaw-rotated right axis).
+const BONE_SIDE_OFFSET = Object.freeze({
+    Head: 0, Chest: 0, Spine: 0,
+    'UpperArm.L': -0.22, 'Hand.L': -0.30,
+    'UpperArm.R':  0.22, 'Hand.R':  0.30,
+    'Thigh.L': -0.12, 'Foot.L': -0.12,
+    'Thigh.R':  0.12, 'Foot.R':  0.12,
+});
 
 export class ShootoutRunner {
     constructor({ match, io }) {
@@ -66,6 +101,12 @@ export class ShootoutRunner {
         this.startMs = 0;
         this._tickInterval     = null;
         this._snapshotInterval = null;
+
+        // Day 2: per-runner DamageSystem. Slots register on start().
+        // Identifier is the slot number coerced to string so the
+        // shared client/server damage code can lookup 'local' or any
+        // slot consistently.
+        this.damageSystem = new DamageSystem();
     }
 
     // ── Lifecycle ────────────────────────────────────────────────────
@@ -124,6 +165,10 @@ export class ShootoutRunner {
             ring,
             ringHead:     0,
         });
+        // Day 2: register each slot in the per-runner DamageSystem so
+        // resolveFire can apply HP loss. ID is the slot-as-string to
+        // match the shape testHitscan expects in its targets array.
+        this.damageSystem.registerPlayer(String(slot));
     }
 
     _addBotsForEmptySlots() {
@@ -198,6 +243,9 @@ export class ShootoutRunner {
     _emitSnapshot() {
         const players = [];
         for (const p of this.players.values()) {
+            // Day 2: include HP from the DamageSystem so clients can
+            // render victim HP bars + death state.
+            const health = this.damageSystem.getHealth(String(p.slot));
             players.push({
                 slot:  p.slot,
                 x:     p.state.x,
@@ -205,7 +253,9 @@ export class ShootoutRunner {
                 z:     p.state.z,
                 yaw:   p.state.yaw,
                 pitch: p.state.pitch,
-                alive: p.alive,
+                alive: p.alive && (health ? health.alive : true),
+                hp:    health ? health.hp : 100,
+                armor: health ? health.armor : 100,
             });
         }
         const snap = {
@@ -214,6 +264,151 @@ export class ShootoutRunner {
             players,
         };
         this.io.to(this.roomName).emit('shootout:match:snapshot', snap);
+    }
+
+    // ── Day 2: lag-comp hitscan ──────────────────────────────────────
+    //
+    // Look up a player's historical state at a given tick from the
+    // ring buffer. Returns null if the tick is outside the available
+    // window. The ring is a fixed-size circular buffer keyed by tick
+    // count, so the lookup is O(RING_CAPACITY) — fine.
+    _historicalStateAtTick(player, tick) {
+        if (!player || !Array.isArray(player.ring)) return null;
+        for (let i = 0; i < player.ring.length; i++) {
+            const entry = player.ring[i];
+            if (entry && entry.tick === tick) return entry;
+        }
+        return null;
+    }
+
+    // Synthesize Mixamo-style bone world positions from {x,y,z,yaw,crouching}
+    // for the purpose of ray-vs-hitbox testing. Y is feet level (matches
+    // physics.js spawn states where y=0 at floor).
+    _buildBonePositions(state) {
+        const yaw   = state.yaw || 0;
+        const sinY  = Math.sin(yaw);
+        const cosY  = Math.cos(yaw);
+        // Right-vector (perpendicular to yaw forward, in XZ plane)
+        // matching physics.js's wishDir math: rX=cosY, rZ=-sinY
+        const rX = cosY, rZ = -sinY;
+        const heightScale = state.crouching ? CROUCH_BONE_SCALE : 1;
+
+        const out = {};
+        for (const bone of Object.keys(BONE_HEIGHTS_STANDING)) {
+            const yOffset = BONE_HEIGHTS_STANDING[bone] * heightScale;
+            const sOffset = BONE_SIDE_OFFSET[bone] || 0;
+            out[bone] = {
+                x: state.x + rX * sOffset,
+                y: state.y + yOffset,
+                z: state.z + rZ * sOffset,
+            };
+        }
+        return out;
+    }
+
+    /**
+     * Day 2: server-authoritative lag-comp hitscan.
+     *
+     * Resolves a fire event by rewinding to the shooter's perceived
+     * tick (INTERP_DELAY_TICKS behind their fire frame), then
+     * intersecting their ray against every OTHER player's historical
+     * hitboxes at that tick. On a hit, apply damage via the runner's
+     * DamageSystem and return the verdict.
+     *
+     * @param {number} shooterSlot
+     * @param {object} fire
+     *   { seq, fromX, fromY, fromZ, dirX, dirY, dirZ, clientTickFired, weaponType }
+     * @returns {{ ok: boolean, victim?: number, zone?: string,
+     *             damageDealt?: number, killed?: boolean,
+     *             isHeadshot?: boolean, reason?: string }}
+     */
+    resolveFire(shooterSlot, fire) {
+        const shooter = this.players.get(shooterSlot);
+        if (!shooter) return { ok: false, reason: 'no_shooter' };
+        if (!shooter.alive) return { ok: false, reason: 'shooter_dead' };
+
+        const wc = weaponConfig(fire?.weaponType) || weaponConfig(WeaponType.AK47);
+        if (!wc) return { ok: false, reason: 'bad_weapon' };
+
+        // ── Determine target tick (lag-comp rewind) ──────────────
+        // Clamp the client's reported tick to current — clients can't
+        // claim hits in the future. Then step back by INTERP_DELAY_TICKS
+        // so the historical state we look at is what the shooter
+        // actually saw when they pulled the trigger.
+        const clientTick = Number.isFinite(fire?.clientTickFired)
+            ? Math.min(fire.clientTickFired, this.tick)
+            : this.tick;
+        const targetTick = clientTick - INTERP_DELAY_TICKS;
+        const rewindAge  = this.tick - targetTick;
+        if (rewindAge > MAX_REWIND_TICKS) {
+            return { ok: false, reason: 'rewind_expired' };
+        }
+        if (targetTick < 0) {
+            return { ok: false, reason: 'pre_match' };
+        }
+
+        // ── Build ray ────────────────────────────────────────────
+        // dir must be normalized; defensive normalize even though the
+        // client should send a unit vector.
+        const dirLen = Math.hypot(fire.dirX, fire.dirY, fire.dirZ) || 1;
+        const ray = {
+            origin: {
+                x: Number(fire.fromX) || 0,
+                y: Number(fire.fromY) || 0,
+                z: Number(fire.fromZ) || 0,
+            },
+            dir: {
+                x: (Number(fire.dirX) || 0) / dirLen,
+                y: (Number(fire.dirY) || 0) / dirLen,
+                z: (Number(fire.dirZ) || 1) / dirLen,
+            },
+        };
+
+        // ── Build temporary target hitbox sets at historical tick ─
+        const targets = [];
+        for (const p of this.players.values()) {
+            if (p.slot === shooterSlot) continue;
+            if (!p.alive) continue;
+            const histState = this._historicalStateAtTick(p, targetTick)
+                // Fallback to current state if no entry for this tick
+                // exists yet (e.g. first 6 ticks of the match).
+                || { x: p.state.x, y: p.state.y, z: p.state.z, yaw: p.state.yaw };
+            const stateForBones = { ...histState, crouching: p.state.crouching };
+            const bones = this._buildBonePositions(stateForBones);
+            const hitboxes = createHitboxSet(String(p.slot));
+            updateHitboxPositions(hitboxes, bones);
+            targets.push({ id: String(p.slot), hitboxes });
+        }
+
+        if (targets.length === 0) return { ok: false, reason: 'no_targets' };
+
+        // ── Run hitscan ──────────────────────────────────────────
+        const hit = testHitscan(ray.origin, ray.dir, targets, String(shooterSlot));
+        if (!hit) return { ok: false, reason: 'miss' };
+
+        // ── Apply damage ─────────────────────────────────────────
+        const dmg = this.damageSystem.applyDamage(String(shooterSlot), hit, wc);
+        if (!dmg) return { ok: false, reason: 'apply_failed' };
+
+        // Mark player dead in the runner record so snapshots + future
+        // hits see the correct alive flag without waiting for the
+        // damage system to re-tick.
+        const victimSlot = Number(hit.targetId);
+        if (dmg.killed) {
+            const victim = this.players.get(victimSlot);
+            if (victim) victim.alive = false;
+        }
+
+        return {
+            ok:           true,
+            victim:       victimSlot,
+            zone:         hit.zone,
+            damageDealt:  dmg.damageDealt,
+            killed:       !!dmg.killed,
+            isHeadshot:   !!dmg.isHeadshot,
+            remainingHp:  dmg.remainingHp,
+            remainingArmor: dmg.remainingArmor,
+        };
     }
 }
 

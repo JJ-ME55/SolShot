@@ -644,3 +644,96 @@ test('ShootoutRunner: round-end with no winner (time-up) gives LOSS_AWARD to bot
         r.stop();
     }
 });
+
+// ── Day 3 / Task 3: runner.buyWeapon — unit tests ────────────────────
+
+test('runner.buyWeapon: success during BUY deducts money + stamps loadout', () => {
+    const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
+    r.start();
+    try {
+        const p = r.players.get(0);
+        const moneyBefore = p.money;
+        const res = r.buyWeapon(0, 'REVOLVER');
+        assert.equal(res.ok, true);
+        assert.equal(res.weaponType, 'REVOLVER');
+        assert.equal(res.money, moneyBefore - 600);
+        assert.equal(p.money, moneyBefore - 600);
+        assert.equal(p.loadout, 'REVOLVER');
+    } finally {
+        r.stop();
+    }
+});
+
+test('runner.buyWeapon: not_buy_phase during LIVE', () => {
+    const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
+    r.start();
+    r.matchState.phase = Phase.LIVE;
+    try {
+        const moneyBefore = r.players.get(0).money;
+        const res = r.buyWeapon(0, 'REVOLVER');
+        assert.equal(res.ok, false);
+        assert.equal(res.reason, 'not_buy_phase');
+        assert.equal(r.players.get(0).money, moneyBefore);
+    } finally {
+        r.stop();
+    }
+});
+
+test('runner.buyWeapon: bad_weapon for unknown type', () => {
+    const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
+    r.start();
+    try {
+        const res = r.buyWeapon(0, 'CHEESE_GUN');
+        assert.equal(res.ok, false);
+        assert.equal(res.reason, 'bad_weapon');
+    } finally {
+        r.stop();
+    }
+});
+
+test('runner.buyWeapon: no_money when player cannot afford', () => {
+    const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
+    r.start();
+    try {
+        const p = r.players.get(0);
+        p.money = 50; // can't afford anything serious
+        const res = r.buyWeapon(0, 'AK47'); // price 2500
+        assert.equal(res.ok, false);
+        assert.equal(res.reason, 'no_money');
+        assert.equal(p.money, 50);  // money unchanged
+        assert.equal(p.loadout, null);
+    } finally {
+        r.stop();
+    }
+});
+
+test('runner.buyWeapon: no_player for unknown slot', () => {
+    const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
+    r.start();
+    try {
+        const res = r.buyWeapon(99, 'REVOLVER');
+        assert.equal(res.ok, false);
+        assert.equal(res.reason, 'no_player');
+    } finally {
+        r.stop();
+    }
+});
+
+test('runner: WIN_AWARD + LOSS_AWARD applied to teams on round end (winners get more)', () => {
+    const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
+    r.start();
+    r.matchState.phase = Phase.LIVE;
+    try {
+        const red  = r.players.get(0);
+        const blue = r.players.get(1);
+        const redBefore  = red.money;
+        const blueBefore = blue.money;
+        blue.alive = false;
+        r._runTick(); // triggers ROUND_END transition
+        // Red won → WIN_AWARD (3000), blue → LOSS_AWARD (1900)
+        assert.equal(red.money  - redBefore,  3000);
+        assert.equal(blue.money - blueBefore, 1900);
+    } finally {
+        r.stop();
+    }
+});

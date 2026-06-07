@@ -392,6 +392,42 @@ export function registerShootoutHandlers(client, io) {
         }
     });
 
+    // ── shootout:buy ─────────────────────────────────────────────────
+    //
+    // Day 3. Players purchase weapons during the BUY phase. The runner
+    // is authoritative — it owns money + matchState.phase — so we just
+    // forward to runner.buyWeapon and broadcast loadout to the match
+    // room on success so every client can update its model + HUD for
+    // the buying player.
+    //
+    // Error cases surface as ack({error:'reason'}):
+    //   no_match | not_buy_phase | bad_weapon | no_money | no_player
+    client.on('shootout:buy', (payload, ack) => {
+        try {
+            const matchId    = payload?.matchId;
+            const slot       = payload?.slot;
+            const weaponType = payload?.weaponType;
+            if (matchId == null || slot == null) {
+                return ack?.({ error: 'bad_payload' });
+            }
+            const runner = _activeMatches.get(matchId);
+            if (!runner) return ack?.({ error: 'no_match' });
+
+            const res = runner.buyWeapon(slot, weaponType);
+            if (!res.ok) return ack?.({ error: res.reason });
+
+            io.to(runner.roomName).emit('shootout:match:loadout', {
+                slot,
+                weaponType: res.weaponType,
+                money:      res.money,
+            });
+            ack?.({ ok: true, money: res.money });
+        } catch (err) {
+            logger.error({ err }, 'shootout:buy failed');
+            ack?.({ error: 'internal' });
+        }
+    });
+
     // ── shootout:joinMatch ───────────────────────────────────────────
     //
     // The client emits this AFTER receiving shootout:match:start AND

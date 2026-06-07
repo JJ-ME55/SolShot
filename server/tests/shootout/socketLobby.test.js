@@ -1226,3 +1226,224 @@ test('shootout:input — happy path forwards to runner.setInput', async () => {
         _stopAndClearActiveMatches();
     }
 });
+
+// ── Day 3 / Task 3 — shootout:buy ────────────────────────────────────
+
+test('registerShootoutHandlers: shootout:buy registered', () => {
+    const client = makeFakeClient();
+    registerShootoutHandlers(client, makeFakeIo());
+    assert.ok(client.handlers.has('shootout:buy'),
+        'expected handler for shootout:buy');
+});
+
+test('shootout:buy — missing matchId/slot acks bad_payload', async () => {
+    _stopAndClearActiveMatches();
+    const client = makeFakeClient();
+    registerShootoutHandlers(client, makeFakeIo());
+    let ack;
+    await client.handlers.get('shootout:buy')({}, (r) => { ack = r; });
+    assert.equal(ack.error, 'bad_payload');
+});
+
+test('shootout:buy — unknown matchId acks no_match', async () => {
+    _stopAndClearActiveMatches();
+    const client = makeFakeClient();
+    registerShootoutHandlers(client, makeFakeIo());
+    let ack;
+    await client.handlers.get('shootout:buy')(
+        { matchId: 'nope', slot: 0, weaponType: 'PISTOL' },
+        (r) => { ack = r; },
+    );
+    assert.equal(ack.error, 'no_match');
+});
+
+test('shootout:buy — happy path during BUY: deducts money, broadcasts loadout, acks ok', async () => {
+    _stopAndClearActiveMatches();
+    const lobbyDoc = readyLobbyDoc({
+        lobbyId: 'L-buy-ok',
+        hostTelegramUserId: 1,
+        members: [
+            { telegramUserId: 1, telegramUsername: 'a', socketId: 'sock-a', displayName: '@a' },
+            { telegramUserId: 2, telegramUsername: 'b', socketId: 'sock-b', displayName: '@b' },
+        ],
+    });
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobbyDoc);
+    try {
+        const host  = makeFakeClient(); host.id  = 'sock-host';
+        const sockA = makeFakeClient(); sockA.id = 'sock-a';
+        const sockB = makeFakeClient(); sockB.id = 'sock-b';
+        const io = makeFakeIo();
+        io.sockets.sockets.set('sock-a', sockA);
+        io.sockets.sockets.set('sock-b', sockB);
+        registerShootoutHandlers(host, io);
+        registerShootoutHandlers(sockA, io);
+
+        let ackStart;
+        await host.handlers.get('shootout:lobby:start')(
+            { lobbyId: 'L-buy-ok', telegramUserId: 1 },
+            (r) => { ackStart = r; },
+        );
+        const runner = _activeMatches.get(ackStart.matchId);
+        // Default phase is BUY after construction.
+        assert.equal(runner.matchState.phase, Phase.BUY);
+        const moneyBefore = runner.players.get(0).money;
+
+        let ack;
+        await sockA.handlers.get('shootout:buy')({
+            matchId: ackStart.matchId,
+            slot:    0,
+            weaponType: 'REVOLVER', // price 600
+        }, (r) => { ack = r; });
+
+        assert.equal(ack.ok, true);
+        assert.equal(ack.money, moneyBefore - 600);
+        assert.equal(runner.players.get(0).money, moneyBefore - 600);
+        assert.equal(runner.players.get(0).loadout, 'REVOLVER');
+
+        const loadoutEmit = io.emitted.find(e =>
+            e.evt === 'shootout:match:loadout'
+            && e.room === `match:${ackStart.matchId}`);
+        assert.ok(loadoutEmit, 'expected loadout broadcast');
+        assert.equal(loadoutEmit.payload.slot, 0);
+        assert.equal(loadoutEmit.payload.weaponType, 'REVOLVER');
+        assert.equal(loadoutEmit.payload.money, moneyBefore - 600);
+    } finally {
+        findMock.mock.restore();
+        _stopAndClearActiveMatches();
+    }
+});
+
+test('shootout:buy — during LIVE acks not_buy_phase, no broadcast', async () => {
+    _stopAndClearActiveMatches();
+    const lobbyDoc = readyLobbyDoc({
+        lobbyId: 'L-buy-live',
+        hostTelegramUserId: 1,
+        members: [
+            { telegramUserId: 1, telegramUsername: 'a', socketId: 'sock-a', displayName: '@a' },
+            { telegramUserId: 2, telegramUsername: 'b', socketId: 'sock-b', displayName: '@b' },
+        ],
+    });
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobbyDoc);
+    try {
+        const host  = makeFakeClient(); host.id  = 'sock-host';
+        const sockA = makeFakeClient(); sockA.id = 'sock-a';
+        const sockB = makeFakeClient(); sockB.id = 'sock-b';
+        const io = makeFakeIo();
+        io.sockets.sockets.set('sock-a', sockA);
+        io.sockets.sockets.set('sock-b', sockB);
+        registerShootoutHandlers(host, io);
+        registerShootoutHandlers(sockA, io);
+
+        let ackStart;
+        await host.handlers.get('shootout:lobby:start')(
+            { lobbyId: 'L-buy-live', telegramUserId: 1 },
+            (r) => { ackStart = r; },
+        );
+        const runner = _activeMatches.get(ackStart.matchId);
+        runner.matchState.phase = Phase.LIVE;
+        const moneyBefore = runner.players.get(0).money;
+        const broadcastsBefore = io.emitted.filter(
+            e => e.evt === 'shootout:match:loadout').length;
+
+        let ack;
+        await sockA.handlers.get('shootout:buy')({
+            matchId: ackStart.matchId,
+            slot:    0,
+            weaponType: 'REVOLVER',
+        }, (r) => { ack = r; });
+
+        assert.equal(ack.error, 'not_buy_phase');
+        assert.equal(runner.players.get(0).money, moneyBefore);
+        assert.equal(io.emitted.filter(
+            e => e.evt === 'shootout:match:loadout').length, broadcastsBefore);
+    } finally {
+        findMock.mock.restore();
+        _stopAndClearActiveMatches();
+    }
+});
+
+test('shootout:buy — insufficient money acks no_money', async () => {
+    _stopAndClearActiveMatches();
+    const lobbyDoc = readyLobbyDoc({
+        lobbyId: 'L-buy-broke',
+        hostTelegramUserId: 1,
+        members: [
+            { telegramUserId: 1, telegramUsername: 'a', socketId: 'sock-a', displayName: '@a' },
+            { telegramUserId: 2, telegramUsername: 'b', socketId: 'sock-b', displayName: '@b' },
+        ],
+    });
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobbyDoc);
+    try {
+        const host  = makeFakeClient(); host.id  = 'sock-host';
+        const sockA = makeFakeClient(); sockA.id = 'sock-a';
+        const sockB = makeFakeClient(); sockB.id = 'sock-b';
+        const io = makeFakeIo();
+        io.sockets.sockets.set('sock-a', sockA);
+        io.sockets.sockets.set('sock-b', sockB);
+        registerShootoutHandlers(host, io);
+        registerShootoutHandlers(sockA, io);
+
+        let ackStart;
+        await host.handlers.get('shootout:lobby:start')(
+            { lobbyId: 'L-buy-broke', telegramUserId: 1 },
+            (r) => { ackStart = r; },
+        );
+        const runner = _activeMatches.get(ackStart.matchId);
+        runner.players.get(0).money = 100; // can't afford anything serious
+
+        let ack;
+        await sockA.handlers.get('shootout:buy')({
+            matchId: ackStart.matchId,
+            slot:    0,
+            weaponType: 'AK47', // 2500
+        }, (r) => { ack = r; });
+
+        assert.equal(ack.error, 'no_money');
+        assert.equal(runner.players.get(0).money, 100);
+        assert.equal(runner.players.get(0).loadout, null);
+    } finally {
+        findMock.mock.restore();
+        _stopAndClearActiveMatches();
+    }
+});
+
+test('shootout:buy — unknown weaponType acks bad_weapon', async () => {
+    _stopAndClearActiveMatches();
+    const lobbyDoc = readyLobbyDoc({
+        lobbyId: 'L-buy-bad',
+        hostTelegramUserId: 1,
+        members: [
+            { telegramUserId: 1, telegramUsername: 'a', socketId: 'sock-a', displayName: '@a' },
+            { telegramUserId: 2, telegramUsername: 'b', socketId: 'sock-b', displayName: '@b' },
+        ],
+    });
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobbyDoc);
+    try {
+        const host  = makeFakeClient(); host.id  = 'sock-host';
+        const sockA = makeFakeClient(); sockA.id = 'sock-a';
+        const sockB = makeFakeClient(); sockB.id = 'sock-b';
+        const io = makeFakeIo();
+        io.sockets.sockets.set('sock-a', sockA);
+        io.sockets.sockets.set('sock-b', sockB);
+        registerShootoutHandlers(host, io);
+        registerShootoutHandlers(sockA, io);
+
+        let ackStart;
+        await host.handlers.get('shootout:lobby:start')(
+            { lobbyId: 'L-buy-bad', telegramUserId: 1 },
+            (r) => { ackStart = r; },
+        );
+
+        let ack;
+        await sockA.handlers.get('shootout:buy')({
+            matchId: ackStart.matchId,
+            slot:    0,
+            weaponType: 'FROGGY_GUN',
+        }, (r) => { ack = r; });
+
+        assert.equal(ack.error, 'bad_weapon');
+    } finally {
+        findMock.mock.restore();
+        _stopAndClearActiveMatches();
+    }
+});

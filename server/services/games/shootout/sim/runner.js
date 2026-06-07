@@ -232,6 +232,34 @@ export class ShootoutRunner {
         }
     }
 
+    // ── Day 3: buy menu ──────────────────────────────────────────────
+
+    /**
+     * Authoritative buy validation. Returns one of:
+     *   { ok:true, weaponType, money }    on success
+     *   { ok:false, reason: 'no_player' | 'not_buy_phase'
+     *               | 'bad_weapon' | 'no_money' }
+     *
+     * Money is deducted on success; the player's `loadout` is set so the
+     * runner can roll it into the round-start spawn (Day 4 task — for
+     * now `loadout` is informational, but the socket layer broadcasts
+     * it so the client can update its HUD/model immediately).
+     */
+    buyWeapon(slot, weaponType) {
+        const p = this.players.get(slot);
+        if (!p) return { ok: false, reason: 'no_player' };
+        if (this.matchState.phase !== Phase.BUY) {
+            return { ok: false, reason: 'not_buy_phase' };
+        }
+        const wc = weaponConfig(weaponType);
+        if (!wc) return { ok: false, reason: 'bad_weapon' };
+        const price = Number.isFinite(wc.price) ? wc.price : 0;
+        if (p.money < price) return { ok: false, reason: 'no_money' };
+        p.money  -= price;
+        p.loadout = weaponType;
+        return { ok: true, weaponType, money: p.money };
+    }
+
     // ── Input ────────────────────────────────────────────────────────
 
     /**

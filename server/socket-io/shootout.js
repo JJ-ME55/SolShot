@@ -210,47 +210,90 @@ export function registerShootoutHandlers(client, io) {
     //   username → both find slot 0 first → both think they're slot 0
     //   → match desync. The fix: emit to EACH member-socket
     //   INDIVIDUALLY with that socket's own yourSlot value baked in.
+    // Shared core: stamp match descriptor, spin up runner, broadcast
+    // match:start per-socket. Used by both :start (full lobby) and
+    // :startSolo (host alone with bot-fill).
+    async function _startCommon({ lobbyId, telegramUserId, allowSolo, ack }) {
+        const startRes = await lobbyService.startMatch({
+            lobbyId, telegramUserId, allowSolo: !!allowSolo,
+        });
+        if (startRes?.error) return ack?.({ error: startRes.error });
+
+        const matchRes = await lifecycle.createMatchFromLobby({ lobby: startRes.lobby });
+        if (matchRes?.error) return ack?.({ error: matchRes.error });
+
+        const runner = new ShootoutRunner({ match: matchRes.match, io });
+        _activeMatches.set(matchRes.match.matchId, runner);
+
+        // Day 2 (1.3): auto-start the runner so snapshots fire as soon
+        // as a client emits shootout:joinMatch. Wrap so a runner-init
+        // failure doesn't crash the lobby:start handler — the start
+        // ack still fires; the runner failure logs upstream.
+        try {
+            runner.start();
+        } catch (err) {
+            logger.error({ err, matchId: matchRes.match.matchId }, 'runner.start() failed');
+        }
+
+        // GOTCHA #5: per-socket emit with each socket's own yourSlot.
+        // GOTCHA #1: NO socket.join(matchRoomName(...)) here.
+        for (const m of matchRes.match.members) {
+            const lobbyMember = startRes.lobby.members.find(
+                (lm) => lm.telegramUserId === m.telegramUserId,
+            );
+            if (!lobbyMember?.socketId) continue;
+            const memberSock = io.sockets.sockets.get(lobbyMember.socketId);
+            if (!memberSock) continue;
+            memberSock.emit('shootout:match:start', {
+                matchId:   matchRes.match.matchId,
+                lobbyId:   matchRes.match.lobbyId,
+                mode:      matchRes.match.mode,
+                startAtMs: matchRes.match.startedAt,
+                members:   matchRes.match.members,
+                yourSlot:  m.slot,
+            });
+        }
+
+        logger.info('[shootout] match starting', {
+            matchId: matchRes.match.matchId,
+            lobbyId: matchRes.match.lobbyId,
+            members: matchRes.match.members.length,
+            solo:    !!allowSolo,
+        });
+        ack?.({ ok: true, matchId: matchRes.match.matchId });
+    }
+
     client.on('shootout:lobby:start', async (payload, ack) => {
         try {
-            const startRes = await lobbyService.startMatch({
+            await _startCommon({
                 lobbyId: payload?.lobbyId,
                 telegramUserId: payload?.telegramUserId,
+                allowSolo: false,
+                ack,
             });
-            if (startRes?.error) return ack?.({ error: startRes.error });
-
-            const matchRes = await lifecycle.createMatchFromLobby({ lobby: startRes.lobby });
-            if (matchRes?.error) return ack?.({ error: matchRes.error });
-
-            const runner = new ShootoutRunner({ match: matchRes.match, io });
-            _activeMatches.set(matchRes.match.matchId, runner);
-
-            // GOTCHA #5: per-socket emit with each socket's own yourSlot.
-            // GOTCHA #1: NO socket.join(matchRoomName(...)) here.
-            for (const m of matchRes.match.members) {
-                const lobbyMember = startRes.lobby.members.find(
-                    (lm) => lm.telegramUserId === m.telegramUserId,
-                );
-                if (!lobbyMember?.socketId) continue;
-                const memberSock = io.sockets.sockets.get(lobbyMember.socketId);
-                if (!memberSock) continue;
-                memberSock.emit('shootout:match:start', {
-                    matchId:   matchRes.match.matchId,
-                    lobbyId:   matchRes.match.lobbyId,
-                    mode:      matchRes.match.mode,
-                    startAtMs: matchRes.match.startedAt,
-                    members:   matchRes.match.members,
-                    yourSlot:  m.slot,
-                });
-            }
-
-            logger.info('[shootout] match starting', {
-                matchId: matchRes.match.matchId,
-                lobbyId: matchRes.match.lobbyId,
-                members: matchRes.match.members.length,
-            });
-            ack?.({ ok: true, matchId: matchRes.match.matchId });
         } catch (err) {
             logger.error({ err }, 'shootout:lobby:start failed');
+            ack?.({ error: 'internal' });
+        }
+    });
+
+    // ── shootout:lobby:startSolo ─────────────────────────────────────
+    //
+    // Host can start with sub-cap members; the runner's bot-fill
+    // populates empty slots. Used by the standalone client's
+    // "Solo vs Bot" entry on the lobby panel. Same downstream contract
+    // as :start (match:start emitted per-socket, runner spun up, room
+    // bind deferred to :joinMatch per gotcha #1).
+    client.on('shootout:lobby:startSolo', async (payload, ack) => {
+        try {
+            await _startCommon({
+                lobbyId: payload?.lobbyId,
+                telegramUserId: payload?.telegramUserId,
+                allowSolo: true,
+                ack,
+            });
+        } catch (err) {
+            logger.error({ err }, 'shootout:lobby:startSolo failed');
             ack?.({ error: 'internal' });
         }
     });

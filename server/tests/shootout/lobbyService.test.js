@@ -542,6 +542,70 @@ test('startMatch: success → matchId set, slots 0..n-1, state STARTING, teams p
     }
 });
 
+test('startMatch allowSolo: OPEN lobby with one member starts (no ready gate)', async () => {
+    const lobby = fakeLobby({
+        state: 'OPEN', cap: 2, mode: '1v1',
+        hostTelegramUserId: 1,
+        members: [hostMember({ isReady: false })],
+    });
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobby);
+    try {
+        const res = await startMatch({ lobbyId: 'lobby-x', telegramUserId: 1, allowSolo: true });
+        assert.equal(res.ok, true);
+        assert.ok(res.matchId.startsWith('match-'));
+        assert.equal(res.lobby.state, 'STARTING');
+        assert.equal(res.lobby.members[0].slot, 0);
+        assert.equal(res.lobby.members[0].isReady, true, 'host ready forced on');
+    } finally {
+        findMock.mock.restore();
+    }
+});
+
+test('startMatch allowSolo: non-host still rejected', async () => {
+    const lobby = fakeLobby({
+        state: 'OPEN', cap: 2, mode: '1v1',
+        hostTelegramUserId: 1,
+        members: [hostMember()],
+    });
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobby);
+    try {
+        const res = await startMatch({ lobbyId: 'lobby-x', telegramUserId: 99, allowSolo: true });
+        assert.equal(res.error, 'not_host');
+    } finally {
+        findMock.mock.restore();
+    }
+});
+
+test('startMatch allowSolo: CLOSED lobby rejected with not_startable', async () => {
+    const lobby = fakeLobby({
+        state: 'CLOSED', cap: 2, mode: '1v1',
+        hostTelegramUserId: 1,
+        members: [hostMember()],
+    });
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobby);
+    try {
+        const res = await startMatch({ lobbyId: 'lobby-x', telegramUserId: 1, allowSolo: true });
+        assert.equal(res.error, 'not_startable');
+    } finally {
+        findMock.mock.restore();
+    }
+});
+
+test('startMatch (full-lobby path unchanged): FULL state still rejected with not_ready', async () => {
+    const lobby = fakeLobby({
+        state: 'FULL', cap: 2, mode: '1v1',
+        hostTelegramUserId: 1,
+        members: [hostMember(), { telegramUserId: 2, displayName: '@b', isHost: false, team: 'blue' }],
+    });
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobby);
+    try {
+        const res = await startMatch({ lobbyId: 'lobby-x', telegramUserId: 1 });
+        assert.equal(res.error, 'not_ready');
+    } finally {
+        findMock.mock.restore();
+    }
+});
+
 // ── listOpenLobbies passthrough ──────────────────────────────────────
 
 test('listOpenLobbies delegates to ShootoutLobby.openLobbies()', async () => {

@@ -30,6 +30,17 @@ import {
     _activeMatches,
 } from '../../socket-io/shootout.js';
 
+// Day 2: shootout:lobby:start now auto-calls runner.start(), which
+// spins up setInterval ticks + snapshot loops. Tests that don't stop
+// runners leave the event loop pinned and the test process hangs at
+// the end. This helper stops every active runner and clears the map.
+function _stopAndClearActiveMatches() {
+    for (const runner of _activeMatches.values()) {
+        try { runner.stop(); } catch {}
+    }
+    _activeMatches.clear();
+}
+
 // ── Fakes ────────────────────────────────────────────────────────────
 
 function makeFakeClient() {
@@ -550,7 +561,7 @@ function readyLobbyDoc({ lobbyId, members, hostTelegramUserId, mode = '1v1' }) {
 }
 
 test('shootout:lobby:start — happy path: acks { ok, matchId }, registers activeMatches entry, emits per-socket match:start', async () => {
-    _activeMatches.clear();
+    _stopAndClearActiveMatches();
     const lobbyDoc = readyLobbyDoc({
         lobbyId: 'L-happy',
         hostTelegramUserId: 1,
@@ -587,12 +598,12 @@ test('shootout:lobby:start — happy path: acks { ok, matchId }, registers activ
         assert.ok(bStart);
     } finally {
         findMock.mock.restore();
-        _activeMatches.clear();
+        _stopAndClearActiveMatches();
     }
 });
 
 test('shootout:lobby:start — gotcha #5: per-socket yourSlot, even for same username', async () => {
-    _activeMatches.clear();
+    _stopAndClearActiveMatches();
     // SAME username on both sockets — the classic CK desync case.
     const lobbyDoc = readyLobbyDoc({
         lobbyId: 'L1',
@@ -641,12 +652,12 @@ test('shootout:lobby:start — gotcha #5: per-socket yourSlot, even for same use
             'sock-b NOT in match room after :start — gotcha #1');
     } finally {
         findMock.mock.restore();
-        _activeMatches.clear();
+        _stopAndClearActiveMatches();
     }
 });
 
 test('shootout:joinMatch — gotcha #1: socket.join(matchRoom) only happens here, after match:start', async () => {
-    _activeMatches.clear();
+    _stopAndClearActiveMatches();
     const lobbyDoc = readyLobbyDoc({
         lobbyId: 'L2',
         hostTelegramUserId: 1,
@@ -705,12 +716,12 @@ test('shootout:joinMatch — gotcha #1: socket.join(matchRoom) only happens here
         assert.ok(sockB.joined.includes(matchRoom));
     } finally {
         findMock.mock.restore();
-        _activeMatches.clear();
+        _stopAndClearActiveMatches();
     }
 });
 
 test('shootout:lobby:start — propagates lobbyService.startMatch errors (not_host)', async () => {
-    _activeMatches.clear();
+    _stopAndClearActiveMatches();
     const lobbyDoc = readyLobbyDoc({
         lobbyId: 'L3',
         hostTelegramUserId: 1, // host is 1
@@ -732,12 +743,12 @@ test('shootout:lobby:start — propagates lobbyService.startMatch errors (not_ho
         assert.equal(_activeMatches.size, 0, 'no runner created on error');
     } finally {
         findMock.mock.restore();
-        _activeMatches.clear();
+        _stopAndClearActiveMatches();
     }
 });
 
 test('shootout:lobby:start — propagates lobbyService.startMatch errors (not_ready)', async () => {
-    _activeMatches.clear();
+    _stopAndClearActiveMatches();
     const lobbyDoc = readyLobbyDoc({
         lobbyId: 'L4',
         hostTelegramUserId: 1,
@@ -760,12 +771,12 @@ test('shootout:lobby:start — propagates lobbyService.startMatch errors (not_re
         assert.equal(_activeMatches.size, 0);
     } finally {
         findMock.mock.restore();
-        _activeMatches.clear();
+        _stopAndClearActiveMatches();
     }
 });
 
 test('shootout:lobby:start — service throw → ack {error:internal}', async () => {
-    _activeMatches.clear();
+    _stopAndClearActiveMatches();
     const findMock = mock.method(ShootoutLobby, 'findOne', async () => {
         throw new Error('mongo dead');
     });
@@ -781,12 +792,12 @@ test('shootout:lobby:start — service throw → ack {error:internal}', async ()
         assert.equal(_activeMatches.size, 0);
     } finally {
         findMock.mock.restore();
-        _activeMatches.clear();
+        _stopAndClearActiveMatches();
     }
 });
 
 test('shootout:joinMatch — match_not_found if matchId is unknown', async () => {
-    _activeMatches.clear();
+    _stopAndClearActiveMatches();
     const sock = makeFakeClient();
     registerShootoutHandlers(sock, makeFakeIo());
     let ackResult;
@@ -799,7 +810,7 @@ test('shootout:joinMatch — match_not_found if matchId is unknown', async () =>
 });
 
 test('shootout:joinMatch — not_a_member if telegramUserId is not on the match', async () => {
-    _activeMatches.clear();
+    _stopAndClearActiveMatches();
     const lobbyDoc = readyLobbyDoc({
         lobbyId: 'L6',
         hostTelegramUserId: 1,
@@ -835,7 +846,127 @@ test('shootout:joinMatch — not_a_member if telegramUserId is not on the match'
         assert.equal(stranger.joined.includes(`match:${ackStart.matchId}`), false);
     } finally {
         findMock.mock.restore();
-        _activeMatches.clear();
+        _stopAndClearActiveMatches();
+    }
+});
+
+// ── Day 2 / Phase 1 — shootout:lobby:startSolo + runner auto-start ───
+//
+// :startSolo lets the host bypass the FULL/READY gate; the runner's
+// bot-fill populates empty slots. Same downstream contract as :start.
+
+test('registerShootoutHandlers: shootout:lobby:startSolo registered', () => {
+    const client = makeFakeClient();
+    registerShootoutHandlers(client, makeFakeIo());
+    assert.ok(client.handlers.has('shootout:lobby:startSolo'),
+        'expected handler for shootout:lobby:startSolo');
+});
+
+test('shootout:lobby:startSolo — OPEN lobby with one human starts; bot fills empty slot', async () => {
+    _stopAndClearActiveMatches();
+    // Solo: just the host, no opponent — runner bot-fill should fire.
+    const lobbyDoc = readyLobbyDoc({
+        lobbyId: 'L-solo',
+        hostTelegramUserId: 1,
+        members: [
+            { telegramUserId: 1, telegramUsername: 'fish', socketId: 'sock-a', displayName: '@fish' },
+        ],
+    });
+    lobbyDoc.cap = 2;     // 1v1 capacity — bot fills the empty slot
+    lobbyDoc.state = 'OPEN'; // sub-cap, can't start via :start
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobbyDoc);
+    try {
+        const host  = makeFakeClient(); host.id  = 'sock-host';
+        const sockA = makeFakeClient(); sockA.id = 'sock-a';
+        const io = makeFakeIo();
+        io.sockets.sockets.set('sock-a', sockA);
+
+        registerShootoutHandlers(host, io);
+        let ackResult;
+        await host.handlers.get('shootout:lobby:startSolo')(
+            { lobbyId: 'L-solo', telegramUserId: 1 },
+            (r) => { ackResult = r; },
+        );
+        assert.equal(ackResult.ok, true);
+        assert.ok(ackResult.matchId?.startsWith('match-'));
+
+        const runner = _activeMatches.get(ackResult.matchId);
+        assert.ok(runner, 'runner registered');
+        // Runner auto-started → both slots populated (1 human + 1 bot)
+        assert.equal(runner.players.size, 2, 'cap=2 → 1 human + 1 bot');
+        const bot = runner.players.get(1);
+        assert.ok(bot, 'slot 1 populated');
+        assert.equal(bot.isBot, true, 'slot 1 is a bot');
+
+        // match:start emitted to the human's socket
+        const aStart = sockA.emits.find(e => e.evt === 'shootout:match:start');
+        assert.ok(aStart, 'sock-a got match:start');
+        assert.equal(aStart.payload.yourSlot, 0);
+    } finally {
+        findMock.mock.restore();
+        _stopAndClearActiveMatches();
+    }
+});
+
+test('shootout:lobby:startSolo — non-host rejected with not_host', async () => {
+    _stopAndClearActiveMatches();
+    const lobbyDoc = readyLobbyDoc({
+        lobbyId: 'L-solo-nh',
+        hostTelegramUserId: 1,
+        members: [
+            { telegramUserId: 1, telegramUsername: 'a', socketId: 'sock-a', displayName: '@a' },
+        ],
+    });
+    lobbyDoc.state = 'OPEN';
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobbyDoc);
+    try {
+        const sock = makeFakeClient();
+        registerShootoutHandlers(sock, makeFakeIo());
+        let ackResult;
+        await sock.handlers.get('shootout:lobby:startSolo')(
+            { lobbyId: 'L-solo-nh', telegramUserId: 999 },
+            (r) => { ackResult = r; },
+        );
+        assert.equal(ackResult.error, 'not_host');
+        assert.equal(_activeMatches.size, 0);
+    } finally {
+        findMock.mock.restore();
+        _stopAndClearActiveMatches();
+    }
+});
+
+test('shootout:lobby:start auto-starts the runner (Day 2: runner.start() in handler)', async () => {
+    _stopAndClearActiveMatches();
+    const lobbyDoc = readyLobbyDoc({
+        lobbyId: 'L-autostart',
+        hostTelegramUserId: 1,
+        members: [
+            { telegramUserId: 1, telegramUsername: 'a', socketId: 'sock-a', displayName: '@a' },
+            { telegramUserId: 2, telegramUsername: 'b', socketId: 'sock-b', displayName: '@b' },
+        ],
+    });
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobbyDoc);
+    try {
+        const host  = makeFakeClient(); host.id  = 'sock-host';
+        const sockA = makeFakeClient(); sockA.id = 'sock-a';
+        const sockB = makeFakeClient(); sockB.id = 'sock-b';
+        const io = makeFakeIo();
+        io.sockets.sockets.set('sock-a', sockA);
+        io.sockets.sockets.set('sock-b', sockB);
+
+        registerShootoutHandlers(host, io);
+        let ackResult;
+        await host.handlers.get('shootout:lobby:start')(
+            { lobbyId: 'L-autostart', telegramUserId: 1 },
+            (r) => { ackResult = r; },
+        );
+        const runner = _activeMatches.get(ackResult.matchId);
+        assert.ok(runner, 'runner registered');
+        assert.equal(runner.started, true, 'runner auto-started by handler');
+        assert.equal(runner.players.size, 2, 'both human slots populated by start()');
+    } finally {
+        findMock.mock.restore();
+        _stopAndClearActiveMatches();
     }
 });
 
@@ -853,7 +984,7 @@ test('registerShootoutHandlers: shootout:input registered', () => {
 });
 
 test('shootout:input — unknown matchId is a silent no-op (no throw, no side effect)', () => {
-    _activeMatches.clear();
+    _stopAndClearActiveMatches();
     const client = makeFakeClient();
     registerShootoutHandlers(client, makeFakeIo());
     // Must not throw.
@@ -865,7 +996,7 @@ test('shootout:input — unknown matchId is a silent no-op (no throw, no side ef
 });
 
 test('shootout:input — missing matchId/slot is a silent no-op', () => {
-    _activeMatches.clear();
+    _stopAndClearActiveMatches();
     const client = makeFakeClient();
     registerShootoutHandlers(client, makeFakeIo());
     assert.doesNotThrow(() => {
@@ -891,7 +1022,7 @@ test('RL_EXEMPT_EVENTS in main.js includes shootout:input (gotcha #2)', () => {
 });
 
 test('shootout:input — happy path forwards to runner.setInput', async () => {
-    _activeMatches.clear();
+    _stopAndClearActiveMatches();
     const lobbyDoc = readyLobbyDoc({
         lobbyId: 'L-input',
         hostTelegramUserId: 1,
@@ -942,6 +1073,6 @@ test('shootout:input — happy path forwards to runner.setInput', async () => {
         }
     } finally {
         findMock.mock.restore();
-        _activeMatches.clear();
+        _stopAndClearActiveMatches();
     }
 });

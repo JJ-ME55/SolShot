@@ -244,12 +244,31 @@ export async function setReady({ lobbyId, telegramUserId, ready }) {
  * layer reads back members + slots + teams from the returned doc to
  * create the ShootoutMatch and seed the sim. We don't import lifecycle
  * here to avoid a circular dep.
+ *
+ * Options:
+ *   allowSolo (default false) — when true, the normal "state === READY"
+ *   gate is relaxed: any OPEN/FULL/READY lobby can start, and the
+ *   ready-flag on the host is implicitly forced on. The runner's
+ *   bot-fill step then fills the empty slots with SimBots. Used by the
+ *   "play vs bots through the MP server" entry point on the client so
+ *   the same socket path is exercised in solo and full lobbies.
  */
-export async function startMatch({ lobbyId, telegramUserId }) {
+export async function startMatch({ lobbyId, telegramUserId, allowSolo = false }) {
     const lobby = await ShootoutLobby.findOne({ lobbyId });
     if (!lobby) return { error: 'lobby_not_found' };
     if (lobby.hostTelegramUserId !== telegramUserId) return { error: 'not_host' };
-    if (lobby.state !== 'READY') return { error: 'not_ready' };
+    if (!allowSolo) {
+        if (lobby.state !== 'READY') return { error: 'not_ready' };
+    } else {
+        // Solo path: must at least be a startable lobby state (not
+        // already STARTING / IN_MATCH / CLOSED). Stamp readiness on the
+        // host so down-stream consumers see a coherent record.
+        if (!['OPEN', 'FULL', 'READY'].includes(lobby.state)) {
+            return { error: 'not_startable' };
+        }
+        const host = lobby.members.find(m => m.telegramUserId === telegramUserId);
+        if (host) host.isReady = true;
+    }
 
     const matchId = newId('match');
     lobby.matchId = matchId;
@@ -261,6 +280,7 @@ export async function startMatch({ lobbyId, telegramUserId }) {
     await lobby.save();
     logger.info('[shootout/lobby] starting', {
         lobbyId, matchId, host: telegramUserId, count: lobby.members.length,
+        solo: !!allowSolo,
     });
     return { ok: true, matchId, lobby: lobby.toObject() };
 }

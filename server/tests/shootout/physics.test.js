@@ -52,11 +52,20 @@ test('spawnStateForSlot: returns finite coords for 2v2 slots 0..3', () => {
     }
 });
 
-test('spawnStateForSlot: opposing slots spawn on opposite sides of arena (sign of x differs)', () => {
+test('spawnStateForSlot: opposing slots spawn at different positions facing each other', () => {
     const red  = spawnStateForSlot('1v1', 0);
     const blue = spawnStateForSlot('1v1', 1);
-    assert.ok(red.x < 0,  'red spawns in negative-x half');
-    assert.ok(blue.x > 0, 'blue spawns in positive-x half');
+    // They must NOT overlap — otherwise both players spawn at the same coords.
+    assert.notDeepStrictEqual(
+        { x: red.x, y: red.y, z: red.z },
+        { x: blue.x, y: blue.y, z: blue.z },
+        'red and blue spawn at distinct positions',
+    );
+    // Demo-mode spawns: same z, opposite-sign x-offset around the SP red zone.
+    // (Earlier layout had them at far corners but client/server fell out of
+    // sync and the demo was unplayable; close-spawn demo until proper buy
+    // phase ships.)
+    assert.ok(Math.abs(red.x - blue.x) > 2, 'spawns are ≥2u apart on x');
 });
 
 test('spawnStateForSlot: throws on unknown mode + slot', () => {

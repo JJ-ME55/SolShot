@@ -69,18 +69,23 @@ export const COVER_BOXES = Object.freeze([
 // Spawn positions per mode/slot. Slot 0/2 = red team, slot 1/3 = blue
 // team — matches lifecycle.createMatchFromLobby's assignment scheme.
 //
-// For 1v1: red at SW open ground, blue at NE near the rect structure.
-// For 2v2: spread both teams along their respective baselines.
+// MUST match the client's MP_SPAWN_POSITIONS in visual/main.js — if they
+// diverge, the client renders the remote player at the server-tracked
+// coords (far away) while the local camera sits at the client-picked
+// coords (close), so players literally never see each other on screen.
+//
+// Close spawns in the SP red-spawn corridor at (15, _, 22) which is
+// known-safe walkable ground on this arena.
 export const SPAWN_POSITIONS_BY_SLOT = Object.freeze({
     '1v1': Object.freeze([
-        Object.freeze({ x: -20, y: 0, z: -20, yaw:  Math.PI / 4 }), // red, facing NE
-        Object.freeze({ x:  25, y: 0, z:  25, yaw: -3 * Math.PI / 4 }), // blue, facing SW
+        Object.freeze({ x: 12, y: 0, z: 22, yaw:  Math.PI / 2 }), // red, facing +X (toward blue)
+        Object.freeze({ x: 18, y: 0, z: 22, yaw: -Math.PI / 2 }), // blue, facing -X (toward red)
     ]),
     '2v2': Object.freeze([
-        Object.freeze({ x: -20, y: 0, z: -22, yaw:  Math.PI / 4 }), // red 1
-        Object.freeze({ x:  25, y: 0, z:  27, yaw: -3 * Math.PI / 4 }), // blue 1
-        Object.freeze({ x: -22, y: 0, z:   0, yaw:  Math.PI / 4 }), // red 2
-        Object.freeze({ x:  27, y: 0, z:  20, yaw: -3 * Math.PI / 4 }), // blue 2
+        Object.freeze({ x: 12, y: 0, z: 22, yaw:  Math.PI / 2 }), // red 1
+        Object.freeze({ x: 18, y: 0, z: 22, yaw: -Math.PI / 2 }), // blue 1
+        Object.freeze({ x: 12, y: 0, z: 18, yaw:  Math.PI / 2 }), // red 2
+        Object.freeze({ x: 18, y: 0, z: 18, yaw: -Math.PI / 2 }), // blue 2
     ]),
 });
 

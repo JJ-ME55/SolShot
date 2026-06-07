@@ -19,6 +19,7 @@ function makeLobby(overrides = {}) {
     return {
         lobbyId: 'lobby-L1',
         mode: '1v1',
+        cap: 2,
         members: [
             { telegramUserId: 1, displayName: '@host' },
             { telegramUserId: 2, displayName: '@guest' },
@@ -59,6 +60,7 @@ test('createMatchFromLobby — slot 0..n-1 by lobby join order (1v1)', async () 
 test('createMatchFromLobby — slot 0..n-1 by lobby join order (2v2)', async () => {
     const lobby = makeLobby({
         mode: '2v2',
+        cap: 4,
         members: [
             { telegramUserId: 1, displayName: '@a' },
             { telegramUserId: 2, displayName: '@b' },
@@ -68,6 +70,24 @@ test('createMatchFromLobby — slot 0..n-1 by lobby join order (2v2)', async () 
     });
     const res = await createMatchFromLobby({ lobby });
     assert.deepEqual(res.match.members.map(m => m.slot), [0, 1, 2, 3]);
+});
+
+test('createMatchFromLobby — cap propagates from lobby (1v1=2)', async () => {
+    const res = await createMatchFromLobby({ lobby: makeLobby({ cap: 2 }) });
+    assert.equal(res.match.cap, 2, 'match.cap must mirror lobby.cap for bot-fill');
+});
+
+test('createMatchFromLobby — cap propagates from lobby (2v2=4)', async () => {
+    const lobby = makeLobby({
+        mode: '2v2',
+        cap: 4,
+        members: [
+            { telegramUserId: 1, displayName: '@a' },
+            { telegramUserId: 2, displayName: '@b' },
+        ],
+    });
+    const res = await createMatchFromLobby({ lobby });
+    assert.equal(res.match.cap, 4, 'cap reflects mode-cap, not members.length');
 });
 
 test('createMatchFromLobby — teams alternate red/blue starting from slot 0', async () => {

@@ -57,6 +57,11 @@ export async function createMatchFromLobby({ lobby }) {
             matchId:   newMatchId(),
             lobbyId:   lobby.lobbyId,
             mode:      lobby.mode,
+            // cap propagates through to ShootoutRunner so bot-fill can
+            // honor the lobby's intended size in the < cap solo path.
+            // Without this, runner._addBotsForEmptySlots falls back to
+            // members.length and silently skips bot fill.
+            cap:       lobby.cap,
             members,
             startedAt: Date.now(),
         },

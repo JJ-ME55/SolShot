@@ -837,3 +837,142 @@ test('ShootoutRunner: match:final skips bots when persisting stats', async (t) =
         t.mock.timers.reset();
     }
 });
+
+// ── 2026-06-08: client-authoritative position ────────────────────────
+//
+// The server adopts the client's position when (a) the player is human,
+// (b) phase is LIVE, and (c) the input frame carries finite clientX/Y/Z.
+// Falls back to integrateMovement otherwise — bots and old clients keep
+// the previous behaviour byte-for-byte.
+
+test('ShootoutRunner.setInput: clientX/Y/Z fields are stored on lastInput', () => {
+    const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
+    r.start();
+    try {
+        r.setInput(0, {
+            seq: 1, moveX: 0, moveZ: 0,
+            lookYaw: 1.5, lookPitch: 0.2,
+            jump: false, crouch: false,
+            clientX: 7.5, clientY: 2.0, clientZ: -3.25,
+            clientOnGround: true,
+        });
+        const p = r.players.get(0);
+        assert.equal(p.lastInput.clientX, 7.5);
+        assert.equal(p.lastInput.clientY, 2.0);
+        assert.equal(p.lastInput.clientZ, -3.25);
+        assert.equal(p.lastInput.clientOnGround, true);
+    } finally { r.stop(); }
+});
+
+test('ShootoutRunner.setInput: missing/NaN clientX coerces to null (fall-back path)', () => {
+    const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
+    r.start();
+    try {
+        // No client fields at all
+        r.setInput(0, { seq: 1, moveX: 0, moveZ: 0, lookYaw: 0, lookPitch: 0 });
+        assert.equal(r.players.get(0).lastInput.clientX, null);
+        // NaN partial set — still null, all-or-nothing
+        r.setInput(0, { seq: 2, moveX: 0, moveZ: 0, lookYaw: 0, lookPitch: 0,
+            clientX: NaN, clientY: 1, clientZ: 1 });
+        assert.equal(r.players.get(0).lastInput.clientX, null);
+    } finally { r.stop(); }
+});
+
+test('ShootoutRunner: tick with valid clientX/Y/Z snaps state to client coords during LIVE', (t) => {
+    t.mock.timers.enable({ apis: ['setInterval'] });
+    const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
+    r.start();
+    r.matchState.phase = Phase.LIVE;
+    try {
+        // Snap to (12.5, 1.3, 22.0) with yaw=1.4 + crouching
+        r.setInput(0, {
+            seq: 1, moveX: 0, moveZ: 0,
+            lookYaw: 1.4, lookPitch: -0.1,
+            jump: false, crouch: true,
+            clientX: 12.5, clientY: 1.3, clientZ: 22.0,
+            clientOnGround: true,
+        });
+        t.mock.timers.tick(50);  // a few ticks @ 60Hz
+        const s = r.players.get(0).state;
+        assert.equal(s.x, 12.5, `expected x=12.5, got ${s.x}`);
+        assert.equal(s.y, 1.3,  `expected y=1.3, got ${s.y}`);
+        assert.equal(s.z, 22.0, `expected z=22.0, got ${s.z}`);
+        assert.equal(s.yaw, 1.4);
+        assert.equal(s.pitch, -0.1);
+        assert.equal(s.crouching, true);
+        assert.equal(s.onGround, true);
+        assert.equal(s.vx, 0); assert.equal(s.vy, 0); assert.equal(s.vz, 0);
+    } finally {
+        r.stop();
+        t.mock.timers.reset();
+    }
+});
+
+test('ShootoutRunner: tick without clientX falls back to integrateMovement', (t) => {
+    t.mock.timers.enable({ apis: ['setInterval'] });
+    const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
+    r.start();
+    r.matchState.phase = Phase.LIVE;
+    try {
+        const p = r.players.get(0);
+        const startX = p.state.x;
+        // No clientX → server integrates with moveZ=1
+        r.setInput(0, { seq: 1, moveX: 0, moveZ: 1, lookYaw: -Math.PI / 2 });
+        t.mock.timers.tick(1000);
+        const dx = p.state.x - startX;
+        assert.ok(Math.hypot(dx) > 1, `expected server-integrated motion, got dx=${dx}`);
+    } finally {
+        r.stop();
+        t.mock.timers.reset();
+    }
+});
+
+test('ShootoutRunner: clientX is IGNORED during BUY phase (frozen)', (t) => {
+    t.mock.timers.enable({ apis: ['setInterval'] });
+    const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
+    r.start();
+    r.matchState.phase = Phase.BUY;
+    try {
+        const p = r.players.get(0);
+        const spawnX = p.state.x;
+        const spawnZ = p.state.z;
+        r.setInput(0, {
+            seq: 1, moveX: 0, moveZ: 0, lookYaw: 0, lookPitch: 0,
+            clientX: 99, clientY: 99, clientZ: 99,  // would teleport if honoured
+        });
+        t.mock.timers.tick(100);
+        assert.equal(p.state.x, spawnX, 'must NOT teleport during BUY');
+        assert.equal(p.state.z, spawnZ, 'must NOT teleport during BUY');
+    } finally {
+        r.stop();
+        t.mock.timers.reset();
+    }
+});
+
+test('ShootoutRunner: bots NEVER use client-auth path (clientX on bot.lastInput is ignored)', (t) => {
+    t.mock.timers.enable({ apis: ['setInterval'] });
+    // 1v1 with only ONE human member — _addBotsForEmptySlots fills slot 1
+    // with a real bot.
+    const r = new ShootoutRunner({
+        match: makeMatch({
+            members: [{ telegramUserId: 1, displayName: '@a', slot: 0, team: 'red' }],
+        }),
+        io: makeFakeIo(),
+    });
+    r.start();
+    r.matchState.phase = Phase.LIVE;
+    try {
+        const bot = r.players.get(1);
+        assert.equal(bot.isBot, true, 'slot 1 should be a bot');
+        // Even if a clientX is jammed onto the bot's lastInput, the tick
+        // loop must ignore it (bot.bot.computeInput overwrites lastInput
+        // before the client-auth branch is checked, and the branch
+        // additionally guards on !p.isBot).
+        bot.lastInput.clientX = 99; bot.lastInput.clientY = 99; bot.lastInput.clientZ = 99;
+        t.mock.timers.tick(100);
+        assert.notEqual(bot.state.x, 99, 'bot must not snap to a planted clientX');
+    } finally {
+        r.stop();
+        t.mock.timers.reset();
+    }
+});

@@ -274,6 +274,22 @@ export class ShootoutRunner {
         if (!p) return false;
         const seq = Number.isFinite(input?.seq) ? input.seq : 0;
         if (seq && seq < p.lastInputSeq) return false;
+        // Client-authoritative position (added 2026-06-08). The client
+        // runs full octree collision against the actual arena mesh; the
+        // server only has simplified AABB cover boxes. Trusting the
+        // client eliminates the server/client collision drift that was
+        // teleporting players through walls, blocking doorways, and
+        // dropping JJ into slopes. Pre-stakes only — add server speed
+        // validation (clientX delta vs maxSpeed*dt) before any real-
+        // money play.
+        //
+        // Fields are OPTIONAL. If absent or non-finite, the server falls
+        // back to integrating from moveX/moveZ/jump/crouch — preserves
+        // old-client compatibility + bot behaviour.
+        const hasClientPos =
+            Number.isFinite(input?.clientX) &&
+            Number.isFinite(input?.clientY) &&
+            Number.isFinite(input?.clientZ);
         p.lastInput = {
             seq,
             moveX:     input?.moveX     || 0,
@@ -282,6 +298,11 @@ export class ShootoutRunner {
             lookPitch: Number.isFinite(input?.lookPitch) ? input.lookPitch : p.lastInput.lookPitch,
             jump:      !!input?.jump,
             crouch:    !!input?.crouch,
+            // Optional client-auth position fields:
+            clientX:        hasClientPos ? input.clientX : null,
+            clientY:        hasClientPos ? input.clientY : null,
+            clientZ:        hasClientPos ? input.clientZ : null,
+            clientOnGround: hasClientPos ? !!input.clientOnGround : null,
         };
         p.lastInputSeq = seq;
         return true;
@@ -304,18 +325,48 @@ export class ShootoutRunner {
             if (p.isBot && p.bot && inputAllowed) {
                 p.lastInput = p.bot.computeInput(p.state, TICK_DT);
             }
-            const effInput = inputAllowed
-                ? p.lastInput
-                : {
-                    seq:       p.lastInput.seq,
-                    moveX:     0,
-                    moveZ:     0,
-                    lookYaw:   p.lastInput.lookYaw,
-                    lookPitch: p.lastInput.lookPitch,
-                    jump:      false,
-                    crouch:    p.lastInput.crouch,
-                };
-            integrateMovement(p.state, effInput, TICK_DT, MOVEMENT_TUNING);
+
+            // ── Client-authoritative position (2026-06-08) ────────────
+            // When the player is human + the phase is LIVE + the client
+            // sent a position in its last input, snap the server's state
+            // to the client's coords. This sidesteps the collision
+            // disagreement between client octree and server AABB.
+            // Look angles + crouching still come through; the server
+            // still synthesizes bone positions from
+            // {x,y,z,yaw,crouching} for lag-comp hitscan, so adopting
+            // the client position improves hitscan accuracy too.
+            const useClientPos =
+                inputAllowed &&
+                !p.isBot &&
+                Number.isFinite(p.lastInput.clientX) &&
+                Number.isFinite(p.lastInput.clientY) &&
+                Number.isFinite(p.lastInput.clientZ);
+            if (useClientPos) {
+                p.state.x = p.lastInput.clientX;
+                p.state.y = p.lastInput.clientY;
+                p.state.z = p.lastInput.clientZ;
+                p.state.yaw   = p.lastInput.lookYaw;
+                p.state.pitch = p.lastInput.lookPitch;
+                p.state.crouching = !!p.lastInput.crouch;
+                p.state.onGround  = !!p.lastInput.clientOnGround;
+                // Velocity isn't authoritative in this mode — set to
+                // zero so any stale value from earlier integration
+                // doesn't poison future fallback paths.
+                p.state.vx = 0; p.state.vy = 0; p.state.vz = 0;
+            } else {
+                const effInput = inputAllowed
+                    ? p.lastInput
+                    : {
+                        seq:       p.lastInput.seq,
+                        moveX:     0,
+                        moveZ:     0,
+                        lookYaw:   p.lastInput.lookYaw,
+                        lookPitch: p.lastInput.lookPitch,
+                        jump:      false,
+                        crouch:    p.lastInput.crouch,
+                    };
+                integrateMovement(p.state, effInput, TICK_DT, MOVEMENT_TUNING);
+            }
 
             // Push a snapshot into the ring buffer so Day 2 lag-comp
             // can rewind. We store {tick, x, y, z, yaw, pitch} — the

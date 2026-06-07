@@ -325,6 +325,13 @@ export function registerShootoutHandlers(client, io) {
             lookPitch: payload.lookPitch,
             jump:      payload.jump,
             crouch:    payload.crouch,
+            // Client-authoritative position fields (2026-06-08).
+            // Optional — runner.setInput coerces missing/non-finite
+            // to null and falls back to integrateMovement.
+            clientX:        payload.clientX,
+            clientY:        payload.clientY,
+            clientZ:        payload.clientZ,
+            clientOnGround: payload.clientOnGround,
         });
     });
 

@@ -29,6 +29,7 @@ import {
     registerShootoutHandlers,
     _activeMatches,
 } from '../../socket-io/shootout.js';
+import { Phase } from '../../services/games/shootout/sim/match.js';
 
 // Day 2: shootout:lobby:start now auto-calls runner.start(), which
 // spins up setInterval ticks + snapshot loops. Tests that don't stop
@@ -1034,6 +1035,7 @@ test('shootout:fire — hit case broadcasts match:hit and acks ok', async () => 
         );
         // Pin slot 1 at (0,0,5) with history at tick 0
         const runner = _activeMatches.get(ackStart.matchId);
+        runner.matchState.phase = Phase.LIVE; // Day 3: fire blocked unless LIVE
         const v = runner.players.get(1);
         v.state.x = 0; v.state.y = 0; v.state.z = 5; v.state.yaw = 0;
         v.ring[0] = { tick: 0, x: 0, y: 0, z: 5, yaw: 0, pitch: 0 };
@@ -1091,6 +1093,7 @@ test('shootout:fire — miss case acks miss, no broadcast', async () => {
             (r) => { ackStart = r; },
         );
         const runner = _activeMatches.get(ackStart.matchId);
+        runner.matchState.phase = Phase.LIVE;
         const v = runner.players.get(1);
         v.state.x = 0; v.state.y = 0; v.state.z = 999; // far away
         v.ring[0] = { tick: 0, x: 0, y: 0, z: 999, yaw: 0, pitch: 0 };

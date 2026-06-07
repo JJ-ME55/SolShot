@@ -34,6 +34,12 @@ import { SimBot } from './simBot.js';
 import { createHitboxSet, updateHitboxPositions, testHitscan } from './combat.js';
 import { DamageSystem } from './damage.js';
 import { weaponConfig, WeaponType } from './weapons.js';
+import {
+    Phase,
+    createMatchState,
+    advanceMatch,
+    phaseDurationFor,
+} from './match.js';
 
 const TICK_HZ        = 60;
 const SNAPSHOT_HZ    = 20;
@@ -41,6 +47,20 @@ const TICK_MS        = 1000 / TICK_HZ;
 const SNAPSHOT_MS    = 1000 / SNAPSHOT_HZ;
 const TICK_DT        = 1 / TICK_HZ;
 const RING_CAPACITY  = 60; // 1s of history @ 60Hz — Day 2 lag-comp scratch
+
+// Day 3: per-round CS-style economy. Starting money is enough to buy a
+// PISTOL upgrade (REVOLVER 600) on round 1; the +3000 win / +1900 loss
+// awards trail close enough to CS economy that pacing feels right
+// without us porting the full loss-streak ladder.
+export const STARTING_MONEY  = 2000;
+export const WIN_AWARD       = 3000;
+export const LOSS_AWARD      = 1900;
+const MONEY_CAP              = 16000;
+
+// Day 3: roundState emit cadence. Transitions emit immediately; the
+// periodic emit (~6Hz, every 10 ticks) keeps late-joining clients in
+// sync without flooding (1/3 the rate of snapshots).
+const ROUNDSTATE_TICKS = 10;
 
 // Day 2 lag-comp: maximum rewind in ticks. 15 ticks @ 60Hz = 250ms,
 // matching the brief's cap. Older fire frames are rejected as 'expired'.
@@ -107,6 +127,18 @@ export class ShootoutRunner {
         // shared client/server damage code can lookup 'local' or any
         // slot consistently.
         this.damageSystem = new DamageSystem();
+
+        // Day 3: round/match FSM. Owned by the runner; advanced each
+        // tick. See sim/match.js. Members stamped here for downstream
+        // consumers — the FSM itself only reads players Map.
+        this.matchState = createMatchState({
+            mode:    match?.mode,
+            members: match?.members || [],
+        });
+
+        // Day 3: whether we've already broadcast match:final + initiated
+        // stop. Guarded so a slow shutdown can't double-emit.
+        this._matchFinalised = false;
     }
 
     // ── Lifecycle ────────────────────────────────────────────────────
@@ -149,21 +181,33 @@ export class ShootoutRunner {
 
     // ── Player setup helpers ─────────────────────────────────────────
 
-    _addPlayer({ slot, telegramUserId, isBot, bot, displayName }) {
+    _addPlayer({ slot, telegramUserId, isBot, bot, displayName, team }) {
         const state = spawnStateForSlot(this.match.mode, slot);
         const ring = new Array(RING_CAPACITY).fill(null);
+        // Day 3: derive team from the explicit override (used by bot fill
+        // which doesn't ship a member row) or from match.members. Falls
+        // back to slot-parity (matches lifecycle.js's assignment rule).
+        const resolvedTeam = team
+            || this.match.members?.find((m) => m.slot === slot)?.team
+            || (slot % 2 === 0 ? 'red' : 'blue');
         this.players.set(slot, {
             slot,
             telegramUserId,
             isBot:        !!isBot,
             bot:          bot || null,
             displayName:  displayName || null,
+            team:         resolvedTeam,
             state,
             lastInput:    neutralInput(),
             lastInputSeq: 0,
             alive:        true,
             ring,
             ringHead:     0,
+            // Day 3: per-match economy + scoring.
+            money:        STARTING_MONEY,
+            loadout:      null,        // weaponType the player has bought this match; null = default pistol
+            kills:        0,
+            deaths:       0,
         });
         // Day 2: register each slot in the per-runner DamageSystem so
         // resolveFire can apply HP loss. ID is the slot-as-string to
@@ -219,12 +263,30 @@ export class ShootoutRunner {
     _runTick() {
         this.tick += 1;
 
+        // Day 3: input is only honored in LIVE. In BUY / ROUND_END /
+        // MATCH_END we still integrate (to apply friction + drop the
+        // player's velocity to zero) but we feed a neutral input. Look
+        // angles are preserved so the camera doesn't snap.
+        const inputAllowed = this.matchState.phase === Phase.LIVE;
+
         for (const p of this.players.values()) {
-            // Bots synthesize their own input each tick.
-            if (p.isBot && p.bot) {
+            // Bots synthesize their own input each tick — also gated on
+            // inputAllowed so the bot freezes during BUY.
+            if (p.isBot && p.bot && inputAllowed) {
                 p.lastInput = p.bot.computeInput(p.state, TICK_DT);
             }
-            integrateMovement(p.state, p.lastInput, TICK_DT, MOVEMENT_TUNING);
+            const effInput = inputAllowed
+                ? p.lastInput
+                : {
+                    seq:       p.lastInput.seq,
+                    moveX:     0,
+                    moveZ:     0,
+                    lookYaw:   p.lastInput.lookYaw,
+                    lookPitch: p.lastInput.lookPitch,
+                    jump:      false,
+                    crouch:    p.lastInput.crouch,
+                };
+            integrateMovement(p.state, effInput, TICK_DT, MOVEMENT_TUNING);
 
             // Push a snapshot into the ring buffer so Day 2 lag-comp
             // can rewind. We store {tick, x, y, z, yaw, pitch} — the
@@ -236,6 +298,107 @@ export class ShootoutRunner {
             };
             p.ringHead = (p.ringHead + 1) % RING_CAPACITY;
         }
+
+        // Day 3: advance the round/match FSM and broadcast on
+        // transition. Transitions emit immediately so clients get a
+        // tight phase-change ack; the periodic emit below catches
+        // late joiners + drives countdown UI without flooding.
+        const transition = advanceMatch(this.matchState, TICK_DT, this.players);
+        if (transition.transitioned) {
+            this._emitRoundState();
+            if (transition.roundJustEnded) {
+                this._awardRoundEndMoney();
+            }
+            if (transition.prevPhase === Phase.ROUND_END
+                && transition.nextPhase === Phase.BUY) {
+                this._resetForNewRound();
+            }
+            if (transition.matchJustEnded) {
+                this._emitMatchFinal();
+            }
+        } else if (this.tick % ROUNDSTATE_TICKS === 0) {
+            this._emitRoundState();
+        }
+    }
+
+    // ── Day 3: round-state broadcast ─────────────────────────────────
+
+    _emitRoundState() {
+        const s = this.matchState;
+        const payload = {
+            phase:         s.phase,
+            round:         s.round,
+            maxRounds:     s.maxRounds,
+            winsNeeded:    s.winsNeeded,
+            winsRed:       s.winsRed,
+            winsBlue:      s.winsBlue,
+            phaseTimer:    s.phaseTimer,
+            phaseDuration: phaseDurationFor(s.phase),
+            roundWinner:   s.roundWinner,
+            matchWinner:   s.matchWinner,
+            over:          s.over,
+        };
+        this.io.to(this.roomName).emit('shootout:match:roundState', payload);
+    }
+
+    _awardRoundEndMoney() {
+        // CS-style: winners get WIN_AWARD, losers get LOSS_AWARD. Both
+        // capped at MONEY_CAP. Called once on the ROUND_END transition.
+        const winner = this.matchState.roundWinner;
+        for (const p of this.players.values()) {
+            const award = winner == null
+                ? LOSS_AWARD
+                : (p.team === winner ? WIN_AWARD : LOSS_AWARD);
+            p.money = Math.min(MONEY_CAP, p.money + award);
+        }
+    }
+
+    _resetForNewRound() {
+        // Re-spawn every player at their slot's start position, reset
+        // velocity, flip alive=true, and reset HP/armor via the
+        // DamageSystem so the next LIVE phase starts clean.
+        for (const p of this.players.values()) {
+            const spawn = spawnStateForSlot(this.match.mode, p.slot);
+            p.state.x  = spawn.x;
+            p.state.y  = spawn.y;
+            p.state.z  = spawn.z;
+            p.state.vx = 0; p.state.vy = 0; p.state.vz = 0;
+            p.state.yaw   = spawn.yaw;
+            p.state.pitch = 0;
+            p.state.onGround  = true;
+            p.state.crouching = false;
+            p.alive = true;
+        }
+        this.damageSystem.resetAll();
+    }
+
+    _emitMatchFinal() {
+        if (this._matchFinalised) return;
+        this._matchFinalised = true;
+        const winner = this.matchState.matchWinner;
+        const players = [];
+        for (const p of this.players.values()) {
+            players.push({
+                slot:           p.slot,
+                telegramUserId: p.telegramUserId,
+                displayName:    p.displayName,
+                team:           p.team,
+                isBot:          p.isBot,
+                kills:          p.kills,
+                deaths:         p.deaths,
+                won:            winner != null && p.team === winner,
+            });
+        }
+        this.io.to(this.roomName).emit('shootout:match:final', {
+            matchId:     this.match.matchId,
+            matchWinner: winner,
+            winsRed:     this.matchState.winsRed,
+            winsBlue:    this.matchState.winsBlue,
+            players,
+        });
+        // Stop the runner after final emit — no more snapshots/ticks
+        // once the match is over. Socket layer cleans up _activeMatches.
+        this.stop();
     }
 
     // ── Snapshot broadcast ───────────────────────────────────────────
@@ -323,6 +486,13 @@ export class ShootoutRunner {
      *             isHeadshot?: boolean, reason?: string }}
      */
     resolveFire(shooterSlot, fire) {
+        // Day 3: only LIVE allows fire. Clients still send fire intents
+        // during BUY (they have local autonomy until ACK lands); the
+        // server cleanly rejects with 'not_live' rather than silently
+        // miss-resolving them.
+        if (this.matchState.phase !== Phase.LIVE) {
+            return { ok: false, reason: 'not_live' };
+        }
         const shooter = this.players.get(shooterSlot);
         if (!shooter) return { ok: false, reason: 'no_shooter' };
         if (!shooter.alive) return { ok: false, reason: 'shooter_dead' };
@@ -404,6 +574,10 @@ export class ShootoutRunner {
         if (dmg.killed) {
             const victim = this.players.get(victimSlot);
             if (victim) victim.alive = false;
+            // Day 3: per-match kill/death counters; rolled into the
+            // match:final payload and ShootoutStats upsert (Task 4).
+            shooter.kills += 1;
+            if (victim) victim.deaths += 1;
         }
 
         return {

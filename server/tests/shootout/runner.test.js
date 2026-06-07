@@ -15,6 +15,7 @@ import { test, mock } from 'node:test';
 import { strict as assert } from 'node:assert';
 
 import { ShootoutRunner } from '../../services/games/shootout/sim/runner.js';
+import { Phase } from '../../services/games/shootout/sim/match.js';
 
 function makeFakeIo() {
     const io = {
@@ -147,6 +148,7 @@ test('ShootoutRunner: 60 ticks of forward input advances position', (t) => {
     t.mock.timers.enable({ apis: ['setInterval'] });
     const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
     r.start();
+    r.matchState.phase = Phase.LIVE; // Day 3: input is zeroed during BUY
     try {
         const p = r.players.get(0);
         const startX = p.state.x;
@@ -249,6 +251,7 @@ function _pinTarget(runner, slot, x, z, ticks = [0]) {
 test('resolveFire: ray that hits target chest returns ok + damage applied', () => {
     const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
     r.start();
+    r.matchState.phase = Phase.LIVE; // Day 3: resolveFire blocks unless LIVE
     try {
         // Pin slot 1 at (0,0,5), pre-populate history at the tick we'll claim
         // we fired at (tick 6, which after INTERP_DELAY_TICKS=6 lookback
@@ -284,6 +287,7 @@ test('resolveFire: ray that hits target chest returns ok + damage applied', () =
 test('resolveFire: shooter cannot hit themselves', () => {
     const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
     r.start();
+    r.matchState.phase = Phase.LIVE;
     try {
         // Pin slot 0 at origin and pre-populate ring so even if iteration
         // crosses through it, the self-hit filter still wins.
@@ -310,6 +314,7 @@ test('resolveFire: shooter cannot hit themselves', () => {
 test('resolveFire: clientTickFired > 250ms in past returns rewind_expired', () => {
     const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
     r.start();
+    r.matchState.phase = Phase.LIVE;
     try {
         _pinTarget(r, 1, 0, 5, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
         // Server is at tick 100; client claims tick 50.
@@ -333,6 +338,7 @@ test('resolveFire: clientTickFired > 250ms in past returns rewind_expired', () =
 test('resolveFire: clientTickFired clamped to current tick — future claims do not let client cheat', () => {
     const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
     r.start();
+    r.matchState.phase = Phase.LIVE;
     try {
         _pinTarget(r, 1, 0, 5, [0]);
         // Server at tick 6, client claims tick 9999 — should clamp to 6,
@@ -357,6 +363,7 @@ test('resolveFire: clientTickFired clamped to current tick — future claims do 
 test('resolveFire: unknown shooter slot returns no_shooter', () => {
     const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
     r.start();
+    r.matchState.phase = Phase.LIVE;
     try {
         const res = r.resolveFire(99, {
             seq: 1, fromX: 0, fromY: 1.6, fromZ: 0,
@@ -387,6 +394,7 @@ test('resolveFire: damageSystem registers slots on start (HP starts at 100)', ()
 test('resolveFire: lethal damage flips victim alive=false', () => {
     const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
     r.start();
+    r.matchState.phase = Phase.LIVE;
     try {
         _pinTarget(r, 1, 0, 5, [0]);
         // Drop victim to 1 HP so a single chest shot kills.
@@ -403,6 +411,235 @@ test('resolveFire: lethal damage flips victim alive=false', () => {
         assert.equal(res.ok, true);
         assert.equal(res.killed, true);
         assert.equal(r.players.get(1).alive, false, 'runner record flips dead');
+    } finally {
+        r.stop();
+    }
+});
+
+// ── Day 3: round / match FSM wiring ──────────────────────────────────
+
+import {
+    BUY_TIME,
+    ROUND_END_TIME,
+    WINS_NEEDED,
+} from '../../services/games/shootout/sim/match.js';
+
+test('ShootoutRunner: matchState exists after construction (BUY phase, round 1)', () => {
+    const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
+    assert.ok(r.matchState);
+    assert.equal(r.matchState.phase, Phase.BUY);
+    assert.equal(r.matchState.round, 1);
+    assert.equal(r.matchState.winsRed, 0);
+    assert.equal(r.matchState.winsBlue, 0);
+});
+
+test('ShootoutRunner: player records carry team, money, kills, deaths after start()', () => {
+    const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
+    r.start();
+    try {
+        const p0 = r.players.get(0);
+        const p1 = r.players.get(1);
+        assert.equal(p0.team, 'red');
+        assert.equal(p1.team, 'blue');
+        assert.equal(p0.money, 2000);
+        assert.equal(p0.kills, 0);
+        assert.equal(p0.deaths, 0);
+        assert.equal(p0.loadout, null);
+    } finally {
+        r.stop();
+    }
+});
+
+test('ShootoutRunner: after BUY_TIME of ticks, phase transitions to LIVE + emits roundState', (t) => {
+    t.mock.timers.enable({ apis: ['setInterval'] });
+    const io = makeFakeIo();
+    const r = new ShootoutRunner({ match: makeMatch(), io });
+    r.start();
+    try {
+        // Drive enough ticks to exceed BUY_TIME with margin for fp drift
+        t.mock.timers.tick((BUY_TIME + 0.2) * 1000);
+        assert.equal(r.matchState.phase, Phase.LIVE);
+        const rs = io.emitted.filter(e => e.evt === 'shootout:match:roundState');
+        assert.ok(rs.length >= 1, `expected at least 1 roundState emit, got ${rs.length}`);
+        // The most recent emit should be in LIVE phase.
+        const latest = rs[rs.length - 1].payload;
+        assert.equal(latest.phase, Phase.LIVE);
+        assert.equal(latest.round, 1);
+        assert.equal(latest.winsRed, 0);
+        assert.equal(latest.winsBlue, 0);
+    } finally {
+        r.stop();
+        t.mock.timers.reset();
+    }
+});
+
+test('ShootoutRunner: during BUY, input is zeroed — player does not move', (t) => {
+    t.mock.timers.enable({ apis: ['setInterval'] });
+    const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
+    r.start();
+    try {
+        const p = r.players.get(0);
+        const startX = p.state.x, startZ = p.state.z;
+        r.setInput(0, { seq: 1, moveZ: 1, moveX: 0, lookYaw: -Math.PI / 2 });
+        // 30 ticks @ 60Hz = 0.5s — well inside BUY phase.
+        t.mock.timers.tick(500);
+        const moved = Math.hypot(p.state.x - startX, p.state.z - startZ);
+        // Some friction/snap can drift the position by sub-meter; allow
+        // tiny noise but it should NOT be a meaningful movement.
+        assert.ok(moved < 0.5, `expected near-zero movement during BUY, got ${moved}`);
+    } finally {
+        r.stop();
+        t.mock.timers.reset();
+    }
+});
+
+test('ShootoutRunner: during BUY, resolveFire returns {ok:false, reason:not_live}', () => {
+    const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
+    r.start();
+    try {
+        _pinTarget(r, 1, 0, 5, [0]);
+        r.tick = 6;
+        const res = r.resolveFire(0, {
+            seq: 1, fromX: 0, fromY: 1.6, fromZ: 0,
+            dirX: 0, dirY: -0.04, dirZ: 1,
+            clientTickFired: 6, weaponType: 'AK47',
+        });
+        assert.equal(res.ok, false);
+        assert.equal(res.reason, 'not_live');
+    } finally {
+        r.stop();
+    }
+});
+
+test('ShootoutRunner: kill increments shooter kills + victim deaths', () => {
+    const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
+    r.start();
+    r.matchState.phase = Phase.LIVE;
+    try {
+        _pinTarget(r, 1, 0, 5, [0]);
+        const vh = r.damageSystem.getHealth('1');
+        vh.hp = 1; // one shot to kill
+        r.tick = 6;
+        r.resolveFire(0, {
+            seq: 1, fromX: 0, fromY: 1.6, fromZ: 0,
+            dirX: 0, dirY: -0.04, dirZ: 1,
+            clientTickFired: 6, weaponType: 'AK47',
+        });
+        assert.equal(r.players.get(0).kills, 1);
+        assert.equal(r.players.get(1).deaths, 1);
+    } finally {
+        r.stop();
+    }
+});
+
+test('ShootoutRunner: when all blue dead, next tick transitions to ROUND_END + emits + awards money', () => {
+    const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
+    r.start();
+    r.matchState.phase = Phase.LIVE;
+    try {
+        const red  = r.players.get(0);
+        const blue = r.players.get(1);
+        const redMoneyBefore  = red.money;
+        const blueMoneyBefore = blue.money;
+        blue.alive = false;
+        // Manually call _runTick by simulating one. The constructor's
+        // setInterval is real but we don't use it here — call directly.
+        r._runTick();
+        assert.equal(r.matchState.phase, Phase.ROUND_END);
+        assert.equal(r.matchState.roundWinner, 'red');
+        assert.equal(r.matchState.winsRed, 1);
+        // Red won — got WIN_AWARD, blue got LOSS_AWARD
+        assert.ok(red.money > redMoneyBefore);
+        assert.ok(blue.money > blueMoneyBefore);
+        assert.ok(red.money - redMoneyBefore > blue.money - blueMoneyBefore,
+            'winners get more money than losers');
+    } finally {
+        r.stop();
+    }
+});
+
+test('ShootoutRunner: 3 round wins for red → emits match:final + stops runner', (t) => {
+    t.mock.timers.enable({ apis: ['setInterval'] });
+    const io = makeFakeIo();
+    const r = new ShootoutRunner({ match: makeMatch(), io });
+    r.start();
+    try {
+        // Force the FSM to one tick away from MATCH_END.
+        r.matchState.phase    = Phase.ROUND_END;
+        r.matchState.winsRed  = WINS_NEEDED;
+        r.matchState.winsBlue = 0;
+        r.matchState.round    = WINS_NEEDED;
+        r.matchState.roundWinner = 'red';
+        r.matchState.phaseTimer  = 0;
+        // Drive enough fake time for ROUND_END to elapse.
+        t.mock.timers.tick((ROUND_END_TIME + 0.2) * 1000);
+        assert.equal(r.matchState.phase, Phase.MATCH_END);
+        assert.equal(r.matchState.matchWinner, 'red');
+        const finalEmit = io.emitted.find(e => e.evt === 'shootout:match:final');
+        assert.ok(finalEmit, 'expected match:final emit');
+        assert.equal(finalEmit.payload.matchWinner, 'red');
+        assert.equal(finalEmit.payload.winsRed, WINS_NEEDED);
+        assert.ok(Array.isArray(finalEmit.payload.players));
+        assert.equal(finalEmit.payload.players.length, 2);
+        const redPlayer  = finalEmit.payload.players.find(p => p.team === 'red');
+        const bluePlayer = finalEmit.payload.players.find(p => p.team === 'blue');
+        assert.equal(redPlayer.won, true);
+        assert.equal(bluePlayer.won, false);
+        // Runner should have stopped after final.
+        assert.equal(r.started, false);
+    } finally {
+        r.stop();
+        t.mock.timers.reset();
+    }
+});
+
+test('ShootoutRunner: ROUND_END → next BUY resets player alive=true and HP', () => {
+    const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
+    r.start();
+    try {
+        // Kill blue, drop HP, set up a ROUND_END that's about to elapse.
+        const blue = r.players.get(1);
+        blue.alive = false;
+        const bh = r.damageSystem.getHealth('1');
+        bh.hp = 0;
+        bh.alive = false;
+        r.matchState.phase       = Phase.ROUND_END;
+        r.matchState.phaseTimer  = ROUND_END_TIME - 0.01;
+        r.matchState.round       = 1;
+        r.matchState.winsRed     = 1;
+        r.matchState.winsBlue    = 0;
+        r.matchState.roundWinner = 'red';
+
+        // Call _runTick directly to step over the threshold.
+        r._runTick();
+        assert.equal(r.matchState.phase, Phase.BUY);
+        assert.equal(r.matchState.round, 2);
+        // Players re-alive + HP refilled.
+        assert.equal(blue.alive, true);
+        const bhAfter = r.damageSystem.getHealth('1');
+        assert.equal(bhAfter.hp, 100);
+        assert.equal(bhAfter.alive, true);
+    } finally {
+        r.stop();
+    }
+});
+
+test('ShootoutRunner: round-end with no winner (time-up) gives LOSS_AWARD to both teams', () => {
+    const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
+    r.start();
+    try {
+        const red  = r.players.get(0);
+        const blue = r.players.get(1);
+        const before = { red: red.money, blue: blue.money };
+        // Trigger time-up: in LIVE with phaseTimer at the cap.
+        r.matchState.phase = Phase.LIVE;
+        r.matchState.phaseTimer = 90 - 0.0001;
+        r._runTick();
+        assert.equal(r.matchState.phase, Phase.ROUND_END);
+        assert.equal(r.matchState.roundWinner, null);
+        // Both teams get LOSS_AWARD on a time-up (winner == null).
+        assert.equal(red.money,  before.red  + 1900);
+        assert.equal(blue.money, before.blue + 1900);
     } finally {
         r.stop();
     }

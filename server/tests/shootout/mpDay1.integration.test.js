@@ -25,6 +25,7 @@ import {
     registerShootoutHandlers,
     _activeMatches,
 } from '../../socket-io/shootout.js';
+import { Phase } from '../../services/games/shootout/sim/match.js';
 
 // ── Fakes ────────────────────────────────────────────────────────────
 
@@ -209,6 +210,10 @@ test('Day 1 integration: two-client lobby → match-start → input → snapshot
         //    countdowns.
         const runner = _activeMatches.get(matchId);
         runner.start();
+        // Day 3: force LIVE so input integration is honored. The Day 1
+        // integration test predates the FSM and asserts movement
+        // immediately; the FSM would otherwise hold us in BUY for 10s.
+        runner.matchState.phase = Phase.LIVE;
 
         try {
             // 7) Each client sends a few input frames. Aim at +X

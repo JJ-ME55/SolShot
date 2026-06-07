@@ -350,6 +350,18 @@ export function registerShootoutHandlers(client, io) {
             const runner = _activeMatches.get(matchId);
             if (!runner) return ack?.({ error: 'no_match' });
 
+            // Broadcast the shot BEFORE doing hitscan so every client in
+            // the room (including the shooter) plays the gunfire SFX —
+            // attenuated by distance on the client side. Without this,
+            // only hits make a sound.
+            io.to(runner.roomName).emit('shootout:match:shot', {
+                shooterSlot: slot,
+                fromX:       payload.fromX,
+                fromY:       payload.fromY,
+                fromZ:       payload.fromZ,
+                weaponType:  payload.weaponType,
+            });
+
             const res = runner.resolveFire(slot, {
                 seq:             payload.seq,
                 fromX:           payload.fromX,

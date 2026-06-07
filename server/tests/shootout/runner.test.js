@@ -16,6 +16,16 @@ import { strict as assert } from 'node:assert';
 
 import { ShootoutRunner } from '../../services/games/shootout/sim/runner.js';
 import { Phase } from '../../services/games/shootout/sim/match.js';
+import ShootoutStats from '../../models/ShootoutStats.js';
+
+// Day 3 / Task 4: tests that drive the runner through MATCH_END trigger
+// the stats persistence path (persistMatchStats → ShootoutStats.
+// findOneAndUpdate). Without a Mongo connection, Mongoose buffers the
+// op and times out at 10s, slowing the suite to ~20s. This helper
+// stubs the model with a no-op so MATCH_END flows complete fast.
+function _stubStats() {
+    return mock.method(ShootoutStats, 'findOneAndUpdate', async () => null);
+}
 
 function makeFakeIo() {
     const io = {
@@ -558,8 +568,9 @@ test('ShootoutRunner: when all blue dead, next tick transitions to ROUND_END + e
     }
 });
 
-test('ShootoutRunner: 3 round wins for red → emits match:final + stops runner', (t) => {
+test('ShootoutRunner: 3 round wins for red → emits match:final + stops runner', async (t) => {
     t.mock.timers.enable({ apis: ['setInterval'] });
+    const statsStub = _stubStats();
     const io = makeFakeIo();
     const r = new ShootoutRunner({ match: makeMatch(), io });
     r.start();
@@ -587,9 +598,15 @@ test('ShootoutRunner: 3 round wins for red → emits match:final + stops runner'
         assert.equal(bluePlayer.won, false);
         // Runner should have stopped after final.
         assert.equal(r.started, false);
+        // Drain the stats-persist promise so the restore() below
+        // happens AFTER the mocked findOneAndUpdate calls land —
+        // otherwise the unawaited promise resolves against the real
+        // Mongoose model and triggers a 10s buffering timeout.
+        await r._statsPromise;
     } finally {
         r.stop();
         t.mock.timers.reset();
+        statsStub.mock.restore();
     }
 });
 
@@ -735,5 +752,88 @@ test('runner: WIN_AWARD + LOSS_AWARD applied to teams on round end (winners get 
         assert.equal(blue.money - blueBefore, 1900);
     } finally {
         r.stop();
+    }
+});
+
+// ── Day 3 / Task 4: ShootoutStats upsert on match:final ──────────────
+
+import { WINS_NEEDED as _WN_RUNNER } from '../../services/games/shootout/sim/match.js';
+
+test('ShootoutRunner: match:final triggers ShootoutStats upsert per human player', async (t) => {
+    t.mock.timers.enable({ apis: ['setInterval'] });
+    const calls = [];
+    const fauMock = mock.method(ShootoutStats, 'findOneAndUpdate', async (query, update) => {
+        calls.push({ query, update });
+        return { telegramUserId: query?.telegramUserId, totalKills: 5, totalDeaths: 2 };
+    });
+    try {
+        const io = makeFakeIo();
+        const r = new ShootoutRunner({ match: makeMatch(), io });
+        r.start();
+        // Force the FSM to a tick away from MATCH_END (red wins).
+        r.matchState.phase    = Phase.ROUND_END;
+        r.matchState.winsRed  = _WN_RUNNER;
+        r.matchState.winsBlue = 0;
+        r.matchState.round    = _WN_RUNNER;
+        r.matchState.roundWinner = 'red';
+        r.matchState.phaseTimer  = 0;
+        // Drive enough fake time for ROUND_END to elapse.
+        t.mock.timers.tick(6000);
+        // The runner's _emitMatchFinal kicks off persistMatchStats; await
+        // the exposed promise so the assertions can read its callbacks.
+        await r._statsPromise;
+        // Two humans (slot 0 + 1) → 2 inc upserts + 2 recompute upserts = 4
+        assert.equal(calls.length, 4);
+
+        const incCalls = calls.filter(c => c.update?.$inc);
+        assert.equal(incCalls.length, 2);
+        const incForRed  = incCalls.find(c => c.query.telegramUserId === 1);
+        const incForBlue = incCalls.find(c => c.query.telegramUserId === 2);
+        assert.ok(incForRed && incForBlue);
+        // Red won → wins+=1; blue lost → losses+=1
+        assert.equal(incForRed.update.$inc.wins, 1);
+        assert.equal(incForRed.update.$inc.losses, 0);
+        assert.equal(incForBlue.update.$inc.wins, 0);
+        assert.equal(incForBlue.update.$inc.losses, 1);
+        assert.equal(incForRed.update.$inc.totalMatches, 1);
+    } finally {
+        fauMock.mock.restore();
+        t.mock.timers.reset();
+    }
+});
+
+test('ShootoutRunner: match:final skips bots when persisting stats', async (t) => {
+    t.mock.timers.enable({ apis: ['setInterval'] });
+    const calls = [];
+    const fauMock = mock.method(ShootoutStats, 'findOneAndUpdate', async (query, update) => {
+        calls.push({ query, update });
+        return { telegramUserId: query?.telegramUserId, totalKills: 0, totalDeaths: 0 };
+    });
+    try {
+        const io = makeFakeIo();
+        // One human + auto-bot fill (slot 1 = bot)
+        const match = makeMatch({
+            members: [
+                { telegramUserId: 101, displayName: '@solo', slot: 0, team: 'red' },
+            ],
+        });
+        const r = new ShootoutRunner({ match, io });
+        r.start();
+        r.matchState.phase    = Phase.ROUND_END;
+        r.matchState.winsRed  = _WN_RUNNER;
+        r.matchState.winsBlue = 0;
+        r.matchState.round    = _WN_RUNNER;
+        r.matchState.roundWinner = 'red';
+        r.matchState.phaseTimer  = 0;
+        t.mock.timers.tick(6000);
+        await r._statsPromise;
+        // 1 human (the bot is skipped) → 2 calls total (inc + recompute)
+        assert.equal(calls.length, 2);
+        const incCalls = calls.filter(c => c.update?.$inc);
+        assert.equal(incCalls.length, 1);
+        assert.equal(incCalls[0].query.telegramUserId, 101);
+    } finally {
+        fauMock.mock.restore();
+        t.mock.timers.reset();
     }
 });

@@ -40,6 +40,7 @@ import {
     advanceMatch,
     phaseDurationFor,
 } from './match.js';
+import { persistMatchStats } from '../stats.js';
 
 const TICK_HZ        = 60;
 const SNAPSHOT_HZ    = 20;
@@ -424,6 +425,16 @@ export class ShootoutRunner {
             winsBlue:    this.matchState.winsBlue,
             players,
         });
+
+        // Day 3 / Task 4: persist career stats. Fire-and-forget — the
+        // service handles its own error logging so a Mongo blip
+        // doesn't take down the runner shutdown. Promise is exposed
+        // via this._statsPromise so tests can await it.
+        this._statsPromise = persistMatchStats({
+            matchWinner: winner,
+            players,
+        });
+
         // Stop the runner after final emit — no more snapshots/ticks
         // once the match is over. Socket layer cleans up _activeMatches.
         this.stop();

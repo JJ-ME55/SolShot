@@ -171,6 +171,28 @@ export function registerShootoutHandlers(client, io) {
         }
     });
 
+    // ── shootout:lobby:pickTeam (Phase C, 2026-06-08) ───────────────
+    // Member picks Red or Blue during Ready Up. Strict balance gate
+    // (1v1: 1-1, 2v2: 2-2) is enforced in lobbyService.pickTeam +
+    // re-checked in setReady's READY transition + double-checked in
+    // startMatch as belt-and-braces.
+    client.on('shootout:lobby:pickTeam', async (payload, ack) => {
+        try {
+            const res = await lobbyService.pickTeam({
+                lobbyId: payload?.lobbyId,
+                telegramUserId: payload?.telegramUserId,
+                team: payload?.team,
+            });
+            if (res?.error) return ack?.({ error: res.error });
+            const room = lobbyRoomName(res.lobby.lobbyId);
+            io.to(room).emit('shootout:lobby:state', { lobby: res.lobby });
+            ack?.({ ok: true });
+        } catch (err) {
+            logger.error({ err }, 'shootout:lobby:pickTeam failed');
+            ack?.({ error: 'internal' });
+        }
+    });
+
     // ── shootout:lobby:list ──────────────────────────────────────────
     // Read-only — no room broadcast, answer goes back in the ack.
     client.on('shootout:lobby:list', async (_payload, ack) => {

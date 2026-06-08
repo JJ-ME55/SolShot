@@ -75,9 +75,26 @@ function makeFakeIo() {
 
 // Mongoose-doc shape that mirrors the lobbyService.test.js fakeDoc.
 function fakeDoc(data) {
+    // Phase C (2026-06-08): production lobbyService no longer auto-
+    // assigns teams (users pick during Ready Up). For test fixtures
+    // that don't care about pickTeam — they're testing :ready, :start,
+    // input forwarding, etc. — default to alternating red/blue per
+    // index so the balance gates pass without each test having to
+    // wire pickTeam first. Tests that DO exercise pickTeam set the
+    // team explicitly + this default is overridden.
+    const members = (data.members || []).map((m, i) => ({
+        team: m.team !== undefined ? m.team : (i % 2 === 0 ? 'red' : 'blue'),
+        ...m,
+    }));
+    // Re-apply caller's overrides on top of the default-aware base,
+    // so an explicit `team: null` still wins.
+    for (let i = 0; i < members.length; i++) {
+        if (data.members[i].team !== undefined) members[i].team = data.members[i].team;
+    }
     return {
         ...data,
-        toObject() { return { ...this }; },
+        members,
+        toObject() { return { ...this, members: this.members.map(m => ({ ...m })) }; },
         async save() { return this; },
     };
 }
@@ -537,7 +554,16 @@ function readyLobbyDoc({ lobbyId, members, hostTelegramUserId, mode = '1v1' }) {
         mode,
         cap: members.length,
         state: 'READY',
-        members: members.map(m => ({ ...m, slot: -1 })),
+        // Phase C (2026-06-08): startMatch enforces balanced teams. For
+        // test fixtures that don't care about the team-pick UX, default
+        // members to alternating red/blue per index so the gate passes
+        // (1v1 → 1-1, 2v2 → 2-2). Callers can override `team:` on a
+        // per-member basis to test unbalanced flows.
+        members: members.map((m, i) => ({
+            team: i % 2 === 0 ? 'red' : 'blue',
+            ...m,
+            slot: -1,
+        })),
         hostTelegramUserId,
         matchId: null,
         lastActiveAt: new Date(),

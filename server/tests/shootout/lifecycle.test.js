@@ -15,8 +15,15 @@ import { strict as assert } from 'node:assert';
 import { createMatchFromLobby } from '../../services/games/shootout/lifecycle.js';
 
 // Minimal lobby shape — only the fields lifecycle reads.
+//
+// Phase C (2026-06-08): lifecycle.createMatchFromLobby no longer
+// assigns slot or team itself; it reads m.slot + m.team that
+// lobbyService.startMatch has already set. Tests that don't go
+// through startMatch must pre-populate those fields, so this helper
+// applies a sensible default (red→even slots, blue→odd) when the
+// caller doesn't override.
 function makeLobby(overrides = {}) {
-    return {
+    const base = {
         lobbyId: 'lobby-L1',
         mode: '1v1',
         cap: 2,
@@ -26,6 +33,12 @@ function makeLobby(overrides = {}) {
         ],
         ...overrides,
     };
+    base.members = base.members.map((m, i) => ({
+        slot: m.slot !== undefined ? m.slot : i,
+        team: m.team !== undefined ? m.team : (i % 2 === 0 ? 'red' : 'blue'),
+        ...m,
+    }));
+    return base;
 }
 
 test('createMatchFromLobby — returns { ok, match } shape', async () => {

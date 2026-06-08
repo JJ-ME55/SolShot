@@ -150,7 +150,21 @@ test('Day 1 integration: two-client lobby → match-start → input → snapshot
         assert.equal(ackJoin.ok, true);
         assert.equal(ackJoin.lobbyId, lobbyId);
 
-        // 3) Both ready up
+        // 3a) Both pick teams (Phase C, 2026-06-08: members now start
+        //     team=null and must explicitly pick before ready-up).
+        let ackPickA, ackPickB;
+        await sockA.handlers.get('shootout:lobby:pickTeam')(
+            { lobbyId, telegramUserId: 101, team: 'red' },
+            (r) => { ackPickA = r; },
+        );
+        await sockB.handlers.get('shootout:lobby:pickTeam')(
+            { lobbyId, telegramUserId: 202, team: 'blue' },
+            (r) => { ackPickB = r; },
+        );
+        assert.equal(ackPickA.ok, true);
+        assert.equal(ackPickB.ok, true);
+
+        // 3b) Both ready up
         let ackReadyA, ackReadyB;
         await sockA.handlers.get('shootout:lobby:ready')(
             { lobbyId, telegramUserId: 101, ready: true },

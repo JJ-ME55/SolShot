@@ -29,7 +29,10 @@ const memberSchema = new mongoose.Schema({
     socketId:         { type: String, default: null },
     isHost:           { type: Boolean, default: false },
     isReady:          { type: Boolean, default: false },
-    team:             { type: String, enum: ['red', 'blue'], default: 'red' },
+    // User-chosen during Ready Up (Phase C, 2026-06-08). null = not yet
+    // picked. startMatch requires every member to have picked + the
+    // teams to be balanced (1-1 in 1v1, 2-2 in 2v2).
+    team:             { type: String, enum: ['red', 'blue', null], default: null },
     slot:             { type: Number, default: -1 }, // assigned at match start
     joinedAt:         { type: Date, default: Date.now },
 }, { _id: false });

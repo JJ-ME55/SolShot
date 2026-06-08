@@ -92,7 +92,10 @@ export async function createLobby({
                     socketId: socketId || null,
                     isHost: true,
                     isReady: false,
-                    team: 'red', // host takes red slot 0; opponent gets blue
+                    // Phase C: team is user-picked during Ready Up.
+                    // Members join unassigned; startMatch requires
+                    // a balanced split.
+                    team: null,
                     slot: -1,
                 }],
                 matchId: null,
@@ -141,7 +144,6 @@ export async function joinLobbyByCode({
     }
 
     const displayName = formatDisplayName({ telegramUsername, firstName, telegramUserId });
-    const slotIndex = lobby.members.length;
     lobby.members.push({
         telegramUserId,
         telegramUsername: telegramUsername || null,
@@ -150,9 +152,9 @@ export async function joinLobbyByCode({
         socketId: socketId || null,
         isHost: false,
         isReady: false,
-        // Alternating red/blue by join order: 0=red, 1=blue, 2=red, 3=blue.
-        // Final slots are assigned at startMatch (member.slot).
-        team: slotIndex % 2 === 0 ? 'red' : 'blue',
+        // Phase C: team is user-picked during Ready Up. Members join
+        // unassigned; startMatch requires a balanced split.
+        team: null,
         slot: -1,
     });
 
@@ -212,6 +214,81 @@ export async function leaveLobby({ lobbyId, telegramUserId }) {
     return { ok: true, lobby: lobby.toObject() };
 }
 
+// ── Team balance ─────────────────────────────────────────────────────
+
+/**
+ * Required team headcount for the given mode. 1v1 → 1 per side, 2v2 → 2.
+ * Centralised so pickTeam / setReady / startMatch agree.
+ */
+function _teamCapPerSide(mode) {
+    if (mode === '2v2') return 2;
+    // Default to 1v1 cap for any unknown mode — safe.
+    return 1;
+}
+
+function _countOnTeam(lobby, team) {
+    return lobby.members.reduce((n, m) => n + (m.team === team ? 1 : 0), 0);
+}
+
+/**
+ * True iff teams are balanced for the lobby's mode and every member
+ * has picked a side. Used by setReady's READY transition and by
+ * startMatch's pre-flight check.
+ */
+function _isLobbyBalanced(lobby) {
+    const cap = _teamCapPerSide(lobby.mode);
+    return _countOnTeam(lobby, 'red')  === cap &&
+           _countOnTeam(lobby, 'blue') === cap;
+}
+
+// ── Pick team (Phase C, 2026-06-08) ──────────────────────────────────
+
+/**
+ * Member chooses Red or Blue during Ready Up. Swapping between teams
+ * is allowed iff the target team has capacity for the lobby's mode.
+ * No-op if the member is already on the requested team.
+ *
+ * Validation:
+ *   - team must be 'red' or 'blue' (null is set via the absence path,
+ *     not via this API)
+ *   - target team must have capacity (< cap-per-side for the mode)
+ *
+ * Side effects:
+ *   - Picking / swapping un-readies the picker so they have to re-ready
+ *     after seeing the new lineup. Prevents a teammate-swap from
+ *     silently stealing the host's go-ahead.
+ *   - State machine: a picker who was previously ready may have
+ *     flipped the lobby out of READY → FULL via the auto-unready
+ *     above. Recompute the READY gate.
+ */
+export async function pickTeam({ lobbyId, telegramUserId, team }) {
+    if (team !== 'red' && team !== 'blue') {
+        return { error: 'bad_team' };
+    }
+    const lobby = await ShootoutLobby.findOne({ lobbyId });
+    if (!lobby) return { error: 'lobby_not_found' };
+    const member = lobby.members.find(m => m.telegramUserId === telegramUserId);
+    if (!member) return { error: 'not_member' };
+    if (member.team === team) {
+        return { ok: true, lobby: lobby.toObject() }; // no-op
+    }
+    // Capacity check on the target team. The picker's current slot on
+    // the OTHER team is freed by the swap, so the count we compare
+    // against is what's already there before this pick.
+    const cap = _teamCapPerSide(lobby.mode);
+    if (_countOnTeam(lobby, team) >= cap) {
+        return { error: 'team_full' };
+    }
+    member.team = team;
+    member.isReady = false;
+    if (lobby.state === 'READY') {
+        lobby.state = 'FULL';
+    }
+    lobby.lastActiveAt = new Date();
+    await lobby.save();
+    return { ok: true, lobby: lobby.toObject() };
+}
+
 // ── Ready ────────────────────────────────────────────────────────────
 
 export async function setReady({ lobbyId, telegramUserId, ready }) {
@@ -219,15 +296,23 @@ export async function setReady({ lobbyId, telegramUserId, ready }) {
     if (!lobby) return { error: 'lobby_not_found' };
     const member = lobby.members.find(m => m.telegramUserId === telegramUserId);
     if (!member) return { error: 'not_member' };
+    // Can't ready-up until you've picked a team. Surfaces a clear
+    // error in the UI; without this you could un-team-pick + ready
+    // + start, slipping past the balance gate.
+    if (ready && !member.team) {
+        return { error: 'pick_team_first' };
+    }
 
     member.isReady = !!ready;
 
-    // FULL → READY when everyone's ready. READY → FULL the moment
-    // anyone un-readies. Pre-FULL states (OPEN) don't transition — you
-    // can flip the flag but the gate doesn't open until at cap.
-    if (lobby.state === 'FULL' && lobby.members.every(m => m.isReady)) {
+    // FULL → READY requires EVERYONE ready AND teams balanced (Phase
+    // C: pick-team is part of the gate now). READY → FULL the moment
+    // any of those break. Pre-FULL states (OPEN) don't transition.
+    const allReady = lobby.members.every(m => m.isReady);
+    const balanced = _isLobbyBalanced(lobby);
+    if (lobby.state === 'FULL' && allReady && balanced) {
         lobby.state = 'READY';
-    } else if (lobby.state === 'READY' && !lobby.members.every(m => m.isReady)) {
+    } else if (lobby.state === 'READY' && (!allReady || !balanced)) {
         lobby.state = 'FULL';
     }
 
@@ -259,22 +344,44 @@ export async function startMatch({ lobbyId, telegramUserId, allowSolo = false })
     if (lobby.hostTelegramUserId !== telegramUserId) return { error: 'not_host' };
     if (!allowSolo) {
         if (lobby.state !== 'READY') return { error: 'not_ready' };
+        // Belt + braces: setReady is supposed to gate READY on balance
+        // but defend against any race where the doc could be READY with
+        // unbalanced teams. Mode-aware: 1v1 = 1-1, 2v2 = 2-2.
+        if (!_isLobbyBalanced(lobby)) return { error: 'unbalanced' };
     } else {
         // Solo path: must at least be a startable lobby state (not
         // already STARTING / IN_MATCH / CLOSED). Stamp readiness on the
-        // host so down-stream consumers see a coherent record.
+        // host so down-stream consumers see a coherent record. For solo
+        // we DO auto-assign the host to red (the team-pick UI isn't
+        // exposed in the solo entry point) — bots fill the rest.
         if (!['OPEN', 'FULL', 'READY'].includes(lobby.state)) {
             return { error: 'not_startable' };
         }
         const host = lobby.members.find(m => m.telegramUserId === telegramUserId);
-        if (host) host.isReady = true;
+        if (host) {
+            host.isReady = true;
+            if (!host.team) host.team = 'red';
+        }
     }
 
     const matchId = newId('match');
     lobby.matchId = matchId;
     lobby.state = 'STARTING';
-    for (let i = 0; i < lobby.members.length; i += 1) {
-        lobby.members[i].slot = i;
+    // Slot assignment: red team gets even slots (0, 2), blue gets odd
+    // (1, 3) — matches SPAWN_POSITIONS_BY_SLOT in sim/physics.js
+    // (red north, blue south). For solo lobbies with empty seats, the
+    // runner's _addBotsForEmptySlots backfills bots into the unused
+    // slots (also alternating by team).
+    let redIdx = 0, blueIdx = 0;
+    for (const m of lobby.members) {
+        if (m.team === 'blue') {
+            m.slot = 1 + blueIdx * 2; // 1, 3
+            blueIdx += 1;
+        } else {
+            // red OR unassigned (solo: host forced to red above)
+            m.slot = 0 + redIdx * 2; // 0, 2
+            redIdx += 1;
+        }
     }
     lobby.lastActiveAt = new Date();
     await lobby.save();

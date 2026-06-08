@@ -22,6 +22,7 @@ import {
     leaveLobby,
     setReady,
     startMatch,
+    pickTeam,
     listOpenLobbies,
 } from '../../services/games/shootout/lobbyService.js';
 
@@ -172,7 +173,7 @@ function hostMember(overrides = {}) {
     };
 }
 
-test('joinLobbyByCode: OPEN with room → adds member with blue team (still OPEN if not at cap)', async () => {
+test('joinLobbyByCode: OPEN with room → adds member with no team yet (still OPEN if not at cap)', async () => {
     const lobby = fakeLobby({ members: [hostMember()], cap: 4, mode: '2v2' });
     const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobby);
     try {
@@ -182,7 +183,9 @@ test('joinLobbyByCode: OPEN with room → adds member with blue team (still OPEN
         assert.equal(res.ok, true);
         assert.equal(res.lobby.members.length, 2);
         assert.equal(res.lobby.members[1].telegramUserId, 2);
-        assert.equal(res.lobby.members[1].team, 'blue');
+        // Phase C (2026-06-08): members join unassigned; team is picked
+        // during Ready Up via shootout:lobby:pickTeam.
+        assert.equal(res.lobby.members[1].team, null);
         assert.equal(res.lobby.members[1].isHost, false);
         assert.equal(res.lobby.members[1].displayName, '@mate');
         assert.equal(res.lobby.members[1].socketId, 'sock-2');
@@ -275,7 +278,7 @@ test('joinLobbyByCode: last seat fills → state OPEN → FULL', async () => {
     }
 });
 
-test('joinLobbyByCode: 2v2 team assignment alternates red/blue by index', async () => {
+test('joinLobbyByCode: 2v2 members join with team=null (Phase C: user-picks during Ready Up)', async () => {
     const lobby = fakeLobby({
         state: 'OPEN', cap: 4, mode: '2v2',
         members: [hostMember()],
@@ -283,11 +286,11 @@ test('joinLobbyByCode: 2v2 team assignment alternates red/blue by index', async 
     const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobby);
     try {
         const r1 = await joinLobbyByCode({ code: 'ABCDEF', telegramUserId: 2 });
-        assert.equal(r1.lobby.members[1].team, 'blue');
+        assert.equal(r1.lobby.members[1].team, null);
         const r2 = await joinLobbyByCode({ code: 'ABCDEF', telegramUserId: 3 });
-        assert.equal(r2.lobby.members[2].team, 'red');
+        assert.equal(r2.lobby.members[2].team, null);
         const r3 = await joinLobbyByCode({ code: 'ABCDEF', telegramUserId: 4 });
-        assert.equal(r3.lobby.members[3].team, 'blue');
+        assert.equal(r3.lobby.members[3].team, null);
         assert.equal(r3.lobby.state, 'FULL');
     } finally {
         findMock.mock.restore();
@@ -617,5 +620,180 @@ test('listOpenLobbies delegates to ShootoutLobby.openLobbies()', async () => {
         assert.equal(m.mock.callCount(), 1);
     } finally {
         m.mock.restore();
+    }
+});
+
+// ── pickTeam (Phase C, 2026-06-08) ────────────────────────────────────
+
+test('pickTeam: sets member.team and persists', async () => {
+    const lobby = fakeLobby({
+        state: 'FULL', cap: 2, mode: '1v1',
+        members: [
+            hostMember({ team: null }),
+            { telegramUserId: 2, displayName: '@b', isHost: false, team: null, isReady: false, slot: -1 },
+        ],
+    });
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobby);
+    try {
+        const res = await pickTeam({ lobbyId: 'lobby-x', telegramUserId: 2, team: 'blue' });
+        assert.equal(res.ok, true);
+        assert.equal(res.lobby.members[1].team, 'blue');
+    } finally {
+        findMock.mock.restore();
+    }
+});
+
+test('pickTeam: rejects bad_team when value is not red or blue', async () => {
+    const lobby = fakeLobby({ members: [hostMember()] });
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobby);
+    try {
+        const res = await pickTeam({ lobbyId: 'lobby-x', telegramUserId: 1, team: 'green' });
+        assert.equal(res.error, 'bad_team');
+    } finally {
+        findMock.mock.restore();
+    }
+});
+
+test('pickTeam: rejects team_full when target side already at cap (2v2)', async () => {
+    const lobby = fakeLobby({
+        state: 'FULL', cap: 4, mode: '2v2',
+        members: [
+            hostMember({ team: 'red' }),
+            { telegramUserId: 2, displayName: '@b', isHost: false, team: 'red', isReady: false, slot: -1 },
+            { telegramUserId: 3, displayName: '@c', isHost: false, team: 'blue', isReady: false, slot: -1 },
+            { telegramUserId: 4, displayName: '@d', isHost: false, team: null, isReady: false, slot: -1 },
+        ],
+    });
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobby);
+    try {
+        const res = await pickTeam({ lobbyId: 'lobby-x', telegramUserId: 4, team: 'red' });
+        assert.equal(res.error, 'team_full');
+        assert.equal(lobby.members[3].team, null);
+    } finally {
+        findMock.mock.restore();
+    }
+});
+
+test('pickTeam: allows swap from red->blue if blue has capacity (2v2)', async () => {
+    const lobby = fakeLobby({
+        state: 'FULL', cap: 4, mode: '2v2',
+        members: [
+            hostMember({ team: 'red' }),
+            { telegramUserId: 2, displayName: '@b', isHost: false, team: 'red', isReady: true, slot: -1 },
+            { telegramUserId: 3, displayName: '@c', isHost: false, team: 'blue', isReady: false, slot: -1 },
+            { telegramUserId: 4, displayName: '@d', isHost: false, team: null, isReady: false, slot: -1 },
+        ],
+    });
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobby);
+    try {
+        const res = await pickTeam({ lobbyId: 'lobby-x', telegramUserId: 2, team: 'blue' });
+        assert.equal(res.ok, true);
+        assert.equal(res.lobby.members[1].team, 'blue');
+        // Swapping un-readies the swapper so the host can't smuggle a
+        // team-swap past a ready-up vote.
+        assert.equal(res.lobby.members[1].isReady, false);
+    } finally {
+        findMock.mock.restore();
+    }
+});
+
+test('pickTeam: no-op when picking own current team', async () => {
+    const lobby = fakeLobby({
+        state: 'READY',
+        members: [
+            hostMember({ team: 'red', isReady: true }),
+            { telegramUserId: 2, displayName: '@b', isHost: false, team: 'blue', isReady: true, slot: -1 },
+        ],
+    });
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobby);
+    try {
+        const res = await pickTeam({ lobbyId: 'lobby-x', telegramUserId: 1, team: 'red' });
+        assert.equal(res.ok, true);
+        assert.equal(res.lobby.members[0].isReady, true);
+        assert.equal(res.lobby.state, 'READY');
+    } finally {
+        findMock.mock.restore();
+    }
+});
+
+test('setReady: errors pick_team_first when ready=true and member has no team', async () => {
+    const lobby = fakeLobby({
+        state: 'FULL', cap: 2, mode: '1v1',
+        members: [
+            hostMember({ team: null }),
+            { telegramUserId: 2, displayName: '@b', isHost: false, team: 'blue', isReady: false, slot: -1 },
+        ],
+    });
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobby);
+    try {
+        const res = await setReady({ lobbyId: 'lobby-x', telegramUserId: 1, ready: true });
+        assert.equal(res.error, 'pick_team_first');
+    } finally {
+        findMock.mock.restore();
+    }
+});
+
+test('setReady: FULL->READY requires balanced teams (2v2 3-1 stays FULL)', async () => {
+    const lobby = fakeLobby({
+        state: 'FULL', cap: 4, mode: '2v2',
+        members: [
+            hostMember({ team: 'red', isReady: true }),
+            { telegramUserId: 2, displayName: '@b', isHost: false, team: 'red',  isReady: true, slot: -1 },
+            { telegramUserId: 3, displayName: '@c', isHost: false, team: 'red',  isReady: false, slot: -1 },
+            { telegramUserId: 4, displayName: '@d', isHost: false, team: 'blue', isReady: true, slot: -1 },
+        ],
+    });
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobby);
+    try {
+        const res = await setReady({ lobbyId: 'lobby-x', telegramUserId: 3, ready: true });
+        assert.equal(res.ok, true);
+        assert.equal(res.lobby.state, 'FULL');
+    } finally {
+        findMock.mock.restore();
+    }
+});
+
+test('startMatch: errors unbalanced when teams not 2-2 in 2v2', async () => {
+    const lobby = fakeLobby({
+        state: 'READY', cap: 4, mode: '2v2',
+        hostTelegramUserId: 1,
+        members: [
+            hostMember({ team: 'red', isReady: true }),
+            { telegramUserId: 2, displayName: '@b', isHost: false, team: 'red',  isReady: true, slot: -1 },
+            { telegramUserId: 3, displayName: '@c', isHost: false, team: 'red',  isReady: true, slot: -1 },
+            { telegramUserId: 4, displayName: '@d', isHost: false, team: 'blue', isReady: true, slot: -1 },
+        ],
+    });
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobby);
+    try {
+        const res = await startMatch({ lobbyId: 'lobby-x', telegramUserId: 1 });
+        assert.equal(res.error, 'unbalanced');
+    } finally {
+        findMock.mock.restore();
+    }
+});
+
+test('startMatch: assigns slots by team (red->even, blue->odd)', async () => {
+    const lobby = fakeLobby({
+        state: 'READY', cap: 4, mode: '2v2',
+        hostTelegramUserId: 1,
+        members: [
+            hostMember({ team: 'red',  isReady: true }),
+            { telegramUserId: 2, displayName: '@b', isHost: false, team: 'blue', isReady: true, slot: -1 },
+            { telegramUserId: 3, displayName: '@c', isHost: false, team: 'red',  isReady: true, slot: -1 },
+            { telegramUserId: 4, displayName: '@d', isHost: false, team: 'blue', isReady: true, slot: -1 },
+        ],
+    });
+    const findMock = mock.method(ShootoutLobby, 'findOne', async () => lobby);
+    try {
+        const res = await startMatch({ lobbyId: 'lobby-x', telegramUserId: 1 });
+        assert.equal(res.ok, true);
+        const slotByUid = Object.fromEntries(res.lobby.members.map(m => [m.telegramUserId, m.slot]));
+        assert.equal(slotByUid[1], 0); // red 1
+        assert.equal(slotByUid[2], 1); // blue 1
+        assert.equal(slotByUid[3], 2); // red 2
+        assert.equal(slotByUid[4], 3); // blue 2
+    } finally {
+        findMock.mock.restore();
     }
 });

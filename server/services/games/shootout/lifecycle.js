@@ -40,16 +40,18 @@ function newMatchId() {
  * Build a match descriptor from a lobby. The runner (E.2) stores it; the
  * socket layer (E.3) emits match:start using its fields.
  *
- * Team assignment is by slot index (alternating red/blue), so 1v1 has
- * slot 0 red vs slot 1 blue, and 2v2 has slots 0,2 red vs slots 1,3 blue.
- * Slot order is the lobby's member join order — keep it stable.
+ * Slot + team source-of-truth: lobbyService.startMatch has already
+ * assigned each member's `slot` (red → even, blue → odd) per the user's
+ * team pick during Ready Up (Phase C, 2026-06-08). We propagate those
+ * directly — no alternating-by-index rewrite. Solo lobbies fall back
+ * to whatever lobbyService set (host forced to red).
  */
 export async function createMatchFromLobby({ lobby, botDifficulty } = {}) {
-    const members = lobby.members.map((m, i) => ({
+    const members = lobby.members.map((m) => ({
         telegramUserId: m.telegramUserId,
         displayName:    m.displayName,
-        slot:           i,
-        team:           i % 2 === 0 ? 'red' : 'blue',
+        slot:           m.slot,            // already assigned in lobbyService.startMatch
+        team:           m.team || 'red',   // null only possible in legacy data
     }));
     // Whitelist allowed difficulty ids — anything else (or absent)
     // falls through to the runner's default ('soldier').

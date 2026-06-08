@@ -94,17 +94,21 @@ export const COVER_BOXES = Object.freeze([
 // put the capsule on the Rect Structure edge → server resolveCollision
 // pushed the player out by 0.35u every tick → client/server desync +
 // 'half in floor' rendering.
+// Match the SP spawn layout — red in the SE room corner (15, _, 22),
+// blue in the NE corner area (18, _, -22). MUST match the client's
+// MP_SPAWN_POSITIONS exactly; divergence reintroduces the
+// 'cannot see each other' bug from earlier in the project.
 // y: 1.0 = arena floor surface (see ARENA_BOUNDS.floorY note above).
 export const SPAWN_POSITIONS_BY_SLOT = Object.freeze({
     '1v1': Object.freeze([
-        Object.freeze({ x: -10, y: 1.0, z:  22, yaw:  Math.PI }), // red,  facing south
-        Object.freeze({ x: -10, y: 1.0, z: -22, yaw:  0       }), // blue, facing north
+        Object.freeze({ x: 15, y: 1.0, z:  22, yaw:  0       }), // red,  SE room, faces -Z
+        Object.freeze({ x: 18, y: 1.0, z: -22, yaw:  Math.PI }), // blue, NE corner, faces +Z
     ]),
     '2v2': Object.freeze([
-        Object.freeze({ x: -12, y: 1.0, z:  22, yaw:  Math.PI }), // red 1
-        Object.freeze({ x: -12, y: 1.0, z: -22, yaw:  0       }), // blue 1
-        Object.freeze({ x:  -8, y: 1.0, z:  22, yaw:  Math.PI }), // red 2
-        Object.freeze({ x:  -8, y: 1.0, z: -22, yaw:  0       }), // blue 2
+        Object.freeze({ x: 14, y: 1.0, z:  22, yaw:  0       }), // red 1
+        Object.freeze({ x: 17, y: 1.0, z: -22, yaw:  Math.PI }), // blue 1
+        Object.freeze({ x: 17, y: 1.0, z:  20, yaw:  0       }), // red 2
+        Object.freeze({ x: 14, y: 1.0, z: -20, yaw:  Math.PI }), // blue 2
     ]),
 });
 

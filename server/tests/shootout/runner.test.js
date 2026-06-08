@@ -1025,6 +1025,10 @@ test('ShootoutRunner: tick without clientX falls back to integrateMovement', (t)
     r.matchState.phase = Phase.LIVE;
     try {
         const p = r.players.get(0);
+        // Normalise to a position clear of any cover-box AABB so the
+        // motion test isn't dominated by spawn-edge collision push
+        // (Rect Structure clips the (15,_,22) red spawn corner).
+        p.state.x = 0; p.state.z = 0; p.state.y = 1.0;
         const startX = p.state.x;
         // No clientX → server integrates with moveZ=1
         r.setInput(0, { seq: 1, moveX: 0, moveZ: 1, lookYaw: -Math.PI / 2 });
@@ -1044,6 +1048,10 @@ test('ShootoutRunner: clientX is IGNORED during BUY phase (frozen)', (t) => {
     r.matchState.phase = Phase.BUY;
     try {
         const p = r.players.get(0);
+        // Move off the Rect-Structure spawn-edge before sampling so
+        // BUY-phase friction integration doesn't push us out by 0.35u
+        // (which would be NOT 'teleport' but does fail strict-equal).
+        p.state.x = 0; p.state.z = 0; p.state.y = 1.0;
         const spawnX = p.state.x;
         const spawnZ = p.state.z;
         r.setInput(0, {

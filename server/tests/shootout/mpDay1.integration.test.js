@@ -214,6 +214,12 @@ test('Day 1 integration: two-client lobby → match-start → input → snapshot
         // integration test predates the FSM and asserts movement
         // immediately; the FSM would otherwise hold us in BUY for 10s.
         runner.matchState.phase = Phase.LIVE;
+        // Move both players off the spawn corners — the SP-matched
+        // spawn (15, _, 22) clips the Rect Structure cover AABB so
+        // a +X motion test wedges against the wall and fails.
+        for (const p of runner.players.values()) {
+            p.state.x = 0; p.state.z = 0; p.state.y = 1.0;
+        }
 
         try {
             // 7) Each client sends a few input frames. Aim at +X

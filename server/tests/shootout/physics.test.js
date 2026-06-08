@@ -186,18 +186,20 @@ test('integrateMovement: gravity pulls airborne player downward', () => {
 
 test('integrateMovement: jump on ground gives upward impulse + lifts off', () => {
     const s = spawnStateForSlot('1v1', 0);
-    s.y = 0; s.onGround = true;
+    s.y = ARENA_BOUNDS.floorY; s.onGround = true;
     integrateMovement(s, { ...neutralInput(), jump: true }, 1 / 60);
-    assert.ok(s.y > 0, `expected y > 0 after jump, got ${s.y}`);
+    assert.ok(s.y > ARENA_BOUNDS.floorY, `expected y > floor after jump, got ${s.y}`);
     assert.ok(s.vy > 0, `expected upward vy after jump, got ${s.vy}`);
     assert.equal(s.onGround, false);
 });
 
-test('integrateMovement: dropped from height eventually lands (onGround true, y=0)', () => {
+test('integrateMovement: dropped from height eventually lands (onGround true, y=floorY)', () => {
     const s = spawnStateForSlot('1v1', 0);
     s.y = 10; s.onGround = false;
     for (let i = 0; i < 120; i++) integrateMovement(s, neutralInput(), 1 / 60);
-    assert.equal(s.y, 0);
+    // ARENA_BOUNDS.floorY matches the arena's visual floor surface; was 0
+    // before 2026-06-08 (cleared half-in-floor remote-render bug).
+    assert.equal(s.y, ARENA_BOUNDS.floorY);
     assert.equal(s.onGround, true);
 });
 

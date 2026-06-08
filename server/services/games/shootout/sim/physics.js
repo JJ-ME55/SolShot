@@ -42,7 +42,12 @@ import { MOVEMENT_TUNING } from './tuning.js';
 // inner rectangle that covers the main body; the NE extension is added
 // as an explicit allowed-extension. Clamp = clamp inside the union.
 export const ARENA_BOUNDS = Object.freeze({
-    floorY: 0,
+    // The arena's visual floor sits at world Y≈1.05 (per SP camera log
+    // on load — 'Player spawned at corner: (15.00, 1.05, 22.00)'). The
+    // server's floor clamp + spawn Y must match the visual mesh or the
+    // remote model renders ~1m below the actual floor ('half in floor').
+    // Set to 1.0 — gives 5cm of buffer to the actual surface.
+    floorY: 1.0,
     ceilingY: 30,           // arbitrary — bullets aren't a Day 1 concern
     // Main body of the L
     mainMinX: -25, mainMaxX: 30,
@@ -89,16 +94,17 @@ export const COVER_BOXES = Object.freeze([
 // put the capsule on the Rect Structure edge → server resolveCollision
 // pushed the player out by 0.35u every tick → client/server desync +
 // 'half in floor' rendering.
+// y: 1.0 = arena floor surface (see ARENA_BOUNDS.floorY note above).
 export const SPAWN_POSITIONS_BY_SLOT = Object.freeze({
     '1v1': Object.freeze([
-        Object.freeze({ x: -10, y: 0, z:  22, yaw:  Math.PI }), // red,  facing south
-        Object.freeze({ x: -10, y: 0, z: -22, yaw:  0       }), // blue, facing north
+        Object.freeze({ x: -10, y: 1.0, z:  22, yaw:  Math.PI }), // red,  facing south
+        Object.freeze({ x: -10, y: 1.0, z: -22, yaw:  0       }), // blue, facing north
     ]),
     '2v2': Object.freeze([
-        Object.freeze({ x: -12, y: 0, z:  22, yaw:  Math.PI }), // red 1
-        Object.freeze({ x: -12, y: 0, z: -22, yaw:  0       }), // blue 1
-        Object.freeze({ x:  -8, y: 0, z:  22, yaw:  Math.PI }), // red 2
-        Object.freeze({ x:  -8, y: 0, z: -22, yaw:  0       }), // blue 2
+        Object.freeze({ x: -12, y: 1.0, z:  22, yaw:  Math.PI }), // red 1
+        Object.freeze({ x: -12, y: 1.0, z: -22, yaw:  0       }), // blue 1
+        Object.freeze({ x:  -8, y: 1.0, z:  22, yaw:  Math.PI }), // red 2
+        Object.freeze({ x:  -8, y: 1.0, z: -22, yaw:  0       }), // blue 2
     ]),
 });
 

@@ -67,6 +67,12 @@ import ShootoutLobby from '../models/ShootoutLobby.js';
 // the handlers below are the only writers.
 export const _activeMatches = new Map(); // matchId → ShootoutRunner
 
+// Phase 3 (2026-06-08): module-scoped room name for the live Open
+// Lobbies browser. Subscribers join via shootout:openLobbies:subscribe
+// and receive shootout:openLobbies:update on every state change that
+// could affect the open-lobby set.
+const OPEN_LOBBIES_ROOM = 'shootout:openLobbies';
+
 // Room name for match broadcasts. Single source of truth so the start
 // handler (which DOES NOT join) and the joinMatch handler (which DOES)
 // can't drift.
@@ -93,11 +99,17 @@ export function registerShootoutHandlers(client, io) {
                 telegramUsername: payload?.telegramUsername,
                 firstName: payload?.firstName,
                 socketId: client.id,
+                // Phase 3 (2026-06-08): Custom Game options.
+                // Defaults preserve back-compat with the existing
+                // Create Lobby flow (private + friendly).
+                visibility: payload?.visibility,
+                gameType:   payload?.gameType,
             });
             if (res?.error) return ack?.({ error: res.error });
             const room = lobbyRoomName(res.lobby.lobbyId);
             client.join(room);
             io.to(room).emit('shootout:lobby:state', { lobby: res.lobby });
+            _broadcastOpenLobbies();
             ack?.({ ok: true, lobbyId: res.lobby.lobbyId, code: res.lobby.code });
         } catch (err) {
             logger.error({ err }, 'shootout:lobby:create failed');
@@ -119,6 +131,7 @@ export function registerShootoutHandlers(client, io) {
             const room = lobbyRoomName(res.lobby.lobbyId);
             client.join(room);
             io.to(room).emit('shootout:lobby:state', { lobby: res.lobby });
+            _broadcastOpenLobbies();
             ack?.({
                 ok: true,
                 lobbyId: res.lobby.lobbyId,
@@ -155,6 +168,7 @@ export function registerShootoutHandlers(client, io) {
                 io.to(room).emit('shootout:lobby:state', { lobby: res.lobby });
                 _syncCountdown(res.lobby);
             }
+            _broadcastOpenLobbies();
             client.leave(room);
             ack?.({ ok: true, ...(res.closed ? { closed: true } : {}) });
         } catch (err) {
@@ -175,6 +189,7 @@ export function registerShootoutHandlers(client, io) {
             const room = lobbyRoomName(res.lobby.lobbyId);
             io.to(room).emit('shootout:lobby:state', { lobby: res.lobby });
             _syncCountdown(res.lobby);
+            _broadcastOpenLobbies();
             ack?.({ ok: true });
         } catch (err) {
             logger.error({ err }, 'shootout:lobby:ready failed');
@@ -198,6 +213,7 @@ export function registerShootoutHandlers(client, io) {
             const room = lobbyRoomName(res.lobby.lobbyId);
             io.to(room).emit('shootout:lobby:state', { lobby: res.lobby });
             _syncCountdown(res.lobby);
+            _broadcastOpenLobbies();
             ack?.({ ok: true });
         } catch (err) {
             logger.error({ err }, 'shootout:lobby:pickTeam failed');
@@ -215,6 +231,32 @@ export function registerShootoutHandlers(client, io) {
             logger.error({ err }, 'shootout:lobby:list failed');
             ack?.({ error: 'internal' });
         }
+    });
+
+    // ── shootout:openLobbies:* (Phase 3, 2026-06-08) ────────────────
+    //
+    // Live-updating Open Lobbies browser. Client subscribes once when
+    // the Open Lobbies panel mounts, server adds the socket to the
+    // OPEN_LOBBIES_ROOM, then any time the open-lobby set changes
+    // (create with visibility=open, join, leave, ready transition,
+    // match start, etc.) the server pushes a fresh full list to that
+    // room. Client unsubscribes on panel unmount.
+    //
+    // OPEN_LOBBIES_ROOM is module-scoped (see top of file).
+    client.on('shootout:openLobbies:subscribe', async (_payload, ack) => {
+        try {
+            client.join(OPEN_LOBBIES_ROOM);
+            const lobbies = await lobbyService.listOpenLobbies();
+            ack?.({ ok: true, lobbies });
+        } catch (err) {
+            logger.error({ err }, 'shootout:openLobbies:subscribe failed');
+            ack?.({ error: 'internal' });
+        }
+    });
+
+    client.on('shootout:openLobbies:unsubscribe', (_payload, ack) => {
+        client.leave(OPEN_LOBBIES_ROOM);
+        ack?.({ ok: true });
     });
 
     // ── shootout:quickplay:* (Phase MP-expansion, 2026-06-08) ───────
@@ -375,6 +417,9 @@ export function registerShootoutHandlers(client, io) {
             members: matchRes.match.members.length,
             solo:    !!allowSolo,
         });
+        // Phase 3 (2026-06-08): lobby state moved to STARTING → falls
+        // out of the open-lobbies list. Live-subscribers need to know.
+        _broadcastOpenLobbies();
         return { ok: true, matchId: matchRes.match.matchId };
     }
 
@@ -384,6 +429,20 @@ export function registerShootoutHandlers(client, io) {
         const res = await _startMatch({ lobbyId, telegramUserId, allowSolo, botDifficulty });
         if (res?.error) return ack?.({ error: res.error });
         ack?.({ ok: true, matchId: res.matchId });
+    }
+
+    // Phase 3 (2026-06-08): re-emit the full open-lobbies list to the
+    // OPEN_LOBBIES_ROOM. Called after every state-mutating lobby
+    // handler so the browser stays live. Cheap: one Mongo .lean()
+    // read + one room emit per change; the room is empty when nobody
+    // is on the Open Lobbies tab.
+    async function _broadcastOpenLobbies() {
+        try {
+            const lobbies = await lobbyService.listOpenLobbies();
+            io.to(OPEN_LOBBIES_ROOM).emit('shootout:openLobbies:update', { lobbies });
+        } catch (err) {
+            logger.error({ err }, '_broadcastOpenLobbies failed');
+        }
     }
 
     // After every state-mutating lobby handler (setReady, pickTeam,

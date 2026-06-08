@@ -294,6 +294,36 @@ test('SimBot.maybeFire: harder difficulty has higher hit chance close-range', ()
         `SEAL hit chance (${s.hitChance}) should exceed Recruit (${r.hitChance})`);
 });
 
+test('SimBot strafe: ATTACK adds perpendicular movement scaled by difficulty', () => {
+    const recruit = new SimBot({ slot: 1, mode: '1v1', difficulty: 'recruit', rng: () => 0.5 });
+    const seal    = new SimBot({ slot: 2, mode: '1v1', difficulty: 'seal',    rng: () => 0.5 });
+    const state = { x: 0, y: 0, z: 0, yaw: 0 };
+    const target = { x: 0, y: 0, z: -5, alive: true };
+    // Drive both into ATTACK
+    recruit.tick(state, { targetPlayer: target }, 0.1);
+    seal.tick(state, { targetPlayer: target }, 0.1);
+    const r = recruit.computeInput(state, 0.1);
+    const s = seal.computeInput(state, 0.1);
+    // Recruit (strafeFactor=0) must always have moveX=0
+    assert.equal(Math.abs(r.moveX), 0, `recruit must not strafe, got moveX=${r.moveX}`);
+    // SEAL (strafeFactor=1) should have a strong side-component
+    assert.ok(Math.abs(s.moveX) > 0.5, `SEAL should strafe, got moveX=${s.moveX}`);
+    // Forward thrust preserved on both
+    assert.equal(r.moveZ, 1);
+    assert.equal(s.moveZ, 1);
+});
+
+test('SimBot strafe: direction flips every ~1.5s while attacking', () => {
+    const bot = new SimBot({ slot: 1, mode: '1v1', difficulty: 'seal', rng: () => 0.5 });
+    const state = { x: 0, y: 0, z: 0, yaw: 0 };
+    const target = { x: 0, y: 0, z: -5, alive: true };
+    bot.tick(state, { targetPlayer: target }, 0.1);
+    const initialDir = bot.strafeDir;
+    // Pump 16 ticks of dt=0.1s = 1.6s total — should flip once
+    for (let i = 0; i < 16; i++) bot.tick(state, { targetPlayer: target }, 0.1);
+    assert.notEqual(bot.strafeDir, initialDir, 'strafe direction should have flipped after >1.5s');
+});
+
 test('SimBot.markDead: switches state to DEAD and stops firing', () => {
     const bot = new SimBot({ slot: 1, mode: '1v1', difficulty: 'soldier' });
     const state = { x: 0, y: 0, z: 0, yaw: 0 };

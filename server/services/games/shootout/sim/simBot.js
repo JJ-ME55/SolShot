@@ -53,11 +53,18 @@ const BURST_PAUSE   = 0.55;           // seconds between bursts
 
 // Difficulty table — keep in sync with the client's BOT_DIFFICULTY
 // in BillionaireBonkClub/shootout:visual/main.js. Bump both together.
+//
+// strafeFactor: 4th axis (added 2026-06-08). When ATTACKING, the bot
+// adds a perpendicular movement component that scales with this value.
+//   0   = pure rush (recruit-style; runs straight at the player)
+//   1   = strong side-step (SEAL-style; hard to hit head-on)
+// Strafe direction flips every ~1.5s creating a "tactical peek" feel
+// without needing a real cover-graph + path planner.
 const DIFFICULTY = Object.freeze({
-    recruit: { aimSkill: 0.05, reactionTime: 0.90, huntPersistSec: 1.5 },
-    soldier: { aimSkill: 0.15, reactionTime: 0.50, huntPersistSec: 5.0 },
-    veteran: { aimSkill: 0.28, reactionTime: 0.25, huntPersistSec: 10.0 },
-    seal:    { aimSkill: 0.42, reactionTime: 0.10, huntPersistSec: 30.0 },
+    recruit: { aimSkill: 0.05, reactionTime: 0.90, huntPersistSec: 1.5,  strafeFactor: 0.00 },
+    soldier: { aimSkill: 0.15, reactionTime: 0.50, huntPersistSec: 5.0,  strafeFactor: 0.30 },
+    veteran: { aimSkill: 0.28, reactionTime: 0.25, huntPersistSec: 10.0, strafeFactor: 0.65 },
+    seal:    { aimSkill: 0.42, reactionTime: 0.10, huntPersistSec: 30.0, strafeFactor: 1.00 },
 });
 export function getDifficultyConfig(id) {
     return DIFFICULTY[id] || DIFFICULTY.soldier;
@@ -128,6 +135,9 @@ export class SimBot {
         this.aimSkill       = jitter(cfg.aimSkill,       0.20);
         this.reactionTime   = jitter(cfg.reactionTime,   0.20);
         this.huntPersistSec = cfg.huntPersistSec;
+        this.strafeFactor   = cfg.strafeFactor || 0;
+        this.strafeDir      = this.rng() < 0.5 ? -1 : 1; // initial side
+        this.strafePhaseSec = 0; // counts up; flips strafeDir at 1.5s
 
         this.state = BotState.PATROL;
         this.target = null;                // {x, z} for wander/search
@@ -221,6 +231,17 @@ export class SimBot {
     _tickFireTimers(dt) {
         if (this.fireCooldown > 0) this.fireCooldown -= dt;
         if (this.burstPause   > 0) this.burstPause   -= dt;
+        // Strafe-direction phase: flip every 1.5s while in ATTACK so the
+        // bot rocks side-to-side instead of charging in a straight line.
+        if (this.state === BotState.ATTACK && this.strafeFactor > 0) {
+            this.strafePhaseSec += dt;
+            if (this.strafePhaseSec >= 1.5) {
+                this.strafePhaseSec = 0;
+                this.strafeDir = -this.strafeDir;
+            }
+        } else {
+            this.strafePhaseSec = 0;
+        }
     }
 
     /**
@@ -278,7 +299,16 @@ export class SimBot {
             }
             return _input(0, 0, lookYaw, false, false);
         }
-        return _input(0, 1, lookYaw, false, false);
+        // ── Tactical strafe (4th difficulty axis) ────────────────────
+        // When attacking, blend in a perpendicular side-step component
+        // so harder bots are less predictable than a straight-line rush.
+        // moveX/moveZ are in the player's LOCAL frame (right/forward),
+        // so we just set moveZ=1 forward and moveX=±strafeFactor for the
+        // lateral push. integrateMovement combines + normalises them.
+        const strafe = this.state === BotState.ATTACK
+            ? this.strafeDir * this.strafeFactor
+            : 0;
+        return _input(strafe, 1, lookYaw, false, false);
     }
 
     /** Decide where the bot LOOKS (aims). Aim at the live target when

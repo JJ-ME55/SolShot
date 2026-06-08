@@ -32,7 +32,9 @@ import logger from '../../logger.js';
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 
 // Mode → cap. Single source of truth, mirrors the model enum.
-const MODE_CAP = { '1v1': 2, '2v2': 4 };
+// Exported so the Quick Play matchmaker (matchmaking.js) can reference
+// the same per-mode caps without duplicating the table.
+export const MODE_CAP = { '1v1': 2, '2v2': 4 };
 const CREATE_CODE_RETRIES = 5;
 
 export function generateLobbyCode() {
@@ -130,6 +132,88 @@ export async function createLobby({
     }
     logger.error('[shootout/lobby] create exhausted retries', { err: lastErr?.message });
     throw lastErr || new Error('create_failed');
+}
+
+// ── Quick Play (Phase MP-expansion, 2026-06-08) ──────────────────────
+
+/**
+ * Create a Quick Play lobby pre-populated with N matched players,
+ * teams alternating (slots 0/2 red, 1/3 blue), and all members
+ * flagged isReady=true. State stamps READY immediately so the
+ * existing auto-countdown trigger (socket-io syncCountdown) fires
+ * on the next emitted state broadcast → 5s → match starts.
+ *
+ * Matchmaking flow (matchmaking.js → socket-io/shootout.js):
+ *   1. quickplay:join fills the queue
+ *   2. queue hits cap → matched group of N
+ *   3. socket handler calls createQuickPlayLobby({mode, members})
+ *   4. socket handler broadcasts lobby:state + arms countdown
+ *   5. 5s later → match:start per-socket
+ *
+ * Quick Play lobbies are always visibility='private' (they're never
+ * surfaced in the Open Lobbies browser — they exist for ~5s and then
+ * become a match) and gameType='friendly' (wager is opted-in via
+ * Custom Game only).
+ *
+ * @param {object} args
+ * @param {'1v1'|'2v2'} args.mode
+ * @param {Array} args.members - matched players from the queue, each
+ *   {telegramUserId, telegramUsername, firstName, socketId}
+ */
+export async function createQuickPlayLobby({ mode, members }) {
+    if (!LOBBY_MODES.includes(mode)) return { error: 'invalid_mode' };
+    const cap = MODE_CAP[mode];
+    if (!Array.isArray(members) || members.length !== cap) {
+        return { error: 'bad_member_count' };
+    }
+    const host = members[0]; // arbitrary — first in the queue
+    let lastErr = null;
+    for (let attempt = 0; attempt < CREATE_CODE_RETRIES; attempt += 1) {
+        const lobbyId = newId('lobby');
+        const code = generateLobbyCode();
+        try {
+            const memberDocs = members.map((m, i) => ({
+                telegramUserId:   m.telegramUserId,
+                telegramUsername: m.telegramUsername || null,
+                firstName:        m.firstName || null,
+                displayName:      formatDisplayName({
+                    telegramUsername: m.telegramUsername,
+                    firstName:        m.firstName,
+                    telegramUserId:   m.telegramUserId,
+                }),
+                socketId:         m.socketId || null,
+                isHost:           i === 0,
+                isReady:          true,                          // pre-ready
+                team:             i % 2 === 0 ? 'red' : 'blue',  // alternating
+                slot:             -1,                             // set on startMatch
+            }));
+            // eslint-disable-next-line no-await-in-loop
+            const lobby = await ShootoutLobby.create({
+                lobbyId, code, mode, cap,
+                visibility: 'private',  // never browseable
+                gameType:   'friendly',
+                state:      'READY',     // triggers countdown immediately
+                hostTelegramUserId: host.telegramUserId,
+                members:    memberDocs,
+                matchId:    null,
+                lastActiveAt: new Date(),
+            });
+            logger.info('[shootout/lobby] quickplay created', {
+                lobbyId, code, mode, members: members.length,
+            });
+            return { ok: true, lobby: lobby.toObject() };
+        } catch (err) {
+            lastErr = err;
+            if (isDuplicateCodeError(err)) {
+                logger.warn('[shootout/lobby] quickplay code collision, regenerating', { code, attempt });
+                continue;
+            }
+            logger.error({ err, lobbyId, code }, 'shootout lobby quickplay create failed');
+            return { error: 'create_failed' };
+        }
+    }
+    logger.error({ err: lastErr }, 'shootout lobby quickplay create exhausted retries');
+    return { error: 'create_failed' };
 }
 
 // ── Join ─────────────────────────────────────────────────────────────

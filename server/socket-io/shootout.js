@@ -51,6 +51,11 @@ import * as lobbyService from '../services/games/shootout/lobbyService.js';
 import * as lifecycle from '../services/games/shootout/lifecycle.js';
 import { ShootoutRunner } from '../services/games/shootout/sim/runner.js';
 import { armCountdown, cancelCountdown } from '../services/games/shootout/lobbyCountdown.js';
+import {
+    joinQueue       as mmJoinQueue,
+    cancelQueue     as mmCancelQueue,
+    scrubBySocket   as mmScrubBySocket,
+} from '../services/games/shootout/matchmaking.js';
 import ShootoutLobby from '../models/ShootoutLobby.js';
 
 // ── Module-level state ───────────────────────────────────────────────
@@ -208,6 +213,82 @@ export function registerShootoutHandlers(client, io) {
             ack?.({ ok: true, lobbies });
         } catch (err) {
             logger.error({ err }, 'shootout:lobby:list failed');
+            ack?.({ error: 'internal' });
+        }
+    });
+
+    // ── shootout:quickplay:* (Phase MP-expansion, 2026-06-08) ───────
+    //
+    // FIFO matchmaking queue per mode. Client taps Quick Play →
+    // shootout:quickplay:join {mode, telegramUserId, ...}. When the
+    // queue hits cap, server creates a pre-populated lobby
+    // (teams alternating, all members isReady=true) in READY state,
+    // sockets join the lobby room, and the existing 5s auto-countdown
+    // (Phase 1) fires → match starts. Quick play deliberately skips
+    // the team-pick UI — teams are auto-assigned (Fish's spec).
+    //
+    // Cancel via shootout:quickplay:cancel; disconnect auto-scrubs.
+    client.on('shootout:quickplay:join', async (payload, ack) => {
+        try {
+            const mode = payload?.mode;
+            const tgId = payload?.telegramUserId;
+            const res = mmJoinQueue({
+                mode,
+                telegramUserId:   tgId,
+                telegramUsername: payload?.telegramUsername,
+                firstName:        payload?.firstName,
+                socketId:         client.id,
+            });
+            if (res?.error) return ack?.({ error: res.error });
+
+            // Still waiting for opponents
+            if (res.queued) {
+                return ack?.({ ok: true, queued: true, position: res.position, cap: res.cap });
+            }
+
+            // Matched — create the pre-ready lobby
+            const lobbyRes = await lobbyService.createQuickPlayLobby({
+                mode: res.mode,
+                members: res.members,
+            });
+            if (lobbyRes?.error) {
+                logger.error({ err: lobbyRes.error }, 'quickplay createQuickPlayLobby failed');
+                return ack?.({ error: lobbyRes.error });
+            }
+            const lobby = lobbyRes.lobby;
+            const room  = lobbyRoomName(lobby.lobbyId);
+
+            // Every matched member's socket joins the lobby room +
+            // gets a direct 'matched' notification so their client
+            // can flip the UI off the Quick Play overlay.
+            for (const m of res.members) {
+                const sock = m.socketId && io.sockets.sockets.get(m.socketId);
+                if (!sock) continue;
+                sock.join(room);
+                sock.emit('shootout:quickplay:matched', {
+                    lobbyId: lobby.lobbyId,
+                    code:    lobby.code,
+                    mode:    lobby.mode,
+                });
+            }
+            // Broadcast lobby state + arm the 5s auto-countdown
+            // (lobby is already READY since all members are pre-ready
+            //  and teams are balanced by construction).
+            io.to(room).emit('shootout:lobby:state', { lobby });
+            _syncCountdown(lobby);
+            ack?.({ ok: true, matched: true, lobbyId: lobby.lobbyId });
+        } catch (err) {
+            logger.error({ err }, 'shootout:quickplay:join failed');
+            ack?.({ error: 'internal' });
+        }
+    });
+
+    client.on('shootout:quickplay:cancel', async (payload, ack) => {
+        try {
+            const res = mmCancelQueue({ telegramUserId: payload?.telegramUserId });
+            ack?.(res);
+        } catch (err) {
+            logger.error({ err }, 'shootout:quickplay:cancel failed');
             ack?.({ error: 'internal' });
         }
     });
@@ -536,6 +617,23 @@ export function registerShootoutHandlers(client, io) {
         // reach this socket from here on.
         client.join(runner.roomName);
         ack?.({ ok: true, slot: member.slot });
+    });
+
+    // ── disconnect cleanup ───────────────────────────────────────────
+    // Scrub the user from any Quick Play queue they were waiting in.
+    // Lobby member cleanup is handled by the existing
+    // shootout:lobby:leave path; this hook is queue-only since
+    // matchmaking state is in-memory and doesn't survive without
+    // active sockets.
+    client.on('disconnect', () => {
+        try {
+            const { removed } = mmScrubBySocket({ socketId: client.id });
+            if (removed.length) {
+                logger.info('[shootout/quickplay] scrubbed disconnected users', { removed });
+            }
+        } catch (err) {
+            logger.error({ err }, 'shootout disconnect scrub failed');
+        }
     });
 }
 

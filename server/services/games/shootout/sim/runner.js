@@ -44,6 +44,11 @@ import { persistMatchStats } from '../stats.js';
 
 const TICK_HZ        = 60;
 const SNAPSHOT_HZ    = 20;
+
+// CS:S-style kit prices. Keep in sync with KIT_PRICES in
+// BillionaireBonkClub/shootout:visual/main.js — both client and server
+// must agree on prices or the server's no_money guard would diverge.
+export const KIT_PRICES = Object.freeze({ armour: 500, helmet: 1000 });
 const TICK_MS        = 1000 / TICK_HZ;
 const SNAPSHOT_MS    = 1000 / SNAPSHOT_HZ;
 const TICK_DT        = 1 / TICK_HZ;
@@ -214,6 +219,11 @@ export class ShootoutRunner {
         // resolveFire can apply HP loss. ID is the slot-as-string to
         // match the shape testHitscan expects in its targets array.
         this.damageSystem.registerPlayer(String(slot));
+        // CS:S behaviour — every match starts with no kit. The damage
+        // system defaults armor=100/hasHelmet=true; override so the
+        // round-1 BUY phase greets the player with an empty loadout.
+        const h = this.damageSystem.getHealth(String(slot));
+        if (h) { h.armor = 0; h.hasHelmet = false; }
     }
 
     _addBotsForEmptySlots() {
@@ -252,6 +262,30 @@ export class ShootoutRunner {
         if (this.matchState.phase !== Phase.BUY) {
             return { ok: false, reason: 'not_buy_phase' };
         }
+
+        // ── Kit items (armour / helmet) ─────────────────────────────
+        // Wire field is still `weaponType` for back-compat; client may
+        // pass 'armour' or 'helmet' to buy kit. Prices stay in sync
+        // with the client's KIT_PRICES const in visual/main.js.
+        if (weaponType === 'armour' || weaponType === 'helmet') {
+            const price = weaponType === 'armour' ? KIT_PRICES.armour : KIT_PRICES.helmet;
+            // No-op if already owned this round — no refund, no double-charge.
+            const h = this.damageSystem.getHealth(String(slot));
+            if (h) {
+                if (weaponType === 'armour' && h.armor > 0)  return { ok: false, reason: 'already_owned' };
+                if (weaponType === 'helmet' && h.hasHelmet)   return { ok: false, reason: 'already_owned' };
+            }
+            if (p.money < price) return { ok: false, reason: 'no_money' };
+            if (!h) return { ok: false, reason: 'no_player' };
+            p.money -= price;
+            if (weaponType === 'armour') h.armor = 100;
+            else                          h.hasHelmet = true;
+            // Re-use the existing wire shape so the client handler doesn't
+            // need a separate branch on the broadcast side.
+            return { ok: true, weaponType, money: p.money };
+        }
+
+        // ── Weapon ──────────────────────────────────────────────────
         const wc = weaponConfig(weaponType);
         if (!wc) return { ok: false, reason: 'bad_weapon' };
         const price = Number.isFinite(wc.price) ? wc.price : 0;
@@ -450,6 +484,14 @@ export class ShootoutRunner {
             p.alive = true;
         }
         this.damageSystem.resetAll();
+        // CS:S behaviour — kit (armour + helmet) doesn't carry between
+        // rounds. damageSystem.resetAll() defaults armor=100/hasHelmet
+        // =true; override to empty so every player must rebuy from the
+        // buy menu each round.
+        for (const p of this.players.values()) {
+            const h = this.damageSystem.getHealth(String(p.slot));
+            if (h) { h.armor = 0; h.hasHelmet = false; }
+        }
     }
 
     _emitMatchFinal() {

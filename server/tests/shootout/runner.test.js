@@ -736,6 +736,112 @@ test('runner.buyWeapon: no_player for unknown slot', () => {
     }
 });
 
+// ── 2026-06-08: kit (armour / helmet) buy path ─────────────────────
+//
+// Reuses the existing buyWeapon entry point + wire field; client sends
+// the string 'armour' or 'helmet' as the weaponType. Server has its own
+// KIT_PRICES const (armour 500, helmet 1000) the client mirrors.
+
+test('runner.buyWeapon: armour deducts 500 + sets armor=100', () => {
+    const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
+    r.start();
+    try {
+        const p = r.players.get(0);
+        const h = r.damageSystem.getHealth('0');
+        const moneyBefore = p.money;
+        assert.equal(h.armor, 0, 'starts with no armour');
+        const res = r.buyWeapon(0, 'armour');
+        assert.equal(res.ok, true);
+        assert.equal(res.weaponType, 'armour');
+        assert.equal(res.money, moneyBefore - 500);
+        assert.equal(p.money, moneyBefore - 500);
+        assert.equal(h.armor, 100);
+        assert.equal(h.hasHelmet, false, 'helmet unaffected');
+    } finally {
+        r.stop();
+    }
+});
+
+test('runner.buyWeapon: helmet deducts 1000 + sets hasHelmet=true', () => {
+    const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
+    r.start();
+    try {
+        const p = r.players.get(0);
+        const h = r.damageSystem.getHealth('0');
+        const moneyBefore = p.money;
+        assert.equal(h.hasHelmet, false, 'starts with no helmet');
+        const res = r.buyWeapon(0, 'helmet');
+        assert.equal(res.ok, true);
+        assert.equal(res.weaponType, 'helmet');
+        assert.equal(p.money, moneyBefore - 1000);
+        assert.equal(h.hasHelmet, true);
+        assert.equal(h.armor, 0, 'armour unaffected');
+    } finally {
+        r.stop();
+    }
+});
+
+test('runner.buyWeapon: armour already_owned blocks re-buy + preserves money', () => {
+    const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
+    r.start();
+    try {
+        const p = r.players.get(0);
+        r.buyWeapon(0, 'armour');
+        const moneyAfter1st = p.money;
+        const res = r.buyWeapon(0, 'armour');
+        assert.equal(res.ok, false);
+        assert.equal(res.reason, 'already_owned');
+        assert.equal(p.money, moneyAfter1st, 'no double charge');
+    } finally {
+        r.stop();
+    }
+});
+
+test('runner.buyWeapon: armour no_money when player cannot afford', () => {
+    const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
+    r.start();
+    try {
+        r.players.get(0).money = 200;
+        const res = r.buyWeapon(0, 'armour');
+        assert.equal(res.ok, false);
+        assert.equal(res.reason, 'no_money');
+        assert.equal(r.players.get(0).money, 200);
+    } finally {
+        r.stop();
+    }
+});
+
+test('runner._resetForNewRound: clears armour + helmet (CS:S behaviour)', () => {
+    const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
+    r.start();
+    try {
+        r.buyWeapon(0, 'armour');
+        r.buyWeapon(0, 'helmet');
+        const h = r.damageSystem.getHealth('0');
+        assert.equal(h.armor, 100);
+        assert.equal(h.hasHelmet, true);
+        r._resetForNewRound();
+        const h2 = r.damageSystem.getHealth('0');
+        assert.equal(h2.armor, 0, 'armour cleared on round reset');
+        assert.equal(h2.hasHelmet, false, 'helmet cleared on round reset');
+    } finally {
+        r.stop();
+    }
+});
+
+test('runner: round-1 spawn starts with no kit', () => {
+    const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
+    r.start();
+    try {
+        const h0 = r.damageSystem.getHealth('0');
+        const h1 = r.damageSystem.getHealth('1');
+        assert.equal(h0.armor, 0); assert.equal(h0.hasHelmet, false);
+        assert.equal(h1.armor, 0); assert.equal(h1.hasHelmet, false);
+    } finally {
+        r.stop();
+    }
+});
+
 test('runner: WIN_AWARD + LOSS_AWARD applied to teams on round end (winners get more)', () => {
     const r = new ShootoutRunner({ match: makeMatch(), io: makeFakeIo() });
     r.start();

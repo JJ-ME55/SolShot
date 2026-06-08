@@ -65,10 +65,17 @@ export async function persistMatchStats({ matchWinner, players }) {
             // rather than +Inf.
             const totalKills  = doc?.totalKills  ?? 0;
             const totalDeaths = doc?.totalDeaths ?? 0;
+            const totalWins   = doc?.wins        ?? 0;
             const rawKD     = totalKills / Math.max(totalDeaths, 1);
-            // rankScore: rawKD for now. Phase D will fold in win-rate +
-            // activity + DC penalty.
-            const rankScore = rawKD;
+            // Wins-weighted KDR — Fish's scoring formula, 2026-06-08.
+            //   rankScore = totalKills - 0.5*totalDeaths + 100*wins
+            // Wins are the heavy lever (you can't fake winning a round
+            // in PvP), kills are secondary, deaths a small penalty.
+            // Plays well across 1v1 + 2v2 on the same board.
+            // Doesn't divide by 0; doesn't reward single lucky games
+            // (KDR-as-rank does); doesn't depend on opponent skill
+            // (no ELO surface yet — that's a wagering-time upgrade).
+            const rankScore = totalKills - 0.5 * totalDeaths + 100 * totalWins;
             await ShootoutStats.findOneAndUpdate(
                 { telegramUserId: p.telegramUserId },
                 { $set: { rawKD, rankScore } },

@@ -168,7 +168,11 @@ test('persistMatchStats: skips telegramUserId=0 (placeholder bot id)', async () 
 test('persistMatchStats: recomputes rawKD = kills / max(deaths, 1) after upsert', async () => {
     const { calls, fauMock } = setupMock({
         docByUser: {
-            1: { totalKills: 5, totalDeaths: 2 }, // previous totals
+            // PRE-upsert state. setupMock applies the test's $inc on
+            // top before returning the post-upsert doc. So the
+            // post-upsert state used to compute rawKD/rankScore is
+            // 5+3=8 kills, 2+1=3 deaths, 1+1=2 wins (won the round).
+            1: { totalKills: 5, totalDeaths: 2, wins: 1 },
         },
     });
     try {
@@ -178,11 +182,48 @@ test('persistMatchStats: recomputes rawKD = kills / max(deaths, 1) after upsert'
                 { telegramUserId: 1, team: 'red', isBot: false, kills: 3, deaths: 1 },
             ],
         });
-        // After upsert: 8 kills / 3 deaths = 2.666...
         const setCall = calls.find(c => c.update?.$set?.rawKD != null);
         assert.ok(setCall, 'expected a $set rawKD call');
+        // rawKD = 8 / max(3,1) = 2.666...
         assert.equal(setCall.update.$set.rawKD, 8 / 3);
-        assert.equal(setCall.update.$set.rankScore, 8 / 3);
+        // Wins-weighted KDR (Fish's formula, 2026-06-08):
+        //   rankScore = totalKills - 0.5*totalDeaths + 100*wins
+        //             = 8 - 0.5*3 + 100*2  =  206.5
+        assert.equal(setCall.update.$set.rankScore, 8 - 0.5 * 3 + 100 * 2);
+    } finally {
+        fauMock.mock.restore();
+    }
+});
+
+test('persistMatchStats: rankScore = kills - 0.5*deaths + 100*wins (wins-weighted KDR)', async () => {
+    // Verify the wins-weighted formula isolated from rawKD. Two
+    // scenarios that read the same K/D but differ in wins should
+    // produce wildly different rankScores — the whole point of
+    // weighting wins heavily.
+    const { calls, fauMock } = setupMock({
+        docByUser: {
+            // PRE-upsert. After this match's 1K/0D/+1W (red wins),
+            // player 1 ends at 11K/10D/10W; player 2 (blue) ends at
+            // 11K/10D/1W.
+            1: { telegramUserId: 1, totalKills: 10, totalDeaths: 10, wins:  9 },
+            2: { telegramUserId: 2, totalKills: 10, totalDeaths: 10, wins:  1 },
+        },
+    });
+    try {
+        await persistMatchStats({
+            matchWinner: 'red',
+            players: [
+                { telegramUserId: 1, team: 'red',  isBot: false, kills: 1, deaths: 0 },
+                { telegramUserId: 2, team: 'blue', isBot: false, kills: 1, deaths: 0 },
+            ],
+        });
+        const setCalls = calls.filter(c => c.update?.$set?.rankScore != null);
+        const byUser = Object.fromEntries(setCalls.map(c => [c.query.telegramUserId, c.update.$set.rankScore]));
+        // Player 1: 11K - 5D + 100*10W = 1006
+        assert.equal(byUser[1], 11 - 0.5 * 10 + 100 * 10);
+        // Player 2: 11K - 5D + 100*1W  =  106
+        assert.equal(byUser[2], 11 - 0.5 * 10 + 100 * 1);
+        assert.ok(byUser[1] > byUser[2] * 5, 'wins dominate the score');
     } finally {
         fauMock.mock.restore();
     }

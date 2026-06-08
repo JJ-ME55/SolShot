@@ -234,7 +234,11 @@ export async function markClosed({ lobbyId, reason }) {
 // or every player sees themselves switch character at race start.
 // Random assignment lives in lifecycle.js (see ROSTER_RACER_IDS); we
 // mirror it here purely for cosmetic preview in the lobby UI.
-const LOBBY_PREVIEW_RACER_IDS = ['rusty', 'shelly', 'pip', 'bruno'];
+// Must mirror lifecycle.js's ROSTER_RACER_IDS exactly (all 6 chars —
+// rusty, shelly, pip, bruno, jj, fish) so the lobby preview shows the
+// same character the race will actually assign. JJ's "no duplicates"
+// requirement 2026-06-08.
+const LOBBY_PREVIEW_RACER_IDS = ['rusty', 'shelly', 'pip', 'bruno', 'jj', 'fish'];
 const lobbyPreviewRacerForSlot = (i) =>
     LOBBY_PREVIEW_RACER_IDS[i % LOBBY_PREVIEW_RACER_IDS.length];
 

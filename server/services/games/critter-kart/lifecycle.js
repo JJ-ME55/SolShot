@@ -84,11 +84,18 @@ export async function createRace({ players, format = {} }) {
         throw new Error(`createRace: max ${MAX_PLAYERS} players, got ${players.length}`);
     }
 
-    // Cycle through Fish's regular roster for kart-character assignment.
-    // Founders ('jj', 'fish') are playerOnly per Fish's Racer spec —
-    // not used for auto-assignment. 6 players = 4 regulars + 2 dupes,
-    // which is fine for race feel (weight 1.0/1.3/0.8/1.3 covers it).
-    const ROSTER_RACER_IDS = ['rusty', 'shelly', 'pip', 'bruno'];
+    // All 6 ROSTER characters — gives every slot in a 6-kart race a
+    // unique racerId so the client never renders the same character at
+    // two different slots. JJ called this out 2026-06-08: "the other
+    // rusty and shelly is so confusing, they need to go." Earlier we
+    // only cycled 4 regulars, which meant slots 4 and 5 visually
+    // duplicated slots 0 and 1.
+    //
+    // Client's ROSTER marks 'jj' and 'fish' as playerOnly — but that
+    // flag gates the SOLO CharacterSelect picker UI, not runtime
+    // rendering. The Kart mesh renders whatever racerId the server
+    // assigns to its slot.
+    const ROSTER_RACER_IDS = ['rusty', 'shelly', 'pip', 'bruno', 'jj', 'fish'];
     const racerIdForSlot = (i) => ROSTER_RACER_IDS[i % ROSTER_RACER_IDS.length];
 
     const raceId = newRaceId();

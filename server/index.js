@@ -412,6 +412,57 @@ app.get('/api/shootout/stats/:telegramUserId', async (req, res) => {
     }
 });
 
+// ── Shootout: top-N leaderboard for the Barracks page ────────────────
+//
+// GET /api/shootout/leaderboard?limit=20
+//
+// Public read of the top players by rankScore (the indexed sort key
+// described in ShootoutStats.js — gives room to evolve the ranking
+// formula without changing the on-doc shape). Used by the Barracks'
+// Leaderboard tab.
+//
+// Response:
+//   200 { ok: true, leaderboard: [{
+//     rank, telegramUserId, displayName, rating, rawKD,
+//     wins, losses, totalMatches, winPct, lastPlayedAt
+//   }, ...] }
+//   500 { error: 'internal' }
+//
+// Caching client-side; no rate limit beyond the global httpLimiter.
+// limit defaults to 20, clamped to [1, 100].
+app.get('/api/shootout/leaderboard', async (req, res) => {
+    try {
+        const rawLimit = Number(req.query?.limit || 20);
+        const limit = Math.max(1, Math.min(100, Number.isFinite(rawLimit) ? rawLimit : 20));
+        const docs = await ShootoutStats
+            .find({})
+            .sort({ rankScore: -1, totalKills: -1, lastPlayedAt: -1 })
+            .limit(limit)
+            .lean();
+        const leaderboard = docs.map((d, i) => {
+            const wins  = d.wins | 0;
+            const matches = d.totalMatches | 0;
+            const winPct = matches > 0 ? Math.round((wins / matches) * 100) : 0;
+            return {
+                rank:           i + 1,
+                telegramUserId: d.telegramUserId,
+                displayName:    d.displayName,
+                rating:         Math.round(Number(d.rankScore || 0)),
+                rawKD:          Number(d.rawKD || 0),
+                wins,
+                losses:         d.losses | 0,
+                totalMatches:   matches,
+                winPct,
+                lastPlayedAt:   d.lastPlayedAt,
+            };
+        });
+        res.json({ ok: true, leaderboard });
+    } catch (err) {
+        console.error('[/api/shootout/leaderboard]', err?.message || err);
+        res.status(500).json({ error: 'internal' });
+    }
+});
+
 // KM-05: Protected key reload endpoint (IM-02: auth via requireAdminKey middleware)
 app.post('/api/admin/reload-keys', requireAdminKey, (req, res) => {
     if (process.platform === 'linux') {

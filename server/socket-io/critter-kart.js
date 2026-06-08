@@ -324,6 +324,7 @@ export function initCritterKartSocket(io) {
                     // Also emit match:found / race:start (Fish's UI shape)
                     const memberWire = race.players.map((p, idx) => ({
                         username: p.displayName,
+                        telegramUserId: p.telegramUserId ?? null,
                         slot: idx,
                         kartId: p.kartId,
                         racerId: p.racerId || 'rusty',
@@ -906,6 +907,7 @@ export function registerCritterKartHandlers(client, io) {
                     });
                     const memberWire = existing.players.map((p, i) => ({
                         username: p.displayName,
+                        telegramUserId: p.telegramUserId ?? null,
                         slot: i,
                         kartId: p.kartId,
                         racerId: p.racerId || 'rusty',
@@ -944,6 +946,7 @@ export function registerCritterKartHandlers(client, io) {
             // listens for this and transitions to race:join.
             const memberWire = race.players.map((p, i) => ({
                 username: p.displayName,
+                telegramUserId: p.telegramUserId ?? null,
                 slot: i,
                 kartId: p.kartId,
                 racerId: p.racerId || 'rusty',

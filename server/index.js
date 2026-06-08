@@ -22,6 +22,7 @@ import { requireAdminKey } from './middleware/guards.js';
 import { telegramSocketMiddleware } from './middleware/telegram.js';
 import { initBot, setupBotWebhook, stopBot } from './services/bot.js';
 import { initArcadeBot, setupArcadeBotWebhook, stopArcadeBot } from './services/arcadeBot.js';
+import ShootoutStats from './models/ShootoutStats.js';
 import { restoreActiveTimers } from './services/groupchat/scheduler.js';
 import { startLobbyWatchdog } from './services/groupchat/lobbyWatchdog.js';
 // Importing lifecycle registers its onTimeout callback with the scheduler.
@@ -357,6 +358,55 @@ app.get('/api/arcade/status', async (req, res) => {
         elapsedMs: Date.now() - startedAt,
         serverTime: new Date().toISOString(),
     });
+});
+
+// ── Shootout: lifetime stats for the Barracks page ───────────────────
+//
+// GET /api/shootout/stats/:telegramUserId
+//
+// Public read of one player's aggregate Shootout stats. No PII beyond
+// what the player already chose to display (displayName from the lobby
+// flow). Used by the client's main-menu Barracks panel to show the
+// signed-in user their own career numbers; later versions will also
+// power tooltip-style profile cards on the leaderboard.
+//
+// Response shapes:
+//   200 { ok: true, stats: { telegramUserId, displayName, totalKills,
+//                            totalDeaths, totalMatches, wins, losses,
+//                            rawKD, lastPlayedAt } }
+//   200 { ok: true, stats: null }            ← user exists but no MP games yet
+//   400 { error: 'bad_id' }                  ← non-numeric path param
+//   500 { error: 'internal' }
+//
+// Cached client-side; no rate limiting beyond the global httpLimiter.
+app.get('/api/shootout/stats/:telegramUserId', async (req, res) => {
+    try {
+        const tgId = Number(req.params.telegramUserId);
+        if (!Number.isFinite(tgId)) {
+            return res.status(400).json({ error: 'bad_id' });
+        }
+        const doc = await ShootoutStats.findOne({ telegramUserId: tgId }).lean();
+        if (!doc) return res.json({ ok: true, stats: null });
+        // Whitelist the public fields. Excludes _id, __v, createdAt /
+        // updatedAt (Mongoose timestamps), rankScore (internal sort key).
+        res.json({
+            ok: true,
+            stats: {
+                telegramUserId: doc.telegramUserId,
+                displayName:    doc.displayName,
+                totalKills:     doc.totalKills    | 0,
+                totalDeaths:    doc.totalDeaths   | 0,
+                totalMatches:   doc.totalMatches  | 0,
+                wins:           doc.wins          | 0,
+                losses:         doc.losses        | 0,
+                rawKD:          Number(doc.rawKD || 0),
+                lastPlayedAt:   doc.lastPlayedAt,
+            },
+        });
+    } catch (err) {
+        console.error('[/api/shootout/stats]', err?.message || err);
+        res.status(500).json({ error: 'internal' });
+    }
 });
 
 // KM-05: Protected key reload endpoint (IM-02: auth via requireAdminKey middleware)

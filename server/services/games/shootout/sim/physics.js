@@ -76,16 +76,29 @@ export const COVER_BOXES = Object.freeze([
 //
 // Close spawns in the SP red-spawn corridor at (15, _, 22) which is
 // known-safe walkable ground on this arena.
+// Red spawns at the north end of the SP red-spawn corridor (X=15, Z=22),
+// blue spawns at the opposite south end (X=15, Z=-22). Both well clear
+// of the Rect Structure (X:15-25, Z:17-23) and the buildings (SE Z:-25..
+// -15, NE Z:0..10). Original close-spawns at (12, _, 22) + (18, _, 22)
+// landed slot 1 INSIDE the Rect Structure → client octree pushed the
+// player into a weird Y and the other client saw them 'half in the
+// floor'. MUST match the client's MP_SPAWN_POSITIONS.
+// X = -10 clears every COVER_BOXES entry (SE/NE buildings, Hollow
+// Square, Rect Structure). Z = ±22 keeps both inside arena Z range
+// (-25..30) but well clear of building Z ranges. Earlier (15, _, 22)
+// put the capsule on the Rect Structure edge → server resolveCollision
+// pushed the player out by 0.35u every tick → client/server desync +
+// 'half in floor' rendering.
 export const SPAWN_POSITIONS_BY_SLOT = Object.freeze({
     '1v1': Object.freeze([
-        Object.freeze({ x: 12, y: 0, z: 22, yaw:  Math.PI / 2 }), // red, facing +X (toward blue)
-        Object.freeze({ x: 18, y: 0, z: 22, yaw: -Math.PI / 2 }), // blue, facing -X (toward red)
+        Object.freeze({ x: -10, y: 0, z:  22, yaw:  Math.PI }), // red,  facing south
+        Object.freeze({ x: -10, y: 0, z: -22, yaw:  0       }), // blue, facing north
     ]),
     '2v2': Object.freeze([
-        Object.freeze({ x: 12, y: 0, z: 22, yaw:  Math.PI / 2 }), // red 1
-        Object.freeze({ x: 18, y: 0, z: 22, yaw: -Math.PI / 2 }), // blue 1
-        Object.freeze({ x: 12, y: 0, z: 18, yaw:  Math.PI / 2 }), // red 2
-        Object.freeze({ x: 18, y: 0, z: 18, yaw: -Math.PI / 2 }), // blue 2
+        Object.freeze({ x: -12, y: 0, z:  22, yaw:  Math.PI }), // red 1
+        Object.freeze({ x: -12, y: 0, z: -22, yaw:  0       }), // blue 1
+        Object.freeze({ x:  -8, y: 0, z:  22, yaw:  Math.PI }), // red 2
+        Object.freeze({ x:  -8, y: 0, z: -22, yaw:  0       }), // blue 2
     ]),
 });
 

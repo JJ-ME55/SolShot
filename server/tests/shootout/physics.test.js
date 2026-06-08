@@ -55,17 +55,17 @@ test('spawnStateForSlot: returns finite coords for 2v2 slots 0..3', () => {
 test('spawnStateForSlot: opposing slots spawn at different positions facing each other', () => {
     const red  = spawnStateForSlot('1v1', 0);
     const blue = spawnStateForSlot('1v1', 1);
-    // They must NOT overlap — otherwise both players spawn at the same coords.
     assert.notDeepStrictEqual(
         { x: red.x, y: red.y, z: red.z },
         { x: blue.x, y: blue.y, z: blue.z },
         'red and blue spawn at distinct positions',
     );
-    // Demo-mode spawns: same z, opposite-sign x-offset around the SP red zone.
-    // (Earlier layout had them at far corners but client/server fell out of
-    // sync and the demo was unplayable; close-spawn demo until proper buy
-    // phase ships.)
-    assert.ok(Math.abs(red.x - blue.x) > 2, 'spawns are ≥2u apart on x');
+    // Current layout (2026-06-08): opposite ends on the Z axis (red at
+    // +22, blue at -22). At least 10u of separation — the old close-
+    // spawn demo at (12, _, 22) / (18, _, 22) put blue inside the Rect
+    // Structure footprint and broke MP testing.
+    const sep = Math.hypot(red.x - blue.x, red.z - blue.z);
+    assert.ok(sep > 10, `spawns should be well-separated, got ${sep.toFixed(1)}u`);
 });
 
 test('spawnStateForSlot: throws on unknown mode + slot', () => {

@@ -161,6 +161,10 @@ test('ShootoutRunner: 60 ticks of forward input advances position', (t) => {
     r.matchState.phase = Phase.LIVE; // Day 3: input is zeroed during BUY
     try {
         const p = r.players.get(0);
+        // Normalise start position to arena center so this motion test
+        // doesn't depend on the live spawn table (which moves around
+        // when the map layout changes).
+        p.state.x = 0; p.state.z = 0; p.state.y = 0;
         const startX = p.state.x;
         const startZ = p.state.z;
         // Aim toward +X (yaw=-π/2 → forward=(1,0)); see physics.js.

@@ -17,6 +17,7 @@ import { SimBot } from '../../services/games/shootout/sim/simBot.js';
 import { ShootoutRunner } from '../../services/games/shootout/sim/runner.js';
 import { ARENA_BOUNDS, spawnStateForSlot, integrateMovement } from '../../services/games/shootout/sim/physics.js';
 import { MOVEMENT_TUNING } from '../../services/games/shootout/sim/tuning.js';
+import { Phase } from '../../services/games/shootout/sim/match.js';
 
 function makeFakeIo() {
     const io = {
@@ -151,6 +152,9 @@ test('SimBot: bot-driven slot advances position when ticked', (t) => {
     };
     const r = new ShootoutRunner({ match, io: makeFakeIo() });
     r.start();
+    // Force LIVE so the runner's input-allowed gate doesn't freeze the
+    // bot through the 10s BUY phase that match auto-starts in.
+    r.matchState.phase = Phase.LIVE;
     try {
         const bot = r.players.get(1);
         const startX = bot.state.x;

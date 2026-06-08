@@ -308,6 +308,8 @@ test('Day 1 integration: 1v1 with one human auto-fills the other slot with a bot
             io,
         });
         runner.start();
+        // Force LIVE — runner starts in BUY which gates bot input.
+        runner.matchState.phase = Phase.LIVE;
         try {
             assert.equal(runner.players.size, 2);
             const slots = [...runner.players.values()].map((p) => p.slot).sort();

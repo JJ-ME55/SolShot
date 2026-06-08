@@ -68,9 +68,16 @@ const MONEY_CAP              = 16000;
 // sync without flooding (1/3 the rate of snapshots).
 const ROUNDSTATE_TICKS = 10;
 
-// Day 2 lag-comp: maximum rewind in ticks. 15 ticks @ 60Hz = 250ms,
-// matching the brief's cap. Older fire frames are rejected as 'expired'.
-const MAX_REWIND_TICKS = 15;
+// Day 2 lag-comp: maximum rewind in ticks. Originally 15 (250ms) per
+// the design brief; bumped to 45 (~750ms) 2026-06-08 after real-world
+// MP testing surfaced consistent 'rewind_expired' rejections when
+// socket.io falls back from WebSocket to long-polling under flaky
+// connections — polling round-trip can easily exceed 250ms, leaving
+// the client's last-known snapshot tick 20+ ticks behind realtime.
+// 750ms is generous but bounded — wider lag-comp than CS:GO (200ms)
+// at the cost of allowing slightly older 'reach-around-corner' kills.
+// We can tighten once the connection layer is reliable WS-only.
+const MAX_REWIND_TICKS = 45;
 // Day 2 interp delay: 100ms / 6 ticks. Both client and server agree
 // to render/resolve 6 ticks behind realtime so snapshots can interpolate.
 const INTERP_DELAY_TICKS = 6;

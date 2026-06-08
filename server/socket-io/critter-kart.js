@@ -1009,16 +1009,41 @@ export function registerCritterKartHandlers(client, io) {
             // bind the socket to the race broadcast room. Without this
             // delay, the 3-2-1 countdown broadcast would fire into an
             // empty room.
+            // READY HANDSHAKE (2026-06-08): the prior 1.5s blanket delay
+            // worked but caused desync — joiners with slow asset loads
+            // landed in a race already-in-progress. JJ's report:
+            // "races started again at slightly different times, they
+            // are running on their own tracks."
+            //
+            // New flow: race countdown is held until EVERY human has
+            // emitted `critterkart:ready` (sent by the client when its
+            // LoadingManager finishes loading every GLB). The existing
+            // critterkart:ready handler at line ~530 already triggers
+            // runCountdownAndRace when allReady → so this handler just
+            // needs to NOT pre-empt that.
+            //
+            // Fallback: if a human never sends ready (asset corrupt,
+            // browser crash, etc) we don't want to hang the lobby
+            // forever. Schedule a 15-second force-start. The lifecycle
+            // beginCountdown is idempotent via state filter
+            // (matched/loading only), so the late critterkart:ready
+            // would no-op if it arrives after force-start.
             setTimeout(() => {
                 runCountdownAndRace(io, race.raceId).catch(err => {
-                    logger.error('[critter-kart] countdown/race driver failed (lobby trigger)', {
-                        raceId: race.raceId, error: err.message,
-                    });
+                    // beginCountdown will throw if race already past
+                    // matched/loading — that's the success case (a
+                    // critterkart:ready already triggered countdown).
+                    // Anything else is a real error.
+                    if (!String(err.message || '').includes('not in countdown-eligible state')) {
+                        logger.error('[critter-kart] countdown/race driver failed (fallback timer)', {
+                            raceId: race.raceId, error: err.message,
+                        });
+                    }
                 });
-            }, 1500);
+            }, 15_000);
             logger.info(
-                { raceId: race.raceId, delayMs: 1500 },
-                '[VERBOSE lobby:start] runCountdownAndRace scheduled',
+                { raceId: race.raceId, fallbackMs: 15_000 },
+                '[VERBOSE lobby:start] awaiting critterkart:ready from all humans (15s fallback)',
             );
             // DELIBERATELY do NOT emit lobby:closed here. Fish's
             // LobbyScreen (screens.tsx:292) handles lobby:closed by
@@ -1118,6 +1143,29 @@ export function registerCritterKartHandlers(client, io) {
 async function runCountdownAndRace(io, raceId) {
     try {
         await beginCountdown({ raceId });
+
+        // LOCK + BROADCAST the canonical race-start wall-clock.
+        //
+        // At lobby:start the server emitted a placeholder startAtMs
+        // (= NOW + 4000), but that's stale by the time all clients
+        // have actually loaded. Re-anchor here: GO happens at this
+        // function call + 3 seconds (the 3-2-1 sleeps below). Emit
+        // the locked value so every client can align its `elapsed`
+        // computation to the same wall-clock anchor regardless of
+        // when each finished loading assets.
+        //
+        // Client reads this via NetClient.getRaceStartAtMs() which
+        // overrides the stale mp.startAtMs from race:start.
+        const lockedStartAtMs = Date.now() + 3000;
+        broadcastToRace(io, raceId, 'race:countdownLocked', {
+            raceId,
+            startAtMs: lockedStartAtMs,
+        });
+        logger.info(
+            { raceId, startAtMs: lockedStartAtMs },
+            '[VERBOSE countdown] locked startAtMs broadcast',
+        );
+
         // Broadcast 3-2-1
         for (const sec of [3, 2, 1]) {
             broadcastToRace(io, raceId, 'critterkart:countdown', { seconds: sec });

@@ -57,6 +57,9 @@ import {
     getLeaderboard as getCritterKartLeaderboard,
     getMyStanding as getCritterKartStanding,
 } from './games/critter-kart-standalone/standaloneLeaderboard.js';
+import {
+    mintSession as mintShootoutSession,
+} from './games/shootout-standalone/standaloneLeaderboard.js';
 
 const ARCADE_WEBHOOK_PATH = '/api/arcade-webhook';
 
@@ -190,6 +193,30 @@ const GAMES = [
     url: 'https://the-arcade-critter-kart.vercel.app/play/critter-kart/launch',
     supportsLoginUrl: false,
     sessionMinter: (ctx) => mintCritterKartSession({
+        telegramUserId: ctx.from?.id,
+        telegramUsername: ctx.from?.username,
+        firstName: ctx.from?.first_name,
+    }),
+  },
+  {
+    // Browser FPS (Three.js + socket.io), lifted from
+    // BillionaireBonkClub/shootout. Red vs Blue rounds, server-authoritative
+    // MP (1v1 + 2v2). Lobby state machine already lives in SolShot's
+    // services/games/shootout/ (so this bot entry just hands over a JWT
+    // with the TG identity — the standalone client + the existing
+    // shootout:lobby:* socket events do the rest).
+    //
+    // URL targets the Vercel standalone for now. When the Arcade hub
+    // wraps Shootout at /play/shootout/launch (mirroring Basketball /
+    // Keepie-Uppies pattern), flip this URL to thearcade.gg the same
+    // way the others were promoted.
+    slug: 'shootout',
+    name: 'SHOOTOUT',
+    emoji: '🎯',
+    tagline: 'Browser FPS. Red vs Blue · winner takes the pot.',
+    url: 'https://fps-staking-game.vercel.app/?via=arcade',
+    supportsLoginUrl: false,
+    sessionMinter: (ctx) => mintShootoutSession({
         telegramUserId: ctx.from?.id,
         telegramUsername: ctx.from?.username,
         firstName: ctx.from?.first_name,

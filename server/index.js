@@ -83,6 +83,9 @@ import {
     getLeaderboard as getCritterKartLeaderboard,
     getMyStanding as getCritterKartStanding,
 } from './services/games/critter-kart-standalone/standaloneLeaderboard.js';
+import {
+    mintSession as mintShootoutSession,
+} from './services/games/shootout-standalone/standaloneLeaderboard.js';
 import BasketballScore from './models/BasketballScore.js';
 import KeepieUppiesScore from './models/KeepieUppiesScore.js';
 import FreeKicksScore from './models/FreeKicksScore.js';
@@ -1121,7 +1124,7 @@ app.post(
 );
 
 // POST /api/arcade/mint-session
-//   query: ?game=basketball|keepieuppies|freekicks
+//   query: ?game=basketball|keepieuppies|freekicks|critter-kart|shootout
 //   headers: Authorization: Bearer <privy-access-token>  (required)
 //   body: (none)
 //   returns: { session: string, game: string, telegramUserId: number }
@@ -1134,6 +1137,10 @@ const GAME_MINTERS = {
     // call. Distinct from the bot's slash slug 'critterkart' which TG
     // requires hyphenless. They're two different namespaces.
     'critter-kart': mintCritterKartSession,
+    // Browser FPS — JWT carries telegramUserId for the Shootout lobby
+    // socket flow (server-side lobby state machine lives in
+    // services/games/shootout/, already keyed by telegramUserId).
+    shootout: mintShootoutSession,
 };
 
 app.post(

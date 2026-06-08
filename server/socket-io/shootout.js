@@ -213,13 +213,16 @@ export function registerShootoutHandlers(client, io) {
     // Shared core: stamp match descriptor, spin up runner, broadcast
     // match:start per-socket. Used by both :start (full lobby) and
     // :startSolo (host alone with bot-fill).
-    async function _startCommon({ lobbyId, telegramUserId, allowSolo, ack }) {
+    async function _startCommon({ lobbyId, telegramUserId, allowSolo, botDifficulty, ack }) {
         const startRes = await lobbyService.startMatch({
             lobbyId, telegramUserId, allowSolo: !!allowSolo,
         });
         if (startRes?.error) return ack?.({ error: startRes.error });
 
-        const matchRes = await lifecycle.createMatchFromLobby({ lobby: startRes.lobby });
+        const matchRes = await lifecycle.createMatchFromLobby({
+            lobby: startRes.lobby,
+            botDifficulty,
+        });
         if (matchRes?.error) return ack?.({ error: matchRes.error });
 
         const runner = new ShootoutRunner({ match: matchRes.match, io });
@@ -290,6 +293,9 @@ export function registerShootoutHandlers(client, io) {
                 lobbyId: payload?.lobbyId,
                 telegramUserId: payload?.telegramUserId,
                 allowSolo: true,
+                // Difficulty for the bot fill (recruit/soldier/veteran/seal).
+                // Falls back to soldier inside SimBot if unknown.
+                botDifficulty: payload?.difficulty,
                 ack,
             });
         } catch (err) {

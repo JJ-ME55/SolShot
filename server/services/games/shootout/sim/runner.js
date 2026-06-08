@@ -232,7 +232,11 @@ export class ShootoutRunner {
         let botIndex = 1;
         for (let slot = 0; slot < cap; slot++) {
             if (filled.has(slot)) continue;
-            const bot = new SimBot({ slot, mode: this.match.mode });
+            const bot = new SimBot({
+                slot,
+                mode: this.match.mode,
+                difficulty: this.match.botDifficulty || 'soldier',
+            });
             this._addPlayer({
                 slot,
                 telegramUserId: 0,
@@ -342,6 +346,114 @@ export class ShootoutRunner {
         return true;
     }
 
+    // ── Bot helpers ──────────────────────────────────────────────────
+
+    /**
+     * Pick the player a given bot should hunt. Strategy: nearest LIVE
+     * non-bot opponent on the OTHER team. For 1v1 there's one human;
+     * for 2v2 the bot picks the closer opponent. Returns null if no
+     * valid target exists (e.g. only bots in the match).
+     */
+    _pickBotTarget(bot) {
+        let best = null;
+        let bestDist = Infinity;
+        for (const other of this.players.values()) {
+            if (other.slot === bot.slot) continue;
+            if (other.isBot) continue;
+            if (!other.alive) continue;
+            if (other.team === bot.team) continue;
+            const dx = other.state.x - bot.state.x;
+            const dz = other.state.z - bot.state.z;
+            const d2 = dx * dx + dz * dz;
+            if (d2 < bestDist) {
+                bestDist = d2;
+                best = {
+                    x: other.state.x,
+                    y: other.state.y,
+                    z: other.state.z,
+                    alive: !!other.alive,
+                    slot: other.slot,
+                };
+            }
+        }
+        return best;
+    }
+
+    /**
+     * After the bot has computed its movement input, check whether it
+     * wants to fire this tick. On fire:
+     *   - broadcast shootout:match:shot so all clients play the SFX
+     *   - roll hit chance; on hit apply damage + broadcast match:hit
+     *   - on miss, no further broadcast (the shot SFX is enough).
+     */
+    _processBotFire(p) {
+        if (!p.isBot || !p.bot || !p.alive) return;
+        if (this.matchState.phase !== Phase.LIVE) return;
+        if (typeof p.bot.maybeFire !== 'function') return;
+        const fire = p.bot.maybeFire(p.state, TICK_DT);
+        if (!fire) return;
+
+        // Broadcast the shot SFX trigger to all clients (mirrors what
+        // the shootout:fire socket handler does for human shooters).
+        this.io.to(this.roomName).emit('shootout:match:shot', {
+            shooterSlot: p.slot,
+            fromX:       fire.fromX,
+            fromY:       fire.fromY,
+            fromZ:       fire.fromZ,
+            weaponType:  'AK47',
+        });
+
+        // Roll the hit chance. Coin-flip model matches the client SP
+        // bot path — simpler than running a full lag-comp hitscan from
+        // a synthetic ray + spread.
+        if (Math.random() >= fire.hitChance) return;
+
+        // Resolve the bot's target the same way we picked it for
+        // perception — nearest live human opponent.
+        const target = this._pickBotTarget(p);
+        if (!target) return;
+
+        // Pick a body zone — bots aim center mass; occasional head shot
+        // proportional to aim skill (a SEAL lands a headshot ~10% of
+        // its hits; a recruit basically never).
+        const headRoll = Math.random();
+        const headChance = Math.min(0.1, Math.max(0, (p.bot.aimSkill - 0.1) * 0.4));
+        const isHead = headRoll < headChance;
+        const zone = isHead ? 'head' : 'chest';
+        const multiplier = isHead ? 4.0 : 1.0;
+        const armorProtected = true; // both chest + head are armorable
+
+        const dmg = this.damageSystem.applyDamage(
+            String(p.slot),
+            {
+                targetId: String(target.slot),
+                zone,
+                multiplier,
+                armorProtected,
+                hitPosition: { x: target.x, y: target.y + 1.4, z: target.z },
+            },
+            { type: 'AK47', baseDamage: 36 },
+        );
+        if (!dmg) return;
+
+        // Sync alive flag (same as resolveFire does for human shots).
+        if (dmg.killed) {
+            const victim = this.players.get(target.slot);
+            if (victim) victim.alive = false;
+        }
+
+        this.io.to(this.roomName).emit('shootout:match:hit', {
+            shooterSlot:    p.slot,
+            victimSlot:     target.slot,
+            zone,
+            damageDealt:    dmg.damageDealt,
+            killed:         !!dmg.killed,
+            isHeadshot:     !!dmg.isHeadshot,
+            weaponType:     'AK47',
+            remainingHp:    dmg.remainingHp,
+        });
+    }
+
     // ── Tick loop ────────────────────────────────────────────────────
 
     _runTick() {
@@ -357,6 +469,16 @@ export class ShootoutRunner {
             // Bots synthesize their own input each tick — also gated on
             // inputAllowed so the bot freezes during BUY.
             if (p.isBot && p.bot && inputAllowed) {
+                // Drive the perception + state machine BEFORE input so
+                // the bot reacts within the same tick it sees the player.
+                if (!p.alive) {
+                    if (typeof p.bot.markDead === 'function') p.bot.markDead();
+                } else {
+                    const target = this._pickBotTarget(p);
+                    if (typeof p.bot.tick === 'function') {
+                        p.bot.tick(p.state, { targetPlayer: target }, TICK_DT);
+                    }
+                }
                 p.lastInput = p.bot.computeInput(p.state, TICK_DT);
             }
 
@@ -411,6 +533,11 @@ export class ShootoutRunner {
                 yaw: p.state.yaw, pitch: p.state.pitch,
             };
             p.ringHead = (p.ringHead + 1) % RING_CAPACITY;
+
+            // Bot fire decision — runs AFTER movement integration so the
+            // bot fires from its current post-tick position. Skipped for
+            // humans, non-LIVE phases, and dead bots.
+            if (p.isBot) this._processBotFire(p);
         }
 
         // Day 3: advance the round/match FSM and broadcast on

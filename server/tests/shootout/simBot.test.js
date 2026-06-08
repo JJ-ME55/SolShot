@@ -180,3 +180,127 @@ test('SimBot + integrateMovement: ~1s of ticks advances the bot toward target', 
     assert.ok(endDist < startDist - 1,
         `expected bot to close >1m on target in 1s, closed ${startDist - endDist}m`);
 });
+
+// ── 2026-06-08: Phase B+C-MP combat AI ──────────────────────────────
+//
+// New SimBot has a state machine + perception + fire decision. Tests
+// here cover the contract the runner depends on. Movement-only tests
+// above remain valid (PATROL state still wanders).
+
+import { BotState, getDifficultyConfig } from '../../services/games/shootout/sim/simBot.js';
+
+test('SimBot: defaults to PATROL state with no target', () => {
+    const bot = new SimBot({ slot: 1, mode: '1v1', difficulty: 'soldier' });
+    assert.equal(bot.state, BotState.PATROL);
+    assert.equal(bot.target, null);
+    assert.equal(bot.lastKnownPlayerPos, null);
+});
+
+test('SimBot: getDifficultyConfig returns scaled values per level', () => {
+    assert.ok(getDifficultyConfig('recruit').aimSkill < getDifficultyConfig('soldier').aimSkill);
+    assert.ok(getDifficultyConfig('soldier').aimSkill < getDifficultyConfig('veteran').aimSkill);
+    assert.ok(getDifficultyConfig('veteran').aimSkill < getDifficultyConfig('seal').aimSkill);
+    // Reaction time inverse — higher difficulty = lower reaction.
+    assert.ok(getDifficultyConfig('seal').reactionTime < getDifficultyConfig('recruit').reactionTime);
+    // Hunt persistence — higher = longer.
+    assert.ok(getDifficultyConfig('seal').huntPersistSec > getDifficultyConfig('recruit').huntPersistSec);
+});
+
+test('SimBot: unknown difficulty falls back to soldier', () => {
+    const bot = new SimBot({ slot: 1, mode: '1v1', difficulty: 'whatever' });
+    const soldier = getDifficultyConfig('soldier');
+    // ±20% jitter at construction, but the centre is soldier.
+    assert.ok(bot.aimSkill > soldier.aimSkill * 0.7 && bot.aimSkill < soldier.aimSkill * 1.3);
+});
+
+test('SimBot.tick: visible alive player → ATTACK state', () => {
+    const bot = new SimBot({ slot: 1, mode: '1v1', difficulty: 'soldier' });
+    const state = { x: 0, y: 0, z: 0, yaw: 0 }; // facing -Z
+    const target = { x: 0, y: 0, z: -5, alive: true }; // 5m in front
+    bot.tick(state, { targetPlayer: target }, 0.1);
+    assert.equal(bot.state, BotState.ATTACK);
+    assert.deepEqual(bot.lastKnownPlayerPos, { x: 0, y: 0, z: -5 });
+});
+
+test('SimBot.tick: target outside FOV stays PATROL', () => {
+    const bot = new SimBot({ slot: 1, mode: '1v1', difficulty: 'soldier' });
+    const state = { x: 0, y: 0, z: 0, yaw: 0 }; // facing -Z
+    const target = { x: 0, y: 0, z: 5, alive: true }; // BEHIND the bot
+    bot.tick(state, { targetPlayer: target }, 0.1);
+    assert.equal(bot.state, BotState.PATROL);
+});
+
+test('SimBot.tick: target beyond view range stays PATROL', () => {
+    const bot = new SimBot({ slot: 1, mode: '1v1', difficulty: 'soldier' });
+    const state = { x: 0, y: 0, z: 0, yaw: 0 };
+    const target = { x: 0, y: 0, z: -50, alive: true }; // VIEW_RANGE=38
+    bot.tick(state, { targetPlayer: target }, 0.1);
+    assert.equal(bot.state, BotState.PATROL);
+});
+
+test('SimBot.tick: ATTACK → SEARCH when LOS lost, with huntPersist timer', () => {
+    const bot = new SimBot({ slot: 1, mode: '1v1', difficulty: 'soldier' });
+    const state = { x: 0, y: 0, z: 0, yaw: 0 };
+    // Acquire
+    bot.tick(state, { targetPlayer: { x: 0, y: 0, z: -5, alive: true } }, 0.1);
+    assert.equal(bot.state, BotState.ATTACK);
+    // Lose LOS — null target
+    bot.tick(state, { targetPlayer: null }, 0.1);
+    assert.equal(bot.state, BotState.PATROL);  // null target = no opponents → PATROL
+    // With LOS lost (but target still alive — just out of sight via cover):
+    const bot2 = new SimBot({ slot: 1, mode: '1v1', difficulty: 'soldier' });
+    bot2.tick(state, { targetPlayer: { x: 0, y: 0, z: -5, alive: true } }, 0.1);
+    bot2.tick(state, { targetPlayer: { x: 0, y: 0, z: 5,  alive: true } }, 0.1); // now behind
+    assert.equal(bot2.state, BotState.SEARCH);
+    assert.ok(bot2.searchTimer > 0);
+});
+
+test('SimBot.maybeFire: holds fire until reactionTime has elapsed', () => {
+    const bot = new SimBot({ slot: 1, mode: '1v1', difficulty: 'soldier', rng: () => 0 });
+    const state = { x: 0, y: 0, z: 0, yaw: 0 };
+    const target = { x: 0, y: 0, z: -5, alive: true };
+    // First tick: see the target but reactionTime not yet met (~0.5s)
+    bot.tick(state, { targetPlayer: target }, 0.05);
+    assert.equal(bot.maybeFire(state, 0.05), null, 'too soon');
+    // Many ticks → eventually >reactionTime → fires
+    for (let i = 0; i < 60; i++) bot.tick(state, { targetPlayer: target }, 0.05);
+    const fire = bot.maybeFire(state, 0.05);
+    assert.ok(fire, 'should fire after sustained sight beyond reactionTime');
+    assert.ok(fire.dirZ < 0, 'fire direction should point toward target (-Z)');
+    assert.ok(fire.hitChance > 0 && fire.hitChance <= 1);
+});
+
+test('SimBot.maybeFire: returns null while in PATROL', () => {
+    const bot = new SimBot({ slot: 1, mode: '1v1', difficulty: 'soldier' });
+    const state = { x: 0, y: 0, z: 0, yaw: 0 };
+    assert.equal(bot.maybeFire(state, 0.1), null);
+});
+
+test('SimBot.maybeFire: harder difficulty has higher hit chance close-range', () => {
+    const rng = () => 0.5;
+    const recruit = new SimBot({ slot: 1, mode: '1v1', difficulty: 'recruit', rng });
+    const seal    = new SimBot({ slot: 2, mode: '1v1', difficulty: 'seal',    rng });
+    const state = { x: 0, y: 0, z: 0, yaw: 0 };
+    const target = { x: 0, y: 0, z: -3, alive: true };
+    // Drive both into ATTACK + past reaction time
+    for (let i = 0; i < 60; i++) {
+        recruit.tick(state, { targetPlayer: target }, 0.05);
+        seal.tick(state, { targetPlayer: target }, 0.05);
+    }
+    const r = recruit.maybeFire(state, 0.05);
+    const s = seal.maybeFire(state, 0.05);
+    assert.ok(r && s);
+    assert.ok(s.hitChance > r.hitChance,
+        `SEAL hit chance (${s.hitChance}) should exceed Recruit (${r.hitChance})`);
+});
+
+test('SimBot.markDead: switches state to DEAD and stops firing', () => {
+    const bot = new SimBot({ slot: 1, mode: '1v1', difficulty: 'soldier' });
+    const state = { x: 0, y: 0, z: 0, yaw: 0 };
+    for (let i = 0; i < 60; i++) {
+        bot.tick(state, { targetPlayer: { x: 0, y: 0, z: -5, alive: true } }, 0.05);
+    }
+    bot.markDead();
+    assert.equal(bot.state, BotState.DEAD);
+    assert.equal(bot.maybeFire(state, 0.05), null);
+});

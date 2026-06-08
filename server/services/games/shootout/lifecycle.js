@@ -44,13 +44,17 @@ function newMatchId() {
  * slot 0 red vs slot 1 blue, and 2v2 has slots 0,2 red vs slots 1,3 blue.
  * Slot order is the lobby's member join order — keep it stable.
  */
-export async function createMatchFromLobby({ lobby }) {
+export async function createMatchFromLobby({ lobby, botDifficulty } = {}) {
     const members = lobby.members.map((m, i) => ({
         telegramUserId: m.telegramUserId,
         displayName:    m.displayName,
         slot:           i,
         team:           i % 2 === 0 ? 'red' : 'blue',
     }));
+    // Whitelist allowed difficulty ids — anything else (or absent)
+    // falls through to the runner's default ('soldier').
+    const allowedDiff = ['recruit', 'soldier', 'veteran', 'seal'];
+    const safeDiff = allowedDiff.includes(botDifficulty) ? botDifficulty : undefined;
     return {
         ok: true,
         match: {
@@ -63,6 +67,10 @@ export async function createMatchFromLobby({ lobby }) {
             // members.length and silently skips bot fill.
             cap:       lobby.cap,
             members,
+            // Bot AI difficulty — only set when the lobby was launched
+            // via the Solo flow (otherwise this is a real PvP match
+            // with no bots). Read by ShootoutRunner._addBotsForEmptySlots.
+            ...(safeDiff && { botDifficulty: safeDiff }),
             startedAt: Date.now(),
         },
     };

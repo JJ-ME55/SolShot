@@ -60,6 +60,7 @@ import {
 import {
     mintSession as mintShootoutSession,
 } from './games/shootout-standalone/standaloneLeaderboard.js';
+import { registerShootoutCustomGameCommands } from './games/shootout/customGame/index.js';
 
 const ARCADE_WEBHOOK_PATH = '/api/arcade-webhook';
 
@@ -417,6 +418,37 @@ function registerCommands(bot) {
     // we could mint a per-user session. Skip the welcome and go
     // straight to the game's launch card with their session attached.
     const payload = (ctx.startPayload || '').trim();
+
+    // Shootout /customgame join deep-link (Phase 4, 2026-06-08).
+    // Pattern: /start sg_<code>. Mint a Shootout JWT for this user
+    // and DM the launch URL with both ?session=<jwt> and
+    // &lobbyCode=<code> so the standalone client auto-joins the
+    // lobby on mount.
+    if (payload.startsWith('sg_')) {
+      const code = payload.slice(3).toUpperCase();
+      const shootoutGame = GAMES.find(g => g.slug === 'shootout');
+      if (shootoutGame && code) {
+        let url = shootoutGame.url;
+        try {
+          const session = shootoutGame.sessionMinter(ctx);
+          const sep1 = url.includes('?') ? '&' : '?';
+          url = `${url}${sep1}session=${encodeURIComponent(session)}&lobbyCode=${encodeURIComponent(code)}`;
+        } catch (err) {
+          console.warn('[arcade-bot] shootout sg_ mint failed:', err?.message);
+          const sep1 = url.includes('?') ? '&' : '?';
+          url = `${url}${sep1}lobbyCode=${encodeURIComponent(code)}`;
+        }
+        const keyboard = {
+          inline_keyboard: [[{ text: `${shootoutGame.emoji} Join lobby ${code}`, url }]],
+        };
+        await ctx.reply(
+          `${shootoutGame.emoji} <b>SHOOTOUT — joining lobby</b>\n\nCode: <code>${code}</code>\n\nTap below to drop in.`,
+          { parse_mode: 'HTML', reply_markup: keyboard }
+        );
+        return;
+      }
+    }
+
     const requested = payload ? GAMES.find(g => g.slug === payload) : null;
     if (requested) {
       const keyboard = { inline_keyboard: [[buildGameButton(requested, ctx)]] };
@@ -559,6 +591,14 @@ function registerCommands(bot) {
       { reply_markup: keyboard }
     );
   });
+
+  // Phase 4 (2026-06-08): SHOOTOUT /customgame group-only flow.
+  // Spawns the wizard message + handles all sg_* callback actions.
+  // botUsername is set asynchronously when bot.telegram.getMe()
+  // resolves at startup — by the time a real user types /customgame
+  // it's populated and the lobby card's Join button can build a
+  // proper t.me/?start= deep-link.
+  registerShootoutCustomGameCommands(bot, { getBotUsername: () => botUsername });
 }
 
 /**
@@ -571,6 +611,9 @@ async function registerArcadeBotCommands() {
     const cmds = [
       { command: 'games',       description: 'List all games in the arcade' },
       ...GAMES.map(g => ({ command: g.slug, description: `Launch ${g.name}` })),
+      // Phase 4 (2026-06-08): /customgame spawns a SHOOTOUT lobby
+      // wizard in the group chat. Group-only — see customGame/index.js.
+      { command: 'customgame',  description: 'Start a SHOOTOUT lobby in this group' },
       { command: 'leaderboard', description: 'Pick a game leaderboard' },
       ...Object.entries(LEADERBOARDS).map(([slug, cfg]) => ({
         command: `leaderboard${slug}`,

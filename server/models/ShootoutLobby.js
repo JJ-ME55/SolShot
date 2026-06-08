@@ -45,6 +45,17 @@ const shootoutLobbySchema = new mongoose.Schema({
     state:              { type: String, enum: LOBBY_STATES, default: 'OPEN', index: true },
     hostTelegramUserId: { type: Number, required: true, index: true },
 
+    // Phase MP-expansion (2026-06-08):
+    //   visibility - 'open' lobbies show in the Open Lobbies browser
+    //                via shootoutLobby.openLobbies(); 'private' join is
+    //                code-only.
+    //   gameType   - 'friendly' is no-stakes; 'wager' is a marker for
+    //                future v2 escrow integration. Today the client +
+    //                bot surface 'Wager coming soon' on selection and
+    //                falls back to friendly.
+    visibility:         { type: String, enum: ['open', 'private'], default: 'private', index: true },
+    gameType:           { type: String, enum: ['friendly', 'wager'],   default: 'friendly' },
+
     members:            { type: [memberSchema], default: [] },
 
     matchId:            { type: String, default: null }, // set when lobby starts a match
@@ -55,9 +66,17 @@ const shootoutLobbySchema = new mongoose.Schema({
 // TTL: auto-delete 30 min after last activity (matches CK lobby behaviour)
 shootoutLobbySchema.index({ lastActiveAt: 1 }, { expireAfterSeconds: 30 * 60 });
 
-// Helper: discoverable lobbies (OPEN + has room)
+// Helper: discoverable lobbies (visibility=open + state=OPEN/FULL/READY
+// + has room). FULL/READY are included because the Open Lobbies browser
+// should show ALL public lobbies that are still pre-match — a 2/2 1v1
+// lobby waiting on ready isn't joinable but is informative
+// ("MATCH STARTING" badge). Filter happens client-side on each row.
 shootoutLobbySchema.statics.openLobbies = function () {
-    return this.find({ state: 'OPEN', $expr: { $lt: [{ $size: '$members' }, '$cap'] } })
+    return this.find({
+        visibility: 'open',
+        state: { $in: ['OPEN', 'FULL', 'READY'] },
+        $expr: { $lt: [{ $size: '$members' }, '$cap'] },
+    })
         .sort({ createdAt: -1 })
         .limit(20)
         .lean();

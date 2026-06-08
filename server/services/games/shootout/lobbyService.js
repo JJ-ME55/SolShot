@@ -66,8 +66,20 @@ export async function listOpenLobbies() {
 
 export async function createLobby({
     mode, telegramUserId, telegramUsername, firstName, socketId,
+    // Phase MP-expansion (2026-06-08):
+    //   visibility — 'open' | 'private' (default private; matches
+    //     current behavior where create-then-share-code is the
+    //     standard flow). 'open' lobbies surface in the Open Lobbies
+    //     browser via ShootoutLobby.openLobbies().
+    //   gameType   — 'friendly' | 'wager' (default friendly). 'wager'
+    //     is a v2 marker; the bot + client currently surface 'coming
+    //     soon' on the user's selection and downgrade to friendly.
+    visibility = 'private',
+    gameType   = 'friendly',
 }) {
     if (!LOBBY_MODES.includes(mode)) return { error: 'invalid_mode' };
+    if (!['open', 'private'].includes(visibility)) return { error: 'invalid_visibility' };
+    if (!['friendly', 'wager'].includes(gameType))  return { error: 'invalid_game_type' };
     const cap = MODE_CAP[mode];
     const hostDisplay = formatDisplayName({ telegramUsername, firstName, telegramUserId });
 
@@ -82,6 +94,8 @@ export async function createLobby({
                 code,
                 mode,
                 cap,
+                visibility,
+                gameType,
                 state: 'OPEN',
                 hostTelegramUserId: telegramUserId,
                 members: [{

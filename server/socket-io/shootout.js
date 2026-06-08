@@ -50,6 +50,8 @@ import logger from '../services/logger.js';
 import * as lobbyService from '../services/games/shootout/lobbyService.js';
 import * as lifecycle from '../services/games/shootout/lifecycle.js';
 import { ShootoutRunner } from '../services/games/shootout/sim/runner.js';
+import { armCountdown, cancelCountdown } from '../services/games/shootout/lobbyCountdown.js';
+import ShootoutLobby from '../models/ShootoutLobby.js';
 
 // ── Module-level state ───────────────────────────────────────────────
 // One ShootoutRunner per in-flight match, keyed by matchId. Populated by
@@ -142,8 +144,11 @@ export function registerShootoutHandlers(client, io) {
                     lobbyId: res.lobby.lobbyId,
                     reason: 'empty',
                 });
+                // Lobby gone — cancel any in-flight countdown.
+                cancelCountdown(res.lobby.lobbyId);
             } else {
                 io.to(room).emit('shootout:lobby:state', { lobby: res.lobby });
+                _syncCountdown(res.lobby);
             }
             client.leave(room);
             ack?.({ ok: true, ...(res.closed ? { closed: true } : {}) });
@@ -164,6 +169,7 @@ export function registerShootoutHandlers(client, io) {
             if (res?.error) return ack?.({ error: res.error });
             const room = lobbyRoomName(res.lobby.lobbyId);
             io.to(room).emit('shootout:lobby:state', { lobby: res.lobby });
+            _syncCountdown(res.lobby);
             ack?.({ ok: true });
         } catch (err) {
             logger.error({ err }, 'shootout:lobby:ready failed');
@@ -186,6 +192,7 @@ export function registerShootoutHandlers(client, io) {
             if (res?.error) return ack?.({ error: res.error });
             const room = lobbyRoomName(res.lobby.lobbyId);
             io.to(room).emit('shootout:lobby:state', { lobby: res.lobby });
+            _syncCountdown(res.lobby);
             ack?.({ ok: true });
         } catch (err) {
             logger.error({ err }, 'shootout:lobby:pickTeam failed');
@@ -235,25 +242,27 @@ export function registerShootoutHandlers(client, io) {
     // Shared core: stamp match descriptor, spin up runner, broadcast
     // match:start per-socket. Used by both :start (full lobby) and
     // :startSolo (host alone with bot-fill).
-    async function _startCommon({ lobbyId, telegramUserId, allowSolo, botDifficulty, ack }) {
+    // Core start-and-broadcast — returns {ok, matchId} | {error}.
+    // Used by both the manual :start handler (with ack) AND the
+    // auto-countdown's onComplete (which has no ack and runs out-of-band
+    // 5s after the last ready). Side-effect-only function: spins the
+    // runner + emits match:start per-socket; logs internal failures
+    // but never throws.
+    async function _startMatch({ lobbyId, telegramUserId, allowSolo, botDifficulty }) {
         const startRes = await lobbyService.startMatch({
             lobbyId, telegramUserId, allowSolo: !!allowSolo,
         });
-        if (startRes?.error) return ack?.({ error: startRes.error });
+        if (startRes?.error) return { error: startRes.error };
 
         const matchRes = await lifecycle.createMatchFromLobby({
             lobby: startRes.lobby,
             botDifficulty,
         });
-        if (matchRes?.error) return ack?.({ error: matchRes.error });
+        if (matchRes?.error) return { error: matchRes.error };
 
         const runner = new ShootoutRunner({ match: matchRes.match, io });
         _activeMatches.set(matchRes.match.matchId, runner);
 
-        // Day 2 (1.3): auto-start the runner so snapshots fire as soon
-        // as a client emits shootout:joinMatch. Wrap so a runner-init
-        // failure doesn't crash the lobby:start handler — the start
-        // ack still fires; the runner failure logs upstream.
         try {
             runner.start();
         } catch (err) {
@@ -285,7 +294,47 @@ export function registerShootoutHandlers(client, io) {
             members: matchRes.match.members.length,
             solo:    !!allowSolo,
         });
-        ack?.({ ok: true, matchId: matchRes.match.matchId });
+        return { ok: true, matchId: matchRes.match.matchId };
+    }
+
+    // Thin ack-wrapping wrapper for the manual :start / :startSolo
+    // handlers — preserves the existing wire API.
+    async function _startCommon({ lobbyId, telegramUserId, allowSolo, botDifficulty, ack }) {
+        const res = await _startMatch({ lobbyId, telegramUserId, allowSolo, botDifficulty });
+        if (res?.error) return ack?.({ error: res.error });
+        ack?.({ ok: true, matchId: res.matchId });
+    }
+
+    // After every state-mutating lobby handler (setReady, pickTeam,
+    // leave), call this with the resulting lobby. It either:
+    //   - arms the 5-second auto-countdown (state just became READY)
+    //   - cancels any in-flight countdown (state moved AWAY from READY)
+    // Armed countdowns are idempotent so calling armCountdown on every
+    // READY-state broadcast is safe; cancel is also a no-op when no
+    // timer is running.
+    function _syncCountdown(lobby) {
+        if (!lobby?.lobbyId) return;
+        if (lobby.state === 'READY') {
+            armCountdown({
+                lobbyId: lobby.lobbyId,
+                io,
+                onComplete: async () => {
+                    // Re-fetch the lobby on completion (state could've
+                    // changed between the timer firing and the
+                    // setTimeout's microtask) and start the match using
+                    // the host's telegramUserId.
+                    const fresh = await ShootoutLobby.findOne({ lobbyId: lobby.lobbyId }).lean();
+                    if (!fresh || fresh.state !== 'READY') return;
+                    await _startMatch({
+                        lobbyId:        fresh.lobbyId,
+                        telegramUserId: fresh.hostTelegramUserId,
+                        allowSolo:      false,
+                    });
+                },
+            });
+        } else {
+            cancelCountdown(lobby.lobbyId);
+        }
     }
 
     client.on('shootout:lobby:start', async (payload, ack) => {

@@ -797,3 +797,54 @@ test('startMatch: assigns slots by team (red->even, blue->odd)', async () => {
         findMock.mock.restore();
     }
 });
+
+// ── visibility + gameType (Phase MP-expansion, 2026-06-08) ───────────
+
+test('createLobby: defaults visibility=private + gameType=friendly', async () => {
+    const createMock = mock.method(ShootoutLobby, 'create', async (doc) => ({
+        ...doc,
+        lobbyId: 'lobby-x',
+        toObject() { return { ...this }; },
+    }));
+    try {
+        const res = await createLobby({ mode: '1v1', telegramUserId: 1, telegramUsername: 'host' });
+        assert.equal(res.ok, true);
+        assert.equal(res.lobby.visibility, 'private');
+        assert.equal(res.lobby.gameType,   'friendly');
+    } finally {
+        createMock.mock.restore();
+    }
+});
+
+test('createLobby: accepts explicit visibility=open + gameType=wager', async () => {
+    const createMock = mock.method(ShootoutLobby, 'create', async (doc) => ({
+        ...doc,
+        lobbyId: 'lobby-x',
+        toObject() { return { ...this }; },
+    }));
+    try {
+        const res = await createLobby({
+            mode: '2v2', telegramUserId: 1, telegramUsername: 'host',
+            visibility: 'open', gameType: 'wager',
+        });
+        assert.equal(res.ok, true);
+        assert.equal(res.lobby.visibility, 'open');
+        assert.equal(res.lobby.gameType,   'wager');
+    } finally {
+        createMock.mock.restore();
+    }
+});
+
+test('createLobby: rejects invalid visibility', async () => {
+    const res = await createLobby({
+        mode: '1v1', telegramUserId: 1, visibility: 'cosmic',
+    });
+    assert.equal(res.error, 'invalid_visibility');
+});
+
+test('createLobby: rejects invalid gameType', async () => {
+    const res = await createLobby({
+        mode: '1v1', telegramUserId: 1, gameType: 'tournament',
+    });
+    assert.equal(res.error, 'invalid_game_type');
+});

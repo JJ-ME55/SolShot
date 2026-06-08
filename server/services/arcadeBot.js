@@ -212,7 +212,9 @@ const GAMES = [
     // way the others were promoted.
     slug: 'shootout',
     name: 'SHOOTOUT',
-    emoji: '🎯',
+    // Squirt-gun glyph because SolShot already owns the bullseye/dart
+    // (target practice game) — Shootout needs its own visual mark.
+    emoji: '🔫',
     tagline: 'Browser FPS. Red vs Blue · winner takes the pot.',
     url: 'https://fps-staking-game.vercel.app/?via=arcade',
     supportsLoginUrl: false,

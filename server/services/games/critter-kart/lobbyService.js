@@ -229,6 +229,15 @@ export async function markClosed({ lobbyId, reason }) {
 
 // ── Shape helpers — wire-friendly lobby state for clients ─────────────
 
+// Must stay in sync with lifecycle.js's racerIdForSlot — the lobby
+// preview character has to match what the race will actually assign,
+// or every player sees themselves switch character at race start.
+// Random assignment lives in lifecycle.js (see ROSTER_RACER_IDS); we
+// mirror it here purely for cosmetic preview in the lobby UI.
+const LOBBY_PREVIEW_RACER_IDS = ['rusty', 'shelly', 'pip', 'bruno'];
+const lobbyPreviewRacerForSlot = (i) =>
+    LOBBY_PREVIEW_RACER_IDS[i % LOBBY_PREVIEW_RACER_IDS.length];
+
 export function toLobbyStateWire(lobby) {
     if (!lobby) return null;
     return {
@@ -236,11 +245,16 @@ export function toLobbyStateWire(lobby) {
         name: lobby.name,
         cap: lobby.cap,
         hostUsername: lobby.hostUsername,
-        members: lobby.members.map(m => ({
+        members: lobby.members.map((m, i) => ({
             username: m.displayName,
             ready: m.isReady,
             host: m.isHost,
             telegramUserId: m.telegramUserId,
+            // Cosmetic preview only: the actual racerId assignment lives
+            // in lifecycle.js at race-creation time. Without this the
+            // lobby SlotCard fell back to RACERS[0] for every player —
+            // "2 Shelly" / "everyone is Shelly" symptom JJ saw 2026-06-08.
+            racerId: lobbyPreviewRacerForSlot(i),
         })),
         pending: lobby.pendingRequests.map(p => ({
             requestId: p.requestId,

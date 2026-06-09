@@ -137,6 +137,51 @@ export function registerShootoutHandlers(client, io) {
                 lobbyId: res.lobby.lobbyId,
                 ...(res.alreadyMember ? { alreadyMember: true } : {}),
             });
+
+            // ── REJOIN-TO-IN-PROGRESS-MATCH RECOVERY ────────────────
+            // The lobby may already be IN_MATCH (player reloaded mid-
+            // match — most common cause: client did a page reload to
+            // switch to the lobby's chosen map). The runner is still
+            // running but this player's NEW socket isn't in the
+            // runner's room and never received the original match:start
+            // broadcast. Without this recovery, the player would sit
+            // in a stale lobby view forever while their team plays.
+            //
+            // Detection: lobby.state === 'IN_MATCH' && lobby.matchId
+            // resolves to a live runner whose players Map includes
+            // this telegramUserId.
+            if (res.lobby.state === 'IN_MATCH' && res.lobby.matchId) {
+                const runner = _activeMatches.get(res.lobby.matchId);
+                if (runner) {
+                    const member = (runner.match?.members || []).find(
+                        (m) => m.telegramUserId === payload?.telegramUserId,
+                    );
+                    if (member) {
+                        // Join the runner's broadcast room so snapshot
+                        // ticks, kill/hit feeds, and round-state events
+                        // start flowing to this new socket.
+                        client.join(runner.roomName);
+                        // Replay match:start so the client-side init
+                        // path (load arena/yard/funhouse + spawn at
+                        // slot + start render loop) runs.
+                        client.emit('shootout:match:start', {
+                            matchId:   runner.match.matchId,
+                            lobbyId:   runner.match.lobbyId,
+                            mode:      runner.match.mode,
+                            mapId:     runner.match.mapId,
+                            startAtMs: runner.match.startedAt,
+                            members:   runner.match.members,
+                            yourSlot:  member.slot,
+                            rejoin:    true,
+                        });
+                        logger.info('[shootout] match rejoin replayed', {
+                            matchId: res.lobby.matchId,
+                            slot: member.slot,
+                            tgId: payload.telegramUserId,
+                        });
+                    }
+                }
+            }
         } catch (err) {
             logger.error({ err }, 'shootout:lobby:join failed');
             ack?.({ error: 'internal' });

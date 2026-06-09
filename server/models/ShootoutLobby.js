@@ -68,7 +68,18 @@ const shootoutLobbySchema = new mongoose.Schema({
     matchId:            { type: String, default: null }, // set when lobby starts a match
     closedAt:           { type: Date, default: null },
     lastActiveAt:       { type: Date, default: Date.now, index: true },
-}, { timestamps: true });
+}, {
+    timestamps: true,
+    // CRITICAL: flatten Map fields when converting to object / JSON.
+    // Without these options, toObject() returns mapVotes as a raw
+    // Mongoose Map (which JSON.stringify renders as '{}'), so
+    // Socket.IO clients receive an empty votes object regardless of
+    // what's actually stored. Bug surface: Fish couldn't see his
+    // own votes register because the wire payload was always empty,
+    // even though the server-side tally was correct.
+    toObject: { flattenMaps: true },
+    toJSON:   { flattenMaps: true },
+});
 
 // TTL: auto-delete 30 min after last activity (matches CK lobby behaviour)
 shootoutLobbySchema.index({ lastActiveAt: 1 }, { expireAfterSeconds: 30 * 60 });

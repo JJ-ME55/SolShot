@@ -529,13 +529,27 @@ export function registerShootoutHandlers(client, io) {
 
         // GOTCHA #5: per-socket emit with each socket's own yourSlot.
         // GOTCHA #1: NO socket.join(matchRoomName(...)) here.
+        const emitOutcomes = [];
         for (const m of matchRes.match.members) {
             const lobbyMember = startRes.lobby.members.find(
                 (lm) => lm.telegramUserId === m.telegramUserId,
             );
-            if (!lobbyMember?.socketId) continue;
+            if (!lobbyMember?.socketId) {
+                emitOutcomes.push({
+                    tgId: m.telegramUserId, slot: m.slot,
+                    skipped: 'no_socketId_in_lobbyMember',
+                });
+                continue;
+            }
             const memberSock = io.sockets.sockets.get(lobbyMember.socketId);
-            if (!memberSock) continue;
+            if (!memberSock) {
+                emitOutcomes.push({
+                    tgId: m.telegramUserId, slot: m.slot,
+                    socketId: lobbyMember.socketId,
+                    skipped: 'socket_not_in_io_registry',
+                });
+                continue;
+            }
             memberSock.emit('shootout:match:start', {
                 matchId:   matchRes.match.matchId,
                 lobbyId:   matchRes.match.lobbyId,
@@ -545,7 +559,19 @@ export function registerShootoutHandlers(client, io) {
                 members:   matchRes.match.members,
                 yourSlot:  m.slot,
             });
+            emitOutcomes.push({
+                tgId: m.telegramUserId, slot: m.slot,
+                socketId: lobbyMember.socketId, emitted: true,
+            });
         }
+        // Critical diagnostic — shows per-member whether match:start
+        // actually went out. If a player's stuck in lobby after countdown,
+        // this is the first place to look.
+        logger.info('[shootout] match:start broadcast', {
+            matchId: matchRes.match.matchId,
+            mapId:   matchRes.match.mapId,
+            outcomes: emitOutcomes,
+        });
 
         logger.info('[shootout] match starting', {
             matchId: matchRes.match.matchId,

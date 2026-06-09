@@ -106,6 +106,13 @@ export function getRecoilAngle(weaponType, shotIndex) {
       // Wrap around if beyond pattern length
       return M4A1_PATTERN[shotIndex % M4A1_PATTERN.length];
 
+    case 'BULLPUP': {
+      // AUG/Steyr-style: similar arc to M4A1 with slightly tighter
+      // horizontal spread — bullpup ergonomics handle recoil better.
+      const m4 = M4A1_PATTERN[shotIndex % M4A1_PATTERN.length];
+      return { x: m4.x * 0.85, y: m4.y * 1.05 };
+    }
+
     case 'SMG': {
       // SMG: lighter, faster climb — reuse the M4 pattern at reduced magnitude.
       const smg = M4A1_PATTERN[shotIndex % M4A1_PATTERN.length];

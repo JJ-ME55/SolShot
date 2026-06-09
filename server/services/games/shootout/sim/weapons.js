@@ -35,6 +35,7 @@ export const SOURCE_COMMIT = '5531febdc6c6289f0d12a05352acb2fad7a08a60'; // bump
 export const WeaponType = Object.freeze({
   AK47: 'AK47',
   M4A1: 'M4A1',
+  BULLPUP: 'BULLPUP',
   SMG: 'SMG',
   SHOTGUN: 'SHOTGUN',
   SNIPER: 'SNIPER',
@@ -81,6 +82,20 @@ const WEAPON_CONFIGS = {
     hasAmmo: true,
     price: 3100,
     displayName: 'M4A1',
+    category: 'rifle',
+  },
+  [WeaponType.BULLPUP]: {
+    type: WeaponType.BULLPUP,
+    fireRate: 0.10,       // 600 RPM — slower than M4A1
+    baseDamage: 36,       // heavier round
+    magazine: 30,
+    reserve: 90,
+    reloadTime: 3.3,
+    drawTime: 0.8,
+    movementSpeed: 221,
+    hasAmmo: true,
+    price: 3300,
+    displayName: 'Bullpup',
     category: 'rifle',
   },
   [WeaponType.SMG]: {

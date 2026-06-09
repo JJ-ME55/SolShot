@@ -219,6 +219,55 @@ export function registerShootoutHandlers(client, io) {
         }
     });
 
+    // ── shootout:match:forfeit (Phase MP-maps, 2026-06-09) ──────────
+    // Player gives up mid-match. We end the runner and broadcast a
+    // synthetic match:final to all clients in the match room so they
+    // all return to landing together. Opposing team wins.
+    client.on('shootout:match:forfeit', (payload, ack) => {
+        try {
+            const matchId = payload?.matchId;
+            const telegramUserId = payload?.telegramUserId;
+            const runner = _activeMatches.get(matchId);
+            if (!runner) return ack?.({ error: 'match_not_found' });
+            // Identify forfeiting player + winning team.
+            const forfeitPlayer = runner.players?.find?.(
+                (p) => p.telegramUserId === telegramUserId,
+            );
+            const forfeitTeam = forfeitPlayer?.team;
+            const winningTeam = forfeitTeam === 'red' ? 'blue' : 'red';
+            // Synth match:final payload (opposing team wins by
+            // default; deaths/kills snapshot whatever's accumulated).
+            const players = (runner.players || []).map((p) => ({
+                slot:           p.slot,
+                telegramUserId: p.telegramUserId,
+                displayName:    p.displayName,
+                team:           p.team,
+                isBot:          p.isBot,
+                kills:          p.kills || 0,
+                deaths:         p.deaths || 0,
+                won:            p.team === winningTeam,
+            }));
+            io.to(runner.roomName).emit('shootout:match:final', {
+                matchId,
+                matchWinner: winningTeam,
+                winsRed:     runner.matchState?.winsRed  || 0,
+                winsBlue:    runner.matchState?.winsBlue || 0,
+                players,
+                forfeit:     true,
+                forfeitedBy: forfeitTeam,
+            });
+            runner.stop?.();
+            _activeMatches.delete(matchId);
+            logger.info('[shootout] match forfeited', {
+                matchId, by: telegramUserId, team: forfeitTeam,
+            });
+            ack?.({ ok: true });
+        } catch (err) {
+            logger.error({ err }, 'shootout:match:forfeit failed');
+            ack?.({ error: 'internal' });
+        }
+    });
+
     // ── shootout:lobby:pickTeam (Phase C, 2026-06-08) ───────────────
     // Member picks Red or Blue during Ready Up. Strict balance gate
     // (1v1: 1-1, 2v2: 2-2) is enforced in lobbyService.pickTeam +

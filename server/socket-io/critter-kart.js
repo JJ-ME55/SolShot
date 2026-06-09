@@ -1269,7 +1269,33 @@ async function runCountdownAndRace(io, raceId) {
         registerRunner(raceId, runner);
         runner.start();
     } catch (err) {
-        logger.error('[critter-kart] race driver failed', { raceId, error: err.message });
+        // IDEMPOTENCY GUARD (2026-06-09): the 15s lobby:start fallback
+        // can fire runCountdownAndRace a SECOND time while the real
+        // handshake-triggered run is mid-race. The second call's
+        // `await beginCountdown(...)` throws "not in countdown-eligible
+        // state (was: racing|countdown|loading)". Without this guard,
+        // the catch below ran cancelRace() and killed the legitimate
+        // race — snapshots stopped, both clients saw bots freeze ~8s
+        // in. JJ's race 4Wm_QobMo8Q on 2026-06-09.
+        //
+        // The matching .catch at the fallback-timer caller site (line
+        // ~1037) already silences this, but that catch never sees the
+        // error because THIS catch swallows it first. So we have to
+        // detect the idempotency case here.
+        if (String(err?.message || '').includes('not in countdown-eligible state')) {
+            logger.info(
+                { raceId, detail: err.message },
+                '[critter-kart] runCountdownAndRace called against non-eligible state — idempotent no-op',
+            );
+            return;
+        }
+        // Pino arg-order: object first, message second (otherwise the
+        // extras get dropped — we couldn't see err.message in the
+        // logs before the JJ 2026-06-09 diagnosis).
+        logger.error(
+            { raceId, error: err?.message, stack: err?.stack },
+            '[critter-kart] race driver failed',
+        );
         disposeRunner(raceId);
         await cancelRace({ raceId, reason: 'driver_error' }).catch(() => {});
         broadcastToRace(io, raceId, 'critterkart:error', {

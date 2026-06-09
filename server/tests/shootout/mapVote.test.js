@@ -34,23 +34,32 @@ test('resolveMapVote: majority wins', () => {
     assert.equal(resolveMapVote(lobby), 'arena');
 });
 
-test('resolveMapVote: tie → VALID_MAPS order (arena before shipping-yard before fun-house)', () => {
-    // arena & shipping-yard tied at 1
+test('resolveMapVote: 2-way tie → random pick from tied set', () => {
     const lobby = {
         mapVotes: new Map([
             ['1', 'arena'],
             ['2', 'shipping-yard'],
         ]),
     };
-    assert.equal(resolveMapVote(lobby), 'arena');
-    // shipping-yard & fun-house tied at 1
-    const lobby2 = {
+    // Deterministic rng → 0.0 → first tied (arena)
+    assert.equal(resolveMapVote(lobby, () => 0.0), 'arena');
+    // 0.99 → last tied in VALID_MAPS order (shipping-yard)
+    assert.equal(resolveMapVote(lobby, () => 0.99), 'shipping-yard');
+});
+
+test('resolveMapVote: 3-way tie → random pick across all 3 maps', () => {
+    const lobby = {
         mapVotes: new Map([
-            ['1', 'shipping-yard'],
-            ['2', 'fun-house'],
+            ['1', 'arena'],
+            ['2', 'shipping-yard'],
+            ['3', 'fun-house'],
         ]),
     };
-    assert.equal(resolveMapVote(lobby2), 'shipping-yard');
+    // Run with mock rng to cover each bucket: 0..1/3 → arena,
+    // 1/3..2/3 → shipping-yard, 2/3..1 → fun-house.
+    assert.equal(resolveMapVote(lobby, () => 0.0),  'arena');
+    assert.equal(resolveMapVote(lobby, () => 0.5),  'shipping-yard');
+    assert.equal(resolveMapVote(lobby, () => 0.99), 'fun-house');
 });
 
 test('resolveMapVote: plain object (lean() result) → same as Map', () => {

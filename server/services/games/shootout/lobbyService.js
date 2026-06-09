@@ -425,7 +425,7 @@ export async function voteMap({ lobbyId, telegramUserId, mapId }) {
  * Tally votes + return the winning mapId. Ties broken by VALID_MAPS
  * order. If no votes cast, returns 'arena' (legacy default).
  */
-export function resolveMapVote(lobby) {
+export function resolveMapVote(lobby, rng = Math.random) {
     const votes = lobby?.mapVotes;
     if (!votes || (votes instanceof Map ? votes.size : Object.keys(votes).length) === 0) {
         return 'arena';
@@ -438,12 +438,17 @@ export function resolveMapVote(lobby) {
     } else {
         for (const v of Object.values(votes)) counts[v] = (counts[v] || 0) + 1;
     }
-    let bestMap = 'arena', bestCount = -1;
-    for (const m of VALID_MAPS) {
-        const c = counts[m] || 0;
-        if (c > bestCount) { bestMap = m; bestCount = c; }
-    }
-    return bestMap;
+    // Find the highest vote count then collect every map tied at
+    // that count. Single-winner case → that map. Multi-way tie →
+    // random pick from the tied set (Fish: 'if votes are even and
+    // people ready up, randomly choose between the two with most
+    // votes'). rng param is injectable so tests can be deterministic.
+    let topCount = 0;
+    for (const m of VALID_MAPS) topCount = Math.max(topCount, counts[m] || 0);
+    if (topCount === 0) return 'arena';
+    const tied = VALID_MAPS.filter((m) => (counts[m] || 0) === topCount);
+    if (tied.length === 1) return tied[0];
+    return tied[Math.floor(rng() * tied.length)];
 }
 
 // ── Ready ────────────────────────────────────────────────────────────

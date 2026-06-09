@@ -139,18 +139,21 @@ export function registerShootoutHandlers(client, io) {
             });
 
             // ── REJOIN-TO-IN-PROGRESS-MATCH RECOVERY ────────────────
-            // The lobby may already be IN_MATCH (player reloaded mid-
-            // match — most common cause: client did a page reload to
-            // switch to the lobby's chosen map). The runner is still
-            // running but this player's NEW socket isn't in the
-            // runner's room and never received the original match:start
-            // broadcast. Without this recovery, the player would sit
-            // in a stale lobby view forever while their team plays.
+            // The lobby may already have an active runner (player
+            // reloaded mid-match — most common cause: client did a
+            // page reload to switch to the lobby's chosen map). The
+            // runner is still running but this player's NEW socket
+            // isn't in the runner's room and never received the
+            // original match:start broadcast. Without this recovery,
+            // the player would sit in a stale lobby view forever
+            // while their team plays.
             //
-            // Detection: lobby.state === 'IN_MATCH' && lobby.matchId
-            // resolves to a live runner whose players Map includes
-            // this telegramUserId.
-            if (res.lobby.state === 'IN_MATCH' && res.lobby.matchId) {
+            // SOURCE OF TRUTH: _activeMatches.get(lobby.matchId) —
+            // not lobby.state. lobbyService.startMatch sets state to
+            // 'STARTING' but nothing transitions it onward to
+            // 'IN_MATCH'; the runner being in _activeMatches is the
+            // only reliable signal that the match is actually running.
+            if (res.lobby.matchId && _activeMatches.has(res.lobby.matchId)) {
                 const runner = _activeMatches.get(res.lobby.matchId);
                 if (runner) {
                     const member = (runner.match?.members || []).find(

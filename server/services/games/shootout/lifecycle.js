@@ -46,6 +46,8 @@ function newMatchId() {
  * directly — no alternating-by-index rewrite. Solo lobbies fall back
  * to whatever lobbyService set (host forced to red).
  */
+import { resolveMapVote } from './lobbyService.js';
+
 export async function createMatchFromLobby({ lobby, botDifficulty } = {}) {
     const members = lobby.members.map((m) => ({
         telegramUserId: m.telegramUserId,
@@ -57,12 +59,16 @@ export async function createMatchFromLobby({ lobby, botDifficulty } = {}) {
     // falls through to the runner's default ('soldier').
     const allowedDiff = ['recruit', 'soldier', 'veteran', 'seal'];
     const safeDiff = allowedDiff.includes(botDifficulty) ? botDifficulty : undefined;
+    // Resolve the lobby's map vote — winning map propagates to the
+    // match payload so both clients load the same geometry.
+    const mapId = resolveMapVote(lobby);
     return {
         ok: true,
         match: {
             matchId:   newMatchId(),
             lobbyId:   lobby.lobbyId,
             mode:      lobby.mode,
+            mapId,
             // cap propagates through to ShootoutRunner so bot-fill can
             // honor the lobby's intended size in the < cap solo path.
             // Without this, runner._addBotsForEmptySlots falls back to

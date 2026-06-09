@@ -387,6 +387,65 @@ export async function pickTeam({ lobbyId, telegramUserId, team }) {
     return { ok: true, lobby: lobby.toObject() };
 }
 
+// ── Map vote (Phase MP-maps, 2026-06-09) ─────────────────────────
+//
+// Members vote on which map the match will be played on. Live —
+// they can switch their vote at any time, or clear it (pass mapId
+// null). At match-start, the map with the most votes wins (ties
+// resolved by VALID_MAPS order — fun-house before arena before
+// shipping-yard, arbitrary but deterministic).
+
+const VALID_MAPS = ['arena', 'shipping-yard', 'fun-house'];
+
+export async function voteMap({ lobbyId, telegramUserId, mapId }) {
+    if (mapId != null && !VALID_MAPS.includes(mapId)) {
+        return { error: 'invalid_map' };
+    }
+    const lobby = await ShootoutLobby.findOne({ lobbyId });
+    if (!lobby) return { error: 'lobby_not_found' };
+    if (lobby.state !== 'OPEN' && lobby.state !== 'FULL' && lobby.state !== 'READY') {
+        return { error: 'lobby_not_voting' };
+    }
+    const member = lobby.members.find((m) => m.telegramUserId === telegramUserId);
+    if (!member) return { error: 'not_in_lobby' };
+
+    const key = String(telegramUserId);
+    if (!lobby.mapVotes) lobby.mapVotes = new Map();
+    if (mapId == null) {
+        lobby.mapVotes.delete(key);
+    } else {
+        lobby.mapVotes.set(key, mapId);
+    }
+    lobby.lastActiveAt = new Date();
+    await lobby.save();
+    return { ok: true, lobby: lobby.toObject() };
+}
+
+/**
+ * Tally votes + return the winning mapId. Ties broken by VALID_MAPS
+ * order. If no votes cast, returns 'arena' (legacy default).
+ */
+export function resolveMapVote(lobby) {
+    const votes = lobby?.mapVotes;
+    if (!votes || (votes instanceof Map ? votes.size : Object.keys(votes).length) === 0) {
+        return 'arena';
+    }
+    // Mongoose 'Map' field deserialises to either a Map or a plain
+    // object depending on lean() vs not — handle both.
+    const counts = {};
+    if (votes instanceof Map) {
+        for (const v of votes.values()) counts[v] = (counts[v] || 0) + 1;
+    } else {
+        for (const v of Object.values(votes)) counts[v] = (counts[v] || 0) + 1;
+    }
+    let bestMap = 'arena', bestCount = -1;
+    for (const m of VALID_MAPS) {
+        const c = counts[m] || 0;
+        if (c > bestCount) { bestMap = m; bestCount = c; }
+    }
+    return bestMap;
+}
+
 // ── Ready ────────────────────────────────────────────────────────────
 
 export async function setReady({ lobbyId, telegramUserId, ready }) {

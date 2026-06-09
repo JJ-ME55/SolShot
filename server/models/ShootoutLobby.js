@@ -56,6 +56,13 @@ const shootoutLobbySchema = new mongoose.Schema({
     visibility:         { type: String, enum: ['open', 'private'], default: 'private', index: true },
     gameType:           { type: String, enum: ['friendly', 'wager'],   default: 'friendly' },
 
+    // Phase MP-maps (2026-06-09): live map voting in the lobby.
+    // Members vote during the team-pick + ready phase; the map with
+    // the most votes is chosen at match-start (tie → first map in
+    // the enum). Stored as a Map<telegramUserId(string)→mapId> so
+    // toggling votes is O(1) and JSON-serialises cleanly.
+    mapVotes:           { type: Map, of: String, default: () => new Map() },
+
     members:            { type: [memberSchema], default: [] },
 
     matchId:            { type: String, default: null }, // set when lobby starts a match

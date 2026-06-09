@@ -197,6 +197,28 @@ export function registerShootoutHandlers(client, io) {
         }
     });
 
+    // ── shootout:lobby:voteMap (Phase MP-maps, 2026-06-09) ──────────
+    // Live map voting in the lobby. Members pass {lobbyId, mapId}
+    // to vote, or {lobbyId, mapId: null} to cancel. The winning map
+    // is computed at match-start via lobbyService.resolveMapVote.
+    client.on('shootout:lobby:voteMap', async (payload, ack) => {
+        try {
+            const res = await lobbyService.voteMap({
+                lobbyId: payload?.lobbyId,
+                telegramUserId: payload?.telegramUserId,
+                mapId: payload?.mapId == null ? null : String(payload.mapId),
+            });
+            if (res?.error) return ack?.({ error: res.error });
+            const room = lobbyRoomName(res.lobby.lobbyId);
+            io.to(room).emit('shootout:lobby:state', { lobby: res.lobby });
+            _broadcastOpenLobbies();
+            ack?.({ ok: true });
+        } catch (err) {
+            logger.error({ err }, 'shootout:lobby:voteMap failed');
+            ack?.({ error: 'internal' });
+        }
+    });
+
     // ── shootout:lobby:pickTeam (Phase C, 2026-06-08) ───────────────
     // Member picks Red or Blue during Ready Up. Strict balance gate
     // (1v1: 1-1, 2v2: 2-2) is enforced in lobbyService.pickTeam +
@@ -405,6 +427,7 @@ export function registerShootoutHandlers(client, io) {
                 matchId:   matchRes.match.matchId,
                 lobbyId:   matchRes.match.lobbyId,
                 mode:      matchRes.match.mode,
+                mapId:     matchRes.match.mapId,
                 startAtMs: matchRes.match.startedAt,
                 members:   matchRes.match.members,
                 yourSlot:  m.slot,

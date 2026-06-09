@@ -37,16 +37,17 @@ test('SOURCE_COMMIT is set to a real-looking sha', () => {
 
 // ---------- WeaponType enum ----------
 
-test('WeaponType has all 8 weapons as frozen string-enum', () => {
+test('WeaponType has all 9 weapons as frozen string-enum', () => {
   assert.equal(WeaponType.AK47, 'AK47');
   assert.equal(WeaponType.M4A1, 'M4A1');
+  assert.equal(WeaponType.BULLPUP, 'BULLPUP');
   assert.equal(WeaponType.SMG, 'SMG');
   assert.equal(WeaponType.SHOTGUN, 'SHOTGUN');
   assert.equal(WeaponType.SNIPER, 'SNIPER');
   assert.equal(WeaponType.PISTOL, 'PISTOL');
   assert.equal(WeaponType.REVOLVER, 'REVOLVER');
   assert.equal(WeaponType.KNIFE, 'KNIFE');
-  assert.equal(Object.values(WeaponType).length, 8);
+  assert.equal(Object.values(WeaponType).length, 9);
   assert.ok(Object.isFrozen(WeaponType));
 });
 

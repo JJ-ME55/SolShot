@@ -153,12 +153,28 @@ export function registerShootoutHandlers(client, io) {
             // 'STARTING' but nothing transitions it onward to
             // 'IN_MATCH'; the runner being in _activeMatches is the
             // only reliable signal that the match is actually running.
+            // Diagnostic — every join sees this so we can spot why
+            // a rejoin DIDN'T fire when we expect one to.
+            logger.info('[shootout] join rejoin-check', {
+                lobbyId:       res.lobby.lobbyId,
+                lobbyState:    res.lobby.state,
+                matchId:       res.lobby.matchId,
+                activeRunner:  res.lobby.matchId ? _activeMatches.has(res.lobby.matchId) : false,
+                tgId:          payload?.telegramUserId,
+            });
             if (res.lobby.matchId && _activeMatches.has(res.lobby.matchId)) {
                 const runner = _activeMatches.get(res.lobby.matchId);
                 if (runner) {
                     const member = (runner.match?.members || []).find(
                         (m) => m.telegramUserId === payload?.telegramUserId,
                     );
+                    if (!member) {
+                        logger.warn('[shootout] rejoin-check: member not in runner', {
+                            matchId: res.lobby.matchId,
+                            tgId: payload?.telegramUserId,
+                            runnerMembers: (runner.match?.members || []).map((m) => m.telegramUserId),
+                        });
+                    }
                     if (member) {
                         // Join the runner's broadcast room so snapshot
                         // ticks, kill/hit feeds, and round-state events

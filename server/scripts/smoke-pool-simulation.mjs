@@ -182,9 +182,15 @@ console.log('\n[BACKSPIN — cue ball reverses past target]');
   const balls = [ball(0, 'white', 400, 360), ball(1, 'red', 600, 360)];
   const r = simulateShot(balls, { power: 25, angle: 0, spinX: 0, spinY: -1 }, table, physics);
   const cueFinal = r.finalBalls.find(b => b.color === 'white');
-  const redFinal = r.finalBalls.find(b => b.color === 'red');
   assert(cueFinal.position.x < 400, `cue ball drew back with backspin (final x=${cueFinal.position.x.toFixed(1)})`);
-  assert(redFinal.position.x > 600, `red ball still driven forward (final x=${redFinal.position.x.toFixed(1)})`);
+  // Red ball driven forward — under the two-regime physics the rolling
+  // tail carries it to the right cushion and back past its start, so a
+  // final-x assertion is meaningless. Assert via events instead (same
+  // rewrite as the browser test fixture — drift guard maintained).
+  const hitRed = r.events.some(e => e.type === 'ball_collision' && (e.ballId === 1 || e.otherBallId === 1));
+  const redReachedRightRail = r.events.some(e => e.type === 'cushion_hit' && e.ballId === 1 && e.cushion === 'right');
+  assert(hitRed, 'cue ball contacted the red ball');
+  assert(redReachedRightRail, 'red ball driven forward to the right cushion');
 }
 
 // ────────────────────────────────────────────────

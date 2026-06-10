@@ -34,19 +34,27 @@ const ALLOWED_BALL_COLORS = new Set(['white', 'red', 'yellow', 'black']);
 // Default table (matches browser game's geometry)
 // ──────────────────────────────────────────────────────────────────────
 
+// Synced 2026-06-10 to the LIVE Side Pocket table (The-Arcade pool
+// game.config.ts table block). The previous defaults were the legacy
+// 1422×720 import-era geometry — server adjudication ran on a
+// different table than the one players see. Includes the pocket-mouth
+// fields so the sim's cushion gaps match the rendered cushions.
 export const DEFAULT_TABLE_CONFIG = Object.freeze({
-  width: 1422,
-  height: 720,
-  cushionWidth: 26,
+  width: 1500,
+  height: 825,
+  cushionWidth: 78,
   pocketsPositions: Object.freeze([
-    Object.freeze({ x: 60, y: 60 }),
-    Object.freeze({ x: 1422 / 2, y: 40 }),
-    Object.freeze({ x: 1422 - 60, y: 60 }),
-    Object.freeze({ x: 60, y: 720 - 60 }),
-    Object.freeze({ x: 1422 / 2, y: 720 - 40 }),
-    Object.freeze({ x: 1422 - 60, y: 720 - 60 })
+    Object.freeze({ x: 62, y: 62 }),     // TL
+    Object.freeze({ x: 750, y: 56 }),    // top-side
+    Object.freeze({ x: 1438, y: 62 }),   // TR
+    Object.freeze({ x: 62, y: 763 }),    // BL
+    Object.freeze({ x: 750, y: 769 }),   // bottom-side
+    Object.freeze({ x: 1438, y: 763 })   // BR
   ]),
-  pocketRadius: 30
+  pocketRadius: 42,
+  woodSeamInset: 48,
+  jawChamfer: 30,
+  pocketRim: 6
 });
 
 // ──────────────────────────────────────────────────────────────────────

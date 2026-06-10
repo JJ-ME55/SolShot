@@ -43,11 +43,17 @@
  * @property {number} cushionWidth
  * @property {IVec2[]} pocketsPositions
  * @property {number} pocketRadius
+ * @property {number} [woodSeamInset]  Pocket-mouth geometry: wood-seam inset (default 48, matches render FELT_INSET)
+ * @property {number} [jawChamfer]     Chamfer miter wood-seam → playing face (default 30)
+ * @property {number} [pocketRim]      Visible hole lip beyond pocketRadius (default 6)
  */
 
 /**
  * @typedef {Object} PhysicsConfig
- * @property {number} friction
+ * @property {number} friction          LEGACY — unused by stepWorld since the two-regime refactor
+ * @property {number} slidingDecel      px/tick² while sliding/skidding (Han 2005 μ_s regime)
+ * @property {number} rollingDecel      px/tick² while rolling (μ_r regime, ~20× smaller)
+ * @property {number} rollSlipThreshold |v| below this = pure rolling
  * @property {number} collisionLoss
  * @property {number} ballDiameter
  * @property {number} minVelocityLength
@@ -81,11 +87,21 @@
  * @property {number[]} pocketedBallIds
  */
 
-/** @type {PhysicsConfig} */
+/**
+ * @type {PhysicsConfig}
+ * Synced 2026-06-10 to the LIVE game's tuning (The-Arcade pool
+ * game.config.ts physics + ball blocks) — two-regime constant decel,
+ * 38px balls. The previous defaults here were the original exponential
+ * generation and made server adjudication disagree with every client
+ * shot.
+ */
 export const DEFAULT_PHYSICS_CONFIG = Object.freeze({
-  friction: 0.018,
+  friction: 0.018,            // legacy, unused by stepWorld
+  slidingDecel: 1.2,
+  rollingDecel: 0.06,
+  rollSlipThreshold: 15,
   collisionLoss: 0.018,
-  ballDiameter: 32,
+  ballDiameter: 38,
   minVelocityLength: 0.05
 });
 

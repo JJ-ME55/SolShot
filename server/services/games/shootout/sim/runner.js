@@ -61,6 +61,12 @@ const RING_CAPACITY  = 60; // 1s of history @ 60Hz — Day 2 lag-comp scratch
 export const STARTING_MONEY  = 2000;
 export const WIN_AWARD       = 3000;
 export const LOSS_AWARD      = 1900;
+// 2026-06-10 (Fish): per-kill award so 1v1 players can upgrade guns
+// faster mid-match. 1v1 pays more than 2v2 because a 1v1 round only
+// ever has one kill in it — kill+win lands a rifle (2500-3300) by
+// round 2; the loser (1900+0) can still afford an SMG + armour.
+export const KILL_AWARD_1V1  = 1500;
+export const KILL_AWARD_2V2  = 1000;
 const MONEY_CAP              = 16000;
 
 // Day 3: roundState emit cadence. Transitions emit immediately; the
@@ -318,7 +324,16 @@ export class ShootoutRunner {
         const p = this.players.get(slot);
         if (!p) return false;
         const seq = Number.isFinite(input?.seq) ? input.seq : 0;
-        if (seq && seq < p.lastInputSeq) return false;
+        // Drop genuinely out-of-order packets (a late retransmit is at
+        // most a few frames behind) — but ACCEPT a big backwards jump:
+        // that's a page reload (map-switch reload or mid-match F5 +
+        // rejoin) whose seq counter restarted at 1. Before 2026-06-10
+        // this dropped EVERY post-reload frame (lastInputSeq kept the
+        // pre-reload high-water mark), freezing the player's avatar at
+        // spawn for everyone else while their fire events (no seq gate)
+        // kept working.
+        const gap = p.lastInputSeq - seq;
+        if (seq && gap > 0 && gap < 300) return false;
         // Client-authoritative position (added 2026-06-08). The client
         // runs full octree collision against the actual arena mesh; the
         // server only has simplified AABB cover boxes. Trusting the
@@ -472,6 +487,23 @@ export class ShootoutRunner {
         // angles are preserved so the camera doesn't snap.
         const inputAllowed = this.matchState.phase === Phase.LIVE;
 
+        // [mp-diag] every 5s during LIVE: per-human input freshness.
+        // Pairs with the client's 1Hz [mp-diag]/[mp-pos] logs — if a
+        // player's lastInputSeq stops advancing here while their own
+        // console shows seq climbing, frames are dying in transit/
+        // being dropped; if it advances, the input pipeline is fine.
+        // (JJ report 2026-06-10: opponent model not facing/moving.)
+        if (inputAllowed && this.tick % 300 === 0) {
+            for (const p of this.players.values()) {
+                if (p.isBot) continue;
+                console.log(
+                    `[shootout-diag] match=${this.match?.matchId} slot=${p.slot} ` +
+                    `lastSeq=${p.lastInputSeq} yaw=${(p.state.yaw ?? 0).toFixed(2)} ` +
+                    `pos=(${p.state.x.toFixed(1)},${p.state.z.toFixed(1)}) alive=${p.alive}`,
+                );
+            }
+        }
+
         for (const p of this.players.values()) {
             // Bots synthesize their own input each tick — also gated on
             // inputAllowed so the bot freezes during BUY.
@@ -553,10 +585,12 @@ export class ShootoutRunner {
         // late joiners + drives countdown UI without flooding.
         const transition = advanceMatch(this.matchState, TICK_DT, this.players);
         if (transition.transitioned) {
-            this._emitRoundState();
+            // Award BEFORE the transition emit so the ROUND_END
+            // roundState already carries the post-award money map.
             if (transition.roundJustEnded) {
                 this._awardRoundEndMoney();
             }
+            this._emitRoundState();
             if (transition.prevPhase === Phase.ROUND_END
                 && transition.nextPhase === Phase.BUY) {
                 this._resetForNewRound();
@@ -573,6 +607,13 @@ export class ShootoutRunner {
 
     _emitRoundState() {
         const s = this.matchState;
+        // Per-slot money map (2026-06-10). Before this, money was only
+        // ever sent to clients inside the buy-ACK loadout broadcast, so
+        // round-end + kill awards happened server-side but the client
+        // HUD never saw them — and the client's local can-afford gate
+        // then blocked buys the server would have allowed.
+        const money = {};
+        for (const p of this.players.values()) money[p.slot] = p.money;
         const payload = {
             phase:         s.phase,
             round:         s.round,
@@ -585,6 +626,7 @@ export class ShootoutRunner {
             roundWinner:   s.roundWinner,
             matchWinner:   s.matchWinner,
             over:          s.over,
+            money,
         };
         this.io.to(this.roomName).emit('shootout:match:roundState', payload);
     }
@@ -844,6 +886,11 @@ export class ShootoutRunner {
             // match:final payload and ShootoutStats upsert (Task 4).
             shooter.kills += 1;
             if (victim) victim.deaths += 1;
+            // 2026-06-10: instant kill award (on top of the round-end
+            // win/loss award). Reaches the client within ~166ms via the
+            // periodic roundState money map.
+            const kAward = this.match?.mode === '1v1' ? KILL_AWARD_1V1 : KILL_AWARD_2V2;
+            shooter.money = Math.min(MONEY_CAP, shooter.money + kAward);
         }
 
         return {

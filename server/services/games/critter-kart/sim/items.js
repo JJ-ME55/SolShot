@@ -70,6 +70,47 @@ export function rollItem(position, numKarts, r) {
 }
 
 /**
+ * Item-box layout — byte-identical to the client (GameCanvas.tsx
+ * ITEM_BOX_ROWS / ITEM_BOX_LAT / LANE_CATEGORY). Boxes sit at fixed
+ * progress rows × three lateral lanes, so the server can compute the
+ * EXACT same set of boxes the client renders, with no scene dependency.
+ * Lane categories: left = ATTACK, centre = SPEED, right = DEFENSE.
+ */
+export const ITEM_BOX_ROWS = [0.12, 0.3, 0.48, 0.66, 0.84];
+export const ITEM_BOX_LAT = [-8, 0, 8];
+export const LANE_CATEGORY = [CATEGORY.ATTACK, CATEGORY.SPEED, CATEGORY.DEFENSE];
+
+/**
+ * Compute the deterministic item-box layout for a track. Mirrors the
+ * client's `pointAndPerp(prog)` placement exactly.
+ * @param {object} track  a TrackPath (needs pointAtProgress)
+ * @returns {Array<{id:number,x:number,z:number,category:number}>}
+ */
+export function computeItemBoxes(track) {
+    const boxes = [];
+    let id = 0;
+    for (const prog of ITEM_BOX_ROWS) {
+        const a = track.pointAtProgress(prog);
+        const b = track.pointAtProgress(prog + 0.01);
+        let tx = b.x - a.x;
+        let tz = b.z - a.z;
+        const l = Math.hypot(tx, tz) || 1;
+        const px = tz / l;
+        const pz = -tx / l;
+        for (let lane = 0; lane < ITEM_BOX_LAT.length; lane++) {
+            const lat = ITEM_BOX_LAT[lane];
+            boxes.push({
+                id: id++,
+                x: a.x + px * lat,
+                z: a.z + pz * lat,
+                category: LANE_CATEGORY[lane],
+            });
+        }
+    }
+    return boxes;
+}
+
+/**
  * Apply a spin-out hit. Shield blocks it, i-frames ignore it, else spin out.
  * @param {object} s    KartState
  * @param {object} t    TUNING

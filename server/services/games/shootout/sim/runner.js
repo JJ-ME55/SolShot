@@ -173,6 +173,14 @@ export class ShootoutRunner {
             this._addPlayer({
                 slot: member.slot,
                 telegramUserId: member.telegramUserId,
+                // displayName was dropped here until 2026-06-10 — the
+                // lobby formats real names (@username / first name) but
+                // every stats row persisted as the 'tg-<id>' fallback
+                // (Fish: leaderboard 'only shows TG and a number').
+                // persistMatchStats $sets displayName per match, so the
+                // old rows self-heal as each player plays again.
+                displayName: member.displayName,
+                team: member.team,
                 isBot: false,
             });
         }

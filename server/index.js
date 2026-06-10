@@ -1664,6 +1664,43 @@ app.get('/api/games/critter-kart/debug/lobbies', async (req, res) => {
     }
 });
 
+// GET /api/games/critter-kart/debug/races[?raceId=...] — recent races + their
+// player composition (humans + bots, slots, socket binding). Temporary debug:
+// public read, non-sensitive (display names + kart slots). Lets us verify two
+// humans actually landed in the SAME race (the "different races" report).
+app.get('/api/games/critter-kart/debug/races', async (req, res) => {
+    try {
+        const { default: CritterKartRace } = await import('./models/CritterKartRace.js');
+        const q = req.query.raceId ? { raceId: String(req.query.raceId) } : {};
+        const races = await CritterKartRace.find(q)
+            .sort({ matchedAt: -1 })
+            .limit(10)
+            .lean();
+        res.json({
+            ok: true,
+            count: races.length,
+            races: races.map(r => ({
+                raceId: r.raceId,
+                state: r.state,
+                lockedStartAtMs: r.lockedStartAtMs,
+                humans: r.players.filter(p => !p.isBot).length,
+                bots: r.players.filter(p => p.isBot).length,
+                players: r.players.map(p => ({
+                    kartId: p.kartId,
+                    telegramUserId: p.telegramUserId,
+                    racerId: p.racerId,
+                    isBot: p.isBot,
+                    socketId: p.socketId,
+                    finishPosition: p.finishPosition,
+                })),
+            })),
+        });
+    } catch (err) {
+        console.error('[GET /api/games/critter-kart/debug/races]', err.message);
+        res.status(500).json({ error: 'failed to fetch races', detail: err.message });
+    }
+});
+
 // ──────────────────────────────────────────────────────────────────────
 // SolShot leaderboard — K/D + Win% scorecard model (NOT points-based).
 // Ranks players by K/D ratio (rate-based per V3 Rule 2). Service in

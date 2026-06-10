@@ -103,7 +103,8 @@ const tgIdBySocketId = new Map();
 // remaining humans aren't waiting for a ghost.
 //
 // Stored shape: Map<telegramUserId, { timer, raceId, scheduledAt }>.
-const RECONNECT_GRACE_MS = 30_000;
+const RECONNECT_GRACE_MS = 60_000; // 60s (was 30s) — give a dropped client more
+// time to reconnect + auto-rejoin before the (currently erratic) AI takeover.
 const pendingReconnects = new Map();
 
 function startReconnectGrace({ telegramUserId, raceId }) {

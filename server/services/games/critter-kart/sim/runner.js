@@ -42,6 +42,14 @@ const PHYSICS_INTERVAL_MS = 1000 / PHYSICS_HZ;             // ~16.67ms
 const MAX_RACE_DURATION_MS = 5 * 60 * 1000;                // 5min hard timeout
 const DEFAULT_KART_WEIGHT = 1.0;
 
+// Debug: recent tick faults (throws + NaN physics blow-ups) surfaced via the
+// /debug/errors endpoint — Render logs aren't queryable from the client.
+export const RECENT_TICK_ERRORS = [];
+function recordFault(f) {
+    RECENT_TICK_ERRORS.unshift({ ...f, at: new Date().toISOString() });
+    if (RECENT_TICK_ERRORS.length > 30) RECENT_TICK_ERRORS.length = 30;
+}
+
 export class RaceRunner {
     /**
      * @param {object} opts
@@ -212,8 +220,30 @@ export class RaceRunner {
     _tickGuarded() {
         try {
             this._tick();
+            // Catch SILENT physics blow-ups (NaN/Inf position) — these don't
+            // throw but render as a kart shooting "off the map". Record the
+            // first one per race for /debug/errors.
+            if (!this._blewUp) {
+                for (const k of this.karts) {
+                    const s = k.state;
+                    if (!Number.isFinite(s.x) || !Number.isFinite(s.z) || !Number.isFinite(s.speed) || !Number.isFinite(s.heading)) {
+                        this._blewUp = true;
+                        recordFault({
+                            kind: 'nan', raceId: this.raceId, tick: this.tickNum, kartId: k.kartId,
+                            x: s.x, z: s.z, speed: s.speed, heading: s.heading,
+                            velHeading: s.velHeading, stunTimer: s.stunTimer, slowTimer: s.slowTimer,
+                        });
+                        break;
+                    }
+                }
+            }
         } catch (err) {
             this.stop();
+            recordFault({
+                kind: 'throw', raceId: this.raceId, tick: this.tickNum,
+                message: err?.message || String(err),
+                stack: (err?.stack || '').split('\n').slice(0, 8).join(' | '),
+            });
             console.warn('[critter-kart] tick threw — aborting race', {
                 raceId: this.raceId,
                 tick: this.tickNum,

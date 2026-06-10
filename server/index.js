@@ -1701,6 +1701,18 @@ app.get('/api/games/critter-kart/debug/races', async (req, res) => {
     }
 });
 
+// GET /api/games/critter-kart/debug/errors — recent tick faults (throws +
+// NaN physics blow-ups) captured by the RaceRunner. Surfaces the actual
+// server-side fault since Render logs aren't queryable here.
+app.get('/api/games/critter-kart/debug/errors', async (req, res) => {
+    try {
+        const { RECENT_TICK_ERRORS } = await import('./services/games/critter-kart/sim/runner.js');
+        res.json({ ok: true, count: RECENT_TICK_ERRORS.length, errors: RECENT_TICK_ERRORS });
+    } catch (err) {
+        res.status(500).json({ error: 'failed to read errors', detail: err.message });
+    }
+});
+
 // ──────────────────────────────────────────────────────────────────────
 // SolShot leaderboard — K/D + Win% scorecard model (NOT points-based).
 // Ranks players by K/D ratio (rate-based per V3 Rule 2). Service in

@@ -27,7 +27,7 @@ import { rankRacers } from './standings.js';
 import { resolveKartCollision } from './collision.js';
 import { botInput, makeBotFleet } from './ai.js';
 import { SUNNY_MEADOW } from './sunnyMeadow.js';
-import { computeItemBoxes, rollCategoryItem, ITEM, NO_ITEM } from './items.js';
+import { computeItemBoxes, rollCategoryItem, applyHit, ITEM, NO_ITEM } from './items.js';
 
 const PHYSICS_HZ = 60;
 const PHYSICS_DT = 1 / PHYSICS_HZ;
@@ -125,6 +125,12 @@ export class RaceRunner {
 
         // Seeded RNG for item rolls — reproducible per race (future replay/anti-cheat)
         this._rng = mulberry32(hashStr(raceId));
+
+        // Active item entities (server-authoritative). Unique id each so the
+        // client can track spawn/despawn for VFX.
+        this.projectiles = [];   // { id, kind:'acorn'|'bee', x,z,y,vy, heading, speed, owner, target, life }
+        this.traps = [];         // { id, x, z, owner, age }
+        this._nextEntId = 1;
 
         // Tick bookkeeping
         this.tickNum = 0;
@@ -304,8 +310,10 @@ export class RaceRunner {
             }
         }
 
-        // Phase 3.5 — item box pickups (server-authoritative)
+        // Phase 3.5 — items: pickups, bot use, projectile/trap sim + hits
         this._applyPickups();
+        this._botUseItems();
+        this._stepItems(dt);
 
         // Phase 4 — snapshot emit at 20Hz
         if (this.tickNum % SNAPSHOT_EVERY_N_TICKS === 0 && this.onSnapshot) {
@@ -335,10 +343,7 @@ export class RaceRunner {
     _applyPickups() {
         const now = this._elapsedMs();
         const N = this.karts.length;
-        // Current standings (best → worst) for position-weighted rolls
-        const ranking = rankRacers(this.karts.map(k => ({
-            id: k.kartId, lap: k.lap.lap, progress: k.lap.lastProgress,
-        })));
+        const ranking = this._currentRanking();
         for (const kart of this.karts) {
             if (kart.finished) continue;
             if (kart.heldItem !== NO_ITEM) continue;
@@ -351,9 +356,159 @@ export class RaceRunner {
                     kart.heldItem = rolled;
                     kart.heldCount = rolled === ITEM.ACORN ? 3 : 1; // Acorn = triple
                     this.boxRespawnAtMs[id] = now + TUNING.itemBoxRespawn * 1000;
+                    if (kart.isBot) kart.botUseAtMs = now + 400 + this._rng() * 600; // bot throws shortly after
                     break;
                 }
             }
+        }
+    }
+
+    /** Current standings best → worst (kartIds). */
+    _currentRanking() {
+        return rankRacers(this.karts.map(k => ({
+            id: k.kartId, lap: k.lap.lap, progress: k.lap.lastProgress,
+        })));
+    }
+
+    /** Bots fire their held item once their post-pickup use-timer elapses. */
+    _botUseItems() {
+        const now = this._elapsedMs();
+        let ranking = null;
+        for (const kart of this.karts) {
+            if (!kart.isBot || kart.finished || kart.heldItem === NO_ITEM) continue;
+            if (now < (kart.botUseAtMs ?? Infinity)) continue;
+            if (!ranking) ranking = this._currentRanking();
+            this._applyItemUse(kart, ranking, now);
+        }
+    }
+
+    /**
+     * Public: a human fires their held item (from the race:useItem socket
+     * event). Validates ownership; no-op if nothing held / finished / stopped.
+     */
+    useItem({ kartId }) {
+        if (this.stopped) return;
+        const kart = this.karts.find(k => k.kartId === kartId);
+        if (!kart || kart.finished || kart.heldItem === NO_ITEM) return;
+        this._applyItemUse(kart, this._currentRanking(), this._elapsedMs());
+    }
+
+    /** Port of the client useItem(): spawn projectile/trap or apply immediate effect. */
+    _applyItemUse(kart, ranking, now) {
+        const item = kart.heldItem;
+        const s = kart.state;
+        const fwdX = Math.sin(s.heading);
+        const fwdZ = Math.cos(s.heading);
+        const REST_Y = 2.6;
+
+        if (item === ITEM.TURBO) {
+            kart.state = { ...s, boostTimer: Math.max(s.boostTimer ?? 0, TUNING.turboBoost) };
+        } else if (item === ITEM.SHIELD) {
+            kart.state = { ...s, shield: true };
+        } else if (item === ITEM.ACORN || item === ITEM.BEE) {
+            const kind = item === ITEM.BEE ? 'bee' : 'acorn';
+            // Bee homes on the kart immediately ahead in the standings.
+            let target = null;
+            if (item === ITEM.BEE) {
+                const rank = ranking.indexOf(kart.kartId);
+                if (rank > 0) target = ranking[rank - 1];
+            }
+            const launchY = (s.y ?? 0) + REST_Y;
+            const airborne = (s.y ?? 0) > 0.5;
+            this.projectiles.push({
+                id: this._nextEntId++,
+                kind,
+                x: s.x + fwdX * 6, z: s.z + fwdZ * 6, y: launchY,
+                vy: airborne ? 6 : 0,
+                heading: s.heading,
+                speed: kind === 'bee' ? TUNING.beeSpeed : TUNING.acornSpeed,
+                owner: kart.kartId, target,
+                life: kind === 'bee' ? TUNING.beeLife : TUNING.projectileLife,
+            });
+        } else if (item === ITEM.MUD) {
+            this.traps.push({ id: this._nextEntId++, x: s.x - fwdX * 6, z: s.z - fwdZ * 6, owner: kart.kartId, age: 0 });
+        } else if (item === ITEM.STORM) {
+            const rank = ranking.indexOf(kart.kartId);
+            for (let r = 0; r < rank; r++) {
+                const k = this.karts.find(kk => kk.kartId === ranking[r]);
+                if (!k) continue;
+                if (k.state.shield) k.state = { ...k.state, shield: false, invulnTimer: TUNING.hitInvuln };
+                else k.state = { ...k.state, slowTimer: TUNING.stormSlow };
+            }
+        }
+
+        // Triple item: spend a shot; keep loaded if any remain (Acorn = 3) else clear.
+        kart.heldCount = Math.max(0, kart.heldCount - 1);
+        if (kart.heldCount > 0) {
+            if (kart.isBot) kart.botUseAtMs = now + 450; // rattle off the next shot
+        } else {
+            kart.heldItem = NO_ITEM;
+            if (kart.isBot) kart.botUseAtMs = Infinity;
+        }
+    }
+
+    /** Advance projectiles + traps and resolve hits. dt = PHYSICS_DT. */
+    _stepItems(dt) {
+        const kartById = (id) => this.karts.find(k => k.kartId === id);
+        const REST_Y = 2.6;
+        // Projectiles (acorn arc / bee homing) + hit detection
+        for (let p = this.projectiles.length - 1; p >= 0; p--) {
+            const pr = this.projectiles[p];
+            pr.life -= dt;
+            if (pr.kind === 'bee' && pr.target) {
+                const tg = kartById(pr.target);
+                if (tg) {
+                    const ts = tg.state;
+                    const dist = Math.hypot(ts.x - pr.x, ts.z - pr.z) || 1;
+                    const lead = Math.min(0.5, dist / Math.max(1, pr.speed));
+                    const aimX = ts.x + Math.sin(ts.velHeading) * ts.speed * lead;
+                    const aimZ = ts.z + Math.cos(ts.velHeading) * ts.speed * lead;
+                    pr.heading = angleLerp(pr.heading, Math.atan2(aimX - pr.x, aimZ - pr.z), 0.45);
+                    pr.speed = Math.max(TUNING.beeSpeed, ts.speed + 22);
+                }
+            }
+            pr.x += Math.sin(pr.heading) * pr.speed * dt;
+            pr.z += Math.cos(pr.heading) * pr.speed * dt;
+            if (pr.kind === 'acorn') {
+                pr.vy -= TUNING.gravity * dt;
+                pr.y += pr.vy * dt;
+                if (pr.y <= REST_Y) { pr.y = REST_Y; pr.vy = 0; }
+            } else {
+                pr.y += (REST_Y - pr.y) * Math.min(1, dt * 4);
+            }
+            let hit = false;
+            if (pr.kind === 'bee' && pr.target && pr.target !== pr.owner) {
+                const tg = kartById(pr.target);
+                if (tg && Math.hypot(tg.state.x - pr.x, tg.state.z - pr.z) < TUNING.hitRadius + 2.5) {
+                    tg.state = applyHit(tg.state, TUNING); hit = true;
+                }
+            }
+            for (let k = 0; !hit && k < this.karts.length; k++) {
+                const kk = this.karts[k];
+                if (kk.kartId === pr.owner) continue;
+                if (Math.hypot(kk.state.x - pr.x, kk.state.z - pr.z) < TUNING.hitRadius) {
+                    kk.state = applyHit(kk.state, TUNING); hit = true; break;
+                }
+            }
+            const grounded = pr.y <= REST_Y + 0.05;
+            const expired = pr.kind === 'bee'
+                ? pr.life <= 0
+                : (pr.life <= 0 || (grounded && !this.track.isOnTrack(pr.x, pr.z)));
+            if (hit || expired) this.projectiles.splice(p, 1);
+        }
+        // Traps (mud) — hit any kart that drives over (owner immune briefly)
+        for (let t = this.traps.length - 1; t >= 0; t--) {
+            const tr = this.traps[t];
+            tr.age += dt;
+            let hit = false;
+            for (let k = 0; k < this.karts.length; k++) {
+                const kk = this.karts[k];
+                if (kk.kartId === tr.owner && tr.age < 0.7) continue;
+                if (Math.hypot(kk.state.x - tr.x, kk.state.z - tr.z) < TUNING.hitRadius) {
+                    kk.state = applyHit(kk.state, TUNING); hit = true; break;
+                }
+            }
+            if (hit || tr.age > 25) this.traps.splice(t, 1);
         }
     }
 
@@ -396,6 +551,10 @@ export class RaceRunner {
                 progress: k.lap.lastProgress,
                 finished: k.finished,
             })),
+            // Active item entities for client VFX (positions only — kinds/owners
+            // are stable per id).
+            projectiles: this.projectiles.map(p => ({ id: p.id, kind: p.kind, x: p.x, y: p.y, z: p.z })),
+            traps: this.traps.map(t => ({ id: t.id, x: t.x, z: t.z })),
         };
     }
 
@@ -490,6 +649,14 @@ function hashStr(str) {
         h = Math.imul(h, 16777619);
     }
     return h >>> 0;
+}
+
+// Shortest-arc angular interpolation (mirrors the client kartPhysics angleLerp).
+function angleLerp(a, b, t) {
+    let d = b - a;
+    while (d > Math.PI) d -= 2 * Math.PI;
+    while (d < -Math.PI) d += 2 * Math.PI;
+    return a + d * t;
 }
 
 // Re-exports for the socket layer

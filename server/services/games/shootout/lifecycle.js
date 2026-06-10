@@ -28,14 +28,6 @@
  * a separate function added later.
  */
 
-import crypto from 'crypto';
-
-// 8-byte base64url id — short, URL/log-safe, collision risk negligible
-// at our concurrency.
-function newMatchId() {
-    return 'match-' + crypto.randomBytes(6).toString('base64url');
-}
-
 /**
  * Build a match descriptor from a lobby. The runner (E.2) stores it; the
  * socket layer (E.3) emits match:start using its fields.
@@ -45,6 +37,11 @@ function newMatchId() {
  * team pick during Ready Up (Phase C, 2026-06-08). We propagate those
  * directly — no alternating-by-index rewrite. Solo lobbies fall back
  * to whatever lobbyService set (host forced to red).
+ *
+ * matchId: we reuse lobby.matchId (set by lobbyService.startMatch and
+ * persisted to MongoDB) so that the server's rejoin-recovery check
+ * (_activeMatches.has(res.lobby.matchId)) resolves correctly when a
+ * player reloads to switch maps and re-emits lobby:join.
  */
 import { resolveMapVote } from './lobbyService.js';
 
@@ -65,7 +62,7 @@ export async function createMatchFromLobby({ lobby, botDifficulty } = {}) {
     return {
         ok: true,
         match: {
-            matchId:   newMatchId(),
+            matchId:   lobby.matchId,
             lobbyId:   lobby.lobbyId,
             mode:      lobby.mode,
             mapId,

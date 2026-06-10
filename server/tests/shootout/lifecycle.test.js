@@ -25,6 +25,9 @@ import { createMatchFromLobby } from '../../services/games/shootout/lifecycle.js
 function makeLobby(overrides = {}) {
     const base = {
         lobbyId: 'lobby-L1',
+        // matchId is set by lobbyService.startMatch before lifecycle is called;
+        // lifecycle now propagates this id rather than generating a new one.
+        matchId: 'match-test01',
         mode: '1v1',
         cap: 2,
         members: [
@@ -52,12 +55,17 @@ test('createMatchFromLobby — returns { ok, match } shape', async () => {
     assert.ok(Number.isFinite(res.match.startedAt));
 });
 
-test('createMatchFromLobby — matchId has match- prefix and is fresh per call', async () => {
-    const a = await createMatchFromLobby({ lobby: makeLobby() });
-    const b = await createMatchFromLobby({ lobby: makeLobby() });
-    assert.match(a.match.matchId, /^match-/);
-    assert.match(b.match.matchId, /^match-/);
-    assert.notEqual(a.match.matchId, b.match.matchId, 'each call mints a new id');
+test('createMatchFromLobby — matchId is propagated from lobby.matchId (not re-generated)', async () => {
+    // lifecycle no longer generates its own matchId — it reuses lobby.matchId
+    // so the rejoin-recovery check (_activeMatches.has(res.lobby.matchId))
+    // resolves correctly when a player reloads to switch maps.
+    const lobbyA = makeLobby({ matchId: 'match-aaaa' });
+    const lobbyB = makeLobby({ matchId: 'match-bbbb' });
+    const a = await createMatchFromLobby({ lobby: lobbyA });
+    const b = await createMatchFromLobby({ lobby: lobbyB });
+    assert.equal(a.match.matchId, 'match-aaaa', 'matchId echoes lobby.matchId');
+    assert.equal(b.match.matchId, 'match-bbbb', 'matchId echoes lobby.matchId');
+    assert.notEqual(a.match.matchId, b.match.matchId, 'different lobbies yield different ids');
 });
 
 test('createMatchFromLobby — slot 0..n-1 by lobby join order (1v1)', async () => {

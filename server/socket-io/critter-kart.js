@@ -539,6 +539,25 @@ export function registerCritterKartHandlers(client, io) {
                 format: race.format,
             });
 
+            // REPLAY the locked race-start anchor. The runCountdownAndRace
+            // broadcast of race:countdownLocked is fire-and-forget to
+            // whoever was in the room at the time — a socket that joins
+            // afterwards (or reconnects mid-race) misses it and falls
+            // back to the stale provisional anchor, running its OWN
+            // private countdown out of sync with the racing peers.
+            // If the lock has been computed, emit it directly to this
+            // socket so its anchor matches everyone else's.
+            if (typeof race.lockedStartAtMs === 'number' && race.lockedStartAtMs > 0) {
+                client.emit('race:countdownLocked', {
+                    raceId: race.raceId,
+                    startAtMs: race.lockedStartAtMs,
+                });
+                logger.info(
+                    { socketId: client.id, raceId, startAtMs: race.lockedStartAtMs },
+                    '[VERBOSE joinRace] replayed lockedStartAtMs to late joiner',
+                );
+            }
+
             ackOk(ack, { kartId: player.kartId });
         } catch (err) {
             logger.error('[critterkart:joinRace]', { error: err.message });
@@ -1157,6 +1176,18 @@ async function runCountdownAndRace(io, raceId) {
         // Client reads this via NetClient.getRaceStartAtMs() which
         // overrides the stale mp.startAtMs from race:start.
         const lockedStartAtMs = Date.now() + 3000;
+        // Persist the locked anchor on the race doc so the joinRace
+        // handler can REPLAY it to late-joining or reconnecting sockets.
+        // Without persistence, anyone who joins the race room AFTER this
+        // broadcast misses the lock entirely and falls back to the
+        // provisional race:start anchor → private out-of-sync countdown.
+        // JJ's "rusty started way before shelly" 2026-06-10.
+        await CritterKartRace.updateOne(
+            { raceId },
+            { $set: { lockedStartAtMs } },
+        ).catch(err => {
+            logger.warn({ raceId, error: err.message }, '[critter-kart] failed to persist lockedStartAtMs (non-fatal)');
+        });
         broadcastToRace(io, raceId, 'race:countdownLocked', {
             raceId,
             startAtMs: lockedStartAtMs,

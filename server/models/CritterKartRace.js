@@ -86,6 +86,16 @@ const critterKartRaceSchema = new mongoose.Schema({
     racingStartedAt:  { type: Date, default: null },
     endedAt:          { type: Date, default: null },
     settledAt:        { type: Date, default: null },
+
+    // Canonical race-start wall-clock locked by runCountdownAndRace once
+    // all humans signaled critterkart:ready (or the 15s fallback fired).
+    // Persisted so the joinRace handler can REPLAY race:countdownLocked
+    // to any socket that joins (or reconnects) AFTER the broadcast — the
+    // broadcast itself is fire-and-forget to whoever was in the room at
+    // the time. Without this, late joiners fall back to the provisional
+    // race:start anchor and run a private out-of-sync countdown. JJ's
+    // "rusty started way before shelly" report 2026-06-10.
+    lockedStartAtMs:  { type: Number, default: null },
 }, {
     timestamps: { createdAt: false, updatedAt: 'updatedAt' },
 });

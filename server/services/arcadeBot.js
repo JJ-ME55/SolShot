@@ -60,6 +60,10 @@ import {
 import {
     mintSession as mintShootoutSession,
 } from './games/shootout-standalone/standaloneLeaderboard.js';
+import {
+    getShootoutLeaderboard,
+    getShootoutStanding,
+} from './games/shootout/stats.js';
 import { registerShootoutCustomGameCommands } from './games/shootout/customGame/index.js';
 
 const ARCADE_WEBHOOK_PATH = '/api/arcade-webhook';
@@ -267,6 +271,16 @@ const LEADERBOARDS = {
     getLeaderboard: getCritterKartLeaderboard,
     getMyStanding: getCritterKartStanding,
     launchCmd: '/critterkart',
+  },
+  shootout: {
+    // Career MP stats (ShootoutStats, written by the match runner).
+    // Sorted by rankScore (kills - 0.5·deaths + 100·wins, Fish's
+    // 2026-06-08 formula); bestScore column shows WINS.
+    emoji: '🔫',
+    title: 'SHOOTOUT · WINS',
+    getLeaderboard: getShootoutLeaderboard,
+    getMyStanding: getShootoutStanding,
+    launchCmd: '/shootout',
   },
 };
 

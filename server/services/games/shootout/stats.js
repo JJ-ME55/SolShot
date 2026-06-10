@@ -89,4 +89,40 @@ export async function persistMatchStats({ matchWinner, players }) {
     return results;
 }
 
-export default { persistMatchStats };
+// ─── Read-side adapters for the arcade bot's LEADERBOARDS registry ──
+//
+// Contract (see arcadeBot.js::sendLeaderboard): getLeaderboard returns
+// rows with { displayName, bestScore }; getStanding returns
+// { rank, displayName, bestScore, totalSubmissions } or null.
+// We sort by rankScore (wins-dominated — see formula above) and show
+// WINS as the number, so the board reads naturally while the ordering
+// can keep evolving server-side.
+
+export async function getShootoutLeaderboard({ limit = 10 } = {}) {
+    const docs = await ShootoutStats.find({})
+        .sort({ rankScore: -1, totalKills: -1, lastPlayedAt: -1 })
+        .limit(Math.max(1, Math.min(100, limit)))
+        .lean();
+    return docs.map((d) => ({
+        telegramUserId: d.telegramUserId,
+        displayName:    d.displayName,
+        bestScore:      d.wins | 0,
+    }));
+}
+
+export async function getShootoutStanding({ telegramUserId } = {}) {
+    if (!Number.isFinite(telegramUserId)) return null;
+    const doc = await ShootoutStats.findOne({ telegramUserId }).lean();
+    if (!doc) return null;
+    const ahead = await ShootoutStats.countDocuments({
+        rankScore: { $gt: doc.rankScore || 0 },
+    });
+    return {
+        rank:             ahead + 1,
+        displayName:      doc.displayName,
+        bestScore:        doc.wins | 0,
+        totalSubmissions: doc.totalMatches | 0,
+    };
+}
+
+export default { persistMatchStats, getShootoutLeaderboard, getShootoutStanding };

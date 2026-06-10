@@ -145,6 +145,14 @@ const ALWAYS_ALLOWED_ORIGINS = [
     // into the hub at thearcade.gg.
     'https://the-arcade-shootout.vercel.app',
     'https://the-arcade-critter-kart.vercel.app',
+    // Shootout standalone — custom domain since 2026-06-10 (Fish bought
+    // shootout.pro). Needed for the game's socket.io MP connection +
+    // leaderboard POSTs. The old Vercel URL is hard-coded too (it was
+    // previously only covered by the CORS_ORIGINS env var on Render) so
+    // an env tweak can't silently kill multiplayer from either domain.
+    'https://shootout.pro',
+    'https://www.shootout.pro',
+    'https://fps-staking-game.vercel.app',
 ];
 const CORS_ORIGINS = Array.from(new Set([
     ...ALWAYS_ALLOWED_ORIGINS,

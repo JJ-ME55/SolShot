@@ -207,17 +207,17 @@ const GAMES = [
     // with the TG identity — the standalone client + the existing
     // shootout:lobby:* socket events do the rest).
     //
-    // URL targets the Vercel standalone for now. When the Arcade hub
-    // wraps Shootout at /play/shootout/launch (mirroring Basketball /
-    // Keepie-Uppies pattern), flip this URL to thearcade.gg the same
-    // way the others were promoted.
+    // Custom domain shootout.pro since 2026-06-10 (was the Vercel
+    // standalone fps-staking-game.vercel.app, which stays live as a
+    // fallback for cached deep-links). The sg_<code> /start deep-link
+    // join builds on this same url, so lobby cards follow automatically.
     slug: 'shootout',
     name: 'SHOOTOUT',
     // Squirt-gun glyph because SolShot already owns the bullseye/dart
     // (target practice game) — Shootout needs its own visual mark.
     emoji: '🔫',
     tagline: 'Browser FPS. Red vs Blue · winner takes the pot.',
-    url: 'https://fps-staking-game.vercel.app/?via=arcade',
+    url: 'https://shootout.pro/?via=arcade',
     supportsLoginUrl: false,
     sessionMinter: (ctx) => mintShootoutSession({
         telegramUserId: ctx.from?.id,

@@ -27,6 +27,7 @@ import { rankRacers } from './standings.js';
 import { resolveKartCollision } from './collision.js';
 import { botInput, makeBotFleet } from './ai.js';
 import { SUNNY_MEADOW } from './sunnyMeadow.js';
+import { computeItemBoxes, rollCategoryItem, ITEM, NO_ITEM } from './items.js';
 
 const PHYSICS_HZ = 60;
 const PHYSICS_DT = 1 / PHYSICS_HZ;
@@ -99,6 +100,11 @@ export class RaceRunner {
                 // Smoothed steer (post-ramp) — carried between ticks
                 smoothedSteer: 0,
 
+                // Item state (server-authoritative). heldItem = ITEM enum / NO_ITEM;
+                // heldCount = shots remaining (Acorn = triple, others = 1).
+                heldItem: NO_ITEM,
+                heldCount: 0,
+
                 // Lap state + per-lap times
                 lap: initLap(startProgress),
                 lapTimes: [],
@@ -110,6 +116,15 @@ export class RaceRunner {
                 finishTimeMs: null,
             };
         });
+
+        // Item boxes — deterministic layout shared with the client (same
+        // ITEM_BOX_ROWS/LAT constants). Each box is "active" (pickable) when
+        // now >= boxRespawnAtMs[id]; picking it sets a respawn timer.
+        this.boxes = computeItemBoxes(this.track);
+        this.boxRespawnAtMs = new Array(this.boxes.length).fill(0);
+
+        // Seeded RNG for item rolls — reproducible per race (future replay/anti-cheat)
+        this._rng = mulberry32(hashStr(raceId));
 
         // Tick bookkeeping
         this.tickNum = 0;
@@ -289,6 +304,9 @@ export class RaceRunner {
             }
         }
 
+        // Phase 3.5 — item box pickups (server-authoritative)
+        this._applyPickups();
+
         // Phase 4 — snapshot emit at 20Hz
         if (this.tickNum % SNAPSHOT_EVERY_N_TICKS === 0 && this.onSnapshot) {
             try {
@@ -306,16 +324,59 @@ export class RaceRunner {
         }
     }
 
+    // ── Item box pickups ──────────────────────────────────────────────
+
+    /**
+     * Server-authoritative pickup: any non-finished kart with no held item
+     * that's within itemPickupRadius of an ACTIVE box rolls an item (weighted
+     * by current standings position) and arms the box's respawn timer.
+     * Mirrors the client pickup loop in GameCanvas exactly.
+     */
+    _applyPickups() {
+        const now = this._elapsedMs();
+        const N = this.karts.length;
+        // Current standings (best → worst) for position-weighted rolls
+        const ranking = rankRacers(this.karts.map(k => ({
+            id: k.kartId, lap: k.lap.lap, progress: k.lap.lastProgress,
+        })));
+        for (const kart of this.karts) {
+            if (kart.finished) continue;
+            if (kart.heldItem !== NO_ITEM) continue;
+            for (let id = 0; id < this.boxes.length; id++) {
+                if (now < this.boxRespawnAtMs[id]) continue;
+                const box = this.boxes[id];
+                if (Math.hypot(kart.state.x - box.x, kart.state.z - box.z) < TUNING.itemPickupRadius) {
+                    const pos = ranking.indexOf(kart.kartId) + 1;
+                    const rolled = rollCategoryItem(box.category, pos, N, this._rng());
+                    kart.heldItem = rolled;
+                    kart.heldCount = rolled === ITEM.ACORN ? 3 : 1; // Acorn = triple
+                    this.boxRespawnAtMs[id] = now + TUNING.itemBoxRespawn * 1000;
+                    break;
+                }
+            }
+        }
+    }
+
     // ── Snapshot generation ───────────────────────────────────────────
 
     _buildSnapshot() {
+        const now = this._elapsedMs();
+        const inactiveBoxes = [];
+        for (let id = 0; id < this.boxRespawnAtMs.length; id++) {
+            if (now < this.boxRespawnAtMs[id]) inactiveBoxes.push(id);
+        }
         return {
             raceId: this.raceId,
             tick: this.tickNum,
-            tMs: this._elapsedMs(),
+            tMs: now,
+            // Boxes currently respawning — client hides these + renders the rest
+            // from the shared layout (so no per-box position needs sending).
+            inactiveBoxes,
             karts: this.karts.map(k => ({
                 kartId: k.kartId,
                 ackSeq: k.inputSeq,
+                heldItem: k.heldItem,
+                heldCount: k.heldCount,
                 // Position + facing — what the client renders
                 x: k.state.x,
                 z: k.state.z,
@@ -410,6 +471,25 @@ function clamp01(v) {
 function clampNeg1Pos1(v) {
     if (typeof v !== 'number' || !Number.isFinite(v)) return 0;
     return v < -1 ? -1 : v > 1 ? 1 : v;
+}
+
+// Seeded RNG (mulberry32) + string hash — deterministic item rolls per race.
+function mulberry32(seed) {
+    let a = seed >>> 0;
+    return function () {
+        a |= 0; a = (a + 0x6D2B79F5) | 0;
+        let t = Math.imul(a ^ (a >>> 15), 1 | a);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+function hashStr(str) {
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < String(str).length; i++) {
+        h ^= String(str).charCodeAt(i);
+        h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
 }
 
 // Re-exports for the socket layer

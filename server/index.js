@@ -22,6 +22,7 @@ import { requireAdminKey } from './middleware/guards.js';
 import { telegramSocketMiddleware } from './middleware/telegram.js';
 import { initBot, setupBotWebhook, stopBot } from './services/bot.js';
 import { initArcadeBot, setupArcadeBotWebhook, stopArcadeBot } from './services/arcadeBot.js';
+import { backfillShootoutNames } from './services/games/shootout/nameBackfill.js';
 import ShootoutStats from './models/ShootoutStats.js';
 import { restoreActiveTimers } from './services/groupchat/scheduler.js';
 import { startLobbyWatchdog } from './services/groupchat/lobbyWatchdog.js';
@@ -2207,6 +2208,12 @@ if (MONGODB_URI) {
             server.listen(PORT, '0.0.0.0', function () {
                 console.log(`SolShot server listening on 0.0.0.0:${PORT}`);
             });
+            // One-shot repair of 'tg-<id>' leaderboard names (see
+            // nameBackfill.js). Fire-and-forget AFTER listen — a
+            // Telegram/Mongo hiccup here must never block boot. Self-
+            // retires: once rows are repaired it no-ops every boot.
+            backfillShootoutNames({ telegram: initArcadeBot()?.telegram })
+                .catch((err) => console.warn('[shootout-backfill] failed:', err.message));
             // Keep-alive: ping ourselves every 12 minutes so Render's
             // free tier doesn't hibernate the dyno after 15min idle.
             // Cold-start can take 5–10s on wake, which during a live

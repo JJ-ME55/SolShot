@@ -341,6 +341,7 @@ export function initCritterKartSocket(io) {
                         roomId: race.raceId,
                         startAtMs: Date.now() + 4000,
                         members: memberWire,
+                        selfKartId: player.kartId,   // AUTHORITATIVE: this socket's kart
                     });
                 }
                 logger.info('[critter-kart] match-found broadcast', {
@@ -947,11 +948,21 @@ export function registerCritterKartHandlers(client, io) {
                         racerId: p.racerId || 'rusty',
                         isBot: p.isBot,
                     }));
-                    io.to(lobbyRoomName(lobby.lobbyId)).emit('race:start', {
-                        roomId: existing.raceId,
-                        startAtMs: Date.now(),
-                        members: memberWire,
-                    });
+                    // Per-socket (not broadcast) so each human gets an
+                    // AUTHORITATIVE selfKartId — fixes both clients defaulting
+                    // to slot 0 on the re-emit path.
+                    const reAt = Date.now();
+                    for (const p of existing.players) {
+                        if (p.isBot || p.telegramUserId == null) continue;
+                        const pc = findClientByTgId(p.telegramUserId);
+                        if (!pc) continue;
+                        pc.emit('race:start', {
+                            roomId: existing.raceId,
+                            startAtMs: reAt,
+                            members: memberWire,
+                            selfKartId: p.kartId,
+                        });
+                    }
                     return ackOk(ack, { raceId: existing.raceId, retry: true });
                 }
                 // Lobby says starting but no race doc found — fall through
@@ -1008,6 +1019,7 @@ export function registerCritterKartHandlers(client, io) {
                     roomId: race.raceId,
                     startAtMs,
                     members: memberWire,
+                    selfKartId: player.kartId,   // AUTHORITATIVE: this socket's kart
                 });
                 c.emit('match:found', {
                     raceId: race.raceId,

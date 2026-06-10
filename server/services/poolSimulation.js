@@ -51,7 +51,7 @@ export const DEFAULT_TABLE_CONFIG = Object.freeze({
     Object.freeze({ x: 750, y: 769 }),   // bottom-side
     Object.freeze({ x: 1438, y: 763 })   // BR
   ]),
-  pocketRadius: 42,
+  pocketRadius: 34,   // synced to client GameConfig 2026-06-10 (was 42 — "pockets too large")
   woodSeamInset: 48,
   jawChamfer: 30,
   pocketRim: 6

@@ -651,6 +651,21 @@ export function registerCritterKartHandlers(client, io) {
         if (!runner) return;
         runner.applyInput({ kartId, seq, steer, throttle, brake, drift });
     });
+
+    // race:useItem — a human fires their held item. Server resolves the use
+    // (projectile/trap spawn or immediate effect) + any hits authoritatively;
+    // effects propagate to all clients via the snapshot. Low-frequency, so it
+    // stays under the normal rate limit (not in RL_EXEMPT_EVENTS).
+    // NOTE: trusts payload.kartId (same as race:input). The runner no-ops if
+    // the kart holds nothing. Binding socket→kartId is a wager-hardening item.
+    client.on('race:useItem', (payload) => {
+        if (!payload || typeof payload !== 'object') return;
+        const { raceId, kartId } = payload;
+        if (!raceId || !kartId) return;
+        const runner = getRunner(raceId);
+        if (!runner) return;
+        runner.useItem({ kartId });
+    });
     // Once-per-second heartbeat: how many race:input events did this
     // socket emit in the last second? If ZERO during an active race
     // ↘ client side rAF isn't running or socket isn't sending → WS

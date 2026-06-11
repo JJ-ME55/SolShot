@@ -322,6 +322,13 @@ export class RaceRunner {
                 rawInput = botInput(kart.state, this.track, TUNING, kart.botParams);
             } else {
                 rawInput = kart.input;
+                // INPUT TIMEOUT: never latch a stale input. If a client stops
+                // sending (lag spike / freeze / tab hidden), its kart coasts to
+                // a stop instead of racing away at full throttle — the runaway
+                // behind JJ's "camera in the sky, 2 laps in a blink" report.
+                if (kart.lastInputAt > 0 && Date.now() - kart.lastInputAt > 500) {
+                    rawInput = { throttle: 0, steer: 0, brake: 0, drift: false };
+                }
             }
 
             // Smooth steer (digital inputs ramp instead of snap)

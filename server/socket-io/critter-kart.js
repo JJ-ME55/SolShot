@@ -371,7 +371,9 @@ export function initCritterKartSocket(io) {
                         roomId: race.raceId,
                         startAtMs: Date.now() + 4000,
                         members: memberWire,
-                        selfKartId: player.kartId,   // AUTHORITATIVE: this socket's kart
+                        // `player` is the pre-race human entry (no kartId) — resolve
+                        // the RACE doc's entry (same fix as the lobby path).
+                        selfKartId: race.players.find(p => p.telegramUserId === player.telegramUserId)?.kartId,
                     });
                 }
                 logger.info('[critter-kart] match-found broadcast', {
@@ -1056,6 +1058,12 @@ export function registerCritterKartHandlers(client, io) {
             for (const player of humans) {
                 const c = findClientByTgId(player.telegramUserId);
                 if (!c) continue;
+                // `humans` is the LOBBY-member list — it has no kartId (karts
+                // are assigned at race creation). Resolve this player's actual
+                // race entry; emitting player.kartId here was undefined, which
+                // silently killed the authoritative selfKartId on the lobby
+                // path (caught by the headless harness, 2026-06-11).
+                const rp = race.players.find(p => p.telegramUserId === player.telegramUserId);
                 // Emit BOTH event-name shapes so Fish's lobby UI
                 // (race:start listener in screens.tsx) and the new
                 // MultiplayerLayer (critterkart:matched listener) both
@@ -1074,7 +1082,7 @@ export function registerCritterKartHandlers(client, io) {
                     roomId: race.raceId,
                     startAtMs,
                     members: memberWire,
-                    selfKartId: player.kartId,   // AUTHORITATIVE: this socket's kart
+                    selfKartId: rp?.kartId,   // AUTHORITATIVE: this socket's kart (from the RACE doc)
                 });
                 c.emit('match:found', {
                     raceId: race.raceId,

@@ -31,7 +31,7 @@ import { computeItemBoxes, rollCategoryItem, applyHit, ITEM, NO_ITEM } from './i
 import { createFeatureContext, resolveBarriers, applyZones } from './trackFeatures.js';
 import { KART_RADIUS } from './collision.js';
 import { buildTrainSim, applyTrainFlatten } from './train.js';
-import { createRailState, stepRailBots, seedRailKart } from './railBots.js';
+import { createRailState, stepRailBots, seedRailKart, releaseRailKart } from './railBots.js';
 
 const PHYSICS_HZ = 60;
 const PHYSICS_DT = 1 / PHYSICS_HZ;
@@ -235,8 +235,23 @@ export class RaceRunner {
         const kart = this.karts[idx];
         if (kart.isBot) return;
         kart.isBot = true;
+        kart.takenOver = true; // reversible — a returning human reclaims it
         kart.botParams = makeBotFleet(1)[0];
         seedRailKart(this.rail, this.track, this.karts, idx);
+    }
+
+    /** Reverse an AI takeover: the human is back (joinRace after grace expiry).
+     *  Control resumes from wherever the rail bot drove the kart to. */
+    convertKartToHuman(kartId) {
+        const idx = this.karts.findIndex(k => k.kartId === kartId);
+        if (idx < 0) return false;
+        const kart = this.karts[idx];
+        if (!kart.isBot || !kart.takenOver) return false;
+        kart.isBot = false;
+        kart.takenOver = false;
+        kart.input = { throttle: 0, steer: 0, brake: 0, drift: false };
+        releaseRailKart(this.rail, idx);
+        return true;
     }
 
     // ── Per-tick orchestration ────────────────────────────────────────

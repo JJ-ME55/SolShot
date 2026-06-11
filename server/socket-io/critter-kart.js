@@ -513,6 +513,17 @@ export function registerCritterKartHandlers(client, io) {
             // it's saved.
             const wasReconnect = cancelReconnectGrace({ telegramUserId });
 
+            // If the grace already EXPIRED and the AI took the kart over,
+            // give it back — the human resumes control from wherever the
+            // rail bot drove it to (handover Deferred #3).
+            const liveRunner = getRunner(raceId);
+            if (liveRunner && liveRunner.convertKartToHuman(player.kartId)) {
+                logger.info(
+                    { raceId, telegramUserId, kartId: player.kartId },
+                    '[critter-kart] AI takeover reversed — control returned to player',
+                );
+            }
+
             // Update the player's current socketId in the race doc
             await CritterKartRace.updateOne(
                 { raceId, 'players.telegramUserId': telegramUserId },

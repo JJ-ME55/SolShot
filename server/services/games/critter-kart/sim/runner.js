@@ -640,6 +640,13 @@ export class RaceRunner {
     _buildSnapshot() {
         const now = this._elapsedMs();
         const raceSec = this._raceElapsedSec();
+        // tMs is stamped on the ANCHORED race clock (lockedStartAtMs — the same
+        // zero every client's `elapsed` uses), NOT on runner-start. Clients
+        // compare snapshot time against local race time for latency-compensated
+        // reconciliation; a runner-start base made that comparison ~100-300ms
+        // off → phantom "drift" → spurious corrections (Fish's 2026-06-11
+        // "pulling me all over the place" run). Relative deltas are unchanged,
+        // so the interpolation buffer is unaffected.
         const inactiveBoxes = [];
         for (let id = 0; id < this.boxRespawnAtMs.length; id++) {
             if (now < this.boxRespawnAtMs[id]) inactiveBoxes.push(id);
@@ -647,7 +654,7 @@ export class RaceRunner {
         return {
             raceId: this.raceId,
             tick: this.tickNum,
-            tMs: now,
+            tMs: raceSec * 1000,
             // Boxes currently respawning — client hides these + renders the rest
             // from the shared layout (so no per-box position needs sending).
             inactiveBoxes,

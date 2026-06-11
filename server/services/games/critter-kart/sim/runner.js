@@ -28,6 +28,8 @@ import { resolveKartCollision } from './collision.js';
 import { botInput, makeBotFleet } from './ai.js';
 import { SUNNY_MEADOW } from './sunnyMeadow.js';
 import { computeItemBoxes, rollCategoryItem, applyHit, ITEM, NO_ITEM } from './items.js';
+import { createFeatureContext, resolveBarriers, applyZones } from './trackFeatures.js';
+import { KART_RADIUS } from './collision.js';
 
 const PHYSICS_HZ = 60;
 const PHYSICS_DT = 1 / PHYSICS_HZ;
@@ -124,6 +126,11 @@ export class RaceRunner {
                 finishTimeMs: null,
             };
         });
+
+        // Track furniture (Phase 1 sim-parity): barriers/walls, ramp+water
+        // respawn, bridges, upper deck, boost pads — the missing features whose
+        // absence made server karts diverge from the clients' local karts.
+        this.features = createFeatureContext(this.track, players.length);
 
         // Item boxes — deterministic layout shared with the client (same
         // ITEM_BOX_ROWS/LAT constants). Each box is "active" (pickable) when
@@ -314,6 +321,17 @@ export class RaceRunner {
                     b.state = { ...b.state, ...result.b };
                 }
             }
+        }
+
+        // Phase 2.5 — track furniture, same order as the client substep:
+        // barriers/walls, then boost pads + bridges + upper deck + jump/water.
+        const elapsedSec = this._elapsedMs() / 1000;
+        for (let i = 0; i < this.karts.length; i++) {
+            const kart = this.karts[i];
+            if (kart.finished) continue;
+            const wall = resolveBarriers(kart.state, this.features.barriers, KART_RADIUS, TUNING);
+            if (wall) kart.state = { ...kart.state, ...wall };
+            kart.state = applyZones(kart.state, i, this.track, this.features, TUNING, elapsedSec);
         }
 
         // Phase 3 — lap progress + finish detection

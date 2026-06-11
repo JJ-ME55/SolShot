@@ -192,6 +192,31 @@ function getRunner(raceId) {
     return runnersByRaceId.get(raceId) || null;
 }
 
+/** Live runner state for /debug/runner — lets us inspect the server's
+ *  authoritative kart positions in real time during a test race. */
+export function debugRunnerStates() {
+    const out = [];
+    for (const [raceId, r] of runnersByRaceId) {
+        out.push({
+            raceId,
+            tick: r.tickNum,
+            anchored: r.anchorMs != null,
+            karts: r.karts.map((k, i) => ({
+                kartId: k.kartId,
+                isBot: k.isBot,
+                railActive: !!r.rail?.active?.[i],
+                x: Math.round(k.state.x * 10) / 10,
+                z: Math.round(k.state.z * 10) / 10,
+                speed: Math.round(k.state.speed * 10) / 10,
+                lap: k.lap?.lap,
+                heldItem: k.heldItem,
+                finished: k.finished,
+            })),
+        });
+    }
+    return out;
+}
+
 function registerRunner(raceId, runner) {
     runnersByRaceId.set(raceId, runner);
 }

@@ -28,7 +28,7 @@ import { resolveKartCollision } from './collision.js';
 import { botInput, makeBotFleet } from './ai.js';
 import { SUNNY_MEADOW } from './sunnyMeadow.js';
 import { computeItemBoxes, rollCategoryItem, applyHit, ITEM, NO_ITEM } from './items.js';
-import { createFeatureContext, resolveBarriers, applyZones } from './trackFeatures.js';
+import { createFeatureContext, resolveBarriers, applyZones, clientStartGrid } from './trackFeatures.js';
 import { KART_RADIUS } from './collision.js';
 import { buildTrainSim, applyTrainFlatten } from './train.js';
 import { createRailState, stepRailBots, seedRailKart, releaseRailKart } from './railBots.js';
@@ -78,8 +78,9 @@ export class RaceRunner {
         let botIdx = 0;
 
         // Spawn karts on the staggered start grid (back from start line in
-        // 3 rows of 2 — see trackPath.startGrid)
-        const grid = this.track.startGrid(players.length);
+        // CLIENT-MATCHING layout (two rows of three) — must equal what every
+        // client renders or karts diverge from frame one (see trackFeatures).
+        const grid = clientStartGrid(this.track, players.length);
 
         this.karts = players.map((p, i) => {
             const startProgress = this.track.nearest(grid[i].x, grid[i].z).progress;

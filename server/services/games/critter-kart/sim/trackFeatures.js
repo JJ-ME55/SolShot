@@ -322,6 +322,35 @@ export function applyZones(state, slot, track, ctx, tuning, elapsedSec) {
     return s;
 }
 
+/**
+ * CLIENT-MATCHING start grid — byte port of GameCanvas's grid (two staggered
+ * rows of three; lat −7/0/+7 across the road, fwd 6/0 from the line). The
+ * server previously used its own 3-rows-of-2 layout, so every kart began
+ * several units from where each client rendered it — a seed divergence that
+ * compounded into "balloons don't pop / we're not racing each other".
+ */
+export function clientStartGrid(track, n) {
+    const pose = track.startPose();
+    const fx = Math.sin(pose.heading);
+    const fz = Math.cos(pose.heading);
+    const ppx = Math.cos(pose.heading);
+    const ppz = -Math.sin(pose.heading);
+    const layout = [
+        { lat: -7, fwd: 6 }, { lat: 0, fwd: 6 }, { lat: 7, fwd: 6 },
+        { lat: -7, fwd: 0 }, { lat: 0, fwd: 0 }, { lat: 7, fwd: 0 },
+    ];
+    const grid = [];
+    for (let i = 0; i < n; i++) {
+        const { lat, fwd } = layout[i % layout.length];
+        grid.push({
+            x: pose.x + fx * fwd + ppx * lat,
+            z: pose.z + fz * fwd + ppz * lat,
+            heading: pose.heading,
+        });
+    }
+    return grid;
+}
+
 /** Build the per-race feature context the runner holds. */
 export function createFeatureContext(track, numKarts) {
     return {

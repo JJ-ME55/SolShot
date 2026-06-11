@@ -1701,6 +1701,18 @@ app.get('/api/games/critter-kart/debug/races', async (req, res) => {
     }
 });
 
+// GET /api/games/critter-kart/debug/runner — LIVE authoritative kart state of
+// every active runner (position/speed/lap/item per kart). Real-time window
+// into the server sim during a test race.
+app.get('/api/games/critter-kart/debug/runner', async (req, res) => {
+    try {
+        const { debugRunnerStates } = await import('./socket-io/critter-kart.js');
+        res.json({ ok: true, runners: debugRunnerStates() });
+    } catch (err) {
+        res.status(500).json({ error: 'failed to read runner state', detail: err.message });
+    }
+});
+
 // GET /api/games/critter-kart/debug/errors — recent tick faults (throws +
 // NaN physics blow-ups) captured by the RaceRunner. Surfaces the actual
 // server-side fault since Render logs aren't queryable here.

@@ -31,6 +31,7 @@ import { computeItemBoxes, rollCategoryItem, applyHit, ITEM, NO_ITEM } from './i
 import { createFeatureContext, resolveBarriers, applyZones } from './trackFeatures.js';
 import { KART_RADIUS } from './collision.js';
 import { buildTrainSim, applyTrainFlatten } from './train.js';
+import { createRailState, stepRailBots, seedRailKart } from './railBots.js';
 
 const PHYSICS_HZ = 60;
 const PHYSICS_DT = 1 / PHYSICS_HZ;
@@ -140,6 +141,10 @@ export class RaceRunner {
         this.features.flattenUntil = new Array(players.length).fill(0);
         this.anchorMs = null;
 
+        // RAIL BOTS (Phase 3 sim-parity): bots ride the racing line kinematically
+        // (the client's competitive bot model) instead of weak physics-steering.
+        this.rail = createRailState(this.track, this.karts);
+
         // Item boxes — deterministic layout shared with the client (same
         // ITEM_BOX_ROWS/LAT constants). Each box is "active" (pickable) when
         // now >= boxRespawnAtMs[id]; picking it sets a respawn timer.
@@ -221,13 +226,17 @@ export class RaceRunner {
         kart.lastInputAt = Date.now();
     }
 
-    /** Convert a kart in-race to bot control (e.g. after disconnect grace). */
+    /** Convert a kart in-race to bot control (e.g. after disconnect grace).
+     *  The kart joins the RAIL model from its current position, so it keeps
+     *  racing sanely instead of wandering off under the old weak AI. */
     convertKartToBot(kartId) {
-        const kart = this.karts.find(k => k.kartId === kartId);
-        if (!kart) return;
+        const idx = this.karts.findIndex(k => k.kartId === kartId);
+        if (idx < 0) return;
+        const kart = this.karts[idx];
         if (kart.isBot) return;
         kart.isBot = true;
         kart.botParams = makeBotFleet(1)[0];
+        seedRailKart(this.rail, this.track, this.karts, idx);
     }
 
     // ── Per-tick orchestration ────────────────────────────────────────
@@ -275,9 +284,13 @@ export class RaceRunner {
         this.tickNum++;
         const dt = PHYSICS_DT;
 
-        // Phase 1 — per-kart input + physics step
-        for (const kart of this.karts) {
+        // Phase 1 — per-kart input + physics step. Rail-driven bots skip the
+        // physics step entirely — stepRailBots() (the LAST phase) positions
+        // them kinematically, the final word on bot state (client parity).
+        for (let ki = 0; ki < this.karts.length; ki++) {
+            const kart = this.karts[ki];
             if (kart.finished) continue;
+            if (this.rail.active[ki]) continue;
 
             // On-track + off-road severity (one nearest-call per kart, reused below)
             const near = this.track.nearest(kart.state.x, kart.state.z);
@@ -373,6 +386,17 @@ export class RaceRunner {
         this._applyPickups();
         this._botUseItems();
         this._stepItems(dt);
+
+        // Phase 3.8 — RAIL BOTS advance last (the final word on bot state,
+        // overriding any collision/zone nudges — client parity).
+        stepRailBots({
+            karts: this.karts,
+            st: this.rail,
+            track: this.track,
+            trainSim: this.trainSim,
+            dt,
+            elapsedSec: this._raceElapsedSec(),
+        });
 
         // Phase 4 — snapshot emit at 20Hz
         if (this.tickNum % SNAPSHOT_EVERY_N_TICKS === 0 && this.onSnapshot) {

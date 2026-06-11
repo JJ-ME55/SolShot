@@ -184,6 +184,10 @@ function cancelReconnectGrace({ telegramUserId }) {
 //   - lifecycle finish → onFinish callback drives settleRace + broadcast
 const runnersByRaceId = new Map();
 
+// Countdown throttle holds per race (raceId → Map<kartId, {downAtMs}>) —
+// consumed by the runner at GO to award rocket starts authoritatively.
+const countdownThrottle = new Map();
+
 function getRunner(raceId) {
     return runnersByRaceId.get(raceId) || null;
 }
@@ -650,7 +654,21 @@ export function registerCritterKartHandlers(client, io) {
         lastRaceInputAt = Date.now();
         lastRaceInputKartId = kartId;
         const runner = getRunner(raceId);
-        if (!runner) return;
+        if (!runner) {
+            // COUNTDOWN window (runner not created until GO): record the
+            // throttle hold so the runner can award rocket starts at GO.
+            // Map cleared when the runner consumes it at creation.
+            let perRace = countdownThrottle.get(raceId);
+            if (!perRace) { perRace = new Map(); countdownThrottle.set(raceId, perRace); }
+            const prev = perRace.get(kartId) || { downAtMs: null };
+            if ((throttle ?? 0) > 0) {
+                if (prev.downAtMs == null) prev.downAtMs = Date.now();
+            } else {
+                prev.downAtMs = null;
+            }
+            perRace.set(kartId, prev);
+            return;
+        }
         runner.applyInput({ kartId, seq, steer, throttle, brake, drift });
     });
 
@@ -1329,6 +1347,10 @@ async function runCountdownAndRace(io, raceId) {
         // Same wall-clock anchor every client aligned to via race:countdownLocked —
         // keeps time-deterministic hazards (the train) identical server vs clients.
         runner.setAnchorMs(lockedStartAtMs);
+        // Rocket starts: hand the countdown throttle-holds to the runner (it
+        // awards rocketBoost to karts that pressed within the window before GO).
+        runner.applyRocketStarts(countdownThrottle.get(raceId), lockedStartAtMs);
+        countdownThrottle.delete(raceId);
         runner.start();
     } catch (err) {
         // IDEMPOTENCY GUARD (2026-06-09): the 15s lobby:start fallback

@@ -358,6 +358,30 @@ export class RaceRunner {
         // Phase 2.6 — train hazard (anchored clock so it matches the clients)
         applyTrainFlatten(this.karts, this.trainSim, this.features, this._raceElapsedSec());
 
+        // Phase 2.7 — slipstream/draft (client parity): tuck into the wake of a
+        // kart ahead (range + tight cone) and wind up past normal top speed.
+        {
+            const range2 = TUNING.draftRange * TUNING.draftRange;
+            const cap = TUNING.maxSpeed * TUNING.draftMult;
+            for (let i = 0; i < this.karts.length; i++) {
+                const kart = this.karts[i];
+                if (kart.finished || this.rail.active[i]) continue; // rail bots set their own pace
+                const s = kart.state;
+                if (s.speed <= 0 || s.speed >= cap) continue;
+                const fwx = Math.sin(s.heading), fwz = Math.cos(s.heading);
+                let drafting = false;
+                for (let j = 0; j < this.karts.length; j++) {
+                    if (j === i || this.karts[j].finished) continue;
+                    const dx = this.karts[j].state.x - s.x, dz = this.karts[j].state.z - s.z;
+                    const d2 = dx * dx + dz * dz;
+                    if (d2 > range2) continue;
+                    const d = Math.sqrt(d2);
+                    if (d >= TUNING.draftMinDist && dx * fwx + dz * fwz > TUNING.draftCone * d) { drafting = true; break; }
+                }
+                if (drafting) kart.state = { ...s, speed: Math.min(cap, s.speed + TUNING.draftAccel * dt) };
+            }
+        }
+
         // Phase 3 — lap progress + finish detection
         let anyUnfinished = false;
         for (const kart of this.karts) {
@@ -711,6 +735,25 @@ export class RaceRunner {
      *  so time-deterministic hazards (the train) match what every client renders. */
     setAnchorMs(ms) {
         if (typeof ms === 'number' && Number.isFinite(ms)) this.anchorMs = ms;
+    }
+
+    /**
+     * Rocket start (Phase 4 parity): a kart that pressed throttle within
+     * `rocketWindow` seconds before GO (and held it) gets `rocketBoost`.
+     * Pressing too early = flooded engine, no boost — same as the client.
+     * @param {Map<string,{downAtMs:number|null}>|undefined} holds  per-kartId countdown holds
+     * @param {number} goMs  the GO wall-clock (lockedStartAtMs)
+     */
+    applyRocketStarts(holds, goMs) {
+        if (!holds || typeof goMs !== 'number') return;
+        for (const kart of this.karts) {
+            if (kart.isBot) continue;
+            const h = holds.get(kart.kartId);
+            if (!h || h.downAtMs == null) continue;
+            if (goMs - h.downAtMs <= TUNING.rocketWindow * 1000) {
+                kart.state = { ...kart.state, boostTimer: Math.max(kart.state.boostTimer ?? 0, TUNING.rocketBoost) };
+            }
+        }
     }
 
     /** Race-elapsed seconds on the SHARED clock (anchor if wired, else startedAt). */

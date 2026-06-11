@@ -1326,6 +1326,9 @@ async function runCountdownAndRace(io, raceId) {
         });
 
         registerRunner(raceId, runner);
+        // Same wall-clock anchor every client aligned to via race:countdownLocked —
+        // keeps time-deterministic hazards (the train) identical server vs clients.
+        runner.setAnchorMs(lockedStartAtMs);
         runner.start();
     } catch (err) {
         // IDEMPOTENCY GUARD (2026-06-09): the 15s lobby:start fallback

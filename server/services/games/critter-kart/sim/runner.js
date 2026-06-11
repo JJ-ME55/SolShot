@@ -30,6 +30,7 @@ import { SUNNY_MEADOW } from './sunnyMeadow.js';
 import { computeItemBoxes, rollCategoryItem, applyHit, ITEM, NO_ITEM } from './items.js';
 import { createFeatureContext, resolveBarriers, applyZones } from './trackFeatures.js';
 import { KART_RADIUS } from './collision.js';
+import { buildTrainSim, applyTrainFlatten } from './train.js';
 
 const PHYSICS_HZ = 60;
 const PHYSICS_DT = 1 / PHYSICS_HZ;
@@ -131,6 +132,13 @@ export class RaceRunner {
         // respawn, bridges, upper deck, boost pads — the missing features whose
         // absence made server karts diverge from the clients' local karts.
         this.features = createFeatureContext(this.track, players.length);
+
+        // Train hazard (Phase 2 sim-parity). Deterministic from race-elapsed
+        // time; the socket layer calls setAnchorMs(lockedStartAtMs) so the
+        // server's train clock matches every client's exactly.
+        this.trainSim = buildTrainSim(this.track);
+        this.features.flattenUntil = new Array(players.length).fill(0);
+        this.anchorMs = null;
 
         // Item boxes — deterministic layout shared with the client (same
         // ITEM_BOX_ROWS/LAT constants). Each box is "active" (pickable) when
@@ -333,6 +341,9 @@ export class RaceRunner {
             if (wall) kart.state = { ...kart.state, ...wall };
             kart.state = applyZones(kart.state, i, this.track, this.features, TUNING, elapsedSec);
         }
+
+        // Phase 2.6 — train hazard (anchored clock so it matches the clients)
+        applyTrainFlatten(this.karts, this.trainSim, this.features, this._raceElapsedSec());
 
         // Phase 3 — lap progress + finish detection
         let anyUnfinished = false;
@@ -564,6 +575,7 @@ export class RaceRunner {
 
     _buildSnapshot() {
         const now = this._elapsedMs();
+        const raceSec = this._raceElapsedSec();
         const inactiveBoxes = [];
         for (let id = 0; id < this.boxRespawnAtMs.length; id++) {
             if (now < this.boxRespawnAtMs[id]) inactiveBoxes.push(id);
@@ -575,11 +587,14 @@ export class RaceRunner {
             // Boxes currently respawning — client hides these + renders the rest
             // from the shared layout (so no per-box position needs sending).
             inactiveBoxes,
-            karts: this.karts.map(k => ({
+            karts: this.karts.map((k, i) => ({
                 kartId: k.kartId,
                 ackSeq: k.inputSeq,
                 heldItem: k.heldItem,
                 heldCount: k.heldCount,
+                // Seconds of train-squash remaining (0 = not flattened) — remote
+                // clients render the squash from this.
+                flattenTimer: Math.max(0, (this.features.flattenUntil[i] ?? 0) - raceSec),
                 // Position + facing — what the client renders
                 x: k.state.x,
                 z: k.state.z,
@@ -666,6 +681,18 @@ export class RaceRunner {
 
     _elapsedMs() {
         return this.startedAt ? Date.now() - this.startedAt : 0;
+    }
+
+    /** Wire the clients' race anchor (lockedStartAtMs from race:countdownLocked)
+     *  so time-deterministic hazards (the train) match what every client renders. */
+    setAnchorMs(ms) {
+        if (typeof ms === 'number' && Number.isFinite(ms)) this.anchorMs = ms;
+    }
+
+    /** Race-elapsed seconds on the SHARED clock (anchor if wired, else startedAt). */
+    _raceElapsedSec() {
+        const base = this.anchorMs ?? this.startedAt;
+        return base ? (Date.now() - base) / 1000 : 0;
     }
 }
 

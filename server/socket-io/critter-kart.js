@@ -724,7 +724,7 @@ export function registerCritterKartHandlers(client, io) {
     let lastRaceInputKartId = null;
     client.on('race:input', (payload) => {
         if (!payload || typeof payload !== 'object') return;
-        const { raceId, kartId, seq, steer, throttle, brake, drift } = payload;
+        const { raceId, kartId, seq, t, steer, throttle, brake, drift } = payload;
         if (!raceId || !kartId) return;
         raceInputCount++;
         lastRaceInputAt = Date.now();
@@ -749,7 +749,7 @@ export function registerCritterKartHandlers(client, io) {
             perRace.set(kartId, prev);
             return;
         }
-        runner.applyInput({ kartId, seq, steer, throttle, brake, drift });
+        runner.applyInput({ kartId, seq, t, steer, throttle, brake, drift });
     });
 
     // race:useItem — a human fires their held item. Server resolves the use

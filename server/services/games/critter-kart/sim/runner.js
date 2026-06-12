@@ -46,6 +46,18 @@ const PHYSICS_INTERVAL_MS = 1000 / PHYSICS_HZ;             // ~16.67ms
 const MAX_RACE_DURATION_MS = 5 * 60 * 1000;                // 5min hard timeout
 const DEFAULT_KART_WEIGHT = 1.0;
 
+// ── Lag compensation (input rewind) ────────────────────────────────────
+// Clients stamp every input with the race-clock ms it started applying.
+// When a stall (TCP head-of-line block / tab freeze) delivers inputs LATE,
+// the runner rewinds that kart to where the inputs SHOULD have applied and
+// re-simulates — so a brief network hiccup costs the player NOTHING and
+// produces no client correction ("lag wall"). This is the same mechanism
+// every mainstream online game uses for input dropouts.
+const HISTORY_LEN = 96;            // ticks of per-kart state history (1.6s)
+const REWIND_MAX_TICKS = 45;       // never rewind more than 750ms
+const INPUT_STALL_ZERO_MS = 700;   // newest input older than this → coast-stop
+const INPUT_LOG_MAX = 90;          // ~3s of 30Hz inputs
+
 // Debug: recent tick faults (throws + NaN physics blow-ups) surfaced via the
 // /debug/errors endpoint — Render logs aren't queryable from the client.
 export const RECENT_TICK_ERRORS = [];
@@ -109,6 +121,16 @@ export class RaceRunner {
                 input: { throttle: 0, steer: 0, brake: 0, drift: false },
                 inputSeq: 0,        // monotonic seq from client for ack
                 lastInputAt: 0,     // ms; informational only
+
+                // Lag-comp input timeline: [{seq, schedMs, input}] on the sim
+                // clock. schedMs = client race-clock t + min-tracked delivery
+                // baseline (cancels client↔server clock skew). Empty for bots
+                // and for legacy clients that don't send t.
+                inputLog: [],
+                inputDelayBase: null,
+                rewindToTick: null,
+                appliedSeq: 0,     // seq of the input currently DRIVING the sim
+                history: new Array(HISTORY_LEN),   // per-tick {tick, state, ...}
 
                 // Smoothed steer (post-ramp) — carried between ticks
                 smoothedSteer: 0,
@@ -225,7 +247,7 @@ export class RaceRunner {
      * @param {number} [args.brake]      0..1
      * @param {boolean} [args.drift]
      */
-    applyInput({ kartId, seq, steer, throttle, brake, drift }) {
+    applyInput({ kartId, seq, t, steer, throttle, brake, drift }) {
         if (this.stopped) return;
         const kart = this.karts.find(k => k.kartId === kartId);
         if (!kart) return;
@@ -245,6 +267,96 @@ export class RaceRunner {
         };
         if (typeof seq === 'number') kart.inputSeq = seq;
         kart.lastInputAt = Date.now();
+
+        // ── Lag-comp timeline ──────────────────────────────────────────
+        if (typeof t === 'number' && Number.isFinite(t) && this.startedAt) {
+            const simMs = this._simMsForTick(this.tickNum);
+            const delay = simMs - t;   // transport latency + clock skew (constant-ish)
+            // Min-track the baseline (fastest observed delivery) with a slow
+            // upward creep so genuine clock drift doesn't pin us forever.
+            kart.inputDelayBase = kart.inputDelayBase === null
+                ? delay
+                : Math.min(delay, kart.inputDelayBase + 0.08);   // +0.08ms per input ≈ 2.4ms/s at 30Hz
+            let schedMs = t + kart.inputDelayBase;
+            const log = kart.inputLog;
+            // keep the timeline monotonic (client clock hiccups)
+            if (log.length && schedMs < log[log.length - 1].schedMs) schedMs = log[log.length - 1].schedMs;
+            log.push({ seq, schedMs, input: kart.input });
+            if (log.length > INPUT_LOG_MAX) log.splice(0, log.length - INPUT_LOG_MAX);
+            // LATE arrival (stall burst): this input should already have been
+            // driving the kart — schedule a rewind to where it belonged.
+            if (schedMs < simMs - PHYSICS_INTERVAL_MS * 1.5) {
+                const tk = Math.max(1, Math.round((schedMs - (this.startedAt - (this.anchorMs ?? this.startedAt))) / PHYSICS_INTERVAL_MS));
+                kart.rewindToTick = kart.rewindToTick === null ? tk : Math.min(kart.rewindToTick, tk);
+            }
+        }
+    }
+
+    /** Sim-time ms (race-clock axis, anchored to lockedStartAtMs) for a tick. */
+    _simMsForTick(tk) {
+        return (this.startedAt - (this.anchorMs ?? this.startedAt)) + tk * PHYSICS_INTERVAL_MS;
+    }
+
+    /** The input that should drive this kart at sim-time simMs, per its
+     *  timestamped timeline. Falls back to the latch for legacy clients.
+     *  Side effect: tracks appliedSeq (the seq actually DRIVING the sim) —
+     *  snapshots ack that, not merely the newest received, so the client's
+     *  replay window matches what the server really applied. */
+    _timelineInput(kart, simMs, track = true) {
+        const log = kart.inputLog;
+        if (!log.length) return kart.input;
+        // STALL: the newest thing we know is too old — coast-stop, no runaway.
+        if (simMs - log[log.length - 1].schedMs > INPUT_STALL_ZERO_MS) {
+            return { throttle: 0, steer: 0, brake: 0, drift: false };
+        }
+        for (let i = log.length - 1; i >= 0; i--) {
+            if (log[i].schedMs <= simMs) {
+                if (track && typeof log[i].seq === 'number') kart.appliedSeq = log[i].seq;
+                return log[i].input;
+            }
+        }
+        return { throttle: 0, steer: 0, brake: 0, drift: false };  // nothing scheduled yet
+    }
+
+    /** Rewind-replay (lag compensation): restore the kart at the tick its
+     *  late inputs belonged to and re-simulate it alone (physics + walls +
+     *  zones + lap) up to the present. Item hits / train squashes / kart
+     *  contacts that already resolved STAND — we never retro-judge events,
+     *  only the kart's own driving line. */
+    _maybeRewind(kart, idx) {
+        const target = kart.rewindToTick;
+        kart.rewindToTick = null;
+        if (target === null || kart.finished) return;
+        // Mid-event karts keep their resolved outcome
+        if ((kart.state.stunTimer ?? 0) > 0 || kart.state.respawnAt !== undefined) return;
+        if ((this.features.flattenUntil[idx] ?? 0) > this._raceElapsedSec()) return;
+        const from = Math.max(target - 1, this.tickNum - REWIND_MAX_TICKS, 1);
+        if (from >= this.tickNum) return;
+        const h = kart.history[from % HISTORY_LEN];
+        if (!h || h.tick !== from) return;   // history evicted — too old, skip
+        kart.state = { ...h.state };
+        kart.smoothedSteer = h.smoothedSteer;
+        kart.lap = h.lap;
+        for (let tk = from + 1; tk <= this.tickNum; tk++) {
+            const simMs = this._simMsForTick(tk);
+            const raw = this._timelineInput(kart, simMs);
+            kart.smoothedSteer = rampSteer(kart.smoothedSteer, raw.steer ?? 0, TUNING.steerRampRate, TUNING.steerReturnRate, PHYSICS_DT);
+            const near = this.track.nearest(kart.state.x, kart.state.z);
+            const distOff = Math.max(0, near.distance - this.track.halfWidth);
+            kart.state = stepKart(kart.state, {
+                throttle: raw.throttle ?? 0,
+                steer: kart.smoothedSteer,
+                brake: raw.brake ?? 0,
+                drift: !!raw.drift,
+                onTrack: distOff === 0,
+                offRoad: Math.min(1, distOff / this.track.halfWidth),
+            }, TUNING, PHYSICS_DT);
+            const wall = resolveBarriers(kart.state, this.features.barriers, KART_RADIUS, TUNING);
+            if (wall) kart.state = { ...kart.state, ...wall };
+            kart.state = applyZones(kart.state, idx, this.track, this.features, TUNING, tk * PHYSICS_DT);
+            kart.lap = updateLap(kart.lap, this.track.nearest(kart.state.x, kart.state.z).progress);
+            kart.history[tk % HISTORY_LEN] = { tick: tk, state: { ...kart.state }, smoothedSteer: kart.smoothedSteer, lap: kart.lap };
+        }
     }
 
     /** Convert a kart in-race to bot control (e.g. after disconnect grace).
@@ -258,6 +370,7 @@ export class RaceRunner {
         kart.isBot = true;
         kart.takenOver = true; // reversible — a returning human reclaims it
         kart.botParams = makeBotFleet(1)[0];
+        kart.inputLog.length = 0; kart.rewindToTick = null; // stale timeline must not rewind a bot
         seedRailKart(this.rail, this.track, this.karts, idx);
     }
 
@@ -272,6 +385,12 @@ export class RaceRunner {
         kart.takenOver = false;
         kart.input = { throttle: 0, steer: 0, brake: 0, drift: false };
         kart.inputSeq = 0; // fresh client counter after reclaim
+        // Fresh lag-comp state: the reclaiming client has a new clock/session
+        kart.inputLog.length = 0;
+        kart.inputDelayBase = null;
+        kart.rewindToTick = null;
+        kart.appliedSeq = 0;
+        kart.history = new Array(HISTORY_LEN);
         releaseRailKart(this.rail, idx);
         return true;
     }
@@ -318,8 +437,22 @@ export class RaceRunner {
 
     _tick() {
         if (this.stopped) return;
+        // Lag-comp rewinds run BEFORE the new tick: history is complete up to
+        // tickNum, so a late input burst re-simulates the kart through the
+        // stall window with the inputs it actually made.
+        for (let ki = 0; ki < this.karts.length; ki++) {
+            const k = this.karts[ki];
+            if (!k.isBot && k.rewindToTick !== null) {
+                try { this._maybeRewind(k, ki); }
+                catch (err) {
+                    k.rewindToTick = null;
+                    recordFault({ kind: 'rewind', raceId: this.raceId, tick: this.tickNum, kartId: k.kartId, error: err.message });
+                }
+            }
+        }
         this.tickNum++;
         const dt = PHYSICS_DT;
+        const simNowMs = this._simMsForTick(this.tickNum);
 
         // Phase 1 — per-kart input + physics step. Rail-driven bots skip the
         // physics step entirely — stepRailBots() (the LAST phase) positions
@@ -342,12 +475,13 @@ export class RaceRunner {
             if (kart.isBot) {
                 rawInput = botInput(kart.state, this.track, TUNING, kart.botParams);
             } else {
-                rawInput = kart.input;
-                // INPUT TIMEOUT: never latch a stale input. If a client stops
-                // sending (lag spike / freeze / tab hidden), its kart coasts to
-                // a stop instead of racing away at full throttle — the runaway
-                // behind JJ's "camera in the sky, 2 laps in a blink" report.
-                if (kart.lastInputAt > 0 && Date.now() - kart.lastInputAt > 500) {
+                // Timestamp-scheduled input (lag comp): each input drives the
+                // sim for the window it actually covered on the client — a TCP
+                // burst no longer collapses to "last write wins". Stall-zero
+                // (no runaway) lives inside _timelineInput.
+                rawInput = this._timelineInput(kart, simNowMs);
+                // Legacy clients without timestamps: original latch + timeout.
+                if (!kart.inputLog.length && kart.lastInputAt > 0 && Date.now() - kart.lastInputAt > 500) {
                     rawInput = { throttle: 0, steer: 0, brake: 0, drift: false };
                 }
             }
@@ -474,6 +608,23 @@ export class RaceRunner {
             dt,
             elapsedSec: raceSecTick,
         });
+
+        // Phase 3.9 — record per-tick history for lag-comp rewinds (humans
+        // only; shallow CLONE of state — later phases of future ticks must
+        // not be able to mutate what we stored).
+        for (const kart of this.karts) {
+            if (kart.isBot || kart.finished) continue;
+            kart.history[this.tickNum % HISTORY_LEN] = {
+                tick: this.tickNum,
+                state: { ...kart.state },
+                smoothedSteer: kart.smoothedSteer,
+                lap: kart.lap,
+            };
+            // prune timeline entries older than the rewind window (keep one
+            // older entry so the active input is always findable)
+            const log = kart.inputLog;
+            while (log.length > 1 && log[1].schedMs <= simNowMs - 1600) log.shift();
+        }
 
         // Phase 4 — snapshot emit at 20Hz
         if (this.tickNum % SNAPSHOT_EVERY_N_TICKS === 0 && this.onSnapshot) {
@@ -703,7 +854,11 @@ export class RaceRunner {
             inactiveBoxes,
             karts: this.karts.map((k, i) => ({
                 kartId: k.kartId,
-                ackSeq: k.inputSeq,
+                // Ack what's DRIVING the sim, not merely the newest received —
+                // acking an input still scheduled in the (near) future made the
+                // client drop it from replay while the server hadn't applied
+                // it: a permanent ±1-tick (~0.9u at speed) standing residual.
+                ackSeq: k.inputLog.length ? k.appliedSeq : k.inputSeq,
                 heldItem: k.heldItem,
                 heldCount: k.heldCount,
                 // Seconds of train-squash remaining (0 = not flattened) — remote

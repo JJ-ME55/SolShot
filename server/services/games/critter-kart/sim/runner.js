@@ -55,6 +55,8 @@ const DEFAULT_KART_WEIGHT = 1.0;
 // every mainstream online game uses for input dropouts.
 const HISTORY_LEN = 96;            // ticks of per-kart state history (1.6s)
 const REWIND_MAX_TICKS = 45;       // never rewind more than 750ms
+const REWIND_TRIGGER_MS = 100;     // lateness below this never rewinds (ordinary jitter)
+const REWIND_COOLDOWN_TICKS = 30;  // at most one history rewrite per 500ms per kart
 const INPUT_STALL_ZERO_MS = 700;   // newest input older than this → coast-stop
 const INPUT_LOG_MAX = 90;          // ~3s of 30Hz inputs
 
@@ -127,8 +129,9 @@ export class RaceRunner {
                 // baseline (cancels client↔server clock skew). Empty for bots
                 // and for legacy clients that don't send t.
                 inputLog: [],
-                inputDelayBase: null,
+                delayWin: [],      // sliding 5s window of per-second delay minimums
                 rewindToTick: null,
+                lastRewindTick: null,
                 appliedSeq: 0,     // seq of the input currently DRIVING the sim
                 history: new Array(HISTORY_LEN),   // per-tick {tick, state, ...}
 
@@ -272,20 +275,35 @@ export class RaceRunner {
         if (typeof t === 'number' && Number.isFinite(t) && this.startedAt) {
             const simMs = this._simMsForTick(this.tickNum);
             const delay = simMs - t;   // transport latency + clock skew (constant-ish)
-            // Min-track the baseline (fastest observed delivery) with a slow
-            // upward creep so genuine clock drift doesn't pin us forever.
-            kart.inputDelayBase = kart.inputDelayBase === null
-                ? delay
-                : Math.min(delay, kart.inputDelayBase + 0.08);   // +0.08ms per input ≈ 2.4ms/s at 30Hz
-            let schedMs = t + kart.inputDelayBase;
+            // SLIDING-WINDOW minimum (5×1s buckets) — NOT an all-time min.
+            // The all-time min with a 2.4ms/s creep was the 2026-06-12 jitter
+            // storm: a mid-race latency rise (+50-100ms is normal consumer
+            // jitter) made EVERY input look "late" for 30+ seconds, so the
+            // runner rewrote the kart's history 30x/sec and the client saw a
+            // sustained 2-4-tick correction storm. A windowed min adapts to
+            // the new latency floor within 5s.
+            const sec = Math.floor(simMs / 1000);
+            const win = kart.delayWin;
+            if (win.length && win[win.length - 1].sec === sec) {
+                if (delay < win[win.length - 1].min) win[win.length - 1].min = delay;
+            } else {
+                win.push({ sec, min: delay });
+                while (win.length > 5) win.shift();
+            }
+            let base = win[0].min;
+            for (let i = 1; i < win.length; i++) if (win[i].min < base) base = win[i].min;
+            let schedMs = t + base;
             const log = kart.inputLog;
             // keep the timeline monotonic (client clock hiccups)
             if (log.length && schedMs < log[log.length - 1].schedMs) schedMs = log[log.length - 1].schedMs;
             log.push({ seq, schedMs, input: kart.input });
             if (log.length > INPUT_LOG_MAX) log.splice(0, log.length - INPUT_LOG_MAX);
-            // LATE arrival (stall burst): this input should already have been
-            // driving the kart — schedule a rewind to where it belonged.
-            if (schedMs < simMs - PHYSICS_INTERVAL_MS * 1.5) {
+            // GENUINELY late (a real stall-burst, not ordinary jitter): rewind.
+            // Sub-threshold lateness just applies going forward — the window
+            // distortion is ±1-2 ticks, oscillating, and lands inside the
+            // client's deadband. Rewinds rewrite broadcast history, so they
+            // must be RARE: threshold 100ms + at most one per 500ms.
+            if (schedMs < simMs - REWIND_TRIGGER_MS) {
                 const tk = Math.max(1, Math.round((schedMs - (this.startedAt - (this.anchorMs ?? this.startedAt))) / PHYSICS_INTERVAL_MS));
                 kart.rewindToTick = kart.rewindToTick === null ? tk : Math.min(kart.rewindToTick, tk);
             }
@@ -327,6 +345,10 @@ export class RaceRunner {
         const target = kart.rewindToTick;
         kart.rewindToTick = null;
         if (target === null || kart.finished) return;
+        // COOLDOWN: rewinds rewrite already-broadcast history — back-to-back
+        // rewrites read as jitter on every client. One per 500ms, hard cap.
+        if (this.tickNum - (kart.lastRewindTick ?? -1e9) < REWIND_COOLDOWN_TICKS) return;
+        kart.lastRewindTick = this.tickNum;
         // Mid-event karts keep their resolved outcome
         if ((kart.state.stunTimer ?? 0) > 0 || kart.state.respawnAt !== undefined) return;
         if ((this.features.flattenUntil[idx] ?? 0) > this._raceElapsedSec()) return;
@@ -387,8 +409,9 @@ export class RaceRunner {
         kart.inputSeq = 0; // fresh client counter after reclaim
         // Fresh lag-comp state: the reclaiming client has a new clock/session
         kart.inputLog.length = 0;
-        kart.inputDelayBase = null;
+        kart.delayWin.length = 0;
         kart.rewindToTick = null;
+        kart.lastRewindTick = null;
         kart.appliedSeq = 0;
         kart.history = new Array(HISTORY_LEN);
         releaseRailKart(this.rail, idx);

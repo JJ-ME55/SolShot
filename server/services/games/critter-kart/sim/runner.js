@@ -903,6 +903,11 @@ export class RaceRunner {
                 speed: r2(k.state.speed),
                 // FX-relevant state
                 driftDir: k.state.driftDir,
+                // Drift charge + post-hit recovery — without these the client's
+                // replay rebuilds every drift from a half-wrong state: false
+                // divergence (and corrections) exactly while drifting.
+                dc: r2(k.state.driftCharge ?? 0),
+                rt: r3(k.state.recoverTimer ?? 0),
                 boostTimer: r3(k.state.boostTimer),
                 stunTimer: r3(k.state.stunTimer ?? 0),
                 slowTimer: r3(k.state.slowTimer ?? 0),

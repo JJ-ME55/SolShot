@@ -35,12 +35,13 @@ import { createRailState, stepRailBots, seedRailKart, releaseRailKart } from './
 
 const PHYSICS_HZ = 60;
 const PHYSICS_DT = 1 / PHYSICS_HZ;
-// 30Hz snapshot rate — smaller interpolation distance for the client
-// than 20Hz (33ms gap instead of 50ms), so lerped motion stays close to
-// truth even when the server's physics make sharp moves (drift snap,
-// item hit). PHYSICS_HZ=60 → SNAPSHOT_EVERY_N_TICKS=2. Bandwidth cost is
-// trivial (~500B per snapshot × 30 × 6 karts = 90KB/s per match).
-const SNAPSHOT_HZ = 30;
+// 60Hz snapshot rate — every physics tick goes on the wire (Fish 2026-06-12:
+// "amp up everything"). Halves the interpolation gap to 16.7ms so remote-kart
+// motion is sampled as densely as the sim itself, and lets the client's
+// applied interp delay drop to ~60ms. Bandwidth ~600B × 60 ≈ 36KB/s per
+// socket — trivial. Snapshots are volatile emits, so a congested client
+// gracefully receives fewer instead of queueing bursts.
+const SNAPSHOT_HZ = 60;
 const SNAPSHOT_EVERY_N_TICKS = PHYSICS_HZ / SNAPSHOT_HZ;   // 2
 const PHYSICS_INTERVAL_MS = 1000 / PHYSICS_HZ;             // ~16.67ms
 const MAX_RACE_DURATION_MS = 5 * 60 * 1000;                // 5min hard timeout
@@ -58,7 +59,7 @@ const REWIND_MAX_TICKS = 45;       // never rewind more than 750ms
 const REWIND_TRIGGER_MS = 100;     // lateness below this never rewinds (ordinary jitter)
 const REWIND_COOLDOWN_TICKS = 30;  // at most one history rewrite per 500ms per kart
 const INPUT_STALL_ZERO_MS = 700;   // newest input older than this → coast-stop
-const INPUT_LOG_MAX = 90;          // ~3s of 30Hz inputs
+const INPUT_LOG_MAX = 180;         // ~3s of 60Hz inputs
 
 // Debug: recent tick faults (throws + NaN physics blow-ups) surfaced via the
 // /debug/errors endpoint — Render logs aren't queryable from the client.

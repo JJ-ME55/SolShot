@@ -73,9 +73,8 @@ export function trainPiecePositions(sim, elapsedSec) {
  * in the rail-bot model — Phase 3 — matching the client where only the player is
  * flattened). Mutates kart.state + ctx.flattenUntil. Returns nothing.
  */
-export function applyTrainFlatten(karts, sim, ctx, elapsedSec) {
+export function applyTrainFlatten(karts, pieces, ctx, elapsedSec) {
     if (elapsedSec < 0) return; // countdown — race not live yet
-    const pieces = trainPiecePositions(sim, elapsedSec);
     for (let i = 0; i < karts.length; i++) {
         const kart = karts[i];
         if (kart.finished || kart.isBot) continue;

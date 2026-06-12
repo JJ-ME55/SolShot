@@ -30,7 +30,7 @@ import { SUNNY_MEADOW } from './sunnyMeadow.js';
 import { computeItemBoxes, rollCategoryItem, applyHit, ITEM, NO_ITEM } from './items.js';
 import { createFeatureContext, resolveBarriers, applyZones, applyBoostPads, clientStartGrid } from './trackFeatures.js';
 import { KART_RADIUS } from './collision.js';
-import { buildTrainSim, applyTrainFlatten } from './train.js';
+import { buildTrainSim, applyTrainFlatten, trainPiecePositions } from './train.js';
 import { createRailState, stepRailBots, seedRailKart, releaseRailKart } from './railBots.js';
 
 const PHYSICS_HZ = 60;
@@ -184,12 +184,16 @@ export class RaceRunner {
         const loop = () => {
             if (this.stopped) return;
             let n = 0;
-            while (Date.now() >= this._nextTickAt && n < 4) {
+            while (!this.stopped && Date.now() >= this._nextTickAt && n < 4) {
                 this._tickGuarded();
                 this._nextTickAt += PHYSICS_INTERVAL_MS;
                 n++;
             }
-            if (Date.now() > this._nextTickAt + 250) this._nextTickAt = Date.now();
+            if (Date.now() > this._nextTickAt + 250) {
+                recordFault({ kind: 'stall', raceId: this.raceId, tick: this.tickNum, lostMs: Date.now() - this._nextTickAt });
+                this._nextTickAt = Date.now();
+            }
+            if (this.stopped) return;
             this.tickHandle = setTimeout(loop, Math.max(0, this._nextTickAt - Date.now()));
             if (typeof this.tickHandle.unref === 'function') this.tickHandle.unref();
         };
@@ -401,8 +405,11 @@ export class RaceRunner {
             kart.state = applyZones(kart.state, i, this.track, this.features, TUNING, elapsedSec);
         }
 
-        // Phase 2.6 — train hazard (anchored clock so it matches the clients)
-        applyTrainFlatten(this.karts, this.trainSim, this.features, this._raceElapsedSec());
+        // Phase 2.6 — train hazard (anchored clock so it matches the clients).
+        // Pieces computed ONCE per tick, shared with the rail bots below.
+        const raceSecTick = this._raceElapsedSec();
+        const trainPieces = raceSecTick >= 0 ? trainPiecePositions(this.trainSim, raceSecTick) : [];
+        applyTrainFlatten(this.karts, trainPieces, this.features, raceSecTick);
 
         // Phase 2.7 — slipstream/draft (client parity): tuck into the wake of a
         // kart ahead (range + tight cone) and wind up past normal top speed.
@@ -463,9 +470,9 @@ export class RaceRunner {
             karts: this.karts,
             st: this.rail,
             track: this.track,
-            trainSim: this.trainSim,
+            trainPieces,
             dt,
-            elapsedSec: this._raceElapsedSec(),
+            elapsedSec: raceSecTick,
         });
 
         // Phase 4 — snapshot emit at 20Hz
@@ -671,6 +678,11 @@ export class RaceRunner {
     _buildSnapshot() {
         const now = this._elapsedMs();
         const raceSec = this._raceElapsedSec();
+        // tMs = SIMULATED time (tick counter), anchored to lockedStartAtMs —
+        // always equals the time the positions actually represent. Wall-clock
+        // stamping made catch-up bursts emit near-identical timestamps for
+        // 33ms-apart sim states (client interp velocity spikes).
+        const simMs = (this.startedAt - (this.anchorMs ?? this.startedAt)) + this.tickNum * PHYSICS_INTERVAL_MS;
         // tMs is stamped on the ANCHORED race clock (lockedStartAtMs — the same
         // zero every client's `elapsed` uses), NOT on runner-start. Clients
         // compare snapshot time against local race time for latency-compensated
@@ -685,7 +697,7 @@ export class RaceRunner {
         return {
             raceId: this.raceId,
             tick: this.tickNum,
-            tMs: raceSec * 1000,
+            tMs: Math.round(simMs),
             // Boxes currently respawning — client hides these + renders the rest
             // from the shared layout (so no per-box position needs sending).
             inactiveBoxes,
@@ -696,7 +708,7 @@ export class RaceRunner {
                 heldCount: k.heldCount,
                 // Seconds of train-squash remaining (0 = not flattened) — remote
                 // clients render the squash from this.
-                flattenTimer: Math.max(0, (this.features.flattenUntil[i] ?? 0) - raceSec),
+                flattenTimer: r3(Math.max(0, (this.features.flattenUntil[i] ?? 0) - raceSec)),
                 // Position + facing — what the client renders
                 x: r2(k.state.x),
                 z: r2(k.state.z),
@@ -713,7 +725,7 @@ export class RaceRunner {
                 shield: !!k.state.shield,
                 // Race standing
                 lap: k.lap.lap,
-                progress: k.lap.lastProgress,
+                progress: Math.round(k.lap.lastProgress * 1e4) / 1e4, // 4dp ≈ 0.26u on this track
                 finished: k.finished,
             })),
             // Active item entities for client VFX (positions only — kinds/owners

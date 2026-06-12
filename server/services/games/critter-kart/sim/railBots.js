@@ -12,7 +12,7 @@
 
 import { TUNING } from './tuning.js';
 import { archHeightAt } from './trackFeatures.js';
-import { trainPiecePositions } from './train.js';
+
 
 // Per-bot rail personas (client BOT_PERSONAS — catchup is what the rail uses).
 export const RAIL_CATCHUP = [1.7, 1.9, 2.3, 2.0, 2.3];
@@ -67,7 +67,7 @@ export function releaseRailKart(st, i) {
  * final word on bot state, like the client). `elapsedSec` is the anchored race
  * clock (drives jockeying + the train-wait check).
  */
-export function stepRailBots({ karts, st, track, trainSim, dt, elapsedSec }) {
+export function stepRailBots({ karts, st, track, trainPieces, dt, elapsedSec }) {
     // Reference = the MIDPOINT of the humans (was: the leading human, which
     // pinned the bot-train to the leader's pace — a human knocked back early
     // could never catch up: JJ 2026-06-12). Midpoint keeps bots raceable for
@@ -94,11 +94,15 @@ export function stepRailBots({ karts, st, track, trainSim, dt, elapsedSec }) {
     const refSpeed = humanConts.length > 0 ? humanSpeedSum / humanConts.length : Math.max(0, ref.state.speed);
     const FLOOR = TUNING.maxSpeed * 0.72;
 
-    const trainPieces = trainSim ? trainPiecePositions(trainSim, elapsedSec) : [];
-    const crossings = [
-        [0.395, track.pointAtProgress(0.395)],
-        [0.769, track.pointAtProgress(0.769)],
-    ];
+    trainPieces = trainPieces || [];
+    // crossings hoisted into the rail state (2 linear track walks per tick saved)
+    if (!st.crossings) {
+        st.crossings = [
+            [0.395, track.pointAtProgress(0.395)],
+            [0.769, track.pointAtProgress(0.769)],
+        ];
+    }
+    const crossings = st.crossings;
 
     for (let i = 0; i < karts.length; i++) {
         if (!st.active[i]) continue;

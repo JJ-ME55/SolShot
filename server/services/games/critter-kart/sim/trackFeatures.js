@@ -236,10 +236,14 @@ export function applyZones(state, slot, track, ctx, tuning, elapsedSec) {
     // Boost pads (client GameCanvas ~877)
     s = applyBoostPads(s, slot, ctx, tuning);
 
+    // ONE nearest scan — x/z don't change between the zone blocks below
+    // (arch/deck mutate only y/vy/falling; the respawn returns immediately).
+    const zoneProgress = track.nearest(s.x, s.z).progress;
+
     // Arched bridge Y pin (client ~891)
     if (track.archBridgeZone) {
         const az = track.archBridgeZone;
-        const p = track.nearest(s.x, s.z).progress;
+        const p = zoneProgress;
         if (p >= az.startProgress && p <= az.endProgress) {
             const t = (p - az.startProgress) / (az.endProgress - az.startProgress || 1);
             s = { ...s, y: archHeightAt(t), vy: 0, falling: false };
@@ -254,8 +258,7 @@ export function applyZones(state, slot, track, ctx, tuning, elapsedSec) {
             if (p > ud.rampDownStart) return ud.height * (ud.endProgress - p) / (ud.endProgress - ud.rampDownStart);
             return ud.height;
         };
-        const near = track.nearest(s.x, s.z);
-        const p = near.progress;
+        const p = zoneProgress;
         if (p < ud.startProgress || p > ud.endProgress) {
             ctx.onUpperDeck[slot] = false;
         } else {
@@ -286,7 +289,7 @@ export function applyZones(state, slot, track, ctx, tuning, elapsedSec) {
         const sp = track.jumpZone.startProgress;
         const ep = track.jumpZone.endProgress;
         const SAFE_BUFFER = 0.015;
-        const p = track.nearest(s.x, s.z).progress;
+        const p = zoneProgress;
         const inZone = p >= sp && p <= ep;
         const safelyOutside = p < sp - SAFE_BUFFER || p > ep + SAFE_BUFFER;
         const grounded = (s.y ?? 0) === 0 && (s.vy ?? 0) === 0 && !s.falling;

@@ -194,6 +194,11 @@ const runnersByRaceId = new Map();
 // consumed by the runner at GO to award rocket starts authoritatively.
 const countdownThrottle = new Map();
 
+// 15s lobby force-start fallback timers, keyed by raceId — cancelled when the
+// real all-ready start runs (previously the stray firing relied on a string-
+// matched idempotency guard to not kill the live race).
+const forceStartTimers = new Map();
+
 function getRunner(raceId) {
     return runnersByRaceId.get(raceId) || null;
 }
@@ -242,7 +247,7 @@ function disposeRunner(raceId) {
 // snapshots 90+ minutes after all sockets disconnected). RaceRunner
 // CPU/memory grows linearly with leaked races; on Pro tier (1 CPU) ~5
 // concurrent abandoned runners would max out the box.
-const RUNNER_EMPTY_TIMEOUT_MS = 60_000;
+const RUNNER_EMPTY_TIMEOUT_MS = 120_000; // > RECONNECT_GRACE_MS (60s) + margin: a solo rejoiner must not find the runner already disposed
 const RUNNER_CLEANUP_INTERVAL_MS = 15_000;
 const runnerEmptyStartAt = new Map();
 
@@ -268,6 +273,22 @@ function startRunnerCleanupTicker(io) {
                     '[critter-kart] disposing abandoned runner (no sockets in race room)',
                 );
                 disposeRunner(raceId);
+                // Terminalize the doc too — otherwise the race stays 'racing'
+                // in Mongo and a later critterkart:joinRace passes the
+                // terminal-state check into a race with no runner (silent
+                // no-snapshot limbo for that player).
+                cancelRace({ raceId, reason: 'abandoned_no_sockets' }).catch(err => {
+                    logger.error({ raceId, error: err.message }, '[critter-kart] cancelRace on abandoned disposal failed');
+                });
+            }
+        }
+        // Sweep countdownThrottle entries for races that never started —
+        // runCountdownAndRace deletes on start, but a race abandoned in the
+        // lobby left its entry forever (the size-50 cap then silently
+        // blocked rocket starts for every NEW race).
+        for (const [rid, perRace] of countdownThrottle) {
+            if (!runnersByRaceId.has(rid) && now - (perRace.createdAt || 0) > 600_000) {
+                countdownThrottle.delete(rid);
             }
         }
     }, RUNNER_CLEANUP_INTERVAL_MS);
@@ -663,6 +684,17 @@ export function registerCritterKartHandlers(client, io) {
         try {
             const { raceId, telegramUserId } = payload || {};
             if (!raceId || !telegramUserId) return ackError(ack, 'params_required');
+            // A quitter's socket stays connected, so the disconnect-grace AI
+            // takeover never fires — without this the abandoned kart parks on
+            // the track (input timeout) and blocks race:final for EVERYONE
+            // until the 5-minute hard timeout.
+            cancelReconnectGrace({ telegramUserId });
+            const runner = getRunner(raceId);
+            if (runner) {
+                const raceDoc = await CritterKartRace.findOne({ raceId }).lean();
+                const kartId = raceDoc?.players?.find(p => p.telegramUserId === telegramUserId)?.kartId;
+                if (kartId) runner.convertKartToBot(kartId);
+            }
             await markDnf({ raceId, telegramUserId });
             client.leave(raceRoomName(raceId));
             ackOk(ack);
@@ -705,7 +737,8 @@ export function registerCritterKartHandlers(client, io) {
             let perRace = countdownThrottle.get(raceId);
             if (!perRace) {
                 if (countdownThrottle.size >= 50) return; // hard cap — countdowns are rare; unstarted races must not leak
-                perRace = new Map(); countdownThrottle.set(raceId, perRace);
+                perRace = new Map(); perRace.createdAt = Date.now();
+                countdownThrottle.set(raceId, perRace);
             }
             const prev = perRace.get(kartId) || { downAtMs: null };
             if ((throttle ?? 0) > 0) {
@@ -1148,7 +1181,8 @@ export function registerCritterKartHandlers(client, io) {
             // beginCountdown is idempotent via state filter
             // (matched/loading only), so the late critterkart:ready
             // would no-op if it arrives after force-start.
-            setTimeout(() => {
+            const fallbackHandle = setTimeout(() => {
+                forceStartTimers.delete(race.raceId);
                 runCountdownAndRace(io, race.raceId).catch(err => {
                     // beginCountdown will throw if race already past
                     // matched/loading — that's the success case (a
@@ -1161,6 +1195,7 @@ export function registerCritterKartHandlers(client, io) {
                     }
                 });
             }, 15_000);
+            forceStartTimers.set(race.raceId, fallbackHandle);
             logger.info(
                 { raceId: race.raceId, fallbackMs: 15_000 },
                 '[VERBOSE lobby:start] awaiting critterkart:ready from all humans (15s fallback)',
@@ -1261,6 +1296,12 @@ export function registerCritterKartHandlers(client, io) {
 // karts cross the finish line OR when the 5min hard timeout fires.
 
 async function runCountdownAndRace(io, raceId) {
+    // Cancel the 15s lobby:start fallback — once ANY path reaches here the
+    // fallback must never fire a second run against the live race. (The
+    // string-matched idempotency guard below still backstops, but proper
+    // cancellation means we no longer depend on matching an error message.)
+    const fst = forceStartTimers.get(raceId);
+    if (fst) { clearTimeout(fst); forceStartTimers.delete(raceId); }
     try {
         await beginCountdown({ raceId });
 

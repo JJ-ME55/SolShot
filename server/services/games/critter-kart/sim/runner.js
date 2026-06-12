@@ -895,6 +895,11 @@ export class RaceRunner {
                 vy: r2(k.state.vy ?? 0),
                 heading: r3(k.state.heading),
                 velHeading: r3(k.state.velHeading),
+                // Smoothed-steer ramp state — the client's replay MUST re-ramp
+                // from this exact value or its reconstructed heading is wrong by
+                // a fraction every snapshot WHILE TURNING (zero when straight):
+                // Fish's "worst when drifting/cornering" jitter, 2026-06-12.
+                ss: r3(k.smoothedSteer ?? 0),
                 speed: r2(k.state.speed),
                 // FX-relevant state
                 driftDir: k.state.driftDir,

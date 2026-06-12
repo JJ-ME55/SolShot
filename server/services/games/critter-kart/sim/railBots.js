@@ -68,12 +68,20 @@ export function releaseRailKart(st, i) {
  * clock (drives jockeying + the train-wait check).
  */
 export function stepRailBots({ karts, st, track, trainSim, dt, elapsedSec }) {
-    // Reference = the LEADING human (client uses THE player). Fallback: leading kart.
+    // Reference = the MIDPOINT of the humans (was: the leading human, which
+    // pinned the bot-train to the leader's pace — a human knocked back early
+    // could never catch up: JJ 2026-06-12). Midpoint keeps bots raceable for
+    // the trailing human while still pressuring the leader.
     let ref = null, refCont = -Infinity;
+    const humanConts = []; let humanSpeedSum = 0;
     for (const k of karts) {
         if (k.isBot || k.finished) continue;
         const cont = (k.lap?.lap ?? 0) + track.nearest(k.state.x, k.state.z).progress;
+        humanConts.push(cont); humanSpeedSum += Math.max(0, k.state.speed);
         if (cont > refCont) { refCont = cont; ref = k; }
+    }
+    if (humanConts.length > 0) {
+        refCont = humanConts.reduce((a, b) => a + b, 0) / humanConts.length;
     }
     if (!ref) {
         for (const k of karts) {
@@ -83,7 +91,7 @@ export function stepRailBots({ karts, st, track, trainSim, dt, elapsedSec }) {
         }
     }
     if (!ref) return;
-    const refSpeed = Math.max(0, ref.state.speed);
+    const refSpeed = humanConts.length > 0 ? humanSpeedSum / humanConts.length : Math.max(0, ref.state.speed);
     const FLOOR = TUNING.maxSpeed * 0.72;
 
     const trainPieces = trainSim ? trainPiecePositions(trainSim, elapsedSec) : [];

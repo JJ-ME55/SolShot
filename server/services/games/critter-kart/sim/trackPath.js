@@ -88,12 +88,16 @@ export class TrackPath {
             t = Math.max(0, Math.min(1, t));
             const px = a.x + dx * t;
             const pz = a.z + dz * t;
-            const dist = Math.hypot(x - px, z - pz);
-            if (dist < best.distance) {
+            // squared-distance compare, one sqrt at the end — this scan runs
+            // ~10-30x per 60Hz tick; hypot-per-segment dominated the budget
+            const ox = x - px, oz = z - pz;
+            const d2 = ox * ox + oz * oz;
+            if (d2 < best.distance) {
                 const along = this.cumLen[i] + t * this.segLen[i];
-                best = { segment: i, t, distance: dist, progress: along / this.totalLength, px, pz };
+                best = { segment: i, t, distance: d2, progress: along / this.totalLength, px, pz };
             }
         }
+        best.distance = Math.sqrt(best.distance);
         return best;
     }
 

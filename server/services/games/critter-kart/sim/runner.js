@@ -28,7 +28,7 @@ import { resolveKartCollision } from './collision.js';
 import { botInput, makeBotFleet } from './ai.js';
 import { SUNNY_MEADOW } from './sunnyMeadow.js';
 import { computeItemBoxes, rollCategoryItem, applyHit, ITEM, NO_ITEM } from './items.js';
-import { createFeatureContext, resolveBarriers, applyZones, clientStartGrid } from './trackFeatures.js';
+import { createFeatureContext, resolveBarriers, applyZones, applyBoostPads, clientStartGrid } from './trackFeatures.js';
 import { KART_RADIUS } from './collision.js';
 import { buildTrainSim, applyTrainFlatten } from './train.js';
 import { createRailState, stepRailBots, seedRailKart, releaseRailKart } from './railBots.js';
@@ -175,11 +175,25 @@ export class RaceRunner {
         this.startedAt = Date.now();
         for (const k of this.karts) k.lapStartTickMs = 0;
 
-        // setInterval at 60Hz. Real-world drift between ticks is fine —
-        // we use the SCHEDULED dt (PHYSICS_DT) not the wall-clock delta,
-        // so the sim is deterministic regardless of jitter. The client's
-        // local prediction uses the same fixed dt for matching results.
-        this.tickHandle = setInterval(() => this._tickGuarded(), PHYSICS_INTERVAL_MS);
+        // SELF-CORRECTING scheduler. setInterval(16.67) truncates to 16ms in
+        // Node, so the sim ran ~4.2% FAST vs wall clock (clients reconciled
+        // that skew forever), and event-loop stalls coalesced + LOST ticks
+        // with no catch-up (the mid-race "lag walls"). Schedule against an
+        // absolute next-tick time; catch up at most 4 ticks, then hard-resync.
+        this._nextTickAt = this.startedAt + PHYSICS_INTERVAL_MS;
+        const loop = () => {
+            if (this.stopped) return;
+            let n = 0;
+            while (Date.now() >= this._nextTickAt && n < 4) {
+                this._tickGuarded();
+                this._nextTickAt += PHYSICS_INTERVAL_MS;
+                n++;
+            }
+            if (Date.now() > this._nextTickAt + 250) this._nextTickAt = Date.now();
+            this.tickHandle = setTimeout(loop, Math.max(0, this._nextTickAt - Date.now()));
+            if (typeof this.tickHandle.unref === 'function') this.tickHandle.unref();
+        };
+        this.tickHandle = setTimeout(loop, 16);
         if (typeof this.tickHandle.unref === 'function') this.tickHandle.unref();
 
         this.timeoutHandle = setTimeout(() => this._endRace('timeout'), MAX_RACE_DURATION_MS);
@@ -190,7 +204,7 @@ export class RaceRunner {
     stop() {
         if (this.stopped) return;
         this.stopped = true;
-        if (this.tickHandle) { clearInterval(this.tickHandle); this.tickHandle = null; }
+        if (this.tickHandle) { clearTimeout(this.tickHandle); this.tickHandle = null; }
         if (this.timeoutHandle) { clearTimeout(this.timeoutHandle); this.timeoutHandle = null; }
     }
 
@@ -214,8 +228,10 @@ export class RaceRunner {
         if (kart.isBot) return;   // bots ignore wire input
         if (kart.finished) return; // no further input from finished karts
 
-        // Reject stale inputs (seq going backwards)
-        if (typeof seq === 'number' && seq < kart.inputSeq) return;
+        // Reject stale inputs (seq going backwards) — but a LARGE backward
+        // jump means a reconnected client whose counter restarted; rejecting
+        // those silently froze every post-reconnect input (total control loss).
+        if (typeof seq === 'number' && seq < kart.inputSeq && kart.inputSeq - seq < 1000) return;
 
         kart.input = {
             throttle: clamp01(throttle ?? 0),
@@ -251,6 +267,7 @@ export class RaceRunner {
         kart.isBot = false;
         kart.takenOver = false;
         kart.input = { throttle: 0, steer: 0, brake: 0, drift: false };
+        kart.inputSeq = 0; // fresh client counter after reclaim
         releaseRailKart(this.rail, idx);
         return true;
     }
@@ -373,6 +390,12 @@ export class RaceRunner {
         for (let i = 0; i < this.karts.length; i++) {
             const kart = this.karts[i];
             if (kart.finished) continue;
+            if (this.rail.active[i]) {
+                // Rail bots: stepRailBots (the final word) overwrites position/Y;
+                // only the boost-pad effect survives. Skip the wall/zone scans.
+                kart.state = applyBoostPads(kart.state, i, this.features, TUNING);
+                continue;
+            }
             const wall = resolveBarriers(kart.state, this.features.barriers, KART_RADIUS, TUNING);
             if (wall) kart.state = { ...kart.state, ...wall };
             kart.state = applyZones(kart.state, i, this.track, this.features, TUNING, elapsedSec);
@@ -473,7 +496,7 @@ export class RaceRunner {
     _applyPickups() {
         const now = this._elapsedMs();
         const N = this.karts.length;
-        const ranking = this._currentRanking();
+        let ranking = null; // lazy — only sort standings when a pickup actually fires
         for (const kart of this.karts) {
             if (kart.finished) continue;
             if (kart.heldItem !== NO_ITEM) continue;
@@ -481,6 +504,7 @@ export class RaceRunner {
                 if (now < this.boxRespawnAtMs[id]) continue;
                 const box = this.boxes[id];
                 if (Math.hypot(kart.state.x - box.x, kart.state.z - box.z) < TUNING.itemPickupRadius) {
+                    if (!ranking) ranking = this._currentRanking();
                     const pos = ranking.indexOf(kart.kartId) + 1;
                     const rolled = rollCategoryItem(box.category, pos, N, this._rng());
                     kart.heldItem = rolled;
@@ -674,18 +698,18 @@ export class RaceRunner {
                 // clients render the squash from this.
                 flattenTimer: Math.max(0, (this.features.flattenUntil[i] ?? 0) - raceSec),
                 // Position + facing — what the client renders
-                x: k.state.x,
-                z: k.state.z,
-                y: k.state.y ?? 0,
-                vy: k.state.vy ?? 0,
-                heading: k.state.heading,
-                velHeading: k.state.velHeading,
-                speed: k.state.speed,
+                x: r2(k.state.x),
+                z: r2(k.state.z),
+                y: r2(k.state.y ?? 0),
+                vy: r2(k.state.vy ?? 0),
+                heading: r3(k.state.heading),
+                velHeading: r3(k.state.velHeading),
+                speed: r2(k.state.speed),
                 // FX-relevant state
                 driftDir: k.state.driftDir,
-                boostTimer: k.state.boostTimer,
-                stunTimer: k.state.stunTimer ?? 0,
-                slowTimer: k.state.slowTimer ?? 0,
+                boostTimer: r3(k.state.boostTimer),
+                stunTimer: r3(k.state.stunTimer ?? 0),
+                slowTimer: r3(k.state.slowTimer ?? 0),
                 shield: !!k.state.shield,
                 // Race standing
                 lap: k.lap.lap,
@@ -694,8 +718,8 @@ export class RaceRunner {
             })),
             // Active item entities for client VFX (positions only — kinds/owners
             // are stable per id).
-            projectiles: this.projectiles.map(p => ({ id: p.id, kind: p.kind, x: p.x, y: p.y, z: p.z })),
-            traps: this.traps.map(t => ({ id: t.id, x: t.x, z: t.z })),
+            projectiles: this.projectiles.map(p => ({ id: p.id, kind: p.kind, x: r2(p.x), y: r2(p.y), z: r2(p.z) })),
+            traps: this.traps.map(t => ({ id: t.id, x: r2(t.x), z: r2(t.z) })),
         };
     }
 
@@ -803,6 +827,11 @@ function clampNeg1Pos1(v) {
     if (typeof v !== 'number' || !Number.isFinite(v)) return 0;
     return v < -1 ? -1 : v > 1 ? 1 : v;
 }
+
+// Snapshot float rounding — full doubles serialized to 17 digits and doubled
+// the wire size at 30Hz; 1cm / 1mrad precision is far below visible.
+function r2(v) { return Math.round(v * 100) / 100; }
+function r3(v) { return Math.round(v * 1000) / 1000; }
 
 // Seeded RNG (mulberry32) + string hash — deterministic item rolls per race.
 function mulberry32(seed) {

@@ -175,7 +175,10 @@ const io = new socket.Server(server, {
     // skips small frames where compression overhead exceeds the savings.
     // Both server + client (socket.io v4) handle this transparently.
     perMessageDeflate: {
-        threshold: 1024,
+        // raised from 1024: small chatty frames (snapshots, inputs, lobby
+        // state) were paying per-message zlib on a 0.5-CPU instance; only
+        // genuinely large payloads (SolShot shotResult 15-25KB) benefit.
+        threshold: 8192,
     },
 })
 
@@ -1707,7 +1710,7 @@ app.get('/api/games/critter-kart/debug/races', async (req, res) => {
 app.get('/api/games/critter-kart/debug/runner', async (req, res) => {
     try {
         const { debugRunnerStates } = await import('./socket-io/critter-kart.js');
-        res.json({ ok: true, v: 5, runners: debugRunnerStates() });
+        res.json({ ok: true, v: 6, runners: debugRunnerStates() });
     } catch (err) {
         res.status(500).json({ error: 'failed to read runner state', detail: err.message });
     }

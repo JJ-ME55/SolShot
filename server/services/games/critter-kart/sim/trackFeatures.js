@@ -213,10 +213,11 @@ export const WATER_Y = 0;
  * feature context built by createFeatureContext(); `slot` indexes per-kart flags.
  * `elapsedSec` drives the respawn timer (client uses race `elapsed`).
  */
-export function applyZones(state, slot, track, ctx, tuning, elapsedSec) {
+/** Boost pads alone — the only zone effect RAIL bots consume (stepRailBots,
+ *  the final word, overwrites their position/Y; scanning walls/ramp for them
+ *  was pure waste on the 60Hz tick). */
+export function applyBoostPads(state, slot, ctx, tuning) {
     let s = state;
-
-    // Boost pads (client GameCanvas ~877)
     for (const pad of ctx.boostPads) {
         const inside = padContains(pad, s.x, s.z);
         if (inside && !pad.triggered[slot]) {
@@ -226,6 +227,14 @@ export function applyZones(state, slot, track, ctx, tuning, elapsedSec) {
             pad.triggered[slot] = false;
         }
     }
+    return s;
+}
+
+export function applyZones(state, slot, track, ctx, tuning, elapsedSec) {
+    let s = state;
+
+    // Boost pads (client GameCanvas ~877)
+    s = applyBoostPads(s, slot, ctx, tuning);
 
     // Arched bridge Y pin (client ~891)
     if (track.archBridgeZone) {

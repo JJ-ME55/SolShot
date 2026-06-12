@@ -182,6 +182,12 @@ function cancelReconnectGrace({ telegramUserId }) {
 //   - race:input socket events → applyInput()
 //   - reconnect grace expiry → convertKartToBot()
 //   - lifecycle finish → onFinish callback drives settleRace + broadcast
+// Realtime-path logging gate: the VERBOSE heartbeats (per-socket per-second
+// input logs, snapshot heartbeats, joinRace traces) are synchronous-ish stdout
+// I/O on the same event loop as the 60Hz tick — measurable jitter on the
+// shared 0.5-CPU instance. Enable with CK_VERBOSE=1 when debugging.
+const CK_VERBOSE = process.env.CK_VERBOSE === '1';
+
 const runnersByRaceId = new Map();
 
 // Countdown throttle holds per race (raceId → Map<kartId, {downAtMs}>) —
@@ -697,7 +703,10 @@ export function registerCritterKartHandlers(client, io) {
             // throttle hold so the runner can award rocket starts at GO.
             // Map cleared when the runner consumes it at creation.
             let perRace = countdownThrottle.get(raceId);
-            if (!perRace) { perRace = new Map(); countdownThrottle.set(raceId, perRace); }
+            if (!perRace) {
+                if (countdownThrottle.size >= 50) return; // hard cap — countdowns are rare; unstarted races must not leak
+                perRace = new Map(); countdownThrottle.set(raceId, perRace);
+            }
             const prev = perRace.get(kartId) || { downAtMs: null };
             if ((throttle ?? 0) > 0) {
                 if (prev.downAtMs == null) prev.downAtMs = Date.now();
@@ -728,7 +737,7 @@ export function registerCritterKartHandlers(client, io) {
     // socket emit in the last second? If ZERO during an active race
     // ↘ client side rAF isn't running or socket isn't sending → WS
     // will idle-disconnect.
-    const inputHeartbeat = setInterval(() => {
+    const inputHeartbeat = !CK_VERBOSE ? null : setInterval(() => {
         const count = raceInputCount;
         raceInputCount = 0;
         if (count > 0) {
@@ -739,7 +748,7 @@ export function registerCritterKartHandlers(client, io) {
             );
         }
     }, 1000);
-    client.on('disconnect', () => clearInterval(inputHeartbeat));
+    client.on('disconnect', () => { if (inputHeartbeat) clearInterval(inputHeartbeat); });
 
     // ── critterkart:input (Session 1 legacy) ──────────────────────────
     // Pre-Session-2b clients may still send this. Drop silently.
@@ -923,13 +932,15 @@ export function registerCritterKartHandlers(client, io) {
             }
             const lobby = await lobbySetReady({ lobbyId, telegramUserId, ready });
             const wire = toLobbyStateWire(lobby);
-            const roomMembers = await io.in(lobbyRoomName(lobby.lobbyId)).fetchSockets();
-            logger.info('[VERBOSE lobby:ready] OK + broadcasting', {
-                lobbyId, telegramUserId, ready,
-                roomName: lobbyRoomName(lobby.lobbyId),
-                socketsInRoom: roomMembers.map(s => s.id),
-                wire,
-            });
+            if (CK_VERBOSE) {
+                const roomMembers = await io.in(lobbyRoomName(lobby.lobbyId)).fetchSockets();
+                logger.info('[VERBOSE lobby:ready] OK + broadcasting', {
+                    lobbyId, telegramUserId, ready,
+                    roomName: lobbyRoomName(lobby.lobbyId),
+                    socketsInRoom: roomMembers.map(s => s.id),
+                    wire,
+                });
+            }
             io.to(lobbyRoomName(lobby.lobbyId)).emit('lobby:state', { lobby: wire });
             ackOk(ack);
         } catch (err) {
@@ -1319,8 +1330,12 @@ async function runCountdownAndRace(io, raceId) {
                 // racer id on join
             })),
             onSnapshot: (snap) => {
-                broadcastToRace(io, raceId, 'race:snapshot', snap);
-                if (snap.tick % 100 === 0) {
+                // VOLATILE + uncompressed: a queued snapshot is a stale snapshot —
+                // socket.io buffering them for a busy/polling transport delivered
+                // multi-hundred-ms BURSTS (the client-side stutter), and deflating
+                // every 30Hz frame per-socket burned the 0.5-CPU instance.
+                io.to(raceRoomName(raceId)).volatile.compress(false).emit('race:snapshot', snap);
+                if (CK_VERBOSE && snap.tick % 100 === 0) {
                     const roomSize = io.sockets.adapter.rooms.get(raceRoomName(raceId))?.size || 0;
                     // PINO: object first, message second.
                     logger.info(

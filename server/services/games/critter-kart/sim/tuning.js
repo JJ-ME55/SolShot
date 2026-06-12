@@ -52,9 +52,9 @@ export const TUNING = {
     driftEntryKickDeg: 12,
     driftRecoverTime: 0.3,
     driftRecoverRate: 0.12,
-    driftTier1: 0.6,
-    driftTier2: 1.4,
-    driftTier3: 2.0,
+    driftTier1: 0.8,
+    driftTier2: 1.8,
+    driftTier3: 2.7, // keep in lockstep with client tuning.ts (playtest 2026-06-12)
     driftBoostDuration: [0, 0, 0, 0.85],
     boostAccel: 130,
     driftBoostMult: 1.28,

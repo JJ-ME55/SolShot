@@ -255,11 +255,11 @@ export function applyZones(state, slot, track, ctx, tuning, elapsedSec) {
             let tx = b.x - a.x, tz = b.z - a.z;
             const l = Math.hypot(tx, tz) || 1; tx /= l; tz /= l;
             const lat = (s.x - a.x) * tz + (s.z - a.z) * -tx;
-            if (!ctx.onUpperDeck[slot] && p < ud.rampUpEnd && Math.sign(lat) === ud.side && Math.abs(lat) >= UPPER_DECK_INNER) {
+            if (!ctx.onUpperDeck[slot] && p < ud.rampUpEnd && Math.sign(lat) === ud.side && Math.abs(lat) >= UPPER_DECK_INNER && Math.abs(lat) <= track.halfWidth) { // outer bound: grass beyond the channel never lifts
                 ctx.onUpperDeck[slot] = true;
             }
             if (ctx.onUpperDeck[slot]) {
-                if (Math.abs(lat) < UPPER_DECK_INNER - 0.5 && p < ud.rampDownStart) {
+                if ((Math.abs(lat) < UPPER_DECK_INNER - 0.5 || Math.abs(lat) > track.halfWidth + 1) && p < ud.rampDownStart) {
                     ctx.onUpperDeck[slot] = false;
                     s = { ...s, falling: true, vy: -1 };
                 } else {

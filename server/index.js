@@ -1707,7 +1707,7 @@ app.get('/api/games/critter-kart/debug/races', async (req, res) => {
 app.get('/api/games/critter-kart/debug/runner', async (req, res) => {
     try {
         const { debugRunnerStates } = await import('./socket-io/critter-kart.js');
-        res.json({ ok: true, v: 3, runners: debugRunnerStates() });
+        res.json({ ok: true, v: 4, runners: debugRunnerStates() });
     } catch (err) {
         res.status(500).json({ error: 'failed to read runner state', detail: err.message });
     }

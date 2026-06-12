@@ -1710,7 +1710,7 @@ app.get('/api/games/critter-kart/debug/races', async (req, res) => {
 app.get('/api/games/critter-kart/debug/runner', async (req, res) => {
     try {
         const { debugRunnerStates } = await import('./socket-io/critter-kart.js');
-        res.json({ ok: true, v: 8, runners: debugRunnerStates() });
+        res.json({ ok: true, v: 9, runners: debugRunnerStates() });
     } catch (err) {
         res.status(500).json({ error: 'failed to read runner state', detail: err.message });
     }
@@ -1726,6 +1726,32 @@ app.get('/api/games/critter-kart/debug/errors', async (req, res) => {
     } catch (err) {
         res.status(500).json({ error: 'failed to read errors', detail: err.message });
     }
+});
+
+// POST /api/games/critter-kart/client-crash — remote crash sink. Mobile
+// browsers (iPad black-screen 2026-06-12) give us no console; the client's
+// crash trap beacons here. text/plain keeps it preflight-free for sendBeacon.
+const CK_CLIENT_CRASHES = [];
+app.post('/api/games/critter-kart/client-crash', express.text({ type: '*/*', limit: '8kb' }), (req, res) => {
+    try {
+        const data = JSON.parse(req.body);
+        CK_CLIENT_CRASHES.unshift({
+            kind: String(data.kind || '').slice(0, 40),
+            msg: String(data.msg || '').slice(0, 2000),
+            stage: String(data.stage || '').slice(0, 40),
+            rafAgoMs: Number(data.rafAgoMs) || null,
+            ua: String(data.ua || '').slice(0, 300),
+            at: String(data.at || '').slice(0, 40),
+            recvAt: new Date().toISOString(),
+        });
+        if (CK_CLIENT_CRASHES.length > 30) CK_CLIENT_CRASHES.length = 30;
+    } catch (_) { /* malformed reports are dropped */ }
+    res.json({ ok: true });
+});
+
+// GET /api/games/critter-kart/debug/crashes — read the sink.
+app.get('/api/games/critter-kart/debug/crashes', (req, res) => {
+    res.json({ ok: true, count: CK_CLIENT_CRASHES.length, crashes: CK_CLIENT_CRASHES });
 });
 
 // ──────────────────────────────────────────────────────────────────────

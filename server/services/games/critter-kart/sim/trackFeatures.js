@@ -347,9 +347,13 @@ export function clientStartGrid(track, n) {
     const fz = Math.cos(pose.heading);
     const ppx = Math.cos(pose.heading);
     const ppz = -Math.sin(pose.heading);
+    // REAL-RACE formation (Fish 2026-06-12): two columns, three rows, right
+    // column staggered half a row back, all behind the line. MUST equal the
+    // client grid in GameCanvas.tsx exactly or karts diverge from frame one.
     const layout = [
-        { lat: -7, fwd: 6 }, { lat: 0, fwd: 6 }, { lat: 7, fwd: 6 },
-        { lat: -7, fwd: 0 }, { lat: 0, fwd: 0 }, { lat: 7, fwd: 0 },
+        { lat: -5, fwd: 0 },   { lat: 5, fwd: -3.5 },
+        { lat: -5, fwd: -7 },  { lat: 5, fwd: -10.5 },
+        { lat: -5, fwd: -14 }, { lat: 5, fwd: -17.5 },
     ];
     const grid = [];
     for (let i = 0; i < n; i++) {

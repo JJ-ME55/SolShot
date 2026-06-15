@@ -61,6 +61,7 @@ import {
     fillWithBots,
 } from '../services/games/critter-kart/lifecycle.js';
 import { RaceRunner } from '../services/games/critter-kart/sim/runner.js';
+import { trackDefFor } from '../services/games/critter-kart/sim/tracks.js';
 import {
     listOpenLobbies,
     getLobby,
@@ -1362,6 +1363,10 @@ async function runCountdownAndRace(io, raceId) {
         // the line (or the 5min timeout hits).
         const runner = new RaceRunner({
             raceId,
+            // Track resolved from the race doc (set at creation; 'default'→meadow).
+            // Was implicitly SUNNY_MEADOW; now honors the chosen track so a second
+            // track can ship. MUST match the client's registry for the same id.
+            trackDef: trackDefFor(race.track),
             players: race.players.map(p => ({
                 kartId: p.kartId,
                 displayName: p.displayName,

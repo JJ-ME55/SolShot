@@ -31,6 +31,7 @@ import { computeItemBoxes, rollCategoryItem, applyHit, ITEM, NO_ITEM } from './i
 import { createFeatureContext, resolveBarriers, applyZones, applyBoostPads, clientStartGrid } from './trackFeatures.js';
 import { KART_RADIUS } from './collision.js';
 import { buildTrainSim, applyTrainFlatten, trainPiecePositions } from './train.js';
+import { crabPositions, crabHit, CRAB_RADIUS } from './crabs.js';
 import { createRailState, stepRailBots, seedRailKart, releaseRailKart } from './railBots.js';
 
 const PHYSICS_HZ = 60;
@@ -169,6 +170,11 @@ export class RaceRunner {
         this.trainSim = buildTrainSim(this.track, trackDef.trainCrossings);
         this.features.flattenUntil = new Array(players.length).fill(0);
         this.anchorMs = null;
+
+        // Crab hazards (Coconut). Deterministic from the anchored clock; positions
+        // recomputed each tick into _crabPos for the snapshot. Empty on Meadow.
+        this.crabDefs = trackDef.crabs ?? [];
+        this._crabPos = [];
 
         // RAIL BOTS (Phase 3 sim-parity): bots ride the racing line kinematically
         // (the client's competitive bot model) instead of weak physics-steering.
@@ -572,6 +578,23 @@ export class RaceRunner {
         const trainPieces = raceSecTick >= 0 ? trainPiecePositions(this.trainSim, raceSecTick) : [];
         applyTrainFlatten(this.karts, trainPieces, this.features, raceSecTick);
 
+        // Phase 2.65 — crab hazard (Coconut; anchored clock, same as the train).
+        // Deterministic positions; contact spins a kart out via applyHit. The
+        // client adopts the spin from the snapshot stun (server-authoritative),
+        // and renders the crabs from this._crabPos.
+        if (this.crabDefs.length && raceSecTick >= 0) {
+            this._crabPos = crabPositions(this.track, this.crabDefs, raceSecTick);
+            for (const kart of this.karts) {
+                if (kart.finished || (kart.state.invulnTimer ?? 0) > 0) continue;
+                for (const c of this._crabPos) {
+                    if (crabHit(kart.state.x, kart.state.z, c.x, c.z, CRAB_RADIUS)) {
+                        kart.state = applyHit(kart.state, TUNING);
+                        break;
+                    }
+                }
+            }
+        }
+
         // Phase 2.7 — slipstream/draft (client parity): tuck into the wake of a
         // kart ahead (range + tight cone) and wind up past normal top speed.
         {
@@ -930,6 +953,9 @@ export class RaceRunner {
             // are stable per id).
             projectiles: this.projectiles.map(p => ({ id: p.id, kind: p.kind, x: r2(p.x), y: r2(p.y), z: r2(p.z) })),
             traps: this.traps.map(t => ({ id: t.id, x: r2(t.x), z: r2(t.z) })),
+            // Crab positions for client render (Coconut). Omitted/empty on tracks
+            // without crabs. The spin-out itself rides the per-kart stun above.
+            crabs: this._crabPos.length ? this._crabPos.map(c => ({ x: r2(c.x), z: r2(c.z) })) : undefined,
         };
     }
 

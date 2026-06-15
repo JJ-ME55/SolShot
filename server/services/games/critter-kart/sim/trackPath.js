@@ -57,6 +57,7 @@ export class TrackPath {
         this.bridgeZone = def.bridgeZone;
         this.archBridgeZone = def.archBridgeZone;
         this.upperDeckZone = def.upperDeckZone;
+        this.widthProfile = def.widthProfile;
         this.points = buildClosedPath(def.control, def.samplesPerSegment ?? 24);
 
         const n = this.points.length;
@@ -101,8 +102,28 @@ export class TrackPath {
         return best;
     }
 
+    /** Road half-width at a progress, honoring widthProfile narrowing. MUST be
+     *  byte-identical to the client (game/logic/trackPath.ts halfWidthAt). */
+    halfWidthAt(progress) {
+        if (!this.widthProfile) return this.halfWidth;
+        const p = ((progress % 1) + 1) % 1;
+        let mult = 1;
+        for (const z of this.widthProfile) {
+            if (p < z.startProgress || p > z.endProgress) continue;
+            const span = z.endProgress - z.startProgress;
+            const e = Math.min(0.025, span / 2);
+            const tIn = Math.min(p - z.startProgress, z.endProgress - p);
+            const k = e > 0 ? Math.min(1, tIn / e) : 1;
+            const s = k * k * (3 - 2 * k); // smoothstep
+            const m = 1 + (z.halfWidthMult - 1) * s;
+            if (m < mult) mult = m; // narrowest wins where zones overlap
+        }
+        return this.halfWidth * mult;
+    }
+
     isOnTrack(x, z) {
-        return this.nearest(x, z).distance < this.halfWidth;
+        const q = this.nearest(x, z);
+        return q.distance < this.halfWidthAt(q.progress);
     }
 
     pointAtProgress(progress) {

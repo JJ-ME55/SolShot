@@ -367,14 +367,14 @@ export class RaceRunner {
             const raw = this._timelineInput(kart, simMs);
             kart.smoothedSteer = rampSteer(kart.smoothedSteer, raw.steer ?? 0, TUNING.steerRampRate, TUNING.steerReturnRate, PHYSICS_DT);
             const near = this.track.nearest(kart.state.x, kart.state.z);
-            const distOff = Math.max(0, near.distance - this.track.halfWidth);
+            const distOff = Math.max(0, near.distance - this.track.halfWidthAt(near.progress)); // widthProfile narrowing
             kart.state = stepKart(kart.state, {
                 throttle: raw.throttle ?? 0,
                 steer: kart.smoothedSteer,
                 brake: raw.brake ?? 0,
                 drift: !!raw.drift,
                 onTrack: distOff === 0,
-                offRoad: Math.min(1, distOff / this.track.halfWidth),
+                offRoad: Math.min(1, distOff / this.track.halfWidth), // base-width ramp = consistent grip feel
             }, TUNING, PHYSICS_DT);
             const wall = resolveBarriers(kart.state, this.features.barriers, KART_RADIUS, TUNING);
             if (wall) kart.state = { ...kart.state, ...wall };
@@ -490,11 +490,12 @@ export class RaceRunner {
 
             // On-track + off-road severity (one nearest-call per kart, reused below)
             const near = this.track.nearest(kart.state.x, kart.state.z);
-            const halfW = this.track.halfWidth;
-            const distOff = Math.max(0, near.distance - halfW);
+            const hwAt = this.track.halfWidthAt(near.progress); // widthProfile narrowing (matches the client)
+            const distOff = Math.max(0, near.distance - hwAt);
             const onTrack = distOff === 0;
-            // offRoad severity 0..1: 0 at edge, 1 a full half-width past the edge.
-            const offRoad = Math.min(1, distOff / halfW);
+            // offRoad severity 0..1: ramps over a BASE half-width margin so grip
+            // feel is consistent regardless of the local pinch.
+            const offRoad = Math.min(1, distOff / this.track.halfWidth);
 
             // Pick input source: client (humans) or AI (bots)
             let rawInput;

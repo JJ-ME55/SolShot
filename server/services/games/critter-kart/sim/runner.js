@@ -32,6 +32,7 @@ import { createFeatureContext, resolveBarriers, applyZones, applyBoostPads, clie
 import { KART_RADIUS } from './collision.js';
 import { buildTrainSim, applyTrainFlatten, trainPiecePositions } from './train.js';
 import { crabPositions, crabHit, CRAB_RADIUS } from './crabs.js';
+import { tideLevel, tideFloods } from './tide.js';
 import { createRailState, stepRailBots, seedRailKart, releaseRailKart } from './railBots.js';
 
 const PHYSICS_HZ = 60;
@@ -175,6 +176,12 @@ export class RaceRunner {
         // recomputed each tick into _crabPos for the snapshot. Empty on Meadow.
         this.crabDefs = trackDef.crabs ?? [];
         this._crabPos = [];
+
+        // Rolling tide (Coconut). Deterministic from the anchored clock; the
+        // current level is broadcast for the client water sheet, the slow/spin
+        // is applied server-side. null on tracks without a tide.
+        this.tideCfg = trackDef.tide ?? null;
+        this._tideLevel = 0;
 
         // RAIL BOTS (Phase 3 sim-parity): bots ride the racing line kinematically
         // (the client's competitive bot model) instead of weak physics-steering.
@@ -595,6 +602,21 @@ export class RaceRunner {
             }
         }
 
+        // Phase 2.66 — rolling tide (Coconut; anchored clock). Flooded karts eat a
+        // heavy slow; at peak (level > 0.85) they also spin out. Server-authoritative
+        // (client adopts via snapshot slowTimer/stun + renders the sheet from _tideLevel).
+        if (this.tideCfg && raceSecTick >= 0) {
+            const level = tideLevel(raceSecTick, this.tideCfg);
+            this._tideLevel = level;
+            for (const kart of this.karts) {
+                if (kart.finished) continue;
+                if (tideFloods(this.track, this.tideCfg, level, kart.state.x, kart.state.z, kart.state.y)) {
+                    kart.state = { ...kart.state, slowTimer: Math.max(kart.state.slowTimer ?? 0, TUNING.stormSlow) };
+                    if (level > 0.85 && (kart.state.invulnTimer ?? 0) <= 0) kart.state = applyHit(kart.state, TUNING);
+                }
+            }
+        }
+
         // Phase 2.7 — slipstream/draft (client parity): tuck into the wake of a
         // kart ahead (range + tight cone) and wind up past normal top speed.
         {
@@ -956,6 +978,9 @@ export class RaceRunner {
             // Crab positions for client render (Coconut). Omitted/empty on tracks
             // without crabs. The spin-out itself rides the per-kart stun above.
             crabs: this._crabPos.length ? this._crabPos.map(c => ({ x: r2(c.x), z: r2(c.z) })) : undefined,
+            // Tide water level 0..1 for the client sheet (Coconut). Slow/spin rides
+            // the per-kart slowTimer/stun above. Omitted on tracks without a tide.
+            tide: this.tideCfg ? r3(this._tideLevel) : undefined,
         };
     }
 

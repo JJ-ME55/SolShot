@@ -52,9 +52,9 @@ export const TUNING = {
     driftEntryKickDeg: 12,
     driftRecoverTime: 0.3,
     driftRecoverRate: 0.12,
-    driftTier1: 0.8,
-    driftTier2: 1.8,
-    driftTier3: 2.7, // keep in lockstep with client tuning.ts (playtest 2026-06-12)
+    driftTier1: 0.7,
+    driftTier2: 1.5,
+    driftTier3: 2.1, // eased 2.7→2.1 (Fish 2026-06-15: too hard to fill) — keep in lockstep with client tuning.ts
     driftBoostDuration: [0, 0, 0, 0.85],
     boostAccel: 130,
     driftBoostMult: 1.28,
@@ -105,3 +105,10 @@ export const TUNING = {
     camLookAhead: 16,
     camLerp: 0.12,
 };
+
+/** Per-track "cc" factor — MUST stay byte-identical to client tuning.ts scaledTuning(). Scales
+ *  ONLY maxSpeed/accel/boostAccel by `scale`; all other knobs untouched. scale 1 = no change. */
+export function scaledTuning(base, scale) {
+    if (!scale || scale === 1) return base;
+    return { ...base, maxSpeed: base.maxSpeed * scale, accel: base.accel * scale, boostAccel: base.boostAccel * scale };
+}

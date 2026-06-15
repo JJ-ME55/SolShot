@@ -18,7 +18,7 @@
  *   onError(err)           — tick threw; race aborts
  */
 
-import { TUNING } from './tuning.js';
+import { TUNING, scaledTuning } from './tuning.js';
 import { stepKart } from './kartPhysics.js';
 import { rampSteer } from './steering.js';
 import { TrackPath } from './trackPath.js';
@@ -85,6 +85,10 @@ export class RaceRunner {
         this.raceId = raceId;
         this.track = new TrackPath(trackDef);
         this.totalLaps = trackDef.laps;
+        // Per-track "cc" speed (Coconut 75cc = ×1.07). Scales ONLY maxSpeed/accel/boostAccel from
+        // the SAME base the client scales (tuning.js scaledTuning), so server authority == client
+        // prediction. Used in the physics methods (_tick, _maybeRewind) via a local TUNING rebind.
+        this.tuning = scaledTuning(TUNING, trackDef.speedScale ?? 1);
         this.onSnapshot = onSnapshot ?? null;
         this.onFinish = onFinish ?? null;
         this.onError = onError ?? null;
@@ -358,6 +362,7 @@ export class RaceRunner {
      *  contacts that already resolved STAND — we never retro-judge events,
      *  only the kart's own driving line. */
     _maybeRewind(kart, idx) {
+        const TUNING = this.tuning; // per-track scaled tuning (75cc) — replay must match the live sim
         const target = kart.rewindToTick;
         kart.rewindToTick = null;
         if (target === null || kart.finished) return;
@@ -476,6 +481,7 @@ export class RaceRunner {
 
     _tick() {
         if (this.stopped) return;
+        const TUNING = this.tuning; // per-track scaled tuning (75cc) — every physics call this tick uses it
         // Lag-comp rewinds run BEFORE the new tick: history is complete up to
         // tickNum, so a late input burst re-simulates the kart through the
         // stall window with the inputs it actually made.

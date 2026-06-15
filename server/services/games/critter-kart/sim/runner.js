@@ -893,6 +893,12 @@ export class RaceRunner {
                 z: r2(k.state.z),
                 y: r2(k.state.y ?? 0),
                 vy: r2(k.state.vy ?? 0),
+                // Real airborne flag — the client's replay must NOT invent it
+                // from height. On the ramp the server has falling=false while
+                // y>0; inventing falling=true from y skipped the client's ramp
+                // re-pin and yanked the kart down through the ramp face
+                // ("falls through the jump", 2026-06-12).
+                fl: !!k.state.falling,
                 heading: r3(k.state.heading),
                 velHeading: r3(k.state.velHeading),
                 // Smoothed-steer ramp state — the client's replay MUST re-ramp

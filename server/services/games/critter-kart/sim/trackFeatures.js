@@ -240,6 +240,14 @@ export function applyZones(state, slot, track, ctx, tuning, elapsedSec) {
     // (arch/deck mutate only y/vy/falling; the respawn returns immediately).
     const zoneProgress = track.nearest(s.x, s.z).progress;
 
+    // Keep a rolling last-safe spot for EVERY track (not just jump tracks): grounded, level,
+    // and on the road. Powers the catch-all fall recovery below so an upper-deck drop-off on a
+    // jumpless track (Coconut) can be rescued. Naturally skips the gap/arch/deck (kart is y>0
+    // or falling there).
+    if ((s.y ?? 0) === 0 && (s.vy ?? 0) === 0 && !s.falling && track.isOnTrack(s.x, s.z)) {
+        ctx.lastSafe[slot] = { x: s.x, z: s.z, heading: s.heading, speed: s.speed };
+    }
+
     // Arched bridge Y pin (client ~891)
     if (track.archBridgeZone) {
         const az = track.archBridgeZone;
@@ -329,6 +337,25 @@ export function applyZones(state, slot, track, ctx, tuning, elapsedSec) {
                 y: 0, vy: 0, falling: false, respawnAt: undefined,
             };
         }
+    }
+
+    // CATCH-ALL FALL RECOVERY (mirrors GameCanvas). On jumpless tracks the block above never
+    // runs, so a kart that dropped off the upper-deck shortcut would fall forever. Snap any kart
+    // that's clearly below the world back to its last safe road spot — keeps client + server in
+    // lockstep so reconciliation doesn't fight the rescue.
+    if ((s.y ?? 0) < -10 && !s.respawnAt) {
+        const safe = ctx.lastSafe[slot];
+        if (safe) {
+            if (ctx.onUpperDeck) ctx.onUpperDeck[slot] = false;
+            return {
+                ...s,
+                x: safe.x, z: safe.z,
+                heading: safe.heading, velHeading: safe.heading,
+                speed: safe.speed * tuning.respawnSpeedKeep,
+                y: 0, vy: 0, falling: false,
+            };
+        }
+        return { ...s, y: 0, vy: 0, falling: false };
     }
 
     return s;

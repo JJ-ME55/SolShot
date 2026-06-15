@@ -215,7 +215,30 @@ export async function setReady({ lobbyId, telegramUserId, ready }) {
     if (!lobby) throw new Error('lobby_not_found');
     const member = lobby.members.find(m => m.telegramUserId === telegramUserId);
     if (!member) throw new Error('not_member');
+    // Must have picked a character before readying up (slice 3).
+    if (ready && !member.racerId) throw new Error('pick_a_character_first');
     member.isReady = !!ready;
+    lobby.lastActiveAt = new Date();
+    await lobby.save();
+    return lobby.toObject();
+}
+
+/**
+ * In-lobby character pick. Sets the member's racerId, enforcing uniqueness across
+ * the lobby (rejects a racer another member already holds — the client greys
+ * taken ones out, this is the authoritative guard against a simultaneous pick).
+ * Changing your pick clears your ready flag (you must re-ready).
+ */
+export async function pickRacer({ lobbyId, telegramUserId, racerId }) {
+    const lobby = await CritterKartLobby.findOne({ lobbyId, state: 'open' });
+    if (!lobby) throw new Error('lobby_not_found');
+    const member = lobby.members.find(m => m.telegramUserId === telegramUserId);
+    if (!member) throw new Error('not_member');
+    if (lobby.members.some(m => m.telegramUserId !== telegramUserId && m.racerId === racerId)) {
+        throw new Error('racer_taken');
+    }
+    member.racerId = racerId;
+    member.isReady = false; // re-ready after changing character
     lobby.lastActiveAt = new Date();
     await lobby.save();
     return lobby.toObject();
@@ -304,16 +327,15 @@ export function toLobbyStateWire(lobby) {
         name: lobby.name,
         cap: lobby.cap,
         hostUsername: lobby.hostUsername,
-        members: lobby.members.map((m, i) => ({
+        members: lobby.members.map((m) => ({
             username: m.displayName,
             ready: m.isReady,
             host: m.isHost,
             telegramUserId: m.telegramUserId,
-            // Cosmetic preview only: the actual racerId assignment lives
-            // in lifecycle.js at race-creation time. Without this the
-            // lobby SlotCard fell back to RACERS[0] for every player —
-            // "2 Shelly" / "everyone is Shelly" symptom JJ saw 2026-06-08.
-            racerId: lobbyPreviewRacerForSlot(i),
+            // The member's CHOSEN character (slice 3). null = not yet picked →
+            // the client shows the picker / "choosing…". Uniqueness enforced in
+            // pickRacer; carried into the race by lobby:start → createRace.
+            racerId: m.racerId || null,
         })),
         pending: lobby.pendingRequests.map(p => ({
             requestId: p.requestId,

@@ -70,6 +70,7 @@ import {
     joinLobby,
     decideRequest,
     setReady as lobbySetReady,
+    pickRacer,
     leaveLobby,
     markStarting,
     markClosed,
@@ -997,6 +998,24 @@ export function registerCritterKartHandlers(client, io) {
         }
     });
 
+    // ── lobby:pickRacer ───────────────────────────────────────────────
+    // In-lobby character pick. Server enforces uniqueness; broadcasts new state.
+    client.on('lobby:pickRacer', async (payload, ack) => {
+        try {
+            const { telegramUserId } = identityFromPayload(payload);
+            if (!telegramUserId) return ackError(ack, 'identity_required');
+            const { lobbyId, racerId } = payload || {};
+            if (!lobbyId || !racerId) return ackError(ack, 'params_required');
+            const lobby = await pickRacer({ lobbyId, telegramUserId, racerId });
+            io.to(lobbyRoomName(lobby.lobbyId)).emit('lobby:state', { lobby: toLobbyStateWire(lobby) });
+            ackOk(ack);
+        } catch (err) {
+            // 'racer_taken' is an expected race condition (two players tapped the
+            // same character) — the client re-syncs from the broadcast state.
+            ackError(ack, 'pick_failed', err.message);
+        }
+    });
+
     // ── lobby:leave ───────────────────────────────────────────────────
     client.on('lobby:leave', async (payload, ack) => {
         try {
@@ -1083,10 +1102,15 @@ export function registerCritterKartHandlers(client, io) {
             if (lobby.state !== 'open' && lobby.state !== 'starting') {
                 return ackError(ack, 'lobby_not_open', `state: ${lobby.state}`);
             }
+            // Gate: every human must have picked a character before the race
+            // starts (the client also disables Start until then).
+            const unpicked = lobby.members.filter(m => !m.racerId);
+            if (unpicked.length) return ackError(ack, 'all_must_pick_character', `${unpicked.length} still choosing`);
             const humans = lobby.members.map(m => ({
                 telegramUserId: m.telegramUserId,
                 displayName: m.displayName,
                 socketId: m.socketId,
+                racerId: m.racerId,   // carry the in-lobby character pick into the race
                 isBot: false,
             }));
             // Bot-fill the remainder (lifecycle helper)

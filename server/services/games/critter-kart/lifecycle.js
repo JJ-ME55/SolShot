@@ -96,7 +96,14 @@ export async function createRace({ players, format = {} }) {
     // rendering. The Kart mesh renders whatever racerId the server
     // assigns to its slot.
     const ROSTER_RACER_IDS = ['rusty', 'shelly', 'pip', 'bruno', 'jj', 'fish'];
-    const racerIdForSlot = (i) => ROSTER_RACER_IDS[i % ROSTER_RACER_IDS.length];
+    // Players who PICKED a character (lobby) keep it; everyone else (bots, and
+    // quick-match humans who don't pick) takes the next UNUSED roster racer, so
+    // a bot can never collide with a human's chosen character. Falls back to a
+    // slot-cycle only if the roster is somehow exhausted.
+    const used = new Set(players.map(p => p.racerId).filter(Boolean));
+    const leftover = ROSTER_RACER_IDS.filter(r => !used.has(r));
+    let _li = 0;
+    const racerIdForSlot = (i) => leftover[_li++] ?? ROSTER_RACER_IDS[i % ROSTER_RACER_IDS.length];
 
     const raceId = newRaceId();
     const race = await CritterKartRace.create({

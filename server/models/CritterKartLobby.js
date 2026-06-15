@@ -23,6 +23,7 @@ const lobbyMemberSchema = new mongoose.Schema({
     socketId:         { type: String, default: null },
     isHost:           { type: Boolean, default: false },
     isReady:          { type: Boolean, default: false },
+    racerId:          { type: String, default: null }, // in-lobby character pick (must be unique + set before ready)
     joinedAt:         { type: Date, default: Date.now },
 }, { _id: false });
 

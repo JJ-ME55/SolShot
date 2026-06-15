@@ -163,8 +163,10 @@ export class RaceRunner {
 
         // Train hazard (Phase 2 sim-parity). Deterministic from race-elapsed
         // time; the socket layer calls setAnchorMs(lockedStartAtMs) so the
-        // server's train clock matches every client's exactly.
-        this.trainSim = buildTrainSim(this.track);
+        // server's train clock matches every client's exactly. Per-track:
+        // trackDef.trainCrossings absent → no train (Coconut). null trainSim
+        // flows safely through trainPiecePositions/applyTrainFlatten (no-op).
+        this.trainSim = buildTrainSim(this.track, trackDef.trainCrossings);
         this.features.flattenUntil = new Array(players.length).fill(0);
         this.anchorMs = null;
 

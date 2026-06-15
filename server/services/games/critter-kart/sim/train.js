@@ -18,11 +18,15 @@ const COUPLE = 1.5;
 const FLATTEN_RADIUS = 6.5;       // contact distance (client uses 6.5)
 const FLATTEN_SECS = 0.7;         // squash duration on hit
 
-/** Build the deterministic train sim for a track (same maths as the client). */
-export function buildTrainSim(track) {
-    // Crossings at race progress 0.395 / 0.769; loop sweeps the outfield + infield.
-    const trainA = track.pointAtProgress(0.395);
-    const trainB = track.pointAtProgress(0.769);
+/** Build the deterministic train sim for a track (same maths as the client).
+ *  `crossings` = the track's [a,b] progress points; ABSENT → the track has NO
+ *  train (Coconut) and this returns null (trainPiecePositions/applyTrainFlatten
+ *  then no-op). Meadow passes [0.395, 0.769]. */
+export function buildTrainSim(track, crossings) {
+    if (!crossings) return null;
+    const [crossA, crossB] = crossings;
+    const trainA = track.pointAtProgress(crossA);
+    const trainB = track.pointAtProgress(crossB);
     let cx = 0, cz = 0;
     for (const p of track.points) { cx += p.x; cz += p.z; }
     cx /= track.points.length; cz /= track.points.length;
@@ -45,7 +49,7 @@ export function buildTrainSim(track) {
         return d / trainPath.totalLength;
     });
     // Engine reaches crossing A about when a kart first gets there from a standing start.
-    const tToCrossingA = (0.395 * track.totalLength) / (TUNING.maxSpeed * 0.72);
+    const tToCrossingA = (crossA * track.totalLength) / (TUNING.maxSpeed * 0.72);
     return {
         trainPath,
         carOffset,
@@ -54,8 +58,10 @@ export function buildTrainSim(track) {
     };
 }
 
-/** All piece positions at a given race-elapsed time (seconds since GO). */
+/** All piece positions at a given race-elapsed time (seconds since GO).
+ *  Empty when the track has no train (sim === null). */
 export function trainPiecePositions(sim, elapsedSec) {
+    if (!sim) return [];
     const base = (elapsedSec + sim.trainPhase) / TRAIN_PERIOD;
     const out = [];
     for (const phase of sim.phaseOffsets) {

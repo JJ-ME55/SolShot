@@ -14,6 +14,7 @@ export const SUNNY_MEADOW = {
     halfWidth: 18,
     laps: 3,
     samplesPerSegment: 22,
+    trainCrossings: [0.395, 0.769], // generalised from the old hardcode; absent = no train (Coconut)
     jumpZone: { startProgress: 0.19, endProgress: 0.21 },
     bridgeZone: { startProgress: 0.902, endProgress: 0.922 },
     archBridgeZone: { startProgress: 0.04, endProgress: 0.085 },

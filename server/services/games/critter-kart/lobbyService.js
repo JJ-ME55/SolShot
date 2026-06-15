@@ -51,7 +51,7 @@ export async function findLobbyForPlayer(telegramUserId) {
 // ── Create / join / decide / ready ───────────────────────────────────
 
 export async function createLobby({
-    name, cap, hostTelegramUserId, hostUsername, hostFirstName, socketId,
+    name, cap, track, hostTelegramUserId, hostUsername, hostFirstName, socketId,
 }) {
     const clampedCap = Math.max(LOBBY_MIN_CAP, Math.min(LOBBY_MAX_CAP, Math.floor(cap || 4)));
     const lobbyId = newId('lobby');
@@ -67,6 +67,7 @@ export async function createLobby({
         hostUsername: hostDisplay,
         cap: clampedCap,
         state: 'open',
+        track: track || 'meadow',
         members: [{
             telegramUserId: hostTelegramUserId,
             telegramUsername: hostUsername || null,

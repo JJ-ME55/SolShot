@@ -840,6 +840,7 @@ export function registerCritterKartHandlers(client, io) {
             const lobby = await createLobby({
                 name: payload?.name,
                 cap: payload?.cap,
+                track: payload?.track, // host's track choice (defaults to meadow)
                 hostTelegramUserId: telegramUserId,
                 hostUsername: telegramUsername,
                 hostFirstName: firstName,
@@ -1082,7 +1083,7 @@ export function registerCritterKartHandlers(client, io) {
             // Bot-fill the remainder (lifecycle helper)
             const MAX = 6;
             const players = fillWithBots(humans, MAX);
-            const { race } = await createRace({ players });
+            const { race } = await createRace({ players, format: { track: lobby.track || 'meadow' } });
             await markStarting({
                 lobbyId,
                 hostTelegramUserId: telegramUserId,

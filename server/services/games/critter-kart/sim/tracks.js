@@ -6,10 +6,12 @@
  * render — karts diverge from frame one. Coconut ('cove') lands in Phase B.
  */
 import { SUNNY_MEADOW } from './sunnyMeadow.js';
+import { COCONUT_COVE } from './coconutCove.js';
 
 export const TRACK_DEFS = {
     meadow: SUNNY_MEADOW,
     default: SUNNY_MEADOW, // lifecycle stores 'default' when no track was chosen
+    cove: COCONUT_COVE,
 };
 
 /** Resolve a trackId to its TrackDef; unknown / undefined falls back to Meadow. */

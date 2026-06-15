@@ -46,6 +46,7 @@ const critterKartLobbySchema = new mongoose.Schema({
     hostUsername:     { type: String, required: true },
     cap:              { type: Number, required: true, min: LOBBY_MIN_CAP, max: LOBBY_MAX_CAP },
     state:            { type: String, enum: LOBBY_STATES, default: 'open' },
+    track:            { type: String, default: 'meadow' }, // host's track choice → race.track
 
     members:          { type: [lobbyMemberSchema], default: [] },
     pendingRequests:  { type: [lobbyPendingRequestSchema], default: [] },

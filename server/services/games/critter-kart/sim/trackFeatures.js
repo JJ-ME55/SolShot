@@ -240,14 +240,6 @@ export function applyZones(state, slot, track, ctx, tuning, elapsedSec) {
     // (arch/deck mutate only y/vy/falling; the respawn returns immediately).
     const zoneProgress = track.nearest(s.x, s.z).progress;
 
-    // Keep a rolling last-safe spot for EVERY track (not just jump tracks): grounded, level,
-    // and on the road. Powers the catch-all fall recovery below so an upper-deck drop-off on a
-    // jumpless track (Coconut) can be rescued. Naturally skips the gap/arch/deck (kart is y>0
-    // or falling there).
-    if ((s.y ?? 0) === 0 && (s.vy ?? 0) === 0 && !s.falling && track.isOnTrack(s.x, s.z)) {
-        ctx.lastSafe[slot] = { x: s.x, z: s.z, heading: s.heading, speed: s.speed };
-    }
-
     // Arched bridge Y pin (client ~891)
     if (track.archBridgeZone) {
         const az = track.archBridgeZone;
@@ -288,6 +280,31 @@ export function applyZones(state, slot, track, ctx, tuning, elapsedSec) {
                         s = { ...s, boostTimer: Math.max(s.boostTimer ?? 0, tuning.turboBoost * 1.4) };
                     }
                 }
+            }
+        }
+    }
+
+    // SKYWALK (mirror of the client GameCanvas skywalk block — MP parity). Centre-lane kicker
+    // ride-up → launch off the lip → settle onto the high walkway deck (+ booster strip). Off the
+    // far end you drop and the HARD FLOOR below catches you.
+    if (track.skywalk) {
+        const sw = track.skywalk;
+        const p = zoneProgress;
+        const a = track.pointAtProgress(p);
+        const b = track.pointAtProgress(Math.min(1, p + 0.002));
+        let tx = b.x - a.x, tz = b.z - a.z; const ll = Math.hypot(tx, tz) || 1; tx /= ll; tz /= ll;
+        const lat = (s.x - a.x) * tz + (s.z - a.z) * -tx;
+        const centre = Math.abs(lat) < track.halfWidth * 0.55;
+        const RAMP_LEN = 0.007, RAMP_RISE = 9;
+        if (centre && p >= sw.jumpProgress - RAMP_LEN && p < sw.jumpProgress) {
+            const t = (p - (sw.jumpProgress - RAMP_LEN)) / RAMP_LEN;
+            s = { ...s, y: t * RAMP_RISE, vy: 0, falling: false };
+        } else if (centre && p >= sw.jumpProgress && p < sw.jumpProgress + 0.005 && (s.y ?? 0) >= RAMP_RISE - 2) {
+            s = { ...s, vy: sw.launch, falling: true };
+        } else if (p >= sw.startProgress && p <= sw.endProgress && (s.y ?? 0) >= sw.height - 6 && (s.y ?? 0) <= sw.height && (s.vy ?? 0) <= 0) {
+            s = { ...s, y: sw.height, vy: 0, falling: false };
+            if (sw.boostStart != null && p >= sw.boostStart && p <= (sw.boostEnd ?? sw.boostStart)) {
+                s = { ...s, boostTimer: Math.max(s.boostTimer ?? 0, tuning.turboBoost * 1.4) };
             }
         }
     }
@@ -339,23 +356,21 @@ export function applyZones(state, slot, track, ctx, tuning, elapsedSec) {
         }
     }
 
-    // CATCH-ALL FALL RECOVERY (mirrors GameCanvas). On jumpless tracks the block above never
-    // runs, so a kart that dropped off the upper-deck shortcut would fall forever. Snap any kart
-    // that's clearly below the world back to its last safe road spot — keeps client + server in
-    // lockstep so reconciliation doesn't fight the rescue.
-    if ((s.y ?? 0) < -10 && !s.respawnAt) {
-        const safe = ctx.lastSafe[slot];
-        if (safe) {
-            if (ctx.onUpperDeck) ctx.onUpperDeck[slot] = false;
-            return {
-                ...s,
-                x: safe.x, z: safe.z,
-                heading: safe.heading, velHeading: safe.heading,
-                speed: safe.speed * tuning.respawnSpeedKeep,
-                y: 0, vy: 0, falling: false,
-            };
+    // HARD FLOOR + HARD CONTAINMENT (mirror GameCanvas; replaced a teleport-to-lastSafe band-aid
+    // that fought the client reconciler = the "shortcut keeps pulling me back" report). On a
+    // jumpless track the player can never be below ground (catches any drop = the landing for the
+    // upper-deck / skywalk), and can never escape past the barrier run-off into the sea.
+    if (!track.jumpZone && (s.y ?? 0) < 0) {
+        s = { ...s, y: 0, vy: 0, falling: false };
+    }
+    {
+        const q = track.nearest(s.x, s.z);
+        const maxD = track.halfWidthAt(q.progress) + 22;
+        if (q.distance > maxD) {
+            const ox = s.x - q.px, oz = s.z - q.pz;
+            const d = Math.hypot(ox, oz) || 1;
+            s = { ...s, x: q.px + (ox / d) * maxD, z: q.pz + (oz / d) * maxD, speed: s.speed * 0.5 };
         }
-        return { ...s, y: 0, vy: 0, falling: false };
     }
 
     return s;

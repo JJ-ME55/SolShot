@@ -57,6 +57,8 @@ export class TrackPath {
         this.bridgeZone = def.bridgeZone;
         this.archBridgeZone = def.archBridgeZone;
         this.upperDeckZone = def.upperDeckZone;
+        this.skywalk = def.skywalk;
+        this.boardwalkZone = def.boardwalkZone;
         this.widthProfile = def.widthProfile;
         this.points = buildClosedPath(def.control, def.samplesPerSegment ?? 24);
 

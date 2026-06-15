@@ -399,6 +399,7 @@ export function initCritterKartSocket(io) {
                         roomId: race.raceId,
                         startAtMs: Date.now() + 4000,
                         members: memberWire,
+                        track: race.track ?? 'meadow', // client renders + predicts this track
                         // `player` is the pre-race human entry (no kartId) — resolve
                         // the RACE doc's entry (same fix as the lobby path).
                         selfKartId: race.players.find(p => p.telegramUserId === player.telegramUserId)?.kartId,
@@ -1063,6 +1064,7 @@ export function registerCritterKartHandlers(client, io) {
                             roomId: existing.raceId,
                             startAtMs: reAt,
                             members: memberWire,
+                            track: existing.track ?? 'meadow',
                             selfKartId: p.kartId,
                         });
                     }
@@ -1128,6 +1130,7 @@ export function registerCritterKartHandlers(client, io) {
                     roomId: race.raceId,
                     startAtMs,
                     members: memberWire,
+                    track: race.track ?? 'meadow', // client renders + predicts this track
                     selfKartId: rp?.kartId,   // AUTHORITATIVE: this socket's kart (from the RACE doc)
                 });
                 c.emit('match:found', {

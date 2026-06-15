@@ -47,6 +47,8 @@ const critterKartLobbySchema = new mongoose.Schema({
     cap:              { type: Number, required: true, min: LOBBY_MIN_CAP, max: LOBBY_MAX_CAP },
     state:            { type: String, enum: LOBBY_STATES, default: 'open' },
     track:            { type: String, default: 'meadow' }, // host's track choice → race.track
+    visibility:       { type: String, enum: ['open', 'private'], default: 'open' }, // open=listed+instant-join; private=hidden+code+request
+    code:             { type: String, default: null, index: true }, // short shareable join code for private lobbies
 
     members:          { type: [lobbyMemberSchema], default: [] },
     pendingRequests:  { type: [lobbyPendingRequestSchema], default: [] },
@@ -63,9 +65,10 @@ const critterKartLobbySchema = new mongoose.Schema({
 // TTL: auto-delete 30 min after last activity unless a race started
 critterKartLobbySchema.index({ lastActiveAt: 1 }, { expireAfterSeconds: 30 * 60 });
 
-// Helper: filter for "discoverable" (open + has room) lobbies
+// Helper: filter for "discoverable" lobbies — OPEN visibility only (private
+// lobbies are hidden; you reach them by code), open state, and not full.
 critterKartLobbySchema.statics.openLobbies = function () {
-    return this.find({ state: 'open', $expr: { $lt: [{ $size: '$members' }, '$cap'] } })
+    return this.find({ state: 'open', visibility: 'open', $expr: { $lt: [{ $size: '$members' }, '$cap'] } })
         .sort({ createdAt: -1 })
         .limit(20)
         .lean();

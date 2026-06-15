@@ -50,10 +50,19 @@ export async function findLobbyForPlayer(telegramUserId) {
 
 // ── Create / join / decide / ready ───────────────────────────────────
 
+// Short shareable join code for private lobbies (no ambiguous 0/O/1/I chars).
+function genJoinCode() {
+    const ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let s = '';
+    for (let i = 0; i < 5; i++) s += ALPHA[Math.floor(Math.random() * ALPHA.length)];
+    return s;
+}
+
 export async function createLobby({
-    name, cap, track, hostTelegramUserId, hostUsername, hostFirstName, socketId,
+    name, cap, track, visibility, hostTelegramUserId, hostUsername, hostFirstName, socketId,
 }) {
     const clampedCap = Math.max(LOBBY_MIN_CAP, Math.min(LOBBY_MAX_CAP, Math.floor(cap || 4)));
+    const vis = visibility === 'private' ? 'private' : 'open';
     const lobbyId = newId('lobby');
     const hostDisplay = formatDisplayName({
         telegramUsername: hostUsername,
@@ -68,6 +77,8 @@ export async function createLobby({
         cap: clampedCap,
         state: 'open',
         track: track || 'meadow',
+        visibility: vis,
+        code: vis === 'private' ? genJoinCode() : null,
         members: [{
             telegramUserId: hostTelegramUserId,
             telegramUsername: hostUsername || null,
@@ -89,6 +100,49 @@ export async function createLobby({
  * always-pending (host must accept). If we add an open-join setting
  * later, this becomes a switch.
  */
+/**
+ * Unified join entry. OPEN lobby (found by lobbyId from the browse list) → the
+ * joiner is added straight to members (no host approval). PRIVATE lobby → must
+ * be reached by `code`; the joiner goes into pendingRequests for the host to
+ * accept (the existing request/accept handshake). Returns { lobby, joined } for
+ * an instant open join, or { lobby, requestId } for a private request.
+ */
+export async function joinLobby({
+    lobbyId, code, telegramUserId, telegramUsername, firstName, socketId,
+}) {
+    // Resolve by code (private) or lobbyId (open browse).
+    const query = code ? { code: String(code).toUpperCase(), state: 'open' } : { lobbyId, state: 'open' };
+    const lobby = await CritterKartLobby.findOne(query);
+    if (!lobby) throw new Error(code ? 'invalid_code' : `lobby ${lobbyId} not open`);
+
+    // Already a member? (idempotent — e.g. reconnect)
+    if (lobby.members.find(m => m.telegramUserId === telegramUserId)) {
+        return { lobby: lobby.toObject(), joined: true, alreadyMember: true };
+    }
+
+    if (lobby.visibility === 'private') {
+        // Private → request/accept handshake (reuses requestJoin against this id).
+        return requestJoin({ lobbyId: lobby.lobbyId, telegramUserId, telegramUsername, firstName, socketId });
+    }
+
+    // OPEN → instant join. Capacity = members only (no pending on open lobbies).
+    if (lobby.members.length >= lobby.cap) throw new Error('lobby_full');
+    const displayName = formatDisplayName({ telegramUsername, firstName, telegramUserId });
+    lobby.members.push({
+        telegramUserId,
+        telegramUsername: telegramUsername || null,
+        firstName: firstName || null,
+        displayName,
+        socketId,
+        isHost: false,
+        isReady: false,
+    });
+    lobby.lastActiveAt = new Date();
+    await lobby.save();
+    logger.info('[critter-kart/lobby] open join', { lobbyId: lobby.lobbyId, joiner: telegramUserId });
+    return { lobby: lobby.toObject(), joined: true };
+}
+
 export async function requestJoin({
     lobbyId, telegramUserId, telegramUsername, firstName, socketId,
 }) {
@@ -266,6 +320,9 @@ export function toLobbyStateWire(lobby) {
             username: p.displayName,
         })),
         status: lobby.state === 'closed' ? 'closed' : (lobby.state === 'starting' ? 'starting' : 'open'),
+        track: lobby.track || 'meadow',
+        visibility: lobby.visibility || 'open',
+        code: lobby.code || null, // shareable join code (private lobbies); members re-share it
     };
 }
 

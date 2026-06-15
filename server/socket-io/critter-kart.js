@@ -67,6 +67,7 @@ import {
     getLobby,
     createLobby,
     requestJoin,
+    joinLobby,
     decideRequest,
     setReady as lobbySetReady,
     leaveLobby,
@@ -842,6 +843,7 @@ export function registerCritterKartHandlers(client, io) {
                 name: payload?.name,
                 cap: payload?.cap,
                 track: payload?.track, // host's track choice (defaults to meadow)
+                visibility: payload?.visibility, // 'open' (default) | 'private'
                 hostTelegramUserId: telegramUserId,
                 hostUsername: telegramUsername,
                 hostFirstName: firstName,
@@ -874,10 +876,13 @@ export function registerCritterKartHandlers(client, io) {
                 payload,
             });
             if (!telegramUserId) return ackError(ack, 'identity_required');
-            const { lobbyId } = payload || {};
-            if (!lobbyId) return ackError(ack, 'lobbyId_required');
-            const { lobby, requestId, alreadyMember } = await requestJoin({
+            const { lobbyId, code } = payload || {};
+            if (!lobbyId && !code) return ackError(ack, 'lobbyId_or_code_required');
+            // joinLobby branches by visibility: OPEN → instant member; PRIVATE
+            // (reached by code) → pending request for the host to accept.
+            const { lobby, requestId, joined, alreadyMember } = await joinLobby({
                 lobbyId,
+                code,
                 telegramUserId,
                 telegramUsername,
                 firstName,
@@ -885,15 +890,17 @@ export function registerCritterKartHandlers(client, io) {
             });
             registerClientIdentity(client, telegramUserId);
             // Joiner subscribes to the lobby room early so they receive
-            // lobby:state broadcasts even while pending.
+            // lobby:state broadcasts (even while pending, for private).
             client.join(lobbyRoomName(lobby.lobbyId));
             const wire = toLobbyStateWire(lobby);
-            if (alreadyMember) {
+            if (joined) {
+                // OPEN instant-join (or already a member): the joiner is in.
                 client.emit('lobby:joined', { lobby: wire });
-                ackOk(ack, { lobby: wire, alreadyMember: true });
+                io.to(lobbyRoomName(lobby.lobbyId)).emit('lobby:state', { lobby: wire });
+                ackOk(ack, { lobby: wire, joined: true, alreadyMember: !!alreadyMember });
                 return;
             }
-            // Notify host of the pending join request
+            // PRIVATE → notify host of the pending join request
             io.to(lobbyRoomName(lobby.lobbyId)).emit('lobby:state', { lobby: wire });
             io.to(lobbyRoomName(lobby.lobbyId)).emit('lobby:joinRequest', {
                 lobbyId: lobby.lobbyId,

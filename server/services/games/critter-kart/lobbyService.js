@@ -345,6 +345,7 @@ export function toLobbyStateWire(lobby) {
         track: lobby.track || 'meadow',
         visibility: lobby.visibility || 'open',
         code: lobby.code || null, // shareable join code (private lobbies); members re-share it
+        createdAt: (lobby.createdAt ? new Date(lobby.createdAt).getTime() : Date.now()), // for the 30-min expiry chip
     };
 }
 
@@ -356,5 +357,6 @@ export function toLobbySummaryWire(lobby) {
         cap: lobby.cap,
         joinedCount: lobby.members.length,
         status: lobby.state === 'starting' ? 'starting' : 'open',
+        track: lobby.track || 'meadow', // for the track color-chip on browser rows
     };
 }

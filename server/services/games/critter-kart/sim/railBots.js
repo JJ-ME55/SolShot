@@ -11,7 +11,7 @@
  */
 
 import { TUNING } from './tuning.js';
-import { archHeightAt } from './trackFeatures.js';
+import { archHeightAt, UPPER_DECK_INNER } from './trackFeatures.js';
 
 
 // Per-bot rail personas (client BOT_PERSONAS — catchup is what the rail uses).
@@ -136,18 +136,30 @@ export function stepRailBots({ karts, st, track, trainPieces, dt, elapsedSec }) 
         let tx = cN.x - c0.x, tz = cN.z - c0.z;
         const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
         const heading = Math.atan2(tx, tz);
-        const x = c0.x + tz * st.lat[i];
-        const z = c0.z - tx * st.lat[i];
-        // Y: ride the arch bridge; arc over the lake jump (on rails → always clears)
+        // Lateral line + Y. Bots RIDE the raised features (skywalk / upper-deck shortcut / arch /
+        // jump) so they go OVER them instead of clipping through (matches the client rail bots).
+        let lat = st.lat[i];
         let y = 0;
         const az = track.archBridgeZone;
-        if (az && pp >= az.startProgress && pp <= az.endProgress) {
+        const ud = track.upperDeckZone;
+        const sw = track.skywalk;
+        const swUp = sw ? sw.jumpProgress - 0.007 : 0;
+        if (sw && Math.abs(st.lat[i]) < track.halfWidth * 0.55 && pp >= swUp && pp <= sw.endProgress) {
+            y = pp < sw.startProgress ? sw.height * Math.max(0, pp - swUp) / (sw.startProgress - swUp || 1) : sw.height;
+        } else if (ud && pp >= ud.startProgress && pp <= ud.endProgress) {
+            lat = ud.side * (UPPER_DECK_INNER + track.halfWidthAt(pp)) / 2;
+            y = pp < ud.rampUpEnd ? ud.height * (pp - ud.startProgress) / (ud.rampUpEnd - ud.startProgress || 1)
+                : pp > ud.rampDownStart ? ud.height * (ud.endProgress - pp) / (ud.endProgress - ud.rampDownStart || 1)
+                : ud.height;
+        } else if (az && pp >= az.startProgress && pp <= az.endProgress) {
             y = archHeightAt((pp - az.startProgress) / (az.endProgress - az.startProgress || 1));
         } else if (track.jumpZone) {
             const rs = track.jumpZone.startProgress - 30 / track.totalLength; // ramp start (RAMP_LEN_WORLD)
             const re = track.jumpZone.endProgress;
             if (pp >= rs && pp <= re) y = RAMP_TOP_Y * Math.sin(Math.PI * ((pp - rs) / ((re - rs) || 1)));
         }
+        const x = c0.x + tz * lat;
+        const z = c0.z - tx * lat;
         kart.state = {
             ...s, x, z, y, heading, velHeading: heading, speed: st.speed[i],
             boostTimer: Math.max(0, (s.boostTimer ?? 0) - dt),

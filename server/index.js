@@ -94,6 +94,7 @@ import {
     getMyStanding as getRugRunStanding,
     mintSession as mintRugRunSession,
 } from './services/games/rug-run-standalone/standaloneLeaderboard.js';
+import { dailyRugs as rugRunDailyRugs } from './services/games/rug-run-standalone/dailySeed.js';
 import BasketballScore from './models/BasketballScore.js';
 import KeepieUppiesScore from './models/KeepieUppiesScore.js';
 import FreeKicksScore from './models/FreeKicksScore.js';
@@ -1428,7 +1429,7 @@ app.get('/api/games/basketball/standing/:telegramUserId', async (req, res) => {
 //   returns: { ok, newBest, bestScore, bestStreakPnl, newBestStreak, rank, totalPlayers }
 app.post('/api/games/rug-run/score', scoreSubmitLimiter, async (req, res) => {
     try {
-        const { score, banked, streak, pnl } = req.body || {};
+        const { score, banked, streak, pnl, date, attempt, rugged } = req.body || {};
         if (!Number.isFinite(score) || score < 0) {
             return res.status(400).json({ error: 'score must be a non-negative number' });
         }
@@ -1439,6 +1440,51 @@ app.post('/api/games/rug-run/score', scoreSubmitLimiter, async (req, res) => {
             if (resolved.message) body.message = resolved.message;
             return res.status(resolved.status).json(body);
         }
+
+        // ─── Server-side determinism validation (anti-cheat) ───────────────
+        // The chart + the 3 daily attempts are fully determined by the UTC date.
+        // We re-derive the rug for the claimed (date, attempt) and verify the
+        // submitted banked/score are physically possible for that run.
+        const serverToday = new Date().toISOString().slice(0, 10);
+        const serverYesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+
+        // 1. date must be present and be the server's current UTC day (1-day grace
+        //    for submits that cross the midnight boundary).
+        if (typeof date !== 'string' || (date !== serverToday && date !== serverYesterday)) {
+            return res.status(400).json({ ok: false, error: 'invalid or stale date' });
+        }
+        // 2. attempt must be an integer 1..3.
+        if (!Number.isInteger(attempt) || attempt < 1 || attempt > 3) {
+            return res.status(400).json({ ok: false, error: 'attempt must be an integer 1..3' });
+        }
+
+        const rug = rugRunDailyRugs(date)[attempt - 1];
+        const isRugged = rugged === true;
+
+        // 3. If NOT rugged, banked can't exceed the rug (2% float-drift tolerance).
+        if (!isRugged) {
+            if (!Number.isFinite(banked) || banked < 0) {
+                return res.status(400).json({ ok: false, error: 'banked must be a non-negative number' });
+            }
+            if (banked > rug * 1.02) {
+                return res.status(400).json({ ok: false, error: 'impossible banked for this run' });
+            }
+        }
+        // 4. score must equal round((rugged ? 0 : banked) * 100) ±1.
+        const expectedScore = Math.round((isRugged ? 0 : banked) * 100);
+        if (Math.abs(score - expectedScore) > 1) {
+            return res.status(400).json({ ok: false, error: 'score does not match banked' });
+        }
+
+        // 5. One submission per telegramUserId per UTC day.
+        const existing = await RugRunScore.findOne(
+            { telegramUserId: resolved.identity.telegramUserId },
+            { lastSubmitDate: 1 }
+        ).lean();
+        if (existing && existing.lastSubmitDate === serverToday) {
+            return res.status(400).json({ ok: false, error: 'already submitted today' });
+        }
+
         const result = await submitRugRunScore({
             telegramUserId: resolved.identity.telegramUserId,
             telegramUsername: resolved.identity.telegramUsername,
@@ -1448,6 +1494,12 @@ app.post('/api/games/rug-run/score', scoreSubmitLimiter, async (req, res) => {
             streak,
             pnl,
         });
+        // Stamp the day so a second submit today is rejected. (submitScore upserts
+        // the row, so it exists now.)
+        await RugRunScore.updateOne(
+            { telegramUserId: resolved.identity.telegramUserId },
+            { $set: { lastSubmitDate: serverToday } }
+        );
         res.json({ ok: true, ...result });
     } catch (err) {
         console.error('[POST /api/games/rug-run/score]', err.message);

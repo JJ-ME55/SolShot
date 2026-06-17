@@ -45,6 +45,10 @@ const rugRunScoreSchema = new mongoose.Schema({
     // Streak PnL state — accumulated streak multiplier (the weekly/all-time metric)
     bestStreakPnl:     { type: Number, required: true, default: 0 },
 
+    // One-per-UTC-day enforcement: 'YYYY-MM-DD' of the last accepted submission.
+    // The /score handler rejects a second submission for the same UTC day.
+    lastSubmitDate:    { type: String, default: null },
+
     // Timestamps
     firstSubmittedAt:  { type: Date, default: Date.now },
     lastSubmittedAt:   { type: Date, default: Date.now },

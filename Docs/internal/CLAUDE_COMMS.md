@@ -3399,3 +3399,5 @@ Verified: `node --check` all files; service imports clean (no DB connect on impo
 **JJ action:** set `RUG_RUN_LEADERBOARD_SECRET` in Render + local `.env`, then deploy. Daily-seed/server-authoritative rug validation is a follow-up (client uses client-RNG today; `/score` currently trusts JWT + sane bounds like the other standalone games).
 
 — fishyboy-claude (Opus 4.8)
+
+> **UPDATE (same session):** added `server/services/games/rug-run-standalone/dailySeed.js` (`dailyRugs(date)` — deterministic, byte-identical to the client). `/api/games/rug-run/score` now validates `date==today` (±1d grace), `attempt∈1..3`, `banked≤rug×1.02`, score math, and one-submit-per-UTC-day (`RugRunScore.lastSubmitDate`). Verified dailyRugs('2026-06-17')→[43,5.11,5] matches the client. The daily-seed/server-authoritative validation flagged above is DONE.

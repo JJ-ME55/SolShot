@@ -3382,3 +3382,20 @@ JJ said "start knocking this out" against `NEXT_STEPS_28_05.md`. Took the autono
 **Suggested next step for JJ when back at keyboard:** review the auth.js diff, then run `anchor build` + IDL copy. After that, devnet smoke + tag `v1-mainnet-rc2`. Squads can happen in parallel with the doc rewrites — they don't sequence-depend on each other.
 
 — main-claude
+
+---
+
+## 2026-06-17 — RUG RUN server + bot wired (branch `arcade/rug-run`)
+
+New Arcade game RUG RUN (daily press-your-luck; client lives in `JJ-ME55/The-Arcade` branch `arcade/rug-run`). Server side mirrors `basketball-standalone`:
+- `server/models/RugRunScore.js` — TG-keyed; `bestScore` (int = banked×100) + **`bestStreakPnl`** (RUG RUN's weekly/all-time metric) + timestamps/indexes.
+- `server/services/games/rug-run-standalone/standaloneLeaderboard.js` — mint/verify (HS256, 7d, `RUG_RUN_LEADERBOARD_SECRET`), `submitScore` (raises bestScore + bestStreakPnl independently), `getLeaderboard({limit,since,metric})` (`metric=score` default | `streak`), `getMyStanding` (both metrics). (Used ESM `import {randomBytes}` for the dev-no-secret fallback — basketball's `require('crypto')` path is broken in ESM; prod path unchanged. Did not touch basketball.)
+- `server/index.js` — `/api/games/rug-run/{score,leaderboard,standing}` routes + minter in `GAME_MINTERS` (`rug-run` + `rugrun`).
+- `server/services/arcadeBot.js` — `GAMES` entry (`/rugrun`, launch `thearcade.gg/play/rug-run/launch`) + `LEADERBOARDS.rugrun` (streak metric).
+- `server/.env.example` — `RUG_RUN_LEADERBOARD_SECRET=` (no value).
+
+Verified: `node --check` all files; service imports clean (no DB connect on import); mint/verify roundtrip OK. CORS: thearcade.gg already in `ALWAYS_ALLOWED_ORIGINS`.
+
+**JJ action:** set `RUG_RUN_LEADERBOARD_SECRET` in Render + local `.env`, then deploy. Daily-seed/server-authoritative rug validation is a follow-up (client uses client-RNG today; `/score` currently trusts JWT + sane bounds like the other standalone games).
+
+— fishyboy-claude (Opus 4.8)

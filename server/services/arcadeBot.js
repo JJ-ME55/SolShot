@@ -61,6 +61,11 @@ import {
     mintSession as mintShootoutSession,
 } from './games/shootout-standalone/standaloneLeaderboard.js';
 import {
+    mintSession as mintRugRunSession,
+    getLeaderboard as getRugRunLeaderboard,
+    getMyStanding as getRugRunStanding,
+} from './games/rug-run-standalone/standaloneLeaderboard.js';
+import {
     getShootoutLeaderboard,
     getShootoutStanding,
 } from './games/shootout/stats.js';
@@ -229,6 +234,26 @@ const GAMES = [
         firstName: ctx.from?.first_name,
     }),
   },
+  {
+    // RUG RUN — single-player "ride the pump" cash-out game served from the
+    // arcade hub at /play/rug-run. TG slash commands can't contain hyphens,
+    // so the bot slug is `rugrun` while the arcade URL is `/play/rug-run`.
+    // Leaderboard binding mirrors basketball: append a signed JWT so the
+    // client can POST run results to `/api/games/rug-run/score`. Scores land
+    // in the RugRunScore Mongo collection (dual metric: banked score + streak
+    // PnL).
+    slug: 'rugrun',
+    name: 'RUG RUN',
+    emoji: '📈',
+    tagline: 'Ride the pump, bank before the rug.',
+    url: 'https://thearcade.gg/play/rug-run/launch',
+    supportsLoginUrl: false,
+    sessionMinter: (ctx) => mintRugRunSession({
+        telegramUserId: ctx.from?.id,
+        telegramUsername: ctx.from?.username,
+        firstName: ctx.from?.first_name,
+    }),
+  },
 ];
 
 // Per-game leaderboard config. Maps slug → { rendering metadata, lib }.
@@ -281,6 +306,26 @@ const LEADERBOARDS = {
     getLeaderboard: getShootoutLeaderboard,
     getMyStanding: getShootoutStanding,
     launchCmd: '/shootout',
+  },
+  rugrun: {
+    // RUG RUN's bot board defaults to the STREAK metric (weekly/all-time =
+    // best accumulated streak multiplier). The daily view uses metric='score'
+    // (raw banked). The shared `sendLeaderboard` renderer expects a
+    // {rank, displayName, bestScore} contract, so these adapters request the
+    // streak metric and surface `bestStreakPnl` in the `bestScore` column.
+    emoji: '📈',
+    title: 'RUG RUN · STREAK',
+    getLeaderboard: async ({ limit, since } = {}) => {
+      const rows = await getRugRunLeaderboard({ limit, since, metric: 'streak' });
+      return rows.map((r) => ({ ...r, bestScore: r.bestStreakPnl }));
+    },
+    getMyStanding: async ({ telegramUserId }) => {
+      const s = await getRugRunStanding({ telegramUserId });
+      if (!s) return null;
+      // Surface the streak metric (rank + value) under the shared contract.
+      return { ...s, rank: s.rankStreak, bestScore: s.bestStreakPnl };
+    },
+    launchCmd: '/rugrun',
   },
 };
 

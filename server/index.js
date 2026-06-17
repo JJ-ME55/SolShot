@@ -65,6 +65,13 @@ import {
     mintSession as mintFreeKicksSession,
 } from './services/games/free-kicks-standalone/standaloneLeaderboard.js';
 import {
+    verifySession as verifyDeeperSession,
+    submitScore as submitDeeperScore,
+    getLeaderboard as getDeeperLeaderboard,
+    getMyStanding as getDeeperStanding,
+    mintSession as mintDeeperSession,
+} from './services/games/deeper-standalone/standaloneLeaderboard.js';
+import {
     getSolShotLeaderboard,
     getSolShotStanding,
 } from './services/games/solshot-leaderboard.js';
@@ -99,6 +106,7 @@ import BasketballScore from './models/BasketballScore.js';
 import KeepieUppiesScore from './models/KeepieUppiesScore.js';
 import FreeKicksScore from './models/FreeKicksScore.js';
 import RugRunScore from './models/RugRunScore.js';
+import DeeperScore from './models/DeeperScore.js';
 
 dotenv.config()
 
@@ -140,6 +148,7 @@ const ALWAYS_ALLOWED_ORIGINS = [
     'https://sol-shot-basketball.vercel.app',
     'https://sol-shot-keepie-uppies.vercel.app',
     'https://solshot-free-kicks-iota.vercel.app',
+    'https://deeper-red.vercel.app',
     // The Arcade — parent-brand web hub. Custom domain since 2026-06-04.
     // `the-arcade-eta.vercel.app` (auto-suffix from when `the-arcade`
     // collided with another Vercel account) stays in the allowlist as
@@ -1205,6 +1214,7 @@ const GAME_MINTERS = {
     basketball: mintBasketballSession,
     keepieuppies: mintKeepieUppiesSession,
     freekicks: mintFreeKicksSession,
+    deeper: mintDeeperSession,
     // Kebab key matches the hub's useArcadeSessionMint('critter-kart')
     // call. Distinct from the bot's slash slug 'critterkart' which TG
     // requires hyphenless. They're two different namespaces.
@@ -1672,6 +1682,73 @@ app.get('/api/games/freekicks/standing/:telegramUserId', async (req, res) => {
         res.json({ ok: true, standing: standing || null });
     } catch (err) {
         console.error('[GET /api/games/freekicks/standing]', err.message);
+        res.status(500).json({ error: 'failed to fetch standing' });
+    }
+});
+
+// ── DEEPER (deeper-red.vercel.app — Phaser mining-descent game) ─────────
+// Standalone client captures the JWT minted by the arcade bot on /deeper tap
+// (?session=<jwt>) and forwards it here. Ranked by NET WORTH (total cash
+// earned); depthFt + treasures are stored as secondary columns.
+//
+// POST /api/games/deeper/score
+//   body: { score: number, depthFt?: number, treasures?: number, session: string }
+//   returns: { ok, newBest, bestScore, rank, totalPlayers }
+app.post('/api/games/deeper/score', scoreSubmitLimiter, async (req, res) => {
+    try {
+        const { score, depthFt, treasures } = req.body || {};
+        if (!Number.isFinite(score)) {
+            return res.status(400).json({ error: 'numeric score required' });
+        }
+        const resolved = await resolveScoreIdentity(req, verifyDeeperSession);
+        if (!resolved.ok) {
+            const body = { error: resolved.error };
+            if (resolved.detail) body.detail = resolved.detail;
+            if (resolved.message) body.message = resolved.message;
+            return res.status(resolved.status).json(body);
+        }
+        const result = await submitDeeperScore({
+            telegramUserId: resolved.identity.telegramUserId,
+            telegramUsername: resolved.identity.telegramUsername,
+            firstName: resolved.identity.firstName,
+            score,
+            depthFt,
+            treasures,
+        });
+        res.json({ ok: true, ...result });
+    } catch (err) {
+        console.error('[POST /api/games/deeper/score]', err.message);
+        res.status(500).json({ error: 'failed to submit score' });
+    }
+});
+
+// GET /api/games/deeper/leaderboard?limit=10&since=<iso>
+app.get('/api/games/deeper/leaderboard', async (req, res) => {
+    try {
+        const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 10));
+        const since = parseSinceParam(req.query.since);
+        const [leaderboard, totalPlayers] = await Promise.all([
+            getDeeperLeaderboard({ limit, since }),
+            DeeperScore.countDocuments(buildSinceFilter(since)),
+        ]);
+        res.json({ ok: true, leaderboard, totalPlayers });
+    } catch (err) {
+        console.error('[GET /api/games/deeper/leaderboard]', err.message);
+        res.status(500).json({ error: 'failed to fetch leaderboard' });
+    }
+});
+
+// GET /api/games/deeper/standing/:telegramUserId
+app.get('/api/games/deeper/standing/:telegramUserId', async (req, res) => {
+    try {
+        const telegramUserId = parseInt(req.params.telegramUserId, 10);
+        if (!Number.isFinite(telegramUserId)) {
+            return res.status(400).json({ error: 'invalid telegramUserId' });
+        }
+        const standing = await getDeeperStanding({ telegramUserId });
+        res.json({ ok: true, standing: standing || null });
+    } catch (err) {
+        console.error('[GET /api/games/deeper/standing]', err.message);
         res.status(500).json({ error: 'failed to fetch standing' });
     }
 });

@@ -52,6 +52,11 @@ services:
       # on Blueprint setup — persistent across deploys.
       - key: ARCADE_SESSION_SECRET
         generateValue: true
+      # DEEPER standalone leaderboard signing secret (JJ-ME55/deeper).
+      # Auto-generated + persistent; the bot's mintDeeperSession and the
+      # /api/games/deeper/* verifySession both read it from this same process.
+      - key: DEEPER_LEADERBOARD_SECRET
+        generateValue: true
       - key: SOLANA_KEYPAIR_JSON
         sync: false
       - key: ADMIN_API_KEY

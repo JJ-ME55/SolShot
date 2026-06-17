@@ -43,11 +43,10 @@ import {
     getLeaderboard as getFreeKicksLeaderboard,
     getMyStanding as getFreeKicksStanding,
 } from './games/free-kicks-standalone/standaloneLeaderboard.js';
-import {
-    mintSession as mintDeeperSession,
-    getLeaderboard as getDeeperLeaderboard,
-    getMyStanding as getDeeperStanding,
-} from './games/deeper-standalone/standaloneLeaderboard.js';
+// DEEPER bot entry intentionally omitted for now — kept off the bot/arcade
+// while the standalone (deeper-red.vercel.app) is being tested. The server
+// leaderboard routes + service stay live; re-add this import + the GAMES /
+// LEADERBOARDS entries to surface /deeper publicly.
 // Pool imports parked 2026-06-05 — pool entry removed from GAMES +
 // LEADERBOARDS while the canvas lift is outstanding. poolLeaderboard.js
 // module + Mongo data are untouched; uncomment to restore the bot
@@ -259,24 +258,6 @@ const GAMES = [
         firstName: ctx.from?.first_name,
     }),
   },
-  {
-    // Phaser 3 Motherload-style mining descent, standalone at
-    // deeper-red.vercel.app (JJ-ME55/deeper). Ranked by NET WORTH (total
-    // cash earned) — the classic Motherload high-score. The bot appends
-    // ?session=<jwt>; the client stashes it and POSTs net worth on death
-    // to /api/games/deeper/score.
-    slug: 'deeper',
-    name: 'DEEPER',
-    emoji: '⛏️',
-    tagline: 'Drill for ore, bank your net worth, upgrade the pod — go DEEPER.',
-    url: 'https://deeper-red.vercel.app',
-    supportsLoginUrl: false,
-    sessionMinter: (ctx) => mintDeeperSession({
-        telegramUserId: ctx.from?.id,
-        telegramUsername: ctx.from?.username,
-        firstName: ctx.from?.first_name,
-    }),
-  },
 ];
 
 // Per-game leaderboard config. Maps slug → { rendering metadata, lib }.
@@ -349,14 +330,6 @@ const LEADERBOARDS = {
       return { ...s, rank: s.rankStreak, bestScore: s.bestStreakPnl };
     },
     launchCmd: '/rugrun',
-  },
-  deeper: {
-    // bestScore is NET WORTH (total cash earned); totalSubmissions is runs.
-    emoji: '⛏️',
-    title: 'DEEPER · NET WORTH',
-    getLeaderboard: getDeeperLeaderboard,
-    getMyStanding: getDeeperStanding,
-    launchCmd: '/deeper',
   },
 };
 

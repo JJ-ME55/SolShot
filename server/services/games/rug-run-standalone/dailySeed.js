@@ -40,8 +40,8 @@ const MU = 2.833;
 const SIGMA = 0.90;
 
 const DAY_TYPES = [
-    { name: 'RUGFEST', p: 0.12, muBias: 0.55 },
-    { name: 'BULL RUN', p: 0.10, muBias: -0.50 },
+    { name: 'RUGFEST', p: 0.12, muBias: -0.55 },
+    { name: 'BULL RUN', p: 0.10, muBias: 0.50 },
     { name: 'HIGH VOLATILITY', p: 0.15, muBias: 0 },
     { name: 'CHOP CITY', p: 0.15, muBias: 0 },
     { name: 'NEUTRAL', p: 0.48, muBias: 0 },

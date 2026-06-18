@@ -559,6 +559,20 @@ app.get('/api/admin/funnel', requireAdminKey, async (req, res) => {
     }
 });
 
+// Historical gameplay aggregates for the arcade-analytics dashboard.
+//   GET /api/admin/stats-aggregate   headers: x-admin-key
+// Returns all-time per-game totals + real per-day timelines for match/race
+// games. Read-only; server-to-server (no CORS surface). See services/analytics/backfill.js
+app.get('/api/admin/stats-aggregate', requireAdminKey, async (req, res) => {
+    try {
+        const { buildBackfill } = await import('./services/analytics/backfill.js');
+        res.json(await buildBackfill());
+    } catch (err) {
+        console.error('[/api/admin/stats-aggregate]', err.message);
+        res.status(500).json({ error: 'aggregate_failed' });
+    }
+});
+
 // SEC-02: CSP violation reporting endpoint
 app.post('/api/csp-report', express.json({ type: 'application/csp-report' }), (req, res) => {
     const report = req.body['csp-report'] || req.body;

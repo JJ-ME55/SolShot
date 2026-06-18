@@ -75,11 +75,11 @@ export async function buildBackfill() {
   const [
     BasketballScore, KeepieUppiesScore, FreeKicksScore, RugRunScore,
     ShootoutStats, CritterKartCareer, PoolElo, MarathonRun,
-    CritterKartRace, ShootoutMatch, PoolMatch,
+    CritterKartRace, ShootoutMatch, PoolMatch, User,
   ] = await Promise.all([
     model('BasketballScore'), model('KeepieUppiesScore'), model('FreeKicksScore'), model('RugRunScore'),
     model('ShootoutStats'), model('CritterKartCareer'), model('PoolElo'), model('MarathonRun'),
-    model('CritterKartRace'), model('ShootoutMatch'), model('PoolMatch'),
+    model('CritterKartRace'), model('ShootoutMatch'), model('PoolMatch'), model('User'),
   ]);
 
   const games = {};
@@ -93,19 +93,47 @@ export async function buildBackfill() {
   games['critter-kart'] = { ...(await aggUsers(CritterKartCareer, { playsField: 'races', firstField: 'firstRaceAt', lastField: 'lastRaceAt' })), granularity: 'daily' };
   games['pool'] = { ...(await aggUsers(PoolElo, { playsField: 'matchCount', lastField: 'lastActiveAt' })), granularity: 'daily' };
   games['marathon'] = { ...(await aggRuns(MarathonRun, { firstField: 'startedAt', lastField: 'startedAt' })), granularity: 'daily' };
+  // SolShot 1v1 artillery — career stats live on the User collection
+  // (stats.matchesPlayed), with a per-match playedAt array for a daily timeline.
+  const [solshotAgg] = await User.aggregate([
+    {
+      $group: {
+        _id: null,
+        plays: { $sum: { $ifNull: ['$stats.matchesPlayed', 0] } },
+        players: { $sum: { $cond: [{ $gt: ['$stats.matchesPlayed', 0] }, 1, 0] } },
+        firstActivity: { $min: '$createdAt' },
+        lastActivity: { $max: '$lastActive' },
+      },
+    },
+  ]);
+  games['solshot'] = {
+    plays: solshotAgg?.plays || 0,
+    players: solshotAgg?.players || 0,
+    firstActivity: solshotAgg?.firstActivity || null,
+    lastActivity: solshotAgg?.lastActivity || null,
+    granularity: 'daily',
+  };
 
-  // Real per-day timelines (one doc per match/race).
-  const [ckTl, soTl, poolTl, marTl] = await Promise.all([
+  // Real per-day timelines (one doc/sub-doc per match/race).
+  const [ckTl, soTl, poolTl, marTl, solshotTl] = await Promise.all([
     CritterKartRace.aggregate(dayBuckets('createdAt')),
     ShootoutMatch.aggregate(dayBuckets('startedAt')),
     PoolMatch.aggregate(dayBuckets('startedAt')),
     MarathonRun.aggregate(dayBuckets('startedAt')),
+    User.aggregate([
+      { $unwind: '$matchHistory' },
+      { $match: { 'matchHistory.playedAt': { $ne: null } } },
+      { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$matchHistory.playedAt' } }, plays: { $sum: 1 } } },
+      { $project: { _id: 0, date: '$_id', plays: 1 } },
+      { $sort: { date: 1 } },
+    ]),
   ]);
   const timelines = {
     'critter-kart': ckTl,
     shootout: soTl,
     pool: poolTl,
     marathon: marTl,
+    solshot: solshotTl,
   };
 
   return { generatedAt: new Date(), games, timelines };

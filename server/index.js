@@ -18,7 +18,7 @@ import { initShotState } from './services/shot-token.js'
 import { initKeys } from './services/keys.js';
 import { initEscrow } from './services/escrow.js';
 import { initEscrowV2 } from './services/escrow-v2.js';
-import { requireAdminKey } from './middleware/guards.js';
+import { requireAdminKey, requireAnalyticsKey } from './middleware/guards.js';
 import { telegramSocketMiddleware } from './middleware/telegram.js';
 import { initBot, setupBotWebhook, stopBot } from './services/bot.js';
 import { initArcadeBot, setupArcadeBotWebhook, stopArcadeBot } from './services/arcadeBot.js';
@@ -564,6 +564,21 @@ app.get('/api/admin/funnel', requireAdminKey, async (req, res) => {
         res.json(data);
     } catch (err) {
         console.error('[/api/admin/funnel]', err.message);
+        res.status(500).json({ error: 'aggregate_failed' });
+    }
+});
+
+// Historical gameplay aggregates for the arcade-analytics dashboard.
+//   GET /api/admin/stats-aggregate   headers: x-analytics-key
+// Returns all-time per-game totals + real per-day timelines for match/race
+// games. Read-only; server-to-server (no CORS surface). Scoped to a dedicated
+// ANALYTICS_API_KEY (not the master admin key). See services/analytics/backfill.js
+app.get('/api/admin/stats-aggregate', requireAnalyticsKey, async (req, res) => {
+    try {
+        const { buildBackfill } = await import('./services/analytics/backfill.js');
+        res.json(await buildBackfill());
+    } catch (err) {
+        console.error('[/api/admin/stats-aggregate]', err.message);
         res.status(500).json({ error: 'aggregate_failed' });
     }
 });

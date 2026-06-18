@@ -40,6 +40,24 @@ export function requireAdminKey(req, res, next) {
     next();
 }
 
+// ─── requireAnalyticsKey ────────────────────────────────────
+// Like requireAdminKey but scoped to the READ-ONLY analytics endpoint.
+// Checks x-analytics-key header against ANALYTICS_API_KEY env var, so the
+// arcade-analytics dashboard never needs the master ADMIN_API_KEY.
+export function requireAnalyticsKey(req, res, next) {
+    const apiKey = req.headers['x-analytics-key'];
+    const expected = process.env.ANALYTICS_API_KEY;
+    if (!expected || typeof apiKey !== 'string') {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const a = Buffer.from(apiKey);
+    const b = Buffer.from(expected);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+    next();
+}
+
 // ─── requireAuth ────────────────────────────────────────────
 // Checks client.isAuthenticated. Emits error if not authed.
 // Returns true if authenticated, false otherwise.

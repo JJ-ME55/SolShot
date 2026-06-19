@@ -136,5 +136,25 @@ export async function buildBackfill() {
     solshot: solshotTl,
   };
 
-  return { generatedAt: new Date(), games, timelines };
+  // ── Signed-in users (the account table) + first-time sign-ups by period ──
+  // "Sign-ups" = User docs by createdAt; "total" = every account that exists.
+  const startOfToday = new Date(); startOfToday.setUTCHours(0, 0, 0, 0);
+  const startOfYesterday = new Date(startOfToday.getTime() - 86400000);
+  const d7 = new Date(Date.now() - 7 * 86400000);
+  const d30 = new Date(Date.now() - 30 * 86400000);
+  const [totalUsers, telegramUsers, suToday, suYesterday, su7, su30] = await Promise.all([
+    User.countDocuments({}),
+    User.countDocuments({ telegramUserId: { $ne: null } }),
+    User.countDocuments({ createdAt: { $gte: startOfToday } }),
+    User.countDocuments({ createdAt: { $gte: startOfYesterday, $lt: startOfToday } }),
+    User.countDocuments({ createdAt: { $gte: d7 } }),
+    User.countDocuments({ createdAt: { $gte: d30 } }),
+  ]);
+  const users = {
+    total: totalUsers,
+    telegram: telegramUsers,
+    signups: { today: suToday, yesterday: suYesterday, last7: su7, last30: su30, allTime: totalUsers },
+  };
+
+  return { generatedAt: new Date(), games, timelines, users };
 }
